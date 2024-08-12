@@ -219,7 +219,7 @@ setup(
     ],
     extras_require={
         "anthropic": [
-            "langchain-anthropic==0.1.11",
+            "langchain-anthropic==0.1.22",
             "anthropic==0.25.2",
         ],
         "openai": [
