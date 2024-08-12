@@ -23,6 +23,6 @@ jobs:
     - name: Publish wheels to Production PyPI
       env:
         TWINE_USERNAME: __token__
-        TWINE_PASSWORD: ${{ secrets.AIPARROT_API_SECRET }}
+        TWINE_PASSWORD: ${{ secrets.NAV_AIPARROT_API_SECRET }}
       run: |
         twine upload  dist/*-manylinux*.whl
