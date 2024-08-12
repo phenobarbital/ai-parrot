@@ -1,0 +1,11 @@
+[MASTER]
+init-hook='import sys; sys.path.append("/home/jesuslara/proyectos/navigator/navigator-ai")'
+
+[MESSAGES CONTROL]
+disable=missing-module-docstring,missing-function-docstring
+
+[REPORTS]
+output-format=text
+
+[PLUGIN]
+load-plugins=pylint.extensions.docparams
