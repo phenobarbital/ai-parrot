@@ -141,7 +141,7 @@ setup(
     ],
     install_requires=[
         "Cython==3.0.9",
-        "pymupdf==1.24.4",
+        "pymupdf==1.24.9",
         "pymupdf4llm==0.0.1",
         "pdf4llm==0.0.6",
         "PyPDF2==3.0.1",
