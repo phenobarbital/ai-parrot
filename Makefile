@@ -16,7 +16,7 @@ install:
 	# QS requirements
 	pip install --upgrade querysource[analytics]
 
-setup:
+develop:
 	python -m pip install -Ur requirements/requirements-dev.txt
 
 dev:

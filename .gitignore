@@ -8,6 +8,10 @@ __pycache__/
 *.c
 *.cpp
 
+# Package related
+etc/config/
+static/*
+
 # Distribution / packaging
 .Python
 build/
