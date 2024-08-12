@@ -1,0 +1,32 @@
+Debian-based systems installation:
+```
+sudo apt install gcc python3.11-venv python3.11-full python3.11-dev libmemcached-dev zlib1g-dev build-essential libffi-dev unixodbc unixodbc-dev libsqliteodbc libev4 libev-dev ffmpeg python3-pycuda nvidia-cuda-toolkit tesseract-ocr libtesseract-dev poppler-utils tesseract-ocr-eng tesseract-ocr-spa
+```
+
+## For Python Installation ##
+
+```bash
+sudo add-apt-repository ppa:deadsnakes/ppa
+```
+
+```bash
+sudo apt update
+```
+
+```bash
+sudo apt install python3.11 python3.11-dev python3.11-venv python3.12 python3.12-dev python3.12-venv
+```
+
+
+For Qdrant installation:
+```
+docker pull qdrant/qdrant
+docker run -d -p 6333:6333 -p 6334:6334 -v $(pwd)/qdrant_storage:/qdrant/storage:z qdrant/qdrant
+```
+
+For VertexAI, creates a folder on "env" called "google" and copy the JSON credentials file into it.
+
+
+CUDA requirements:
+pip install cuda-python
+pip install accelerate==0.29.1
