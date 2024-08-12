@@ -146,7 +146,7 @@ setup(
         "pdf4llm==0.0.6",
         "PyPDF2==3.0.1",
         "pdfminer.six==20231228",
-        "pdfplumber==0.11.0",
+        "pdfplumber==0.11.3",
         "bitsandbytes==0.43.0",
         "Cartopy==0.22.0",
         "chromadb==0.4.24",
