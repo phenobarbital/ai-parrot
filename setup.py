@@ -153,7 +153,7 @@ setup(
         "contourpy==1.2.0",
         "datasets==2.18.0",
         "faiss-cpu==1.8.0",
-        "fastavro==1.9.4",
+        "fastavro==1.9.5",
         "GitPython==3.1.42",
         "gunicorn==21.2.0",
         "jq==1.7.0",
