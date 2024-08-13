@@ -3,5 +3,5 @@ from .basic import Chatbot
 from .asktroc import AskTROC
 from .hragents import HRAgent
 from .bose import BoseBot
-from .oddie import OddieBot
+from .odoo import OddieBot
 from .cody import Cody
