@@ -106,7 +106,30 @@ class MilvusStore(AbstractStore):
             self.kwargs['db_name'] = self.database
             self.use_database(self.database, create=True)
 
-    def connect(self, client_id: str = None):
+    async def __aenter__(self):
+        try:
+            self.tensor = torch.randn(1000, 1000).cuda()
+        except RuntimeError:
+            self.tensor = None
+        if self._embed_ is None:
+            self._embed_ = self.create_embedding(
+                model_name=self.embedding_name
+            )
+        self._client_id = str(uuid.uuid4())
+        self._client, self.client_id = self.connect(client_id=self._client_id)
+        return self
+
+    async def __aexit__(self, exc_type, exc_value, traceback):
+        # closing Embedding
+        self._embed_ = None
+        del self.tensor
+        try:
+            self.close(client_id=self.client_id)
+            torch.cuda.empty_cache()
+        except RuntimeError:
+            pass
+
+    def connect(self, client_id: str = None) -> tuple:
         # 1. Set up a pyMilvus default connection
         # Unique connection:
         if not client_id:
@@ -115,13 +138,16 @@ class MilvusStore(AbstractStore):
             alias=client_id,
             **self.kwargs
         )
+        print('CONN > ', self.conn)
         self._client = MilvusClient(
             **self.kwargs
         )
+        print('AQUI > ', self._client, client_id, connections)
         self._connected = True
         return self._client, client_id
 
     def close(self, client_id: str = "uri-connection"):
+        print(':::: CLOSING CONNECTIONS :::: ')
         connections.disconnect(alias=client_id)
         self._connected = False
         self._client.close()
@@ -133,7 +159,6 @@ class MilvusStore(AbstractStore):
             "port": self.port,
             **kwargs
         }
-        print('ARGS >', args)
         try:
             conn = connections.connect(**args)
             db.create_database(db_name)
@@ -452,8 +477,9 @@ class MilvusStore(AbstractStore):
         self,
         collection: str = None,
         metric_type: str = None,
-        nprobe: int = 200,
-        metadata_field: str = None
+        nprobe: int = 32,
+        metadata_field: str = None,
+        consistency_level: str = 'session'
     ) -> Milvus:
         if not metric_type:
             metric_type = self._metric_type
@@ -462,7 +488,7 @@ class MilvusStore(AbstractStore):
         _search = {
             "search_params": {
                 "metric_type": metric_type,
-                "params": {"nprobe": nprobe},
+                "params": {"nprobe": nprobe, "nlist": 1024},
             }
         }
         if metadata_field:
@@ -474,7 +500,7 @@ class MilvusStore(AbstractStore):
         return Milvus(
             embedding_function=_embed_,
             collection_name=collection,
-            consistency_level='Bounded',
+            consistency_level=consistency_level,
             connection_args={
                 **self.kwargs
             },
@@ -484,7 +510,13 @@ class MilvusStore(AbstractStore):
             **_search
         )
 
-    def similarity_search(self, query: str, collection: str = None, limit: int = 2) -> list:
+    def similarity_search(
+        self,
+        query: str,
+        collection: str = None,
+        limit: int = 2,
+        consistency_level: str = 'Bounded'
+    ) -> list:
         if collection is None:
             collection = self.collection
         if self._embed_ is None:
@@ -496,7 +528,7 @@ class MilvusStore(AbstractStore):
         vector_db = Milvus(
             embedding_function=_embed_,
             collection_name=collection,
-            consistency_level='Bounded',
+            consistency_level=consistency_level,
             connection_args={
                 **self.kwargs
             },
