@@ -48,7 +48,6 @@ class ChatHandler(BaseView):
         post.
         description: Post method for ChatHandler.
         """
-        print('ARGS > ', args, kwargs)
         app = self.request.app
         name = self.request.match_info.get('chatbot_name', None)
         qs = self.query_parameters(self.request)
@@ -92,19 +91,20 @@ class ChatHandler(BaseView):
         session = self.request.session
         try:
             session_id = session.get('session_id', None)
-            # print('SESSION ID > ', session_id)
             memory_key = f'{session.session_id}_{name}_message_store'
-            # print('MEM STORAGE > ', memory_key)
             memory = chatbot.get_memory(session_id=memory_key)
-            # print('MEMORY >> ', memory)
-            async with chatbot.get_retrieval(request=self.request) as retrieval:
-                qa = retrieval.conversation(
+            with chatbot.get_retrieval(request=self.request) as retrieval:
+                result = await retrieval.question(
                     question=question,
-                    search_kwargs={"k": 10},
-                    use_llm=llm,
                     memory=memory
                 )
-                result = await qa.invoke(question)
+                # qa = retrieval.qa(
+                #     question=question,
+                #     search_kwargs={"k": 10},
+                #     use_llm=llm,
+                #     # memory=memory
+                # )
+                # result = await qa.invoke(question)
                 # Drop "memory" information:
                 result.chat_history = None
                 result.source_documents = None

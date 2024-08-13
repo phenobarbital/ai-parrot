@@ -108,12 +108,14 @@ class RetrievalManager:
     def create_memory(
         self,
         key: str = 'chat_history',
-        input_key: str = 'question'
+        input_key: str = 'question',
+        output_key: str = 'answer'
     ):
         return ConversationBufferMemory(
             memory_key=key,
             return_messages=True,
-            input_key=input_key
+            input_key=input_key,
+            output_key=output_key
         )
 
     ### Different types of Retrieval
@@ -122,7 +124,7 @@ class RetrievalManager:
         question: str = None,
         chain_type: str = 'stuff',
         search_type: str = 'similarity',
-        search_kwargs: dict = {"k": 10, "fetch_k": 30, "lambda_mult": 0.86},
+        search_kwargs: dict = {"k": 5, "fetch_k": 20, "lambda_mult": 0.89},
         return_docs: bool = True,
         metric_type: str = None,
         memory: Any = None,
@@ -137,18 +139,27 @@ class RetrievalManager:
         vector = self.store.get_vector(
             metric_type=metric_type
         )
-        retriever = VectorStoreRetriever(
+        simil_retriever = VectorStoreRetriever(
             vectorstore=vector,
-            search_type=search_type,
+            search_type='similarity',
             chain_type=chain_type,
+            search_kwargs=search_kwargs
+        )
+        retriever = vector.as_retriever(
+            search_type=search_type,
             search_kwargs=search_kwargs
         )
         if self.kb:
             # Get a BM25 Retriever:
             b25_retriever = BM25Retriever.from_documents(self.kb)
             retriever = EnsembleRetriever(
-                retrievers=[retriever, b25_retriever],
-                weights=[0.9, 0.1]
+                retrievers=[simil_retriever, retriever, b25_retriever],
+                weights=[0.6, 0.3, 0.1]
+            )
+        else:
+            retriever = EnsembleRetriever(
+                retrievers=[simil_retriever, retriever],
+                weights=[0.7, 0.3]
             )
         custom_template = self.template.format_map(
             SafeDict(
@@ -209,7 +220,7 @@ class RetrievalManager:
         question: str = None,
         chain_type: str = 'stuff',
         search_type: str = 'mmr',
-        search_kwargs: dict = {"k": 10, "fetch_k": 20, "lambda_mult": 0.86},
+        search_kwargs: dict = {"k": 5, "fetch_k": 40, "lambda_mult": 0.85},
         return_docs: bool = True,
         metric_type: str = None,
         use_llm: str = None
@@ -235,14 +246,14 @@ class RetrievalManager:
             b25_retriever = BM25Retriever.from_documents(self.kb)
             retriever = EnsembleRetriever(
                 retrievers=[simil_retriever, retriever, b25_retriever],
-                weights=[0.3, 0.6, 0.1]
+                weights=[0.6, 0.3, 0.1]
             )
         else:
-            # retriever = EnsembleRetriever(
-            #     retrievers=[simil_retriever, retriever],
-            #     weights=[0.7, 0.3]
-            # )
-            retriever = simil_retriever
+            retriever = EnsembleRetriever(
+                retrievers=[simil_retriever, retriever],
+                weights=[0.7, 0.3]
+            )
+            # retriever = simil_retriever
         custom_template = self.template.format_map(
             SafeDict(
                 chat_history=''
@@ -284,13 +295,15 @@ class RetrievalManager:
             chain_type=chain_type,
             retriever=retriever,
             return_source_documents=return_docs,
+            verbose=True,
             chain_type_kwargs={
                 "prompt": PromptTemplate(
                     template=custom_template,
-                    input_variables=['summaries', 'question']
+                    input_variables=['context', 'question']
                 )
             },
         )
+        # Debug Code ::
         # print('=====================')
         # print(custom_template)
         # response = self.chain.invoke(question)
@@ -311,6 +324,7 @@ class RetrievalManager:
         #     distance = 'EMPTY'
         # print('DISTANCE > ', distance)
         # print('CHAIN > ', self.chain)
+
         return self
 
     def get_current_context(self):
@@ -328,7 +342,7 @@ class RetrievalManager:
             count = 0
             d = {}
             for source in source_documents:
-                if count >= 10:
+                if count >= 20:
                     break  # Exit loop after processing 10 documents
                 metadata = source.metadata
                 if 'url' in metadata:
@@ -433,41 +447,94 @@ class RetrievalManager:
                 )
 
 
-    def question(self, question):
-        # vector = self.store.get_vector()
-        # docs = vector.similarity_search(self._question, k=1)
-        # max_confidence_score = 0
-        # for doc_id, similarity_score in docs:
-        #     max_confidence_score = max(max_confidence_score, similarity_score)
-        try:
-            # Invoke the chain with the given question
-            response = self.chain.invoke(question)
-        except Exception as exc:
-            self.logger.error(
-                f"Error invoking chain: {exc}"
+    async def question(
+            self,
+            question: str = None,
+            chain_type: str = 'stuff',
+            search_type: str = 'similarity',
+            search_kwargs: dict = {"k": 5, "fetch_k": 20, "lambda_mult": 0.89},
+            return_docs: bool = True,
+            metric_type: str = None,
+            memory: Any = None,
+            **kwargs
+    ):
+        # Generating Vector:
+        print('COLLECTION > ', self.store.collection, self.store.embedding_name)
+        print('DB > ', self.store.database)
+        async with self.store as store:  #pylint: disable=E1101
+            vector = store.get_vector(metric_type=metric_type)
+            docs = vector.similarity_search(question, k=1)
+            print('DOCS > ', docs)
+            retriever = VectorStoreRetriever(
+                vectorstore=vector,
+                search_type=search_type,
+                chain_type=chain_type,
+                search_kwargs=search_kwargs
             )
-            return None, None
-        try:
-            qa_response = ChatResponse(**response)
-        except (ValueError, TypeError) as exc:
-            self.logger.error(
-                f"Error validating response: {exc}"
+            custom_template = self.template.format_map(
+                SafeDict(
+                    summaries=''
+                )
             )
-            return None, None
-        except ValidationError as exc:
-            self.logger.error(
-                f"Error on response: {exc.payload}"
+            _prompt = PromptTemplate(
+                template=custom_template,
+                input_variables=["context", "chat_history", "question"],
             )
-            return None, None
+            try:
+                chain = ConversationalRetrievalChain.from_llm(
+                    llm=self.model,
+                    retriever=retriever,
+                    chain_type=chain_type,
+                    verbose=False,
+                    memory=memory,
+                    return_source_documents=return_docs,
+                    return_generated_question=True,
+                    combine_docs_chain_kwargs={"prompt": _prompt},
+                    **kwargs
+                )
+                response = chain.invoke(
+                    question
+                )
+            except Exception as exc:
+                self.logger.error(
+                    f"Error invoking chain: {exc}"
+                )
+                return None, None
+            try:
+                qa_response = ChatResponse(**response)
+            except (ValueError, TypeError) as exc:
+                self.logger.error(
+                    f"Error validating response: {exc}"
+                )
+                return None, None
+            except ValidationError as exc:
+                self.logger.error(
+                    f"Error on response: {exc.payload}"
+                )
+                return None, None
         try:
-            return self.as_markdown(
+            qa_response.response = self.as_markdown(
                 qa_response
-            ), qa_response
+            )
+            # # saving question to Usage Log
+            # if self.request:
+            #     tasker = self.request.app['service_queue']
+            #     await tasker.put(
+            #         self.log_usage,
+            #         response=qa_response,
+            #         request=self.request
+            #     )
+            # else:
+            #     asyncio.create_task(
+            #         self.log_usage(response=qa_response)
+            #     )
+            return qa_response
         except Exception as exc:
             self.logger.exception(
                 f"Error on response: {exc}"
             )
             return None, None
+
 
     async def invoke(self, question):
         # Invoke the chain with the given question
@@ -481,7 +548,6 @@ class RetrievalManager:
             )
             return None, None
         try:
-            print('RESPONSE > ', response)
             qa_response = ChatResponse(**response)
         except (ValueError, TypeError) as exc:
             self.logger.error(

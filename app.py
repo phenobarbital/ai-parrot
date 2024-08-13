@@ -1,11 +1,8 @@
-import pandas as pd
-from navconfig import BASE_DIR
 from navigator.handlers.types import AppHandler
 # Tasker:
 from navigator.background import BackgroundQueue
 from navigator_auth import AuthHandler
 from parrot.manager import ChatbotManager
-from parrot.conf import ENABLE_AZURE_BOT
 from parrot.loaders.handlers import DataManagement
 from parrot.conf import STATIC_DIR
 from parrot.handlers.bots import (
@@ -15,27 +12,6 @@ from parrot.handlers.bots import (
     ChatbotUsageHandler,
     ChatbotSharingQuestion
 )
-from settings.settings import (
-    NEW_CLIENT_ID,
-    NEW_CLIENT_SECRET,
-    TROCERS_CLIENT_ID,
-    TROCERS_CLIENT_SECRET,
-    BOSE_CLIENT_ID,
-    BOSE_CLIENT_SECRET,
-    ODOO_CLIENT_ID,
-    ODOO_CLIENT_SECRET,
-    ASKBRETT_CLIENT_ID,
-    ASKBRETT_CLIENT_SECRET,
-    BOTTROCDEV_CLIENT_ID,
-    BOTTROCDEV_CLIENT_SECRET
-)
-try:
-    from azure_teams_bot import AzureBot
-    from azure_teams_bot.bots import ChatBot, AgentBot
-    AZUREBOT_INSTALLED = True
-except ImportError as exc:
-    print(exc)
-    AZUREBOT_INSTALLED = False
 
 class Main(AppHandler):
     """
@@ -79,89 +55,6 @@ class Main(AppHandler):
         # Management APIs:
         DataManagement.configure(self.app)
 
-        # Azure Bot:
-        if ENABLE_AZURE_BOT and AZUREBOT_INSTALLED:
-            # Lucas Bot:
-            chat = ChatBot(
-                app=self.app,
-                # bot=self.hr_agent,
-                bot_name='TROCers',
-                welcome_message='Welcome to TROCers Bot, you can ask me anything about T-ROC.'
-            )
-            AzureBot(
-                app=self.app,
-                bots=[chat],
-                route='/api/edu/messages',
-                client_id=TROCERS_CLIENT_ID,
-                secret_id=TROCERS_CLIENT_SECRET
-            )
-            # Odoo Bot:
-            # odoo = ChatBot(
-            #     app=self.app,
-            #     bot_name='Oddie',
-            #     welcome_message='Welcome to Odoo Bot, you can ask me anything about Odoo ERP.'
-            # )
-            # AzureBot(
-            #     app=self.app,
-            #     bots=[odoo],
-            #     client_id=ODOO_CLIENT_ID,
-            #     secret_id=ODOO_CLIENT_SECRET,
-            #     route='/api/oddie/messages'
-            # )
-            # # Odoo Dev Bot:
-            # AzureBot(
-            #     app=self.app,
-            #     bots=[odoo],
-            #     client_id=BOTTROCDEV_CLIENT_ID,
-            #     secret_id=BOTTROCDEV_CLIENT_SECRET,
-            #     route='/api/oddiedev/messages'
-            # )
-            # Ask Brett (now askTROC):
-            brett = ChatBot(
-                app=self.app,
-                bot_name='AskTROC',
-                welcome_message=(
-                    "Welcome to the T-ROC BOT. May name is TROCer, you can ask me anything about T-ROC."
-                    "About T-ROC Clients, Case studies, success stories, and more."
-                )
-            )
-            AzureBot(
-                app=self.app,
-                bots=[brett],
-                client_id=ASKBRETT_CLIENT_ID,
-                secret_id=ASKBRETT_CLIENT_SECRET,
-                route='/api/askbrett/messages'
-            )
-            # Bose Bot:
-            bose = ChatBot(
-                app=self.app,
-                bot_name='BoseBot',
-                welcome_message=(
-                    'Welcome to Bose Bot, you can ask me anything about Bose Systems.'
-                    'Installations, displays, services, troubleshooting, etc.'
-                )
-            )
-            AzureBot(
-                app=self.app,
-                bots=[bose],
-                client_id=BOSE_CLIENT_ID,
-                secret_id=BOSE_CLIENT_SECRET,
-                route='/api/bose/messages'
-            )
-            # Agent:
-            paywhiz = AgentBot(
-                app=self.app,
-                bot_name='PayWhiz',
-                welcome_message='Welcome to PayWhiz Bot, you can ask me anything about Payroll.',
-                file=BASE_DIR.joinpath('docs', 'agent', 'payroll_employees_2024-06-18.xlsx')
-            )
-            AzureBot(
-                app=self.app,
-                bots=[paywhiz],
-                client_id=BOTTROCDEV_CLIENT_ID,
-                secret_id=BOTTROCDEV_CLIENT_SECRET,
-                route='/api/paywhiz/messages'
-            )
 
     async def on_prepare(self, request, response):
         """
