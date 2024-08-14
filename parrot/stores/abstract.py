@@ -32,7 +32,7 @@ class AbstractStore(ABC):
         self._connected: bool = False
         self.use_bge: bool = kwargs.pop("use_bge", False)
         self.fastembed: bool = kwargs.pop("use_fastembed", False)
-        self.embedding_name: str = EMBEDDING_DEFAULT_MODEL
+        self.embedding_name: str = kwargs.pop('embedding_name', EMBEDDING_DEFAULT_MODEL)
         self.dimension: int = kwargs.pop("dimension", 768)
         self._metric_type: str = kwargs.pop("metric_type", 'COSINE')
         self._index_type: str = kwargs.pop("index_type", 'IVF_FLAT')

@@ -125,7 +125,8 @@ from ..conf import (
     MAX_VRAM_AVAILABLE,
     RAM_AVAILABLE,
     default_dsn,
-    REDIS_HISTORY_URL
+    REDIS_HISTORY_URL,
+    EMBEDDING_DEFAULT_MODEL
 )
 from ..interfaces import DBInterface
 from ..models import ChatbotModel
@@ -537,7 +538,7 @@ class AbstractChatbot(ABC, DBInterface):
         models = file_config.get('models', {})
         if not self.embedding_model_name:
             self.embedding_model_name = models.get(
-                'embedding_name', None,
+                'embedding', EMBEDDING_DEFAULT_MODEL
             )
         if not self.tokenizer_model_name:
             self.tokenizer_model_name = models.get('tokenizer')
@@ -625,8 +626,12 @@ class AbstractChatbot(ABC, DBInterface):
                 )
         elif vector_db == 'MilvusStore':
             if MILVUS_ENABLED is True:
+                print('EMBEDDINGS > ', self.embeddings)
+                print('AQUI MILVUS >> ', embed)
+                print('AQUI MILVUS >> ', self.embedding_model_name)
                 self._store = MilvusStore(
                     embeddings=embed,
+                    embedding_name=self.embedding_model_name,
                     use_bge=self.use_bge,
                     use_fastembed=self.use_fastembed,
                     **config

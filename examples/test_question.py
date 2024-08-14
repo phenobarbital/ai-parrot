@@ -20,7 +20,7 @@ async def get_agent():
     )
     agent = Chatbot(
         name='RFPBot',
-        llm=llm
+        # llm=llm
     )
     await agent.configure()
     return agent
