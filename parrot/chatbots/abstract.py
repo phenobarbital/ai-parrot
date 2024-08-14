@@ -626,9 +626,6 @@ class AbstractChatbot(ABC, DBInterface):
                 )
         elif vector_db == 'MilvusStore':
             if MILVUS_ENABLED is True:
-                print('EMBEDDINGS > ', self.embeddings)
-                print('AQUI MILVUS >> ', embed)
-                print('AQUI MILVUS >> ', self.embedding_model_name)
                 self._store = MilvusStore(
                     embeddings=embed,
                     embedding_name=self.embedding_model_name,
