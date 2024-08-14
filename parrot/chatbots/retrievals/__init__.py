@@ -459,12 +459,12 @@ class RetrievalManager:
             **kwargs
     ):
         # Generating Vector:
-        print('COLLECTION > ', self.store.collection, self.store.embedding_name)
-        print('DB > ', self.store.database)
+        # print('COLLECTION > ', self.store.collection, self.store.embedding_name)
+        # print('DB > ', self.store.database)
         async with self.store as store:  #pylint: disable=E1101
             vector = store.get_vector(metric_type=metric_type)
-            docs = vector.similarity_search(question, k=1)
-            print('DOCS > ', docs)
+            # docs = vector.similarity_search(question, k=1)
+            # print('DOCS > ', docs)
             retriever = VectorStoreRetriever(
                 vectorstore=vector,
                 search_type=search_type,
