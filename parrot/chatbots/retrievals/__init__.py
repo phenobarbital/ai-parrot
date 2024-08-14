@@ -124,7 +124,7 @@ class RetrievalManager:
         question: str = None,
         chain_type: str = 'stuff',
         search_type: str = 'similarity',
-        search_kwargs: dict = {"k": 5, "fetch_k": 20, "lambda_mult": 0.89},
+        search_kwargs: dict = {"k": 4, "fetch_k": 10, "lambda_mult": 0.89},
         return_docs: bool = True,
         metric_type: str = None,
         memory: Any = None,
@@ -220,7 +220,7 @@ class RetrievalManager:
         question: str = None,
         chain_type: str = 'stuff',
         search_type: str = 'mmr',
-        search_kwargs: dict = {"k": 5, "fetch_k": 40, "lambda_mult": 0.85},
+        search_kwargs: dict = {"k": 4, "fetch_k": 10, "lambda_mult": 0.89},
         return_docs: bool = True,
         metric_type: str = None,
         use_llm: str = None
@@ -452,19 +452,15 @@ class RetrievalManager:
             question: str = None,
             chain_type: str = 'stuff',
             search_type: str = 'similarity',
-            search_kwargs: dict = {"k": 5, "fetch_k": 20, "lambda_mult": 0.89},
+            search_kwargs: dict = {"k": 4, "fetch_k": 10, "lambda_mult": 0.89},
             return_docs: bool = True,
             metric_type: str = None,
             memory: Any = None,
             **kwargs
     ):
         # Generating Vector:
-        # print('COLLECTION > ', self.store.collection, self.store.embedding_name)
-        # print('DB > ', self.store.database)
         async with self.store as store:  #pylint: disable=E1101
             vector = store.get_vector(metric_type=metric_type)
-            # docs = vector.similarity_search(question, k=1)
-            # print('DOCS > ', docs)
             retriever = VectorStoreRetriever(
                 vectorstore=vector,
                 search_type=search_type,
