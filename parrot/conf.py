@@ -85,7 +85,7 @@ QDRANT_CONN_TYPE = config.get('QDRANT_CONN_TYPE', fallback='server')
 EMBEDDING_DEVICE = config.get('EMBEDDING_DEVICE', fallback='cpu')
 EMBEDDING_DEFAULT_MODEL = config.get(
     'EMBEDDING_DEFAULT_MODEL',
-    fallback='sentence-transformers/sentence-t5-large'
+    fallback='thenlper/gte-base'
 )
 MAX_VRAM_AVAILABLE = config.get('MAX_VRAM_AVAILABLE', fallback=20000)
 RAM_AVAILABLE = config.get('RAM_AVAILABLE', fallback=819200)

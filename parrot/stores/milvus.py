@@ -138,16 +138,14 @@ class MilvusStore(AbstractStore):
             alias=client_id,
             **self.kwargs
         )
-        print('CONN > ', self.conn)
         self._client = MilvusClient(
             **self.kwargs
         )
-        print('AQUI > ', self._client, client_id, connections)
+        print('CONN > ', self._client, client_id, connections)
         self._connected = True
         return self._client, client_id
 
     def close(self, client_id: str = "uri-connection"):
-        print(':::: CLOSING CONNECTIONS :::: ')
         connections.disconnect(alias=client_id)
         self._connected = False
         self._client.close()
