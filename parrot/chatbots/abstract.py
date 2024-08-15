@@ -107,20 +107,8 @@ try:
 except (ModuleNotFoundError, ImportError):
     GROQ_ENABLED = False
 
-from ..loaders import (
-    PDFLoader,
-    PDFTablesLoader,
-    GithubLoader,
-    RepositoryLoader,
-    WebLoader,
-    VimeoLoader,
-    YoutubeLoader,
-    PPTXLoader,
-    MSWordLoader
-)
 from .retrievals import RetrievalManager
 from ..conf import (
-    DEFAULT_LLM_MODEL_NAME,
     EMBEDDING_DEVICE,
     MAX_VRAM_AVAILABLE,
     RAM_AVAILABLE,
@@ -802,122 +790,21 @@ class AbstractChatbot(ABC, DBInterface):
                     collection=collection
                 )
 
-    def load_pdf(self, path: Path, source_type: str = 'pdf', **kwargs):
-        loader = PDFLoader(path, source_type=source_type, no_summarization=True, **kwargs)
-        return loader.load()
-
-    def load_github(
+    def clean_history(
         self,
-        url: str,
-        github_token: str,
-        lang: str = 'python',
-        branch: str = 'master',
-        source_type: str = 'code'
-    ) -> list:
-        git = GithubLoader(
-            url,
-            github_token=github_token,
-            lang=lang,
-            branch=branch,
-            source_type=source_type
-        )
-        return git.load()
-
-    def load_repository(
-        self,
-        path: Path,
-        lang: str = 'python',
-        source_type: str = 'code',
-        **kwargs
-    ) -> list:
-        repo = RepositoryLoader(
-            source_type=source_type,
-            **kwargs
-        )
-        return repo.load(path, lang=lang)
-
-    def process_websites(
-        self,
-        websites: list,
-        source_type: str = 'website',
-        **kwargs
-    ) -> list:
-        loader = WebLoader(
-            urls=websites,
-            source_type=source_type
-        )
-        return loader.load()
-
-    def load_youtube_videos(
-        self,
-        urls: list,
-        video_path: Union[str, Path],
-        source_type: str = 'youtube',
-        priority: int = 'high',
-        language: str = 'en',
-        **kwargs
-    ) -> list:
-        yt = YoutubeLoader(
-            urls=urls,
-            video_path=video_path,
-            source_type=source_type,
-            priority=priority,
-            language=language,
-            llm=self._llm,
-            **kwargs
-        )
-        return yt.load()
-
-    def load_vimeo_videos(
-        self,
-        urls: list,
-        video_path: Union[str, Path],
-        source_type: str = 'vimeo',
-        priority: int = 'high',
-        language: str = 'en',
-        **kwargs
-    ) -> list:
-        yt = VimeoLoader(
-            urls=urls,
-            video_path=video_path,
-            source_type=source_type,
-            priority=priority,
-            language=language,
-            llm=self._llm,
-            **kwargs
-        )
-        return yt.load()
-
-    def load_directory(
-        self,
-        path: Union[str, Path],
-        source_type: str = 'documents',
-    ) -> list:
-        return None
-
-    def load_docx(
-        self,
-        path: Path,
-        source_type: str = 'docx',
-        **kwargs
-    ) -> list:
-        return MSWordLoader.from_path(
-            path=path,
-            source_type=source_type,
-            **kwargs
-        )
-
-    def load_pptx(
-        self,
-        path: Path,
-        source_type: str = 'pptx',
-        **kwargs
-    ) -> list:
-        return PPTXLoader.from_path(
-            path=path,
-            source_type=source_type,
-            **kwargs
-        )
+        session_id: str = None
+    ):
+        try:
+            redis_client = RedisChatMessageHistory(
+                    url=REDIS_HISTORY_URL,
+                    session_id=session_id,
+                    ttl=60
+            )
+            redis_client.clear()
+        except Exception as e:
+            self.logger.error(
+                f"Error clearing chat history: {e}"
+            )
 
     def get_memory(
         self,
@@ -925,7 +812,7 @@ class AbstractChatbot(ABC, DBInterface):
         key: str = 'chat_history',
         input_key: str = 'question',
         output_key: str = 'answer',
-        size: int = 30,
+        size: int = 5,
         ttl: int = 86400
     ):
         args = {
