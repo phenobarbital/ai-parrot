@@ -12,6 +12,11 @@ class GoogleGenAI(AbstractLLM):
         Using Google Generative AI models with Google Cloud AI Platform.
     """
     model: str = "gemini-pro"
+    supported_models: list = [
+        "models/text-bison-001",
+        "models/chat-bison-001",
+        "gemini-pro"
+    ]
 
     def __init__(self, *args, **kwargs):
         self.model_type = kwargs.get("model_type", "chat")

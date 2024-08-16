@@ -1,6 +1,6 @@
 from navconfig import config
 from navconfig.logging import logging
-from langchain_anthropic import ChatAnthropic
+from langchain_anthropic import ChatAnthropic  # pylint: disable=E0401, E0611
 from langchain_core.prompts import ChatPromptTemplate
 from .abstract import AbstractLLM
 
@@ -17,6 +17,12 @@ class Anthropic(AbstractLLM):
     model: str = 'claude-3-opus-20240229'
     embed_model: str = None
     max_tokens: int = 1024
+    supported_models: list = [
+        'claude-3-opus-20240229',
+        'claude-3-sonnet-20240229',
+        'claude-3-haiku-20240307'
+        'claude-3-5-sonnet-20240620',
+    ]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

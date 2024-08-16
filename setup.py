@@ -175,7 +175,7 @@ setup(
         "safetensors==0.4.2",
         "sentence-transformers==2.6.1",
         "tabulate==0.9.0",
-        "tiktoken==0.6.0",
+        "tiktoken==0.7.0",
         "tokenizers==0.19.1",
         "unstructured==0.14.3",
         "unstructured-client==0.18.0",
@@ -198,7 +198,7 @@ setup(
         "accelerate==0.29.3",
         "langchain>=0.2.6",
         "langchain-community>=0.2.6",
-        "langchain-core==0.2.10",
+        "langchain-core==0.2.32",
         "langchain-experimental==0.0.62",
         "langchainhub==0.1.15",
         "langchain-text-splitters==0.2.2",
@@ -237,11 +237,11 @@ setup(
             "grpc-google-iam-v1==0.13.0",
         ],
         "hunggingfaces": [
-            "llama-index-llms-huggingface==0.1.4"
+            "llama-index-llms-huggingface==0.2.7"
         ],
         "groq": [
-          "groq==0.6.0",
-          "langchain-groq==0.1.4"
+            "groq==0.6.0",
+            "langchain-groq==0.1.4"
         ],
         "qdrant": [
             "qdrant-client==1.8.0",
@@ -267,6 +267,31 @@ setup(
             # "ultralytics==8.2.4", # image-processor
             # "albumentations-1.4.4",
             # "yolov8-0.0.2"
+        ],
+        "all": [
+            # Install all LLM Models
+            "langchain-milvus==0.1.1",
+            "milvus==2.3.5",
+            "pymilvus==2.4.4",
+            # GroQ
+            "groq==0.6.0",
+            "langchain-groq==0.1.4",
+            # HF
+            "llama-index-llms-huggingface==0.2.7",
+            # Google
+            "langchain-google-vertexai==1.0.8",
+            "langchain-google-genai==1.0.8",
+            "google-generativeai==0.7.2",
+            "vertexai==1.60.0",
+            "google-cloud-aiplatform>=1.60.0",
+            "grpc-google-iam-v1==0.13.0",
+            # OpenAI
+            "langchain-openai==0.1.21",
+            "openai==1.40.8",
+            "llama-index-llms-openai==0.1.11",
+            # Antropic
+            "langchain-anthropic==0.1.23",
+            "anthropic==0.34.0",
         ]
     },
     tests_require=[

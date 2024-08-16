@@ -17,6 +17,18 @@ install:
 	pip install --upgrade querysource[analytics]
 
 develop:
+	pip install wheel==0.42.0
+	# Install Parrot
+	pip install -e .[all]
+	pip install --upgrade python-datamodel
+	pip install --upgrade asyncdb[all]
+	pip install --upgrade navconfig[default]
+	pip install --upgrade navigator-api[locale]
+	# Nav requirements:
+	pip install --upgrade navigator-session
+	pip install --upgrade navigator-auth
+	# QS requirements
+	pip install --upgrade querysource
 	python -m pip install -Ur requirements/requirements-dev.txt
 
 dev:

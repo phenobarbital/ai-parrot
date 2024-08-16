@@ -9,6 +9,18 @@ class GroqLLM(AbstractLLM):
         Using Groq Open-source models.
     """
     model: str = "mixtral-8x7b-32768"
+    supported_models: list = [
+        "llama3-70b-8192",
+        "llama3-80b-8192",
+        "llama-3.1-70b-versatile",
+        "llama-3.1-8b-instant",
+        "mixtral-8x7b-32768",
+        "whisper-large-v3",
+        "llama3-groq-70b-8192-tool-use-preview",
+        "gemma2-9b-it",
+        "gemma-7b-it",
+        "llama-guard-3-8b"
+    ]
 
     def __init__(self, *args, **kwargs):
         self.model_type = kwargs.get("model_type", "text")

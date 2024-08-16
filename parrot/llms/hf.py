@@ -15,6 +15,12 @@ class HuggingFace(AbstractLLM):
     model: str = "databricks/dolly-v2-3b"
     embed_model: str = None
     max_tokens: int = 1024
+    supported_models: list = [
+        "databricks/dolly-v2-3b",
+        "gpt2",
+        "bigscience/bloom-1b7",
+        "meta-llama/Llama-2-7b-hf"
+    ]
 
     def __init__(self, *args, **kwargs):
         self.batch_size = kwargs.get('batch_size', 4)

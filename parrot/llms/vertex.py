@@ -20,6 +20,16 @@ class VertexLLM(AbstractLLM):
     model: str = "gemini-1.0-pro"
     embed_model: str = "textembedding-gecko@003"
     max_tokens: int = 1024
+    supported_models: list = [
+        "gemini-1.0-pro",
+        "gemini-1.5-pro-001",
+        "gemini-1.5-pro-exp-0801",
+        "gemini-1.5-flash-preview-0514",
+        "gemini-1.5-flash",
+        "chat-bison@001",
+        "claude-3-opus@20240229",
+        'claude-3-5-sonnet@20240620'
+    ]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
