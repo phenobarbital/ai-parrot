@@ -11,6 +11,7 @@ logging.getLogger(name='groq').setLevel(logging.INFO)
 logging.getLogger(name='h5py').setLevel(logging.INFO)
 logging.getLogger(name='tensorflow').setLevel(logging.INFO)
 logging.getLogger(name='selenium.webdriver').setLevel(logging.WARNING)
+logging.getLogger(name='selenium').setLevel(logging.INFO)
 
 
 # Static directory

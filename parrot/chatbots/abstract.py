@@ -33,17 +33,8 @@ from asyncdb.exceptions import NoDataFound
 ## LLM configuration
 from ..llms import get_llm
 
-try:
-    from ..stores.qdrant import QdrantStore
-    QDRANT_ENABLED = True
-except (ModuleNotFoundError, ImportError):
-    QDRANT_ENABLED = False
-
-try:
-    from ..stores.milvus import MilvusStore
-    MILVUS_ENABLED = True
-except (ModuleNotFoundError, ImportError):
-    MILVUS_ENABLED = False
+## Vector Database configuration:
+from ..stores import get_vectordb
 
 from ..utils import SafeDict, parse_toml_config
 from .retrievals import RetrievalManager
@@ -57,10 +48,6 @@ from ..conf import (
 )
 from ..interfaces import DBInterface
 from ..models import ChatbotModel
-
-
-logging.getLogger(name='selenium.webdriver').setLevel(logging.WARNING)
-logging.getLogger(name='selenium').setLevel(logging.INFO)
 
 
 class AbstractChatbot(ABC, DBInterface):
@@ -492,42 +479,13 @@ class AbstractChatbot(ABC, DBInterface):
         else:
             embed = self.embeddings
         # TODO: add dynamic configuration of VectorStore
-        if vector_db == 'QdrantStore':
-            if QDRANT_ENABLED is True:
-                ## TODO: support pluggable vector store
-                self._store = QdrantStore(  # pylint: disable=E0110
-                    embeddings=embed,
-                    use_bge=self.use_bge,
-                    use_fastembed=self.use_fastembed,
-                    **config
-                )
-            else:
-                raise ConfigError(
-                    (
-                        "Qdrant is enabled but not installed, "
-                        "Hint: Please install with pip install -e .[qdrant]"
-                    )
-                )
-        elif vector_db == 'MilvusStore':
-            if MILVUS_ENABLED is True:
-                self._store = MilvusStore(
-                    embeddings=embed,
-                    embedding_name=self.embedding_model_name,
-                    use_bge=self.use_bge,
-                    use_fastembed=self.use_fastembed,
-                    **config
-                )
-            else:
-                raise ConfigError(
-                    (
-                        "Milvus is enabled but not installed, "
-                        "Hint: Please install with pip install -e .[milvus]"
-                    )
-                )
-        else:
-            raise ValueError(
-                f"Invalid Vector Store {vector_db}"
-            )
+        self._store = get_vectordb(
+            vector_db,
+            embeddings=embed,
+            use_bge=self.use_bge,
+            use_fastembed=self.use_fastembed,
+            **config
+        )
 
     def _define_prompt(self, config: dict):
         # setup the prompt variables:

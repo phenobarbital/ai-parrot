@@ -1,4 +1,5 @@
 from abc import ABC
+from typing import List
 from langchain_core.prompts import ChatPromptTemplate
 
 
@@ -7,9 +8,14 @@ class AbstractLLM(ABC):
     """
 
     model: str = "databricks/dolly-v2-3b"
+    supported_models: List[str] = []
     embed_model: str = None
     max_tokens: int = 1024
     max_retries: int = 3
+
+    @classmethod
+    def get_supported_models(cls):
+        return cls.supported_models
 
     def __init__(self, *args, **kwargs):
         self.model = kwargs.get("model", "databricks/dolly-v2-3b")

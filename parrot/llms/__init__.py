@@ -7,56 +7,56 @@ from .abstract import AbstractLLM
 
 # Vertex
 try:
-    from ..llms.vertex import VertexLLM
+    from .vertex import VertexLLM
     VERTEX_ENABLED = True
 except (ModuleNotFoundError, ImportError):
     VERTEX_ENABLED = False
 
 # Anthropic:
 try:
-    from ..llms.anthropic import Anthropic
+    from .anthropic import Anthropic
     ANTHROPIC_ENABLED = True
 except (ModuleNotFoundError, ImportError):
     ANTHROPIC_ENABLED = False
 
 # OpenAI
 try:
-    from ..llms.openai import OpenAILLM
+    from .openai import OpenAILLM
     OPENAI_ENABLED = True
 except (ModuleNotFoundError, ImportError):
     OPENAI_ENABLED = False
 
 # LLM Transformers
 try:
-    from  ..llms.pipes import PipelineLLM
+    from  .pipes import PipelineLLM
     TRANSFORMERS_ENABLED = True
 except (ModuleNotFoundError, ImportError):
     TRANSFORMERS_ENABLED = False
 
 # HuggingFaces Hub:
 try:
-    from  ..llms.hf import HuggingFace
+    from  .hf import HuggingFace
     HF_ENABLED = True
 except (ModuleNotFoundError, ImportError):
     HF_ENABLED = False
 
 # GroQ:
 try:
-    from ..llms.groq import GroqLLM
+    from .groq import GroqLLM
     GROQ_ENABLED = True
 except (ModuleNotFoundError, ImportError):
     GROQ_ENABLED = False
 
 # Mixtral:
 try:
-    from ..llms.groq import GroqLLM
+    from .groq import GroqLLM
     MIXTRAL_ENABLED = True
 except (ModuleNotFoundError, ImportError):
     MIXTRAL_ENABLED = False
 
 # Google
 try:
-    from ..llms.google import GoogleGenAI
+    from .google import GoogleGenAI
     GOOGLE_ENABLED = True
 except (ModuleNotFoundError, ImportError):
     GOOGLE_ENABLED = False
@@ -113,3 +113,25 @@ def get_llm(llm_name: str, model_name: str, **kwargs) -> AbstractLLM:
     else:
         # TODO: Add more LLMs
         return hub.pull(llm_name)
+
+def get_llm_list():
+    """get_llm_list.
+
+    Get the list of available LLMs.
+    """
+    llms = []
+    if VERTEX_ENABLED:
+        llms.append(VertexLLM.get_supported_models())
+    if ANTHROPIC_ENABLED:
+        llms.append(Anthropic.get_supported_models())
+    if OPENAI_ENABLED:
+        llms.append(OpenAILLM.get_supported_models())
+    if HF_ENABLED:
+        llms.append(HuggingFace.get_supported_models())
+    if TRANSFORMERS_ENABLED:
+        llms.append(PipelineLLM.get_supported_models())
+    if GROQ_ENABLED:
+        llms.append(GroqLLM.get_supported_models())
+    if GOOGLE_ENABLED:
+        llms.append(GoogleGenAI.get_supported_models())
+    return llms

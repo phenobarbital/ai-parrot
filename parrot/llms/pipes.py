@@ -22,6 +22,13 @@ class PipelineLLM(AbstractLLM):
     model: str = "databricks/dolly-v2-3b"
     embed_model: str = None
     max_tokens: int = 1024
+    supported_models: list = [
+        "databricks/dolly-v2-3b",
+        "gpt2",
+        "bigscience/bloom-1b7",
+        "meta-llama/Llama-2-7b-hf",
+        'llava-hf/llava-1.5-7b-hf'
+    ]
 
     def __init__(self, *args, **kwargs):
         self.batch_size = kwargs.get('batch_size', 4)
@@ -100,4 +107,8 @@ class PipelineLLM(AbstractLLM):
         )
 
     def pipe(self, *args, **kwargs):
-        return self._pipe(*args, **kwargs, generate_kwargs={"max_new_tokens": self.max_tokens})
+        return self._pipe(
+            *args,
+            **kwargs,
+            generate_kwargs={"max_new_tokens": self.max_tokens}
+        )

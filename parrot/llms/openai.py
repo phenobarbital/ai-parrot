@@ -1,4 +1,4 @@
-from langchain_openai import (
+from langchain_openai import (  # pylint: disable=E0401, E0611
     OpenAI,
     ChatOpenAI,
     OpenAIEmbeddings
@@ -17,6 +17,16 @@ class OpenAILLM(AbstractLLM):
     model: str = "gpt-4-turbo"
     embed_model: str = "text-embedding-3-large"
     max_tokens: int = 1024
+    supported_models: list = [
+        'gpt-4o-mini',
+        'gpt-4-turbo',
+        'gpt-4-turbo-preview',
+        'gpt-4o',
+        'gpt-3.5-turbo',
+        'gpt-3.5-turbo-instruct',
+        'dall-e-3'
+        'tts-1',
+    ]
 
     def __init__(self, *args, **kwargs):
         self.model_type = kwargs.get("model_type", "text")
