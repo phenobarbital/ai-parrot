@@ -648,7 +648,7 @@ class AbstractChatbot(ABC, DBInterface):
             documents,
             self._estimate_chunk_size()
         )
-        async with self._store as store:
+        async with self._store.connection() as store:
             # if delete is True, then delete the collection
             if delete is True:
                 await store.delete_collection(collection)
@@ -669,9 +669,9 @@ class AbstractChatbot(ABC, DBInterface):
     ):
         try:
             redis_client = RedisChatMessageHistory(
-                    url=REDIS_HISTORY_URL,
-                    session_id=session_id,
-                    ttl=60
+                url=REDIS_HISTORY_URL,
+                session_id=session_id,
+                ttl=60
             )
             redis_client.clear()
         except Exception as e:
