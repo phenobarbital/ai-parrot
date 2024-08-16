@@ -3,7 +3,7 @@ Foundational base of every Chatbot and Agent in ai-parrot.
 """
 from abc import ABC
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Union
 from pathlib import Path, PurePath
 import uuid
 from aiohttp import web
@@ -31,7 +31,7 @@ from navconfig.logging import logging
 from asyncdb.exceptions import NoDataFound
 
 ## LLM configuration
-from ..llms import get_llm
+from ..llms import get_llm, AbstractLLM
 
 ## Vector Database configuration:
 from ..stores import get_vectordb
@@ -87,6 +87,9 @@ class AbstractChatbot(ABC, DBInterface):
 
     def __init__(self, **kwargs):
         """Initialize the Chatbot with the given configuration."""
+        # Start initialization:
+        self.kb = None
+        self.knowledge_base: list = []
         # Chatbot ID:
         self.chatbot_id: uuid.UUID = kwargs.get(
             'chatbot_id',
@@ -186,11 +189,15 @@ class AbstractChatbot(ABC, DBInterface):
             'mixedbread-ai/mxbai-embed-large-v1'
         )
         # Definition of LLM
-        self._llm: Callable = None
+        # Overrriding LLM object
         self._llm_obj: Callable = kwargs.get('llm', None)
+        # LLM base Object:
+        self._llm: Callable = None
 
         # Max VRAM usage:
-        self._max_vram = int(kwargs.get('max_vram', MAX_VRAM_AVAILABLE))
+        self._max_vram = int(
+            kwargs.get('max_vram', MAX_VRAM_AVAILABLE)
+        )
 
     def get_llm(self):
         return self._llm_obj
@@ -207,30 +214,31 @@ class AbstractChatbot(ABC, DBInterface):
 
     def default_rationale(self) -> str:
         # TODO: read rationale from a file
-        return """
-        I am a language model trained by Google.
-        I am designed to provide helpful information to users.
-        Remember to maintain a professional tone.
-        If I cannot find relevant information in the documents,
-        I will indicate this and suggest alternative avenues for the user to find an answer.
-        """
+        return (
+            "I am a language model trained by Google.\n"
+            "I am designed to provide helpful information to users."
+            "Remember to maintain a professional tone."
+            "If I cannot find relevant information in the documents,"
+            "I will indicate this and suggest alternative avenues for the user to find an answer."
+        )
 
     def default_backstory(self) -> str:
         return (
-        "help with Human Resources related queries or knowledge-based questions about T-ROC Global.\n"
-        "You can ask me about the company's products and services, the company's culture, the company's clients.\n"
-        "You have the capability to read and understand various Human Resources documents, "
-        "such as employee handbooks, policy documents, onboarding materials, company's website, and more.\n"
-        "I can also provide information about the company's policies and procedures, benefits, and other HR-related topics."
-    )
+            "help with Human Resources related queries or knowledge-based questions about T-ROC Global.\n"
+            "You can ask me about the company's products and services, the company's culture, the company's clients.\n"
+            "You have the capability to read and understand various Human Resources documents, "
+            "such as employee handbooks, policy documents, onboarding materials, company's website, and more.\n"
+            "I can also provide information about the company's policies and procedures, benefits, and other HR-related topics."
+        )
 
     async def configure(self, app = None) -> None:
-        if isinstance(app, web.Application):
-            self.app = app  # register the app into the Extension
-        elif app is None:
+        if app is None:
             self.app = None
         else:
-            self.app = app.get_app()  # Nav Application
+            if isinstance(app, web.Application):
+                self.app = app  # register the app into the Extension
+            else:
+                self.app = app.get_app()  # Nav Application
         # Config File:
         config_file = BASE_DIR.joinpath(
             'etc',
@@ -241,41 +249,33 @@ class AbstractChatbot(ABC, DBInterface):
         )
         if config_file.exists():
             self.logger.notice(
-                f"Using Bot config {config_file}"
+                f"Loading Bot {self.name} from config: {config_file.name}"
             )
-        else:
-            config_file = None
-        # Database-based Bot Configuration
-        if self.chatbot_id is not None:
-            # Configure from the Database
-            await self.from_database(config_file)
-        elif config_file:
+        if (bot := await self.bot_exists(name=self.name, uuid=self.chatbot_id)):
+            self.logger.notice(
+                f"Loading Bot {self.name} from Database: {bot.chatbot_id}"
+            )
+            # Bot exists on Database, Configure from the Database
+            await self.from_database(bot, config_file)
+        elif config_file.exists():
             # Configure from the TOML file
             await self.from_config_file(config_file)
-        # else:
-        #     # Configure from a default configuration
-        #     vector_config = {
-        #         "vector_database": self.vector_database,
-        #         "collection_name": self.collection_name
-        #     }
-        #     # configure vector database:
-        #     await self.store_configuration(
-        #         config=vector_config
-        #     )
-        #     # Get the Embeddings:
-        #     if not self.embedding_model_name:
-        #         self.embeddings = self._llm_obj.get_embedding()
-        #     # Config Prompt:
-        #     self._define_prompt(
-        #         config={}
-        #     )
+        else:
+            raise ValueError(
+                f'Bad configuration procedure for bot {self.name}'
+            )
         # adding this configured chatbot to app:
         if self.app:
             self.app[f"{self.name.lower()}_chatbot"] = self
 
     def _configure_llm(self, llm, config):
-        if self._llm_obj:
+        """
+        Configuration of LLM.
+        """
+        if isinstance(self._llm_obj, AbstractLLM):
             self._llm = self._llm_obj.get_llm()
+        elif self._llm_obj is not None:
+            self._llm = self._llm_obj
         else:
             if llm:
                 # LLM:
@@ -283,10 +283,11 @@ class AbstractChatbot(ABC, DBInterface):
                     llm,
                     **config
                 )
+                # getting langchain LLM from Obj:
                 self._llm = self._llm_obj.get_llm()
             else:
                 raise ValueError(
-                    f"LLM is not defined in the Configuration."
+                    f"{self.name}: LLM is not defined in bot Configuration."
                 )
 
     def _from_bot(self, bot, key, config, default) -> Any:
@@ -294,81 +295,97 @@ class AbstractChatbot(ABC, DBInterface):
         file_value = config.get(key, default)
         return value if value else file_value
 
-    async def from_database(self, config_file: PurePath = None) -> None:
-        """Load the Chatbot Configuration from the Database."""
-        file_config = await parse_toml_config(config_file)
+    def _from_db(self, botobj, key, default = None) -> Any:
+        value = getattr(botobj, key, default)
+        return value if value else default
+
+    async def bot_exists(
+        self,
+        name: str = None,
+        uuid: uuid.UUID = None
+    ) -> Union[ChatbotModel, bool]:
+        """Check if the Chatbot exists in the Database."""
         db = self.get_database('pg', dsn=default_dsn)
-        bot = None
         async with await db.connection() as conn:  # pylint: disable=E1101
-            # import model
             ChatbotModel.Meta.connection = conn
             try:
                 if self.chatbot_id:
                     try:
-                        bot = await ChatbotModel.get(chatbot_id=self.chatbot_id)
+                        bot = await ChatbotModel.get(chatbot_id=uuid)
                     except Exception:
-                        bot = await ChatbotModel.get(name=self.name)
+                        bot = await ChatbotModel.get(name=name)
                 else:
                     bot = await ChatbotModel.get(name=self.name)
+                if bot:
+                    return bot
             except NoDataFound:
-                # Fallback to File configuration:
-                if file_config:
-                    await self.from_config_file(config_file)
-                else:
+                return False
+
+    async def from_database(
+        self,
+        bot: Union[ChatbotModel, None] = None,
+        config_file: PurePath = None
+    ) -> None:
+        """Load the Chatbot Configuration from the Database."""
+        if not bot:
+            db = self.get_database('pg', dsn=default_dsn)
+            async with await db.connection() as conn:  # pylint: disable=E1101
+                # import model
+                ChatbotModel.Meta.connection = conn
+                try:
+                    if self.chatbot_id:
+                        try:
+                            bot = await ChatbotModel.get(chatbot_id=self.chatbot_id)
+                        except Exception:
+                            bot = await ChatbotModel.get(name=self.name)
+                    else:
+                        bot = await ChatbotModel.get(name=self.name)
+                except NoDataFound:
+                    # Fallback to File configuration:
                     raise ConfigError(
                         f"Chatbot {self.name} not found in the database."
                     )
-        if not bot:
-            raise ConfigError(
-                f"Chatbot {self.name} not found in the database."
-            )
         # Start Bot configuration from Database:
-        config_file = Path(bot.config_file).resolve()
-        if config_file:
+        if config_file and config_file.exists():
             file_config = await parse_toml_config(config_file)
-        # basic configuration
-        basic = file_config.get('chatbot', {})
-        self.name = self._from_bot(bot, 'name', basic, self.name)
-        self.description = self._from_bot(bot, 'description', basic, self.description)
-        self.role = self._from_bot(bot, 'role', basic, self.role)
-        self.goal = self._from_bot(bot, 'goal', basic, self.goal)
-        self.rationale = self._from_bot(bot, 'rationale', basic, self.rationale)
-        self.backstory = self._from_bot(bot, 'backstory', basic, self.backstory)
+            # Knowledge Base come from file:
+            # Contextual knowledge-base
+            self.kb = file_config.get('knowledge-base', [])
+            if self.kb:
+                self.knowledge_base = self.create_kb(
+                    self.kb.get('data', [])
+                )
+        self.name = self._from_db(bot, 'name', default=self.name)
+        self.chatbot_id = str(self._from_db(bot, 'chatbot_id', default=self.chatbot_id))
+        self.description = self._from_db(bot, 'description', default=self.description)
+        self.role = self._from_db(bot, 'role', default=self.role)
+        self.goal = self._from_db(bot, 'goal', default=self.goal)
+        self.rationale = self._from_db(bot, 'rationale', default=self.rationale)
+        self.backstory = self._from_db(bot, 'backstory', default=self.backstory)
         # company information:
-        self.company_information = self._from_bot(
-            bot, 'company_information', basic, self.company_information
+        self.company_information = self._from_db(
+            bot, 'company_information', default=self.company_information
         )
-        # Contextual knowledge-base
-        self.kb = file_config.get('knowledge-base', [])
-        if self.kb:
-            self.knowledge_base = self.create_kb(
-                self.kb.get('data', [])
-            )
-        # Model Information:
-        models = file_config.get('llm', {})
-        # LLM Configuration (from file and from db)
-        llm_config = models.get('config', bot.llm_config)
-        llm = self._from_bot(bot, 'llm', models, 'VertexLLM')
+        # LLM Configuration:
+        llm = self._from_db(bot, 'llm', default='VertexLLM')
+        llm_config = self._from_db(bot, 'llm_config', default={})
         # Configuration of LLM:
         self._configure_llm(llm, llm_config)
         # Other models:
-        models = file_config.get('models', {})
-        self.embedding_model_name = self._from_bot(
-            bot, 'embedding_name', models, None
+        self.embedding_model_name = self._from_db(
+            bot, 'embedding_name', None
         )
-        self.tokenizer_model_name = self._from_bot(
-            bot, 'tokenizer', models, None
+        self.tokenizer_model_name = self._from_db(
+            bot, 'tokenizer', None
         )
-        self.summarization_model = self._from_bot(
-            bot, 'summarize_model', models, "facebook/bart-large-cnn"
+        self.summarization_model = self._from_db(
+            bot, 'summarize_model', "facebook/bart-large-cnn"
         )
-        self.classification_model = self._from_bot(
-            bot, 'classification_model', models, None
+        self.classification_model = self._from_db(
+            bot, 'classification_model', None
         )
         # Database Configuration:
-        vector_config = file_config.get('database', {})
         db_config = bot.database
-        db_config = {**vector_config, **db_config}
         vector_db = db_config.pop('vector_database')
         await self.store_configuration(vector_db, db_config)
         # after configuration, setup the chatbot
