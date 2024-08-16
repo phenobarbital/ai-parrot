@@ -232,7 +232,7 @@ setup(
             "langchain-google-vertexai==1.0.4",
             "langchain-google-genai==1.0.4",
             "google-generativeai==0.5.4",
-            "vertexai==1.49.0",
+            "vertexai==1.60.0",
             "google-cloud-aiplatform==1.49.0",
             "grpc-google-iam-v1==0.13.0",
         ],
