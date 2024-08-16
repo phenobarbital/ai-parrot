@@ -9,19 +9,11 @@ from aiohttp import web
 from navconfig.logging import logging
 from .chatbots import (
     AbstractChatbot,
-    Chatbot,
-    HRAgent,
-    AskTROC,
-    OddieBot,
-    Cody,
-    BoseBot
+    Chatbot
 )
 from .handlers.chat import ChatHandler # , BotHandler
 from .handlers import ChatbotHandler
 from .models import ChatbotModel
-
-
-logging.getLogger(name='selenium.webdriver').setLevel(logging.WARNING)
 
 
 class ChatbotManager:
@@ -138,8 +130,6 @@ class ChatbotManager:
         router.add_view('/api/v1/chat', ChatHandler)
         router.add_view('/api/v1/chat/{chatbot_name}', ChatHandler)
         ChatbotHandler.configure(self.app, '/api/v1/bots')
-        # router.add_view('/api/v1/bots', ChatbotHandler)
-        # router.add_view('/api/v1/bots/{chatbot_name}', ChatbotHandler)
         return self.app
 
     async def on_startup(self, app: web.Application) -> None:

@@ -23,3 +23,6 @@ cdef class ParrotError(Exception):
 
     def get(self):
         return self.message
+
+cdef class ConfigError(ParrotError):
+    pass

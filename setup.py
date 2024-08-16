@@ -262,6 +262,7 @@ setup(
             "gradio-client==0.2.9",
             "streamlit==1.37.1",
             "simsimd==4.3.1",
+            "opencv-python==4.10.0.84"
             # "timm==0.9.16", # image-processor
             # "ultralytics==8.2.4", # image-processor
             # "albumentations-1.4.4",

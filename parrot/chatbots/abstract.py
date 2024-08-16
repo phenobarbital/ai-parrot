@@ -1,6 +1,9 @@
+"""
+Foundational base of every Chatbot and Agent in ai-parrot.
+"""
 from abc import ABC
 from collections.abc import Callable
-from typing import Any, Union
+from typing import Any
 from pathlib import Path, PurePath
 import uuid
 from aiohttp import web
@@ -9,45 +12,26 @@ from transformers import (
     AutoModel,
     AutoConfig,
     AutoTokenizer,
-    # AutoModelForSeq2SeqLM
 )
 # Langchain
-from langchain import hub
 from langchain.docstore.document import Document
 from langchain.memory import (
-    # ConversationSummaryMemory,
     ConversationBufferMemory
 )
-# from langchain.retrievers import (
-#     EnsembleRetriever,
-#     ContextualCompressionRetriever
-# )
 from langchain.text_splitter import (
     RecursiveCharacterTextSplitter
 )
-# from langchain.chains.retrieval_qa.base import RetrievalQA
-# from langchain.chains.conversational_retrieval.base import (
-#     ConversationalRetrievalChain
-# )
-# from langchain_core.runnables import (
-#     RunnablePassthrough,
-#     RunnablePick,
-#     RunnableParallel
-# )
-# from langchain_core.output_parsers import StrOutputParser
-# from langchain_core.prompts import (
-#     PromptTemplate,
-#     ChatPromptTemplate
-# )
-# from langchain_core.vectorstores import VectorStoreRetriever
-# from langchain_community.retrievers import BM25Retriever
-from langchain_community.chat_message_histories import RedisChatMessageHistory
-
+from langchain_community.chat_message_histories import (
+    RedisChatMessageHistory
+)
 # Navconfig
 from navconfig import BASE_DIR
 from navconfig.exceptions import ConfigError  # pylint: disable=E0611
 from navconfig.logging import logging
 from asyncdb.exceptions import NoDataFound
+
+## LLM configuration
+from ..llms import get_llm
 
 try:
     from ..stores.qdrant import QdrantStore
@@ -62,51 +46,6 @@ except (ModuleNotFoundError, ImportError):
     MILVUS_ENABLED = False
 
 from ..utils import SafeDict, parse_toml_config
-
-
-## LLM configuration
-# Vertex
-try:
-    from ..llms.vertex import VertexLLM
-    VERTEX_ENABLED = True
-except (ModuleNotFoundError, ImportError):
-    VERTEX_ENABLED = False
-
-# Anthropic:
-try:
-    from ..llms.anthropic import Anthropic
-    ANTHROPIC_ENABLED = True
-except (ModuleNotFoundError, ImportError):
-    ANTHROPIC_ENABLED = False
-
-# OpenAI
-try:
-    from ..llms.openai import OpenAILLM
-    OPENAI_ENABLED = True
-except (ModuleNotFoundError, ImportError):
-    OPENAI_ENABLED = False
-
-# LLM Transformers
-try:
-    from  ..llms.pipes import PipelineLLM
-    TRANSFORMERS_ENABLED = True
-except (ModuleNotFoundError, ImportError):
-    TRANSFORMERS_ENABLED = False
-
-# HuggingFaces Hub:
-try:
-    from  ..llms.hf import HuggingFace
-    HF_ENABLED = True
-except (ModuleNotFoundError, ImportError):
-    HF_ENABLED = False
-
-# GroQ:
-try:
-    from ..llms.groq import GroqLLM
-    GROQ_ENABLED = True
-except (ModuleNotFoundError, ImportError):
-    GROQ_ENABLED = False
-
 from .retrievals import RetrievalManager
 from ..conf import (
     EMBEDDING_DEVICE,
@@ -296,49 +235,6 @@ class AbstractChatbot(ABC, DBInterface):
         "I can also provide information about the company's policies and procedures, benefits, and other HR-related topics."
     )
 
-    def load_llm(self, llm_name: str, model_name: str = None, **kwargs):
-        """Load the Language Model for the Chatbot.
-        """
-        print('LLM > ', llm_name)
-        if llm_name == 'VertexLLM':
-            if VERTEX_ENABLED is False:
-                raise ConfigError(
-                    "VertexAI enabled but not installed."
-                )
-            return VertexLLM(model=model_name, **kwargs)
-        elif llm_name == 'Anthropic':
-            if ANTHROPIC_ENABLED is False:
-                raise ConfigError(
-                    "ANTHROPIC is enabled but not installed."
-                )
-            return Anthropic(model=model_name, **kwargs)
-        elif llm_name == 'OpenAI':
-            if OPENAI_ENABLED is False:
-                raise ConfigError(
-                    "OpenAI is enabled but not installed."
-                )
-            return OpenAILLM(model=model_name, **kwargs)
-        elif llm_name == 'hf':
-            if HF_ENABLED is False:
-                raise ConfigError(
-                    "Hugginfaces Hub is enabled but not installed."
-                )
-            return HuggingFace(model=model_name, **kwargs)
-        elif llm_name == 'pipe':
-            if TRANSFORMERS_ENABLED is False:
-                raise ConfigError(
-                    "Transformes Pipelines are enabled, but not installed."
-                )
-            return PipelineLLM(model=model_name, **kwargs)
-        elif llm_name == 'Groq':
-            if GROQ_ENABLED is False:
-                raise ConfigError(
-                    "Groq is enabled but not installed."
-                )
-            return GroqLLM(model=model_name, **kwargs)
-        # TODO: Add more LLMs
-        return hub.pull(llm_name)
-
     async def configure(self, app = None) -> None:
         if isinstance(app, web.Application):
             self.app = app  # register the app into the Extension
@@ -394,7 +290,7 @@ class AbstractChatbot(ABC, DBInterface):
         else:
             if llm:
                 # LLM:
-                self._llm_obj = self.load_llm(
+                self._llm_obj = get_llm(
                     llm,
                     **config
                 )
