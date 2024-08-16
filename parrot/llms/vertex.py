@@ -25,7 +25,7 @@ class VertexLLM(AbstractLLM):
         "gemini-1.5-pro-001",
         "gemini-1.5-pro-exp-0801",
         "gemini-1.5-flash-preview-0514",
-        "gemini-1.5-flash",
+        "gemini-1.5-flash-001",
         "chat-bison@001",
         "claude-3-opus@20240229",
         'claude-3-5-sonnet@20240620'

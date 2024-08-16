@@ -90,7 +90,7 @@ class AbstractChatbot(ABC, DBInterface):
         # Chatbot ID:
         self.chatbot_id: uuid.UUID = kwargs.get(
             'chatbot_id',
-            None
+            str(uuid.uuid4().hex)
         )
         # Basic Information:
         self.name = self._get_default_attr(
@@ -105,7 +105,9 @@ class AbstractChatbot(ABC, DBInterface):
             'role', 'Chatbot', **kwargs
         )
         self.goal = self._get_default_attr(
-            'goal', 'provide helpful information to users', **kwargs
+            'goal',
+            'provide helpful information to users',
+            **kwargs
         )
         self.backstory = self._get_default_attr(
             'backstory',
