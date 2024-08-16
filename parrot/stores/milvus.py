@@ -32,6 +32,43 @@ from ..conf import (
 )
 
 
+class MilvusConnection:
+    """
+    Context Manager for Milvus Connections.
+    """
+    def __init__(self, alias: str = 'default', **kwargs):
+        self._connected: bool = False
+        self.kwargs = kwargs
+        self.alias: str = alias
+
+    def connect(self, alias: str = None, **kwargs):
+        if not alias:
+            alias = self.alias
+        conn = connections.connect(
+            alias=alias,
+            **kwargs
+        )
+        self._connected = True
+        return alias
+
+    def is_connected(self):
+        return self._connected
+
+    def close(self, alias: str = None):
+        try:
+            connections.disconnect(alias=alias)
+        finally:
+            self._connected = False
+
+    def __enter__(self):
+        self.connect(alias=self.alias, **self.kwargs)
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.close(alias=self.alias)
+        return self
+
+
 class MilvusStore(AbstractStore):
     """MilvusStore class.
 
@@ -57,6 +94,7 @@ class MilvusStore(AbstractStore):
         self.protocol = kwargs.pop("protocol", MILVUS_PROTOCOL)
         self.create_database: bool = kwargs.pop('create_database', True)
         self.url = kwargs.pop("url", MILVUS_URL)
+        self._client_id = kwargs.pop('client_id', 'default')
         if not self.url:
             self.url = f"{self.protocol}://{self.host}:{self.port}"
         else:
@@ -104,7 +142,10 @@ class MilvusStore(AbstractStore):
         # 1. Check if database exists:
         if self.database:
             self.kwargs['db_name'] = self.database
-            self.use_database(self.database, create=True)
+            self.use_database(
+                self.database,
+                create=self.create_database
+            )
 
     async def __aenter__(self):
         try:
@@ -115,8 +156,6 @@ class MilvusStore(AbstractStore):
             self._embed_ = self.create_embedding(
                 model_name=self.embedding_name
             )
-        self._client_id = str(uuid.uuid4())
-        self._client, self.client_id = self.connect(client_id=self._client_id)
         return self
 
     async def __aexit__(self, exc_type, exc_value, traceback):
@@ -124,33 +163,45 @@ class MilvusStore(AbstractStore):
         self._embed_ = None
         del self.tensor
         try:
-            self.close(client_id=self.client_id)
+            self.close(alias=self.client_id)
             torch.cuda.empty_cache()
         except RuntimeError:
             pass
 
-    def connect(self, client_id: str = None) -> tuple:
+    async def connection(self, alias: str = None):
+        if not alias:
+            self._client_id = str(uuid.uuid4())
+        else:
+            self._client_id = alias
+        # making the connection:
+        self._client, self.client_id = self.connect(
+            alias=self._client_id
+        )
+        return self
+
+    def connect(self, alias: str = None) -> tuple:
         # 1. Set up a pyMilvus default connection
         # Unique connection:
-        if not client_id:
-            client_id = "uri-connection"
-        self.conn = connections.connect(
-            alias=client_id,
+        if not alias:
+            alias = "default"
+        _ = connections.connect(
+            alias=alias,
             **self.kwargs
         )
-        self._client = MilvusClient(
+        client = MilvusClient(
             **self.kwargs
         )
-        print('CONN > ', self._client, client_id, connections)
         self._connected = True
-        return self._client, client_id
+        return client, alias
 
-    def close(self, client_id: str = "uri-connection"):
-        connections.disconnect(alias=client_id)
-        self._connected = False
-        self._client.close()
+    def close(self, alias: str = "default"):
+        connections.disconnect(alias=alias)
+        try:
+            self._client.close()
+        finally:
+            self._connected = False
 
-    def create_db(self, db_name: str, **kwargs) -> bool:
+    def create_db(self, db_name: str, alias: str = 'default', **kwargs) -> bool:
         args = {
             "uri": self.url,
             "host": self.host,
@@ -158,7 +209,7 @@ class MilvusStore(AbstractStore):
             **kwargs
         }
         try:
-            conn = connections.connect(**args)
+            conn = connections.connect(alias, **args)
             db.create_database(db_name)
             self.logger.notice(
                 f"Database {db_name} created successfully."
@@ -170,32 +221,39 @@ class MilvusStore(AbstractStore):
         finally:
             connections.disconnect(alias="uri-connection")
 
-    def use_database(self, db_name: str, create: bool = False) -> None:
+    def use_database(
+        self,
+        db_name: str,
+        alias:str = 'default',
+        create: bool = False
+    ) -> None:
         try:
-            conn = connections.connect(**self.kwargs)
+            conn = connections.connect(alias, **self.kwargs)
         except MilvusException as exc:
             if "database not found" in exc.message:
                 args = self.kwargs.copy()
                 del args['db_name']
-                self.create_db(db_name, **args)
-                # re-connect:
-                conn = connections.connect(**self.kwargs)
-        if db_name not in db.list_database():
-            if self.create_database is True or create is True:
-                try:
-                    db.create_database(db_name)
-                    self.logger.notice(
-                        f"Database {db_name} created successfully."
-                    )
-                except Exception as e:
+                self.create_db(db_name, alias=alias, **args)
+        # re-connect:
+        try:
+            _ = connections.connect(alias, **self.kwargs)
+            if db_name not in db.list_database(using=alias):
+                if self.create_database is True or create is True:
+                    try:
+                        db.create_database(db_name, using=alias, timeout=10)
+                        self.logger.notice(
+                            f"Database {db_name} created successfully."
+                        )
+                    except Exception as e:
+                        raise ValueError(
+                            f"Error creating database: {e}"
+                        )
+                else:
                     raise ValueError(
-                        f"Error creating database: {e}"
+                        f"Database {db_name} does not exist."
                     )
-            else:
-                raise ValueError(
-                    f"Database {db_name} does not exist."
-                )
-        connections.disconnect(alias='default')
+        finally:
+            connections.disconnect(alias=alias)
 
     def setup_vector(self):
         self.vector = Milvus(
@@ -460,7 +518,7 @@ class MilvusStore(AbstractStore):
     def insert(
         self,
         payload: Union[dict, list],
-        collection: str = None
+        collection: Union[str, None] = None
     ) -> dict:
         if collection is None:
             collection = self.collection
@@ -473,7 +531,7 @@ class MilvusStore(AbstractStore):
 
     def get_vector(
         self,
-        collection: str = None,
+        collection: Union[str, None] = None,
         metric_type: str = None,
         nprobe: int = 32,
         metadata_field: str = None,
@@ -511,7 +569,7 @@ class MilvusStore(AbstractStore):
     def similarity_search(
         self,
         query: str,
-        collection: str = None,
+        collection: Union[str, None] = None,
         limit: int = 2,
         consistency_level: str = 'Bounded'
     ) -> list:
@@ -539,7 +597,7 @@ class MilvusStore(AbstractStore):
     def search(
         self,
         payload: Union[dict, list],
-        collection: str = None,
+        collection: Union[str, None] = None,
         limit: Optional[int] = None
     ) -> list:
         args = {}
@@ -562,7 +620,10 @@ class MilvusStore(AbstractStore):
             self._embed_,
             connection_args={**self.kwargs}
         )
-        retriever = Milvus.as_retriever(vectordb, search_kwargs=dict(k=num_results))
+        retriever = Milvus.as_retriever(
+            vectordb,
+            search_kwargs=dict(k=num_results)
+        )
         return VectorStoreRetrieverMemory(retriever=retriever)
 
     def save_context(self, memory: VectorStoreRetrieverMemory, context: list) -> None:
