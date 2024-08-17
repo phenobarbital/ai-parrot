@@ -1,7 +1,8 @@
 import asyncio
+from pymilvus import connections
 from parrot.chatbots.basic import Chatbot
 from parrot.llms.groq import GroqLLM
-from pymilvus import connections
+
 
 
 _HOST = '127.0.0.1'
