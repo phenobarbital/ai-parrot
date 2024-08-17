@@ -459,7 +459,7 @@ class RetrievalManager:
             **kwargs
     ):
         # Generating Vector:
-        async with self.store as store:  #pylint: disable=E1101
+        async with self.store.connection() as store:  #pylint: disable=E1101
             vector = store.get_vector(metric_type=metric_type)
             retriever = VectorStoreRetriever(
                 vectorstore=vector,
@@ -512,18 +512,18 @@ class RetrievalManager:
             qa_response.response = self.as_markdown(
                 qa_response
             )
-            # # saving question to Usage Log
-            # if self.request:
-            #     tasker = self.request.app['service_queue']
-            #     await tasker.put(
-            #         self.log_usage,
-            #         response=qa_response,
-            #         request=self.request
-            #     )
-            # else:
-            #     asyncio.create_task(
-            #         self.log_usage(response=qa_response)
-            #     )
+            # saving question to Usage Log
+            if self.request:
+                tasker = self.request.app['service_queue']
+                await tasker.put(
+                    self.log_usage,
+                    response=qa_response,
+                    request=self.request
+                )
+            else:
+                asyncio.create_task(
+                    self.log_usage(response=qa_response)
+                )
             return qa_response
         except Exception as exc:
             self.logger.exception(

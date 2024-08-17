@@ -648,7 +648,7 @@ class AbstractChatbot(ABC, DBInterface):
             documents,
             self._estimate_chunk_size()
         )
-        async with self._store.connection() as store:
+        async with self._store.connection(alias='default') as store:
             # if delete is True, then delete the collection
             if delete is True:
                 await store.delete_collection(collection)
