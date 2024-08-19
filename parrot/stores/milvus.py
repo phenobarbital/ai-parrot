@@ -168,7 +168,7 @@ class MilvusStore(AbstractStore):
         except RuntimeError:
             pass
 
-    async def connection(self, alias: str = None):
+    def connection(self, alias: str = None):
         if not alias:
             # self._client_id = str(uuid.uuid4())
             self._client_id = 'uri-connection'

@@ -98,13 +98,6 @@ class ChatHandler(BaseView):
                     question=question,
                     memory=memory
                 )
-                # qa = retrieval.qa(
-                #     question=question,
-                #     search_kwargs={"k": 10},
-                #     use_llm=llm,
-                #     # memory=memory
-                # )
-                # result = await qa.invoke(question)
                 # Drop "memory" information:
                 result.chat_history = None
                 result.source_documents = None
