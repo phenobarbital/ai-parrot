@@ -87,7 +87,7 @@ class ChatbotManager:
                     except Exception as e:
                         print('AQUI >>> ', e)
                         self.logger.error(
-                            f"Failed to configure Agent '{chatbot.name}': {e}"
+                            f"Failed to configure Agent '{bot.name}': {e}"
                         )
                 self.add_chatbot(chatbot)
         self.logger.info(

@@ -45,29 +45,38 @@ class CopilotAgent(BaseAgent):
     @classmethod
     def default_tools(cls) -> list:
         # ZipCode API Toolkit
-        zpt = ZipcodeAPIToolkit()
-        zpt_tools = zpt.get_tools()
+        tools = []
+        zpt_tools = []
+        try:
+            zpt = ZipcodeAPIToolkit()
+            zpt_tools = zpt.get_tools()
 
-        wk1 = WikipediaTool()
-        wk12 = WikidataTool()
+        except Exception as e:
+            print('ERROR LOADING ZIPCODE TOOLS')
 
-        g1 = GoogleSearchTool()
-        g2 = GoogleLocationFinder()
+            wk1 = WikipediaTool()
+            wk12 = WikidataTool()
 
-        b = BingSearchTool()
-        d = DuckDuckGoSearchTool()
-        ask = AskNewsTool()
+            g1 = GoogleSearchTool()
+            g2 = GoogleLocationFinder()
 
-        yt = YouTubeSearchTool()
-        stackexchange = StackExchangeTool()
-        weather = OpenWeatherMapTool()
+            b = BingSearchTool()
+            d = DuckDuckGoSearchTool()
+            ask = AskNewsTool()
 
-        tools = [
-            wk1,
-            wk12, g1, g2,
-            b, d, ask, yt,
-            weather,
-            stackexchange
-        ] + zpt_tools
+            yt = YouTubeSearchTool()
+            stackexchange = StackExchangeTool()
+            weather = OpenWeatherMapTool()
+
+            tools = [
+                wk1,
+                wk12, g1, g2,
+                b, d, ask, yt,
+                weather,
+                stackexchange
+            ] + zpt_tools
+
+        except Exception as e:
+            print('TOOL Error > ', e)
 
         return tools
