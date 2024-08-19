@@ -215,7 +215,8 @@ setup(
         "asknews==0.7.30",
         "pyowm==3.3.0",
         "O365==2.0.35",
-        "langchain-huggingface==0.0.3"
+        "langchain-huggingface==0.0.3",
+        "stackapi==0.3.1"
     ],
     extras_require={
         "anthropic": [

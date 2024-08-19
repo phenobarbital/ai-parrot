@@ -3,7 +3,7 @@
 __title__ = "ai-parrot"
 __description__ = "Live Chatbots based on Langchain chatbots and Agents \
     Integrated into Navigator Framework or used into aiohttp applications."
-__version__ = "0.2.3"
+__version__ = "0.2.4"
 __author__ = "Jesus Lara"
 __author_email__ = "jesuslarag@gmail.com"
 __license__ = "MIT"

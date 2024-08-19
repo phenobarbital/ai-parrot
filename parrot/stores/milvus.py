@@ -170,7 +170,8 @@ class MilvusStore(AbstractStore):
 
     async def connection(self, alias: str = None):
         if not alias:
-            self._client_id = str(uuid.uuid4())
+            # self._client_id = str(uuid.uuid4())
+            self._client_id = 'uri-connection'
         else:
             self._client_id = alias
         # making the connection:
