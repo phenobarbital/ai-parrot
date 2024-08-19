@@ -14,7 +14,8 @@ from .chatbots import (
 from .handlers.chat import ChatHandler # , BotHandler
 from .handlers import ChatbotHandler
 from .models import ChatbotModel
-
+# Manual Load of Copilot Agent:
+from parrot.chatbots.copilot import CopilotAgent
 
 class ChatbotManager:
     """ChatbotManager.
@@ -44,7 +45,6 @@ class ChatbotManager:
         except AttributeError:
             raise ImportError(f"No class named '{class_name}' found in the module 'chatbots'.")
 
-
     async def load_bots(self, app: web.Application) -> None:
         """Load all chatbots from DB."""
         self.logger.info("Loading chatbots from DB...")
@@ -53,25 +53,43 @@ class ChatbotManager:
             ChatbotModel.Meta.connection = conn
             bots = await ChatbotModel.all()
             for bot in bots:
-                self.logger.notice(
-                    f"Loading chatbot '{bot.name}'..."
-                )
-                cls_name = bot.custom_class
-                if cls_name is None:
-                    class_name = Chatbot
-                else:
-                    class_name = self.get_chatbot_class(cls_name)
-                chatbot = class_name(
-                    chatbot_id=bot.chatbot_id,
-                    name=bot.name
-                )
-                try:
-                    await chatbot.configure()
-                    self.add_chatbot(chatbot)
-                except Exception as e:
-                    self.logger.error(
-                        f"Failed to configure chatbot '{chatbot.name}': {e}"
+                if bot.bot_type == 'chatbot':
+                    self.logger.notice(
+                        f"Loading chatbot '{bot.name}'..."
                     )
+                    cls_name = bot.custom_class
+                    if cls_name is None:
+                        class_name = Chatbot
+                    else:
+                        class_name = self.get_chatbot_class(cls_name)
+                    chatbot = class_name(
+                        chatbot_id=bot.chatbot_id,
+                        name=bot.name
+                    )
+                    try:
+                        await chatbot.configure()
+                    except Exception as e:
+                        self.logger.error(
+                            f"Failed to configure chatbot '{chatbot.name}': {e}"
+                        )
+                elif bot.bot_type == 'agent':
+                    self.logger.notice(
+                        f"Loading Agent '{bot.name}'..."
+                    )
+                    # TODO: extract the list of tools from Agent config
+                    try:
+                        tools = CopilotAgent.default_tools()
+                        chatbot = CopilotAgent(
+                            name=bot.name,
+                            llm=bot.llm,
+                            tools=tools
+                        )
+                    except Exception as e:
+                        print('AQUI >>> ', e)
+                        self.logger.error(
+                            f"Failed to configure Agent '{chatbot.name}': {e}"
+                        )
+                self.add_chatbot(chatbot)
         self.logger.info(
             ":: Chatbots loaded successfully."
         )
@@ -127,8 +145,14 @@ class ChatbotManager:
         self.app['chatbot_manager'] = self
         ## Configure Routes
         router = self.app.router
-        router.add_view('/api/v1/chat', ChatHandler)
-        router.add_view('/api/v1/chat/{chatbot_name}', ChatHandler)
+        router.add_view(
+            '/api/v1/chat',
+            ChatHandler
+        )
+        router.add_view(
+            '/api/v1/chat/{chatbot_name}',
+            ChatHandler
+        )
         ChatbotHandler.configure(self.app, '/api/v1/bots')
         return self.app
 

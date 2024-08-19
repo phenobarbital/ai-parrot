@@ -4,6 +4,8 @@ import time
 from datetime import datetime
 from pathlib import Path, PurePath
 from enum import Enum
+from langchain_core.agents import AgentAction
+
 from datamodel import BaseModel, Field
 from datamodel.types import Text  # pylint: disable=no-name-in-module
 from asyncdb.models import Model
@@ -23,7 +25,28 @@ class AgentResponse(BaseModel):
     question: str = Field(required=False)
     input: str = Field(required=False)
     output: str = Field(required=False)
+    response: str = Field(required=False)
     intermediate_steps: list = Field(default_factory=list)
+    chat_history: list = Field(repr=True, default_factory=list)
+    source_documents: list = Field(required=False, default_factory=list)
+
+    def __post_init__(self) -> None:
+        if self.intermediate_steps:
+            steps = []
+            for item, result in self.intermediate_steps:
+                if isinstance(item, AgentAction):
+                    # convert into dictionary:
+                    steps.append(
+                        {
+                            "tool": item.tool,
+                            "tool_input": item.tool_input,
+                            "result": result,
+                            "log": str(item.log)
+                        }
+                    )
+            if steps:
+                self.intermediate_steps = steps
+
 
 class ChatResponse(BaseModel):
     """ChatResponse.
@@ -138,6 +161,8 @@ class ChatbotModel(Model):
     classification_model: str = Field(default="facebook/bart-large-cnn", required=False)
     # Database Configuration
     database: dict = Field(default='TROC', required=False, default_factory=dict)
+    # Bot/Agent type
+    bot_type: str = Field(default='chatbot', required=False)
     # When created
     created_at: datetime = Field(required=False, default=datetime.now())
     created_by: int = Field(required=False)

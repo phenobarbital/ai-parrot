@@ -529,7 +529,7 @@ class RetrievalManager:
             self.logger.exception(
                 f"Error on response: {exc}"
             )
-            return None, None
+            return None
 
 
     async def invoke(self, question):
