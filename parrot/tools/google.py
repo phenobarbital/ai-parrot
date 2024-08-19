@@ -107,6 +107,7 @@ class GoogleLocationFinder(BaseTool):
         super().__init__(**kwargs)
         self.google_key = kwargs.get('api_key', GOOGLE_API_KEY)
         self.kwargs = kwargs
+        print(':: LOCATION FINDER STARTED :: ')
 
     def extract_location(self, data):
         city = state = state_code = zipcode = None
@@ -133,6 +134,7 @@ class GoogleLocationFinder(BaseTool):
             self.base_url,
             params=params
         )
+        print('LOCATION FINDER > ', response)
         if response.status_code == 200:
             result = response.json()
             if result['status'] == 'OK':
