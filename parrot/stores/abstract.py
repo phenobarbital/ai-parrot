@@ -47,6 +47,7 @@ class AbstractStore(ABC):
         self.logger = logging.getLogger(f"Store.{__name__}")
         # client
         self._client = None
+        self._client_id = None
 
     @property
     def connected(self) -> bool:
@@ -61,7 +62,7 @@ class AbstractStore(ABC):
             self._embed_ = self.create_embedding(
                 model_name=self.embedding_name
             )
-        self._client, self.client_id = self.connect()
+        self._client, self._client_id = self.connect()
         return self
 
     @abstractmethod

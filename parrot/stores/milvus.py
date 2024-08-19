@@ -163,7 +163,7 @@ class MilvusStore(AbstractStore):
         self._embed_ = None
         del self.tensor
         try:
-            self.close(alias=self.client_id)
+            self.close(alias=self._client_id)
             torch.cuda.empty_cache()
         except RuntimeError:
             pass
@@ -175,7 +175,7 @@ class MilvusStore(AbstractStore):
         else:
             self._client_id = alias
         # making the connection:
-        self._client, self.client_id = self.connect(
+        self._client, self._client_id = self.connect(
             alias=self._client_id
         )
         return self
