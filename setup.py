@@ -206,7 +206,7 @@ setup(
         "llama-index==0.10.20",
         "llama_cpp_python==0.2.56",
         "asyncdb[all]>=2.7.10",
-        "querysource[analytics]>=3.10.1",
+        "querysource>=3.10.1",
         "yfinance==0.2.40",
         "youtube_search==2.1.2",
         "wikipedia==1.4.0",
