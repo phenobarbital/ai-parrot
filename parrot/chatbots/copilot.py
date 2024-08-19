@@ -54,6 +54,7 @@ class CopilotAgent(BaseAgent):
         except Exception as e:
             print('ERROR LOADING ZIPCODE TOOLS')
 
+        try:
             wk1 = WikipediaTool()
             wk12 = WikidataTool()
 
