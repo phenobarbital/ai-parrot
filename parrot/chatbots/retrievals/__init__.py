@@ -85,25 +85,25 @@ class RetrievalManager:
         self.request = request
 
     def __enter__(self):
-        # self.client_id: str = str(uuid.uuid4())
-        # self.client, self.client_id = self.store.connect()
+        self.client_id: str = str(uuid.uuid4())
+        self.client, _ = self.store.connect(alias=self.client_id)
         return self
 
     async def __aenter__(self):
-        # self.client_id: str = str(uuid.uuid4())
-        # self.client, self.client_id = self.store.connect()
+        self.client_id: str = str(uuid.uuid4())
+        self.client, _ = self.store.connect(alias=self.client_id)
         return self
 
     async def __aexit__(self, exc_type, exc_value, traceback):
-        #self.client.close()  # closing database connection
+        self.client.close()  # closing database connection
         # closing the connection:
-        # self.store.close(alias=self.client_id)
+        self.store.close(alias=self.client_id)
         pass
 
     def __exit__(self, exc_type, exc_value, traceback):
-        # self.client.close()  # closing database connection
+        self.client.close()  # closing database connection
         # closing the connection:
-        # self.store.close(alias=self.client_id)
+        self.store.close(alias=self.client_id)
         pass
 
     def create_memory(
