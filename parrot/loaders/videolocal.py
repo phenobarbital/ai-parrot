@@ -105,3 +105,16 @@ class VideoLocalLoader(BaseVideoLoader):
                     if set(item.parts).isdisjoint(self.skip_directories):
                         documents.extend(self.load_video(item))
         return self.split_documents(documents)
+
+    def extract(self) -> list:
+        documents = []
+        if self.path.is_file():
+            docs = self.load_video(self.path)
+            documents.extend(docs)
+        if self.path.is_dir():
+            # iterate over the files in the directory
+            for ext in self._extension:
+                for item in self.path.glob(f'*{ext}'):
+                    if set(item.parts).isdisjoint(self.skip_directories):
+                        documents.extend(self.load_video(item))
+        return documents
