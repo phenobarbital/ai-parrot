@@ -218,7 +218,7 @@ setup(
         "stackapi==0.3.1",
         "timm==1.0.9",
         "torchvision==0.19.1",
-        "paddlepaddle==2.6.1"
+        "paddlepaddle==2.6.1",
         "paddlepaddle_gpu==2.6.1",
         "paddleocr==2.8.1",
         "ftfy==6.2.3"
