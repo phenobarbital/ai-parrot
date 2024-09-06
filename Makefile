@@ -3,7 +3,6 @@ venv:
 	echo 'run `source .venv/bin/activate` to start develop with Parrot'
 
 install:
-	pip install wheel==0.42.0
 	# Install Parrot
 	pip install -e .[google,milvus,analytics]
 	pip install --upgrade python-datamodel
@@ -17,7 +16,6 @@ install:
 	pip install --upgrade querysource[analytics]
 
 develop:
-	pip install wheel==0.42.0
 	# Install Parrot
 	pip install -e .[all]
 	pip install --upgrade python-datamodel

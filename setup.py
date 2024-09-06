@@ -136,11 +136,11 @@ setup(
     package_data={"parrot": ["py.typed"]},
     setup_requires=[
         "setuptools_scm>=8.0.4",
-        "wheel>=0.42.0",
-        "Cython==3.0.9",
+        "wheel>=0.44.0",
+        'Cython==3.0.11',
     ],
     install_requires=[
-        "Cython==3.0.9",
+        "Cython==3.0.11",
         "pymupdf==1.24.4",
         "pymupdf4llm==0.0.1",
         "pdf4llm==0.0.6",
@@ -179,7 +179,6 @@ setup(
         "tokenizers==0.19.1",
         "unstructured==0.14.3",
         "unstructured-client==0.18.0",
-        "uvloop==0.19.0",
         "XlsxWriter==3.2.0",
         "youtube-transcript-api==0.6.2",
         "selenium==4.18.1",
@@ -192,7 +191,7 @@ setup(
         "gdown==5.1.0",
         "weasyprint==61.2",
         "markdown2==2.4.13",
-        "xformers==0.0.25.post1",
+        "xformers==0.0.27.post2",
         "fastembed==0.3.4",
         "mammoth==1.7.1",
         "accelerate==0.29.3",
@@ -216,7 +215,14 @@ setup(
         "pyowm==3.3.0",
         "O365==2.0.35",
         "langchain-huggingface==0.0.3",
-        "stackapi==0.3.1"
+        "stackapi==0.3.1",
+        "timm==1.0.9",
+        "torchvision==0.19.1",
+        "paddlepaddle==2.6.1"
+        "paddlepaddle_gpu==2.6.1",
+        "paddleocr==2.8.1",
+        "ftfy==6.2.3"
+        # "torch==2.4.1"
     ],
     extras_require={
         "anthropic": [
