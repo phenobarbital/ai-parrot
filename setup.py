@@ -157,7 +157,7 @@ setup(
         "chromadb==0.4.24",
         "datasets==2.18.0",
         "faiss-cpu==1.8.0",
-        "fastavro==1.9.4",
+        "fastavro==1.9.7",
         "gunicorn==21.2.0",
         "jq==1.7.0",
         "rank_bm25==0.2.2",
