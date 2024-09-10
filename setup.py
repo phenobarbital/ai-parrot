@@ -288,7 +288,7 @@ setup(
             "google-generativeai==0.7.2",
             "vertexai==1.60.0",
             "google-cloud-aiplatform>=1.60.0",
-            "grpc-google-iam-v1==0.13.0",
+            "grpc-google-iam-v1==0.13.1",
             # OpenAI
             "langchain-openai==0.1.21",
             "openai==1.40.8",
