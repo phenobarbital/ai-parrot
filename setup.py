@@ -256,7 +256,7 @@ setup(
             "pymilvus==2.4.6",
         ],
         "crew": [
-            "colbert-ai==0.2.19",
+            "colbert-ai==0.2.21",
             "vanna==0.3.4", # Vanna:
             "crewai[tools]==0.28.8"
         ],
