@@ -199,7 +199,7 @@ setup(
             "youtube-transcript-api==0.6.2",
             "pymupdf==1.24.4",
             "pymupdf4llm==0.0.1",
-            "pdf4llm==0.0.6",
+            "pdf4llm==0.0.9",
             "PyPDF2==3.0.1",
             "pdfminer.six==20231228",
             "pdfplumber==0.11.0",
