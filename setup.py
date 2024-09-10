@@ -215,7 +215,7 @@ setup(
             "markdownify==0.12.1",
             "yt_dlp==2024.4.9",
             "moviepy==1.0.3",
-            "mammoth==1.7.1",
+            "mammoth==1.8.0",
             "paddlepaddle==2.6.1",
             "paddlepaddle_gpu==2.6.1",
             "paddleocr==2.8.1",
