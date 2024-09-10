@@ -95,7 +95,7 @@ setup(
     long_description=readme(),
     long_description_content_type='text/markdown',
     license=__license__,
-    python_requires=">=3.10.12",
+    python_requires=">=3.9.20",
     keywords=['asyncio', 'asyncpg', 'aioredis', 'aiomcache', 'langchain', 'chatbot', 'agents'],
     platforms=['POSIX'],
     classifiers=[
