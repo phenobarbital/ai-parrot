@@ -202,7 +202,7 @@ setup(
             "pdf4llm==0.0.6",
             "PyPDF2==3.0.1",
             "pdfminer.six==20231228",
-            "pdfplumber==0.11.0",
+            "pdfplumber==0.11.4",
             "GitPython==3.1.42",
             "opentelemetry-sdk==1.24.0",
             "rapidocr-onnxruntime==1.3.15",
