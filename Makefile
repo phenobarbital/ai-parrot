@@ -4,7 +4,6 @@ venv:
 
 install:
 	# Install Parrot
-	pip install -e .[google,milvus,analytics]
 	pip install --upgrade python-datamodel
 	pip install --upgrade asyncdb[all]
 	pip install --upgrade navconfig[default]
@@ -14,6 +13,8 @@ install:
 	pip install --upgrade navigator-auth
 	# QS requirements
 	pip install --upgrade querysource[analytics]
+	# and Parrot:
+	# pip install -e .[google,milvus,analytics]
 
 develop:
 	# Install Parrot
