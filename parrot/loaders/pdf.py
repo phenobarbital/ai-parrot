@@ -49,14 +49,6 @@ class PDFLoader(BasePDF):
         self.parse_images = kwargs.get('parse_images', False)
         self.page_as_images = kwargs.get('page_as_images', False)
         if self.page_as_images is True:
-            # # Load the processor and model from Hugging Face
-            # self.image_processor = DonutProcessor.from_pretrained(
-            #     "naver-clova-ix/donut-base-finetuned-docvqa"
-            # )
-            # self.image_model = VisionEncoderDecoderModel.from_pretrained(
-            #     "naver-clova-ix/donut-base-finetuned-docvqa",
-
-            # )
             # Load the processor and model from Hugging Face
             self.image_processor = LayoutLMv3Processor.from_pretrained(
                 "microsoft/layoutlmv3-base",
@@ -388,6 +380,7 @@ class PDFLoader(BasePDF):
                     # TODO passing the image to a AI visual to get explanation
                     # Get the extracted text from the image
                     text = self.extract_page_text(img_path)
+                    print('TEXT EXTRACTED >> ', text)
                     url = f'/static/images/{img_name}'
                     image_meta = {
                         "url": url,

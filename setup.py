@@ -222,7 +222,7 @@ setup(
             "ftfy==6.2.3",
             "librosa==0.10.1",
             "XlsxWriter==3.2.0",
-            "xformers==0.0.27.post2",
+            # "xformers==0.0.27.post2",
             "timm==1.0.9",
         ],
         "anthropic": [
@@ -271,31 +271,6 @@ setup(
             # "ultralytics==8.2.4", # image-processor
             # "albumentations-1.4.4",
             # "yolov8-0.0.2"
-        ],
-        "all": [
-            # Install all LLM Models
-            "langchain-milvus==0.1.1",
-            "milvus==2.3.5",
-            "pymilvus==2.4.4",
-            # GroQ
-            "groq==0.11.0",
-            "langchain-groq==0.1.4",
-            # HF
-            "llama-index-llms-huggingface==0.2.7",
-            # Google
-            "langchain-google-vertexai==1.0.8",
-            "langchain-google-genai==1.0.8",
-            "google-generativeai==0.7.2",
-            "vertexai==1.60.0",
-            "google-cloud-aiplatform>=1.60.0",
-            "grpc-google-iam-v1==0.13.0",
-            # OpenAI
-            "langchain-openai==0.1.21",
-            "openai==1.40.8",
-            "llama-index-llms-openai==0.1.11",
-            # Antropic
-            "langchain-anthropic==0.1.23",
-            "anthropic==0.34.0",
         ]
     },
     tests_require=[
