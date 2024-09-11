@@ -7,13 +7,14 @@ from parrot.loaders import (
 
 async def process_pdf():
     llm = VertexLLM(
-        model='gemini-1.5-flash-001',
+        model='gemini-1.5-pro',
         temperature=0.1,
         top_k=30,
         Top_p=0.5,
     )
     # Add LLM
-    doc = BASE_DIR.joinpath('documents', 'AR_Certification_Skill_Practice_Scorecard_EXAMPLE.pdf')
+    # doc = BASE_DIR.joinpath('documents', 'AR_Certification_Skill_Practice_Scorecard_EXAMPLE.pdf')
+    doc = BASE_DIR.joinpath('documents', 'Day 1_Essentials_AR_PPT.pdf')
     print(':: Processing: ', doc)
     # PDF Files
     loader = PDFLoader(
