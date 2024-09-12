@@ -178,7 +178,7 @@ setup(
         "google-api-python-client>=2.86.0",
         "gdown==5.1.0",
         "weasyprint==61.2",
-        "markdown2==2.4.13",
+        "markdown2==2.5.0",
         "fastembed==0.3.4",
         "yfinance==0.2.40",
         "youtube_search==2.1.2",
