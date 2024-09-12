@@ -1,8 +1,24 @@
 from typing import Any
 from collections.abc import Callable
+import math
 from pathlib import PurePath
 from langchain.docstore.document import Document
 from .basevideo import BaseVideoLoader
+
+
+def split_text(text, max_length):
+    """Split text into chunks of a maximum length, ensuring not to break words."""
+    chunks = []
+    while len(text) > max_length:
+        # Find the last space before the max_length
+        split_point = text.rfind(' ', 0, max_length)
+        # If no space found, split at max_length
+        if split_point == -1:
+            split_point = max_length
+        chunks.append(text[:split_point])
+        text = text[split_point:].strip()
+    chunks.append(text)
+    return chunks
 
 
 class VideoLocalLoader(BaseVideoLoader):
@@ -54,22 +70,27 @@ class VideoLocalLoader(BaseVideoLoader):
             transcript = ''
         # Summarize the transcript
         if transcript:
+            # Split transcript into chunks
+            transcript_chunks = split_text(transcript, 32767)
             summary = self.get_summary_from_text(transcript)
             # Create Two Documents, one is for transcript, second is VTT:
             metadata['summary'] = summary
-            doc = Document(
-                page_content=transcript,
-                metadata=metadata
-            )
-            documents.append(doc)
+            for chunk in transcript_chunks:
+                doc = Document(
+                    page_content=chunk,
+                    metadata=metadata
+                )
+                documents.append(doc)
         if transcript_whisper:
             # VTT version:
             transcript = self.transcript_to_vtt(transcript_whisper, transcript_path)
-            doc = Document(
-                page_content=transcript,
-                metadata=metadata
-            )
-            documents.append(doc)
+            transcript_chunks = split_text(transcript, 65535)
+            for chunk in transcript_chunks:
+                doc = Document(
+                    page_content=chunk,
+                    metadata=metadata
+                )
+                documents.append(doc)
             # Saving every dialog chunk as a separate document
             dialogs = self.transcript_to_blocks(transcript_whisper)
             docs = []
