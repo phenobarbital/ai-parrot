@@ -269,8 +269,9 @@ class MilvusStore(AbstractStore):
         return self.get_vector()
 
     def collection_exists(self, collection_name: str) -> bool:
-        if collection_name in self._client.list_collections():
-            return True
+        with self.connection():
+            if collection_name in self._client.list_collections():
+                return True
         return False
 
     def check_state(self, collection_name: str) -> dict:
