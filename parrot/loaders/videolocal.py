@@ -26,14 +26,15 @@ class VideoLocalLoader(BaseVideoLoader):
 
     def load_video(self, path: PurePath) -> list:
         metadata = {
-            "source": f"{path}",
             "url": f"{path.name}",
-            "index": path.stem,
+            "source": f"{path}",
             "filename": f"{path}",
+            "index": path.stem,
             "question": '',
             "answer": '',
             'type': 'video_transcript',
             "source_type": self._source_type,
+            "data": {},
             "summary": '',
             "document_meta": {
                 "language": self._language,
