@@ -1,12 +1,12 @@
 from typing import Optional, Union, Any
 import asyncio
-import uuid
-import torch
+# import uuid
+# import torch
 from pymilvus import (
     MilvusClient,
-    Collection,
-    FieldSchema,
-    CollectionSchema,
+    # Collection,
+    # FieldSchema,
+    # CollectionSchema,
     DataType,
     connections,
     db
@@ -148,10 +148,10 @@ class MilvusStore(AbstractStore):
             )
 
     async def __aenter__(self):
-        try:
-            self.tensor = torch.randn(1000, 1000).cuda()
-        except RuntimeError:
-            self.tensor = None
+        # try:
+        #     self.tensor = torch.randn(1000, 1000).cuda()
+        # except RuntimeError:
+        #     self.tensor = None
         if self._embed_ is None:
             self._embed_ = self.create_embedding(
                 model_name=self.embedding_name
@@ -161,10 +161,10 @@ class MilvusStore(AbstractStore):
     async def __aexit__(self, exc_type, exc_value, traceback):
         # closing Embedding
         self._embed_ = None
-        del self.tensor
+        # del self.tensor
         try:
             self.close(alias=self._client_id)
-            torch.cuda.empty_cache()
+            # torch.cuda.empty_cache()
         except RuntimeError:
             pass
 
@@ -199,7 +199,10 @@ class MilvusStore(AbstractStore):
         connections.disconnect(alias=alias)
         try:
             self._client.close()
+        except AttributeError:
+            pass
         finally:
+            self._client = None
             self._connected = False
 
     def create_db(self, db_name: str, alias: str = 'default', **kwargs) -> bool:
@@ -479,10 +482,10 @@ class MilvusStore(AbstractStore):
     ):
         if not collection:
             collection = self.collection
-        try:
-            tensor = torch.randn(1000, 1000).cuda()
-        except Exception:
-            tensor = None
+        # try:
+        #     tensor = torch.randn(1000, 1000).cuda()
+        # except Exception:
+        #     tensor = None
         if upsert is True:
             # get first document
             doc = documents[0]
@@ -511,7 +514,7 @@ class MilvusStore(AbstractStore):
             vector_field='vector',
             **kwargs
         )
-        del tensor
+        # del tensor
         return docstore
 
     def upsert(self, payload: dict, collection: str = None) -> None:
