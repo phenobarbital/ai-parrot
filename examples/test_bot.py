@@ -13,7 +13,7 @@ async def get_agent():
     #     Top_p=0.6,
     # )
     llm = VertexLLM(
-        model='gemini-1.5-flash-001',
+        model='gemini-1.5-pro',
         temperature=0.1,
         top_k=30,
         Top_p=0.5,

@@ -175,3 +175,6 @@ docs/videos/*.mkv
 docs/videos/*.mp3
 docs/vimeo/*
 docs/youtube/*
+
+# more documents:
+documents/*
