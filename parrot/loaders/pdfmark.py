@@ -74,7 +74,7 @@ class PDFMarkdownLoader(BasePDF):
             }
             for idx, chunk in enumerate(self._splitter.split_text(md_text)):
                 _info = {
-                    "index": f"{idx}",
+                    # "index": f"{idx}",
                     **metadata
                 }
                 docs.append(

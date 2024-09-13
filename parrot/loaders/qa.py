@@ -46,7 +46,7 @@ class QAFileLoader(AbstractLoader):
                     page_content=f"**Question:** {row[q]}: **Answer:** {row[a]}",
                     metadata={
                         "url": '',
-                        "index": f"{path.name} #{idx}",
+                        # "index": f"{path.name} #{idx}",
                         "source": f"{path.name} Row.#{idx}",
                         "filename": f"{path.name}",
                         "question": row[q],

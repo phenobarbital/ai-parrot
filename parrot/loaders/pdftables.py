@@ -91,7 +91,7 @@ class PDFTablesLoader(BasePDF):
             "url": '',
             "source": f"{path.name} Page.#{page} Table.#{table_idx}",
             "filename": path.name,
-            "index": f"{path.name}:Table:{table_idx}",
+            # "index": f"{path.name}:Table:{table_idx}",
             "question": '',
             "answer": '',
             "type": 'table',

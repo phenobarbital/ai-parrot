@@ -350,11 +350,11 @@ class MilvusStore(AbstractStore):
                 auto_id=True,
                 max_length=100
             )
-            schema.add_field(
-                field_name="index",
-                datatype=DataType.VARCHAR,
-                max_length=65535
-            )
+            # schema.add_field(
+            #     field_name="index",
+            #     datatype=DataType.VARCHAR,
+            #     max_length=65535
+            # )
             schema.add_field(
                 field_name="url",
                 datatype=DataType.VARCHAR,

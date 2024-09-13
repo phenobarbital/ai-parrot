@@ -47,7 +47,7 @@ class ReadTheDocsLoader(AbstractLoader):
             metadata = {
                 "source": url,
                 "url": url,
-                "index": suffix,
+                # "index": suffix,
                 "filename": src,
                 "question": '',
                 "answer": '',

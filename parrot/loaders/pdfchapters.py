@@ -78,7 +78,7 @@ class PDFChapterLoader(BasePDF):
             page_number = page_num + 1
             metadata = {
                 "url": '',
-                "index": f"{path.name} #{page_number}",
+                # "index": f"{path.name} #{page_number}",
                 "source": f"{path.name} #{page_number}",
                 "filename": path.name,
                 "source_type": self._source_type,

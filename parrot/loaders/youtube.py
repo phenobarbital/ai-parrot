@@ -71,7 +71,7 @@ class YoutubeLoader(VideoLoader):
                 metadata = {
                     "url": f"{url}",
                     "source": f"{url}",
-                    "index": video_title,
+                    # "index": video_title,
                     "filename": video_title,
                     "question": '',
                     "answer": '',
@@ -103,7 +103,7 @@ class YoutubeLoader(VideoLoader):
                 dialogs = self.transcript_to_blocks(transcript_whisper)
                 for chunk in dialogs:
                     _meta = {
-                        "index": f"{video_title}:{chunk['id']}",
+                        # "index": f"{video_title}:{chunk['id']}",
                         "document_meta": {
                             "start": f"{chunk['start_time']}",
                             "end": f"{chunk['end_time']}",
@@ -150,7 +150,7 @@ class YoutubeLoader(VideoLoader):
                 for doc in docs:
                     doc.metadata['source_type'] = self._source_type
                     doc.metadata['summary'] = f"{summary!s}"
-                    doc.metadata['index'] = ''
+                    # doc.metadata['index'] = ''
                     doc.metadata['filename'] = ''
                     doc.metadata['question'] = ''
                     doc.metadata['answer'] = ''
@@ -171,7 +171,7 @@ class YoutubeLoader(VideoLoader):
                 metadata = {
                     "source": url,
                     "url": url,
-                    "index": '',
+                    # "index": '',
                     "filename": '',
                     "question": '',
                     "answer": '',

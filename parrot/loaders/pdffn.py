@@ -55,7 +55,7 @@ class PDFFnLoader(BasePDF):
         n = page_number + 1
         return {
             "url": '',
-            "index": f"{path.name} #{page_number}",
+            # "index": f"{path.name} #{page_number}",
             "source": f"{path.name} #{page_number}",
             "filename": path.name,
             "source_type": self._source_type,

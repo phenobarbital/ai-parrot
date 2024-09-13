@@ -124,7 +124,7 @@ class PDFImageLoader(BasePDF):
                 }
                 for idx, chunk in enumerate(self._splitter.split_text(md_text)):
                     _info = {
-                        "index": f"{idx}",
+                        # "index": f"{idx}",
                         **metadata
                     }
                     docs.append(
@@ -178,7 +178,7 @@ class PDFImageLoader(BasePDF):
                     _meta = {
                         "url": f"{url}",
                         "filename": str(path.name),
-                        "index": f"Page {page_num}, part: {idx}",
+                        # "index": f"Page {page_num}, part: {idx}",
                         "source": str(path.name),
                         "type": 'pdf',
                         "question": prompt_text,
