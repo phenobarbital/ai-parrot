@@ -216,6 +216,7 @@ setup(
             "pydub==0.25.1",
             "markdownify==0.12.1",
             "yt_dlp==2024.4.9",
+            'pydub==0.25.1',
             "moviepy==1.0.3",
             "mammoth==1.7.1",
             "paddlepaddle==2.6.1",
@@ -227,7 +228,7 @@ setup(
             # "xformers==0.0.27.post2",
             "timm==1.0.9",
             "simsimd==4.3.1",
-            "opencv-python==4.10.0.84"
+            "opencv-python==4.10.0.84",
             "easyocr==1.7.1"
         ],
         "anthropic": [
