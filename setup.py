@@ -190,7 +190,8 @@ setup(
         "O365==2.0.35",
         "stackapi==0.3.1",
         "torchvision==0.19.1",
-        "tf-keras==2.17.0"
+        "tf-keras==2.17.0",
+        "simsimd==4.3.1",
     ],
     extras_require={
         "loaders": [
@@ -226,6 +227,7 @@ setup(
             "timm==1.0.9",
             "simsimd==4.3.1",
             "opencv-python==4.10.0.84"
+            "easyocr==1.7.1"
         ],
         "anthropic": [
             "langchain-anthropic==0.1.11",
