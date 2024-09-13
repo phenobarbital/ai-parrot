@@ -190,7 +190,9 @@ setup(
         "O365==2.0.35",
         "stackapi==0.3.1",
         "torchvision==0.19.1",
-        "tf-keras==2.17.0"
+        "tf-keras==2.17.0",
+        "simsimd==4.3.1",
+        "opencv-python==4.10.0.84"
     ],
     extras_require={
         "loaders": [
@@ -266,8 +268,6 @@ setup(
             "gradio_tools==0.0.9",
             "gradio-client==0.2.9",
             "streamlit==1.37.1",
-            "simsimd==4.3.1",
-            "opencv-python==4.10.0.84"
             # "timm==0.9.16", # image-processor
             # "ultralytics==8.2.4", # image-processor
             # "albumentations-1.4.4",

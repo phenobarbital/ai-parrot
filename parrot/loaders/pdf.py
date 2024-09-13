@@ -299,7 +299,7 @@ class PDFLoader(BasePDF):
                     "answer": '',
                     "source_type": self._source_type,
                     "data": {},
-                    "summary": '',
+                    "summary": '-',
                     "document_meta": {
                         "title": pdf.metadata.get("title", ""),  # pylint: disable=E1101
                         "creationDate": pdf.metadata.get("creationDate", ""),  # pylint: disable=E1101
@@ -331,9 +331,9 @@ class PDFLoader(BasePDF):
                     try:
                         summary = self.get_summary_from_text(text)
                     except Exception:
-                        summary = ''
+                        summary = '-'
                     metadata = {
-                        "url": '',
+                        "url": f"{path}:#{page_num}",
                         "source": f"{path.name} Page.#{page_num}",
                         "filename": path.name,
                         "index": f"{page_num}",
@@ -427,7 +427,7 @@ class PDFLoader(BasePDF):
                         df = df.dropna(axis=1, how='all')
                         df = df.dropna(how='all', axis=0)  # Drop empty rows
                         table_meta = {
-                            "url": '',
+                            "url": f"{path.name} Page.#{page_num} Table.#{tab_idx}",
                             "source": f"{path.name} Page.#{page_num} Table.#{tab_idx}",
                             "filename": path.name,
                             "index": f"{path.name}:{page_num}",
@@ -435,7 +435,7 @@ class PDFLoader(BasePDF):
                             "answer": '',
                             "type": 'table',
                             "data": {},
-                            "summary": '',
+                            "summary": '-',
                             "document_meta": {
                                 "table_index": tab_idx,
                                 "table_shape": df.shape,
@@ -481,7 +481,7 @@ class PDFLoader(BasePDF):
                         "answer": '',
                         "type": 'page',
                         "data": {},
-                        "summary": '',
+                        "summary": '-',
                         "document_meta": {
                             "image_name": img_name,
                             "page_number": f"{page_number}"
