@@ -313,7 +313,7 @@ class PDFLoader(BasePDF):
                     )
                 )
                 if summary_document:
-                    summary_document = f"{path.name}\n" + summary_document
+                    summary_document = f"**Summary**\n{path.name}\n" + summary_document
                     docs.append(
                         Document(
                             page_content=summary_document,
@@ -355,13 +355,14 @@ class PDFLoader(BasePDF):
                         )
                     )
                     # And Summary Document:
-                    sm = f"{path.name} Page.#{page_num}\n" + summary
-                    docs.append(
-                        Document(
-                            page_content=sm,
-                            metadata=metadata
+                    if summary:
+                        sm = f"**Summary**\n{path.name} Page.#{page_num}\n" + summary
+                        docs.append(
+                            Document(
+                                page_content=sm,
+                                metadata=metadata
+                            )
                         )
-                    )
                 # Extract images and use OCR to get text from each image
                 # second: images
                 file_name = path.stem.replace(' ', '_').replace('.', '').lower()
