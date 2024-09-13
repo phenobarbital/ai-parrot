@@ -216,7 +216,7 @@ class AbstractLoader(ABC):
             return ''
         try:
             splitter = TokenTextSplitter(
-                chunk_size=5000,
+                chunk_size=6144,
                 chunk_overlap=100,
             )
             prompt_template = """Write a summary of the following, please also identify the main theme:

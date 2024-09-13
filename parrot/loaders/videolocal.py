@@ -81,9 +81,9 @@ class VideoLocalLoader(BaseVideoLoader):
         if transcript:
             # first: extract summary, saving summary as a document:
             summary = self.get_summary_from_text(transcript)
-            self.saving_file(summary_path, summary)
+            self.saving_file(summary_path, summary.encode('utf-8'))
             # second: saving transcript to a file:
-            self.saving_file(transcript_path, transcript)
+            self.saving_file(transcript_path, transcript.encode('utf-8'))
             # Split transcript into chunks
             print('HERE >> ', transcript)
             print('SUMMARY > ', summary)
