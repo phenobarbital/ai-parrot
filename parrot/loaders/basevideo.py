@@ -3,6 +3,7 @@ from typing import Any, Union, List
 from abc import abstractmethod
 from pathlib import Path
 from moviepy.editor import VideoFileClip
+from pydub import AudioSegment
 from transformers import (
     pipeline,
     AutoModelForSeq2SeqLM,
@@ -193,7 +194,13 @@ class BaseVideoLoader(AbstractLoader):
             print('ERROR in summarization:', e)
             return ""
 
-    def extract_audio(self, video_path, audio_path):
+    def extract_audio(
+        self,
+        video_path,
+        audio_path,
+        compress_speed: bool = False,
+        speed_factor: float = 1.5
+    ):
         """
         Extracts the audio from a video file and saves it as an audio file.
 
@@ -211,6 +218,16 @@ class BaseVideoLoader(AbstractLoader):
         audio_clip.write_audiofile(str(audio_path))
         audio_clip.close()
         video_clip.close()
+        if compress_speed is True:
+            # Load the audio file
+            audio = AudioSegment.from_file(audio_path)
+            # The playback speed change factor is applied by changing the frame rate
+            sped_up_audio = audio._spawn(audio.raw_data, overrides={
+                "frame_rate": int(audio.frame_rate * speed_factor)
+            })
+            sped_up_audio = sped_up_audio.set_frame_rate(audio.frame_rate)
+            # Export the sped-up audio to a new file
+            sped_up_audio.export(audio_path, format="mp3")
 
     def get_whisper_transcript(self, audio_path: Path, chunk_length: int = 30):
         # Initialize the Whisper parser

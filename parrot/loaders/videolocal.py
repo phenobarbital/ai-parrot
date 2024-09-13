@@ -37,15 +37,22 @@ class VideoLocalLoader(BaseVideoLoader):
         origin: str = '',
         **kwargs
     ):
-        super().__init__(tokenizer, text_splitter, source_type=source_type, **kwargs)
+        super().__init__(
+            tokenizer,
+            text_splitter,
+            source_type=source_type,
+            **kwargs
+        )
+        self.extract_frames: bool = kwargs.pop('extract_frames', False)
+        self.seconds_per_frame: int = kwargs.pop('seconds_per_frame', 1)
+        self.compress_speed: bool = kwargs.pop('compress_speed', False)
         self.path = path
 
     def load_video(self, path: PurePath) -> list:
         metadata = {
-            "url": f"{path.name}",
+            "url": f"{path}",
             "source": f"{path}",
-            "filename": f"{path}",
-            # "index": path.stem,
+            "filename": f"{path.name}",
             "question": '',
             "answer": '',
             'type': 'video_transcript',
@@ -58,10 +65,12 @@ class VideoLocalLoader(BaseVideoLoader):
             }
         }
         documents = []
-        transcript_path = path.with_suffix('.vtt')
+        transcript_path = path.with_suffix('.txt')
+        vtt_path = path.with_suffix('.vtt')
+        summary_path = path.with_suffix('.summary')
         audio_path = path.with_suffix('.mp3')
         # second: extract audio from File
-        self.extract_audio(path, audio_path)
+        self.extract_audio(path, audio_path, self.compress_speed)
         # get the Whisper parser
         transcript_whisper = self.get_whisper_transcript(audio_path)
         if transcript_whisper:
@@ -70,9 +79,16 @@ class VideoLocalLoader(BaseVideoLoader):
             transcript = ''
         # Summarize the transcript
         if transcript:
-            # Split transcript into chunks
-            transcript_chunks = split_text(transcript, 32767)
+            # first: extract summary, saving summary as a document:
             summary = self.get_summary_from_text(transcript)
+            self.saving_file(summary_path, summary)
+            # second: saving transcript to a file:
+            self.saving_file(transcript_path, transcript)
+            # Split transcript into chunks
+            print('HERE >> ', transcript)
+            print('SUMMARY > ', summary)
+            transcript_chunks = split_text(transcript, 32767)
+
             # Create Two Documents, one is for transcript, second is VTT:
             metadata['summary'] = summary
             for chunk in transcript_chunks:
@@ -83,7 +99,7 @@ class VideoLocalLoader(BaseVideoLoader):
                 documents.append(doc)
         if transcript_whisper:
             # VTT version:
-            transcript = self.transcript_to_vtt(transcript_whisper, transcript_path)
+            transcript = self.transcript_to_vtt(transcript_whisper, vtt_path)
             transcript_chunks = split_text(transcript, 65535)
             for chunk in transcript_chunks:
                 doc = Document(
@@ -96,7 +112,6 @@ class VideoLocalLoader(BaseVideoLoader):
             docs = []
             for chunk in dialogs:
                 _meta = {
-                    # "index": f"{path.stem}:{chunk['id']}",
                     "document_meta": {
                         "start": f"{chunk['start_time']}",
                         "end": f"{chunk['end_time']}",

@@ -454,3 +454,14 @@ class AbstractLoader(ABC):
         for url in urls:
             documents += cls.load(url, **kwargs)
         return documents
+
+    def saving_file(self, filename: PurePath, data: Any):
+        """Save data to a file.
+
+        Args:
+            filename (PurePath): The path to the file.
+            data (Any): The data to save.
+        """
+        with open(filename, 'wb') as f:
+            f.write(data)
+            f.flush()

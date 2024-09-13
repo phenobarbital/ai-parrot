@@ -12,7 +12,7 @@ class VideoLoader(BaseVideoLoader):
     """
     _extension = ['.youtube']
     encoding = 'utf-8'
-    chunk_size = 768
+    chunk_size = 2048
 
     def __init__(
         self,
