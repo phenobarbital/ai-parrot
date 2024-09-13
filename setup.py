@@ -224,6 +224,7 @@ setup(
             "XlsxWriter==3.2.0",
             # "xformers==0.0.27.post2",
             "timm==1.0.9",
+            "easyocr==1.7.1"
         ],
         "anthropic": [
             "langchain-anthropic==0.1.11",
