@@ -44,7 +44,7 @@ class TXTLoader(AbstractLoader):
                     page_content=text,
                     metadata={
                         "url": '',
-                        "index": str(path.name),
+                        # "index": str(path.name),
                         "source": str(path),
                         "filename": str(path.name),
                         "summary": '',

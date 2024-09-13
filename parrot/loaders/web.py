@@ -164,7 +164,7 @@ class WebLoader(AbstractLoader):
             )
             metadata = {
                 "source": url,
-                "index": page_title,
+                # "index": page_title,
                 "url": url,
                 "filename": page_title,
                 "question": '',

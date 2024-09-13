@@ -284,7 +284,7 @@ class ExcelLoader(AbstractLoader):
             df = self.unique_columns(df)
             metadata = {
                 "url": '',
-                "index": '',
+                # "index": '',
                 "source": str(path.name),
                 "filename": path.name,
                 "question": '',
@@ -309,7 +309,7 @@ class ExcelLoader(AbstractLoader):
                         idk = row[col]
                         break
                 _data = {
-                    "index": idk,
+                    # "index": idk,
                     "data": rw,
                     "document_meta": {
                         "row_index": idx,

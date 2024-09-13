@@ -58,7 +58,7 @@ class MSWordLoader(AbstractLoader):
                         "url": '',
                         "source": path.name,
                         "filename": path.name,
-                        "index": str(path.name),
+                        # "index": str(path.name),
                         "type": 'document',
                         "question": '',
                         "answer": '',

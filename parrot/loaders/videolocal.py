@@ -45,7 +45,7 @@ class VideoLocalLoader(BaseVideoLoader):
             "url": f"{path.name}",
             "source": f"{path}",
             "filename": f"{path}",
-            "index": path.stem,
+            # "index": path.stem,
             "question": '',
             "answer": '',
             'type': 'video_transcript',
@@ -96,7 +96,7 @@ class VideoLocalLoader(BaseVideoLoader):
             docs = []
             for chunk in dialogs:
                 _meta = {
-                    "index": f"{path.stem}:{chunk['id']}",
+                    # "index": f"{path.stem}:{chunk['id']}",
                     "document_meta": {
                         "start": f"{chunk['start_time']}",
                         "end": f"{chunk['end_time']}",

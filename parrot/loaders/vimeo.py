@@ -13,7 +13,7 @@ class VimeoLoader(YoutubeLoader):
         metadata = {
             "source": url,
             "url": url,
-            "index": url,
+            # "index": url,
             "filename": video_title,
             "question": '',
             "answer": '',
@@ -73,7 +73,7 @@ class VimeoLoader(YoutubeLoader):
                 dialogs = self.transcript_to_blocks(transcript_whisper)
                 for chunk in dialogs:
                     _meta = {
-                        "index": f"{video_title}:{chunk['id']}",
+                        # "index": f"{video_title}:{chunk['id']}",
                         "document_meta": {
                             "start": f"{chunk['start_time']}",
                             "end": f"{chunk['end_time']}",

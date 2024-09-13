@@ -75,7 +75,7 @@ class WebBaseLoader(AbstractLoader):
             metadata = {
                 "url": url,
                 "source": url,
-                "index": "",
+                # "index": "",
                 "filename": '',
                 "type": 'webpage',
                 "question": '',

@@ -28,7 +28,7 @@ class AudioLoader(BaseVideoLoader):
         metadata = {
             "source": f"{path}",
             "url": f"{path.name}",
-            "index": path.stem,
+            # "index": path.stem,
             "filename": f"{path}",
             "question": '',
             "answer": '',
@@ -71,7 +71,7 @@ class AudioLoader(BaseVideoLoader):
             docs = []
             for chunk in dialogs:
                 _meta = {
-                    "index": f"{path.stem}:{chunk['id']}",
+                    # "index": f"{path.stem}:{chunk['id']}",
                     "document_meta": {
                         "start": f"{chunk['start_time']}",
                         "end": f"{chunk['end_time']}",
