@@ -1,5 +1,6 @@
 from typing import Any
 from collections.abc import Callable
+import re
 import math
 from pathlib import PurePath
 from langchain.docstore.document import Document
@@ -8,16 +9,35 @@ from .basevideo import BaseVideoLoader
 
 def split_text(text, max_length):
     """Split text into chunks of a maximum length, ensuring not to break words."""
+    # Split the transcript into paragraphs
+    paragraphs = text.split('\n\n')
     chunks = []
-    while len(text) > max_length:
-        # Find the last space before the max_length
-        split_point = text.rfind(' ', 0, max_length)
-        # If no space found, split at max_length
-        if split_point == -1:
-            split_point = max_length
-        chunks.append(text[:split_point])
-        text = text[split_point:].strip()
-    chunks.append(text)
+    current_chunk = ""
+    for paragraph in paragraphs:
+        # If the paragraph is too large, split it into sentences
+        if len(paragraph) > max_length:
+            # Split paragraph into sentences
+            sentences = re.split(r'(?<=[.!?]) +', paragraph)
+            for sentence in sentences:
+                if len(current_chunk) + len(sentence) + 1 > max_length:
+                    # Save the current chunk and start a new one
+                    chunks.append(current_chunk.strip())
+                    current_chunk = sentence
+                else:
+                    # Add sentence to the current chunk
+                    current_chunk += " " + sentence
+        else:
+            # If adding the paragraph exceeds max size, start a new chunk
+            if len(current_chunk) + len(paragraph) + 2 > max_length:
+                chunks.append(current_chunk.strip())
+                current_chunk = paragraph
+            else:
+                # Add paragraph to the current chunk
+                current_chunk += "\n\n" + paragraph
+    # Add any remaining text to chunks
+    if current_chunk.strip():
+        chunks.append(current_chunk.strip())
+
     return chunks
 
 
@@ -84,27 +104,54 @@ class VideoLocalLoader(BaseVideoLoader):
             self.saving_file(summary_path, summary.encode('utf-8'))
             # second: saving transcript to a file:
             self.saving_file(transcript_path, transcript.encode('utf-8'))
-            # Split transcript into chunks
-            print('HERE >> ', transcript)
-            print('SUMMARY > ', summary)
-            transcript_chunks = split_text(transcript, 32767)
-
-            # Create Two Documents, one is for transcript, second is VTT:
-            metadata['summary'] = summary
-            for chunk in transcript_chunks:
+            # Create Three Documents:
+            # one is for transcript
+            # split document only if size > 65.534
+            if len(transcript) > 65534:
+                # Split transcript into chunks
+                transcript_chunks = split_text(transcript, 32767)
+                for chunk in transcript_chunks:
+                    doc = Document(
+                        page_content=chunk,
+                        metadata=metadata
+                    )
+                    documents.append(doc)
+            else:
                 doc = Document(
-                    page_content=chunk,
+                    page_content=transcript,
                     metadata=metadata
                 )
                 documents.append(doc)
+            # second is Summary
+            if summary:
+                _meta = {
+                    **metadata,
+                    "type": 'video summary'
+                }
+                doc = Document(
+                    page_content=summary,
+                    metadata=_meta
+                )
+            # Third is VTT:
         if transcript_whisper:
             # VTT version:
             transcript = self.transcript_to_vtt(transcript_whisper, vtt_path)
-            transcript_chunks = split_text(transcript, 65535)
-            for chunk in transcript_chunks:
+            _meta = {
+                **metadata,
+                "type": 'video subte vtt'
+            }
+            if len(transcript) > 65535:
+                transcript_chunks = split_text(transcript, 65535)
+                for chunk in transcript_chunks:
+                    doc = Document(
+                        page_content=chunk,
+                        metadata=_meta
+                    )
+                    documents.append(doc)
+            else:
                 doc = Document(
-                    page_content=chunk,
-                    metadata=metadata
+                    page_content=transcript,
+                    metadata=_meta
                 )
                 documents.append(doc)
             # Saving every dialog chunk as a separate document
@@ -112,6 +159,7 @@ class VideoLocalLoader(BaseVideoLoader):
             docs = []
             for chunk in dialogs:
                 _meta = {
+                    "type": "video dialog",
                     "document_meta": {
                         "start": f"{chunk['start_time']}",
                         "end": f"{chunk['end_time']}",
