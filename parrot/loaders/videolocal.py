@@ -66,6 +66,7 @@ class VideoLocalLoader(BaseVideoLoader):
         self.extract_frames: bool = kwargs.pop('extract_frames', False)
         self.seconds_per_frame: int = kwargs.pop('seconds_per_frame', 1)
         self.compress_speed: bool = kwargs.pop('compress_speed', False)
+        self.speed_factor: float = kwargs.pop('speed_factor', 1.5)
         self.path = path
 
     def load_video(self, path: PurePath) -> list:
@@ -90,7 +91,12 @@ class VideoLocalLoader(BaseVideoLoader):
         summary_path = path.with_suffix('.summary')
         audio_path = path.with_suffix('.mp3')
         # second: extract audio from File
-        self.extract_audio(path, audio_path, self.compress_speed)
+        self.extract_audio(
+            path,
+            audio_path,
+            compress_speed=self.compress_speed,
+            speed_factor=self.speed_factor
+        )
         # get the Whisper parser
         transcript_whisper = self.get_whisper_transcript(audio_path)
         if transcript_whisper:
