@@ -158,10 +158,12 @@ class VideoLocalLoader(BaseVideoLoader):
             dialogs = self.transcript_to_blocks(transcript_whisper)
             docs = []
             for chunk in dialogs:
+                start_time = chunk['start_time']
                 _meta = {
+                    "source": f"{path.name}: min. {start_time}",
                     "type": "video dialog",
                     "document_meta": {
-                        "start": f"{chunk['start_time']}",
+                        "start": f"{start_time}",
                         "end": f"{chunk['end_time']}",
                         "id": f"{chunk['id']}",
                         "language": self._language,
