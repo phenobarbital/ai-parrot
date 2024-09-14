@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from typing import Any, Union, List
+from typing import Any, Union, List, Optional
 from abc import abstractmethod
 from pathlib import Path
 from moviepy.editor import VideoFileClip
@@ -196,38 +196,66 @@ class BaseVideoLoader(AbstractLoader):
 
     def extract_audio(
         self,
-        video_path,
-        audio_path,
+        video_path: Path,
+        audio_path: Path,
         compress_speed: bool = False,
+        output_path: Optional[Path] = None,
         speed_factor: float = 1.5
     ):
         """
-        Extracts the audio from a video file and saves it as an audio file.
+        Extracts the audio from a video file and optionally compresses the audio speed.
 
         Args:
             video_path (str): Path to the video file.
             audio_path (str): Path where the extracted audio file will be saved.
+            compress_speed (bool): Whether to compress the audio speed.
+            speed_factor (float): The factor by which to speed up the audio.
         """
+        # Ensure that the paths are valid Path objects
+        video_path = Path(video_path)
+        audio_path = Path(audio_path)
+
+        # Check if the audio file already exists
         if audio_path.exists():
             print(f"Audio already extracted: {audio_path}")
             return
+
+        # Load the video and extract the audio
         video_clip = VideoFileClip(str(video_path))
         audio_clip = video_clip.audio
         if not audio_clip:
+            print("No audio found in video.")
             return
+
+        # Write the extracted audio to the specified path
+        print(f"Extracting audio to: {audio_path}")
         audio_clip.write_audiofile(str(audio_path))
         audio_clip.close()
         video_clip.close()
-        if compress_speed is True:
-            # Load the audio file
+
+        # Optionally compress the audio speed
+        if compress_speed:
+            print(f"Compressing audio speed by factor: {speed_factor}")
+
+            # Load the audio file with pydub
             audio = AudioSegment.from_file(audio_path)
-            # The playback speed change factor is applied by changing the frame rate
+
+            # Adjust the playback speed by modifying the frame rate
             sped_up_audio = audio._spawn(audio.raw_data, overrides={
                 "frame_rate": int(audio.frame_rate * speed_factor)
             })
+
+            # Restore the original frame rate to maintain proper playback speed
             sped_up_audio = sped_up_audio.set_frame_rate(audio.frame_rate)
-            # Export the sped-up audio to a new file
-            sped_up_audio.export(audio_path, format="mp3")
+
+            # Overwrite the original file with the sped-up version
+            if not output_path:
+                output_path = audio_path
+            sped_up_audio.export(output_path, format="mp3")
+            print(f"Compressed audio saved to: {audio_path}")
+        else:
+            print(f"Audio extracted: {audio_path}")
+
 
     def get_whisper_transcript(self, audio_path: Path, chunk_length: int = 30):
         # Initialize the Whisper parser
