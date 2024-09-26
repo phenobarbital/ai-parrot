@@ -15,7 +15,7 @@ install:
 	# pip install --upgrade querysource[analytics]
 	pip install --upgrade querysource
 	# and Parrot:
-	# pip install -e .[google,milvus,groq,analytics]
+	pip install -e .[google,milvus,groq]
 
 develop:
 	# Install Parrot
@@ -29,6 +29,9 @@ develop:
 	pip install --upgrade navigator-auth
 	# QS requirements
 	pip install --upgrade querysource
+	python -m pip install -Ur requirements/requirements-dev.txt
+
+setup:
 	python -m pip install -Ur requirements/requirements-dev.txt
 
 dev:

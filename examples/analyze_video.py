@@ -1,11 +1,11 @@
 import asyncio
+from pathlib import Path
+from pprint import pprint
 from navconfig import BASE_DIR
 from parrot.llms.vertex import VertexLLM
 from parrot.loaders.videolocal import (
     VideoLocalLoader
 )
-
-
 
 
 async def process_video(doc):
@@ -20,14 +20,20 @@ async def process_video(doc):
         doc,
         source_type=f"Video {doc.name}",
         llm=llm.get_llm(),
-        language="en"
+        language="en",
+        compress_speed=True
     )
     docs = loader.extract()
-    print('DOCS > ', docs)
+    pprint(docs)
+    print('========')
+    pprint(docs[0])
 
 
 if __name__ == '__main__':
-    doc = BASE_DIR.joinpath('documents', 'video_2024-09-11_19-43-58.mp4')
+    doc = Path(
+        '/home/jesuslara/proyectos/navigator-ai'
+    ).joinpath('docs', 'askbuddy', 'videos', 'MSO Rally Call - Sep 6 2024.mp4')
+    # doc = BASE_DIR.joinpath('documents', 'video_2024-09-11_19-43-58.mp4')
     asyncio.run(
         process_video(doc)
     )
