@@ -190,3 +190,53 @@ class YoutubeLoader(VideoLoader):
                     metadata=metadata
                 )
                 return [doc]
+
+    def extract_video(
+        self,
+        url: str
+    ) -> list:
+        # first: load video metadata:
+        video_info = self.get_video_info(url)
+        # first: download video
+        file_path = self.download_video(url, self._video_path)
+        audio_path = file_path.with_suffix('.mp3')
+        transcript_path = file_path.with_suffix('.txt')
+        vtt_path = file_path.with_suffix('.vtt')
+        summary_path = file_path.with_suffix('.summary')
+        # second: extract audio
+        self.extract_audio(file_path, audio_path)
+        transcript_whisper = self.get_whisper_transcript(audio_path)
+        transcript = transcript_whisper['text']
+        # Summarize the transcript
+        try:
+            summary = self.get_summary_from_text(transcript)
+            self.saving_file(summary_path, summary.encode('utf-8'))
+        except Exception:
+            summary = ''
+        # Create Meta of Video Document
+        metadata = {
+            "url": f"{url}",
+            "source": f"{url}",
+            "source_type": self._source_type,
+            'type': 'video_transcript',
+            "summary": f"{summary!s}",
+            "video_info": video_info
+        }
+        # VTT version:
+        transcript = self.transcript_to_vtt(transcript_whisper, vtt_path)
+        # second: saving transcript to a file:
+        self.saving_file(transcript_path, transcript.encode('utf-8'))
+        metadata['transcript'] = transcript_path
+        metadata["summary"] = summary
+        metadata['summary_file'] = summary_path
+        metadata["vtt"] = vtt_path
+        metadata['audio'] = audio_path
+        return metadata
+
+    def extract(self) -> list:
+        # Adding also Translation to other language.
+        documents = []
+        for url in self.urls:
+            doc = self.extract_video(url)
+            documents.append(doc)
+        return documents
