@@ -199,15 +199,58 @@ class VideoLocalLoader(BaseVideoLoader):
                         documents.extend(self.load_video(item))
         return self.split_documents(documents)
 
+    def extract_video(self, path: PurePath) -> list:
+        metadata = {
+            "url": f"{path}",
+            "source": f"{path}",
+            "filename": f"{path.name}",
+            'type': 'video_transcript',
+            "source_type": self._source_type,
+            "summary": None,
+            "vtt": None
+        }
+        transcript_path = path.with_suffix('.txt')
+        vtt_path = path.with_suffix('.vtt')
+        summary_path = path.with_suffix('.summary')
+        audio_path = path.with_suffix('.mp3')
+        # second: extract audio from File
+        self.extract_audio(
+            path,
+            audio_path,
+            compress_speed=self.compress_speed,
+            speed_factor=self.speed_factor
+        )
+        # get the Whisper parser
+        transcript_whisper = self.get_whisper_transcript(audio_path)
+        if transcript_whisper:
+            transcript = transcript_whisper['text']
+        else:
+            transcript = ''
+        # Summarize the transcript
+        if transcript:
+            # first: extract summary, saving summary as a document:
+            summary = self.get_summary_from_text(transcript)
+            self.saving_file(summary_path, summary.encode('utf-8'))
+            # second: saving transcript to a file:
+            self.saving_file(transcript_path, transcript.encode('utf-8'))
+            metadata["summary"] = summary
+            metadata["vtt"] = vtt_path
+            # Third is VTT:
+        if transcript_whisper:
+            # VTT version:
+            transcript = self.transcript_to_vtt(transcript_whisper, vtt_path)
+        return metadata
+
     def extract(self) -> list:
+        # Adding also Translation to other language.
         documents = []
         if self.path.is_file():
-            docs = self.load_video(self.path)
+            docs = self.extract_video(self.path)
             documents.extend(docs)
         if self.path.is_dir():
             # iterate over the files in the directory
             for ext in self._extension:
                 for item in self.path.glob(f'*{ext}'):
                     if set(item.parts).isdisjoint(self.skip_directories):
-                        documents.extend(self.load_video(item))
+                        documents.extend(self.extract_video(item))
         return documents
