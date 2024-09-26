@@ -14,6 +14,7 @@ from ..tools import (
     OpenWeatherMapTool,
     StackExchangeTool,
 )
+from ..tools.execute import ExecutablePythonREPLTool
 
 
 class CopilotAgent(BaseAgent):
@@ -35,12 +36,17 @@ class CopilotAgent(BaseAgent):
                     name='python_repl_ast',
                     globals={},
                     locals={}
+                ),
+                ExecutablePythonREPLTool(
+                    name='executable_python_repl_ast',
+                    globals={},
+                    locals={}
                 )
             ] + list(tools)
         self.prompt = self.get_prompt(
             self.prompt_template
         )
-        # print('PROMPT > ', self.prompt)
+        print('PROMPT > ', self.prompt)
 
     @classmethod
     def default_tools(cls) -> list:

@@ -12,6 +12,8 @@ logging.getLogger(name='h5py').setLevel(logging.INFO)
 logging.getLogger(name='tensorflow').setLevel(logging.INFO)
 logging.getLogger(name='selenium.webdriver').setLevel(logging.WARNING)
 logging.getLogger(name='selenium').setLevel(logging.INFO)
+logging.getLogger(name='matplotlib').setLevel(logging.WARNING)
+logging.getLogger(name='PIL').setLevel(logging.INFO)
 
 
 # Static directory

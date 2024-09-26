@@ -74,6 +74,7 @@ class AbstractLoader(ABC):
         self,
         tokenizer: Union[str, Callable] = None,
         text_splitter: Union[str, Callable] = None,
+        translation: Optional[str] = None,
         source_type: str = 'file',
         **kwargs
     ):
@@ -114,6 +115,15 @@ class AbstractLoader(ABC):
             )
         # JSON encoder:
         self._encoder = JSONContent()
+        # Traslation
+        self._translation = translation
+        self.translator = None
+        if self._translation:
+            mdl = kwargs.get(
+                'translation_model',
+                f"Helsinki-NLP/opus-mt-en-{self._translation}"
+            )
+            self.translator = self.get_translator(mdl)
 
 
     def __enter__(self):
@@ -158,6 +168,27 @@ class AbstractLoader(ABC):
             unpad_inputs=True,
             use_memory_efficient_attention=True,
         ).to(self._device)
+
+    def get_translator(self, model_name: str = 'Helsinki-NLP/opus-mt-en-es'):
+        if not self._translation:
+            return None
+        trans_model = AutoModelForSeq2SeqLM.from_pretrained(
+            model_name,
+            device_map="auto",
+            torch_dtype=torch.bfloat16,
+            trust_remote_code=True
+        )
+        trans_tokenizer = AutoTokenizer.from_pretrained(model_name)
+        translator = pipeline(
+            "translation",
+            model=trans_model,
+            tokenizer=trans_tokenizer,
+            batch_size=True,
+            max_new_tokens=500,
+            min_new_tokens=300,
+            use_fast=True
+        )
+        return translator
 
     def get_summarization_model(self, model_name: str = 'facebook/bart-large-cnn'):
         if self._no_summarization is True:

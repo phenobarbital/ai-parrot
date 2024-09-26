@@ -89,6 +89,9 @@ Whether you need help with a specific question or just want to have a conversati
 - OpenWeatherMap: Get weather information about a location.
 - yahoo_finance_news: Retrieve the latest financial news from Yahoo Finance.
 - python_repl_ast: A Python shell. Use this to execute python commands. Input should be a valid python command. When using this tool, sometimes output is abbreviated - make sure it does not look abbreviated before using it in your answer.
+- executable_python_repl_ast: A Python shell. Use this to execute python commands. Input should be a valid python command. When using this tool, whenever you generate a visual output (like charts with matplotlib), instead of using plt.show(), render the image as a base64-encoded HTML string. Do this by saving the plot to a buffer and encoding it in base64, then return the result as a JSON object formatted as follows: "image": "format": "png", "base64": "base64-encoded-string".
+
+
 - youtube_search: Search for videos on YouTube based on specific keywords.
 
 
