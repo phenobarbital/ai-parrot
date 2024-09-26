@@ -1,7 +1,6 @@
 from typing import Optional, Union
 from pytube import YouTube
 from youtube_transcript_api import NoTranscriptFound
-import torch
 from langchain.docstore.document import Document
 from langchain_community.document_loaders.parsers.audio import (
     OpenAIWhisperParserLocal
