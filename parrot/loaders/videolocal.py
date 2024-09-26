@@ -206,6 +206,7 @@ class VideoLocalLoader(BaseVideoLoader):
             "filename": f"{path.name}",
             'type': 'video_transcript',
             "source_type": self._source_type,
+            "transcript": None,
             "summary": None,
             "vtt": None
         }
@@ -233,7 +234,9 @@ class VideoLocalLoader(BaseVideoLoader):
             self.saving_file(summary_path, summary.encode('utf-8'))
             # second: saving transcript to a file:
             self.saving_file(transcript_path, transcript.encode('utf-8'))
+            metadata['transcript'] = transcript_path
             metadata["summary"] = summary
+            metadata['summary_file'] = summary_path
             metadata["vtt"] = vtt_path
             # Third is VTT:
         if transcript_whisper:
@@ -245,12 +248,12 @@ class VideoLocalLoader(BaseVideoLoader):
         # Adding also Translation to other language.
         documents = []
         if self.path.is_file():
-            docs = self.extract_video(self.path)
-            documents.extend(docs)
-        if self.path.is_dir():
+            doc = self.extract_video(self.path)
+            documents.append(doc)
+        elif self.path.is_dir():
             # iterate over the files in the directory
             for ext in self._extension:
                 for item in self.path.glob(f'*{ext}'):
                     if set(item.parts).isdisjoint(self.skip_directories):
-                        documents.extend(self.extract_video(item))
+                        documents.append(self.extract_video(item))
         return documents

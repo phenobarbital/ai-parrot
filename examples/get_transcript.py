@@ -25,6 +25,6 @@ video_loader = VideoLocalLoader(
 )
 try:
     video = video_loader.extract()
-    print(video)
+    print('Result > ', video)
 except Exception as e:
     print(e)
