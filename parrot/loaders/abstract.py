@@ -74,7 +74,6 @@ class AbstractLoader(ABC):
         self,
         tokenizer: Union[str, Callable] = None,
         text_splitter: Union[str, Callable] = None,
-        translation: Optional[str] = None,
         source_type: str = 'file',
         **kwargs
     ):
@@ -116,7 +115,7 @@ class AbstractLoader(ABC):
         # JSON encoder:
         self._encoder = JSONContent()
         # Traslation
-        self._translation = translation
+        self._translation = kwargs.get('translation', None)
         self.translator = None
         if self._translation:
             mdl = kwargs.get(
