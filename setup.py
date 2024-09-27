@@ -130,7 +130,8 @@ setup(
             "notebooks",
             "resources",
             "static",
-            "templates"
+            "templates",
+            "videos"  # Exclude the 'videos' folder
         ]
     ),
     package_data={"parrot": ["py.typed"]},
