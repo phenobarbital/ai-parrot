@@ -173,8 +173,8 @@ class AbstractLoader(ABC):
             return None
         trans_model = AutoModelForSeq2SeqLM.from_pretrained(
             model_name,
-            device_map="auto",
-            torch_dtype=torch.bfloat16,
+            # device_map="auto",
+            # torch_dtype=torch.bfloat16,
             trust_remote_code=True
         )
         trans_tokenizer = AutoTokenizer.from_pretrained(model_name)
