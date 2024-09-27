@@ -1,8 +1,7 @@
 include LICENSE
 include README.md
 global-include *.typed
-recursive-include templates *
-recursive-include static *
+recursive-include parrot *
 # Exclude directories
 prune videos
 prune examples
@@ -12,6 +11,7 @@ prune etc
 prune env
 prune resources
 prune dist
+
 
 # Optionally, you can also specify any other unwanted directories
 prune tests
