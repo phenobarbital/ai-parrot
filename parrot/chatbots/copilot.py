@@ -4,11 +4,11 @@ from .base import BaseAgent
 from ..tools import (
     ZipcodeAPIToolkit,
     WikipediaTool,
-    WikidataTool,
+    # WikidataTool,
     GoogleSearchTool,
     GoogleLocationFinder,
     BingSearchTool,
-    AskNewsTool,
+    # AskNewsTool,
     DuckDuckGoSearchTool,
     YouTubeSearchTool,
     OpenWeatherMapTool,
@@ -16,6 +16,31 @@ from ..tools import (
 )
 from ..tools.execute import ExecutablePythonREPLTool
 
+# ZipCode API Toolkit
+zpt = ZipcodeAPIToolkit()
+zpt_tools = zpt.get_tools()
+
+wk1 = WikipediaTool()
+# wk12 = WikidataTool()
+
+g1 = GoogleSearchTool()
+g2 = GoogleLocationFinder()
+
+b = BingSearchTool()
+d = DuckDuckGoSearchTool()
+# ask = AskNewsTool()
+
+yt = YouTubeSearchTool()
+stackexchange = StackExchangeTool()
+weather = OpenWeatherMapTool()
+
+tooling = [
+    wk1,
+    g1, g2,
+    b, d, yt,
+    weather,
+    stackexchange
+] + zpt_tools
 
 class CopilotAgent(BaseAgent):
     """CopilotAgent Agent.
@@ -31,6 +56,8 @@ class CopilotAgent(BaseAgent):
         **kwargs
     ):
         super().__init__(name, llm, tools, prompt_template, **kwargs)
+        if not tools:
+            tools = tooling
         self.tools = [
                 PythonAstREPLTool(
                     name='python_repl_ast',
