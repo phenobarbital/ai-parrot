@@ -26,7 +26,6 @@ async def process_video(doc):
     docs = loader.extract()
     pprint(docs)
     print('========')
-    pprint(docs[0])
 
 
 if __name__ == '__main__':
