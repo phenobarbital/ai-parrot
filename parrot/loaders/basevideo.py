@@ -39,7 +39,7 @@ class BaseVideoLoader(AbstractLoader):
 
     def __init__(
         self,
-        urls: List[str],
+        urls: Union[List[str], str],
         tokenizer: Callable[..., Any] = None,
         text_splitter: Callable[..., Any] = None,
         source_type: str = 'video',
@@ -48,7 +48,10 @@ class BaseVideoLoader(AbstractLoader):
         **kwargs
     ):
         super().__init__(tokenizer, text_splitter, source_type, **kwargs)
-        self.urls = urls
+        if isinstance(urls, str):
+            self.urls = [urls]
+        else:
+            self.urls = urls
         self._task = kwargs.get('task', "automatic-speech-recognition")
         # Topics:
         self.topics: list = kwargs.get('topics', [])

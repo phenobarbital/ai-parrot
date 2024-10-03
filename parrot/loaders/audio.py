@@ -24,6 +24,9 @@ class AudioLoader(BaseVideoLoader):
         super().__init__(tokenizer, text_splitter, source_type=source_type, **kwargs)
         self.path = path
 
+    def load_video(self, path):
+        return
+
     def load_audio(self, path: PurePath) -> list:
         metadata = {
             "source": f"{path}",
@@ -90,6 +93,38 @@ class AudioLoader(BaseVideoLoader):
             documents.extend(docs)
         return documents
 
+    def extract_audio(self, path: PurePath) -> list:
+        metadata = {
+            "source": f"{path}",
+            "url": f"{path.name}",
+            # "index": path.stem,
+            "filename": f"{path}",
+            'type': 'audio_transcript',
+            "source_type": self._source_type,
+            "document_meta": {
+                "language": self._language,
+            }
+        }
+        vtt_path = path.with_suffix('.vtt')
+        transcript_path = path.with_suffix('.txt')
+        summary_path = path.with_suffix('.summary')
+        # get the Whisper parser
+        transcript_whisper = self.get_whisper_transcript(path)
+        if transcript_whisper:
+            transcript = transcript_whisper['text']
+        else:
+            transcript = ''
+        # Summarize the transcript
+        self.saving_file(transcript_path, transcript.encode('utf-8'))
+        if transcript:
+            summary = self.get_summary_from_text(transcript)
+            # Create Two Documents, one is for transcript, second is VTT:
+            metadata['summary'] = summary
+            self.saving_file(summary_path, summary.encode('utf-8'))
+            # VTT version:
+            transcript = self.transcript_to_vtt(transcript_whisper, vtt_path)
+        return metadata
+
     def load(self) -> list:
         documents = []
         if self.path.is_file():
@@ -104,3 +139,17 @@ class AudioLoader(BaseVideoLoader):
                             self.load_audio(item)
                         )
         return self.split_documents(documents)
+
+    def extract(self) -> list:
+        # Adding also Translation to other language.
+        documents = []
+        if self.path.is_file():
+            doc = self.extract_audio(self.path)
+            documents.append(doc)
+        elif self.path.is_dir():
+            # iterate over the files in the directory
+            for ext in self._extension:
+                for item in self.path.glob(f'*{ext}'):
+                    if set(item.parts).isdisjoint(self.skip_directories):
+                        documents.append(self.extract_audio(item))
+        return documents
