@@ -238,6 +238,8 @@ class VideoLocalLoader(BaseVideoLoader):
             metadata["summary"] = summary
             metadata['summary_file'] = summary_path
             metadata["vtt"] = vtt_path
+            metadata['audio'] = audio_path
+            metadata['video'] = path
             # Third is VTT:
         if transcript_whisper:
             # VTT version:

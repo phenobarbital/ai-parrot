@@ -148,6 +148,11 @@ class VimeoLoader(YoutubeLoader):
                 self.saving_file(summary_path, summary.encode('utf-8'))
         # VTT version:
         transcript = self.transcript_to_vtt(transcript_whisper, vtt_path)
+        metadata['transcript'] = transcript_path
+        metadata['summary_file'] = summary_path
+        metadata["vtt"] = vtt_path
+        metadata['audio'] = audio_path
+        metadata['video'] = file_path
         return metadata
 
     def extract(self) -> list:
