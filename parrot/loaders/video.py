@@ -42,14 +42,36 @@ class VideoLoader(BaseVideoLoader):
             video_url (str): The URL of the video to download.
             output_path (str): The directory where the video will be saved.
         """
-        command = [
-            "yt-dlp",
-            "--get-filename",
-            url
-        ]
         try:
+            command = [
+                "yt-dlp",
+                "--get-filename",
+                "-o",
+                str(path / "%(title)s.%(ext)s"),
+                url
+            ]
             result = subprocess.run(command, check=True, stdout=subprocess.PIPE, text=True)
+        except Exception as e:
+            try:
+                command = [
+                    "yt-dlp",
+                    "--get-filename",
+                    url
+                ]
+                result = subprocess.run(
+                    command,
+                    check=True,
+                    stdout=subprocess.PIPE,
+                    text=True
+                )
+            except Exception as e:
+                raise ValueError(
+                    f"Unable to Download Video: {e}"
+                )
+        try:
+            print('RESULT > ', result)
             filename = result.stdout.strip()  # Remove any trailing newline characters
+            print('FILENAME > ', filename)
             file_path = path.joinpath(filename)
             if file_path.exists():
                 print(f"Video already downloaded: {filename}")
@@ -60,7 +82,7 @@ class VideoLoader(BaseVideoLoader):
                 "yt-dlp",
                 url,
                 "-o",
-                str(file_path)
+                str(path / "%(title)s.%(ext)s")
             ]
             subprocess.run(command, check=True)
             return file_path
