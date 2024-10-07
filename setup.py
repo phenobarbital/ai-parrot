@@ -234,7 +234,7 @@ setup(
             "easyocr==1.7.1"
         ],
         "anthropic": [
-            "langchain-anthropic==0.1.11",
+            "langchain-anthropic==0.2.3",
             "anthropic==0.25.2",
         ],
         "openai": [
