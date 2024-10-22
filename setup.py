@@ -198,7 +198,7 @@ setup(
     extras_require={
         "basic_loaders": [
             "youtube-transcript-api==0.6.2",
-            "pymupdf==1.24.4",
+            "pymupdf==1.24.12",
             "pymupdf4llm==0.0.1",
             "pdf4llm==0.0.6",
             "pytube==15.0.0",
