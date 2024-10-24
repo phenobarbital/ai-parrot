@@ -110,7 +110,8 @@ class ChatbotModel(Model):
         database JSONB DEFAULT '{"vector_database": "MilvusStore", "database": "TROC", "collection_name": "troc_information"}'::JSONB,
         created_at TIMESTAMPTZ DEFAULT NOW(),
         created_by INTEGER,
-        updated_at TIMESTAMPTZ DEFAULT NOW()
+        updated_at TIMESTAMPTZ DEFAULT NOW(),
+        disclaimer VARCHAR,        
     );
     """
     chatbot_id: uuid.UUID = Field(primary_key=True, required=False, default_factory=uuid.uuid4)
@@ -167,6 +168,8 @@ class ChatbotModel(Model):
     created_at: datetime = Field(required=False, default=datetime.now())
     created_by: int = Field(required=False)
     updated_at: datetime = Field(required=False, default=datetime.now())
+    disclaimer: str = Field(required=False)
+
 
     def __post_init__(self) -> None:
         super(ChatbotModel, self).__post_init__()
