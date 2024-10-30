@@ -8,18 +8,10 @@ from pathlib import Path, PurePath
 import uuid
 from aiohttp import web
 import torch
-from transformers import (
-    AutoModel,
-    AutoConfig,
-    AutoTokenizer,
-)
 # Langchain
 from langchain.docstore.document import Document
 from langchain.memory import (
     ConversationBufferMemory
-)
-from langchain.text_splitter import (
-    RecursiveCharacterTextSplitter
 )
 from langchain_community.chat_message_histories import (
     RedisChatMessageHistory
@@ -29,19 +21,14 @@ from navconfig import BASE_DIR
 from navconfig.exceptions import ConfigError  # pylint: disable=E0611
 from navconfig.logging import logging
 from asyncdb.exceptions import NoDataFound
-
 ## LLM configuration
 from ..llms import get_llm, AbstractLLM
-
 ## Vector Database configuration:
 from ..stores import get_vectordb
-
 from ..utils import SafeDict, parse_toml_config
 from .retrievals import RetrievalManager
 from ..conf import (
     EMBEDDING_DEVICE,
-    MAX_VRAM_AVAILABLE,
-    RAM_AVAILABLE,
     default_dsn,
     REDIS_HISTORY_URL,
     EMBEDDING_DEFAULT_MODEL
@@ -50,22 +37,24 @@ from ..interfaces import DBInterface
 from ..models import ChatbotModel
 
 
-class AbstractChatbot(ABC, DBInterface):
-    """Represents an Chatbot in Navigator.
+logging.getLogger(name='h5py._conv').setLevel(logging.INFO)
+
+
+class AbstractChatbot(DBInterface, ABC):
+    """Represents an Bot (Chatbot, Agent) in Navigator.
 
         Each Chatbot has a name, a role, a goal, a backstory,
         and an optional language model (llm).
     """
 
     template_prompt: str = (
-        "You are {name}, an expert AI assistant and {role} Working at {company}.\n\n"
+        "You are {name}, You are a helpful and professional AI assistant.\n\n"
         "Your primary function is to {goal}\n"
-        "Use the provided context of the documents you have processed or extracted from other provided tools or sources to provide informative, detailed and accurate responses.\n"
+        "Use the information from the provided knowledge base and provided context of documents to answer users' questions accurately and concisely\n"
+        "Focus on answering the question directly but detailed. Do not include an introduction or greeting in your response.\n\n"
         "I am here to help with {role}.\n"
         "**Backstory:**\n"
         "{backstory}.\n\n"
-        "Focus on answering the question directly but detailed. Do not include an introduction or greeting in your response.\n\n"
-        "{company_information}\n\n"
         "Here is a brief summary of relevant information:\n"
         "Context: {context}\n\n"
         "Given this information, please provide answers to the following question adding detailed and useful insights:\n\n"
@@ -73,7 +62,6 @@ class AbstractChatbot(ABC, DBInterface):
         "**Human Question:** {question}\n"
         "Assistant Answer:\n\n"
         "{rationale}\n"
-        "You are a fluent speaker, you can talk and respond fluently in English and Spanish, and you must answer in the same language as the user's question. If the user's language is not English, you should translate your response into their language.\n"
     )
 
     def _get_default_attr(self, key, default: Any = None, **kwargs):
@@ -100,7 +88,7 @@ class AbstractChatbot(ABC, DBInterface):
             'name', 'NAV', **kwargs
         )
         ##  Logging:
-        self.logger = logging.getLogger(f'{self.name}.Chatbot')
+        self.logger = logging.getLogger(f'{self.name}.Bot')
         self.description = self._get_default_attr(
             'description', 'Navigator Chatbot', **kwargs
         )
@@ -127,9 +115,6 @@ class AbstractChatbot(ABC, DBInterface):
         # Other Configuration
         self.confidence_threshold: float = kwargs.get('threshold', 0.5)
         self.context = kwargs.pop('context', '')
-
-        # Company Information:
-        self.company_information: dict = kwargs.pop('company_information', {})
 
         # Pre-Instructions:
         self.pre_instructions: list = kwargs.get(
@@ -161,32 +146,21 @@ class AbstractChatbot(ABC, DBInterface):
         self.dimension: int = int(kwargs.get('dimension', 768))
         self._database: dict = kwargs.get('database', {})
         self._store: Callable = None
+
         # Embedding Model Name
-        self.use_bge: bool = bool(
-            kwargs.get('use_bge', 'False')
+        self.embedding_model = kwargs.get(
+            'embedding_model', {}
         )
-        self.use_fastembed: bool = bool(
-            kwargs.get('use_fastembed', 'False')
-        )
-        self.embedding_model_name = kwargs.get(
-            'embedding_model_name', None
-        )
+        if not self.embedding_model:
+            self.embedding_model = {
+                'model': EMBEDDING_DEFAULT_MODEL,
+                'tokenizer': None
+            }
         # embedding object:
         self.embeddings = kwargs.get('embeddings', None)
-        self.tokenizer_model_name = kwargs.get(
-            'tokenizer', None
-        )
-        self.summarization_model = kwargs.get(
-            'summarization_model',
-            "facebook/bart-large-cnn"
-        )
         self.rag_model = kwargs.get(
             'rag_model',
             "rlm/rag-prompt-llama"
-        )
-        self._text_splitter_model = kwargs.get(
-            'text_splitter',
-            'mixedbread-ai/mxbai-embed-large-v1'
         )
         # Definition of LLM
         # Overrriding LLM object
@@ -194,41 +168,24 @@ class AbstractChatbot(ABC, DBInterface):
         # LLM base Object:
         self._llm: Callable = None
 
-        # Max VRAM usage:
-        self._max_vram = int(
-            kwargs.get('max_vram', MAX_VRAM_AVAILABLE)
-        )
-
     def get_llm(self):
         return self._llm_obj
 
     def __repr__(self):
-        return f"<Chatbot.{self.__class__.__name__}:{self.name}>"
-
-    # Database:
-    @property
-    def store(self):
-        if not self._store.connected:
-            self._store.connect()
-        return self._store
+        return f"<Bot.{self.__class__.__name__}:{self.name}>"
 
     def default_rationale(self) -> str:
         # TODO: read rationale from a file
         return (
-            "I am a language model trained by Google.\n"
-            "I am designed to provide helpful information to users."
-            "Remember to maintain a professional tone."
-            "If I cannot find relevant information in the documents,"
-            "I will indicate this and suggest alternative avenues for the user to find an answer."
+            "When responding to user queries, ensure that you provide accurate and up-to-date information.\n"
+            "Be polite and clear in your explanations, "
+            "ensuring that responses are based only on verified information from owned sources. "
+            "If you are unsure, let the user know and avoid making assumptions. Maintain a professional tone in all responses.\n"
         )
 
     def default_backstory(self) -> str:
         return (
-            "help with Human Resources related queries or knowledge-based questions about T-ROC Global.\n"
-            "You can ask me about the company's products and services, the company's culture, the company's clients.\n"
-            "You have the capability to read and understand various Human Resources documents, "
-            "such as employee handbooks, policy documents, onboarding materials, company's website, and more.\n"
-            "I can also provide information about the company's policies and procedures, benefits, and other HR-related topics."
+            "I am an AI assistant designed to help you find information.\n"
         )
 
     async def configure(self, app = None) -> None:
@@ -362,28 +319,19 @@ class AbstractChatbot(ABC, DBInterface):
         self.goal = self._from_db(bot, 'goal', default=self.goal)
         self.rationale = self._from_db(bot, 'rationale', default=self.rationale)
         self.backstory = self._from_db(bot, 'backstory', default=self.backstory)
-        # company information:
-        self.company_information = self._from_db(
-            bot, 'company_information', default=self.company_information
-        )
         # LLM Configuration:
         llm = self._from_db(bot, 'llm', default='VertexLLM')
         llm_config = self._from_db(bot, 'llm_config', default={})
         # Configuration of LLM:
         self._configure_llm(llm, llm_config)
         # Other models:
-        self.embedding_model_name = self._from_db(
+        embedding_model_name = self._from_db(
             bot, 'embedding_name', None
         )
-        self.tokenizer_model_name = self._from_db(
-            bot, 'tokenizer', None
-        )
-        self.summarization_model = self._from_db(
-            bot, 'summarize_model', "facebook/bart-large-cnn"
-        )
-        self.classification_model = self._from_db(
-            bot, 'classification_model', None
-        )
+        self.embedding_model = {
+            'model': embedding_model_name,
+            'model_type': 'transformers'
+        }
         # Database Configuration:
         db_config = bot.database
         vector_db = db_config.pop('vector_database')
@@ -412,11 +360,6 @@ class AbstractChatbot(ABC, DBInterface):
         self.goal = basic.get('goal', self.goal)
         self.rationale = basic.get('rationale', self.rationale)
         self.backstory = basic.get('backstory', self.backstory)
-        # Company Information:
-        self.company_information = basic.get(
-            'company_information',
-            self.company_information
-        )
         # Model Information:
         llminfo = file_config.get('llm')
         llm = llminfo.get('llm', 'VertexLLM')
@@ -426,25 +369,14 @@ class AbstractChatbot(ABC, DBInterface):
 
         # Other models:
         models = file_config.get('models', {})
-        if not self.embedding_model_name:
-            self.embedding_model_name = models.get(
-                'embedding', EMBEDDING_DEFAULT_MODEL
-            )
-        if not self.tokenizer_model_name:
-            self.tokenizer_model_name = models.get('tokenizer')
-        if not self.embedding_model_name:
-            # Getting the Embedding Model from the LLM
-            self.embeddings = self._llm_obj.get_embedding()
-        self.use_bge = models.get('use_bge', False)
-        self.use_fastembed = models.get('use_fastembed', False)
-        self.summarization_model = models.get(
-            'summarize_model',
-            "facebook/bart-large-cnn"
+        embedding_model_name = models.get(
+            'embedding',
+            EMBEDDING_DEFAULT_MODEL
         )
-        self.classification_model = models.get(
-            'classification_model',
-            None
-        )
+        self.embedding_model = {
+            'model': embedding_model_name,
+            'model_type': 'transformers'
+        }
         # pre-instructions
         instructions = file_config.get('pre-instructions')
         if instructions:
@@ -494,15 +426,13 @@ class AbstractChatbot(ABC, DBInterface):
         """Create the Vector Store Configuration."""
         self.collection_name = config.get('collection_name')
         if not self.embeddings:
-            embed = self.embedding_model_name
+            embed = self.embedding_model
         else:
             embed = self.embeddings
         # TODO: add dynamic configuration of VectorStore
         self._store = get_vectordb(
             vector_db,
             embeddings=embed,
-            use_bge=self.use_bge,
-            use_fastembed=self.use_fastembed,
             **config
         )
 
@@ -510,17 +440,17 @@ class AbstractChatbot(ABC, DBInterface):
         # setup the prompt variables:
         for key, val in config.items():
             setattr(self, key, val)
-        if self.company_information:
-            self.template_prompt = self.template_prompt.format_map(
-                SafeDict(
-                    company_information=(
-                        "For further inquiries or detailed information, you can contact us at:\n"
-                        "- Contact Information: {contact_email}\n"
-                        "- Use our contact form: {contact_form}\n"
-                        "- or Visit our website: {company_website}\n"
-                    )
-                )
-            )
+        # if self.company_information:
+        #     self.template_prompt = self.template_prompt.format_map(
+        #         SafeDict(
+        #             company_information=(
+        #                 "For further inquiries or detailed information, you can contact us at:\n"
+        #                 "- Contact Information: {contact_email}\n"
+        #                 "- Use our contact form: {contact_form}\n"
+        #                 "- or Visit our website: {company_website}\n"
+        #             )
+        #         )
+        #     )
         # Parsing the Template:
         self.template_prompt = self.template_prompt.format_map(
             SafeDict(
@@ -529,11 +459,10 @@ class AbstractChatbot(ABC, DBInterface):
                 goal=self.goal,
                 backstory=self.backstory,
                 rationale=self.rationale,
-                threshold=self.confidence_threshold,
-                **self.company_information
+                threshold=self.confidence_threshold
             )
         )
-        # print('Template Prompt:', self.template_prompt)
+        print('Template Prompt:', self.template_prompt)
 
     @property
     def llm(self):
@@ -557,111 +486,6 @@ class AbstractChatbot(ABC, DBInterface):
         else:
             device = torch.device(EMBEDDING_DEVICE)
         return device
-
-    def get_tokenizer(self, model_name: str, chunk_size: int = 768):
-        return AutoTokenizer.from_pretrained(
-            model_name,
-            chunk_size=chunk_size
-        )
-
-    def get_model(self, model_name: str):
-        device = self._get_device()
-        self._model_config = AutoConfig.from_pretrained(
-            model_name, trust_remote_code=True
-        )
-        return AutoModel.from_pretrained(
-            model_name,
-            trust_remote_code=True,
-            config=self._model_config,
-            unpad_inputs=True,
-            use_memory_efficient_attention=True,
-        ).to(device)
-
-    def get_text_splitter(self, model, chunk_size: int = 1024, overlap: int = 100):
-        return RecursiveCharacterTextSplitter.from_huggingface_tokenizer(
-            model,
-            chunk_size=chunk_size,
-            chunk_overlap=overlap,
-            add_start_index=True,  # If `True`, includes chunk's start index in metadata
-            strip_whitespace=True,  # strips whitespace from the start and end
-            separators=["\n\n", "\n", "\r\n", "\r", "\f", "\v", "\x0b", "\x0c"],
-        )
-
-    def chunk_documents(self, documents, chunk_size):
-        # Yield successive n-sized chunks from documents.
-        for i in range(0, len(documents), chunk_size):
-            yield documents[i:i + chunk_size]
-
-    def get_available_vram(self):
-        """
-        Returns available VRAM in megabytes.
-        """
-        try:
-            # Clear any unused memory to get a fresher estimate
-            torch.cuda.empty_cache()
-            # Convert to MB
-            total_memory = torch.cuda.get_device_properties(0).total_memory / (1024 ** 2)
-            reserved_memory = torch.cuda.memory_reserved(0) / (1024 ** 2)
-            available_memory = total_memory - reserved_memory
-            self.logger.notice(f'Available VRAM : {available_memory}')
-            # Limit by predefined max usage
-            return min(available_memory, self._max_vram)
-        except RuntimeError:
-            # Limit by predefined max usage
-            return min(RAM_AVAILABLE, self._max_vram)
-
-    def _estimate_chunk_size(self):
-        """Estimate chunk size based on VRAM usage.
-        This is a simplistic heuristic and might need tuning based on empirical data
-        """
-        available_vram = self.get_available_vram()
-        estimated_vram_per_doc = 50  # Estimated VRAM in megabytes per document, adjust based on empirical observation
-        chunk_size = max(1, int(available_vram / estimated_vram_per_doc))
-        self.logger.notice(
-            f'Chunk size for Load Documents: {chunk_size}'
-        )
-        return chunk_size
-
-    ## Utility Loaders
-    ##
-
-    async def load_documents(
-        self,
-        documents: list,
-        collection: str = None,
-        delete: bool = False
-    ):
-        # Load Raw Documents into the Vectorstore
-        print('::: LEN >> ', len(documents), type(documents))
-        if len(documents) < 1:
-            self.logger.warning(
-                "There is no documents to be loaded, skipping."
-            )
-            return
-
-        self._documents_.extend(documents)
-        if not collection:
-            collection = self.collection_name
-
-        self.logger.notice(f'Loading Documents: {len(documents)}')
-        document_chunks = self.chunk_documents(
-            documents,
-            self._estimate_chunk_size()
-        )
-        async with self._store.connection(alias='default') as store:
-            # if delete is True, then delete the collection
-            if delete is True:
-                await store.delete_collection(collection)
-                fdoc = documents.pop(0)
-                await store.create_collection(
-                    collection,
-                    fdoc
-                )
-            for chunk in document_chunks:
-                await store.load_documents(
-                    chunk,
-                    collection=collection
-                )
 
     def clean_history(
         self,

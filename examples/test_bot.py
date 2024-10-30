@@ -1,5 +1,5 @@
 import asyncio
-from parrot.chatbots.basic import Chatbot
+from parrot.bots.basic import BasicBot
 from parrot.llms.groq import GroqLLM
 from parrot.llms.vertex import VertexLLM
 
@@ -18,8 +18,8 @@ async def get_agent():
         top_k=30,
         Top_p=0.5,
     )
-    agent = Chatbot(
-        name='RFPBot',
+    agent = BasicBot(
+        name='Oddie',
         llm=llm
     )
     await agent.configure()
