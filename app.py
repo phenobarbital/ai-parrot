@@ -3,7 +3,6 @@ from navigator.handlers.types import AppHandler
 from navigator.background import BackgroundQueue
 from navigator_auth import AuthHandler
 from parrot.manager import ChatbotManager
-# from parrot.loaders.handlers import DataManagement
 from parrot.conf import STATIC_DIR
 from parrot.handlers.bots import (
     FeedbackTypeHandler,
@@ -52,8 +51,6 @@ class Main(AppHandler):
             '/api/v1/chatbots/questions/{sid}',
             ChatbotSharingQuestion
         )
-        # Management APIs:
-        # DataManagement.configure(self.app)
 
 
     async def on_prepare(self, request, response):

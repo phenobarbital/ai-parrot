@@ -7,7 +7,7 @@ from typing import Any, Dict, Type
 from importlib import import_module
 from aiohttp import web
 from navconfig.logging import logging
-from .chatbots import (
+from .bots import (
     AbstractChatbot,
     Chatbot
 )
@@ -15,7 +15,8 @@ from .handlers.chat import ChatHandler # , BotHandler
 from .handlers import ChatbotHandler
 from .models import ChatbotModel
 # Manual Load of Copilot Agent:
-from parrot.chatbots.copilot import CopilotAgent
+from .bots.copilot import CopilotAgent
+
 
 class ChatbotManager:
     """ChatbotManager.
@@ -24,22 +25,22 @@ class ChatbotManager:
 
     """
     app: web.Application = None
-    chatbots: Dict[str, AbstractChatbot] = {}
 
     def __init__(self) -> None:
         self.app = None
-        self.chatbots = {}
+        self._bots: Dict[str, AbstractChatbot] = {}
         self.logger = logging.getLogger(name='Parrot.Manager')
 
     def get_chatbot_class(self, class_name: str) -> Type[AbstractChatbot]:
         """
-        Dynamically import a chatbot class based on the class name from the relative module '.chatbots'.
+        Dynamically import a chatbot class based on the class name
+          from the relative module '.bots'.
         Args:
         class_name (str): The name of the chatbot class to be imported.
         Returns:
         Type[AbstractChatbot]: A chatbot class derived from AbstractChatbot.
         """
-        module = import_module('.chatbots', __package__)
+        module = import_module('.bots', __package__)
         try:
             return getattr(module, class_name)
         except AttributeError:
@@ -113,19 +114,19 @@ class ChatbotManager:
 
     def add_chatbot(self, chatbot: AbstractChatbot) -> None:
         """Add a chatbot to the manager."""
-        self.chatbots[chatbot.name] = chatbot
+        self._bots[chatbot.name] = chatbot
 
     def get_chatbot(self, name: str) -> AbstractChatbot:
         """Get a chatbot by name."""
-        return self.chatbots.get(name)
+        return self._bots.get(name)
 
     def remove_chatbot(self, name: str) -> None:
         """Remove a chatbot by name."""
-        del self.chatbots[name]
+        del self._bots[name]
 
     def get_chatbots(self) -> Dict[str, AbstractChatbot]:
         """Get all chatbots."""
-        return self.chatbots
+        return self._bots
 
     def get_app(self) -> web.Application:
         """Get the app."""
@@ -145,14 +146,16 @@ class ChatbotManager:
         self.app['chatbot_manager'] = self
         ## Configure Routes
         router = self.app.router
+        # Chat Information Router
         router.add_view(
-            '/api/v1/chat',
+            '/api/v1/chats',
             ChatHandler
         )
         router.add_view(
             '/api/v1/chat/{chatbot_name}',
             ChatHandler
         )
+        # ChatBot Manager
         ChatbotHandler.configure(self.app, '/api/v1/bots')
         return self.app
 

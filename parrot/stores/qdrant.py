@@ -1,4 +1,5 @@
-from typing import Any
+from collections.abc import Callable
+from typing import Any, Union
 from qdrant_client import QdrantClient  # pylint: disable=import-error
 from langchain_community.vectorstores import (  # pylint: disable=import-error, E0611
     Qdrant
@@ -23,7 +24,6 @@ class QdrantStore(AbstractStore):
         port (int): Qdrant port.
         index_name (str): Qdrant index name.
     """
-
     def _create_qdrant_client(self, host, port, url, https, verify, qdrant_args):
         """
         Creates a Qdrant client based on the provided configuration.
@@ -55,99 +55,56 @@ class QdrantStore(AbstractStore):
             **qdrant_args
             )
 
-    def __init__(self, embeddings = None, **kwargs):
+    def __init__(self, embeddings: Union[str, Callable] = None, **kwargs):
         super().__init__(embeddings, **kwargs)
         self.host = kwargs.get("host", QDRANT_HOST)
         self.port = kwargs.get("port", QDRANT_PORT)
         qdrant_args = kwargs.get("qdrant_args", {})
-        connection_type = kwargs.get("connection_type", QDRANT_CONN_TYPE)
+        self.connection_type = kwargs.get("connection_type", QDRANT_CONN_TYPE)
         url = kwargs.get("url", QDRANT_URL)
-        if connection_type == "server":
-            self.client = self._create_qdrant_client(
-                self.host, self.port, url, QDRANT_USE_HTTPS, False, qdrant_args
-            )
-        elif connection_type == "cloud":
-            if url is None:
-                raise ValueError(
-                    "A URL is required for 'cloud' connection"
-                )
-            self.client = self._create_qdrant_client(
-                None, None, url, False, False, qdrant_args
-            )
-        else:
-            raise ValueError(
-                f"Invalid connection type: {connection_type}"
-            )
         if url is not None:
             self.url = url
         else:
             self.url = f"{QDRANT_PROTOCOL}://{self.host}"
             if self.port:
                 self.url += f":{self.port}"
+        self.qdrant_args = {**qdrant_args, **kwargs}
+
+    def connection(self) -> Callable:
+        """Connects to the Qdrant database."""
+        client = None
+        if self.connection_type == "server":
+            client = self._create_qdrant_client(
+                self.host, self.port, self.url, QDRANT_USE_HTTPS, False, self.qdrant_args
+            )
+        elif self.connection_type == "cloud":
+            if self.url is None:
+                raise ValueError(
+                    "A URL is required for 'cloud' connection"
+                )
+            client = self._create_qdrant_client(
+                None, None, self.url, False, False, self.qdrant_args
+            )
+        else:
+            raise ValueError(
+                f"Invalid connection type: {self.connection_type}"
+            )
+        return client
+
 
     def get_vectorstore(self):
         if self._embed_ is None:
             _embed_ = self.create_embedding(
-                model_name=self.embedding_name
+                embedding_model=self.embedding_model
             )
         else:
             _embed_ = self._embed_
         self.vector = Qdrant(
             client=self.client,
-            collection_name=self.collection,
+            collection_name=self.collection_name,
             embeddings=_embed_,
         )
         return self.vector
 
-    async def load_documents(
-        self,
-        documents: list,
-        collection: str = None
-    ):
-        if collection is None:
-            collection = self.collection
-
-        docstore = Qdrant.from_documents(
-            documents,
-            self._embed_,
-            url=self.url,
-            # location=":memory:",  # Local mode with in-memory storage only
-            collection_name=collection,
-            force_recreate=False,
-        )
-        return docstore
-
-    def upsert(self, payload: dict, collection: str = None) -> None:
-        if collection is None:
-            collection = self.collection
-        self.client.upsert(
-            collection_name=collection,
-            points=self._embed_,
-            payload=payload
-        )
-
     def search(self, payload: dict, collection: str = None) -> dict:
         pass
-
-    async def delete_collection(self, collection: str = None) -> dict:
-        self.client.delete_collection(
-            collection_name=collection
-        )
-
-    async def create_collection(
-        self,
-        collection_name: str,
-        document: Any,
-        dimension: int = 768,
-        **kwargs
-    ) -> dict:
-        # Here using drop_old=True to force recreate based on the first document
-        docstore = Qdrant.from_documents(
-            [document],
-            self._embed_,
-            url=self.url,
-            # location=":memory:",  # Local mode with in-memory storage only
-            collection_name=collection_name,
-            force_recreate=True,
-        )
-        return docstore
