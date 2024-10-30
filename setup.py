@@ -244,7 +244,7 @@ setup(
         "google": [
             "langchain-google-genai==2.0.1",
             "langchain-google-vertexai==2.0.5",
-            "vertexai==1.70.0"
+            "vertexai==1.71.0"
         ],
         "hunggingfaces": [
             "llama-index-llms-huggingface==0.2.7"
