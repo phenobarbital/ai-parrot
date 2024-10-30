@@ -1,4 +1,4 @@
-from parrot.chatbots import Chatbot
+from .basic import Chatbot
 
 class HRAgent(Chatbot):
     """Represents an Human Resources agent in Navigator.

@@ -1,4 +1,4 @@
-from parrot.chatbots import Chatbot
+from .basic import Chatbot
 
 class Cody(Chatbot):
     """Represents a Python expert in Navigator.
