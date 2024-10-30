@@ -143,22 +143,19 @@ setup(
     install_requires=[
         "Cython==3.0.11",
         "accelerate==0.34.2",
-        "langchain>=0.2.6",
-        "langchain-community>=0.2.6",
-        "langchain-core>=0.2.32",
-        "langchain-experimental==0.0.62",
-        "langchainhub==0.1.15",
-        "langchain-text-splitters==0.2.2",
-        "langchain-huggingface==0.0.3",
-        "huggingface-hub==0.23.5",
-        "llama-index==0.10.20",
+        "langchain>=0.3.4",
+        "langchain-community==0.3.3",
+        "langchain-experimental==0.3.2",
+        "langchain_huggingface==0.1.0",
+        "langchainhub==0.1.21",
+        "langchain-text-splitters==0.3.1",
+        "huggingface-hub==0.26.2",
+        "llama-index==0.11.20",
         "llama_cpp_python==0.2.56",
-        "bitsandbytes==0.43.3",
-        "Cartopy==0.22.0",
-        "chromadb==0.4.24",
-        "datasets==2.18.0",
-        "faiss-cpu==1.8.0",
-        "fastavro==1.9.4",
+        "bitsandbytes==0.44.1",
+        "chromadb==0.5.15",
+        "datasets>=3.0.2",
+        "faiss-cpu>=1.9.0",
         "gunicorn==21.2.0",
         "jq==1.7.0",
         "rank_bm25==0.2.2",
@@ -166,10 +163,12 @@ setup(
         "numba==0.59.0",
         "querysource>=3.12.10",
         "safetensors>=0.4.3",
+        "transformers>=4.44.2",
         "sentence-transformers==3.0.1",
         "tabulate==0.9.0",
         "tiktoken==0.7.0",
-        "tokenizers==0.19.1",
+        "tokenizers==0.20.1",
+        "torchvision==0.19.1",
         "selenium>=4.18.1",
         "webdriver_manager>=4.0.1",
         "transitions==0.9.0",
@@ -190,7 +189,6 @@ setup(
         "pyowm==3.3.0",
         "O365==2.0.35",
         "stackapi==0.3.1",
-        "torchvision==0.19.1",
         "tf-keras==2.17.0",
         "simsimd==4.3.1",
         "opencv-python==4.10.0.84"
@@ -244,24 +242,24 @@ setup(
             "tiktoken==0.7.0"
         ],
         "google": [
-            "langchain-google-vertexai==1.0.10",
-            "langchain-google-genai==1.0.10",
-            "vertexai==1.65.0"
+            "langchain-google-genai==2.0.1",
+            "langchain-google-vertexai==2.0.5",
+            "vertexai==1.70.0"
         ],
         "hunggingfaces": [
             "llama-index-llms-huggingface==0.2.7"
         ],
         "groq": [
             "groq==0.11.0",
-            "langchain-groq==0.1.9"
+            "langchain-groq==0.2.0"
         ],
         "qdrant": [
-            "qdrant-client==1.8.0",
+            "qdrant-client==1.12.1",
         ],
         "milvus": [
-            "langchain-milvus>=0.1.4",
-            "milvus==2.3.5",
-            "pymilvus==2.4.6",
+            "langchain-milvus>=0.1.6",
+            "pymilvus==2.4.8",
+            "milvus==2.3.5"
         ],
         "crew": [
             "colbert-ai==0.2.19",

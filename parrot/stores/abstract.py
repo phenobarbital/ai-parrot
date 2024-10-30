@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Union, Any
+from typing import Union
 from collections.abc import Callable
 import torch
 from langchain_huggingface import (
@@ -8,7 +8,9 @@ from langchain_huggingface import (
 from langchain_community.embeddings import (
     HuggingFaceBgeEmbeddings
 )
-from langchain_community.embeddings.fastembed import FastEmbedEmbeddings
+from langchain_community.embeddings.fastembed import (
+    FastEmbedEmbeddings
+)
 from navconfig.logging import logging
 from ..conf import (
     EMBEDDING_DEVICE,
@@ -21,33 +23,42 @@ from ..conf import (
 class AbstractStore(ABC):
     """AbstractStore class.
 
+        Base class for all Vector Database Stores.
     Args:
         embeddings (str): Embeddings.
     """
-
     def __init__(self, embeddings: Union[str, Callable] = None, **kwargs):
         self.client: Callable = None
         self.vector: Callable = None
         self._embed_: Callable = None
         self._connected: bool = False
-        self.use_bge: bool = kwargs.pop("use_bge", False)
-        self.fastembed: bool = kwargs.pop("use_fastembed", False)
-        self.embedding_name: str = kwargs.pop('embedding_name', EMBEDDING_DEFAULT_MODEL)
+        self.embedding_model: dict = kwargs.pop('embedding_model', {})
+        self.collection_name: str = kwargs.pop('collection_name', 'my_collection')
         self.dimension: int = kwargs.pop("dimension", 768)
         self._metric_type: str = kwargs.pop("metric_type", 'COSINE')
         self._index_type: str = kwargs.pop("index_type", 'IVF_FLAT')
         self.database: str = kwargs.pop('database', '')
-        self.collection = kwargs.pop("collection_name", "my_collection")
         self.index_name = kwargs.pop("index_name", "my_index")
         if embeddings is not None:
             if isinstance(embeddings, str):
-                self.embedding_name = embeddings
+                self.embedding_model = {
+                    'model_name': embeddings,
+                    'model_type': 'transformers'
+                }
+            elif isinstance(embeddings, dict):
+                self.embedding_model = embeddings
             else:
+                # is a callable:
+                self.embedding_model = {
+                    'model_name': EMBEDDING_DEFAULT_MODEL,
+                    'model_type': 'transformers'
+                }
                 self._embed_ = embeddings
-        self.logger = logging.getLogger(f"Store.{__name__}")
-        # client
-        self._client = None
-        self._client_id = None
+        self.logger = logging.getLogger(
+            f"Store.{__name__}"
+        )
+        # Client Connection (if required):
+        self._connection = None
 
     @property
     def connected(self) -> bool:
@@ -60,21 +71,18 @@ class AbstractStore(ABC):
             self.tensor = None
         if self._embed_ is None:
             self._embed_ = self.create_embedding(
-                model_name=self.embedding_name
+                embedding_model=self.embedding_model
             )
-        self._client, self._client_id = self.connect()
+        await self.connection()
         return self
 
     @abstractmethod
-    def connect(self):
+    async def connection(self) -> tuple:
         pass
 
-    def __enter__(self):
-        if self._embed_ is None:
-            self._embed_ = self.create_embedding(
-                model_name=self.embedding_name
-            )
-        return self
+    @abstractmethod
+    async def disconnect(self) -> None:
+        pass
 
     async def __aexit__(self, exc_type, exc_value, traceback):
         # closing Embedding
@@ -82,14 +90,7 @@ class AbstractStore(ABC):
         del self.tensor
         try:
             torch.cuda.empty_cache()
-        except RuntimeError:
-            pass
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        # closing Embedding
-        self._embed_ = None
-        try:
-            torch.cuda.empty_cache()
+            await self.disconnect()
         except RuntimeError:
             pass
 
@@ -98,61 +99,45 @@ class AbstractStore(ABC):
         pass
 
     @abstractmethod
-    async def load_documents(
-        self,
-        documents: list,
-        collection: str = None
-    ):
-        pass
-
-    @abstractmethod
-    def upsert(self, payload: dict, collection_name: str = None) -> None:
-        pass
-
-    @abstractmethod
     def search(self, payload: dict, collection_name: str = None) -> dict:
         pass
 
-    @abstractmethod
-    async def delete_collection(self, collection_name: str = None) -> dict:
-        pass
+    def _get_device(self, device_type: str = None, cuda_number: int = CUDA_DEFAULT_DEVICE):
+        """Get Default device for Torch and transformers.
 
-    @abstractmethod
-    async def create_collection(self, collection_name: str, document: Any) -> dict:
-        pass
+        """
+        if device_type is not None:
+            return torch.device(device_type)
+        if torch.cuda.is_available():
+            # Use CUDA GPU if available
+            return torch.device(f'cuda:{cuda_number}')
+        if torch.backends.mps.is_available():
+            # Use CUDA Multi-Processing Service if available
+            return torch.device("mps")
+        if EMBEDDING_DEVICE == 'cuda':
+            return torch.device(f'cuda:{cuda_number}')
+        else:
+            return torch.device(EMBEDDING_DEVICE)
 
     def create_embedding(
         self,
-        model_name: str = None
+        embedding_model: dict
     ):
         encode_kwargs: str = {
             'normalize_embeddings': True,
             "batch_size": MAX_BATCH_SIZE
         }
-        if torch.backends.mps.is_available():
-            # Use CUDA Multi-Processing Service if available
-            device = torch.device("mps")
-        elif torch.cuda.is_available():
-            # Use CUDA GPU if available
-            device = torch.device(
-                f'cuda:{CUDA_DEFAULT_DEVICE}'
-            )
-        elif EMBEDDING_DEVICE == 'cuda':
-            device = torch.device(
-                f'cuda:{CUDA_DEFAULT_DEVICE}'
-            )
-        else:
-            device = torch.device(EMBEDDING_DEVICE)
+        device = self._get_device()
         model_kwargs: str = {'device': device}
-        if model_name is None:
-            model_name = EMBEDDING_DEFAULT_MODEL
-        if self.use_bge is True:
+        model_name = embedding_model.get('model_name', EMBEDDING_DEFAULT_MODEL)
+        model_type = embedding_model.get('model_type', 'transformers')
+        if model_type == 'bge':
             return HuggingFaceBgeEmbeddings(
                 model_name=model_name,
                 model_kwargs=model_kwargs,
                 encode_kwargs=encode_kwargs
             )
-        if self.fastembed is True:
+        if model_type == 'fastembed':
             return FastEmbedEmbeddings(
                 model_name=model_name,
                 max_length=1024,
@@ -164,8 +149,11 @@ class AbstractStore(ABC):
             encode_kwargs=encode_kwargs
         )
 
-    def get_default_embedding(
-        self,
-        model_name: str = EMBEDDING_DEFAULT_MODEL
-    ):
-        return self.create_embedding(model_name=model_name)
+    def get_default_embedding(self):
+        embed_model = {
+            'model_name': EMBEDDING_DEFAULT_MODEL,
+            'model_type': 'transformers'
+        }
+        return self.create_embedding(
+            embedding_model=embed_model
+        )
