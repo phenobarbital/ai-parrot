@@ -84,26 +84,25 @@ class RetrievalManager:
         # Web Request:
         self.request = request
 
+    # async def __aenter__(self):
+    #     self.client_id: str = str(uuid.uuid4())
+    #     await self.store.connection(alias=self.client_id)
+    #     return self
+
+    # async def __aexit__(self, exc_type, exc_value, traceback):
+    #     # closing the connection:
+    #     await self.store.disconnect(alias=self.client_id)
+
     def __enter__(self):
-        self.client_id: str = str(uuid.uuid4())
-        self.client, _ = self.store.connect(alias=self.client_id)
         return self
 
+    def __exit__(self, exc_type, exc_value, traceback):
+        pass
+
     async def __aenter__(self):
-        self.client_id: str = str(uuid.uuid4())
-        self.client, _ = self.store.connect(alias=self.client_id)
         return self
 
     async def __aexit__(self, exc_type, exc_value, traceback):
-        self.client.close()  # closing database connection
-        # closing the connection:
-        self.store.close(alias=self.client_id)
-        pass
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        self.client.close()  # closing database connection
-        # closing the connection:
-        self.store.close(alias=self.client_id)
         pass
 
     def create_memory(
@@ -187,7 +186,7 @@ class RetrievalManager:
             elif use_llm == 'vertex':
                 if VERTEX_ENABLED is True:
                     llm = VertexLLM(
-                        model='gemini-pro',
+                        model='gemini-pro-1.5',
                         temperature=0.2,
                         top_p=0.4,
                         top_k=20
@@ -391,13 +390,13 @@ class RetrievalManager:
         return result
 
     async def log_usage(self, response: ChatResponse, request: web.Request = None):
-        PARAMS = {
+        params = {
             "credentials": BIGQUERY_CREDENTIALS,
             "project_id": BIGQUERY_PROJECT_ID,
         }
         db = AsyncDB(
             'bigquery',
-            params=PARAMS
+            params=params
         )
         origin = {
             "user_agent": 'script'
