@@ -8,7 +8,6 @@ from navigator.conf import default_dsn, CACHE_HOST, CACHE_PORT
 logging.getLogger(name='httpcore').setLevel(logging.INFO)
 logging.getLogger(name='httpx').setLevel(logging.INFO)
 logging.getLogger(name='groq').setLevel(logging.INFO)
-logging.getLogger(name='h5py').setLevel(logging.INFO)
 logging.getLogger(name='tensorflow').setLevel(logging.INFO)
 logging.getLogger(name='selenium.webdriver').setLevel(logging.WARNING)
 logging.getLogger(name='selenium').setLevel(logging.INFO)
