@@ -17,9 +17,11 @@ from langchain.retrievers import (
     ContextualCompressionRetriever
 )
 from langchain_core.vectorstores import VectorStoreRetriever
-from langchain_core.prompts import (
-    PromptTemplate,
-    ChatPromptTemplate
+from langchain.prompts import (
+    ChatPromptTemplate,
+    SystemMessagePromptTemplate,
+    HumanMessagePromptTemplate,
+    PromptTemplate
 )
 from langchain_community.retrievers import BM25Retriever
 from datamodel.exceptions import ValidationError  # pylint: disable=E0611
@@ -56,8 +58,9 @@ class RetrievalManager:
         chatbot_name: str,
         model: Callable,
         store: Callable,
+        system_prompt: str = None,
+        human_prompt: str = None,
         memory: ConversationBufferMemory = None,
-        template: str = None,
         source_path: str = 'web',
         request: web.Request = None,
         kb: Any = None
@@ -76,22 +79,14 @@ class RetrievalManager:
         self.model = model
         # template prompt
         # TODO: if none, create a basic template
-        self.template = template
+        self.system_prompt = system_prompt
+        self.human_prompt = human_prompt
         # Knowledge-base
         self.kb = kb
         # Logger:
         self.logger = logging.getLogger('Parrot.Retrieval')
         # Web Request:
         self.request = request
-
-    # async def __aenter__(self):
-    #     self.client_id: str = str(uuid.uuid4())
-    #     await self.store.connection(alias=self.client_id)
-    #     return self
-
-    # async def __aexit__(self, exc_type, exc_value, traceback):
-    #     # closing the connection:
-    #     await self.store.disconnect(alias=self.client_id)
 
     def __enter__(self):
         return self
@@ -161,15 +156,18 @@ class RetrievalManager:
                 retrievers=[simil_retriever, retriever],
                 weights=[0.7, 0.3]
             )
-        custom_template = self.template.format_map(
-            SafeDict(
-                summaries=''
-            )
+        # Create prompt templates
+        system_prompt = SystemMessagePromptTemplate.from_template(
+            self.system_prompt
         )
-        _prompt = PromptTemplate(
-            template=custom_template,
-            input_variables=["context", "chat_history", "question"],
+        human_prompt = HumanMessagePromptTemplate.from_template(
+            self.human_prompt,
+            input_variables=['question', 'chat_history']
         )
+        chat_prompt = ChatPromptTemplate.from_messages([
+            system_prompt,
+            human_prompt
+        ])
         if use_llm is not None:
             if use_llm == 'claude':
                 if ANTHROPIC_ENABLED is True:
@@ -211,7 +209,7 @@ class RetrievalManager:
             memory=self.memory,
             return_source_documents=return_docs,
             return_generated_question=True,
-            combine_docs_chain_kwargs={"prompt": _prompt},
+            combine_docs_chain_kwargs={"prompt": chat_prompt},
         )
         return self
 
@@ -253,8 +251,10 @@ class RetrievalManager:
                 retrievers=[simil_retriever, retriever],
                 weights=[0.7, 0.3]
             )
-            # retriever = simil_retriever
-        custom_template = self.template.format_map(
+        human_prompt = self.human_prompt.replace(
+            '**Chat History:**', ''
+        )
+        human_prompt = human_prompt.format_map(
             SafeDict(
                 chat_history=''
             )
@@ -298,7 +298,7 @@ class RetrievalManager:
             verbose=True,
             chain_type_kwargs={
                 "prompt": PromptTemplate(
-                    template=custom_template,
+                    template=self.system_prompt + '\n' + human_prompt,
                     input_variables=['context', 'question']
                 )
             },
@@ -332,10 +332,10 @@ class RetrievalManager:
             return self.memory.buffer_as_str()
         return None
 
-    def as_markdown(self, response: ChatResponse) -> str:
+    def as_markdown(self, response: ChatResponse, return_sources: bool = True) -> str:
         markdown_output = f"**Question**: {response.question}  \n"
         markdown_output += f"**Answer**: {response.answer}  \n"
-        if response.source_documents:
+        if return_sources is True and response.source_documents:
             source_documents = response.source_documents
             current_sources = []
             block_sources = []
@@ -467,15 +467,19 @@ class RetrievalManager:
                 chain_type=chain_type,
                 search_kwargs=search_kwargs
             )
-            custom_template = self.template.format_map(
-                SafeDict(
-                    summaries=''
-                )
+            system_prompt = SystemMessagePromptTemplate.from_template(
+                self.system_prompt
             )
-            _prompt = PromptTemplate(
-                template=custom_template,
-                input_variables=["context", "chat_history", "question"],
+            human_prompt = HumanMessagePromptTemplate.from_template(
+                self.human_prompt,
+                input_variables=['question', 'chat_history']
             )
+            # Combine into a ChatPromptTemplate
+            chat_prompt = ChatPromptTemplate.from_messages([
+                system_prompt,
+                human_prompt
+            ])
+            response = None
             try:
                 chain = ConversationalRetrievalChain.from_llm(
                     llm=self.model,
@@ -485,29 +489,32 @@ class RetrievalManager:
                     memory=memory,
                     return_source_documents=return_docs,
                     return_generated_question=True,
-                    combine_docs_chain_kwargs={"prompt": _prompt},
+                    combine_docs_chain_kwargs={"prompt": chat_prompt},
                     **kwargs
                 )
                 response = chain.invoke(
-                    question
+                    {"question": question}
                 )
             except Exception as exc:
                 self.logger.error(
                     f"Error invoking chain: {exc}"
                 )
-                return None, None
+                return {
+                    "question": question,
+                    "error": str(exc)
+                }
             try:
                 qa_response = ChatResponse(**response)
             except (ValueError, TypeError) as exc:
                 self.logger.error(
                     f"Error validating response: {exc}"
                 )
-                return None, None
+                return response
             except ValidationError as exc:
                 self.logger.error(
                     f"Error on response: {exc.payload}"
                 )
-                return None, None
+                return response
         try:
             qa_response.response = self.as_markdown(
                 qa_response
@@ -542,19 +549,22 @@ class RetrievalManager:
             self.logger.error(
                 f"Error invoking chain: {exc}"
             )
-            return None, None
+            return {
+                "question": question,
+                "error": str(exc)
+            }
         try:
             qa_response = ChatResponse(**response)
         except (ValueError, TypeError) as exc:
             self.logger.error(
                 f"Error validating response: {exc}"
             )
-            return None, None
+            return response
         except ValidationError as exc:
             self.logger.error(
                 f"Error on response: {exc.payload}"
             )
-            return None, None
+            return response
         try:
             qa_response.response = self.as_markdown(
                 qa_response
@@ -574,4 +584,4 @@ class RetrievalManager:
             self.logger.exception(
                 f"Error on response: {exc}"
             )
-            return None, None
+            return response
