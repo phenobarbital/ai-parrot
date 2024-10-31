@@ -1,4 +1,4 @@
-from .basic import Chatbot
+from .chatbot import Chatbot
 
 class Cody(Chatbot):
     """Represents a Python expert in Navigator.
