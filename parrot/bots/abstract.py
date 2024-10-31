@@ -1,99 +1,126 @@
-"""
-Foundational base of every Chatbot and Agent in ai-parrot.
-"""
 from abc import ABC
+from typing import Any, Union, Optional
 from collections.abc import Callable
-from typing import Any, Union
-from pathlib import Path, PurePath
 import uuid
+import asyncio
 from aiohttp import web
+import grpc
 import torch
-# Langchain
-from langchain.docstore.document import Document
 from langchain.memory import (
     ConversationBufferMemory
+)
+from langchain.prompts import (
+    ChatPromptTemplate,
+    SystemMessagePromptTemplate,
+    HumanMessagePromptTemplate,
+    PromptTemplate
+)
+from langchain.docstore.document import Document
+from langchain.chains.retrieval_qa.base import RetrievalQA
+from langchain.chains.conversational_retrieval.base import (
+    ConversationalRetrievalChain
 )
 from langchain_community.chat_message_histories import (
     RedisChatMessageHistory
 )
-# Navconfig
-from navconfig import BASE_DIR
-from navconfig.exceptions import ConfigError  # pylint: disable=E0611
+from langchain_core.retrievers import BaseRetriever
+from langchain_core.vectorstores import VectorStoreRetriever
+from datamodel.exceptions import ValidationError  # pylint: disable=E0611
 from navconfig.logging import logging
-from asyncdb.exceptions import NoDataFound
-## LLM configuration
-from ..llms import get_llm, AbstractLLM
-## Vector Database configuration:
-from ..stores import get_vectordb
-from ..utils import SafeDict, parse_toml_config
-from .retrievals import RetrievalManager
+from ..interfaces import DBInterface
 from ..conf import (
     EMBEDDING_DEVICE,
-    default_dsn,
     REDIS_HISTORY_URL,
     EMBEDDING_DEFAULT_MODEL
 )
-from ..interfaces import DBInterface
-from ..models import ChatbotModel
+## LLM configuration
+from ..llms import get_llm, AbstractLLM
+from ..llms.vertex import VertexLLM
+try:
+    from ..llms.groq import GroqLLM
+except ImportError:
+    pass
+# Stores
+from ..stores import get_vectordb
+from ..utils import SafeDict
+from ..models import ChatResponse
 
 
-logging.getLogger(name='h5py._conv').setLevel(logging.INFO)
+class EmptyRetriever(BaseRetriever):
+    """Return a Retriever with No results.
+    """
+    async def aget_relevant_documents(self, query: str):
+        return []
+
+    def _get_relevant_documents(self, query: str):
+        return []
 
 
-class AbstractChatbot(DBInterface, ABC):
-    """Represents an Bot (Chatbot, Agent) in Navigator.
+class AbstractBot(DBInterface, ABC):
+    """AbstractBot.
 
-        Each Chatbot has a name, a role, a goal, a backstory,
-        and an optional language model (llm).
+    This class is an abstract representation a base abstraction for all Chatbots.
+    """
+    # Define system prompt template
+    system_prompt_template = """
+    You are {name}, a helpful and professional AI assistant.
+
+    Your primary function is to {goal}
+    Use the information from the provided knowledge base and provided context of documents to answer users' questions accurately and concisely.
+    Focus on answering the question directly but in detail. Do not include an introduction or greeting in your response.
+
+    I am here to help with {role}.
+
+    **Backstory:**
+    {backstory}.
+
+    Here is a brief summary of relevant information:
+    Context: {context}
+
+    **{rationale}**
+
+    Given this information, please provide answers to the following question adding detailed and useful insights.
     """
 
-    template_prompt: str = (
-        "You are {name}, You are a helpful and professional AI assistant.\n\n"
-        "Your primary function is to {goal}\n"
-        "Use the information from the provided knowledge base and provided context of documents to answer users' questions accurately and concisely\n"
-        "Focus on answering the question directly but detailed. Do not include an introduction or greeting in your response.\n\n"
-        "I am here to help with {role}.\n"
-        "**Backstory:**\n"
-        "{backstory}.\n\n"
-        "Here is a brief summary of relevant information:\n"
-        "Context: {context}\n\n"
-        "Given this information, please provide answers to the following question adding detailed and useful insights:\n\n"
-        "**Chat History:** {chat_history}\n\n"
-        "**Human Question:** {question}\n"
-        "Assistant Answer:\n\n"
-        "{rationale}\n"
-    )
+    # Define human prompt template
+    human_prompt_template = """
+    **Chat History:**
+    {chat_history}
 
-    def _get_default_attr(self, key, default: Any = None, **kwargs):
-        if key in kwargs:
-            return kwargs.get(key)
-        if hasattr(self, key):
-            return getattr(self, key)
-        if not hasattr(self, key):
-            return default
-        return getattr(self, key)
+    **Human Question:**
+    {question}
+    """
 
-    def __init__(self, **kwargs):
+    def __init__(
+        self,
+        name: str = 'Nav',
+        system_prompt: str = None,
+        human_prompt: str = None,
+        **kwargs
+    ):
         """Initialize the Chatbot with the given configuration."""
-        # Start initialization:
-        self.kb = None
-        self.knowledge_base: list = []
+        if system_prompt:
+            self.system_prompt_template = system_prompt
+        if human_prompt:
+            self.human_prompt_template = human_prompt
         # Chatbot ID:
         self.chatbot_id: uuid.UUID = kwargs.get(
             'chatbot_id',
             str(uuid.uuid4().hex)
         )
         # Basic Information:
-        self.name = self._get_default_attr(
-            'name', 'NAV', **kwargs
-        )
+        self.name = name
         ##  Logging:
         self.logger = logging.getLogger(f'{self.name}.Bot')
+        # Start initialization:
+        self.kb = None
+        self.knowledge_base: list = []
+        self.return_sources: bool = kwargs.pop('return_sources', False)
         self.description = self._get_default_attr(
             'description', 'Navigator Chatbot', **kwargs
         )
         self.role = self._get_default_attr(
-            'role', 'Chatbot', **kwargs
+            'role', self.default_role(), **kwargs
         )
         self.goal = self._get_default_attr(
             'goal',
@@ -110,10 +137,12 @@ class AbstractChatbot(DBInterface, ABC):
             default=self.default_rationale(),
             **kwargs
         )
-        # Configuration File:
-        self.config_file: PurePath = kwargs.get('config_file', None)
-        # Other Configuration
-        self.confidence_threshold: float = kwargs.get('threshold', 0.5)
+        # Definition of LLM
+        self._default_llm: str = kwargs.get('use_llm', 'vertexai')
+        # Overrriding LLM object
+        self._llm_obj: Callable = kwargs.get('llm', None)
+        # LLM base Object:
+        self._llm: Callable = None
         self.context = kwargs.pop('context', '')
 
         # Pre-Instructions:
@@ -125,27 +154,14 @@ class AbstractChatbot(DBInterface, ABC):
         # Knowledge base:
         self.knowledge_base: list = []
         self._documents_: list = []
-
-        # Text Documents
-        self.documents_dir = kwargs.get(
-            'documents_dir',
-            None
-        )
-        if isinstance(self.documents_dir, str):
-            self.documents_dir = Path(self.documents_dir)
-        if not self.documents_dir:
-            self.documents_dir = BASE_DIR.joinpath('documents')
-        if not self.documents_dir.exists():
-            self.documents_dir.mkdir(
-                parents=True,
-                exist_ok=True
-            )
         # Models, Embed and collections
         # Vector information:
         self.chunk_size: int = int(kwargs.get('chunk_size', 768))
         self.dimension: int = int(kwargs.get('dimension', 768))
+        self.use_database: bool = kwargs.get('use_database', False)
         self._database: dict = kwargs.get('database', {})
-        self._store: Callable = None
+        self.store: Callable = None
+        self.memory: Callable = None
 
         # Embedding Model Name
         self.embedding_model = kwargs.get(
@@ -162,14 +178,15 @@ class AbstractChatbot(DBInterface, ABC):
             'rag_model',
             "rlm/rag-prompt-llama"
         )
-        # Definition of LLM
-        # Overrriding LLM object
-        self._llm_obj: Callable = kwargs.get('llm', None)
-        # LLM base Object:
-        self._llm: Callable = None
 
-    def get_llm(self):
-        return self._llm_obj
+    def _get_default_attr(self, key, default: Any = None, **kwargs):
+        if key in kwargs:
+            return kwargs.get(key)
+        if hasattr(self, key):
+            return getattr(self, key)
+        if not hasattr(self, key):
+            return default
+        return getattr(self, key)
 
     def __repr__(self):
         return f"<Bot.{self.__class__.__name__}:{self.name}>"
@@ -188,218 +205,58 @@ class AbstractChatbot(DBInterface, ABC):
             "I am an AI assistant designed to help you find information.\n"
         )
 
-    async def configure(self, app = None) -> None:
-        if app is None:
-            self.app = None
-        else:
-            if isinstance(app, web.Application):
-                self.app = app  # register the app into the Extension
-            else:
-                self.app = app.get_app()  # Nav Application
-        # Config File:
-        config_file = BASE_DIR.joinpath(
-            'etc',
-            'config',
-            'chatbots',
-            self.name.lower(),
-            "config.toml"
-        )
-        if config_file.exists():
-            self.logger.notice(
-                f"Loading Bot {self.name} from config: {config_file.name}"
-            )
-        if (bot := await self.bot_exists(name=self.name, uuid=self.chatbot_id)):
-            self.logger.notice(
-                f"Loading Bot {self.name} from Database: {bot.chatbot_id}"
-            )
-            # Bot exists on Database, Configure from the Database
-            await self.from_database(bot, config_file)
-        elif config_file.exists():
-            # Configure from the TOML file
-            await self.from_config_file(config_file)
-        else:
-            raise ValueError(
-                f'Bad configuration procedure for bot {self.name}'
-            )
-        # adding this configured chatbot to app:
-        if self.app:
-            self.app[f"{self.name.lower()}_chatbot"] = self
+    def default_role(self) -> str:
+        return "Assisting with queries"
 
-    def _configure_llm(self, llm, config):
+    def get_llm(self):
+        return self._llm_obj
+
+    @property
+    def llm(self):
+        return self._llm
+
+    @llm.setter
+    def llm(self, model):
+        self._llm_obj = model
+        self._llm = model.get_llm()
+
+    def _configure_llm(self, llm: Union[str, Callable] = None, config: Optional[dict] = None):
         """
         Configuration of LLM.
         """
-        if isinstance(self._llm_obj, AbstractLLM):
+        if isinstance(llm, str):
+            # Get the LLM By Name:
+            self._llm_obj = get_llm(
+                llm,
+                **config
+            )
+            # getting langchain LLM from Obj:
+            self._llm = self._llm_obj.get_llm()
+        elif isinstance(llm, AbstractLLM):
+            self._llm_obj = llm
+            self._llm = llm.get_llm()
+        elif isinstance(self._llm_obj, AbstractLLM):
             self._llm = self._llm_obj.get_llm()
         elif self._llm_obj is not None:
             self._llm = self._llm_obj
         else:
-            if llm:
-                # LLM:
-                self._llm_obj = get_llm(
-                    llm,
-                    **config
+            # TODO: Calling a Default LLM
+            # TODO: passing the default configuration
+            if self._default_llm == 'vertexai':
+                self._llm_obj = VertexLLM(
+                    model='gemini-1.5-pro',
+                    temperature=0.2,
+                    top_k=30,
+                    Top_p=0.6,
                 )
-                # getting langchain LLM from Obj:
-                self._llm = self._llm_obj.get_llm()
             else:
-                raise ValueError(
-                    f"{self.name}: LLM is not defined in bot Configuration."
+                self._llm_obj = GroqLLM(
+                    model="llama3-groq-70b-8192-tool-use-preview",
+                    temperature=0.2,
+                    top_k=30,
+                    Top_p=0.6,
                 )
-
-    def _from_bot(self, bot, key, config, default) -> Any:
-        value = getattr(bot, key, None)
-        file_value = config.get(key, default)
-        return value if value else file_value
-
-    def _from_db(self, botobj, key, default = None) -> Any:
-        value = getattr(botobj, key, default)
-        return value if value else default
-
-    async def bot_exists(
-        self,
-        name: str = None,
-        uuid: uuid.UUID = None
-    ) -> Union[ChatbotModel, bool]:
-        """Check if the Chatbot exists in the Database."""
-        db = self.get_database('pg', dsn=default_dsn)
-        async with await db.connection() as conn:  # pylint: disable=E1101
-            ChatbotModel.Meta.connection = conn
-            try:
-                if self.chatbot_id:
-                    try:
-                        bot = await ChatbotModel.get(chatbot_id=uuid)
-                    except Exception:
-                        bot = await ChatbotModel.get(name=name)
-                else:
-                    bot = await ChatbotModel.get(name=self.name)
-                if bot:
-                    return bot
-            except NoDataFound:
-                return False
-
-    async def from_database(
-        self,
-        bot: Union[ChatbotModel, None] = None,
-        config_file: PurePath = None
-    ) -> None:
-        """Load the Chatbot Configuration from the Database."""
-        if not bot:
-            db = self.get_database('pg', dsn=default_dsn)
-            async with await db.connection() as conn:  # pylint: disable=E1101
-                # import model
-                ChatbotModel.Meta.connection = conn
-                try:
-                    if self.chatbot_id:
-                        try:
-                            bot = await ChatbotModel.get(chatbot_id=self.chatbot_id)
-                        except Exception:
-                            bot = await ChatbotModel.get(name=self.name)
-                    else:
-                        bot = await ChatbotModel.get(name=self.name)
-                except NoDataFound:
-                    # Fallback to File configuration:
-                    raise ConfigError(
-                        f"Chatbot {self.name} not found in the database."
-                    )
-        # Start Bot configuration from Database:
-        if config_file and config_file.exists():
-            file_config = await parse_toml_config(config_file)
-            # Knowledge Base come from file:
-            # Contextual knowledge-base
-            self.kb = file_config.get('knowledge-base', [])
-            if self.kb:
-                self.knowledge_base = self.create_kb(
-                    self.kb.get('data', [])
-                )
-        self.name = self._from_db(bot, 'name', default=self.name)
-        self.chatbot_id = str(self._from_db(bot, 'chatbot_id', default=self.chatbot_id))
-        self.description = self._from_db(bot, 'description', default=self.description)
-        self.role = self._from_db(bot, 'role', default=self.role)
-        self.goal = self._from_db(bot, 'goal', default=self.goal)
-        self.rationale = self._from_db(bot, 'rationale', default=self.rationale)
-        self.backstory = self._from_db(bot, 'backstory', default=self.backstory)
-        # LLM Configuration:
-        llm = self._from_db(bot, 'llm', default='VertexLLM')
-        llm_config = self._from_db(bot, 'llm_config', default={})
-        # Configuration of LLM:
-        self._configure_llm(llm, llm_config)
-        # Other models:
-        embedding_model_name = self._from_db(
-            bot, 'embedding_name', None
-        )
-        self.embedding_model = {
-            'model': embedding_model_name,
-            'model_type': 'transformers'
-        }
-        # Database Configuration:
-        db_config = bot.database
-        vector_db = db_config.pop('vector_database')
-        await self.store_configuration(vector_db, db_config)
-        # after configuration, setup the chatbot
-        if bot.template_prompt:
-            self.template_prompt = bot.template_prompt
-        self._define_prompt(
-            config={}
-        )
-
-    async def from_config_file(self, config_file: PurePath) -> None:
-        """Load the Chatbot Configuration from the TOML file."""
-        self.logger.debug(
-            f"Using Config File: {config_file}"
-        )
-        file_config = await parse_toml_config(config_file)
-        # getting the configuration from config
-        self.config_file = config_file
-        # basic config
-        basic = file_config.get('chatbot', {})
-        # Chatbot Name:
-        self.name = basic.get('name', self.name)
-        self.description = basic.get('description', self.description)
-        self.role = basic.get('role', self.role)
-        self.goal = basic.get('goal', self.goal)
-        self.rationale = basic.get('rationale', self.rationale)
-        self.backstory = basic.get('backstory', self.backstory)
-        # Model Information:
-        llminfo = file_config.get('llm')
-        llm = llminfo.get('llm', 'VertexLLM')
-        cfg = llminfo.get('config', {})
-        # Configuration of LLM:
-        self._configure_llm(llm, cfg)
-
-        # Other models:
-        models = file_config.get('models', {})
-        embedding_model_name = models.get(
-            'embedding',
-            EMBEDDING_DEFAULT_MODEL
-        )
-        self.embedding_model = {
-            'model': embedding_model_name,
-            'model_type': 'transformers'
-        }
-        # pre-instructions
-        instructions = file_config.get('pre-instructions')
-        if instructions:
-            self.pre_instructions = instructions.get('instructions', [])
-        # Contextual knowledge-base
-        self.kb = file_config.get('knowledge-base', [])
-        if self.kb:
-            self.knowledge_base = self.create_kb(
-                self.kb.get('data', [])
-            )
-        vector_config = file_config.get('database', {})
-        vector_db = vector_config.pop('vector_database')
-        # configure vector database:
-        await self.store_configuration(
-            vector_db,
-            vector_config
-        )
-        # after configuration, setup the chatbot
-        if 'template_prompt' in basic:
-            self.template_prompt = basic.get('template_prompt')
-        self._define_prompt(
-            config=basic
-        )
+            self._llm = self._llm_obj.get_llm()
 
     def create_kb(self, documents: list):
         new_docs = []
@@ -424,54 +281,38 @@ class AbstractChatbot(DBInterface, ABC):
 
     async def store_configuration(self, vector_db: str, config: dict):
         """Create the Vector Store Configuration."""
-        self.collection_name = config.get('collection_name')
+        self.collection_name = config.get('collection_name', None)
         if not self.embeddings:
             embed = self.embedding_model
         else:
             embed = self.embeddings
         # TODO: add dynamic configuration of VectorStore
-        self._store = get_vectordb(
+        self.store = get_vectordb(
             vector_db,
             embeddings=embed,
             **config
         )
 
-    def _define_prompt(self, config: dict):
+
+    def _define_prompt(self, config: Optional[dict] = None):
+        """
+        Define the System Prompt and replace variables.
+        """
         # setup the prompt variables:
-        for key, val in config.items():
-            setattr(self, key, val)
-        # if self.company_information:
-        #     self.template_prompt = self.template_prompt.format_map(
-        #         SafeDict(
-        #             company_information=(
-        #                 "For further inquiries or detailed information, you can contact us at:\n"
-        #                 "- Contact Information: {contact_email}\n"
-        #                 "- Use our contact form: {contact_form}\n"
-        #                 "- or Visit our website: {company_website}\n"
-        #             )
-        #         )
-        #     )
-        # Parsing the Template:
-        self.template_prompt = self.template_prompt.format_map(
+        if config:
+            for key, val in config.items():
+                setattr(self, key, val)
+        # Creating the variables:
+        self.system_prompt_template = self.system_prompt_template.format_map(
             SafeDict(
                 name=self.name,
                 role=self.role,
                 goal=self.goal,
                 backstory=self.backstory,
-                rationale=self.rationale,
-                threshold=self.confidence_threshold
+                rationale=self.rationale
             )
         )
-        print('Template Prompt:', self.template_prompt)
-
-    @property
-    def llm(self):
-        return self._llm
-
-    @llm.setter
-    def llm(self, model):
-        self._llm_obj = model
-        self._llm = model.get_llm()
+        # print('Template Prompt: \n', self.system_prompt_template)
 
     def _get_device(self, cuda_number: int = 0):
         torch.backends.cudnn.deterministic = True
@@ -487,21 +328,25 @@ class AbstractChatbot(DBInterface, ABC):
             device = torch.device(EMBEDDING_DEVICE)
         return device
 
-    def clean_history(
-        self,
-        session_id: str = None
-    ):
-        try:
-            redis_client = RedisChatMessageHistory(
-                url=REDIS_HISTORY_URL,
-                session_id=session_id,
-                ttl=60
-            )
-            redis_client.clear()
-        except Exception as e:
-            self.logger.error(
-                f"Error clearing chat history: {e}"
-            )
+    async def configure(self, app = None) -> None:
+        """Basic Configuration of Bot.
+        """
+        self.app = None
+        if app:
+            if isinstance(app, web.Application):
+                self.app = app  # register the app into the Extension
+            else:
+                self.app = app.get_app()  # Nav Application
+        # adding this configured chatbot to app:
+        if self.app:
+            self.app[f"{self.name.lower()}_chatbot"] = self
+        # Setup the Store Config:
+        await self.store_configuration(
+            vector_db='MilvusStore',
+            config=self._database
+        )
+        # And define Prompt:
+        self._define_prompt()
 
     def get_memory(
         self,
@@ -530,23 +375,242 @@ class AbstractChatbot(DBInterface, ABC):
             **args
         )
 
-    def get_retrieval(self, source_path: str = 'web', request: web.Request = None):
+    def clean_history(
+        self,
+        session_id: str = None
+    ):
+        try:
+            redis_client = RedisChatMessageHistory(
+                url=REDIS_HISTORY_URL,
+                session_id=session_id,
+                ttl=60
+            )
+            redis_client.clear()
+        except Exception as e:
+            self.logger.error(
+                f"Error clearing chat history: {e}"
+            )
+
+    def get_response(self, response: dict):
+        if 'error' in response:
+            return response  # return this error directly
+        try:
+            response = ChatResponse(**response)
+            response.response = self.as_markdown(
+                response,
+                return_sources=self.return_sources
+            )
+            return response
+        except (ValueError, TypeError) as exc:
+            self.logger.error(
+                f"Error validating response: {exc}"
+            )
+            return response
+        except ValidationError as exc:
+            self.logger.error(
+                f"Error on response: {exc.payload}"
+            )
+            return response
+
+    async def conversation(
+            self,
+            question: str,
+            chain_type: str = 'stuff',
+            search_type: str = 'similarity',
+            search_kwargs: dict = {"k": 4, "fetch_k": 10, "lambda_mult": 0.89},
+            return_docs: bool = True,
+            metric_type: str = None,
+            memory: Any = None,
+            **kwargs
+    ):
+        # re-configure LLM:
+        new_llm = kwargs.pop('llm', None)
+        llm_config = kwargs.pop('llm_config', {})
+        self._configure_llm(llm=new_llm, config=llm_config)
+        # define the Pre-Context
         pre_context = "\n".join(f"- {a}." for a in self.pre_instructions)
-        custom_template = self.template_prompt.format_map(
+        custom_template = self.system_prompt_template.format_map(
             SafeDict(
                 summaries=pre_context
             )
         )
-        # Generate the Retrieval
-        rm = RetrievalManager(
-            chatbot_id=self.chatbot_id,
-            chatbot_name=self.name,
-            source_path=source_path,
-            model=self._llm,
-            store=self._store,
-            memory=None,
-            template=custom_template,
-            kb=self.knowledge_base,
-            request=request
+        # Create prompt templates
+        self.system_prompt = SystemMessagePromptTemplate.from_template(
+            custom_template
         )
-        return rm
+        self.human_prompt = HumanMessagePromptTemplate.from_template(
+            self.human_prompt_template,
+            input_variables=['question', 'chat_history']
+        )
+        # Combine into a ChatPromptTemplate
+        chat_prompt = ChatPromptTemplate.from_messages([
+            self.system_prompt,
+            self.human_prompt
+        ])
+        if not memory:
+            memory = self.memory
+        if not self.memory:
+            # Initialize memory
+            self.memory = ConversationBufferMemory(
+                memory_key="chat_history",
+                input_key="question",
+                output_key='answer',
+                return_messages=True
+            )
+        try:
+            # allowing DB connections:
+            self.store.use_database = self.use_database
+            async with self.store as store:  #pylint: disable=E1101
+                if self.use_database is True:
+                    vector = store.get_vector(metric_type=metric_type)
+                    retriever = VectorStoreRetriever(
+                        vectorstore=vector,
+                        search_type=search_type,
+                        chain_type=chain_type,
+                        search_kwargs=search_kwargs
+                    )
+                else:
+                    retriever = EmptyRetriever()
+                # Create the ConversationalRetrievalChain with custom prompt
+                chain = ConversationalRetrievalChain.from_llm(
+                    llm=self.llm,
+                    retriever=retriever,
+                    memory=self.memory,
+                    verbose=True,
+                    return_source_documents=return_docs,
+                    return_generated_question=True,
+                    combine_docs_chain_kwargs={
+                        'prompt': chat_prompt
+                    },
+                    **kwargs
+                )
+                response = await chain.ainvoke(
+                    {"question": question}
+                )
+
+        except asyncio.CancelledError:
+            # Handle task cancellation
+            print("Conversation task was cancelled.")
+        return self.get_response(response)
+
+    async def question(
+            self,
+            question: str,
+            chain_type: str = 'stuff',
+            search_type: str = 'similarity',
+            search_kwargs: dict = {"k": 4, "fetch_k": 10, "lambda_mult": 0.89},
+            return_docs: bool = True,
+            metric_type: str = None,
+            **kwargs
+    ):
+        pre_context = "\n".join(f"- {a}." for a in self.pre_instructions)
+        system_prompt = self.system_prompt_template.format_map(
+            SafeDict(
+                summaries=pre_context
+            )
+        )
+        human_prompt = self.human_prompt_template.replace(
+            '**Chat History:**', ''
+        )
+        human_prompt = human_prompt.format_map(
+            SafeDict(
+                chat_history=''
+            )
+        )
+        # re-configure LLM:
+        new_llm = kwargs.pop('llm', None)
+        llm_config = kwargs.pop('llm_config', {})
+        self._configure_llm(llm=new_llm, config=llm_config)
+        # Combine into a ChatPromptTemplate
+        prompt = PromptTemplate(
+            template=system_prompt + '\n' + human_prompt,
+            input_variables=['context', 'question']
+        )
+        # allowing DB connections:
+        self.store.use_database = self.use_database
+        async with self.store as store:  #pylint: disable=E1101
+            if self.use_database is True:
+                vector = store.get_vector(metric_type=metric_type)
+                retriever = VectorStoreRetriever(
+                    vectorstore=vector,
+                    search_type=search_type,
+                    chain_type=chain_type,
+                    search_kwargs=search_kwargs
+                )
+            else:
+                retriever = EmptyRetriever()
+            # Create the RetrievalQA chain with custom prompt
+            chain = RetrievalQA.from_chain_type(
+                llm=self.llm,
+                chain_type=chain_type,  # e.g., 'stuff', 'map_reduce', etc.
+                retriever=retriever,
+                chain_type_kwargs={
+                    'prompt': prompt,
+                },
+                return_source_documents=return_docs,
+                **kwargs
+            )
+            try:
+                response = await chain.ainvoke(
+                    question
+                )
+            except Exception as e:
+                # Handle exceptions
+                self.logger.error(
+                    f"An error occurred: {e}"
+                )
+                response = {
+                    "query": question,
+                    "error": str(e)
+                }
+        return self.get_response(response)
+
+    def as_markdown(self, response: ChatResponse, return_sources: bool = False) -> str:
+        markdown_output = f"**Question**: {response.question}  \n"
+        markdown_output += f"**Answer**: {response.answer}  \n"
+        if return_sources is True and response.source_documents:
+            source_documents = response.source_documents
+            current_sources = []
+            block_sources = []
+            count = 0
+            d = {}
+            for source in source_documents:
+                if count >= 20:
+                    break  # Exit loop after processing 10 documents
+                metadata = source.metadata
+                if 'url' in metadata:
+                    src = metadata.get('url')
+                elif 'filename' in metadata:
+                    src = metadata.get('filename')
+                else:
+                    src = metadata.get('source', 'unknown')
+                if src == 'knowledge-base':
+                    continue  # avoid attaching kb documents
+                source_title = metadata.get('title', src)
+                if source_title in current_sources:
+                    continue
+                current_sources.append(source_title)
+                if src:
+                    d[src] = metadata.get('document_meta', {})
+                source_filename = metadata.get('filename', src)
+                if src:
+                    block_sources.append(f"- [{source_title}]({src})")
+                else:
+                    if 'page_number' in metadata:
+                        block_sources.append(f"- {source_filename} (Page {metadata.get('page_number')})")
+                    else:
+                        block_sources.append(f"- {source_filename}")
+            if block_sources:
+                markdown_output += f"**Sources**:  \n"
+                markdown_output += "\n".join(block_sources)
+            if d:
+                response.documents = d
+        return markdown_output
+
+    async def shutdown(self):
+        if self.store:
+            try:
+                await self.store.disconnect()
+                await grpc.aio.shutdown_grpc_aio()
+            except Exception:
+                pass
