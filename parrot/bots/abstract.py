@@ -199,6 +199,7 @@ class AbstractBot(DBInterface, ABC):
             "Be polite and clear in your explanations, "
             "ensuring that responses are based only on verified information from owned sources. "
             "If you are unsure, let the user know and avoid making assumptions. Maintain a professional tone in all responses.\n"
+            "You are a fluent speaker, you can talk and respond fluently in English or Spanish, and you must answer in the same language as the user's question. If the user's language is not English, you should translate your response into their language.\n"
         )
 
     def default_backstory(self) -> str:
