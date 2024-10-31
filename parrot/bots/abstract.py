@@ -44,6 +44,7 @@ except ImportError:
 from ..stores import get_vectordb
 from ..utils import SafeDict
 from ..models import ChatResponse
+from .retrievals import RetrievalManager
 
 
 class EmptyRetriever(BaseRetriever):
@@ -614,3 +615,26 @@ class AbstractBot(DBInterface, ABC):
                 await grpc.aio.shutdown_grpc_aio()
             except Exception:
                 pass
+
+def get_retrieval(self, source_path: str = 'web', request: web.Request = None):
+        pre_context = "\n".join(f"- {a}." for a in self.pre_instructions)
+        system_prompt = self.system_prompt_template.format_map(
+            SafeDict(
+                summaries=pre_context
+            )
+        )
+        human_prompt = self.human_prompt_template
+        # Generate the Retrieval
+        rm = RetrievalManager(
+            chatbot_id=self.chatbot_id,
+            chatbot_name=self.name,
+            source_path=source_path,
+            model=self._llm,
+            store=self.store,
+            memory=None,
+            system_prompt=system_prompt,
+            human_prompt=human_prompt,
+            kb=self.knowledge_base,
+            request=request
+        )
+        return rm
