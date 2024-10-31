@@ -279,7 +279,7 @@ class AbstractBot(DBInterface, ABC):
             mdl = VertexLLM(model="gemini-1.5-pro", **kwargs)
         elif llm == 'anthropic' and ANTHROPIC_ENABLED:
             mdl = Anthropic(model="claude-3-opus-20240229", **kwargs)
-        elif llm in ('groq', 'Groq', 'llama3') and GROQ_ENABLED:
+        elif llm in ('groq', 'Groq') and GROQ_ENABLED:
             mdl = GroqLLM(model="llama3-70b-8192", **kwargs)
         elif llm == 'llama3' and GROQ_ENABLED:
             mdl = GroqLLM(model="llama3-groq-70b-8192-tool-use-preview", **kwargs)
