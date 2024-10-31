@@ -35,11 +35,49 @@ from ..conf import (
 )
 ## LLM configuration
 from ..llms import get_llm, AbstractLLM
-from ..llms.vertex import VertexLLM
+## LLM configuration
+# Vertex
+try:
+    from ..llms.vertex import VertexLLM
+    VERTEX_ENABLED = True
+except (ModuleNotFoundError, ImportError):
+    VERTEX_ENABLED = False
+
+# Google
+try:
+    from ..llms.google import GoogleGenAI
+    GOOGLE_ENABLED = True
+except (ModuleNotFoundError, ImportError):
+    GOOGLE_ENABLED = False
+
+# Anthropic:
+try:
+    from ..llms.anthropic import Anthropic
+    ANTHROPIC_ENABLED = True
+except (ModuleNotFoundError, ImportError):
+    ANTHROPIC_ENABLED = False
+
+# OpenAI
+try:
+    from ..llms.openai import OpenAILLM
+    OPENAI_ENABLED = True
+except (ModuleNotFoundError, ImportError):
+    OPENAI_ENABLED = False
+
+# Groq
 try:
     from ..llms.groq import GroqLLM
-except ImportError:
-    pass
+    GROQ_ENABLED = True
+except (ModuleNotFoundError, ImportError):
+    GROQ_ENABLED = False
+
+# for exponential backoff
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_random_exponential,
+)  # for exponential backoff
+
 # Stores
 from ..stores import get_vectordb
 from ..utils import SafeDict
@@ -222,13 +260,46 @@ class AbstractBot(DBInterface, ABC):
         self._llm_obj = model
         self._llm = model.get_llm()
 
+    @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(6))
+    def llm_chain(
+        self, llm: str = "vertexai", **kwargs
+    ) -> AbstractLLM:
+        """llm_chain.
+
+        Args:
+            llm (str): The language model to use.
+
+        Returns:
+            AbstractLLM: The language model to use.
+
+        """
+        if llm == 'openai' and OPENAI_ENABLED:
+            mdl = OpenAILLM(model="gpt-3.5-turbo", **kwargs)
+        elif llm in ('vertexai', 'VertexLLM') and VERTEX_ENABLED:
+            mdl = VertexLLM(model="gemini-1.5-pro", **kwargs)
+        elif llm == 'anthropic' and ANTHROPIC_ENABLED:
+            mdl = Anthropic(model="claude-3-opus-20240229", **kwargs)
+        elif llm in ('groq', 'Groq', 'llama3') and GROQ_ENABLED:
+            mdl = GroqLLM(model="llama3-70b-8192", **kwargs)
+        elif llm == 'llama3' and GROQ_ENABLED:
+            mdl = GroqLLM(model="llama3-groq-70b-8192-tool-use-preview", **kwargs)
+        elif llm == 'mixtral' and GROQ_ENABLED:
+            mdl = GroqLLM(model="mixtral-8x7b-32768", **kwargs)
+        elif llm == 'google' and GOOGLE_ENABLED:
+            mdl = GoogleGenAI(model="models/gemini-1.5-pro-latest", **kwargs)
+        else:
+            raise ValueError(f"Invalid llm: {llm}")
+
+        # get the LLM:
+        return mdl
+
     def _configure_llm(self, llm: Union[str, Callable] = None, config: Optional[dict] = None):
         """
         Configuration of LLM.
         """
         if isinstance(llm, str):
             # Get the LLM By Name:
-            self._llm_obj = get_llm(
+            self._llm_obj = self.llm_chain(
                 llm,
                 **config
             )
@@ -244,20 +315,12 @@ class AbstractBot(DBInterface, ABC):
         else:
             # TODO: Calling a Default LLM
             # TODO: passing the default configuration
-            if self._default_llm == 'vertexai':
-                self._llm_obj = VertexLLM(
-                    model='gemini-1.5-pro',
-                    temperature=0.2,
-                    top_k=30,
-                    Top_p=0.6,
-                )
-            else:
-                self._llm_obj = GroqLLM(
-                    model="llama3-groq-70b-8192-tool-use-preview",
-                    temperature=0.2,
-                    top_k=30,
-                    Top_p=0.6,
-                )
+            self._llm_obj = self.llm_chain(
+                llm=self._default_llm,
+                temperature=0.2,
+                top_k=30,
+                Top_p=0.6,
+            )
             self._llm = self._llm_obj.get_llm()
 
     def create_kb(self, documents: list):
@@ -427,7 +490,14 @@ class AbstractBot(DBInterface, ABC):
     ):
         # re-configure LLM:
         new_llm = kwargs.pop('llm', None)
-        llm_config = kwargs.pop('llm_config', {})
+        llm_config = kwargs.pop(
+            'llm_config',
+            {
+                "temperature": 0.2,
+                "top_k": 30,
+                "Top_p": 0.6
+            }
+        )
         self._configure_llm(llm=new_llm, config=llm_config)
         # define the Pre-Context
         pre_context = "\n".join(f"- {a}." for a in self.pre_instructions)
@@ -521,7 +591,14 @@ class AbstractBot(DBInterface, ABC):
         )
         # re-configure LLM:
         new_llm = kwargs.pop('llm', None)
-        llm_config = kwargs.pop('llm_config', {})
+        llm_config = kwargs.pop(
+            'llm_config',
+            {
+                "temperature": 0.2,
+                "top_k": 30,
+                "Top_p": 0.6
+            }
+        )
         self._configure_llm(llm=new_llm, config=llm_config)
         # Combine into a ChatPromptTemplate
         prompt = PromptTemplate(
