@@ -1,4 +1,4 @@
-from .basic import Chatbot
+from .chatbot import Chatbot
 
 
 class BoseBot(Chatbot):
