@@ -6,12 +6,12 @@ from parrot.llms.vertex import VertexLLM
 async def get_agent():
     """Return the New Agent.
     """
-    # llm = GroqLLM(
-    #     model="llama3-groq-70b-8192-tool-use-preview",
-    #     temperature=0.1,
-    #     top_k=30,
-    #     Top_p=0.6,
-    # )
+    llm = GroqLLM(
+        model="llama3-groq-70b-8192-tool-use-preview",
+        temperature=0.1,
+        top_k=30,
+        Top_p=0.6,
+    )
     llm = VertexLLM(
         model='gemini-1.5-pro',
         temperature=0.1,

@@ -55,6 +55,7 @@ try:
 except (ModuleNotFoundError, ImportError):
     GROQ_ENABLED = False
 
+# for exponential backoff
 from tenacity import (
     retry,
     stop_after_attempt,
