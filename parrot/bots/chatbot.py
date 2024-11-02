@@ -26,6 +26,7 @@ class Chatbot(AbstractBot):
     """
     def __init__(self, **kwargs):
         """Initialize the Chatbot with the given configuration."""
+        super().__init__(**kwargs)
         # Configuration File:
         self.config_file: PurePath = kwargs.get('config_file', None)
         # Other Configuration
