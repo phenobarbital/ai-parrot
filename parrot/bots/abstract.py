@@ -148,7 +148,7 @@ class AbstractBot(DBInterface, ABC):
             str(uuid.uuid4().hex)
         )
         # Basic Information:
-        self.name = name
+        self.name: str = name
         ##  Logging:
         self.logger = logging.getLogger(f'{self.name}.Bot')
         # Start initialization:
@@ -197,7 +197,7 @@ class AbstractBot(DBInterface, ABC):
         # Vector information:
         self.chunk_size: int = int(kwargs.get('chunk_size', 768))
         self.dimension: int = int(kwargs.get('dimension', 768))
-        self.use_database: bool = kwargs.get('use_database', False)
+        self._use_database: bool = kwargs.get('use_database', False)
         self._database: dict = kwargs.get('database', {})
         self.store: Callable = None
         self.memory: Callable = None
@@ -531,9 +531,9 @@ class AbstractBot(DBInterface, ABC):
             )
         try:
             # allowing DB connections:
-            self.store.use_database = self.use_database
+            self.store._use_database = self._use_database
             async with self.store as store:  #pylint: disable=E1101
-                if self.use_database is True:
+                if self._use_database is True:
                     vector = store.get_vector(metric_type=metric_type)
                     retriever = VectorStoreRetriever(
                         vectorstore=vector,
@@ -606,9 +606,9 @@ class AbstractBot(DBInterface, ABC):
             input_variables=['context', 'question']
         )
         # allowing DB connections:
-        self.store.use_database = self.use_database
+        self.store._use_database = self._use_database
         async with self.store as store:  #pylint: disable=E1101
-            if self.use_database is True:
+            if self._use_database is True:
                 vector = store.get_vector(metric_type=metric_type)
                 retriever = VectorStoreRetriever(
                     vectorstore=vector,
@@ -694,25 +694,25 @@ class AbstractBot(DBInterface, ABC):
             except Exception:
                 pass
 
-def get_retrieval(self, source_path: str = 'web', request: web.Request = None):
-        pre_context = "\n".join(f"- {a}." for a in self.pre_instructions)
-        system_prompt = self.system_prompt_template.format_map(
-            SafeDict(
-                summaries=pre_context
+    def get_retrieval(self, source_path: str = 'web', request: web.Request = None):
+            pre_context = "\n".join(f"- {a}." for a in self.pre_instructions)
+            system_prompt = self.system_prompt_template.format_map(
+                SafeDict(
+                    summaries=pre_context
+                )
             )
-        )
-        human_prompt = self.human_prompt_template
-        # Generate the Retrieval
-        rm = RetrievalManager(
-            chatbot_id=self.chatbot_id,
-            chatbot_name=self.name,
-            source_path=source_path,
-            model=self._llm,
-            store=self.store,
-            memory=None,
-            system_prompt=system_prompt,
-            human_prompt=human_prompt,
-            kb=self.knowledge_base,
-            request=request
-        )
-        return rm
+            human_prompt = self.human_prompt_template
+            # Generate the Retrieval
+            rm = RetrievalManager(
+                chatbot_id=self.chatbot_id,
+                chatbot_name=self.name,
+                source_path=source_path,
+                model=self._llm,
+                store=self.store,
+                memory=None,
+                system_prompt=system_prompt,
+                human_prompt=human_prompt,
+                kb=self.knowledge_base,
+                request=request
+            )
+            return rm

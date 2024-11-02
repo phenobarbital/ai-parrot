@@ -38,7 +38,7 @@ class AbstractStore(ABC):
         self._metric_type: str = kwargs.pop("metric_type", 'COSINE')
         self._index_type: str = kwargs.pop("index_type", 'IVF_FLAT')
         self.database: str = kwargs.pop('database', '')
-        self.use_database: bool = kwargs.pop('use_database', True)
+        self._use_database: bool = kwargs.pop('use_database', True)
         self.index_name = kwargs.pop("index_name", "my_index")
         if embeddings is not None:
             if isinstance(embeddings, str):
@@ -74,7 +74,7 @@ class AbstractStore(ABC):
             self._embed_ = self.create_embedding(
                 embedding_model=self.embedding_model
             )
-        if self.use_database is True:
+        if self._use_database is True:
             await self.connection()
         return self
 
@@ -91,7 +91,7 @@ class AbstractStore(ABC):
         self._embed_ = None
         del self.tensor
         try:
-            if self.use_database is True:
+            if self._use_database is True:
                 await self.disconnect()
             torch.cuda.empty_cache()
         except RuntimeError:
