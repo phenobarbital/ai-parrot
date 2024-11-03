@@ -115,6 +115,8 @@ setup(
     ],
     packages=find_packages(
         exclude=[
+            "env",
+            "etc",
             "bin",
             "contrib",
             "docs",
@@ -131,6 +133,8 @@ setup(
             "resources",
             "static",
             "templates",
+            "resources",
+            "settings",
             "videos"  # Exclude the 'videos' folder
         ]
     ),
