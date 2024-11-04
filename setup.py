@@ -180,6 +180,7 @@ setup(
             "google-api-python-client>=2.86.0",
         ],
         "chatbots": [
+            "torch==2.5.1",
             "langchain_huggingface==0.1.0",
             "langchain-text-splitters==0.3.1",
             "fastembed==0.3.4",
