@@ -27,6 +27,7 @@ class VertexLLM(AbstractLLM):
         "gemini-1.5-flash-preview-0514",
         "gemini-1.5-flash-001",
         "chat-bison@001",
+        "chat-bison@002",
         "claude-3-opus@20240229",
         'claude-3-5-sonnet@20240620'
     ]
@@ -52,8 +53,8 @@ class VertexLLM(AbstractLLM):
         if use_garden is True:
             base_llm = VertexAIModelGarden
             self.args['endpoint_id'] = self.model
-        elif self.model == "chat":
-            self.args['model_name'] = "chat-bison@001"
+        if 'bison' in self.model:
+            self.args['model_name'] = self.model
             base_llm = ChatVertexAI
         else:
             self.args['model_name'] = self.model
