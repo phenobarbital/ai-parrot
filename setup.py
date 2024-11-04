@@ -214,7 +214,7 @@ setup(
             "vertexai==1.71.1"
         ],
         "hunggingfaces": [
-            "llama-index-llms-huggingface==0.2.7"
+            "llama-index-llms-huggingface==0.3.5"
         ],
         "groq": [
             "groq==0.11.0",
