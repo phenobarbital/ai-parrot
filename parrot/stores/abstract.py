@@ -1,16 +1,22 @@
 from abc import ABC, abstractmethod
 from typing import Union
 from collections.abc import Callable
-from langchain_huggingface import (
-    HuggingFaceEmbeddings
-)
-from langchain_community.embeddings import (
-    HuggingFaceBgeEmbeddings
-)
-from langchain_community.embeddings.fastembed import (
-    FastEmbedEmbeddings
-)
 from navconfig.logging import logging
+try:
+    import torch  # pylint: disable=E0401,C0415  # noqa: F401
+    from langchain_huggingface import (
+        HuggingFaceEmbeddings
+    )
+    from langchain_community.embeddings import (
+        HuggingFaceBgeEmbeddings
+    )
+    from langchain_community.embeddings.fastembed import (
+        FastEmbedEmbeddings
+    )
+except ImportError:
+    logging.warning(
+        f"Unable to import HuggingFace Embeddings, required to use Vector Databases and embeddings."
+    )
 from ..conf import (
     EMBEDDING_DEVICE,
     EMBEDDING_DEFAULT_MODEL,
@@ -65,11 +71,11 @@ class AbstractStore(ABC):
         return self._connected
 
     async def __aenter__(self):
-        if self._embed_ is None:
-            self._embed_ = self.create_embedding(
-                embedding_model=self.embedding_model
-            )
         if self._use_database is True:
+            if self._embed_ is None:
+                self._embed_ = self.create_embedding(
+                    embedding_model=self.embedding_model
+                )
             await self.connection()
         return self
 
@@ -102,7 +108,6 @@ class AbstractStore(ABC):
         """Get Default device for Torch and transformers.
 
         """
-        import torch  # pylint: disable=E0401,C0415  # noqa: F401
         torch.backends.cudnn.deterministic = True
         if device_type is not None:
             return torch.device(device_type)
