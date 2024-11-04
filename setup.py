@@ -200,7 +200,7 @@ setup(
         ],
         "anthropic": [
             "langchain-anthropic==0.1.11",
-            "anthropic==0.25.2",
+            "anthropic==0.38.0",
         ],
         "openai": [
             "langchain-openai==0.1.21",
