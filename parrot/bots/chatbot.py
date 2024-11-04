@@ -4,6 +4,7 @@ Foundational base of every Chatbot and Agent in ai-parrot.
 from typing import Any, Union
 from pathlib import Path, PurePath
 import uuid
+import torch
 from aiohttp import web
 # Navconfig
 from navconfig import BASE_DIR
@@ -11,12 +12,12 @@ from navconfig.exceptions import ConfigError  # pylint: disable=E0611
 from asyncdb.exceptions import NoDataFound
 from ..utils import parse_toml_config
 from ..conf import (
+    EMBEDDING_DEVICE,
     default_dsn,
-    EMBEDDING_DEFAULT_MODEL
+    EMBEDDING_DEFAULT_MODEL,
 )
 from ..models import ChatbotModel
 from .abstract import AbstractBot
-
 
 class Chatbot(AbstractBot):
     """Represents an Bot (Chatbot, Agent) in Navigator.
@@ -49,6 +50,20 @@ class Chatbot(AbstractBot):
 
     def __repr__(self):
         return f"<ChatBot.{self.__class__.__name__}:{self.name}>"
+
+    def _get_device(self, cuda_number: int = 0):
+        torch.backends.cudnn.deterministic = True
+        if torch.cuda.is_available():
+            # Use CUDA GPU if available
+            device = torch.device(f'cuda:{cuda_number}')
+        elif torch.backends.mps.is_available():
+            # Use CUDA Multi-Processing Service if available
+            device = torch.device("mps")
+        elif EMBEDDING_DEVICE == 'cuda':
+            device = torch.device(f'cuda:{cuda_number}')
+        else:
+            device = torch.device(EMBEDDING_DEVICE)
+        return device
 
     async def configure(self, app = None) -> None:
         if app is None:

@@ -1,7 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Union
 from collections.abc import Callable
-import torch
 from langchain_huggingface import (
     HuggingFaceEmbeddings
 )
@@ -66,10 +65,6 @@ class AbstractStore(ABC):
         return self._connected
 
     async def __aenter__(self):
-        try:
-            self.tensor = torch.randn(1000, 1000).cuda()
-        except RuntimeError:
-            self.tensor = None
         if self._embed_ is None:
             self._embed_ = self.create_embedding(
                 embedding_model=self.embedding_model
@@ -89,11 +84,9 @@ class AbstractStore(ABC):
     async def __aexit__(self, exc_type, exc_value, traceback):
         # closing Embedding
         self._embed_ = None
-        del self.tensor
         try:
             if self._use_database is True:
                 await self.disconnect()
-            torch.cuda.empty_cache()
         except RuntimeError:
             pass
 
@@ -109,6 +102,8 @@ class AbstractStore(ABC):
         """Get Default device for Torch and transformers.
 
         """
+        import torch  # pylint: disable=E0401,C0415  # noqa: F401
+        torch.backends.cudnn.deterministic = True
         if device_type is not None:
             return torch.device(device_type)
         if torch.cuda.is_available():
