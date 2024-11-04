@@ -5,7 +5,7 @@ import uuid
 import asyncio
 from aiohttp import web
 import grpc
-import torch
+# import torch
 from langchain.memory import (
     ConversationBufferMemory
 )
@@ -25,17 +25,21 @@ from langchain_community.chat_message_histories import (
 )
 from langchain_core.retrievers import BaseRetriever
 from langchain_core.vectorstores import VectorStoreRetriever
+# for exponential backoff
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_random_exponential,
+)  # for exponential backoff
 from datamodel.exceptions import ValidationError  # pylint: disable=E0611
 from navconfig.logging import logging
 from ..interfaces import DBInterface
 from ..conf import (
-    EMBEDDING_DEVICE,
     REDIS_HISTORY_URL,
     EMBEDDING_DEFAULT_MODEL
 )
 ## LLM configuration
-from ..llms import get_llm, AbstractLLM
-## LLM configuration
+from ..llms import AbstractLLM
 # Vertex
 try:
     from ..llms.vertex import VertexLLM
@@ -71,13 +75,6 @@ try:
 except (ModuleNotFoundError, ImportError):
     GROQ_ENABLED = False
 
-# for exponential backoff
-from tenacity import (
-    retry,
-    stop_after_attempt,
-    wait_random_exponential,
-)  # for exponential backoff
-
 # Stores
 from ..stores import get_vectordb
 from ..utils import SafeDict
@@ -100,6 +97,7 @@ class AbstractBot(DBInterface, ABC):
 
     This class is an abstract representation a base abstraction for all Chatbots.
     """
+    # TODO: make tensor and embeddings optional.
     # Define system prompt template
     system_prompt_template = """
     You are {name}, a helpful and professional AI assistant.
@@ -248,9 +246,6 @@ class AbstractBot(DBInterface, ABC):
     def default_role(self) -> str:
         return "Assisting with queries"
 
-    def get_llm(self):
-        return self._llm_obj
-
     @property
     def llm(self):
         return self._llm
@@ -334,7 +329,7 @@ class AbstractBot(DBInterface, ABC):
                     **doc
                 }
             else:
-                meta = { 'source': source}
+                meta = {'source': source}
             if content:
                 new_docs.append(
                     Document(
@@ -358,7 +353,6 @@ class AbstractBot(DBInterface, ABC):
             **config
         )
 
-
     def _define_prompt(self, config: Optional[dict] = None):
         """
         Define the System Prompt and replace variables.
@@ -379,21 +373,7 @@ class AbstractBot(DBInterface, ABC):
         )
         # print('Template Prompt: \n', self.system_prompt_template)
 
-    def _get_device(self, cuda_number: int = 0):
-        torch.backends.cudnn.deterministic = True
-        if torch.cuda.is_available():
-            # Use CUDA GPU if available
-            device = torch.device(f'cuda:{cuda_number}')
-        elif torch.backends.mps.is_available():
-            # Use CUDA Multi-Processing Service if available
-            device = torch.device("mps")
-        elif EMBEDDING_DEVICE == 'cuda':
-            device = torch.device(f'cuda:{cuda_number}')
-        else:
-            device = torch.device(EMBEDDING_DEVICE)
-        return device
-
-    async def configure(self, app = None) -> None:
+    async def configure(self, app=None) -> None:
         """Basic Configuration of Bot.
         """
         self.app = None
