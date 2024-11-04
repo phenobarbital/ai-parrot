@@ -11,7 +11,9 @@ prune etc
 prune env
 prune resources
 prune dist
-
+prune settings
+prune templates
+prune static
 
 # Optionally, you can also specify any other unwanted directories
 prune tests
