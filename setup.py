@@ -199,7 +199,7 @@ setup(
             "opencv-python==4.10.0.84",
         ],
         "anthropic": [
-            "langchain-anthropic==0.1.11",
+            "langchain-anthropic==0.2.4",
             "anthropic==0.25.2",
         ],
         "openai": [
