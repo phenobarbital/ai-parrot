@@ -3,7 +3,6 @@ from typing import Any
 import uuid
 import asyncio
 from aiohttp import web
-from sentence_transformers import SentenceTransformer, util
 from langchain.memory import (
     ConversationSummaryMemory,
     ConversationBufferMemory
@@ -374,20 +373,20 @@ class RetrievalManager:
                 response.documents = d
         return markdown_output
 
-    def evaluate_distance(self, model, question, source_documents):
-        tokenizer = SentenceTransformer(model)
-        query_embedding = tokenizer.encode(question)
-        document_embeddings = [
-            tokenizer.encode(doc.page_content) for doc in source_documents
-        ]
-        distances = util.cos_sim(query_embedding, document_embeddings)
-        result = []
-        for doc, distance in zip(source_documents, distances):
-            result.append({
-                "document": doc,
-                "distance": distance
-            })
-        return result
+    # def evaluate_distance(self, model, question, source_documents):
+    #     tokenizer = SentenceTransformer(model)
+    #     query_embedding = tokenizer.encode(question)
+    #     document_embeddings = [
+    #         tokenizer.encode(doc.page_content) for doc in source_documents
+    #     ]
+    #     distances = util.cos_sim(query_embedding, document_embeddings)
+    #     result = []
+    #     for doc, distance in zip(source_documents, distances):
+    #         result.append({
+    #             "document": doc,
+    #             "distance": distance
+    #         })
+    #     return result
 
     async def log_usage(self, response: ChatResponse, request: web.Request = None):
         params = {
