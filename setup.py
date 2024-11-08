@@ -232,7 +232,7 @@ setup(
         ],
         "crew": [
             "colbert-ai==0.2.19",
-            "vanna==0.3.4", # Vanna:
+            "vanna==0.7.5", # Vanna:
             "crewai[tools]==0.28.8"
         ],
         "analytics": [
