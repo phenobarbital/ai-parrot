@@ -175,7 +175,7 @@ setup(
             "pyowm==3.3.0",
             "O365==2.0.35",
             "stackapi==0.3.1",
-            "duckduckgo-search==5.3.0",
+            "duckduckgo-search==6.3.6",
             "google-search-results==2.4.2",
             "google-api-python-client>=2.86.0",
         ],
