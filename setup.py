@@ -161,7 +161,7 @@ setup(
         "transitions==0.9.0",
         "sentencepiece==0.2.0",
         "weasyprint==61.2",
-        "markdown2==2.4.13",
+        "markdown2==2.5.2",
     ],
     extras_require={
         "agents": [
