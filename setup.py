@@ -238,7 +238,7 @@ setup(
         "analytics": [
             "annoy==1.17.3",
             "gradio_tools==0.0.9",
-            "gradio-client==0.2.9",
+            "gradio-client==1.5.2",
             "streamlit==1.37.1",
             # "timm==0.9.16", # image-processor
             # "ultralytics==8.2.4", # image-processor
