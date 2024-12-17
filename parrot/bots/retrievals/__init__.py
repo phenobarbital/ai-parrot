@@ -62,7 +62,8 @@ class RetrievalManager:
         memory: ConversationBufferMemory = None,
         source_path: str = 'web',
         request: web.Request = None,
-        kb: Any = None
+        kb: Any = None,
+        **kwargs
     ):
         # Chatbot ID:
         self.chatbot_id: uuid.UUID = chatbot_id
@@ -86,6 +87,9 @@ class RetrievalManager:
         self.logger = logging.getLogger('Parrot.Retrieval')
         # Web Request:
         self.request = request
+        # Test Vector Retriever:
+        self._test_vector: bool = kwargs.get('test_vector', False)
+
 
     def __enter__(self):
         return self
@@ -111,6 +115,19 @@ class RetrievalManager:
             input_key=input_key,
             output_key=output_key
         )
+
+    def test_retriever(self, question, retriever):
+        if self._test_vector is True:
+            docs = retriever.get_relevant_documents(question)
+            self.logger.notice(
+                f":: Question: {question}"
+            )
+            # Print the retrieved documents
+            for doc in docs:
+                self.logger.debug(
+                    f":: Document: {doc.page_content}"
+                )
+                print("---")
 
     ### Different types of Retrieval
     def conversation(
@@ -155,13 +172,10 @@ class RetrievalManager:
                 retrievers=[simil_retriever, retriever],
                 weights=[0.6, 0.4]
             )
-        # # TEST THE VECTOR RETRIEVER:
-        # docs = retriever.get_relevant_documents(question)
-        # print('CHECK QUESTIONS >')
-        # # Print the retrieved documents
-        # for doc in docs:
-        #     print(doc.page_content)
-        #     print("---")
+
+
+        # TEST THE VECTOR RETRIEVER:
+        self.test_retriever(question, retriever)
 
         # Create prompt templates
         system_prompt = SystemMessagePromptTemplate.from_template(
@@ -258,6 +272,8 @@ class RetrievalManager:
                 retrievers=[simil_retriever, retriever],
                 weights=[0.7, 0.3]
             )
+        # TEST THE VECTOR RETRIEVER:
+        self.test_retriever(question, retriever)
         human_prompt = self.human_prompt.replace(
             '**Chat History:**', ''
         )
@@ -474,13 +490,8 @@ class RetrievalManager:
                 chain_type=chain_type,
                 search_kwargs=search_kwargs
             )
-            # # TESTING THE VECTOR STORE:
-            # docs = retriever.get_relevant_documents(question)
-            # # Print the retrieved documents
-            # print('CHECK QUESTIONS >')
-            # for doc in docs:
-            #     print(doc.page_content)
-            #     print("---")
+            # TEST THE VECTOR RETRIEVER:
+            self.test_retriever(question, retriever)
 
             system_prompt = SystemMessagePromptTemplate.from_template(
                 self.system_prompt
