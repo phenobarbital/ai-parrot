@@ -113,6 +113,7 @@ class AbstractBot(DBInterface, ABC):
 
     Here is a brief summary of relevant information:
     Context: {context}
+    End of Context.
 
     **{rationale}**
 
@@ -611,6 +612,11 @@ class AbstractBot(DBInterface, ABC):
             )
             try:
                 response = await chain.ainvoke(
+                    question
+                )
+            except (RuntimeError, asyncio.CancelledError):
+                # check for "Event loop is closed"
+                response = chain.invoke(
                     question
                 )
             except Exception as e:

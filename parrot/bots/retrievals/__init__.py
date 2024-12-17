@@ -153,8 +153,16 @@ class RetrievalManager:
         else:
             retriever = EnsembleRetriever(
                 retrievers=[simil_retriever, retriever],
-                weights=[0.7, 0.3]
+                weights=[0.6, 0.4]
             )
+        # # TEST THE VECTOR RETRIEVER:
+        # docs = retriever.get_relevant_documents(question)
+        # print('CHECK QUESTIONS >')
+        # # Print the retrieved documents
+        # for doc in docs:
+        #     print(doc.page_content)
+        #     print("---")
+
         # Create prompt templates
         system_prompt = SystemMessagePromptTemplate.from_template(
             self.system_prompt
@@ -466,6 +474,14 @@ class RetrievalManager:
                 chain_type=chain_type,
                 search_kwargs=search_kwargs
             )
+            # # TESTING THE VECTOR STORE:
+            # docs = retriever.get_relevant_documents(question)
+            # # Print the retrieved documents
+            # print('CHECK QUESTIONS >')
+            # for doc in docs:
+            #     print(doc.page_content)
+            #     print("---")
+
             system_prompt = SystemMessagePromptTemplate.from_template(
                 self.system_prompt
             )
