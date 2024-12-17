@@ -28,11 +28,12 @@ class Chatbot(AbstractBot):
     def __init__(self, **kwargs):
         """Initialize the Chatbot with the given configuration."""
         super().__init__(**kwargs)
+        # For Chatbots, always use a database:
+        # self._use_database = True
         # Configuration File:
         self.config_file: PurePath = kwargs.get('config_file', None)
         # Other Configuration
         self.confidence_threshold: float = kwargs.get('threshold', 0.5)
-
         # Text Documents
         self.documents_dir = kwargs.get(
             'documents_dir',
@@ -241,6 +242,8 @@ class Chatbot(AbstractBot):
             )
         vector_config = file_config.get('database', {})
         vector_db = vector_config.pop('vector_database')
+        if vector_db:
+            self._use_database = True
         # configure vector database:
         await self.store_configuration(
             vector_db,
