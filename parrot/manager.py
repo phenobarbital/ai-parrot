@@ -7,15 +7,13 @@ from typing import Any, Dict, Type
 from importlib import import_module
 from aiohttp import web
 from navconfig.logging import logging
-from .bots import (
-    AbstractChatbot,
-    Chatbot
-)
+from .bots.abstract import AbstractBot
+from .bots.chatbot import Chatbot
 from .handlers.chat import ChatHandler # , BotHandler
 from .handlers import ChatbotHandler
 from .models import ChatbotModel
 # Manual Load of Copilot Agent:
-from .bots.copilot import CopilotAgent
+# from .bots.copilot import CopilotAgent
 
 
 class ChatbotManager:
@@ -28,17 +26,17 @@ class ChatbotManager:
 
     def __init__(self) -> None:
         self.app = None
-        self._bots: Dict[str, AbstractChatbot] = {}
+        self._bots: Dict[str, AbstractBot] = {}
         self.logger = logging.getLogger(name='Parrot.Manager')
 
-    def get_chatbot_class(self, class_name: str) -> Type[AbstractChatbot]:
+    def get_chatbot_class(self, class_name: str) -> Type[AbstractBot]:
         """
         Dynamically import a chatbot class based on the class name
           from the relative module '.bots'.
         Args:
         class_name (str): The name of the chatbot class to be imported.
         Returns:
-        Type[AbstractChatbot]: A chatbot class derived from AbstractChatbot.
+        Type[AbstractBot]: A chatbot class derived from AbstractBot.
         """
         module = import_module('.bots', __package__)
         try:
@@ -75,27 +73,29 @@ class ChatbotManager:
                         )
                 elif bot.bot_type == 'agent':
                     self.logger.notice(
-                        f"Loading Agent '{bot.name}'..."
+                        f"Unsupported kind of Agent '{bot.name}'..."
                     )
+                    chatbot = None
                     # TODO: extract the list of tools from Agent config
-                    try:
-                        tools = CopilotAgent.default_tools()
-                        chatbot = CopilotAgent(
-                            name=bot.name,
-                            llm=bot.llm,
-                            tools=tools
-                        )
-                    except Exception as e:
-                        print('AQUI >>> ', e)
-                        self.logger.error(
-                            f"Failed to configure Agent '{bot.name}': {e}"
-                        )
-                self.add_chatbot(chatbot)
+                    # try:
+                    #     tools = CopilotAgent.default_tools()
+                    #     chatbot = CopilotAgent(
+                    #         name=bot.name,
+                    #         llm=bot.llm,
+                    #         tools=tools
+                    #     )
+                    # except Exception as e:
+                    #     print('AQUI >>> ', e)
+                    #     self.logger.error(
+                    #         f"Failed to configure Agent '{bot.name}': {e}"
+                    #     )
+                if chatbot:
+                    self.add_chatbot(chatbot)
         self.logger.info(
             ":: Chatbots loaded successfully."
         )
 
-    def create_chatbot(self, class_name: Any = None, name: str = None, **kwargs) -> AbstractChatbot:
+    def create_chatbot(self, class_name: Any = None, name: str = None, **kwargs) -> AbstractBot:
         """Create a chatbot and add it to the manager."""
         if class_name is None:
             class_name = Chatbot
@@ -112,11 +112,11 @@ class ChatbotManager:
             chatbot.llm = llm
         return chatbot
 
-    def add_chatbot(self, chatbot: AbstractChatbot) -> None:
+    def add_chatbot(self, chatbot: AbstractBot) -> None:
         """Add a chatbot to the manager."""
         self._bots[chatbot.name] = chatbot
 
-    def get_chatbot(self, name: str) -> AbstractChatbot:
+    def get_chatbot(self, name: str) -> AbstractBot:
         """Get a chatbot by name."""
         return self._bots.get(name)
 
@@ -124,7 +124,7 @@ class ChatbotManager:
         """Remove a chatbot by name."""
         del self._bots[name]
 
-    def get_chatbots(self) -> Dict[str, AbstractChatbot]:
+    def get_chatbots(self) -> Dict[str, AbstractBot]:
         """Get all chatbots."""
         return self._bots
 

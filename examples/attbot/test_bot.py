@@ -1,18 +1,16 @@
 import asyncio
-from parrot.bots.troc import AskTROC
+from parrot.bots.chatbot import Chatbot
 from parrot.llms.vertex import VertexLLM
 
 async def get_agent():
-    """Return the New Agent.
-    """
     llm = VertexLLM(
         model='gemini-1.5-pro',
         temperature=0.2,
         top_k=30,
         Top_p=0.5,
     )
-    agent = AskTROC(
-        name='AskPage',
+    agent = Chatbot(
+        name='ATTBot',
         llm=llm
     )
     await agent.configure()
@@ -38,5 +36,5 @@ if __name__ == "__main__":
                 response = loop.run_until_complete(
                     ask_agent(agent, query, memory)
                 )
-                print('::: Response: ', response)
+                print('::: Response: ', response.answer)
         query = input("Type in your query: \n")

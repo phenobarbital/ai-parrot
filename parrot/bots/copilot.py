@@ -2,8 +2,8 @@ from langchain_experimental.tools.python.tool import PythonAstREPLTool
 from .base import BaseAgent
 # importing Tools
 from ..tools import (
-    ZipcodeAPIToolkit,
-    WikipediaTool,
+    # ZipcodeAPIToolkit,
+    # WikipediaTool,
     # WikidataTool,
     GoogleSearchTool,
     GoogleLocationFinder,
@@ -17,10 +17,10 @@ from ..tools import (
 from ..tools.execute import ExecutablePythonREPLTool
 
 # ZipCode API Toolkit
-zpt = ZipcodeAPIToolkit()
-zpt_tools = zpt.get_tools()
+# zpt = ZipcodeAPIToolkit()
+# zpt_tools = zpt.get_tools()
 
-wk1 = WikipediaTool()
+# wk1 = WikipediaTool()
 # wk12 = WikidataTool()
 
 g1 = GoogleSearchTool()
@@ -35,12 +35,12 @@ stackexchange = StackExchangeTool()
 weather = OpenWeatherMapTool()
 
 tooling = [
-    wk1,
+    # wk1,
     g1, g2,
     b, d, yt,
     weather,
     stackexchange
-] + zpt_tools
+] # + zpt_tools
 
 class CopilotAgent(BaseAgent):
     """CopilotAgent Agent.
@@ -88,27 +88,28 @@ class CopilotAgent(BaseAgent):
             print('ERROR LOADING ZIPCODE TOOLS')
 
         try:
-            wk1 = WikipediaTool()
-            wk12 = WikidataTool()
+            # wk1 = WikipediaTool()
+            # wk12 = WikidataTool()
 
             g1 = GoogleSearchTool()
             g2 = GoogleLocationFinder()
 
             b = BingSearchTool()
             d = DuckDuckGoSearchTool()
-            ask = AskNewsTool()
+            # ask = AskNewsTool()
 
             yt = YouTubeSearchTool()
             stackexchange = StackExchangeTool()
             weather = OpenWeatherMapTool()
 
             tools = [
-                wk1,
-                wk12, g1, g2,
-                b, d, ask, yt,
+                # wk1,wk12,
+                g1, g2,
+                b, d, # ask,
+                yt,
                 weather,
                 stackexchange
-            ] + zpt_tools
+            ]
 
         except Exception as e:
             print('TOOL Error > ', e)
