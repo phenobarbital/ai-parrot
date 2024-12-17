@@ -3,8 +3,8 @@ from typing import Any
 import uuid
 import asyncio
 from aiohttp import web
+from langchain_core.vectorstores import VectorStoreRetriever
 from langchain.memory import (
-    ConversationSummaryMemory,
     ConversationBufferMemory
 )
 from langchain.chains.retrieval_qa.base import RetrievalQA
@@ -13,9 +13,7 @@ from langchain.chains.conversational_retrieval.base import (
 )
 from langchain.retrievers import (
     EnsembleRetriever,
-    ContextualCompressionRetriever
 )
-from langchain_core.vectorstores import VectorStoreRetriever
 from langchain.prompts import (
     ChatPromptTemplate,
     SystemMessagePromptTemplate,
@@ -130,7 +128,7 @@ class RetrievalManager:
                 print("---")
 
     ### Different types of Retrieval
-    def conversation(
+    async def conversation(
         self,
         question: str = None,
         chain_type: str = 'stuff',
@@ -482,7 +480,7 @@ class RetrievalManager:
             **kwargs
     ):
         # Generating Vector:
-        async with self.store.connection() as store:  #pylint: disable=E1101
+        async with self.store as store:  #pylint: disable=E1101
             vector = store.get_vector(metric_type=metric_type)
             retriever = VectorStoreRetriever(
                 vectorstore=vector,
@@ -492,7 +490,6 @@ class RetrievalManager:
             )
             # TEST THE VECTOR RETRIEVER:
             self.test_retriever(question, retriever)
-
             system_prompt = SystemMessagePromptTemplate.from_template(
                 self.system_prompt
             )

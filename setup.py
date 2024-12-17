@@ -213,7 +213,9 @@ setup(
         "google": [
             "langchain-google-genai==2.0.1",
             "langchain-google-vertexai==2.0.5",
-            "vertexai==1.71.1"
+            "vertexai==1.71.1",
+            "pydantic==2.9.2",
+            "pydantic-core==2.23.4"
         ],
         "hunggingfaces": [
             "llama-index-llms-huggingface==0.2.7"

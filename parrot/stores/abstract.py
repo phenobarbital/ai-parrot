@@ -70,6 +70,15 @@ class AbstractStore(ABC):
     def connected(self) -> bool:
         return self._connected
 
+    @abstractmethod
+    async def connection(self) -> tuple:
+        pass
+
+    @abstractmethod
+    async def disconnect(self) -> None:
+        pass
+
+    # Async Context Manager
     async def __aenter__(self):
         if self._use_database is True:
             if self._embed_ is None:
@@ -78,14 +87,6 @@ class AbstractStore(ABC):
                 )
             await self.connection()
         return self
-
-    @abstractmethod
-    async def connection(self) -> tuple:
-        pass
-
-    @abstractmethod
-    async def disconnect(self) -> None:
-        pass
 
     async def __aexit__(self, exc_type, exc_value, traceback):
         # closing Embedding
