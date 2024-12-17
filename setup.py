@@ -218,7 +218,7 @@ setup(
             "pydantic-core==2.23.4"
         ],
         "hunggingfaces": [
-            "llama-index-llms-huggingface==0.2.7"
+            "llama-index-llms-huggingface==0.4.1"
         ],
         "groq": [
             "groq==0.11.0",
