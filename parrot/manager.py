@@ -50,7 +50,7 @@ class ChatbotManager:
         db = app['database']
         async with await db.acquire() as conn:
             ChatbotModel.Meta.connection = conn
-            bots = await ChatbotModel.all()
+            bots = await ChatbotModel.filter(enabled=True)
             for bot in bots:
                 if bot.bot_type == 'chatbot':
                     self.logger.notice(
