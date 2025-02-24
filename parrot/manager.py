@@ -9,17 +9,18 @@ from aiohttp import web
 from navconfig.logging import logging
 from .bots.abstract import AbstractBot
 from .bots.chatbot import Chatbot
-from .handlers.chat import ChatHandler # , BotHandler
+from .handlers.chat import ChatHandler, BotHandler
 from .handlers import ChatbotHandler
 from .models import ChatbotModel
 # Manual Load of Copilot Agent:
 # from .bots.copilot import CopilotAgent
 
 
-class ChatbotManager:
-    """ChatbotManager.
+class BotManager:
+    """BotManager.
 
-    Manage chatbots and interact with them through via aiohttp App.
+    Manage Bots/Agents and interact with them through via aiohttp App.
+    Deploy and manage chatbots and agents using a RESTful API.
 
     """
     app: web.Application = None
@@ -27,22 +28,26 @@ class ChatbotManager:
     def __init__(self) -> None:
         self.app = None
         self._bots: Dict[str, AbstractBot] = {}
-        self.logger = logging.getLogger(name='Parrot.Manager')
+        self.logger = logging.getLogger(
+            name='Parrot.Manager'
+        )
 
-    def get_chatbot_class(self, class_name: str) -> Type[AbstractBot]:
+    def get_bot_class(self, class_name: str) -> Type[AbstractBot]:
         """
-        Dynamically import a chatbot class based on the class name
-          from the relative module '.bots'.
+        Dynamically import a Bot class based on the class name
+        from the relative module '.bots'.
         Args:
-        class_name (str): The name of the chatbot class to be imported.
+        class_name (str): The name of the Bot class to be imported.
         Returns:
-        Type[AbstractBot]: A chatbot class derived from AbstractBot.
+        Type[AbstractBot]: A Bot class derived from AbstractBot.
         """
         module = import_module('.bots', __package__)
         try:
             return getattr(module, class_name)
         except AttributeError:
-            raise ImportError(f"No class named '{class_name}' found in the module 'chatbots'.")
+            raise ImportError(
+                f"No class named '{class_name}' found in the module 'bots'."
+            )
 
     async def load_bots(self, app: web.Application) -> None:
         """Load all chatbots from DB."""
@@ -60,7 +65,7 @@ class ChatbotManager:
                     if cls_name is None:
                         class_name = Chatbot
                     else:
-                        class_name = self.get_chatbot_class(cls_name)
+                        class_name = self.get_bot_class(cls_name)
                     chatbot = class_name(
                         chatbot_id=bot.chatbot_id,
                         name=bot.name
@@ -76,32 +81,19 @@ class ChatbotManager:
                         f"Unsupported kind of Agent '{bot.name}'..."
                     )
                     chatbot = None
-                    # TODO: extract the list of tools from Agent config
-                    # try:
-                    #     tools = CopilotAgent.default_tools()
-                    #     chatbot = CopilotAgent(
-                    #         name=bot.name,
-                    #         llm=bot.llm,
-                    #         tools=tools
-                    #     )
-                    # except Exception as e:
-                    #     print('AQUI >>> ', e)
-                    #     self.logger.error(
-                    #         f"Failed to configure Agent '{bot.name}': {e}"
-                    #     )
                 if chatbot:
-                    self.add_chatbot(chatbot)
+                    self.add_bot(chatbot)
         self.logger.info(
             ":: Chatbots loaded successfully."
         )
 
-    def create_chatbot(self, class_name: Any = None, name: str = None, **kwargs) -> AbstractBot:
-        """Create a chatbot and add it to the manager."""
+    def create_bot(self, class_name: Any = None, name: str = None, **kwargs) -> AbstractBot:
+        """Create a Bot and add it to the manager."""
         if class_name is None:
             class_name = Chatbot
         chatbot = class_name(**kwargs)
         chatbot.name = name
-        self.add_chatbot(chatbot)
+        self.add_bot(chatbot)
         if 'llm' in kwargs:
             llm = kwargs['llm']
             llm_name = llm.pop('name')
@@ -112,20 +104,20 @@ class ChatbotManager:
             chatbot.llm = llm
         return chatbot
 
-    def add_chatbot(self, chatbot: AbstractBot) -> None:
-        """Add a chatbot to the manager."""
-        self._bots[chatbot.name] = chatbot
+    def add_bot(self, bot: AbstractBot) -> None:
+        """Add a Bot to the manager."""
+        self._bots[bot.name] = bot
 
-    def get_chatbot(self, name: str) -> AbstractBot:
-        """Get a chatbot by name."""
+    def get_bot(self, name: str) -> AbstractBot:
+        """Get a Bot by name."""
         return self._bots.get(name)
 
-    def remove_chatbot(self, name: str) -> None:
-        """Remove a chatbot by name."""
+    def remove_bot(self, name: str) -> None:
+        """Remove a Bot by name."""
         del self._bots[name]
 
-    def get_chatbots(self) -> Dict[str, AbstractBot]:
-        """Get all chatbots."""
+    def get_bots(self) -> Dict[str, AbstractBot]:
+        """Get all Bots declared on Manager."""
         return self._bots
 
     def get_app(self) -> web.Application:
@@ -143,7 +135,7 @@ class ChatbotManager:
         self.app.on_startup.append(self.on_startup)
         self.app.on_shutdown.append(self.on_shutdown)
         # Add Manager to main Application:
-        self.app['chatbot_manager'] = self
+        self.app['bot_manager'] = self
         ## Configure Routes
         router = self.app.router
         # Chat Information Router
