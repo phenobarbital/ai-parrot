@@ -10,6 +10,7 @@ from datamodel import BaseModel, Field
 from datamodel.types import Text  # pylint: disable=no-name-in-module
 from asyncdb.models import Model
 
+
 def created_at(*args, **kwargs) -> int:
     return int(time.time()) * 1000
 
@@ -111,7 +112,7 @@ class ChatbotModel(Model):
         created_at TIMESTAMPTZ DEFAULT NOW(),
         created_by INTEGER,
         updated_at TIMESTAMPTZ DEFAULT NOW(),
-        disclaimer VARCHAR,        
+        disclaimer VARCHAR,
     );
     """
     chatbot_id: uuid.UUID = Field(primary_key=True, required=False, default_factory=uuid.uuid4)
@@ -165,9 +166,9 @@ class ChatbotModel(Model):
     # Bot/Agent type
     bot_type: str = Field(default='chatbot', required=False)
     # When created
-    created_at: datetime = Field(required=False, default=datetime.now())
+    created_at: datetime = Field(required=False, default=datetime.now)
     created_by: int = Field(required=False)
-    updated_at: datetime = Field(required=False, default=datetime.now())
+    updated_at: datetime = Field(required=False, default=datetime.now)
     disclaimer: str = Field(required=False)
 
 
@@ -322,7 +323,8 @@ class PromptCategory(Enum):
     """
     Prompt Category.
 
-    Categorization of Prompts, as "tech", "tech-or-explain", "idea", "explain", "action", "command", "other".
+    Categorization of Prompts, as "tech",
+    "tech-or-explain", "idea", "explain", "action", "command", "other".
     """
     TECH = "tech"
     TECH_OR_EXPLAIN = "tech-or-explain"

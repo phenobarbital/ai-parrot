@@ -41,7 +41,7 @@ class ChatbotUsageHandler(ModelView):
     """
 
     model = ChatbotUsage
-    driver: str = 'scylladb'
+    driver: str = 'bigquery'
     credentials: dict = {
         "credentials": BIGQUERY_CREDENTIALS,
         "project_id": BIGQUERY_PROJECT_ID,

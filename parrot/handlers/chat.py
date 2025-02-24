@@ -10,7 +10,7 @@ from navigator.views import BaseView
 class ChatHandler(BaseView):
     """
     ChatHandler.
-    description: ChatHandler for Parrot Application.
+    description: Chat Handler for Parrot Application.
     """
 
     async def get(self, **kwargs):
@@ -25,8 +25,8 @@ class ChatHandler(BaseView):
             })
         else:
             # retrieve chatbof information:
-            manager = self.request.app['chatbot_manager']
-            chatbot = manager.get_chatbot(name)
+            manager = self.request.app['bot_manager']
+            chatbot = manager.get_bot(name)
             if not chatbot:
                 return self.error(
                     f"Chatbot {name} not found.",
@@ -47,6 +47,8 @@ class ChatHandler(BaseView):
         """
         post.
         description: Post method for ChatHandler.
+
+        Use this method to interact with a Chatbot.
         """
         app = self.request.app
         name = self.request.match_info.get('chatbot_name', None)
@@ -65,7 +67,7 @@ class ChatHandler(BaseView):
         else:
             llm = None
         try:
-            manager = app['chatbot_manager']
+            manager = app['bot_manager']
         except KeyError:
             return self.json_response(
                 {
@@ -74,7 +76,7 @@ class ChatHandler(BaseView):
                 status=404
             )
         try:
-            chatbot = manager.get_chatbot(name)
+            chatbot = manager.get_bot(name)
             if not chatbot:
                 raise KeyError(
                     f"Chatbot {name} not found."
@@ -128,7 +130,7 @@ class BotHandler(BaseView):
         """Create a New Bot (passing a configuration).
         """
         try:
-            manager = self.request.app['chatbot_manager']
+            manager = self.request.app['bot_manager']
         except KeyError:
             return self.json_response(
                 {

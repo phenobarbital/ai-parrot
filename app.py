@@ -2,7 +2,7 @@ from navigator.handlers.types import AppHandler
 # Tasker:
 from navigator.background import BackgroundQueue
 from navigator_auth import AuthHandler
-from parrot.manager import ChatbotManager
+from parrot.manager import BotManager
 from parrot.conf import STATIC_DIR
 from parrot.handlers.bots import (
     FeedbackTypeHandler,
@@ -34,8 +34,8 @@ class Main(AppHandler):
             queue_size=5
         )
         # Chatbot System
-        self.chatbot_manager = ChatbotManager()
-        self.chatbot_manager.setup(self.app)
+        self.bot_manager = BotManager()
+        self.bot_manager.setup(self.app)
 
         # API of feedback types:
         self.app.router.add_view(
