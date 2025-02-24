@@ -107,6 +107,9 @@ GA_SERVICE_PATH = config.get('GA_SERVICE_PATH', fallback="env/google/")
 # Google SerpAPI:
 SERPAPI_API_KEY = config.get('SERPAPI_API_KEY')
 
+# Groq API Key:
+GROQ_API_KEY = config.get('GROQ_API_KEY')
+
 # Ethical Principle:
 ETHICAL_PRINCIPLE = config.get(
     'ETHICAL_PRINCIPLE',
