@@ -1,7 +1,10 @@
 """
 Tools infrastructure for building Agents.
 """
+# Abstract Agent interface
 from .abstract import AbstractTool
+
+
 # from langchain_community.tools.yahoo_finance_news import YahooFinanceNewsTool
 # from langchain_community.tools import YouTubeSearchTool
 # from langchain_community.agent_toolkits import O365Toolkit
