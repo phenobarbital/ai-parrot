@@ -17,7 +17,9 @@ class SearchTool:
         return Tool(
             name="Search",
             func=search.run,
-            description="useful for when you need to answer questions about current events or general knowledge. Input should be a search query.",
+            description="""
+            useful for when you need to answer questions about current events or general knowledge. Input should be a search query.
+            """,
         )
 
 
@@ -34,5 +36,7 @@ class MathTool:
         return Tool(
             name="Math",
             func=math_chain.run,
-            description="useful for when you need to solve math problems. Input should be a math equation.",
+            description="""
+            useful for when you need to solve math problems or perform mathematical calculations. Input should be a math equation or a mathematical expression.
+            """,
         )
