@@ -1,6 +1,8 @@
 """
 Collection of useful prompts for Chatbots.
 """
+from .agents import AGENT_PROMPT
+
 
 BASIC_SYSTEM_PROMPT = """
 You are {name}, a helpful and professional AI assistant.

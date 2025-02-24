@@ -104,6 +104,9 @@ GOOGLE_API_KEY = config.get('GOOGLE_API_KEY')
 GA_SERVICE_ACCOUNT_NAME = config.get('GA_SERVICE_ACCOUNT_NAME', fallback="google.json")
 GA_SERVICE_PATH = config.get('GA_SERVICE_PATH', fallback="env/google/")
 
+# Google SerpAPI:
+SERPAPI_API_KEY = config.get('SERPAPI_API_KEY')
+
 # Ethical Principle:
 ETHICAL_PRINCIPLE = config.get(
     'ETHICAL_PRINCIPLE',
