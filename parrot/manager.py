@@ -55,7 +55,13 @@ class BotManager:
         db = app['database']
         async with await db.acquire() as conn:
             ChatbotModel.Meta.connection = conn
-            bots = await ChatbotModel.filter(enabled=True)
+            try:
+                bots = await ChatbotModel.filter(enabled=True)
+            except Exception as e:
+                self.logger.error(
+                    f"Failed to load chatbots from DB: {e}"
+                )
+                return
             for bot in bots:
                 if bot.bot_type == 'chatbot':
                     self.logger.notice(

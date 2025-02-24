@@ -1,11 +1,12 @@
+"""
+Abstract Bot interface.
+"""
 from abc import ABC
 from typing import Any, Union, Optional
 from collections.abc import Callable
 import uuid
 import asyncio
 from aiohttp import web
-import grpc
-# import torch
 from langchain.memory import (
     ConversationBufferMemory
 )
@@ -23,8 +24,6 @@ from langchain.chains.conversational_retrieval.base import (
 from langchain_community.chat_message_histories import (
     RedisChatMessageHistory
 )
-from langchain_core.retrievers import BaseRetriever
-from langchain_core.vectorstores import VectorStoreRetriever
 # for exponential backoff
 from tenacity import (
     retry,
@@ -75,21 +74,15 @@ try:
 except (ModuleNotFoundError, ImportError):
     GROQ_ENABLED = False
 
-# Stores
-from ..stores import get_vectordb
 from ..utils import SafeDict
+# Chat Response:
 from ..models import ChatResponse
-from .retrievals import RetrievalManager
-
-
-class EmptyRetriever(BaseRetriever):
-    """Return a Retriever with No results.
-    """
-    async def aget_relevant_documents(self, query: str):
-        return []
-
-    def _get_relevant_documents(self, query: str):
-        return []
+from .prompts import (
+    BASIC_SYSTEM_PROMPT,
+    BASIC_HUMAN_PROMPT,
+    DEFAULT_BACKHISTORY
+)
+from .interfaces import EmptyRetriever
 
 
 class AbstractBot(DBInterface, ABC):
@@ -99,35 +92,10 @@ class AbstractBot(DBInterface, ABC):
     """
     # TODO: make tensor and embeddings optional.
     # Define system prompt template
-    system_prompt_template = """
-    You are {name}, a helpful and professional AI assistant.
-
-    Your primary function is to {goal}
-    Use the information from the provided knowledge base and provided context of documents to answer users' questions accurately and concisely.
-    Focus on answering the question directly but in detail. Do not include an introduction or greeting in your response.
-
-    I am here to help with {role}.
-
-    **Backstory:**
-    {backstory}.
-
-    Here is a brief summary of relevant information:
-    Context: {context}
-    End of Context.
-
-    **{rationale}**
-
-    Given this information, please provide answers to the following question adding detailed and useful insights.
-    """
+    system_prompt_template = BASIC_SYSTEM_PROMPT
 
     # Define human prompt template
-    human_prompt_template = """
-    **Chat History:**
-    {chat_history}
-
-    **Human Question:**
-    {question}
-    """
+    human_prompt_template = BASIC_HUMAN_PROMPT
 
     def __init__(
         self,
@@ -138,9 +106,9 @@ class AbstractBot(DBInterface, ABC):
     ):
         """Initialize the Chatbot with the given configuration."""
         if system_prompt:
-            self.system_prompt_template = system_prompt
+            self.system_prompt_template = system_prompt or BASIC_SYSTEM_PROMPT
         if human_prompt:
-            self.human_prompt_template = human_prompt
+            self.human_prompt_template = human_prompt or BASIC_HUMAN_PROMPT
         # Chatbot ID:
         self.chatbot_id: uuid.UUID = kwargs.get(
             'chatbot_id',
@@ -149,7 +117,9 @@ class AbstractBot(DBInterface, ABC):
         # Basic Information:
         self.name: str = name
         ##  Logging:
-        self.logger = logging.getLogger(f'{self.name}.Bot')
+        self.logger = logging.getLogger(
+            f'{self.name}.Bot'
+        )
         # Start initialization:
         self.kb = None
         self.knowledge_base: list = []
@@ -196,11 +166,8 @@ class AbstractBot(DBInterface, ABC):
         # Vector information:
         self.chunk_size: int = int(kwargs.get('chunk_size', 768))
         self.dimension: int = int(kwargs.get('dimension', 768))
-        self._use_database: bool = kwargs.get('use_database', False)
-        self._database: dict = kwargs.get('database', {})
         self.store: Callable = None
         self.memory: Callable = None
-
         # Embedding Model Name
         self.embedding_model = kwargs.get(
             'embedding_model', {}
@@ -241,7 +208,7 @@ class AbstractBot(DBInterface, ABC):
 
     def default_backstory(self) -> str:
         return (
-            "I am an AI assistant designed to help you find information.\n"
+            DEFAULT_BACKHISTORY
         )
 
     def default_role(self) -> str:
@@ -285,11 +252,14 @@ class AbstractBot(DBInterface, ABC):
             mdl = GoogleGenAI(model="models/gemini-1.5-pro-latest", **kwargs)
         else:
             raise ValueError(f"Invalid llm: {llm}")
-
         # get the LLM:
         return mdl
 
-    def _configure_llm(self, llm: Union[str, Callable] = None, config: Optional[dict] = None):
+    def _configure_llm(
+        self,
+        llm: Union[str, Callable] = None,
+        config: Optional[dict] = None
+    ):
         """
         Configuration of LLM.
         """
@@ -340,20 +310,6 @@ class AbstractBot(DBInterface, ABC):
                 )
         return new_docs
 
-    async def store_configuration(self, vector_db: str, config: dict):
-        """Create the Vector Store Configuration."""
-        self.collection_name = config.get('collection_name', None)
-        if not self.embeddings:
-            embed = self.embedding_model
-        else:
-            embed = self.embeddings
-        # TODO: add dynamic configuration of VectorStore
-        self.store = get_vectordb(
-            vector_db,
-            embeddings=embed,
-            **config
-        )
-
     def _define_prompt(self, config: Optional[dict] = None):
         """
         Define the System Prompt and replace variables.
@@ -385,12 +341,7 @@ class AbstractBot(DBInterface, ABC):
                 self.app = app.get_app()  # Nav Application
         # adding this configured chatbot to app:
         if self.app:
-            self.app[f"{self.name.lower()}_chatbot"] = self
-        # Setup the Store Config:
-        await self.store_configuration(
-            vector_db='MilvusStore',
-            config=self._database
-        )
+            self.app[f"{self.name.lower()}_bot"] = self
         # And define Prompt:
         self._define_prompt()
 
@@ -461,11 +412,6 @@ class AbstractBot(DBInterface, ABC):
     async def conversation(
             self,
             question: str,
-            chain_type: str = 'stuff',
-            search_type: str = 'similarity',
-            search_kwargs: dict = {"k": 4, "fetch_k": 10, "lambda_mult": 0.89},
-            return_docs: bool = True,
-            metric_type: str = None,
             memory: Any = None,
             **kwargs
     ):
@@ -511,36 +457,23 @@ class AbstractBot(DBInterface, ABC):
                 return_messages=True
             )
         try:
-            # allowing DB connections:
-            self.store._use_database = self._use_database
-            async with self.store as store:  #pylint: disable=E1101
-                if self._use_database is True:
-                    vector = store.get_vector(metric_type=metric_type)
-                    retriever = VectorStoreRetriever(
-                        vectorstore=vector,
-                        search_type=search_type,
-                        chain_type=chain_type,
-                        search_kwargs=search_kwargs
-                    )
-                else:
-                    retriever = EmptyRetriever()
-                # Create the ConversationalRetrievalChain with custom prompt
-                chain = ConversationalRetrievalChain.from_llm(
-                    llm=self.llm,
-                    retriever=retriever,
-                    memory=self.memory,
-                    verbose=True,
-                    return_source_documents=return_docs,
-                    return_generated_question=True,
-                    combine_docs_chain_kwargs={
-                        'prompt': chat_prompt
-                    },
-                    **kwargs
-                )
-                response = await chain.ainvoke(
-                    {"question": question}
-                )
-
+            retriever = EmptyRetriever()
+            # Create the ConversationalRetrievalChain with custom prompt
+            chain = ConversationalRetrievalChain.from_llm(
+                llm=self.llm,
+                retriever=retriever,
+                memory=self.memory,
+                verbose=True,
+                return_source_documents=False,
+                return_generated_question=True,
+                combine_docs_chain_kwargs={
+                    'prompt': chat_prompt
+                },
+                **kwargs
+            )
+            response = await chain.ainvoke(
+                {"question": question}
+            )
         except asyncio.CancelledError:
             # Handle task cancellation
             print("Conversation task was cancelled.")
@@ -550,10 +483,7 @@ class AbstractBot(DBInterface, ABC):
             self,
             question: str,
             chain_type: str = 'stuff',
-            search_type: str = 'similarity',
-            search_kwargs: dict = {"k": 4, "fetch_k": 10, "lambda_mult": 0.89},
             return_docs: bool = True,
-            metric_type: str = None,
             **kwargs
     ):
         pre_context = "\n".join(f"- {a}." for a in self.pre_instructions)
@@ -586,48 +516,36 @@ class AbstractBot(DBInterface, ABC):
             template=system_prompt + '\n' + human_prompt,
             input_variables=['context', 'question']
         )
-        # allowing DB connections:
-        self.store._use_database = self._use_database
-        async with self.store as store:  #pylint: disable=E1101
-            if self._use_database is True:
-                vector = store.get_vector(metric_type=metric_type)
-                retriever = VectorStoreRetriever(
-                    vectorstore=vector,
-                    search_type=search_type,
-                    chain_type=chain_type,
-                    search_kwargs=search_kwargs
-                )
-            else:
-                retriever = EmptyRetriever()
-            # Create the RetrievalQA chain with custom prompt
-            chain = RetrievalQA.from_chain_type(
-                llm=self.llm,
-                chain_type=chain_type,  # e.g., 'stuff', 'map_reduce', etc.
-                retriever=retriever,
-                chain_type_kwargs={
-                    'prompt': prompt,
-                },
-                return_source_documents=return_docs,
-                **kwargs
+        retriever = EmptyRetriever()
+        # Create the RetrievalQA chain with custom prompt
+        chain = RetrievalQA.from_chain_type(
+            llm=self.llm,
+            chain_type=chain_type,  # e.g., 'stuff', 'map_reduce', etc.
+            retriever=retriever,
+            chain_type_kwargs={
+                'prompt': prompt,
+            },
+            return_source_documents=return_docs,
+            **kwargs
+        )
+        try:
+            response = await chain.ainvoke(
+                question
             )
-            try:
-                response = await chain.ainvoke(
-                    question
-                )
-            except (RuntimeError, asyncio.CancelledError):
-                # check for "Event loop is closed"
-                response = chain.invoke(
-                    question
-                )
-            except Exception as e:
-                # Handle exceptions
-                self.logger.error(
-                    f"An error occurred: {e}"
-                )
-                response = {
-                    "query": question,
-                    "error": str(e)
-                }
+        except (RuntimeError, asyncio.CancelledError):
+            # check for "Event loop is closed"
+            response = chain.invoke(
+                question
+            )
+        except Exception as e:
+            # Handle exceptions
+            self.logger.error(
+                f"An error occurred: {e}"
+            )
+            response = {
+                "query": question,
+                "error": str(e)
+            }
         return self.get_response(response)
 
     def as_markdown(self, response: ChatResponse, return_sources: bool = False) -> str:
@@ -662,7 +580,9 @@ class AbstractBot(DBInterface, ABC):
                     block_sources.append(f"- [{source_title}]({src})")
                 else:
                     if 'page_number' in metadata:
-                        block_sources.append(f"- {source_filename} (Page {metadata.get('page_number')})")
+                        block_sources.append(
+                            f"- {source_filename} (Page {metadata.get('page_number')})"
+                        )
                     else:
                         block_sources.append(f"- {source_filename}")
             if block_sources:
@@ -671,34 +591,3 @@ class AbstractBot(DBInterface, ABC):
             if d:
                 response.documents = d
         return markdown_output
-
-    async def shutdown(self):
-        if self.store:
-            try:
-                await self.store.disconnect()
-                await grpc.aio.shutdown_grpc_aio()
-            except Exception:
-                pass
-
-    def get_retrieval(self, source_path: str = 'web', request: web.Request = None):
-            pre_context = "\n".join(f"- {a}." for a in self.pre_instructions)
-            system_prompt = self.system_prompt_template.format_map(
-                SafeDict(
-                    summaries=pre_context
-                )
-            )
-            human_prompt = self.human_prompt_template
-            # Generate the Retrieval
-            rm = RetrievalManager(
-                chatbot_id=self.chatbot_id,
-                chatbot_name=self.name,
-                source_path=source_path,
-                model=self._llm,
-                store=self.store,
-                memory=None,
-                system_prompt=system_prompt,
-                human_prompt=human_prompt,
-                kb=self.knowledge_base,
-                request=request
-            )
-            return rm
