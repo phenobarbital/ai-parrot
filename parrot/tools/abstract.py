@@ -3,6 +3,9 @@ from abc import abstractmethod
 from langchain_core.pydantic_v1 import BaseModel, Field, Extra
 from langchain_core.callbacks import CallbackManagerForToolRun
 from langchain_core.tools import BaseTool
+from navconfig.logging import logging
+
+
 
 class AbstractToolArgsSchema(BaseModel):
     """Schema for the arguments to the AbstractTool."""
@@ -20,6 +23,13 @@ class AbstractTool(BaseTool):
         """Configuration for this pydantic object."""
         extra = Extra.forbid
         arbitrary_types_allowed = True
+
+    def __init__(self, **kwargs):
+        self.name = kwargs.pop('name', self.__class__.__name__)
+        self.logger = logging.getLogger(
+            f'{self.name}.Tool'
+        )
+        super().__init__(**kwargs)
 
     @abstractmethod
     def _search(self, query: str) -> str:
