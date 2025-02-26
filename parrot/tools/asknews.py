@@ -8,8 +8,9 @@ class AskNewsTool(BaseTool):
     """Tool that searches the AskNews API."""
     name: str = "asknews_search"
     description: str = (
-        "This tool allows you to perform a search on up-to-date news and historical "
-        "news. If you needs news from more than 48 hours ago, you can estimate the "
+        "Search for up-to-date news and historical news on AskNews site. "
+        "This tool allows you to perform a search on up-to-date news and historical news. "
+        "If you needs news from more than 48 hours ago, you can estimate the "
         "number of hours back to search."
     )
     search: Any = None

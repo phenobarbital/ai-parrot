@@ -10,7 +10,7 @@ class WikipediaTool(BaseTool):
     """Tool that searches the Wikipedia API."""
     name = "Wikipedia"
     description: str = (
-        "A wrapper around Wikipedia. "
+        "Access detailed and verified information from Wikipedia. "
         "Useful for searching Wikipedia for general information. "
         "Useful for when you need to answer general questions about "
         "people, places, companies, facts, historical events, or other subjects. "
@@ -36,11 +36,10 @@ class WikidataTool(BaseTool):
     """Tool that searches the Wikidata API."""
     name: str = "Wikidata"
     description: str = (
-        "A wrapper around Wikidata. "
+        "Fetch structured data from WikiData for precise and factual details. "
         "Useful for when you need to answer general questions about "
         "people, places, companies, facts, historical events, or other subjects. "
-        "Input should be the exact name of the item you want information about "
-        "or a Wikidata QID."
+        "Input should be the exact name of the item you want information about or a Wikidata QID."
     )
     search: Any = None
 
@@ -55,5 +54,5 @@ class WikidataTool(BaseTool):
         query: str,
         run_manager: Optional[CallbackManagerForToolRun] = None,
     ) -> str:
-        """Use the Wikipedia tool."""
+        """Use the Wikidata tool."""
         return self.search.run(query)

@@ -55,8 +55,8 @@ class GoogleSearchTool(BaseTool):
 
 class GoogleSiteSearchTool(BaseTool):
     """Web Search under a site using Google API."""
-    name: str = "Google Web Search"
-    description: str = "Search the web using Google Search API"
+    name: str = "Google Site Search"
+    description: str = "Search under a Site using Google Search API"
     source: str = 'news'
     max_results: int = 5
     region: str = ''
@@ -155,7 +155,7 @@ class GoogleLocationFinder(BaseTool):
             return None
 
 class GoogleRouteSearch(BaseTool):
-    """Web Search under a site using Google API."""
+    """Route Search tool using Google Maps API."""
     name: str = "google_maps_route_search"
     description: str = "Search for a Route to a location using Google Maps, using this tool if answers questions about how to reach a location."
     google_key: str = None

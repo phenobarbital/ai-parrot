@@ -44,12 +44,15 @@ class BasicAgent(AbstractBot):
             **kwargs
         )
         self.prompt_template = prompt_template or AGENT_PROMPT
-        self.tools = tools or []
+        self.tools = tools or self.default_tools()
         self.prompt = self.define_prompt(self.prompt_template)
         ##  Logging:
         self.logger = logging.getLogger(
             f'{self.name}.Agent'
         )
+
+    def default_tools(self) -> List[AbstractTool]:
+        return []
 
     def define_prompt(self, prompt, **kwargs):
         partial_prompt = ChatPromptTemplate.from_template(prompt)
