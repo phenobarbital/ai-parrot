@@ -6,7 +6,8 @@ class StackExchangeTool(BaseTool):
     """Tool that searches the StackExchangeTool API."""
     name: str = "StackExchangeSearch"
     description: str = (
-        "A wrapper around StackExchange API. Stack Exchange is a network of question-and-answer (Q&A) websites on topics in diverse fields, each site covering a specific topic."
+        "Search for questions and answers on Stack Exchange. "
+        "Stack Exchange is a network of question-and-answer (Q&A) websites on topics in diverse fields, each site covering a specific topic."
         "Useful for when you need to answer general questions about different topics when user requested."
     )
     search: Tool = None

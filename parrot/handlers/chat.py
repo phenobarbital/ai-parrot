@@ -1,6 +1,7 @@
 from navigator_auth.decorators import (
     is_authenticated,
-    user_session
+    user_session,
+    allowed_organizations
 )
 from navigator.views import BaseView
 
