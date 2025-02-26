@@ -146,10 +146,11 @@ setup(
     ],
     install_requires=[
         "Cython==3.0.11",
-        "langchain>=0.3.4",
-        "langchain-core==0.3.37",
+        "langchain>=0.3.19",
+        "langchain-core==0.3.40",
         "langchain-community==0.3.18",
         "langchain-experimental==0.3.4",
+        "langchain-text-splitters==0.3.6",
         "langchainhub==0.1.21",
         "huggingface-hub==0.29.1",
         "faiss-cpu>=1.9.0",
@@ -166,6 +167,7 @@ setup(
     ],
     extras_require={
         "agents": [
+            "numexpr==2.10.2",
             "numba==0.59.0",
             "yfinance==0.2.54",
             "youtube_search==2.1.2",
@@ -179,6 +181,8 @@ setup(
             "duckduckgo-search==7.5.0",
             "google-search-results==2.4.2",
             "google-api-python-client>=2.86.0",
+            "google-api-core==2.24.1",
+            "grpcio-status==1.67.1"
         ],
         "chatbots": [
             "torch==2.5.1",

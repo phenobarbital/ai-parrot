@@ -27,6 +27,7 @@ class AgentResponse(BaseModel):
     input: str = Field(required=False)
     output: str = Field(required=False)
     response: str = Field(required=False)
+    answer: str = Field(required=False)
     intermediate_steps: list = Field(default_factory=list)
     chat_history: list = Field(repr=True, default_factory=list)
     source_documents: list = Field(required=False, default_factory=list)

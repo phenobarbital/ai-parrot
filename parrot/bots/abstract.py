@@ -4,6 +4,7 @@ Abstract Bot interface.
 from abc import ABC
 from typing import Any, Union, Optional
 from collections.abc import Callable
+import os
 import uuid
 import asyncio
 from aiohttp import web
@@ -85,6 +86,12 @@ from .prompts import (
 from .interfaces import EmptyRetriever
 
 
+os.environ["GRPC_ENABLE_FORK_SUPPORT"] = "0"
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"  # Hide TensorFlow logs if present
+logging.getLogger(name='primp').setLevel(logging.INFO)
+logging.getLogger(name='rquest').setLevel(logging.INFO)
+logging.getLogger("grpc").setLevel(logging.CRITICAL)
+
 class AbstractBot(DBInterface, ABC):
     """AbstractBot.
 
@@ -147,6 +154,11 @@ class AbstractBot(DBInterface, ABC):
         )
         # Definition of LLM
         self._default_llm: str = kwargs.get('use_llm', 'vertexai')
+        self._default_llm_config: dict = {
+            "temperature": 0.1,
+            "top_k": 30,
+            "Top_p": 0.4
+        }
         # Overrriding LLM object
         self._llm_obj: Callable = kwargs.get('llm', None)
         # LLM base Object:
@@ -255,7 +267,7 @@ class AbstractBot(DBInterface, ABC):
         # get the LLM:
         return mdl
 
-    def _configure_llm(
+    def configure_llm(
         self,
         llm: Union[str, Callable] = None,
         config: Optional[dict] = None
@@ -274,6 +286,15 @@ class AbstractBot(DBInterface, ABC):
         elif isinstance(llm, AbstractLLM):
             self._llm_obj = llm
             self._llm = llm.get_llm()
+        elif isinstance(self._llm_obj, str):
+            # is the name of the LLM object to be used:
+            if not config:
+                config = self._default_llm_config
+            self._llm_obj = self.llm_chain(
+                llm=self._llm_obj,
+                **config
+            )
+            self._llm = self._llm_obj.get_llm()
         elif isinstance(self._llm_obj, AbstractLLM):
             self._llm = self._llm_obj.get_llm()
         elif self._llm_obj is not None:
@@ -425,7 +446,7 @@ class AbstractBot(DBInterface, ABC):
                 "Top_p": 0.6
             }
         )
-        self._configure_llm(llm=new_llm, config=llm_config)
+        self.configure_llm(llm=new_llm, config=llm_config)
         # define the Pre-Context
         pre_context = "\n".join(f"- {a}." for a in self.pre_instructions)
         custom_template = self.system_prompt_template.format_map(
@@ -460,7 +481,7 @@ class AbstractBot(DBInterface, ABC):
             retriever = EmptyRetriever()
             # Create the ConversationalRetrievalChain with custom prompt
             chain = ConversationalRetrievalChain.from_llm(
-                llm=self.llm,
+                llm=self._llm,
                 retriever=retriever,
                 memory=self.memory,
                 verbose=True,
@@ -510,7 +531,7 @@ class AbstractBot(DBInterface, ABC):
                 "Top_p": 0.6
             }
         )
-        self._configure_llm(llm=new_llm, config=llm_config)
+        self.configure_llm(llm=new_llm, config=llm_config)
         # Combine into a ChatPromptTemplate
         prompt = PromptTemplate(
             template=system_prompt + '\n' + human_prompt,
@@ -519,7 +540,7 @@ class AbstractBot(DBInterface, ABC):
         retriever = EmptyRetriever()
         # Create the RetrievalQA chain with custom prompt
         chain = RetrievalQA.from_chain_type(
-            llm=self.llm,
+            llm=self._llm,
             chain_type=chain_type,  # e.g., 'stuff', 'map_reduce', etc.
             retriever=retriever,
             chain_type_kwargs={
