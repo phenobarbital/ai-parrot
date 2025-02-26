@@ -4,6 +4,7 @@ Tools infrastructure for building Agents.
 # Abstract Agent interface
 from .abstract import AbstractTool
 from .basic import SearchTool, MathTool
+from .duck import DuckDuckGoSearchTool, DuckDuckGoRelevantSearch
 
 # from langchain_community.tools.yahoo_finance_news import YahooFinanceNewsTool
 # from langchain_community.tools import YouTubeSearchTool
@@ -11,7 +12,7 @@ from .basic import SearchTool, MathTool
 # from navconfig import config
 # # from .wikipedia import WikipediaTool, WikidataTool
 # from .asknews import AskNewsTool
-# from .duck import DuckDuckGoSearchTool, DuckDuckGoRelevantSearch
+
 # from .weather import OpenWeather, OpenWeatherMapTool
 # from .google import GoogleLocationFinder, GoogleSiteSearchTool, GoogleSearchTool
 # from .zipcode import ZipcodeAPIToolkit
