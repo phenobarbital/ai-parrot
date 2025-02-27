@@ -86,15 +86,15 @@ class BuildExtensions(build_ext):
         super().build_extensions()
 
 setup(
-    name=__title__,
-    version=__version__,
+    name=__title__,  # pylint: disable=E0601
+    version=__version__,  # pylint: disable=E0601
     author='Jesus Lara',
     author_email='jesuslara@phenobarbital.info',
     url='https://github.com/phenobarbital/ai-parrot',
-    description=__description__,
+    description=__description__,  # pylint: disable=E0601
     long_description=readme(),
     long_description_content_type='text/markdown',
-    license=__license__,
+    license=__license__,  # pylint: disable=E0601
     python_requires=">=3.9.20",
     keywords=['asyncio', 'asyncpg', 'aioredis', 'aiomcache', 'langchain', 'chatbot', 'agents'],
     platforms=['POSIX'],
@@ -174,7 +174,7 @@ setup(
             "youtube_search==2.1.2",
             "wikipedia==1.4.0",
             "mediawikiapi==1.2",
-            # "wikibase-rest-api-client==0.2.1",
+            "wikibase-rest-api-client==0.2.2",
             "asknews>=0.10.0",
             "pyowm==3.3.0",
             "O365==2.0.35",
@@ -185,10 +185,9 @@ setup(
             "google-api-core==2.24.1",
             "grpcio-status==1.67.1"
         ],
-        "chatbots": [
+        "vector": [
             "torch==2.5.1",
             "langchain_huggingface==0.1.2",
-            "langchain-text-splitters==0.3.1",
             "fastembed==0.3.4",
             "tiktoken==0.7.0",
             "accelerate==0.34.2",
@@ -205,6 +204,7 @@ setup(
             "tf-keras==2.18.0",
             "simsimd==4.3.1",
             "opencv-python==4.10.0.84",
+            "langchain-postgres==0.0.13"
         ],
         "anthropic": [
             "langchain-anthropic==0.2.4",
@@ -235,6 +235,10 @@ setup(
             "langchain-milvus>=0.1.6",
             "pymilvus==2.4.8",
             "milvus==2.3.5"
+        ],
+        "chroma": [
+            "chroma==0.2.0",
+            "langchain-chroma==0.2.2"
         ],
         "crew": [
             "colbert-ai==0.2.19",
