@@ -75,6 +75,9 @@ class AbstractStore(ABC):
     def connected(self) -> bool:
         return self._connected
 
+    def is_connected(self):
+        return self._connected
+
     @abstractmethod
     async def connection(self) -> tuple:
         pass
@@ -103,6 +106,9 @@ class AbstractStore(ABC):
     @abstractmethod
     def get_vector(self):
         pass
+
+    def get_vectorstore(self):
+        return self.get_vector()
 
     @abstractmethod
     def search(self, payload: dict, collection_name: str = None) -> dict:
