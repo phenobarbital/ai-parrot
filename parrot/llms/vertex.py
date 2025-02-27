@@ -5,7 +5,6 @@ from langchain_google_vertexai import (
     ChatVertexAI,
     VertexAI,
     VertexAIModelGarden,
-    VertexAIEmbeddings
 )
 from .abstract import AbstractLLM
 
@@ -18,7 +17,6 @@ class VertexLLM(AbstractLLM):
         _type_: VertexAI LLM.
     """
     model: str = "gemini-1.0-pro"
-    embed_model: str = "textembedding-gecko@003"
     max_tokens: int = 1024
     supported_models: list = [
         "gemini-1.0-pro",
@@ -63,17 +61,5 @@ class VertexLLM(AbstractLLM):
         self._llm = base_llm(
             system_prompt="Always respond in the same language as the user's question. If the user's language is not English, translate your response into their language.",
             **self.args
-        )
-        # Embedding Model:
-        embed_model = kwargs.get("embed_model", self.embed_model)
-        self._embed = VertexAIEmbeddings(
-            model_name=embed_model,
-            project=project_id,
-            location=region,
-            request_parallelism=5,
-            max_retries=4,
-            temperature=self.temperature,
-            top_p=self.top_p,
-            top_k=self.top_k,
         )
         self._version_ = aiplatform.__version__

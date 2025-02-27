@@ -115,3 +115,7 @@ ETHICAL_PRINCIPLE = config.get(
     'ETHICAL_PRINCIPLE',
     fallback='The model should only talk about ethical and legal things.'
 )
+
+# Embedding Configuration:
+VERTEX_PROJECT_ID = config.get('VERTEX_PROJECT_ID')
+VERTEX_REGION = config.get('VERTEX_REGION')
