@@ -117,5 +117,11 @@ ETHICAL_PRINCIPLE = config.get(
 )
 
 # Embedding Configuration:
+
+# VERTEX
 VERTEX_PROJECT_ID = config.get('VERTEX_PROJECT_ID')
 VERTEX_REGION = config.get('VERTEX_REGION')
+
+# OpenAI:
+OPENAI_API_KEY = config.get('OPENAI_API_KEY')
+OPENAI_ORGANIZATION = config.get('OPENAI_ORGANIZATION')
