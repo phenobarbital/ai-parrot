@@ -8,14 +8,9 @@ from langchain_core.prompts import (
 )
 from langchain_core.retrievers import BaseRetriever
 from langchain import hub
-from langchain.tools.json.tool import JsonSpec
-from langchain.agents.agent_toolkits import JsonToolkit
-from langchain.requests import TextRequestsWrapper
 from langchain.callbacks.base import BaseCallbackHandler
 from langchain.agents import (
-    create_react_agent,
-    create_json_agent,
-    create_sql_agent
+    create_react_agent
 )
 from langchain.agents.agent import (
     AgentExecutor,
@@ -31,6 +26,11 @@ from langchain.prompts import (
 )
 from langchain_community.utilities import SQLDatabase
 from langchain_community.agent_toolkits.sql.toolkit import SQLDatabaseToolkit
+from langchain_community.agent_toolkits.sql.base import create_sql_agent
+from langchain_community.agent_toolkits.json.base import create_json_agent
+from langchain_community.tools.json.tool import JsonSpec
+from langchain_community.agent_toolkits.json.toolkit import JsonToolkit
+from langchain_community.utilities import TextRequestsWrapper
 # for exponential backoff
 from tenacity import (
     retry,

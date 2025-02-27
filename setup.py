@@ -204,7 +204,10 @@ setup(
             "tf-keras==2.18.0",
             "simsimd==4.3.1",
             "opencv-python==4.10.0.84",
-            "langchain-postgres==0.0.13"
+            "langchain-postgres==0.0.13",
+            "langchain_chroma==0.2.2",
+            "chromadb==0.6.3",
+            "langchain_duckdb==0.1.1",
         ],
         "anthropic": [
             "langchain-anthropic==0.2.4",
