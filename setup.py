@@ -153,6 +153,7 @@ setup(
         "langchain-text-splitters==0.3.6",
         "langchainhub==0.1.21",
         "huggingface-hub==0.29.1",
+        "langgraph==0.3.0",
         "faiss-cpu>=1.9.0",
         "jq==1.7.0",
         "rank_bm25==0.2.2",
@@ -219,8 +220,6 @@ setup(
             "langchain-google-genai==2.0.1",
             "langchain-google-vertexai==2.0.5",
             "vertexai==1.71.1",
-            "pydantic==2.9.2",
-            "pydantic-core==2.23.4"
         ],
         "hunggingfaces": [
             "llama-index-llms-huggingface==0.2.7"

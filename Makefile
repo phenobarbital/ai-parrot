@@ -15,7 +15,11 @@ install:
 	# pip install --upgrade querysource[analytics]
 	pip install --upgrade querysource
 	# and Parrot:
-	pip install -e .[google,milvus,groq]
+	pip install -e .[google,milvus,groq,agents]
+	# downgrade pydantic (google requirement)
+	pip install pydantic==2.9.2
+	# avoid warning of google-gemini:
+	pip install grpcio==1.67.1
 
 develop:
 	# Install Parrot
