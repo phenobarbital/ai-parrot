@@ -2,7 +2,7 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 from .base import BaseEmbed
 
 
-class HugginfacesEmbed(BaseEmbed):
+class HugginfaceEmbed(BaseEmbed):
     """A wrapper class for HuggingFace embeddings."""
     model_name: str = "sentence-transformers/all-mpnet-base-v2"
 
