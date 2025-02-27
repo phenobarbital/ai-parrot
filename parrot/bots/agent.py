@@ -1,28 +1,36 @@
-from typing import List, Any
+from pathlib import Path
+from typing import List, Any, Union
 import os
 from datetime import datetime, timezone
 from langchain_core.prompts import (
     PromptTemplate,
     ChatPromptTemplate
 )
-from langchain.agents.mrkl.base import ZeroShotAgent
-from langchain.agents import create_react_agent
+from langchain_core.retrievers import BaseRetriever
+from langchain import hub
+from langchain.tools.json.tool import JsonSpec
+from langchain.agents.agent_toolkits import JsonToolkit
+from langchain.requests import TextRequestsWrapper
+from langchain.callbacks.base import BaseCallbackHandler
+from langchain.agents import (
+    create_react_agent,
+    create_json_agent,
+    create_sql_agent
+)
 from langchain.agents.agent import (
     AgentExecutor,
     RunnableAgent,
     RunnableMultiActionAgent,
 )
-from langchain.agents import (
-    create_react_agent,
-    initialize_agent,
-    AgentType
-)
+from langchain.agents.agent_toolkits import create_retriever_tool
 from langchain.prompts import (
     ChatPromptTemplate,
     MessagesPlaceholder,
     SystemMessagePromptTemplate,
     HumanMessagePromptTemplate,
 )
+from langchain_community.utilities import SQLDatabase
+from langchain_community.agent_toolkits.sql.toolkit import SQLDatabaseToolkit
 # for exponential backoff
 from tenacity import (
     retry,
@@ -30,6 +38,7 @@ from tenacity import (
     wait_random_exponential,
 )  # for exponential backoff
 from datamodel.typedefs import SafeDict
+from datamodel.parsers.json import json_decoder  # noqa  pylint: disable=E0611
 from navconfig.logging import logging
 from .abstract import AbstractBot
 from .prompts import AGENT_PROMPT
@@ -47,6 +56,8 @@ class BasicAgent(AbstractBot):
         Agents are chatbots that can access to Tools and execute commands.
         Each Agent has a name, a role, a goal, a backstory,
         and an optional language model (llm).
+
+        These agents are designed to interact with structured and unstructured data sources.
     """
     def __init__(
         self,
@@ -114,29 +125,93 @@ class BasicAgent(AbstractBot):
             **kwargs
         )
 
-    def zero_agent(self, **kwargs):
-        agent_kwargs = {
-            "extra_prompt_messages": [MessagesPlaceholder(variable_name="memory")],
-        }
-        return ZeroShotAgent.from_llm_and_tools(
-            llm=self._llm,
-            tools=self.tools,
-            prompt=self.prompt,
-            agent_kwargs=agent_kwargs,
-            **kwargs
+    def get_retriever_tool(
+        self,
+        retriever: BaseRetriever,
+        name: str = 'vector_retriever',
+        description: str = 'Search for information about a topic in a Vector Retriever.',
+    ):
+        return create_retriever_tool(
+            name=name,
+            description=description,
+            retriever=retriever,
         )
 
+    def runnable_json_agent(self, json_file: Union[str, Path], **kwargs):
+        """
+        Creates a JSON Agent using `create_json_agent`.
+
+        This agent is designed to work with structured JSON input and output.
+
+        Returns:
+            RunnableMultiActionAgent: A JSON-based agent.
+
+        ✅ Use Case: Best when dealing with structured JSON data and needing a predictable schema.
+        """
+        data = None
+        if isinstance(json_file, str):
+            data = json_file
+        elif isinstance(json_file, Path):
+            data = json_file.read_text()
+        data = json_decoder(data)
+        json_spec = JsonSpec(dict_= data, max_value_length=4000)
+        json_toolkit = JsonToolkit(spec=json_spec)
+        agent = create_json_agent(
+            llm=self._llm,
+            toolkit=json_toolkit,
+            verbose=True,
+            prompt=self.prompt,
+        )
+        return self.prompt | self._llm | agent
+
     def runnable_agent(self, **kwargs):
-        # Create a ReAct Agent:
-        return RunnableAgent(
+        """
+        Creates a ZeroShot ReAct Agent.
+
+        This agent uses reasoning and tool execution iteratively to generate responses.
+
+        Returns:
+            RunnableMultiActionAgent: A ReAct-based agent.
+
+        ✅ Use Case: Best for decision-making and reasoning tasks where the agent must break problems down into multiple steps.
+
+        """
+        return RunnableMultiActionAgent(
             runnable = create_react_agent(
-                self.llm,
+                self._llm,
                 self.tools,
                 prompt=self.prompt,
             ),  # type: ignore
             input_keys_arg=["input"],
             return_keys_arg=["output"],
             **kwargs
+        )
+
+    def sql_agent(self, dsn: str, **kwargs):
+        """
+        Creates a SQL Agent.
+
+        This agent is designed to work with SQL queries and databases.
+
+        Returns:
+            AgentExecutor: A SQL-based AgentExecutor.
+
+        ✅ Use Case: Best for querying databases and working with SQL data.
+        """
+        db = SQLDatabase.from_uri(dsn)
+        toolkit = SQLDatabaseToolkit(db=db, llm=self._llm)
+        # prompt_template = hub.pull("langchain-ai/sql-agent-system-prompt")
+        return create_sql_agent(
+            llm=self._llm,
+            toolkit=toolkit,
+            db=db,
+            agent_type= "openai-tools",
+            extra_tools=self.tools,
+            max_iterations=5,
+            handle_parsing_errors=True,
+            verbose=True,
+            prompt=self.prompt,
+            agent_executor_kwargs = {"return_intermediate_steps": True}
         )
 
     def get_executor(
@@ -210,6 +285,7 @@ class BasicAgent(AbstractBot):
             )
             raise
 
+    @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(3))
     def invoke(self, query: str):
         """invoke.
 
@@ -237,3 +313,11 @@ class BasicAgent(AbstractBot):
                 return result.get('output', None), None
         except Exception as e:
             return result, e
+
+    async def __aenter__(self):
+        if not self._agent:
+            await self.configure()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        self._agent = None

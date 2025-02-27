@@ -8,8 +8,10 @@ import os
 import uuid
 import asyncio
 from aiohttp import web
+from langgraph.checkpoint.memory import MemorySaver
 from langchain.memory import (
-    ConversationBufferMemory
+    ConversationBufferMemory,
+    ConversationBufferWindowMemory
 )
 from langchain.prompts import (
     ChatPromptTemplate,
@@ -380,7 +382,8 @@ class AbstractBot(DBInterface, ABC):
             'input_key': input_key,
             'output_key': output_key,
             'return_messages': True,
-            'max_len': size
+            'max_len': size,
+            'k': 10
         }
         if session_id:
             message_history = RedisChatMessageHistory(
@@ -389,7 +392,7 @@ class AbstractBot(DBInterface, ABC):
                 ttl=ttl
             )
             args['chat_memory'] = message_history
-        return ConversationBufferMemory(
+        return ConversationBufferWindowMemory(
             **args
         )
 

@@ -33,6 +33,9 @@ class AgentResponse(BaseModel):
     source_documents: list = Field(required=False, default_factory=list)
 
     def __post_init__(self) -> None:
+        super().__post_init__()
+        if self.output:
+            self.answer = self.output
         if self.intermediate_steps:
             steps = []
             for item, result in self.intermediate_steps:
