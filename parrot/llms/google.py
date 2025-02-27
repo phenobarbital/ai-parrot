@@ -1,7 +1,6 @@
 from langchain_google_genai import (
     GoogleGenerativeAI,
     ChatGoogleGenerativeAI,
-    GoogleGenerativeAIEmbeddings
 )
 from navconfig import config
 from .abstract import AbstractLLM
@@ -31,12 +30,4 @@ class GoogleGenAI(AbstractLLM):
             api_key=self._api_key,
             temperature=self.temperature,
             **self.args
-        )
-        embed_model = kwargs.get("embed_model", "models/embedding-001")
-        self._embed = GoogleGenerativeAIEmbeddings(
-            model=embed_model,
-            google_api_key=self._api_key,
-            temperature=self.temperature,
-            top_p=self.top_p,
-            top_k=self.top_k,
         )

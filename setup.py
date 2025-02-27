@@ -208,6 +208,7 @@ setup(
             "langchain_chroma==0.2.2",
             "chromadb==0.6.3",
             "langchain_duckdb==0.1.1",
+            "langchain-ollama==0.2.3"
         ],
         "anthropic": [
             "langchain-anthropic==0.2.4",
