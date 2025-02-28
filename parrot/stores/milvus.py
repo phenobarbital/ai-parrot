@@ -1,6 +1,6 @@
 from collections.abc import Callable
-from typing import Optional, Union, Any
-import asyncio
+from typing import Optional, Union
+from uuid import uuid4
 from pymilvus import (
     MilvusClient,
     connections,
@@ -102,8 +102,12 @@ class MilvusStore(AbstractStore):
                 self.port = int(self.url.split(":")[-1])
         self.token = kwargs.pop("token", MILVUS_TOKEN)
         # user and password (if required)
-        self.user = kwargs.pop("user", MILVUS_USER)
-        self.password = kwargs.pop("password", MILVUS_PASSWORD)
+        self.user = kwargs.pop(
+            "user", MILVUS_USER
+        )
+        self.password = kwargs.pop(
+            "password", MILVUS_PASSWORD
+        )
         # SSL/TLS
         self._secure: bool = kwargs.pop('secure', MILVUS_SECURE)
         self._server_name: str = kwargs.pop('server_name', MILVUS_SERVER_NAME)
@@ -136,20 +140,12 @@ class MilvusStore(AbstractStore):
             if self._ca_cert:
                 args['ca_pem_path'] = self._ca_cert
             self.credentials = {**self.credentials, **args}
-        # 1. Check if database exists:
         if self.database:
             self.credentials['db_name'] = self.database
-            self.use_database(
-                self.database,
-                create=self.create_database
-            )
 
     async def connection(self, alias: str = None) -> "MilvusStore":
         """Connects to the Milvus database."""
-        if not alias:
-            self._client_id = 'default'
-        else:
-            self._client_id = alias
+        self._client_id = alias or uuid4().hex
         _ = connections.connect(
             alias=self._client_id,
             **self.credentials
@@ -163,17 +159,21 @@ class MilvusStore(AbstractStore):
         self._connection = MilvusClient(
             **self.credentials
         )
+        self._connected = True
         return self
 
-    async def disconnect(self, alias: str = 'default'):
+    async def disconnect(self, alias: str = None):
         try:
-            connections.disconnect(alias=alias)
+            a = alias or self._client_id
+            connections.disconnect(alias=a)
             self._connection.close()
         except AttributeError:
             pass
         finally:
             self._connection = None
             self.client = None
+            self._client_id = None
+            self._connected = False
 
     def use_database(
         self,
@@ -228,7 +228,9 @@ class MilvusStore(AbstractStore):
         return False
 
     def check_state(self, collection_name: str) -> dict:
-        return self._connection.get_load_state(collection_name=collection_name)
+        return self._connection.get_load_state(
+            collection_name=collection_name
+        )
 
     def get_vector(
         self,
@@ -267,34 +269,6 @@ class MilvusStore(AbstractStore):
             **_search
         )
 
-    def similarity_search(
-        self,
-        query: str,
-        collection: Union[str, None] = None,
-        limit: int = 2,
-        consistency_level: str = 'Bounded'
-    ) -> list:
-        if collection is None:
-            collection = self.collection_name
-        if self._embed_ is None:
-            _embed_ = self.create_embedding(
-                embedding_model=self.embedding_model
-            )
-        else:
-            _embed_ = self._embed_
-        vector_db = Milvus(
-            embedding_function=_embed_,
-            collection_name=collection,
-            consistency_level=consistency_level,
-            connection_args={
-                **self.credentials
-            },
-            primary_field='pk',
-            text_field='text',
-            vector_field='vector'
-        )
-        return vector_db.similarity_search(query, k=limit)
-
     def search(
         self,
         payload: Union[dict, list],
@@ -330,3 +304,31 @@ class MilvusStore(AbstractStore):
     def save_context(self, memory: VectorStoreRetrieverMemory, context: list) -> None:
         for val in context:
             memory.save_context(val)
+
+    async def similarity_search(
+        self,
+        query: str,
+        collection: Union[str, None] = None,
+        limit: int = 2,
+        consistency_level: str = 'Bounded'
+    ) -> list:
+        if collection is None:
+            collection = self.collection_name
+        if self._embed_ is None:
+            _embed_ = self.create_embedding(
+                embedding_model=self.embedding_model
+            )
+        else:
+            _embed_ = self._embed_
+        vector_db = Milvus(
+            embedding_function=_embed_,
+            collection_name=collection,
+            consistency_level=consistency_level,
+            connection_args={
+                **self.credentials
+            },
+            primary_field='pk',
+            text_field='text',
+            vector_field='vector'
+        )
+        return await vector_db.asimilarity_search(query, k=limit)

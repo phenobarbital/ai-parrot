@@ -1,7 +1,8 @@
 from abc import ABC, abstractmethod
-from typing import Union
+from typing import List, Union
 import importlib
 from collections.abc import Callable
+from langchain.docstore.document import Document
 from navconfig.logging import logging
 from ..conf import (
     EMBEDDING_DEFAULT_MODEL
@@ -118,13 +119,64 @@ class AbstractStore(ABC):
     def search(self, payload: dict, collection_name: str = None) -> dict:
         pass
 
+    @abstractmethod
+    async def similarity_search(self, query: str, collection: Union[str, None] = None, limit: int = 2) -> list:  # noqa
+        pass
+
+    @abstractmethod
+    async def from_documents(
+        self,
+        documents: List[Document],
+        collection: Union[str, None] = None,
+        **kwargs
+    ) -> Callable:
+        """
+        Create Vector Store from Documents.
+
+        Args:
+            documents (List[Document]): List of Documents.
+            collection (str): Collection Name.
+            kwargs: Additional Arguments.
+
+        Returns:
+            Callable VectorStore.
+        """
+
+    @abstractmethod
+    async def add_documents(
+        self,
+        documents: List[Document],
+        collection: Union[str, None] = None,
+        **kwargs
+    ) -> None:
+        """
+        Add Documents to Vector Store.
+
+        Args:
+            documents (List[Document]): List of Documents.
+            collection (str): Collection Name.
+            kwargs: Additional Arguments.
+
+        Returns:
+            None.
+        """
+
     def create_embedding(
         self,
+
         embedding_model: dict,
         **kwargs
     ):
         """
         Create Embedding Model.
+
+        Args:
+            embedding_model (dict): Embedding Model Configuration.
+            kwargs: Additional Arguments.
+
+        Returns:
+            Callable: Embedding Model.
+
         """
         model_type = embedding_model.get('model_type', 'huggingface')
         model_name = embedding_model.get('model_name', EMBEDDING_DEFAULT_MODEL)
