@@ -1,10 +1,13 @@
 from abc import ABC, abstractmethod
 from typing import Union
+import importlib
 from collections.abc import Callable
 from navconfig.logging import logging
 from ..conf import (
     EMBEDDING_DEFAULT_MODEL
 )
+from ..exceptions import ConfigError  # pylint: disable=E0611
+from .embeddings import supported_embeddings
 
 
 class AbstractStore(ABC):
@@ -21,6 +24,7 @@ class AbstractStore(ABC):
         - Chroma
         - PgVector
     """
+
     def __init__(
         self,
         embedding_model: Union[dict, str] = None,
@@ -35,7 +39,7 @@ class AbstractStore(ABC):
             if isinstance(embedding_model, str):
                 self.embedding_model = {
                     'model_name': embedding_model,
-                    'model_type': 'transformers'
+                    'model_type': 'huggingface'
                 }
             elif isinstance(embedding_model, dict):
                 self.embedding_model = embedding_model
@@ -54,7 +58,7 @@ class AbstractStore(ABC):
             if isinstance(embedding, str):
                 self.embedding_model = {
                     'model_name': embedding,
-                    'model_type': 'transformers'
+                    'model_type': 'huggingface'
                 }
             elif isinstance(embedding, dict):
                 self.embedding_model = embedding
@@ -62,7 +66,7 @@ class AbstractStore(ABC):
                 # is a callable:
                 self.embedding_model = {
                     'model_name': EMBEDDING_DEFAULT_MODEL,
-                    'model_type': 'transformers'
+                    'model_type': 'huggingface'
                 }
                 self._embed_ = embedding
         self.logger = logging.getLogger(
@@ -121,20 +125,42 @@ class AbstractStore(ABC):
         """
         pass
 
-    @abstractmethod
     def create_embedding(
         self,
-        embedding_model: dict
+        embedding_model: dict,
+        **kwargs
     ):
         """
         Create Embedding Model.
         """
-        pass
+        model_type = embedding_model.get('model_type', 'huggingface')
+        model_name = embedding_model.get('model_name', EMBEDDING_DEFAULT_MODEL)
+        if model_type not in supported_embeddings:
+            raise ConfigError(
+                f"Embedding Model Type: {model_type} not supported."
+            )
+        embed_cls = supported_embeddings[model_type]
+        cls_path = f'.embeddings/{model_type}'
+        try:
+            embed_module = importlib.import_module(
+                cls_path,
+                package=model_type
+            )
+            embed_obj = getattr(embed_module, embed_cls)
+            self._embed_ = embed_obj(
+                model_name=model_name,
+                **kwargs
+            )
+            return self._embed_
+        except ImportError as e:
+            raise ConfigError(
+                f"Error Importing Embedding Model: {model_type}"
+            ) from e
 
     def get_default_embedding(self):
         embed_model = {
             'model_name': EMBEDDING_DEFAULT_MODEL,
-            'model_type': 'transformers'
+            'model_type': 'huggingface'
         }
         return self.create_embedding(
             embedding_model=embed_model

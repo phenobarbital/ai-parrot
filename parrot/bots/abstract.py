@@ -86,6 +86,8 @@ from .prompts import (
     DEFAULT_BACKHISTORY
 )
 from .interfaces import EmptyRetriever
+## Vector Stores:
+from ..stores.abstract import AbstractStore
 
 
 os.environ["GRPC_ENABLE_FORK_SUPPORT"] = "0"
