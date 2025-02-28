@@ -165,6 +165,7 @@ setup(
         "sentencepiece==0.2.0",
         "weasyprint==61.2",
         "markdown2==2.4.13",
+        "psycopg-binary==3.2.5",
     ],
     extras_require={
         "agents": [
