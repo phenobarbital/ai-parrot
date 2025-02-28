@@ -118,13 +118,6 @@ class AbstractStore(ABC):
     def search(self, payload: dict, collection_name: str = None) -> dict:
         pass
 
-    @abstractmethod
-    def get_device(self, device_type: str = None, **kwargs):
-        """
-        Get Default Device to use in Embedding Transformers.
-        """
-        pass
-
     def create_embedding(
         self,
         embedding_model: dict,

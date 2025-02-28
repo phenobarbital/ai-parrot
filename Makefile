@@ -20,6 +20,8 @@ install:
 	pip install pydantic==2.9.2
 	# avoid warning of google-gemini:
 	pip install grpcio==1.67.1
+	# fix version of httpx:
+	pip install httpx==0.27.2
 
 develop:
 	# Install Parrot
