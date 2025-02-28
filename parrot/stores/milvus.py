@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from typing import Optional, Union, Any
 import asyncio
 from pymilvus import (
@@ -77,7 +78,12 @@ class MilvusStore(AbstractStore):
         url (str): Milvus URL.
     """
 
-    def __init__(self, embeddings = None, **kwargs):
+    def __init__(
+        self,
+        embedding_model: Union[dict, str] = None,
+        embedding: Union[dict, Callable] = None,
+        **kwargs
+    ):
         self.host = kwargs.pop("host", MILVUS_HOST)
         self.port = kwargs.pop("port", MILVUS_PORT)
         self.protocol = kwargs.pop("protocol", MILVUS_PROTOCOL)
@@ -85,7 +91,7 @@ class MilvusStore(AbstractStore):
         self.create_database: bool = kwargs.pop('create_database', True)
         self.url = kwargs.pop("url", MILVUS_URL)
         self._client_id = kwargs.pop('client_id', 'default')
-        super().__init__(embeddings, **kwargs)
+        super().__init__(embedding_model, embedding, **kwargs)
         if not self.url:
             self.url = f"{self.protocol}://{self.host}:{self.port}"
         else:

@@ -2,6 +2,7 @@
 Abstract Bot interface.
 """
 from abc import ABC
+import importlib
 from typing import Any, Union, Optional
 from collections.abc import Callable
 import os
@@ -76,6 +77,8 @@ try:
     GROQ_ENABLED = True
 except (ModuleNotFoundError, ImportError):
     GROQ_ENABLED = False
+# Function for get LLM configuration.
+from ..llms import get_llm
 
 from ..utils import SafeDict
 # Chat Response:
@@ -87,7 +90,7 @@ from .prompts import (
 )
 from .interfaces import EmptyRetriever
 ## Vector Stores:
-from ..stores.abstract import AbstractStore
+from ..stores import AbstractStore, supported_stores
 
 
 os.environ["GRPC_ENABLE_FORK_SUPPORT"] = "0"
@@ -180,19 +183,19 @@ class AbstractBot(DBInterface, ABC):
         self._documents_: list = []
         # Models, Embed and collections
         # Vector information:
-        self.chunk_size: int = int(kwargs.get('chunk_size', 768))
+        self._use_vector: bool = kwargs.get('use_vectorstore', False)
+        self._vector_store: str = kwargs.get('vector_store', None)
+        self.chunk_size: int = int(kwargs.get('chunk_size', 2048))
         self.dimension: int = int(kwargs.get('dimension', 768))
         self.store: Callable = None
         self.memory: Callable = None
         # Embedding Model Name
         self.embedding_model = kwargs.get(
-            'embedding_model', {}
-        )
-        if not self.embedding_model:
-            self.embedding_model = {
-                'model': EMBEDDING_DEFAULT_MODEL,
-                'tokenizer': None
+            'embedding_model', {
+                'model_name': EMBEDDING_DEFAULT_MODEL,
+                'model_type': 'huggingface'
             }
+        )
         # embedding object:
         self.embeddings = kwargs.get('embeddings', None)
         self.rag_model = kwargs.get(
@@ -369,6 +372,27 @@ class AbstractBot(DBInterface, ABC):
             self.app[f"{self.name.lower()}_bot"] = self
         # And define Prompt:
         self._define_prompt()
+        # Configure VectorStore if enabled:
+        if self._use_vector:
+            self.configure_store()
+
+    def configure_store(self, **kwargs):
+        # TODO: Implement VectorStore Configuration
+        store_cls = supported_stores.get(self._vector_store)
+        cls_path = f"parrot.stores.{self._vector_store}"
+        try:
+            module = importlib.import_module(cls_path, package=self._vector_store)
+            store_cls = getattr(module, store_cls)
+            self.store = store_cls(
+                embedding_model=self.embedding_model,
+                embedding=self.embeddings,
+                dimension=self.dimension
+            )
+        except (ModuleNotFoundError, ImportError) as e:
+            self.logger.error(
+                f"Error importing VectorStore: {e}"
+            )
+            self.store = None
 
     def get_memory(
         self,
