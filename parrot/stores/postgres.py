@@ -1,5 +1,6 @@
 from typing import List, Union, Optional
 from collections.abc import Callable
+import sqlalchemy
 from langchain.docstore.document import Document
 from langchain.memory import VectorStoreRetrieverMemory
 from langchain_community.vectorstores.utils import DistanceStrategy
@@ -25,6 +26,23 @@ class PgvectorStore(AbstractStore):
             **kwargs
         )
         self.dsn = kwargs.get('dsn', self.database)
+        self._drop: bool = kwargs.pop('drop', False)
+        self._connection: AsyncEngine = None
+
+    async def collection_exists(self, collection: str = None) -> bool:
+        """Check if a collection exists in the database."""
+        if not collection:
+            collection = self.collection_name
+        async with self._connection.connect() as conn:
+            # ✅ Check if the collection (table) exists
+            check_query = f"""
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables
+                WHERE table_name = '{collection}'
+            );
+            """
+            result = await conn.execute(sqlalchemy.text(check_query))
+            return bool(result.scalar())
 
     async def connection(self, alias: str = None):
         """Connection to DuckDB.
@@ -37,6 +55,20 @@ class PgvectorStore(AbstractStore):
 
         """
         self._connection = create_async_engine(self.dsn, future=True, echo=False)
+        async with self._connection.begin() as conn:
+            if getattr(self, "_drop", False):
+                vectorstore = PGVector(
+                    embeddings=self._embed_,
+                    collection_name=self.collection_name,
+                    embedding_length=self.dimension,
+                    connection=self._connection,
+                    use_jsonb=True,
+                    create_extension=False
+                )
+                await vectorstore.adrop_tables()
+            if not await self.collection_exists(self.collection_name):
+                print(f"⚠️ Collection `{self.collection_name}` not found. Creating a new one...")
+                await self.create_collection(self.collection_name)
         self._connected = True
         return self._connection
 
@@ -54,6 +86,25 @@ class PgvectorStore(AbstractStore):
         finally:
             self._connection = None
             self._connected = False
+
+    async def create_collection(self, collection: str) -> None:
+        """Create a new collection in the database."""
+        async with self._connection.connect() as conn:
+            # ✅ Create the collection in PgVector
+            _embed_ = self._embed_ or self.create_embedding(
+                embedding_model=self.embedding_model
+            )
+            self._client = PGVector(
+                embeddings=_embed_,
+                embedding_length=self.dimension,
+                collection_name=self.collection_name,
+                connection=self._connection,
+                use_jsonb=True,
+                create_extension=False
+            )
+            print(
+                f"✅ Collection `{self.collection_name}` created successfully."
+            )
 
     def get_vector(
         self,
@@ -77,9 +128,8 @@ class PgvectorStore(AbstractStore):
             embeddings=_embed_,
             logger=self.logger,
             use_jsonb=True,
-            create_extension=True,
             async_mode=True,
-            **kwargs
+            create_extension=False
         )
 
     def memory_retriever(
@@ -91,14 +141,14 @@ class PgvectorStore(AbstractStore):
                 embedding_model=self.embedding_model
         )
         vectordb = PGVector.from_documents(
-            documents or {},
+            documents or [],
             embedding=_embed_,
             connection=self._connection,
             collection_name=self.collection_name,
             embedding_length=self.dimension,
             use_jsonb=True,
-            create_extension=True,
-            async_mode=True
+            async_mode=True,
+            create_extension=False,
         )
         retriever = PGVector.as_retriever(
             vectordb,
@@ -125,9 +175,7 @@ class PgvectorStore(AbstractStore):
             embedding=_embed_,
             embedding_length=self.dimension,
             use_jsonb=True,
-            create_extension=True,
             async_mode=True,
-            distance_strategy=DistanceStrategy.EUCLIDEAN_DISTANCE
         )
         return vectordb
 
