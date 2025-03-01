@@ -5,6 +5,6 @@ supported_stores = {
     'duck': 'DuckDBStore',
     'milvus': 'MilvusStore',
     'qdrant': 'QdrantStore',
-    'pgvector': 'PgvectorStore',
+    'postgres': 'PgvectorStore',
     'faiss': 'FaissStore',
 }
