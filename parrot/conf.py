@@ -83,6 +83,9 @@ QDRANT_URL = config.get('QDRANT_URL')
 # QDRANT Connection Type: server or cloud
 QDRANT_CONN_TYPE = config.get('QDRANT_CONN_TYPE', fallback='server')
 
+# ChromaDB:
+CHROMADB_HOST = config.get('CHROMADB_HOST', fallback='localhost')
+CHROMADB_PORT = config.get('CHROMADB_PORT', fallback=8000)
 
 # Embedding Device:
 EMBEDDING_DEVICE = config.get('EMBEDDING_DEVICE', fallback='cpu')
