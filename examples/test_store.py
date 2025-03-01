@@ -5,6 +5,7 @@ from parrot.stores.faiss import FaissStore
 from parrot.stores.chroma import ChromaStore
 from parrot.stores.duck import DuckDBStore
 from parrot.stores.postgres import PgvectorStore
+from parrot.stores.qdrant import QdrantStore
 
 
 embed_model = {
@@ -22,6 +23,8 @@ async def test_store(use: str):
         _store = DuckDBStore(embedding_model=embed_model, database=":memory:")
     if use == 'postgres':
         _store = PgvectorStore(embedding_model=embed_model, dsn="postgresql+asyncpg://troc_pgdata:12345678@127.0.0.1:5432/navigator", drop=True)
+    if use == 'qdrant':
+        _store = QdrantStore(embedding_model=embed_model, host="localhost", database="navigator")
     print('Store selected: ', _store)
     # Create two LangChain documents
     doc1 = Document(page_content="LangChain is a framework for building language models.")
@@ -39,4 +42,4 @@ async def test_store(use: str):
             print(result)
 
 if __name__ == "__main__":
-    asyncio.run(test_store(use='postgres'))
+    asyncio.run(test_store(use='qdrant'))
