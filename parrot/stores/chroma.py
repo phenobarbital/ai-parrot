@@ -1,11 +1,16 @@
 from collections.abc import Callable
 from typing import Optional, Union
 from uuid import uuid4
+import logging
 from langchain.docstore.document import Document
 from langchain.memory import VectorStoreRetrieverMemory
 import chromadb
 from langchain_chroma import Chroma
 from .abstract import AbstractStore
+from ..conf import CHROMADB_HOST, CHROMADB_PORT
+
+
+logging.getLogger('chromadb').setLevel(logging.INFO)
 
 
 class ChromaStore(AbstractStore):
@@ -27,6 +32,10 @@ class ChromaStore(AbstractStore):
             **kwargs
         )
         self.database_path: str = kwargs.pop('database_path', 'chroma.db')
+        self._ephemeral: bool = kwargs.pop('ephemeral', False)
+        self._local: bool = kwargs.pop('local', False)
+        self.host = kwargs.pop("host", CHROMADB_HOST)
+        self.port = kwargs.pop("port", CHROMADB_PORT)
         self._collection = None
 
     async def connection(self):
@@ -39,10 +48,20 @@ class ChromaStore(AbstractStore):
             Callable: ChromaDB connection.
 
         """
-        self._connection = chromadb.PersistentClient(
-            path=self.database_path,
-            database=self.database,
-        )
+        if self._ephemeral:
+            self._connection = chromadb.Client()
+        elif self._local:
+            self._connection = chromadb.PersistentClient(
+                path=self.database_path,
+                database=self.database,
+            )
+        else:
+            # Client-Server Connection:
+            self._connection = chromadb.HttpClient(
+                host=self.host,
+                port=self.port,
+                database=self.database,
+            )
         self._collection = self._connection.get_or_create_collection(self.collection_name)
         self._connected = True
         return self._connection
@@ -102,16 +121,20 @@ class ChromaStore(AbstractStore):
         documents: list,
         collection: str = None,
         embedding: Optional[Callable] = None,
-    )   -> bool:
-        """
-        Add Documents to ChromaDB
-        """
+    ) -> bool:
+        """Add Documents to ChromaDB"""
+
+        if collection is None:
+            collection = self.collection_name
+
         async with self:
-            collection = self._connection.get_or_create_collection(collection)
+            collection_obj = self._connection.get_or_create_collection(collection)
             uuids = [str(uuid4()) for _ in range(len(documents))]
             vector_db = self.get_vector(collection=collection, embedding=embedding)
             await vector_db.aadd_documents(documents=documents, ids=uuids)
+
         return True
+
 
     async def update_documents(
         self,
