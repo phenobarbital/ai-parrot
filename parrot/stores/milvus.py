@@ -1,10 +1,16 @@
 from collections.abc import Callable
-from typing import Optional, Union
+from typing import List, Optional, Union
 from uuid import uuid4
+from langchain.docstore.document import Document
+# Milvus Database
 from pymilvus import (
-    MilvusClient,
+    db,
     connections,
-    db
+    FieldSchema,
+    CollectionSchema,
+    DataType,
+    Collection,
+    MilvusClient
 )
 from pymilvus.exceptions import MilvusException
 from langchain_milvus import Milvus  # pylint: disable=import-error, E0611
@@ -289,9 +295,9 @@ class MilvusStore(AbstractStore):
         )
         return result
 
-    def memory_retriever(self, num_results: int  = 5) -> VectorStoreRetrieverMemory:
+    def memory_retriever(self, documents: List[Document], num_results: int  = 5) -> VectorStoreRetrieverMemory:
         vectordb = Milvus.from_documents(
-            {},
+            documents or [],
             self._embed_,
             connection_args={**self.credentials}
         )
@@ -332,3 +338,45 @@ class MilvusStore(AbstractStore):
             vector_field='vector'
         )
         return await vector_db.asimilarity_search(query, k=limit)
+
+    async def insert(self, collection: str, embeddings: list) -> dict:
+        if not collection:
+            collection = self.collection_name
+        async with self:
+            # create the collection object from milvus
+            if self._connection.has_collection(collection):
+                schema = self._connection.describe_collection(collection)
+                if schema.params['dimension']!= embeddings[0].shape[0]:
+                    raise ValueError(
+                        f"Invalid dimension: expected {schema.params['dimension']}, got {embeddings[0].shape[0]}"
+                    )
+                self._connection.upsert(collection, embeddings)
+            else:
+                raise RuntimeError(
+                    f"Collection {collection} does not exist."
+                )
+
+    async def from_documents(self, documents: list[Document], collection: str = None, **kwargs):
+        """
+        Save Documents as Vectors in Milvus.
+        """
+        if not collection:
+            collection = self.collection_name
+        vectordb = await Milvus.afrom_documents(
+            documents=documents,
+            embedding=self._embed_,
+            connection_args={**self.credentials},
+            collection_name=collection
+        )
+        return vectordb
+
+    async def add_documents(self, documents: list[Document], collection: str = None, **kwargs):
+        """
+        Add Documents as Vectors in Milvus.
+        """
+        if not collection:
+            collection = self.collection_name
+        async with self:
+            # create the collection object from milvus
+            vectordb = self.get_vector(collection=collection, **kwargs)
+            await vectordb.aadd_documents(documents)
