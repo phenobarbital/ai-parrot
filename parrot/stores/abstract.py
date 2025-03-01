@@ -97,7 +97,8 @@ class AbstractStore(ABC):
             self._embed_ = self.create_embedding(
                 embedding_model=self.embedding_model
             )
-        await self.connection()
+        if not self._connection:
+            await self.connection()
         return self
 
     async def __aexit__(self, exc_type, exc_value, traceback):
