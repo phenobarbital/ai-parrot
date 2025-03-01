@@ -234,7 +234,8 @@ setup(
             "langchain-groq==0.2.0"
         ],
         "qdrant": [
-            "qdrant-client==1.12.1",
+            "qdrant-client==1.13.2",
+            "langchain-qdrant==0.2.0"
         ],
         "milvus": [
             "langchain-milvus>=0.1.6",
