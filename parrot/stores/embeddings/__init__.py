@@ -5,5 +5,6 @@ supported_embeddings = {
     'huggingface': 'HugginfaceEmbed',
     'fastembed': 'FastembedEmbed',
     'bge': 'BgeEmbed',
-    'ollama': 'OllamaEmbed'
+    'ollama': 'OllamaEmbed',
+    'transformers': 'TransformersEmbed'
 }
