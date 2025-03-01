@@ -116,10 +116,6 @@ class AbstractStore(ABC):
         return self.get_vector()
 
     @abstractmethod
-    def search(self, payload: dict, collection_name: str = None) -> dict:
-        pass
-
-    @abstractmethod
     async def similarity_search(self, query: str, collection: Union[str, None] = None, limit: int = 2) -> list:  # noqa
         pass
 
@@ -185,11 +181,11 @@ class AbstractStore(ABC):
                 f"Embedding Model Type: {model_type} not supported."
             )
         embed_cls = supported_embeddings[model_type]
-        cls_path = f'.embeddings/{model_type}'
+        cls_path = f".embeddings.{model_type}"  # Relative module path
         try:
             embed_module = importlib.import_module(
                 cls_path,
-                package=model_type
+                package=__package__
             )
             embed_obj = getattr(embed_module, embed_cls)
             self._embed_ = embed_obj(
@@ -210,3 +206,11 @@ class AbstractStore(ABC):
         return self.create_embedding(
             embedding_model=embed_model
         )
+
+    def generate_embedding(self, documents: List[Document]):
+        if not self._embed_:
+            self._embed_ = self.get_default_embedding()
+
+        # Using the Embed Model to Generate Embeddings:
+        embeddings = self._embed_.embed_documents(documents)
+        return embeddings

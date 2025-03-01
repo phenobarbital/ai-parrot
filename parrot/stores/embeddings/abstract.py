@@ -20,8 +20,8 @@ class AbstractEmbed(ABC):
     def _get_device(self):
         return EMBEDDING_DEVICE
 
-    @abstractmethod
     @classmethod
+    @abstractmethod
     def __new__(cls, model_name: str = None, **kwargs):
         """
         Create a new instance of the class.

@@ -1,6 +1,7 @@
 from collections.abc import Callable
 from typing import Optional, Union
 import duckdb
+from langchain.docstore.document import Document
 from langchain.memory import VectorStoreRetrieverMemory
 from langchain_community.vectorstores import DuckDB
 from .abstract import AbstractStore
@@ -115,7 +116,7 @@ class DuckDBStore(AbstractStore):
             collection = self.collection_name
         async with self:
             vector_db = self.get_vector(collection=collection, embedding=embedding)
-            return vector_db.similarity_search(query, k=limit)
+            return await vector_db.asimilarity_search(query, k=limit)
 
     def memory_retriever(
         self,
@@ -134,3 +135,28 @@ class DuckDBStore(AbstractStore):
             search_kwargs=dict(k=num_results)
         )
         return VectorStoreRetrieverMemory(retriever=retriever)
+
+    async def from_documents(self, documents: list[Document], collection: str = None, **kwargs):
+        """
+        Save Documents as Vectors in DuckDB.
+        """
+        if not collection:
+            collection = self.collection_name
+        vectordb = await DuckDB.afrom_documents(
+            documents,
+            embedding=self._embed_,
+            connection=self._connection,
+        )
+        return vectordb
+
+    async def add_documents(self, documents: list[Document], collection: str = None, **kwargs):
+        """
+        Add Documents as Vectors in DuckDB.
+        """
+        _embed_ = self._embed_ or self.create_embedding(
+                embedding_model=self.embedding_model
+        )
+        if not collection:
+            collection = self.collection_name
+        vectordb = self.get_vector(collection=collection, embedding=_embed_)
+        await vectordb.aadd_documents(documents)

@@ -6,4 +6,5 @@ supported_stores = {
     'milvus': 'MilvusStore',
     'qdrant': 'QdrantStore',
     'pgvector': 'PgvectorStore',
+    'faiss': 'FaissStore',
 }

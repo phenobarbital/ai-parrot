@@ -1,6 +1,7 @@
 from collections.abc import Callable
 from typing import Optional, Union
 from uuid import uuid4
+from langchain.docstore.document import Document
 from langchain.memory import VectorStoreRetrieverMemory
 import chromadb
 from langchain_chroma import Chroma
@@ -74,6 +75,17 @@ class ChromaStore(AbstractStore):
             create_collection_if_not_exists=True,
         )
 
+    async def from_documents(self, documents: list[Document], collection: str = None, **kwargs):
+        """
+        Save Documents as Vectors in Chroma.
+        """
+        vectordb = await Chroma.afrom_documents(
+            documents=documents,
+            embedding=self._embed_,
+            connection=self._connection,
+        )
+        return vectordb
+
 
     async def add_texts(self, objects: list, collection: str = None):
         """
@@ -98,7 +110,7 @@ class ChromaStore(AbstractStore):
             collection = self._connection.get_or_create_collection(collection)
             uuids = [str(uuid4()) for _ in range(len(documents))]
             vector_db = self.get_vector(collection=collection, embedding=embedding)
-            vector_db.add_documents(documents=documents, ids=uuids)
+            await vector_db.aadd_documents(documents=documents, ids=uuids)
         return True
 
     async def update_documents(
