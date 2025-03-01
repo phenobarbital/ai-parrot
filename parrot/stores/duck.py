@@ -159,4 +159,7 @@ class DuckDBStore(AbstractStore):
         if not collection:
             collection = self.collection_name
         vectordb = self.get_vector(collection=collection, embedding=_embed_)
-        await vectordb.aadd_documents(documents)
+        result = await vectordb.aadd_documents(
+            documents=documents
+        )
+        return result
