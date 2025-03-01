@@ -10,7 +10,7 @@ async def get_agent():
 
 if __name__ == '__main__':
     agent = asyncio.run(get_agent())
-    answer, response = agent.invoke("is Gene Hackman alive?")
+    answer, response = agent.invoke("is Gene Hackman alive?, based on recent news was found dead in his house.")
     print(answer)
     # print('===== ')
     # print(agent.prompt)
