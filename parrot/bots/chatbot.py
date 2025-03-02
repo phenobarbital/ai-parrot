@@ -4,7 +4,6 @@ Foundational base of every Chatbot and Agent in ai-parrot.
 from typing import Any, Union
 from pathlib import Path, PurePath
 import uuid
-import torch
 from aiohttp import web
 # Navconfig
 from navconfig import BASE_DIR
@@ -25,11 +24,14 @@ class Chatbot(AbstractBot):
         Each Chatbot has a name, a role, a goal, a backstory,
         and an optional language model (llm).
     """
-    def __init__(self, **kwargs):
+    def __init__(
+        self,
+        name: str = 'Nav',
+        system_prompt: str = None,
+        human_prompt: str = None,
+        **kwargs
+    ):
         """Initialize the Chatbot with the given configuration."""
-        super().__init__(**kwargs)
-        # For Chatbots, always use a database:
-        # self._use_database = True
         # Configuration File:
         self.config_file: PurePath = kwargs.get('config_file', None)
         # Other Configuration
@@ -38,6 +40,12 @@ class Chatbot(AbstractBot):
         self.documents_dir = kwargs.get(
             'documents_dir',
             None
+        )
+        super().__init__(
+            name=name,
+            system_prompt=system_prompt,
+            human_prompt=human_prompt,
+            **kwargs
         )
         if isinstance(self.documents_dir, str):
             self.documents_dir = Path(self.documents_dir)
@@ -48,33 +56,22 @@ class Chatbot(AbstractBot):
                 parents=True,
                 exist_ok=True
             )
+        # define de Config File:
+        if self.config_file:
+            if isinstance(self.config_file, str):
+                self.config_file = Path(self.config_file)
+            if not self.config_file.exists():
+                raise ConfigError(
+                    f"Configuration file {self.config_file} not found."
+                )
 
     def __repr__(self):
         return f"<ChatBot.{self.__class__.__name__}:{self.name}>"
 
-    def _get_device(self, cuda_number: int = 0):
-        torch.backends.cudnn.deterministic = True
-        if torch.cuda.is_available():
-            # Use CUDA GPU if available
-            device = torch.device(f'cuda:{cuda_number}')
-        elif torch.backends.mps.is_available():
-            # Use CUDA Multi-Processing Service if available
-            device = torch.device("mps")
-        elif EMBEDDING_DEVICE == 'cuda':
-            device = torch.device(f'cuda:{cuda_number}')
-        else:
-            device = torch.device(EMBEDDING_DEVICE)
-        return device
-
     async def configure(self, app = None) -> None:
-        if app is None:
-            self.app = None
-        else:
-            if isinstance(app, web.Application):
-                self.app = app  # register the app into the Extension
-            else:
-                self.app = app.get_app()  # Nav Application
-        # Config File:
+        """Load configuration for this Chatbot."""
+        await super().configure(app)
+        # Check if a Config File exists for this Bot instance:
         config_file = BASE_DIR.joinpath(
             'etc',
             'config',
@@ -82,19 +79,20 @@ class Chatbot(AbstractBot):
             self.name.lower(),
             "config.toml"
         )
+        if not config_file.exists():
+            config_file = self.config_file
         if config_file.exists():
             self.logger.notice(
                 f"Loading Bot {self.name} from config: {config_file.name}"
             )
-        if (bot := await self.bot_exists(name=self.name, uuid=self.chatbot_id)):
+            # Configure from the TOML file
+            await self.from_config_file(config_file)
+        elif (bot := await self.bot_exists(name=self.name, uuid=self.chatbot_id)):
             self.logger.notice(
                 f"Loading Bot {self.name} from Database: {bot.chatbot_id}"
             )
             # Bot exists on Database, Configure from the Database
             await self.from_database(bot, config_file)
-        elif config_file.exists():
-            # Configure from the TOML file
-            await self.from_config_file(config_file)
         else:
             raise ValueError(
                 f'Bad configuration procedure for bot {self.name}'
@@ -128,6 +126,8 @@ class Chatbot(AbstractBot):
                     bot = await ChatbotModel.get(name=self.name)
                 if bot:
                     return bot
+                else:
+                    return False
             except NoDataFound:
                 return False
 
@@ -173,22 +173,18 @@ class Chatbot(AbstractBot):
         self.rationale = self._from_db(bot, 'rationale', default=self.rationale)
         self.backstory = self._from_db(bot, 'backstory', default=self.backstory)
         # LLM Configuration:
-        llm = self._from_db(bot, 'llm', default='VertexLLM')
+        llm = self._from_db(bot, 'llm', default='vertexai')
         llm_config = self._from_db(bot, 'llm_config', default={})
         # Configuration of LLM:
-        self._configure_llm(llm, llm_config)
-        # Other models:
-        embedding_model_name = self._from_db(
-            bot, 'embedding_name', None
+        self.configure_llm(llm, llm_config)
+        # Embedding Model Configuration:
+        self.embedding_model : dict = self._from_db(
+            bot, 'embedding_model', None
         )
-        self.embedding_model = {
-            'model': embedding_model_name,
-            'model_type': 'transformers'
-        }
         # Database Configuration:
-        db_config = bot.database
-        vector_db = db_config.pop('vector_database')
-        await self.store_configuration(vector_db, db_config)
+        self._use_vector = bot.vector_store
+        self._vector_store = bot.database
+        self.configure_store()
         # after configuration, setup the chatbot
         if bot.template_prompt:
             self.template_prompt = bot.template_prompt
@@ -218,18 +214,16 @@ class Chatbot(AbstractBot):
         llm = llminfo.get('llm', 'VertexLLM')
         cfg = llminfo.get('config', {})
         # Configuration of LLM:
-        self._configure_llm(llm, cfg)
-
-        # Other models:
+        self.configure_llm(llm, cfg)
+        # Other models and embedding models:
         models = file_config.get('models', {})
-        embedding_model_name = models.get(
-            'embedding',
-            EMBEDDING_DEFAULT_MODEL
+        self.embedding_model = models.get(
+            'embedding_model',
+            {
+                'model': EMBEDDING_DEFAULT_MODEL,
+                'model_type': 'transformers'
+            }
         )
-        self.embedding_model = {
-            'model': embedding_model_name,
-            'model_type': 'transformers'
-        }
         # pre-instructions
         instructions = file_config.get('pre-instructions')
         if instructions:
@@ -240,15 +234,16 @@ class Chatbot(AbstractBot):
             self.knowledge_base = self.create_kb(
                 self.kb.get('data', [])
             )
-        vector_config = file_config.get('database', {})
-        vector_db = vector_config.pop('vector_database')
-        if vector_db:
+        database = file_config.get('database', {})
+        vector_store = database.get('vector_store', False)
+        if database or vector_store is True:
             self._use_database = True
+        vector_db = database.pop('vector_database', None)
         # configure vector database:
-        await self.store_configuration(
-            vector_db,
-            vector_config
-        )
+        if vector_db:
+            self._use_vector = vector_store
+            self._vector_store = database
+            self.configure_store()
         # after configuration, setup the chatbot
         if 'template_prompt' in basic:
             self.template_prompt = basic.get('template_prompt')
