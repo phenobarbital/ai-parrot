@@ -30,7 +30,11 @@ from langchain.docstore.document import Document
 from langchain.memory import VectorStoreRetrieverMemory
 from langchain_community.vectorstores.pgembedding import PGEmbedding
 from langchain_community.vectorstores.utils import DistanceStrategy
-from langchain_postgres.vectorstores import PGVector, _get_embedding_collection_store
+from langchain_postgres.vectorstores import (
+    PGVector,
+    _get_embedding_collection_store,
+    _results_to_docs
+)
 from datamodel.parsers.json import json_encoder  # pylint: disable=E0611
 from .abstract import AbstractStore
 
@@ -155,16 +159,69 @@ class PgVector(PGVector):
             await self.acreate_tables_if_not_exists()
             await self.acreate_collection()
 
+    async def asimilarity_search(
+        self,
+        query: str,
+        k: int = 4,
+        score_threshold: Optional[float] = None,
+        filter: Optional[dict] = None,
+        **kwargs: Any,
+    ) -> List[Document]:
+        """Run similarity search with PGVector with distance.
+
+        Args:
+            query (str): Query text to search for.
+            k (int): Number of results to return. Defaults to 4.
+            filter (Optional[Dict[str, str]]): Filter by metadata. Defaults to None.
+
+        Returns:
+            List of Documents most similar to the query.
+        """
+        await self.__apost_init__()  # Lazy async init
+        embedding = await self.embeddings.aembed_query(query)
+        return await self.asimilarity_search_by_vector(
+            embedding=embedding,
+            k=k,
+            score_threshold=score_threshold,
+            filter=filter,
+        )
+
+    async def asimilarity_search_by_vector(
+        self,
+        embedding: List[float],
+        k: int = 4,
+        score_threshold: Optional[float] = None,
+        filter: Optional[dict] = None,
+        **kwargs: Any,
+    ) -> List[Document]:
+        """Return docs most similar to embedding vector.
+
+        Args:
+            embedding: Embedding to look up documents similar to.
+            k: Number of Documents to return. Defaults to 4.
+            filter (Optional[Dict[str, str]]): Filter by metadata. Defaults to None.
+
+        Returns:
+            List of Documents most similar to the query vector.
+        """
+        assert self._async_engine, "This method must be called with async_mode"
+        await self.__apost_init__()  # Lazy async init
+        docs_and_scores = await self.asimilarity_search_with_score_by_vector(
+            embedding=embedding, k=k, score_threshold=score_threshold, filter=filter
+        )
+        return _results_to_docs(docs_and_scores)
+
     async def asimilarity_search_with_score_by_vector(
         self,
         embedding: List[float],
         k: int = 4,
+        score_threshold: Optional[float] = None,
         filter: Optional[dict] = None,
     ) -> List[Tuple[Document, float]]:
         await self.__apost_init__()  # Lazy async init
         async with self._make_async_session() as session:  # type: ignore[arg-type]
             results = await self._aquery_collection(
-                session=session, embedding=embedding, k=k, filter=filter
+                session=session, embedding=embedding, k=k, score_threshold=score_threshold, filter=filter
             )
             return self._results_to_docs_and_scores(results)
 
@@ -462,6 +519,7 @@ class PgvectorStore(AbstractStore):
         schema: Optional[str] = None,
         collection: Union[str, None] = None,
         limit: int = 2,
+        score_threshold: Optional[float] = None,
         filter: Optional[dict] = None,
         **kwargs
     ) -> List[Document]:
@@ -477,6 +535,7 @@ class PgvectorStore(AbstractStore):
             return await vector_db.asimilarity_search(
                 query,
                 k=limit,
+                score_threshold=score_threshold,
                 filter=filter
             )
 
