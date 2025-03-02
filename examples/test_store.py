@@ -42,4 +42,4 @@ async def test_store(use: str):
             print(result)
 
 if __name__ == "__main__":
-    asyncio.run(test_store(use='qdrant'))
+    asyncio.run(test_store(use='postgres'))
