@@ -81,11 +81,13 @@ class BotManager:
                         embedding_model=bot.embedding_model,
                         use_vectorstore=bot.vector_store,
                         vector_store=bot.database,
+                        config_file=bot.config_file,
                         role=bot.role,
                         goal=bot.goal,
                         backstory=bot.backstory,
                         rationale=bot.rationale,
                         pre_instructions=bot.pre_instructions,
+                        company_information=bot.company_information,
                         vector_info=bot.database
                     )
                     try:
