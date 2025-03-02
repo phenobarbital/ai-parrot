@@ -3,7 +3,7 @@ Abstract Bot interface.
 """
 from abc import ABC
 import importlib
-from typing import Any, Union, Optional
+from typing import Any, List, Union, Optional
 from collections.abc import Callable
 import os
 import uuid
@@ -186,10 +186,11 @@ class AbstractBot(DBInterface, ABC):
         # Vector information:
         self._use_vector: bool = kwargs.get('use_vectorstore', False)
         self._vector_info_: dict = kwargs.get('vector_info', {})
-        self._vector_store: str = kwargs.get('vector_store', None)
+        self._vector_store: dict = kwargs.get('vector_store', None)
         self.chunk_size: int = int(kwargs.get('chunk_size', 2048))
         self.dimension: int = int(kwargs.get('dimension', 768))
         self.store: Callable = None
+        self.stores: List[AbstractStore] = []
         self.memory: Callable = None
         # Embedding Model Name
         self.embedding_model = kwargs.get(
@@ -396,14 +397,14 @@ class AbstractBot(DBInterface, ABC):
         if self._use_vector:
             self.configure_store()
 
-    def configure_store(self, **kwargs):
-        # TODO: Implement VectorStore Configuration
-        store_cls = supported_stores.get(self._vector_store)
-        cls_path = f"parrot.stores.{self._vector_store}"
+    def _get_database_store(self, store: dict) -> AbstractStore:
+        name = store.get('name', 'milvus')
+        store_cls = supported_stores.get(name)
+        cls_path = f"parrot.stores.{name}"
         try:
-            module = importlib.import_module(cls_path, package=self._vector_store)
+            module = importlib.import_module(cls_path, package=name)
             store_cls = getattr(module, store_cls)
-            self.store = store_cls(
+            return store_cls(
                 embedding_model=self.embedding_model,
                 embedding=self.embeddings,
                 dimension=self.dimension
@@ -412,7 +413,29 @@ class AbstractBot(DBInterface, ABC):
             self.logger.error(
                 f"Error importing VectorStore: {e}"
             )
-            self.store = None
+            raise
+
+    def configure_store(self, **kwargs):
+        # TODO: Implement VectorStore Configuration
+        if isinstance(self._vector_store, list):
+            # Is a list of vector stores instances:
+            for st in self._vector_store:
+                try:
+                    store_cls = self._get_database_store(st)
+                    self.stores.append(store_cls)
+                except ImportError:
+                    continue
+        elif isinstance(self._vector_store, dict):
+            # Is a single vector store instance:
+            store_cls = self._get_database_store(self._vector_store)
+            self.stores.append(store_cls)
+        else:
+            raise ValueError(
+                f"Invalid Vector Store Config: {self._vector_store}"
+            )
+        self.logger.info(f"Configured Vector Stores: {self.stores}")
+        if self.stores:
+            self.store = self.stores[0]
 
     def get_memory(
         self,

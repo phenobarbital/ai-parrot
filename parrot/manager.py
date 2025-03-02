@@ -80,6 +80,7 @@ class BotManager:
                         model_config=bot.model_config,
                         embedding_model=bot.embedding_model,
                         use_vectorstore=bot.vector_store,
+                        vector_store=bot.database,
                         role=bot.role,
                         goal=bot.goal,
                         backstory=bot.backstory,
