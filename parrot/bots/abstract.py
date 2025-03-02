@@ -160,12 +160,13 @@ class AbstractBot(DBInterface, ABC):
             **kwargs
         )
         # Definition of LLM
+        self._llm_class: str = None
         self._default_llm: str = kwargs.get('use_llm', 'vertexai')
-        self._default_llm_config: dict = {
-            "temperature": 0.1,
-            "top_k": 30,
-            "Top_p": 0.4
-        }
+        self._llm_model = kwargs.get('model_name', 'gemini-1.5-pro')
+        self._llm_config = kwargs.get('model_config', {})
+        if self._llm_config:
+            self._llm_model = self._llm_config.pop('model', self._llm_model)
+            self._llm_class = self._llm_config.pop('name', None)
         # Overrriding LLM object
         self._llm_obj: Callable = kwargs.get('llm', None)
         # LLM base Object:
@@ -184,6 +185,7 @@ class AbstractBot(DBInterface, ABC):
         # Models, Embed and collections
         # Vector information:
         self._use_vector: bool = kwargs.get('use_vectorstore', False)
+        self._vector_info_: dict = kwargs.get('vector_info', {})
         self._vector_store: str = kwargs.get('vector_store', None)
         self.chunk_size: int = int(kwargs.get('chunk_size', 2048))
         self.dimension: int = int(kwargs.get('dimension', 768))
@@ -191,7 +193,8 @@ class AbstractBot(DBInterface, ABC):
         self.memory: Callable = None
         # Embedding Model Name
         self.embedding_model = kwargs.get(
-            'embedding_model', {
+            'embedding_model',
+            {
                 'model_name': EMBEDDING_DEFAULT_MODEL,
                 'model_type': 'huggingface'
             }
@@ -202,6 +205,7 @@ class AbstractBot(DBInterface, ABC):
             'rag_model',
             "rlm/rag-prompt-llama"
         )
+        # Summarization and Classification Models
 
     def _get_default_attr(self, key, default: Any = None, **kwargs):
         if key in kwargs:
@@ -282,7 +286,24 @@ class AbstractBot(DBInterface, ABC):
         """
         Configuration of LLM.
         """
-        if isinstance(llm, str):
+        if not llm:
+            # Using Configuration or Default
+            if self._llm_class:
+                self._llm_obj = get_llm(
+                    llm_name=self._llm_class,
+                    model_name=self._llm_model,
+                    **self._llm_config
+                )
+            else:
+                # Using Default Configuration:
+                self._llm_obj = self.llm_chain(
+                    llm=self._default_llm,
+                    temperature=0.2,
+                    top_k=30,
+                    Top_p=0.6,
+                )
+            self._llm = self._llm_obj.get_llm()
+        elif isinstance(llm, str):
             # Get the LLM By Name:
             self._llm_obj = self.llm_chain(
                 llm,
@@ -295,11 +316,8 @@ class AbstractBot(DBInterface, ABC):
             self._llm = llm.get_llm()
         elif isinstance(self._llm_obj, str):
             # is the name of the LLM object to be used:
-            if not config:
-                config = self._default_llm_config
             self._llm_obj = self.llm_chain(
-                llm=self._llm_obj,
-                **config
+                llm=self._llm_obj
             )
             self._llm = self._llm_obj.get_llm()
         elif isinstance(self._llm_obj, AbstractLLM):
@@ -370,6 +388,8 @@ class AbstractBot(DBInterface, ABC):
         # adding this configured chatbot to app:
         if self.app:
             self.app[f"{self.name.lower()}_bot"] = self
+        # Configure LLM:
+        self.configure_llm()
         # And define Prompt:
         self._define_prompt()
         # Configure VectorStore if enabled:
@@ -475,7 +495,8 @@ class AbstractBot(DBInterface, ABC):
                 "Top_p": 0.6
             }
         )
-        self.configure_llm(llm=new_llm, config=llm_config)
+        if new_llm:
+            self.configure_llm(llm=new_llm, config=llm_config)
         # define the Pre-Context
         pre_context = "\n".join(f"- {a}." for a in self.pre_instructions)
         custom_template = self.system_prompt_template.format_map(
@@ -513,7 +534,7 @@ class AbstractBot(DBInterface, ABC):
                 llm=self._llm,
                 retriever=retriever,
                 memory=self.memory,
-                verbose=True,
+                # verbose=True,
                 return_source_documents=False,
                 return_generated_question=True,
                 combine_docs_chain_kwargs={
@@ -560,7 +581,8 @@ class AbstractBot(DBInterface, ABC):
                 "Top_p": 0.6
             }
         )
-        self.configure_llm(llm=new_llm, config=llm_config)
+        if new_llm:
+            self.configure_llm(llm=new_llm, config=llm_config)
         # Combine into a ChatPromptTemplate
         prompt = PromptTemplate(
             template=system_prompt + '\n' + human_prompt,
