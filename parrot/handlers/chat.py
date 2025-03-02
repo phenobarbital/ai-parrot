@@ -4,6 +4,7 @@ from navigator_auth.decorators import (
     allowed_organizations
 )
 from navigator.views import BaseView
+from ..bots.abstract import AbstractBot
 
 
 @is_authenticated()
@@ -77,7 +78,7 @@ class ChatHandler(BaseView):
                 status=404
             )
         try:
-            chatbot = manager.get_bot(name)
+            chatbot: AbstractBot = manager.get_bot(name)
             if not chatbot:
                 raise KeyError(
                     f"Chatbot {name} not found."
@@ -101,6 +102,7 @@ class ChatHandler(BaseView):
                 llm=llm,
                 memory=memory
             )
+            print('RESULT > ', result)
             # Drop "memory" information:
             result.chat_history = None
             result.source_documents = None
