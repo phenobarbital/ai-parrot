@@ -54,11 +54,8 @@ class VertexLLM(AbstractLLM):
         if use_garden is True:
             base_llm = VertexAIModelGarden
             self._llm = VertexAIModelGarden(
-                project=project_id,
-                location=region,
                 endpoint_id=self.model,
-                temperature=self.temperature,
-                max_output_tokens=self.max_tokens,
+                **self.args
             )
         else:
             base_llm = VertexAI
