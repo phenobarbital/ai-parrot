@@ -37,7 +37,7 @@ class ChatHandler(BaseView):
                 "chatbot": chatbot.name,
                 "description": chatbot.description,
                 "role": chatbot.role,
-                "embedding_model_name": chatbot.embedding_model_name,
+                "embedding_model": chatbot.embedding_model,
                 "llm": f"{chatbot.get_llm()!r}",
                 "temperature": chatbot.get_llm().temperature,
                 "args": chatbot.get_llm().args,
@@ -96,14 +96,22 @@ class ChatHandler(BaseView):
             session_id = session.get('session_id', None)
             memory_key = f'{session.session_id}_{name}_message_store'
             memory = chatbot.get_memory(session_id=memory_key)
-            with chatbot.get_retrieval(request=self.request) as retrieval:
-                result = await retrieval.question(
-                    question=question,
-                    memory=memory
-                )
-                # Drop "memory" information:
-                result.chat_history = None
-                result.source_documents = None
+            result = await chatbot.conversation(
+                question=question,
+                llm=llm,
+                memory=memory
+            )
+            # Drop "memory" information:
+            result.chat_history = None
+            result.source_documents = None
+            # with chatbot.get_retrieval(request=self.request) as retrieval:
+            #     result = await retrieval.question(
+            #         question=question,
+            #         memory=memory
+            #     )
+            #     # Drop "memory" information:
+            #     result.chat_history = None
+            #     result.source_documents = None
             return self.json_response(response=result)
         except ValueError as exc:
             return self.error(

@@ -10,16 +10,20 @@ class GroqLLM(AbstractLLM):
     """
     model: str = "mixtral-8x7b-32768"
     supported_models: list = [
+        "llama-3.3-70b-versatile",
+        "qwen-2.5-32b",
+        "qwen-2.5-coder-32b",
+        "deepseek-r1-distill-qwen-32b",
+        "deepseek-r1-distill-llama-70b",
+        "gemma2-9b-it",
         "llama3-70b-8192",
         "llama3-80b-8192",
-        "llama-3.1-70b-versatile",
+        "llama-guard-3-8b",
         "llama-3.1-8b-instant",
+        "mistral-saba-24b",
         "mixtral-8x7b-32768",
         "whisper-large-v3",
-        "llama3-groq-70b-8192-tool-use-preview",
-        "gemma2-9b-it",
-        "gemma-7b-it",
-        "llama-guard-3-8b"
+        "whisper-large-v3-turbo",
     ]
 
     def __init__(self, *args, **kwargs):

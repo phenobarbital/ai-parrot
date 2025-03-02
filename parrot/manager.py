@@ -8,12 +8,11 @@ from importlib import import_module
 from aiohttp import web
 from navconfig.logging import logging
 from .bots.abstract import AbstractBot
+from .bots.basic import BasicBot
 from .bots.chatbot import Chatbot
 from .handlers.chat import ChatHandler, BotHandler
 from .handlers import ChatbotHandler
 from .models import ChatbotModel
-# Manual Load of Copilot Agent:
-# from .bots.copilot import CopilotAgent
 
 
 class BotManager:
@@ -67,17 +66,31 @@ class BotManager:
                     self.logger.notice(
                         f"Loading chatbot '{bot.name}'..."
                     )
-                    cls_name = bot.custom_class
+                    cls_name = bot.bot_class
                     if cls_name is None:
                         class_name = Chatbot
                     else:
                         class_name = self.get_bot_class(cls_name)
                     chatbot = class_name(
                         chatbot_id=bot.chatbot_id,
-                        name=bot.name
+                        name=bot.name,
+                        description=bot.description,
+                        use_llm=bot.llm,
+                        model_name=bot.model_name,
+                        model_config=bot.model_config,
+                        embedding_model=bot.embedding_model,
+                        use_vectorstore=bot.vector_store,
+                        role=bot.role,
+                        goal=bot.goal,
+                        backstory=bot.backstory,
+                        rationale=bot.rationale,
+                        pre_instructions=bot.pre_instructions,
+                        vector_info=bot.database
                     )
                     try:
-                        await chatbot.configure()
+                        await chatbot.configure(
+                            app=app
+                        )
                     except Exception as e:
                         self.logger.error(
                             f"Failed to configure chatbot '{chatbot.name}': {e}"

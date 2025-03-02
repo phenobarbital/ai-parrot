@@ -1,4 +1,4 @@
-from typing import Union, Optional
+from typing import List, Union, Optional
 import uuid
 import time
 from datetime import datetime
@@ -80,52 +80,56 @@ class ChatResponse(BaseModel):
             self.generated_question = self.question
         return super().__post_init__()
 
+def default_embed_model():
+    return {"model_name": "thenlper/gte-base", "model_type": "huggingface"}
 
 # Chatbot Model:
 class ChatbotModel(Model):
     """Chatbot.
+        --- drop table navigator.chatbots;
     CREATE TABLE IF NOT EXISTS navigator.chatbots (
         chatbot_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
         name VARCHAR NOT NULL DEFAULT 'Nav',
         description VARCHAR,
-        config_file VARCHAR DEFAULT 'config.toml',
+        config_file VARCHAR,
         company_information JSONB DEFAULT '{}'::JSONB,
-        contact_information VARCHAR,
-        contact_form VARCHAR,
-        contact_email VARCHAR,
-        company_website VARCHAR,
         avatar TEXT,
         enabled BOOLEAN NOT NULL DEFAULT TRUE,
         timezone VARCHAR DEFAULT 'UTC',
+        bot_class VARCHAR DEFAULT 'BasicBot',
         attributes JSONB DEFAULT '{}'::JSONB,
         role VARCHAR DEFAULT 'a Human Resources Assistant',
         goal VARCHAR NOT NULL DEFAULT 'Bring useful information to Users.',
         backstory VARCHAR NOT NULL DEFAULT 'I was created by a team of developers to assist with users tasks.',
         rationale VARCHAR NOT NULL DEFAULT 'Remember to maintain a professional tone. Please provide accurate and relevant information.',
         language VARCHAR DEFAULT 'en',
-        template_prompt VARCHAR,
+        system_prompt_template VARCHAR,
+        human_prompt_template VARCHAR,
         pre_instructions JSONB DEFAULT '[]'::JSONB,
-        llm VARCHAR DEFAULT 'VertexLLM',
-        model_name VARCHAR DEFAULT 'gemini-pro',
+        llm VARCHAR DEFAULT 'vertexai',
+        model_name VARCHAR DEFAULT 'gemini-1.5-pro',
         model_config JSONB DEFAULT '{}'::JSONB,
-        embedding_name VARCHAR DEFAULT 'thenlper/gte-base',
-        tokenizer VARCHAR DEFAULT 'thenlper/gte-base',
-        summarize_model VARCHAR DEFAULT 'facebook/bart-large-cnn',
-        classification_model VARCHAR DEFAULT 'facebook/bart-large-cnn',
-        database JSONB DEFAULT '{"vector_database": "MilvusStore", "database": "TROC", "collection_name": "troc_information"}'::JSONB,
+        embedding_model JSONB DEFAULT '{"model_name": "thenlper/gte-base", "model_type": "huggingface"}',
+        summarize_model JSONB DEFAULT '{"model_name": "facebook/bart-large-cnn", "model_type": "huggingface"}',
+        classification_model JSONB DEFAULT '{"model_name": "facebook/bart-large-cnn", "model_type": "huggingface"}',
+        vector_store BOOLEAN not null default FALSE,
+        database JSONB DEFAULT '{"vector_database": "milvus", "database": "TROC", "collection_name": "troc_information"}'::JSONB,
+        bot_type varchar default 'chatbot',
         created_at TIMESTAMPTZ DEFAULT NOW(),
         created_by INTEGER,
         updated_at TIMESTAMPTZ DEFAULT NOW(),
-        disclaimer VARCHAR,
+        disclaimer VARCHAR
     );
+    ALTER TABLE navigator.chatbots
+    ADD CONSTRAINT unq_navigator_chatbots_name UNIQUE (name);
     """
     chatbot_id: uuid.UUID = Field(primary_key=True, required=False, default_factory=uuid.uuid4)
-    name: str = Field(default='Nav', required=True)
+    name: str = Field(default='Nav', required=True, primary_key=True)
     description: str = Field(default='Nav Chatbot', required=False)
-    config_file: str = Field(default='config.toml', required=False)
-    custom_class: str = Field(required=False)
+    config_file: str = Field(required=False)
+    bot_class: str = Field(required=False, default=None)
     company_information: dict = Field(default_factory=dict, required=False)
-    avatar: Text
+    avatar: str
     enabled: bool = Field(required=True, default=True)
     timezone: str = Field(required=False, max=75, default="UTC", repr=False)
     attributes: Optional[dict] = Field(required=False, default_factory=dict)
@@ -150,23 +154,29 @@ class ChatbotModel(Model):
         required=True
     )
     language: str = Field(default='en', required=False)
-    template_prompt: Union[str, PurePath] = Field(
+    system_prompt_template: Union[str, PurePath] = Field(
         default=None,
         required=False
     )
-    pre_instructions: list = Field(
+    human_prompt_template: Union[str, PurePath] = Field(
+        default=None,
+        required=False
+    )
+    pre_instructions: List[str] = Field(
         default_factory=list,
         required=False
     )
     # Model Configuration:
-    llm: str = Field(default='VertexLLM', required=False)
-    llm_config: dict = Field(default_factory=dict, required=False)
-    embedding_name: str = Field(default="thenlper/gte-base", required=False)
-    tokenizer: str = Field(default='thenlper/gte-base', required=False)
-    summarize_model: str = Field(default="facebook/bart-large-cnn", required=False)
-    classification_model: str = Field(default="facebook/bart-large-cnn", required=False)
+    llm: str = Field(default='vertexai', required=False)
+    model_name: str = Field(default='gemini-1.5-pro', required=False)
+    model_config: dict = Field(default_factory=dict, required=False)
+    embedding_model: dict = Field(default=default_embed_model, required=False)
+    # Summarization/Classification Models: {"model_name": "facebook/bart-large-cnn", "model_type": "huggingface"}
+    summarize_model: dict = Field(default_factory=dict, required=False)
+    classification_model: dict = Field(default_factory=dict, required=False)
     # Database Configuration
-    database: dict = Field(default='TROC', required=False, default_factory=dict)
+    vector_store: bool = Field(default=False, required=False)
+    database: dict = Field(required=False, default_factory=dict)
     # Bot/Agent type
     bot_type: str = Field(default='chatbot', required=False)
     # When created
@@ -178,10 +188,9 @@ class ChatbotModel(Model):
 
     def __post_init__(self) -> None:
         super(ChatbotModel, self).__post_init__()
-        if isinstance(self.config_file, str):
-            self.config_file = Path(self.config_file).resolve()
-        if isinstance(self.config_file, PurePath):
-            self.config_file = str(self.config_file)
+        if self.config_file:
+            if isinstance(self.config_file, str):
+                self.config_file = Path(self.config_file).resolve()
 
     class Meta:
         """Meta Chatbot."""

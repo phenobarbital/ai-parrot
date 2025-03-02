@@ -98,7 +98,7 @@ def get_llm(llm_name: str, model_name: str, **kwargs) -> AbstractLLM:
                 "Transformes Pipelines are enabled, but not installed."
             )
         return PipelineLLM(model=model_name, **kwargs)
-    if llm_name in ('Groq', 'llama3', 'mixtral'):
+    if llm_name in ('Groq', 'llama3', 'mixtral', 'GroqLLM'):
         if GROQ_ENABLED is False:
             raise ConfigError(
                 "Groq is enabled but not installed."
