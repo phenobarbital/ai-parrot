@@ -44,10 +44,11 @@ async def test_locator():
     )
     async with _store as store:
         # Do a Similarity Search over a existing Store:
-        query = "store in Hialeah, FL"
+        query = "stores in Port Richey"
         results = await store.similarity_search(
             query,
-            limit=2,
+            limit=None,
+            score_threshold=0.5,
             collection='bestbuy.stores',
         )
         for doc in results:
