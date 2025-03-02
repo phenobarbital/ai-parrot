@@ -1,6 +1,8 @@
 import os
 from navconfig import config, BASE_DIR
 from google.cloud import aiplatform
+import vertexai
+from vertexai.preview.vision_models import ImageGenerationModel
 from langchain_google_vertexai import (
     ChatVertexAI,
     VertexAI,
@@ -35,6 +37,7 @@ class VertexLLM(AbstractLLM):
         use_garden: bool = kwargs.get("use_garden", False)
         project_id = config.get("VERTEX_PROJECT_ID")
         region = config.get("VERTEX_REGION")
+        # vertexai.init(project=project_id, location="us-central1")
         config_file = config.get('GOOGLE_CREDENTIALS_FILE', 'env/google/vertexai.json')
         config_dir = BASE_DIR.joinpath(config_file)
         os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = str(config_dir)
@@ -50,16 +53,19 @@ class VertexLLM(AbstractLLM):
         }
         if use_garden is True:
             base_llm = VertexAIModelGarden
-            self.args['endpoint_id'] = self.model
-        if 'bison' in self.model:
-            self.args['model_name'] = self.model
-            base_llm = ChatVertexAI
+            self._llm = VertexAIModelGarden(
+                project=project_id,
+                location=region,
+                endpoint_id=self.model,
+                temperature=self.temperature,
+                max_output_tokens=self.max_tokens,
+            )
         else:
-            self.args['model_name'] = self.model
             base_llm = VertexAI
+            self._llm = base_llm(
+                model_name=self.model,
+                system_prompt="Always respond in the same language as the user's question. If the user's language is not English, translate your response into their language.",
+                **self.args
+            )
         # LLM
-        self._llm = base_llm(
-            system_prompt="Always respond in the same language as the user's question. If the user's language is not English, translate your response into their language.",
-            **self.args
-        )
         self._version_ = aiplatform.__version__

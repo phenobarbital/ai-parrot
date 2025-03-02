@@ -534,7 +534,7 @@ class AbstractBot(DBInterface, ABC):
                 llm=self._llm,
                 retriever=retriever,
                 memory=self.memory,
-                # verbose=True,
+                verbose=True,
                 return_source_documents=False,
                 return_generated_question=True,
                 combine_docs_chain_kwargs={
@@ -548,6 +548,11 @@ class AbstractBot(DBInterface, ABC):
         except asyncio.CancelledError:
             # Handle task cancellation
             print("Conversation task was cancelled.")
+        except Exception as e:
+            self.logger.error(
+                f"Error in conversation: {e}"
+            )
+            raise
         return self.get_response(response)
 
     async def question(
