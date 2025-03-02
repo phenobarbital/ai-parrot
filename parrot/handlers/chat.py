@@ -94,27 +94,20 @@ class ChatHandler(BaseView):
         question = data.get('query')
         session = self.request.session
         try:
-            session_id = session.get('session_id', None)
-            memory_key = f'{session.session_id}_{name}_message_store'
-            memory = chatbot.get_memory(session_id=memory_key)
-            result = await chatbot.conversation(
-                question=question,
-                llm=llm,
-                memory=memory
-            )
-            print('RESULT > ', result)
-            # Drop "memory" information:
-            result.chat_history = None
-            result.source_documents = None
-            # with chatbot.get_retrieval(request=self.request) as retrieval:
-            #     result = await retrieval.question(
-            #         question=question,
-            #         memory=memory
-            #     )
-            #     # Drop "memory" information:
-            #     result.chat_history = None
-            #     result.source_documents = None
-            return self.json_response(response=result)
+            async with chatbot.retrieval(request=self.request) as retrieval:
+                session_id = session.get('session_id', None)
+                memory_key = f'{session.session_id}_{name}_message_store'
+                memory = retrieval.get_memory(session_id=memory_key)
+                result = await retrieval.conversation(
+                    question=question,
+                    llm=llm,
+                    memory=memory
+                )
+                print('RESULT > ', result)
+                # Drop "memory" information:
+                result.chat_history = None
+                result.source_documents = None
+                return self.json_response(response=result)
         except ValueError as exc:
             return self.error(
                 f"{exc}",

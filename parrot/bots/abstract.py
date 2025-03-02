@@ -119,6 +119,7 @@ class AbstractBot(DBInterface, ABC):
         **kwargs
     ):
         """Initialize the Chatbot with the given configuration."""
+        self._request: Optional[web.Request] = None
         if system_prompt:
             self.system_prompt_template = system_prompt or BASIC_SYSTEM_PROMPT
         if human_prompt:
@@ -691,3 +692,18 @@ class AbstractBot(DBInterface, ABC):
             if d:
                 response.documents = d
         return markdown_output
+
+    async def retrieval(self, request: web.Request = None) -> "AbstractBot":
+        """Retrieval.
+        
+        Configure the retrieval chain for the Chatbot.
+        
+        Args:
+            request (web.Request, optional): The request object. Defaults to None.
+        
+        Returns:
+            AbstractBot: The Chatbot object.
+        """
+        self._request = request
+        # TODO: using the permissions on session to check if can be used this bot.
+        return self
