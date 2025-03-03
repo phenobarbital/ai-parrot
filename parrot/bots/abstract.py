@@ -872,16 +872,23 @@ class AbstractBot(DBInterface, ABC):
         # 5: check programs
         if programs_allowed == "*":
             return self
-        user_programs = set(userinfo.get("programs", []))
-        if not user_programs.isdisjoint(programs_allowed):
-            return self
+        try:
+            user_programs = set(userinfo.get("programs", []))
+            if not user_programs.isdisjoint(programs_allowed):
+                return self
+        except AttributeError:
+            pass
+
 
         # 6: check organizations
         if orgs_allowed == "*":
             return self
-        user_orgs = set(userinfo.get("organizations", []))
-        if not user_orgs.isdisjoint(orgs_allowed):
-            return self
+        try:
+            user_orgs = set(userinfo.get("organizations", []))
+            if not user_orgs.isdisjoint(orgs_allowed):
+                return self
+        except AttributeError:
+            pass
 
         # If none of the conditions pass, raise unauthorized:
         raise web.HTTPUnauthorized(reason="Unauthorized")
