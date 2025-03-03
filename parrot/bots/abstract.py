@@ -96,6 +96,7 @@ from .prompts import (
 from .interfaces import EmptyRetriever
 ## Vector Stores:
 from ..stores import AbstractStore, supported_stores
+from .retrievals import MultiVectorStoreRetriever
 
 
 os.environ["GRPC_ENABLE_FORK_SUPPORT"] = "0"
@@ -836,13 +837,22 @@ class AbstractBot(DBInterface, ABC):
             )
         async with self.store as store:  #pylint: disable=E1101
             if self._use_vector:
-                vector = store.get_vector(metric_type=metric_type)
-                retriever = VectorStoreRetriever(
-                    vectorstore=vector,
-                    search_type=search_type,
-                    chain_type=chain_type,
-                    search_kwargs=search_kwargs
-                )
+                if len(self.stores) > 1:
+                    retriever = MultiVectorStoreRetriever(
+                        stores=self.stores,
+                        metric_type=metric_type,
+                        search_type=search_type,
+                        chain_type=chain_type,
+                        search_kwargs=search_kwargs
+                    )
+                else:
+                    vector = store.get_vector(metric_type=metric_type)
+                    retriever = VectorStoreRetriever(
+                        vectorstore=vector,
+                        search_type=search_type,
+                        chain_type=chain_type,
+                        search_kwargs=search_kwargs
+                    )
             else:
                 retriever = EmptyRetriever()
             if self.kb:

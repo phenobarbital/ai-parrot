@@ -3,6 +3,7 @@ from typing import List, Union
 import importlib
 from collections.abc import Callable
 from langchain.docstore.document import Document
+from langchain_core.vectorstores import VectorStoreRetriever
 from navconfig.logging import logging
 from ..conf import (
     EMBEDDING_DEFAULT_MODEL
@@ -113,7 +114,7 @@ class AbstractStore(ABC):
             pass
 
     @abstractmethod
-    def get_vector(self):
+    def get_vector(self, metric_type: str = None, **kwargs):
         pass
 
     def get_vectorstore(self):
@@ -218,3 +219,18 @@ class AbstractStore(ABC):
         # Using the Embed Model to Generate Embeddings:
         embeddings = self._embed_.embed_documents(documents)
         return embeddings
+
+    def as_retriever(
+        self,
+        metric_type: str = 'COSINE',
+        search_type: str = 'similarity',
+        chain_type: str = 'stuff',
+        search_kwargs: dict = None
+    ) -> Callable:
+        vector = self.get_vector(metric_type=metric_type)
+        return VectorStoreRetriever(
+            vectorstore=vector,
+            search_type=search_type,
+            chain_type=chain_type,
+            search_kwargs=search_kwargs
+        )
