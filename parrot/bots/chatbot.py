@@ -11,7 +11,6 @@ from navconfig.exceptions import ConfigError  # pylint: disable=E0611
 from asyncdb.exceptions import NoDataFound
 from ..utils import parse_toml_config
 from ..conf import (
-    EMBEDDING_DEVICE,
     default_dsn,
     EMBEDDING_DEFAULT_MODEL,
 )
