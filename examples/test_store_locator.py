@@ -44,7 +44,7 @@ async def test_locator():
     )
     async with _store as store:
         # Do a Similarity Search over a existing Store:
-        query = "stores in Port Richey"
+        query = "address of Estero store, in FL"
         results = await store.similarity_search(
             query,
             limit=None,

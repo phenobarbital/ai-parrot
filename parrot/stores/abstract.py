@@ -49,12 +49,12 @@ class AbstractStore(ABC):
                     "Embedding Model must be a string or a dictionary."
                 )
         # Database Information:
-        self.collection_name: str = kwargs.pop('collection_name', 'my_collection')
-        self.dimension: int = kwargs.pop("dimension", 768)
-        self._metric_type: str = kwargs.pop("metric_type", 'COSINE')
-        self._index_type: str = kwargs.pop("index_type", 'IVF_FLAT')
-        self.database: str = kwargs.pop('database', '')
-        self.index_name = kwargs.pop("index_name", "my_index")
+        self.collection_name: str = kwargs.get('collection_name', 'my_collection')
+        self.dimension: int = kwargs.get("dimension", 768)
+        self._metric_type: str = kwargs.get("metric_type", 'COSINE')
+        self._index_type: str = kwargs.get("index_type", 'IVF_FLAT')
+        self.database: str = kwargs.get('database', '')
+        self.index_name = kwargs.get("index_name", "my_index")
         if embedding is not None:
             if isinstance(embedding, str):
                 self.embedding_model = {
