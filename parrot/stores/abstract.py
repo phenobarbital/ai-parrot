@@ -48,6 +48,8 @@ class AbstractStore(ABC):
                 raise ValueError(
                     "Embedding Model must be a string or a dictionary."
                 )
+        # Use or not connection to a vector database:
+        self._use_database: bool = kwargs.get('use_database', True)
         # Database Information:
         self.collection_name: str = kwargs.get('collection_name', 'my_collection')
         self.dimension: int = kwargs.get("dimension", 768)
@@ -97,8 +99,9 @@ class AbstractStore(ABC):
             self._embed_ = self.create_embedding(
                 embedding_model=self.embedding_model
             )
-        if not self._connection:
-            await self.connection()
+        if self._use_database:
+            if not self._connection:
+                await self.connection()
         return self
 
     async def __aexit__(self, exc_type, exc_value, traceback):

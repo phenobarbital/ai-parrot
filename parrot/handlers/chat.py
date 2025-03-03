@@ -91,17 +91,18 @@ class ChatHandler(BaseView):
                 status=404
             )
         # getting the question:
-        question = data.get('query')
+        question = data.pop('query')
         session = self.request.session
         try:
             async with chatbot.retrieval(request=self.request) as retrieval:
                 session_id = session.get('session_id', None)
                 memory_key = f'{session.session_id}_{name}_message_store'
                 memory = retrieval.get_memory(session_id=memory_key)
-                result = await retrieval.conversation(
+                result = await retrieval.invoke(
                     question=question,
                     llm=llm,
-                    memory=memory
+                    memory=memory,
+                    **data
                 )
                 print('RESULT > ', result)
                 # Drop "memory" information:

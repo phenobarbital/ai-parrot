@@ -21,6 +21,9 @@ from langchain.prompts import (
     HumanMessagePromptTemplate,
     PromptTemplate
 )
+from langchain.retrievers import (
+    EnsembleRetriever,
+)
 from langchain.docstore.document import Document
 from langchain.chains.retrieval_qa.base import RetrievalQA
 from langchain.chains.conversational_retrieval.base import (
@@ -29,6 +32,7 @@ from langchain.chains.conversational_retrieval.base import (
 from langchain_community.chat_message_histories import (
     RedisChatMessageHistory
 )
+from langchain_community.retrievers import BM25Retriever
 # for exponential backoff
 from tenacity import (
     retry,
@@ -427,12 +431,14 @@ class AbstractBot(DBInterface, ABC):
             for st in self._vector_store:
                 try:
                     store_cls = self._get_database_store(st)
+                    store_cls.use_database = self._use_vector
                     self.stores.append(store_cls)
                 except ImportError:
                     continue
         elif isinstance(self._vector_store, dict):
             # Is a single vector store instance:
             store_cls = self._get_database_store(self._vector_store)
+            store_cls.use_database = self._use_vector
             self.stores.append(store_cls)
         else:
             raise ValueError(
@@ -621,7 +627,10 @@ class AbstractBot(DBInterface, ABC):
             self,
             question: str,
             chain_type: str = 'stuff',
+            search_type: str = 'similarity',
+            search_kwargs: dict = {"k": 4, "fetch_k": 10, "lambda_mult": 0.89},
             return_docs: bool = True,
+            metric_type: str = None,
             **kwargs
     ):
         pre_context = "\n".join(f"- {a}." for a in self.pre_instructions)
@@ -655,22 +664,45 @@ class AbstractBot(DBInterface, ABC):
             template=system_prompt + '\n' + human_prompt,
             input_variables=['context', 'question']
         )
-        retriever = EmptyRetriever()
-        # Create the RetrievalQA chain with custom prompt
-        chain = RetrievalQA.from_chain_type(
-            llm=self._llm,
-            chain_type=chain_type,  # e.g., 'stuff', 'map_reduce', etc.
-            retriever=retriever,
-            chain_type_kwargs={
-                'prompt': prompt,
-            },
-            return_source_documents=return_docs,
-            **kwargs
-        )
         try:
-            response = await chain.ainvoke(
-                question
-            )
+            if self._use_vector:
+                async with self.store as store:  #pylint: disable=E1101
+                    vector = store.get_vector(metric_type=metric_type)
+                    retriever = VectorStoreRetriever(
+                        vectorstore=vector,
+                        search_type=search_type,
+                        chain_type=chain_type,
+                        search_kwargs=search_kwargs
+                    )
+                    chain = RetrievalQA.from_chain_type(
+                        llm=self._llm,
+                        chain_type=chain_type,  # e.g., 'stuff', 'map_reduce', etc.
+                        retriever=retriever,
+                        chain_type_kwargs={
+                            'prompt': prompt,
+                        },
+                        return_source_documents=return_docs,
+                        **kwargs
+                    )
+                    response = await chain.ainvoke(
+                        question
+                    )
+            else:
+                retriever = EmptyRetriever()
+                # Create the RetrievalQA chain with custom prompt
+                chain = RetrievalQA.from_chain_type(
+                    llm=self._llm,
+                    chain_type=chain_type,  # e.g., 'stuff', 'map_reduce', etc.
+                    retriever=retriever,
+                    chain_type_kwargs={
+                        'prompt': prompt,
+                    },
+                    return_source_documents=return_docs,
+                    **kwargs
+                )
+                response = await chain.ainvoke(
+                    question
+                )
         except (RuntimeError, asyncio.CancelledError):
             # check for "Event loop is closed"
             response = chain.invoke(
@@ -745,3 +777,104 @@ class AbstractBot(DBInterface, ABC):
         self._request = request
         # TODO: using the permissions on session to check if can be used this bot.
         return self
+
+    async def invoke(
+        self,
+        question: str,
+        chain_type: str = 'stuff',
+        search_type: str = 'similarity',
+        search_kwargs: dict = {"k": 4, "fetch_k": 10, "lambda_mult": 0.89},
+        return_docs: bool = True,
+        metric_type: str = None,
+        memory: Any = None,
+        **kwargs
+    ) -> ChatResponse:
+        """Build a Chain to answer Questions using AI Models.
+        """
+        new_llm = kwargs.pop('llm', None)
+        if new_llm is not None:
+            # re-configure LLM:
+            llm_config = kwargs.pop(
+                'llm_config',
+                {
+                    "temperature": 0.2,
+                    "top_k": 30,
+                    "Top_p": 0.6
+                }
+            )
+            self.configure_llm(llm=new_llm, config=llm_config)
+        # define the Pre-Context
+        pre_context = "\n".join(f"- {a}." for a in self.pre_instructions)
+        custom_template = self.system_prompt_template.format_map(
+            SafeDict(
+                summaries=pre_context
+            )
+        )
+
+        # Create prompt templates
+        self.system_prompt = SystemMessagePromptTemplate.from_template(
+            custom_template
+        )
+        self.human_prompt = HumanMessagePromptTemplate.from_template(
+            self.human_prompt_template,
+            input_variables=['question', 'chat_history']
+        )
+        # Combine into a ChatPromptTemplate
+        chat_prompt = ChatPromptTemplate.from_messages([
+            self.system_prompt,
+            self.human_prompt
+        ])
+        if not memory:
+            memory = self.memory
+        if not self.memory:
+            # Initialize memory
+            self.memory = ConversationBufferMemory(
+                memory_key="chat_history",
+                input_key="question",
+                output_key='answer',
+                return_messages=True
+            )
+        async with self.store as store:  #pylint: disable=E1101
+            if self._use_vector:
+                vector = store.get_vector(metric_type=metric_type)
+                retriever = VectorStoreRetriever(
+                    vectorstore=vector,
+                    search_type=search_type,
+                    chain_type=chain_type,
+                    search_kwargs=search_kwargs
+                )
+            else:
+                retriever = EmptyRetriever()
+            if self.kb:
+                b25_retriever = BM25Retriever.from_documents(self.kb)
+                retriever = EnsembleRetriever(
+                    retrievers=[retriever, b25_retriever],
+                    weights=[0.8, 0.2]
+                )
+            try:
+                # Create the ConversationalRetrievalChain with custom prompt
+                chain = ConversationalRetrievalChain.from_llm(
+                    llm=self._llm,
+                    retriever=retriever,
+                    memory=self.memory,
+                    chain_type=chain_type,  # e.g., 'stuff', 'map_reduce', etc.
+                    verbose=True,
+                    return_source_documents=return_docs,
+                    return_generated_question=True,
+                    combine_docs_chain_kwargs={
+                        'prompt': chat_prompt
+                    },
+                    **kwargs
+                )
+                response = await chain.ainvoke(
+                    {"question": question}
+                )
+                return self.get_response(response)
+            except asyncio.CancelledError:
+                # Handle task cancellation
+                print("Conversation task was cancelled.")
+            except Exception as e:
+                self.logger.error(
+                    f"Error in conversation: {e}"
+                )
+                raise
