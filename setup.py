@@ -198,7 +198,7 @@ setup(
             "datasets>=3.0.2",
             "safetensors>=0.4.3",
             "transformers>=4.44.2",
-            "sentence-transformers==3.0.1",
+            "sentence-transformers==3.4.1",
             "tokenizers==0.20.1",
             "torchvision==0.20.1",
             "tensorflow==2.18.0",
