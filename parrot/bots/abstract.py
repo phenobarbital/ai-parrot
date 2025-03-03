@@ -10,6 +10,7 @@ import uuid
 import asyncio
 from aiohttp import web
 from langgraph.checkpoint.memory import MemorySaver
+from langchain_core.vectorstores import VectorStoreRetriever
 from langchain.memory import (
     ConversationBufferMemory,
     ConversationBufferWindowMemory
@@ -98,6 +99,9 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"  # Hide TensorFlow logs if present
 logging.getLogger(name='primp').setLevel(logging.INFO)
 logging.getLogger(name='rquest').setLevel(logging.INFO)
 logging.getLogger("grpc").setLevel(logging.CRITICAL)
+logging.getLogger("tensorflow").setLevel(logging.CRITICAL)
+logging.getLogger("transformers").setLevel(logging.CRITICAL)
+logging.getLogger("pymilvus").setLevel(logging.INFO)
 
 class AbstractBot(DBInterface, ABC):
     """AbstractBot.
@@ -408,7 +412,7 @@ class AbstractBot(DBInterface, ABC):
             return store_cls(
                 embedding_model=self.embedding_model,
                 embedding=self.embeddings,
-                dimension=self.dimension
+                **store
             )
         except (ModuleNotFoundError, ImportError) as e:
             self.logger.error(
@@ -506,6 +510,11 @@ class AbstractBot(DBInterface, ABC):
     async def conversation(
             self,
             question: str,
+            chain_type: str = 'stuff',
+            search_type: str = 'similarity',
+            search_kwargs: dict = {"k": 4, "fetch_k": 10, "lambda_mult": 0.89},
+            return_docs: bool = True,
+            metric_type: str = None,
             memory: Any = None,
             **kwargs
     ):
@@ -528,6 +537,7 @@ class AbstractBot(DBInterface, ABC):
                 summaries=pre_context
             )
         )
+
         # Create prompt templates
         self.system_prompt = SystemMessagePromptTemplate.from_template(
             custom_template
@@ -552,23 +562,51 @@ class AbstractBot(DBInterface, ABC):
                 return_messages=True
             )
         try:
-            retriever = EmptyRetriever()
-            # Create the ConversationalRetrievalChain with custom prompt
-            chain = ConversationalRetrievalChain.from_llm(
-                llm=self._llm,
-                retriever=retriever,
-                memory=self.memory,
-                verbose=True,
-                return_source_documents=False,
-                return_generated_question=True,
-                combine_docs_chain_kwargs={
-                    'prompt': chat_prompt
-                },
-                **kwargs
-            )
-            response = await chain.ainvoke(
-                {"question": question}
-            )
+            if self._use_vector:
+                async with self.store as store:  #pylint: disable=E1101
+                    vector = store.get_vector(metric_type=metric_type)
+                    retriever = VectorStoreRetriever(
+                        vectorstore=vector,
+                        search_type=search_type,
+                        chain_type=chain_type,
+                        search_kwargs=search_kwargs
+                    )
+                    # Create the ConversationalRetrievalChain with custom prompt
+                    chain = ConversationalRetrievalChain.from_llm(
+                        llm=self._llm,
+                        retriever=retriever,
+                        memory=self.memory,
+                        chain_type=chain_type,  # e.g., 'stuff', 'map_reduce', etc.
+                        verbose=True,
+                        return_source_documents=return_docs,
+                        return_generated_question=True,
+                        combine_docs_chain_kwargs={
+                            'prompt': chat_prompt
+                        },
+                        **kwargs
+                    )
+                    response = await chain.ainvoke(
+                        {"question": question}
+                    )
+            else:
+                retriever = EmptyRetriever()
+                # Create the ConversationalRetrievalChain with custom prompt
+                chain = ConversationalRetrievalChain.from_llm(
+                    llm=self._llm,
+                    retriever=retriever,
+                    memory=self.memory,
+                    chain_type=chain_type,  # e.g., 'stuff', 'map_reduce', etc.
+                    verbose=True,
+                    return_source_documents=False,
+                    return_generated_question=True,
+                    combine_docs_chain_kwargs={
+                        'prompt': chat_prompt
+                    },
+                    **kwargs
+                )
+                response = await chain.ainvoke(
+                    {"question": question}
+                )
         except asyncio.CancelledError:
             # Handle task cancellation
             print("Conversation task was cancelled.")
@@ -695,12 +733,12 @@ class AbstractBot(DBInterface, ABC):
 
     async def retrieval(self, request: web.Request = None) -> "AbstractBot":
         """Retrieval.
-        
+
         Configure the retrieval chain for the Chatbot.
-        
+
         Args:
             request (web.Request, optional): The request object. Defaults to None.
-        
+
         Returns:
             AbstractBot: The Chatbot object.
         """

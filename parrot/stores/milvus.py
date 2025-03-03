@@ -250,9 +250,12 @@ class MilvusStore(AbstractStore):
             metric_type = self._metric_type
         if not collection:
             collection = self.collection_name
+        if not metric_type:
+            metric_type = self._metric_type or 'COSINE'
         _search = {
             "search_params": {
                 "metric_type": metric_type,
+                "index_type": self._index_type,
                 "params": {"nprobe": nprobe, "nlist": 1024},
             }
         }
