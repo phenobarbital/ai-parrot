@@ -854,8 +854,11 @@ class AbstractBot(DBInterface, ABC):
         # 3: check job_code
         if job_codes_allowed == "*":
             return self
-        if user.job_code in job_codes_allowed:
-            return self
+        try:
+            if user.job_code in job_codes_allowed:
+                return self
+        except AttributeError:
+            pass
 
         # 4: check groups
         # If groups_allowed == "*", no restriction on groups
