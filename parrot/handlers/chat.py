@@ -1,3 +1,4 @@
+from aiohttp import web
 from navigator_auth.decorators import (
     is_authenticated,
     user_session,
@@ -110,6 +111,12 @@ class ChatHandler(BaseView):
                 result.source_documents = None
                 return self.json_response(response=result)
         except ValueError as exc:
+            return self.error(
+                f"{exc}",
+                exception=exc,
+                status=400
+            )
+        except web.HTTPException as exc:
             return self.error(
                 f"{exc}",
                 exception=exc,
