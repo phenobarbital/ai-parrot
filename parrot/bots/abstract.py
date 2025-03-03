@@ -233,6 +233,9 @@ class AbstractBot(DBInterface, ABC):
             "groups": [],
         }
 
+    def permissions(self):
+        return self._permissions
+
     def _get_default_attr(self, key, default: Any = None, **kwargs):
         if key in kwargs:
             return kwargs.get(key)

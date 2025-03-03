@@ -185,6 +185,7 @@ class ChatbotModel(Model):
     created_by: int = Field(required=False)
     updated_at: datetime = Field(required=False, default=datetime.now)
     disclaimer: str = Field(required=False)
+    permissions: dict = Field(required=False, default_factory=dict)
 
 
     def __post_init__(self) -> None:
