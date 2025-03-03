@@ -156,16 +156,22 @@ class MilvusStore(AbstractStore):
             alias=self._client_id,
             **self.credentials
         )
-        if self.database:
-            self.use_database(
-                self.database,
-                alias=self._client_id,
-                create=self.create_database
+        try:
+            if self.database:
+                self.use_database(
+                    self.database,
+                    alias=self._client_id,
+                    create=self.create_database
+                )
+        except Exception as e:
+            self.logger.error(
+                f"Cannot create Database {self.database} for alias {self._client_id}: {e}"
             )
         self._connection = MilvusClient(
             **self.credentials
         )
         self._connected = True
+        print('Connected to database', self._connection)
         return self
 
     async def disconnect(self, alias: str = None):
@@ -191,9 +197,12 @@ class MilvusStore(AbstractStore):
             conn = connections.connect(alias, **self.credentials)
         except MilvusException as exc:
             if "database not found" in exc.message:
+                self.logger.error(
+                    f"Database {db_name} does not exist."
+                )
                 args = self.credentials.copy()
                 del args['db_name']
-                self.create_database(db_name, alias=alias, **args)
+                db.create_database(db_name, alias=alias, **args)
         # re-connect:
         try:
             _ = connections.connect(alias, **self.credentials)

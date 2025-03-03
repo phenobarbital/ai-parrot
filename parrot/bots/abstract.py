@@ -832,7 +832,9 @@ class AbstractBot(DBInterface, ABC):
         try:
             user = session.decode("user")
         except (KeyError, TypeError):
-            raise web.HTTPUnauthorized(reason="Invalid user")
+            raise web.HTTPUnauthorized(
+                reason="Invalid user"
+            )
 
         # 1: superuser is always allowed
         if user.superuser:
@@ -925,7 +927,6 @@ class AbstractBot(DBInterface, ABC):
                 summaries=pre_context
             )
         )
-
         # Create prompt templates
         self.system_prompt = SystemMessagePromptTemplate.from_template(
             custom_template
@@ -961,6 +962,7 @@ class AbstractBot(DBInterface, ABC):
                     )
                 else:
                     vector = store.get_vector(metric_type=metric_type)
+                    print('Vector > ', vector)
                     retriever = VectorStoreRetriever(
                         vectorstore=vector,
                         search_type=search_type,
