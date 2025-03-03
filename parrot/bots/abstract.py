@@ -224,7 +224,22 @@ class AbstractBot(DBInterface, ABC):
         self._permissions = {**_default, **_permissions}
 
     def default_permissions(self) -> dict:
-        """Returns the default permissions for the bot."""
+        """
+        Returns the default permissions for the bot.
+
+        This function defines and returns a dictionary containing the default
+        permission settings for the bot. These permissions are used to control
+        access and functionality of the bot across different organizational
+        structures and user groups.
+
+        Returns:
+            dict: A dictionary containing the following keys, each with an empty list as its value:
+                - "organizations": List of organizations the bot has access to.
+                - "programs": List of programs the bot is allowed to interact with.
+                - "job_codes": List of job codes the bot is authorized for.
+                - "users": List of specific users granted access to the bot.
+                - "groups": List of user groups with bot access permissions.
+        """
         return {
             "organizations": [],
             "programs": [],
@@ -791,47 +806,81 @@ class AbstractBot(DBInterface, ABC):
         pass
 
     def retrieval(self, request: web.Request = None) -> "AbstractBot":
-        """Retrieval.
-
-        Configure the retrieval chain for the Chatbot.
+        """
+        Configure the retrieval chain for the Chatbot, returning `self` if allowed,
+        or raise HTTPUnauthorized if not. A permissions dictionary can specify
+        * users
+        * groups
+        * job_codes
+        * programs
+        * organizations
+        If a permission list is the literal string "*", it means "unrestricted" for that category.
 
         Args:
             request (web.Request, optional): The request object. Defaults to None.
-
         Returns:
-            AbstractBot: The Chatbot object.
+            AbstractBot: The Chatbot object or raise HTTPUnauthorized.
         """
         self._request = request
-        # User Session:
         session = request.session
         try:
             userinfo = session[AUTH_SESSION_OBJECT]
         except KeyError:
             userinfo = {}
-        # Using the permissions on session to check if can be used this bot.
+
+        # decode your user from session
         try:
             user = session.decode("user")
         except (KeyError, TypeError):
             raise web.HTTPUnauthorized(reason="Invalid user")
-        # 1: evaluate if user is a superuser:
+
+        # 1: superuser is always allowed
         if user.superuser:
             return self
-        # check first under users restrictions:
-        if user.get('username') in self._permissions.get('users', []):
+
+        # convenience references
+        users_allowed = self._permissions.get('users', [])
+        groups_allowed = self._permissions.get('groups', [])
+        job_codes_allowed = self._permissions.get('job_codes', [])
+        programs_allowed = self._permissions.get('programs', [])
+        orgs_allowed = self._permissions.get('organizations', [])
+
+        # 2: check if 'users' == "*" or user.username in 'users'
+        if users_allowed == "*":
             return self
-        # or check if job_code of user is allowed:
-        if user.job_code in self._permissions.get('job_codes', []):
+        if user.get('username') in users_allowed:
             return self
-        # 2: evaluate if any of user groups is allowed based on permissions['groups']
-        if not set(userinfo["groups"]).isdisjoint(self._permissions.get('groups', [])):
+
+        # 3: check job_code
+        if job_codes_allowed == "*":
             return self
-        # 3: evaluate if any of user programs is allowed based on permissions['programs']
-        if not set(userinfo["programs"]).isdisjoint(self._permissions.get('programs', [])):
+        if user.job_code in job_codes_allowed:
             return self
-        # 4: evaluate if any of user organizations is allowed based on permissions['organizations']
-        if not set(userinfo["organizations"]).isdisjoint(self._permissions.get('organizations', [])):
+
+        # 4: check groups
+        # If groups_allowed == "*", no restriction on groups
+        if groups_allowed == "*":
             return self
-        # 5: If not allowed, raise an Unauthorized error:
+        # otherwise, see if there's an intersection
+        user_groups = set(userinfo.get("groups", []))
+        if not user_groups.isdisjoint(groups_allowed):
+            return self
+
+        # 5: check programs
+        if programs_allowed == "*":
+            return self
+        user_programs = set(userinfo.get("programs", []))
+        if not user_programs.isdisjoint(programs_allowed):
+            return self
+
+        # 6: check organizations
+        if orgs_allowed == "*":
+            return self
+        user_orgs = set(userinfo.get("organizations", []))
+        if not user_orgs.isdisjoint(orgs_allowed):
+            return self
+
+        # If none of the conditions pass, raise unauthorized:
         raise web.HTTPUnauthorized(reason="Unauthorized")
 
     async def invoke(
