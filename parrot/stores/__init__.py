@@ -1,4 +1,5 @@
 from .abstract import AbstractStore
+from .empty import EmptyStore
 
 supported_stores = {
     'chroma': 'ChromaStore',

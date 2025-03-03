@@ -41,6 +41,7 @@ from tenacity import (
 )  # for exponential backoff
 from datamodel.exceptions import ValidationError  # pylint: disable=E0611
 from navconfig.logging import logging
+from navigator_auth.conf import AUTH_SESSION_OBJECT
 from ..interfaces import DBInterface
 from ..conf import (
     REDIS_HISTORY_URL,
@@ -95,7 +96,7 @@ from .prompts import (
 )
 from .interfaces import EmptyRetriever
 ## Vector Stores:
-from ..stores import AbstractStore, supported_stores
+from ..stores import AbstractStore, supported_stores, EmptyStore
 from .retrievals import MultiVectorStoreRetriever
 
 
@@ -217,6 +218,20 @@ class AbstractBot(DBInterface, ABC):
             "rlm/rag-prompt-llama"
         )
         # Summarization and Classification Models
+        # Bot Security and Permissions:
+        _default = self.default_permissions()
+        _permissions = kwargs.get('permissions', _default)
+        self._permissions = {**_default, **_permissions}
+
+    def default_permissions(self) -> dict:
+        """Returns the default permissions for the bot."""
+        return {
+            "organizations": [],
+            "programs": [],
+            "job_codes": [],
+            "users": [],
+            "groups": [],
+        }
 
     def _get_default_attr(self, key, default: Any = None, **kwargs):
         if key in kwargs:
@@ -764,7 +779,15 @@ class AbstractBot(DBInterface, ABC):
                 response.documents = d
         return markdown_output
 
-    async def retrieval(self, request: web.Request = None) -> "AbstractBot":
+    async def __aenter__(self):
+        if not self.store:
+            self.store = EmptyStore()
+        return self
+
+    async def __aexit__(self, exc_type, exc_value, traceback):
+        pass
+
+    def retrieval(self, request: web.Request = None) -> "AbstractBot":
         """Retrieval.
 
         Configure the retrieval chain for the Chatbot.
@@ -776,8 +799,37 @@ class AbstractBot(DBInterface, ABC):
             AbstractBot: The Chatbot object.
         """
         self._request = request
-        # TODO: using the permissions on session to check if can be used this bot.
-        return self
+        # User Session:
+        session = request.session
+        try:
+            userinfo = session[AUTH_SESSION_OBJECT]
+        except KeyError:
+            userinfo = {}
+        # Using the permissions on session to check if can be used this bot.
+        try:
+            user = session.decode("user")
+        except (KeyError, TypeError):
+            raise web.HTTPUnauthorized(reason="Invalid user")
+        # 1: evaluate if user is a superuser:
+        if user.superuser:
+            return self
+        # check first under users restrictions:
+        if user.get('username') in self._permissions.get('users', []):
+            return self
+        # or check if job_code of user is allowed:
+        if user.job_code in self._permissions.get('job_codes', []):
+            return self
+        # 2: evaluate if any of user groups is allowed based on permissions['groups']
+        if not set(userinfo["groups"]).isdisjoint(self._permissions.get('groups', [])):
+            return self
+        # 3: evaluate if any of user programs is allowed based on permissions['programs']
+        if not set(userinfo["programs"]).isdisjoint(self._permissions.get('programs', [])):
+            return self
+        # 4: evaluate if any of user organizations is allowed based on permissions['organizations']
+        if not set(userinfo["organizations"]).isdisjoint(self._permissions.get('organizations', [])):
+            return self
+        # 5: If not allowed, raise an Unauthorized error:
+        raise web.HTTPUnauthorized(reason="Unauthorized")
 
     async def invoke(
         self,

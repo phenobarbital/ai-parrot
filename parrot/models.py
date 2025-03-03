@@ -118,7 +118,8 @@ class ChatbotModel(Model):
         created_at TIMESTAMPTZ DEFAULT NOW(),
         created_by INTEGER,
         updated_at TIMESTAMPTZ DEFAULT NOW(),
-        disclaimer VARCHAR
+        disclaimer VARCHAR,
+        permissions JSONB
     );
     ALTER TABLE navigator.chatbots
     ADD CONSTRAINT unq_navigator_chatbots_name UNIQUE (name);
