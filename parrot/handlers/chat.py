@@ -105,7 +105,6 @@ class ChatHandler(BaseView):
                     memory=memory,
                     **data
                 )
-                print('RESULT > ', result)
                 # Drop "memory" information:
                 result.chat_history = None
                 result.source_documents = None
