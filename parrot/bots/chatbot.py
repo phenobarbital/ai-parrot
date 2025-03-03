@@ -190,6 +190,10 @@ class Chatbot(AbstractBot):
         self._define_prompt(
             config={}
         )
+        # Last: permissions:
+        _default = self.default_permissions()
+        _permissions = bot.permissions
+        self._permissions = {**_default, **_permissions}
 
     async def from_config_file(self, config_file: PurePath) -> None:
         """Load the Chatbot Configuration from the TOML file."""
@@ -249,3 +253,7 @@ class Chatbot(AbstractBot):
         self._define_prompt(
             config=basic
         )
+        # Last: permissions:
+        permissions = file_config.get('permissions', {})
+        _default = self.default_permissions()
+        self._permissions = {**_default, **permissions}
