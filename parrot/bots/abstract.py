@@ -221,6 +221,8 @@ class AbstractBot(DBInterface, ABC):
         # Bot Security and Permissions:
         _default = self.default_permissions()
         _permissions = kwargs.get('permissions', _default)
+        if _permissions is None:
+            _permissions = {}
         self._permissions = {**_default, **_permissions}
 
     def default_permissions(self) -> dict:
@@ -837,7 +839,7 @@ class AbstractBot(DBInterface, ABC):
             )
 
         # 1: superuser is always allowed
-        if user.superuser:
+        if userinfo.get('superuser', False) is True:
             return self
 
         # convenience references
