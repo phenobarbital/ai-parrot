@@ -127,7 +127,7 @@ class DuckDBStore(AbstractStore):
             documents = []
         vectordb = DuckDB.from_documents(
             documents=documents,
-            embedding=self._embed_,
+            embedding=self._embed_.embedding,
             connection=self._connection,
         )
         retriever = DuckDB.as_retriever(
@@ -144,7 +144,7 @@ class DuckDBStore(AbstractStore):
             collection = self.collection_name
         vectordb = await DuckDB.afrom_documents(
             documents,
-            embedding=self._embed_,
+            embedding=self._embed_.embedding,
             connection=self._connection,
         )
         return vectordb
@@ -153,12 +153,9 @@ class DuckDBStore(AbstractStore):
         """
         Add Documents as Vectors in DuckDB.
         """
-        _embed_ = self._embed_ or self.create_embedding(
-                embedding_model=self.embedding_model
-        )
         if not collection:
             collection = self.collection_name
-        vectordb = self.get_vector(collection=collection, embedding=_embed_)
+        vectordb = self.get_vector(collection=collection)
         result = await vectordb.aadd_documents(
             documents=documents
         )

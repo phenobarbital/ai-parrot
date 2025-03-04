@@ -342,7 +342,7 @@ class PgvectorStore(AbstractStore):
         async with self._connection.begin() as conn:
             if getattr(self, "_drop", False):
                 vectorstore = PgVector(
-                    embeddings=self._embed_,
+                    embeddings=self._embed_.embedding,
                     table_name=self.table,
                     schema=self.schema,
                     id_column=self._id_column,
@@ -385,7 +385,7 @@ class PgvectorStore(AbstractStore):
                 embedding_model=self.embedding_model
             )
             self._client = PgVector(
-                embeddings=_embed_,
+                embeddings=_embed_.embedding,
                 embedding_length=self.dimension,
                 collection_name=self.collection_name,
                 connection=self._connection,
@@ -436,7 +436,7 @@ class PgvectorStore(AbstractStore):
             id_column=self._id_column,
             collection_name=collection,
             embedding_length=self.dimension,
-            embeddings=_embed_,
+            embeddings=_embed_.embedding,
             logger=self.logger,
             async_mode=True,
             use_jsonb=True,
@@ -454,7 +454,7 @@ class PgvectorStore(AbstractStore):
         )
         vectordb = PgVector.from_documents(
             documents or [],
-            embedding=_embed_,
+            embedding=_embed_.embedding,
             connection=self._connection,
             collection_name=self.collection_name,
             embedding_length=self.dimension,
@@ -489,7 +489,7 @@ class PgvectorStore(AbstractStore):
             schema=schema,
             id_column=self._id_column,
             collection_name=collection,
-            embedding=_embed_,
+            embedding=_embed_.embedding,
             embedding_length=self.dimension,
             use_jsonb=True,
             async_mode=True,
@@ -503,12 +503,9 @@ class PgvectorStore(AbstractStore):
         **kwargs
     ) -> None:
         """Save Documents as Vectors in VectorStore."""
-        _embed_ = self._embed_ or self.create_embedding(
-                embedding_model=self.embedding_model
-        )
         if not collection:
             collection = self.collection_name
-        vectordb = self.get_vector(collection=collection, embedding=_embed_)
+        vectordb = self.get_vector(collection=collection, **kwargs)
         # Asynchronously add documents to PGVector
         await vectordb.aadd_documents(documents)
 
@@ -560,7 +557,7 @@ class PgvectorStore(AbstractStore):
         cols = ', '.join(columns)
         _qry = f'SELECT {cols} FROM {tablename};'
         # Generate a sample embedding to determine its dimension
-        sample_vector = self._embed_.embed_query("sample text")
+        sample_vector = self._embed_.embedding.embed_query("sample text")
         vector_dim = len(sample_vector)
         # Compare it with the expected dimension
         if vector_dim != dimension:
@@ -643,7 +640,7 @@ class PgvectorStore(AbstractStore):
                 metadata = {col: getattr(row, col) for col in columns}
                 data = " ".join([f"{col}: {metadata[col]}" for col in columns])
                 # Get the vector information from data:
-                vector = self._embed_.embed_query(data)
+                vector = self._embed_.embedding.embed_query(data)
                 vector_str = "[" + ",".join(str(v) for v in vector) + "]"
                 await conn.execute(
                 sqlalchemy.text(f"""
