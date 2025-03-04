@@ -61,13 +61,13 @@ class QdrantStore(AbstractStore):
                 self._connection.create_collection(
                     collection_name=self.collection_name,
                     vectors_config=models.VectorParams(
-                        size=len(self._embed_.embed_query("test")), distance=models.Distance.EUCLID
+                        size=len(self._embed_.embedding.embed_query("test")), distance=models.Distance.EUCLID
                     )
                 )
             self.client = Qdrant(
                 client=self._connection,
                 collection_name=self.collection_name,
-                embedding_function=self._embed_
+                embedding_function=self._embed_.embedding
             )
         except Exception as e:
             print(f"Error connecting to Qdrant: {e}")
@@ -105,7 +105,7 @@ class QdrantStore(AbstractStore):
         """Save Documents as Vectors in Qdrant."""
         vectordb = await Qdrant.afrom_documents(
             documents=documents,
-            embedding=self._embed_,
+            embedding=self._embed_.embedding,
             client=self.client,
             collection_name=self.collection_name,
             **kwargs
@@ -159,7 +159,7 @@ class QdrantStore(AbstractStore):
             documents = []
         vectordb = Qdrant.from_documents(
             documents=documents,
-            embedding=self._embed_,
+            embedding=self._embed_.embedding,
             client=self.client,
             collection_name=self.collection_name
         )

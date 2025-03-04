@@ -44,16 +44,16 @@ class FaissStore(AbstractStore):
                 raise FileNotFoundError
             self._connection = FAISS.load_local(
                 folder_path=self.index_path,
-                embeddings=self._embed_,
+                embeddings=self._embed_.embedding,
                 allow_dangerous_deserialization=True,
                 distance_strategy=DistanceStrategy.EUCLIDEAN_DISTANCE
             )
         except FileNotFoundError:
             # Create a new FAISS index if none exists.
-            print(len(self._embed_.embed_query("test")))
-            index = faiss.IndexFlatL2(len(self._embed_.embed_query("test")))
+            print(len(self._embed_.embedding.embed_query("test")))
+            index = faiss.IndexFlatL2(len(self._embed_.embedding.embed_query("test")))
             self._connection = FAISS(
-                embedding_function=self._embed_,
+                embedding_function=self._embed_.embedding,
                 index=index,
                 docstore=InMemoryDocstore(),
                 index_to_docstore_id={},
@@ -91,7 +91,7 @@ class FaissStore(AbstractStore):
         """Save Documents as Vectors in FAISS."""
         vectordb = await FAISS.afrom_documents(
             documents=documents,
-            embedding=self._embed_,
+            embedding=self._embed_.embedding,
             allow_dangerous_deserialization=True,
             distance_strategy=DistanceStrategy.EUCLIDEAN_DISTANCE
         )
@@ -149,7 +149,7 @@ class FaissStore(AbstractStore):
             documents = []
         vectordb = FAISS.from_documents(
             documents=documents,
-            embedding=self._embed_,
+            embedding=self._embed_.embedding,
             allow_dangerous_deserialization=True,
             distance_strategy=DistanceStrategy.EUCLIDEAN_DISTANCE
         )

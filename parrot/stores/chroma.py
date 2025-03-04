@@ -84,12 +84,12 @@ class ChromaStore(AbstractStore):
         if embedding is not None:
             _embed_ = embedding
         else:
-            _embed_ = self.create_embedding(
+            _embed_ = self._embed_ or self.create_embedding(
                 embedding_model=self.embedding_model
             )
         return Chroma(
             collection_name=self.collection_name,
-            embedding_function=_embed_,
+            embedding_function=_embed_.embedding,
             client=self._connection,
             create_collection_if_not_exists=True,
         )
@@ -100,7 +100,7 @@ class ChromaStore(AbstractStore):
         """
         vectordb = await Chroma.afrom_documents(
             documents=documents,
-            embedding=self._embed_,
+            embedding=self._embed_.embedding,
             connection=self._connection,
         )
         return vectordb
@@ -178,7 +178,7 @@ class ChromaStore(AbstractStore):
             documents = []
         vectordb = Chroma.from_documents(
             documents=documents,
-            embedding=self._embed_,
+            embedding=self._embed_.embedding,
             connection=self._connection,
         )
         retriever = Chroma.as_retriever(
