@@ -78,6 +78,10 @@ class AbstractStore(ABC):
         )
         # Client Connection (if required):
         self._connection = None
+        # Create the Embedding Model:
+        self._embed_ = self.create_embedding(
+            embedding_model=self.embedding_model
+        )
 
     @property
     def connected(self) -> bool:
@@ -96,18 +100,17 @@ class AbstractStore(ABC):
 
     # Async Context Manager
     async def __aenter__(self):
-        if self._embed_ is None:
-            self._embed_ = self.create_embedding(
-                embedding_model=self.embedding_model
-            )
         if self._use_database:
             if not self._connection:
                 await self.connection()
         return self
 
+    async def _free_resources(self):
+        self._embed_.free()
+        self._embed_ = None
+
     async def __aexit__(self, exc_type, exc_value, traceback):
         # closing Embedding
-        self._embed_ = None
         try:
             await self.disconnect()
         except RuntimeError:
@@ -121,7 +124,12 @@ class AbstractStore(ABC):
         return self.get_vector()
 
     @abstractmethod
-    async def similarity_search(self, query: str, collection: Union[str, None] = None, limit: int = 2) -> list:  # noqa
+    async def similarity_search(
+        self,
+        query: str,
+        collection: Union[str, None] = None,
+        limit: int = 2
+    ) -> list:  # noqa
         pass
 
     @abstractmethod
@@ -193,11 +201,10 @@ class AbstractStore(ABC):
                 package=__package__
             )
             embed_obj = getattr(embed_module, embed_cls)
-            self._embed_ = embed_obj(
+            return embed_obj(
                 model_name=model_name,
                 **kwargs
             )
-            return self._embed_
         except ImportError as e:
             raise ConfigError(
                 f"Error Importing Embedding Model: {model_type}"

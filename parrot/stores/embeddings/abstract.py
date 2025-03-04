@@ -17,17 +17,30 @@ class AbstractEmbed(ABC):
         'trust_remote_code':True
     }
 
+    def __init__(self, model_name: str = None, **kwargs):
+        self._embedding = self._create_embedding(model_name, **kwargs)
+
+    @property
+    def embedding(self):
+        return self._embedding
+
+    def free(self):
+        """
+        Free the resources.
+        """
+        pass
+
     def _get_device(self):
         return EMBEDDING_DEVICE
 
-    @classmethod
     @abstractmethod
-    def __new__(cls, model_name: str = None, **kwargs):
+    def _create_embedding(self, model_name: str = None, **kwargs):
         """
-        Create a new instance of the class.
+        Create Embedding Model.
         Args:
             model_name (str): The name of the model to use.
 
         Returns:
-        An Embedding Model instance.
+            Callable: Embedding Model.
         """
+        pass
