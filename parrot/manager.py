@@ -88,7 +88,8 @@ class BotManager:
                         rationale=bot.rationale,
                         pre_instructions=bot.pre_instructions,
                         company_information=bot.company_information,
-                        vector_info=bot.database
+                        vector_info=bot.database,
+                        permissions=bot.permissions,
                     )
                     try:
                         await chatbot.configure(

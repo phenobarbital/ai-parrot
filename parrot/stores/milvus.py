@@ -271,11 +271,12 @@ class MilvusStore(AbstractStore):
         if metadata_field:
             # document_meta
             _search['metadata_field'] = metadata_field
-        _embed_ = self.create_embedding(
-            embedding_model=self.embedding_model
-        )
+        if self._embed_ is None:
+            self._embed_ = self.create_embedding(
+                embedding_model=self.embedding_model
+            )
         return Milvus(
-            embedding_function=_embed_,
+            embedding_function=self._embed_,
             collection_name=collection,
             consistency_level=consistency_level,
             connection_args={
