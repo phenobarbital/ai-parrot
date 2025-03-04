@@ -8,7 +8,7 @@ class FastembedEmbed(AbstractEmbed):
     """A wrapper class for FastEmbed embeddings."""
     model_name: str = "BAAI/bge-large-en-v1.5"
 
-    def __new__(cls, model_name: str = None, **kwargs):
+    def _create_embedding(self, model_name: str = None, **kwargs):
         # Embedding Model:
         return FastEmbedEmbeddings(
             model_name=model_name,

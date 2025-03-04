@@ -1,4 +1,5 @@
 from typing import Optional
+import gc
 import torch
 from .abstract import AbstractEmbed
 from ...conf import CUDA_DEFAULT_DEVICE, EMBEDDING_DEVICE
@@ -9,6 +10,10 @@ class BaseEmbed(AbstractEmbed):
 
     Use this class to Embedding Models that requires Torch/Transformers.
     """
+    model_kwargs = {
+        'device': EMBEDDING_DEVICE,
+        'trust_remote_code':True
+    }
     def _get_device(self, device_type: str = None, cuda_number: Optional[int] = None):
         """Get Default device for Torch and transformers.
 
@@ -30,3 +35,13 @@ class BaseEmbed(AbstractEmbed):
             return torch.device(f'cuda:{cuda_number}')
         else:
             return torch.device(EMBEDDING_DEVICE)
+
+    def free(self):
+        """
+        Free the resources.
+        """
+        try:
+            gc.collect()               # Run Python garbage collector to free unreferenced objects
+            torch.cuda.empty_cache()   # Release cached memory blocks back to the GPU
+        except Exception as e:
+            print(f"Error: {e}")

@@ -964,7 +964,6 @@ class AbstractBot(DBInterface, ABC):
                     )
                 else:
                     vector = store.get_vector(metric_type=metric_type)
-                    print('Vector > ', vector)
                     retriever = VectorStoreRetriever(
                         vectorstore=vector,
                         search_type=search_type,

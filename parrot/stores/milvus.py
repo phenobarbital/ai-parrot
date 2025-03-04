@@ -276,7 +276,7 @@ class MilvusStore(AbstractStore):
                 embedding_model=self.embedding_model
             )
         return Milvus(
-            embedding_function=self._embed_,
+            embedding_function=self._embed_.embedding,
             collection_name=collection,
             consistency_level=consistency_level,
             connection_args={
