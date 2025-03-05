@@ -895,7 +895,9 @@ class AbstractBot(DBInterface, ABC):
             pass
 
         # If none of the conditions pass, raise unauthorized:
-        raise web.HTTPUnauthorized(reason="Unauthorized")
+        raise web.HTTPUnauthorized(
+            reason=f"User {user.username} is not Unauthorized"
+        )
 
     async def invoke(
         self,

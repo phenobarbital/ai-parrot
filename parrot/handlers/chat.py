@@ -35,15 +35,15 @@ class ChatHandler(BaseView):
                     f"Chatbot {name} not found.",
                     status=404
                 )
+            config_file = getattr(chatbot, 'config_file', None)
             return self.json_response({
                 "chatbot": chatbot.name,
                 "description": chatbot.description,
                 "role": chatbot.role,
                 "embedding_model": chatbot.embedding_model,
-                "llm": f"{chatbot.get_llm()!r}",
-                "temperature": chatbot.get_llm().temperature,
-                "args": chatbot.get_llm().args,
-                "config_file": chatbot.config_file
+                "llm": f"{chatbot.llm!r}",
+                "temperature": chatbot.llm.temperature,
+                "config_file": config_file
             })
 
     async def post(self, *args, **kwargs):
@@ -93,7 +93,17 @@ class ChatHandler(BaseView):
             )
         # getting the question:
         question = data.pop('query')
-        session = self.request.session
+        try:
+            session = self.request.session
+        except AttributeError:
+            session = None
+        if not session:
+            return self.json_response(
+                {
+                "message": "User Session is required to interact with a Chatbot."
+                },
+                status=400
+            )
         try:
             async with chatbot.retrieval(request=self.request) as retrieval:
                 session_id = session.get('session_id', None)
