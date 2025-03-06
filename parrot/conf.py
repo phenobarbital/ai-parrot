@@ -128,3 +128,19 @@ VERTEX_REGION = config.get('VERTEX_REGION')
 # OpenAI:
 OPENAI_API_KEY = config.get('OPENAI_API_KEY')
 OPENAI_ORGANIZATION = config.get('OPENAI_ORGANIZATION')
+
+## HTTPClioent
+HTTPCLIENT_MAX_SEMAPHORE = config.getint("HTTPCLIENT_MAX_SEMAPHORE", fallback=5)
+HTTPCLIENT_MAX_WORKERS = config.getint("HTTPCLIENT_MAX_WORKERS", fallback=1)
+
+## Google API:
+GOOGLE_API_KEY = config.get('GOOGLE_API_KEY')
+GOOGLE_SEARCH_API_KEY = config.get('GOOGLE_SEARCH_API_KEY')
+GOOGLE_SEARCH_ENGINE_ID = config.get('GOOGLE_SEARCH_ENGINE_ID')
+GOOGLE_PLACES_API_KEY = config.get('GOOGLE_PLACES_API_KEY')
+GOOGLE_CREDENTIALS_FILE = Path(
+    config.get(
+        'GOOGLE_CREDENTIALS_FILE',
+        fallback=BASE_DIR.joinpath('env', 'google', 'key.json')
+    )
+)

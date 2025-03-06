@@ -10,7 +10,10 @@ from langchain_core.retrievers import BaseRetriever
 from langchain import hub
 from langchain.callbacks.base import BaseCallbackHandler
 from langchain.agents import (
-    create_react_agent
+    create_react_agent,
+    create_openai_functions_agent,
+    create_openai_tools_agent,
+    create_tool_calling_agent
 )
 from langchain.agents.agent import (
     AgentExecutor,
@@ -62,6 +65,7 @@ class BasicAgent(AbstractBot):
     def __init__(
         self,
         name: str = 'Agent',
+        agent_type: str = 'zero_shot',
         llm: str = 'vertexai',
         tools: List[AbstractTool] = None,
         system_prompt: str = None,
@@ -77,21 +81,25 @@ class BasicAgent(AbstractBot):
             **kwargs
         )
         self.agent = None
+        self.agent_type = agent_type
         self._agent = None # Agent Executor
         self.prompt_template = prompt_template or AGENT_PROMPT
-        self.tools = tools or self.default_tools()
+        self.tools = tools or self.default_tools(tools)
         self.prompt = self.define_prompt(self.prompt_template)
         ##  Logging:
         self.logger = logging.getLogger(
             f'{self.name}.Agent'
         )
 
-    def default_tools(self) -> List[AbstractTool]:
-        return [
+    def default_tools(self, tools: list = None) -> List[AbstractTool]:
+        ctools = [
             DuckDuckGoSearchTool(),
             SearchTool(),
             MathTool()
         ]
+        if tools:
+            ctools.extend(tools)
+        return ctools
 
     def define_prompt(self, prompt, **kwargs):
         now = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -121,6 +129,7 @@ class BasicAgent(AbstractBot):
         ])
         return chat_prompt.partial(
             tools=self.tools,
+            tool_names=", ".join([tool.name for tool in self.tools]),
             name=self.name,
             **kwargs
         )
@@ -187,6 +196,52 @@ class BasicAgent(AbstractBot):
             **kwargs
         )
 
+    def function_calling_agent(self, **kwargs):
+        """
+        Creates a Function Calling Agent.
+
+        This agent uses reasoning and tool execution iteratively to generate responses.
+
+        Returns:
+            RunnableMultiActionAgent: A ReAct-based agent.
+
+        ✅ Use Case: Best for decision-making and reasoning tasks where the agent must break problems down into multiple steps.
+
+        """
+        return RunnableMultiActionAgent(
+            runnable = create_tool_calling_agent(
+                self._llm,
+                self.tools,
+                prompt=self.prompt,
+            ),  # type: ignore
+            input_keys_arg=["input"],
+            return_keys_arg=["output"],
+            **kwargs
+        )
+
+    def openai_agent(self, **kwargs):
+        """
+        Creates OpenAI-like task executor Agent.
+
+        This agent uses reasoning and tool execution iteratively to generate responses.
+
+        Returns:
+            RunnableMultiActionAgent: A ReAct-based agent.
+
+        ✅ Use Case: Best for decision-making and reasoning tasks where the agent must break problems down into multiple steps.
+
+        """
+        return RunnableMultiActionAgent(
+            runnable = create_openai_functions_agent(
+                self._llm,
+                self.tools,
+                prompt=self.prompt
+            ),  # type: ignore
+            input_keys_arg=["input"],
+            return_keys_arg=["output"],
+            **kwargs
+        )
+
     def sql_agent(self, dsn: str, **kwargs):
         """
         Creates a SQL Agent.
@@ -211,7 +266,7 @@ class BasicAgent(AbstractBot):
             handle_parsing_errors=True,
             verbose=True,
             prompt=self.prompt,
-            agent_executor_kwargs = {"return_intermediate_steps": True}
+            agent_executor_kwargs = {"return_intermediate_steps": False}
         )
 
     def get_executor(
@@ -227,7 +282,7 @@ class BasicAgent(AbstractBot):
             agent=agent,
             tools=tools,
             verbose=verbose,
-            return_intermediate_steps=True,
+            return_intermediate_steps=False,
             max_iterations=5,
             max_execution_time=360,
             handle_parsing_errors=True,
@@ -243,11 +298,23 @@ class BasicAgent(AbstractBot):
         """
         await super(BasicAgent, self).configure(app)
         # Configure LLM:
-        self.configure_llm()
+        self.configure_llm(use_chat=True)
         # Conversation History:
         self.memory = self.get_memory()
         # 1. Initialize the Agent (as the base for RunnableMultiActionAgent)
-        self.agent = self.runnable_agent()
+        if self.agent_type == 'zero_shot':
+            self.agent = self.runnable_agent()
+        elif self.agent_type == 'function_calling':
+            self.agent = self.function_calling_agent()
+        elif self.agent_type == 'openai':
+            self.agent = self.openai_agent()
+        # elif self.agent_type == 'json':
+        #     self.agent = self.runnable_json_agent()
+        # elif self.agent_type == 'sql':
+        #     self.agent = self.sql_agent()
+        else:
+            self.agent = self.runnable_agent()
+        # self.agent = self.openai_agent()
         # 2. Create Agent Executor - This is where we typically run the agent.
         #  While RunnableMultiActionAgent itself might be "runnable",
         #  we often use AgentExecutor to manage the agent's execution loop.
@@ -286,7 +353,7 @@ class BasicAgent(AbstractBot):
             raise
 
     @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(3))
-    def invoke(self, query: str):
+    async def invoke(self, query: str):
         """invoke.
 
         Args:
@@ -299,7 +366,7 @@ class BasicAgent(AbstractBot):
         input_question = {
             "input": query
         }
-        result = self._agent.invoke(input_question)
+        result = await self._agent.ainvoke(input_question)
         try:
             response = AgentResponse(question=query, **result)
             try:
