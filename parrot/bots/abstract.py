@@ -173,7 +173,7 @@ class AbstractBot(DBInterface, ABC):
         # Definition of LLM
         self._llm_class: str = None
         self._default_llm: str = kwargs.get('use_llm', 'vertexai')
-        self._llm_model = kwargs.get('model_name', 'gemini-1.5-pro')
+        self._llm_model = kwargs.get('model_name', 'gemini-2.0-pro')
         self._llm_config = kwargs.get('model_config', {})
         if self._llm_config:
             self._llm_model = self._llm_config.pop('model', self._llm_model)
@@ -294,7 +294,9 @@ class AbstractBot(DBInterface, ABC):
 
     @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(6))
     def llm_chain(
-        self, llm: str = "vertexai", **kwargs
+        self,
+        llm: str = "vertexai",
+        **kwargs
     ) -> AbstractLLM:
         """llm_chain.
 
@@ -327,7 +329,8 @@ class AbstractBot(DBInterface, ABC):
     def configure_llm(
         self,
         llm: Union[str, Callable] = None,
-        config: Optional[dict] = None
+        config: Optional[dict] = None,
+        use_chat: bool = False
     ):
         """
         Configuration of LLM.
@@ -377,7 +380,8 @@ class AbstractBot(DBInterface, ABC):
                 llm=self._default_llm,
                 temperature=0.2,
                 top_k=30,
-                Top_p=0.6,
+                top_p=0.6,
+                use_chat=use_chat
             )
             self._llm = self._llm_obj.get_llm()
 

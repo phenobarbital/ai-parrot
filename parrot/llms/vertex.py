@@ -18,7 +18,7 @@ class VertexLLM(AbstractLLM):
     Returns:
         _type_: VertexAI LLM.
     """
-    model: str = "gemini-1.0-pro"
+    model: str = "gemini-2.0-pro"
     max_tokens: int = 1024
     supported_models: list = [
         "gemini-1.0-pro",
@@ -32,7 +32,7 @@ class VertexLLM(AbstractLLM):
         'claude-3-5-sonnet@20240620'
     ]
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, use_chat: bool = False, **kwargs):
         super().__init__(*args, **kwargs)
         use_garden: bool = kwargs.get("use_garden", False)
         project_id = config.get("VERTEX_PROJECT_ID")
@@ -58,7 +58,10 @@ class VertexLLM(AbstractLLM):
                 **self.args
             )
         else:
-            base_llm = VertexAI
+            if use_chat is True:
+                base_llm = ChatVertexAI
+            else:
+                base_llm = VertexAI
             self._llm = base_llm(
                 model_name=self.model,
                 system_prompt="Always respond in the same language as the user's question. If the user's language is not English, translate your response into their language.",

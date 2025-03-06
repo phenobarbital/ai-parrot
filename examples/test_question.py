@@ -44,6 +44,6 @@ if __name__ == "__main__":
                 response = loop.run_until_complete(
                     ask_agent(retrieval, query, memory)
                 )
-                print('::: Response: ', response.response)
+                print('::: Response: ', response)
 
         query = input("Type in your query: \n")
