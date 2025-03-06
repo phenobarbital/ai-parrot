@@ -1,17 +1,21 @@
-from typing import List, Dict, Optional, Any, Union
+from typing import List, Dict, Any, Union
 import random
-import asyncio
-import json
+from orjson import JSONDecodeError
 from pydantic import BaseModel, Field
 # from pydantic.v1 import BaseModel, Field
 from langchain_core.tools import BaseTool, BaseToolkit, StructuredTool, ToolException, Tool
+from datamodel.parsers.json import json_decoder, json_encoder  # pylint: disable=E0611
+from datamodel.exceptions import ParserError  # pylint: disable=E0611
+from navconfig import config
 from ..interfaces.http import HTTPService, ua
+
 
 ctt_list: list = [
     "f3dbf688e45146555bb2b8604a993601",
     "06f4dfe367e87866397ef32302f5042e",
     "4e07e03ff03f5debc4e09ac4db9239ac"
 ]
+
 sid_list: list = [
     "d4fa1142-2998-4b68-af78-46d821bb3e1f",
     "9627390e-b423-459f-83ee-7964dd05c9a8"
@@ -39,6 +43,8 @@ class BestBuyProductAvailabilityInput(BaseModel):
 class BestBuyToolkit(BaseToolkit):
     """Toolkit for interacting with BestBuy's API."""
 
+    api_key: str = Field(default=config.get('BESTBUY_APIKEY'))
+
     http_service: HTTPService = Field(default_factory=lambda: HTTPService(
         use_proxy=True,
         cookies={
@@ -65,8 +71,88 @@ class BestBuyToolkit(BaseToolkit):
     def get_tools(self) -> List[BaseTool]:
         """Get the tools in the toolkit."""
         return [
-            self._get_availability_tool()
+            self._get_availability_tool(),
+            self._get_product_information()
         ]
+
+    def _get_product_information(self) -> StructuredTool:
+        """Create a tool for getting product information from BestBuy."""
+
+        async def _product_information(tool_input: Union[str, dict]) -> List[dict]:
+            """Get product information from BestBuy based on SKU, name, or search terms."""
+            # https://api.bestbuy.com/v1/products(name={product_name})?format=json&show=sku,name,salePrice,customerReviewAverage,customerReviewCount,manufacturer,modelNumber&apiKey={api_key}
+            if isinstance(tool_input, dict):
+                # Direct call with dict
+                input_data = tool_input
+            elif isinstance(tool_input, str):
+                # Might be a JSON string from LLM
+                try:
+                    # input_data = json.loads(tool_input)
+                    input_data = json_decoder(tool_input)
+                except (ParserError, JSONDecodeError):
+                    # Not valid JSON, treat as zipcode with missing other params
+                    input_data = {"product_name": tool_input}
+            else:
+                # Some other type that we don't expect
+                input_data = {"product_name": str(tool_input)}
+
+            # Product Name to be used in the search:
+            print('PRODUCT > ', input_data)
+
+            product_name = input_data.get("product_name", None)
+            search_terms = input_data.get("search_terms", None)
+            print(search_terms)
+            if search_terms:
+                search_terms = search_terms.split(',')
+                # I need in format: search=oven&search=stainless&search=steel
+                search_terms = '&'.join([f"search={term.strip()}" for term in search_terms])
+                url = f"https://api.bestbuy.com/v1/products({search_terms})?format=json&show=sku,name,salePrice,customerReviewAverage,customerReviewCount,manufacturer,modelNumber&apiKey={self.api_key}"
+            elif product_name:
+                if ',' in product_name:
+                    search_terms = product_name.split(',')
+                    search_terms = '&'.join([f"search={term.strip()}" for term in search_terms])
+                else:
+                    search_terms = f"name={product_name.strip()}"
+                url = f"https://api.bestbuy.com/v1/products({search_terms})?format=json&show=sku,name,salePrice,customerReviewAverage,customerReviewCount,manufacturer,modelNumber&apiKey={self.api_key}"
+            else:
+                raise ToolException(
+                    "Either product_name or search_terms must be provided."
+                )
+            # URL for BestBuy's Product API
+            result, error = await self.http_service._request(
+                url=url,
+                method="GET",
+                use_json=True,
+                use_proxy=True,
+                headers={
+                    "User-Agent": random.choice(ua)
+                },
+                use_ssl=True,
+                follow_redirects=True,
+                raise_for_status=True,
+                full_response=False
+            )
+            products = result.get('products', [])
+            if not products:
+                return "No products found."
+
+            return products
+
+
+        return StructuredTool.from_function(
+            name="product_information",
+            description=(
+                "Use this tool to search for product information. "
+                "Input must be the search terms: "
+                "- search terms: different words separated by commas "
+                " Example input: {{\"search_terms\": \"oven,stainless\"}}"
+            ),
+            func=_product_information,
+            coroutine=_product_information,
+            infer_schema=False,
+            return_direct=False,
+            handle_tool_error=True
+        )
 
     def _get_availability_tool(self) -> StructuredTool:
         """Create a tool for checking product availability at BestBuy."""
@@ -83,8 +169,9 @@ class BestBuyToolkit(BaseToolkit):
                 elif isinstance(tool_input, str):
                     # Might be a JSON string from LLM
                     try:
-                        input_data = json.loads(tool_input)
-                    except json.JSONDecodeError:
+                        # input_data = json.loads(tool_input)
+                        input_data = json_decoder(tool_input)
+                    except (ParserError, JSONDecodeError):
                         # Not valid JSON, treat as zipcode with missing other params
                         input_data = {"zipcode": tool_input}
                 else:
@@ -179,24 +266,10 @@ class BestBuyToolkit(BaseToolkit):
             except Exception as e:
                 raise ToolException(f"Failed to check BestBuy product availability: {str(e)}")
 
-        # return Tool(
-        #     name="availability",
-        #     description=(
-        #         "Use this tool to check product availability at a specific Best Buy store. "
-        #         "Input must be a JSON object with the following fields: "
-        #         "zipcode (required): The ZIP code to check availability in. "
-        #         "sku (required): The SKU of the product to check. "
-        #         "location_id (required): The specific store location ID to check. "
-        #         "show_only_in_stock (optional): Whether to only show stores with product in stock. "
-        #         "For example: {{\"zipcode\": \"33928\", \"sku\": \"6428376\", \"location_id\": \"767\", \"show_only_in_stock\": false}}"
-        #     ),
-        #     func=_check_availability,
-        #     coroutine=_check_availability
-        # )
         return StructuredTool.from_function(
             name="availability",
             description=(
-                "Use this tool to check product availability at a specific Best Buy store. "
+                "Use this tool to check product availability at a specific Best Buy store or zipcode. "
                 "Input must be a JSON object with the following fields: "
                 "- zipcode (required): The ZIP code to check availability in. "
                 "- sku (required): The SKU of the product to check. "
@@ -244,6 +317,8 @@ class BestBuyToolkit(BaseToolkit):
             if not item:
                 return "No matching product found."
 
+            print('ITEM > ', item)
+
             product_instore = item.get("inStoreAvailable", False)
             product_pickup = item.get("pickupEligible", False)
 
@@ -256,7 +331,7 @@ class BestBuyToolkit(BaseToolkit):
                 return "No matching product availability found."
 
             on_shelf = availability.get("onShelfDisplay", False)
-            in_store_quantity = availability.get("inStoreAvailability", {}).get("availableInStoreQuantity")
+            in_store_quantity = availability.get("inStoreAvailability", {}).get("availableInStoreQuantity", 0)
             available_from = availability.get("inStoreAvailability", {}).get("minDate")
 
             # Build and return a formatted result string

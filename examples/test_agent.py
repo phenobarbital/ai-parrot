@@ -1,12 +1,39 @@
 import asyncio
 from parrot.bots.agent import BasicAgent
 from parrot.tools.bby import BestBuyToolkit
+from parrot.tools.zipcode import ZipcodeAPIToolkit
 
 
 async def create_agent():
     toolkit = BestBuyToolkit()
-    bby = toolkit._get_availability_tool()
-    agent = BasicAgent(name='BestBuyAgent', tools=[bby])
+    zp = ZipcodeAPIToolkit()
+    bby = toolkit.get_tools()
+    # zp_tools = zp.get_tools()
+    system_prompt = """
+    You are a helpful shopping assistant specialized in checking product information and availability at Best Buy stores.
+    Your goal is to help users find out if a product information, or if is available at a specific store.
+    Use the tools available to check product information (based on search or product name) and availability based on the store location, zip code, and product SKU.
+
+    IMPORTANT:
+
+    When searching for products and you find MULTIPLE RESULTS, you must:
+    1. List ALL products found in a clear, formatted table with complete details for each product
+    2. Include ALL fields returned by the tool for EVERY product (sku, name, price, reviews, etc.)
+    3. DO NOT summarize or omit any products from the list
+    4. After listing all products, provide a brief summary of the options and ask the user which specific product they're interested in
+
+
+    When reporting availability, include ALL details from the tool response including:
+    1. Complete store information (name, address, city, state, zip, hours)
+    2. Complete product availability details (in-store availability, pickup eligibility, quantity, etc.)
+    3. Format this information clearly for the user in your response.
+    """
+    agent = BasicAgent(
+        name='BestBuyAgent',
+        system_prompt=system_prompt,
+        tools=bby,
+        agent_type='tool_calling'
+    )
     await agent.configure()
     return agent
 
