@@ -1,8 +1,8 @@
 from typing import List, Dict, Any, Optional, Type, Union
 import httpx
+from pydantic import BaseModel, Field
 from langchain_core.callbacks import CallbackManagerForToolRun
 from langchain_core.tools import BaseToolkit
-from langchain_core.pydantic_v1 import BaseModel, Field, Extra
 from langchain_core.tools import BaseTool
 from navconfig import config
 from .abstract import AbstractTool
@@ -14,6 +14,13 @@ class ZipcodeDistanceInput(BaseModel):
     zipcode2: Union[str, int] = Field(description="The second zipcode.")
     unit: Optional[str] = Field(description="The unit of the distance.", default="mile")
 
+    model_config = {
+        "arbitrary_types_allowed": True,
+        "extra": "forbid",  # Helps with compatibility
+        "json_schema_extra": {
+            "required": ["zipcode", "sku", "location_id"]
+        }
+    }
 
 class ZipcodeRadiusInput(BaseModel):
     """Input for the Zipcode Radius Tool."""
@@ -21,12 +28,26 @@ class ZipcodeRadiusInput(BaseModel):
     radius: int = Field(description="The radius in miles.", default=5)
     unit: Optional[str] = Field(description="The unit of the distance.", default="mile")
 
+    model_config = {
+        "arbitrary_types_allowed": True,
+        "extra": "forbid",  # Helps with compatibility
+        "json_schema_extra": {
+            "required": ["zipcode", "sku", "location_id"]
+        }
+    }
 
 class ZipcodeLocationInput(BaseModel):
     """Input for the Zipcode Location Tool."""
     zipcode: Union[str, int] = Field(description="The zipcode.")
     unit: Optional[str] = Field(description="The unit of the distance.", default="degrees")
 
+    model_config = {
+        "arbitrary_types_allowed": True,
+        "extra": "forbid",  # Helps with compatibility
+        "json_schema_extra": {
+            "required": ["zipcode", "sku", "location_id"]
+        }
+    }
 
 class ZipcodeDistance(AbstractTool):
     """Tool for calculating the distance between two zipcodes."""
@@ -39,10 +60,13 @@ class ZipcodeDistance(AbstractTool):
         " Zipcodes must be provided as a couple of strings (e.g., '33066')."
     )
 
-    class Config:
-        """Configuration for this pydantic object."""
-        # extra = Extra.forbid
-        arbitrary_types_allowed = True
+    model_config = {
+        "arbitrary_types_allowed": True,
+        "extra": "forbid",  # Helps with compatibility
+        "json_schema_extra": {
+            "required": ["zipcode", "sku", "location_id"]
+        }
+    }
 
     def _search(
         self,
@@ -91,10 +115,13 @@ class ZipcodeRadius(AbstractTool):
         " Provides a Zipcode and a radius."
     )
 
-    class Config:
-        """Configuration for this pydantic object."""
-        extra = Extra.forbid
-        arbitrary_types_allowed = True
+    model_config = {
+        "arbitrary_types_allowed": True,
+        "extra": "forbid",  # Helps with compatibility
+        "json_schema_extra": {
+            "required": ["zipcode", "sku", "location_id"]
+        }
+    }
 
     def _search(
         self,
@@ -142,11 +169,6 @@ class ZipcodeLocation(AbstractTool):
         " Provides only a Zipcode as string."
     )
 
-    class Config:
-        """Configuration for this pydantic object."""
-        extra = Extra.forbid
-        arbitrary_types_allowed = True
-
     def _search(
         self,
         zipcode: str,
@@ -166,9 +188,6 @@ class ZipcodeLocation(AbstractTool):
 class ZipcodeAPIToolkit(BaseToolkit):
     """Toolkit for interacting with ZipcodeAPI.
     """
-    class Config:
-        """Pydantic config."""
-        arbitrary_types_allowed = True
 
     def get_tools(self) -> List[BaseTool]:
         """Get the tools in the toolkit."""

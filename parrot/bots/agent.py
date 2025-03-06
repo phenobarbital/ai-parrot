@@ -85,6 +85,20 @@ class BasicAgent(AbstractBot):
         self._agent = None # Agent Executor
         self.prompt_template = prompt_template or AGENT_PROMPT
         self.tools = tools or self.default_tools(tools)
+        if system_prompt:
+            self.prompt_template = self.prompt_template.format_map(
+                SafeDict(
+                    system_prompt_base=system_prompt
+                )
+            )
+        else:
+            self.prompt_template = self.prompt_template.format_map(
+                SafeDict(
+                    system_prompt_base="""
+                    Whether you need help with a specific question or just want to have a conversation about a particular topic, Assistant is here to assist.
+                    """
+                )
+            )
         self.prompt = self.define_prompt(self.prompt_template)
         ##  Logging:
         self.logger = logging.getLogger(
