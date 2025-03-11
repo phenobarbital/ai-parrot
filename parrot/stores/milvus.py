@@ -251,6 +251,7 @@ class MilvusStore(AbstractStore):
         self,
         collection: Union[str, None] = None,
         metric_type: str = None,
+        index_type: str = None,
         nprobe: int = 32,
         metadata_field: str = None,
         consistency_level: str = 'session'
@@ -261,10 +262,11 @@ class MilvusStore(AbstractStore):
             collection = self.collection_name
         if not metric_type:
             metric_type = self._metric_type or 'COSINE'
+        _idx = index_type or self._index_type
         _search = {
             "search_params": {
                 "metric_type": metric_type,
-                "index_type": self._index_type,
+                "index_type": _idx,
                 "params": {"nprobe": nprobe, "nlist": 1024},
             }
         }
