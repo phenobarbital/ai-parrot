@@ -79,7 +79,7 @@ class Chatbot(AbstractBot):
             "config.toml"
         )
         if not config_file.exists():
-            config_file = self.config_file
+            config_file = self.config_file or config_file
         if config_file.exists():
             self.logger.notice(
                 f"Loading Bot {self.name} from config: {config_file.name}"
@@ -185,8 +185,8 @@ class Chatbot(AbstractBot):
         self._vector_store = bot.database
         self.configure_store()
         # after configuration, setup the chatbot
-        if bot.template_prompt:
-            self.template_prompt = bot.template_prompt
+        if bot.system_prompt_template:
+            self.system_prompt_template = bot.system_prompt_template
         self._define_prompt(
             config={}
         )
