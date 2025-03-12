@@ -230,11 +230,16 @@ class AbstractStore(ABC):
     def as_retriever(
         self,
         metric_type: str = 'COSINE',
+        index_type: str = 'IVF_FLAT',
         search_type: str = 'similarity',
         chain_type: str = 'stuff',
         search_kwargs: dict = None
     ) -> Callable:
-        vector = self.get_vector(metric_type=metric_type)
+        vector = self.get_vector(metric_type=metric_type, index_type=index_type)
+        if not vector:
+            raise ConfigError(
+                "Vector Store is not connected. Check your connection."
+            )
         return VectorStoreRetriever(
             vectorstore=vector,
             search_type=search_type,

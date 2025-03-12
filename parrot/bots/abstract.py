@@ -466,6 +466,7 @@ class AbstractBot(DBInterface, ABC):
 
     def configure_store(self, **kwargs):
         # TODO: Implement VectorStore Configuration
+        print('SELF > ', self._vector_store)
         if isinstance(self._vector_store, list):
             # Is a list of vector stores instances:
             for st in self._vector_store:
@@ -476,6 +477,7 @@ class AbstractBot(DBInterface, ABC):
                 except ImportError:
                     continue
         elif isinstance(self._vector_store, dict):
+            print('< ENTERING HERE > ', )
             # Is a single vector store instance:
             store_cls = self._get_database_store(self._vector_store)
             store_cls.use_database = self._use_vector
@@ -484,9 +486,15 @@ class AbstractBot(DBInterface, ABC):
             raise ValueError(
                 f"Invalid Vector Store Config: {self._vector_store}"
             )
-        self.logger.info(f"Configured Vector Stores: {self.stores}")
+        self.logger.info(
+            f"Configured Vector Stores: {self.stores}"
+        )
         if self.stores:
             self.store = self.stores[0]
+        print('=================================')
+        print('END STORES >> ', self.stores, self.store)
+        print('=================================')
+
 
     def get_memory(
         self,
@@ -532,11 +540,12 @@ class AbstractBot(DBInterface, ABC):
                 f"Error clearing chat history: {e}"
             )
 
-    def get_response(self, response: dict):
+    def get_response(self, response: dict, query: str = None):
         if 'error' in response:
             return response  # return this error directly
         try:
             response = ChatResponse(**response)
+            response.query = query
             response.response = self.as_markdown(
                 response,
                 return_sources=self.return_sources
@@ -689,15 +698,15 @@ class AbstractBot(DBInterface, ABC):
         )
         # re-configure LLM:
         new_llm = kwargs.pop('llm', None)
-        llm_config = kwargs.pop(
-            'llm_config',
-            {
-                "temperature": 0.2,
-                "top_k": 30,
-                "Top_p": 0.6
-            }
-        )
         if new_llm:
+            llm_config = kwargs.pop(
+                'llm_config',
+                {
+                    "temperature": 0.2,
+                    "top_k": 30,
+                    "Top_p": 0.6
+                }
+            )
             self.configure_llm(llm=new_llm, config=llm_config)
         # Combine into a ChatPromptTemplate
         prompt = PromptTemplate(
@@ -757,11 +766,11 @@ class AbstractBot(DBInterface, ABC):
                 "query": question,
                 "error": str(e)
             }
-        return self.get_response(response)
+        return self.get_response(response, question)
 
     def as_markdown(self, response: ChatResponse, return_sources: bool = False) -> str:
         markdown_output = f"**Question**: {response.question}  \n"
-        markdown_output += f"**Answer**: {response.answer}  \n"
+        markdown_output += f"**Answer**: \n {response.answer}  \n"
         if return_sources is True and response.source_documents:
             source_documents = response.source_documents
             current_sources = []
@@ -959,6 +968,7 @@ class AbstractBot(DBInterface, ABC):
                 return_messages=True
             )
         async with self.store as store:  #pylint: disable=E1101
+            print('STORES > ', self.stores, store)
             if self._use_vector:
                 if len(self.stores) > 1:
                     retriever = MultiVectorStoreRetriever(
@@ -1002,7 +1012,7 @@ class AbstractBot(DBInterface, ABC):
                 response = await chain.ainvoke(
                     {"question": question}
                 )
-                return self.get_response(response)
+                return self.get_response(response, question)
             except asyncio.CancelledError:
                 # Handle task cancellation
                 print("Conversation task was cancelled.")

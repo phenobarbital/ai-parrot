@@ -61,7 +61,9 @@ class BotManager:
                     f"Failed to load chatbots from DB: {e}"
                 )
                 return
+            print('HERE >>>>>> ', len(bots))
             for bot in bots:
+                print('CREATING BOT > ', bot)
                 if bot.bot_type == 'chatbot':
                     self.logger.notice(
                         f"Loading chatbot '{bot.name}'..."

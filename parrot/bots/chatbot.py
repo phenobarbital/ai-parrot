@@ -244,6 +244,9 @@ class Chatbot(AbstractBot):
         vector_db = database.pop('vector_database', None)
         # configure vector database:
         if vector_db:
+            # Initialize the store:
+            self.stores = []
+            self.store = None
             self._use_vector = vector_store
             self._vector_store = database
             self.configure_store()
