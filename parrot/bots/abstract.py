@@ -969,23 +969,25 @@ class AbstractBot(DBInterface, ABC):
             )
         async with self.store as store:  #pylint: disable=E1101
             print('STORES > ', self.stores, store)
+            # Check if we have multiple stores:
             if self._use_vector:
                 if len(self.stores) > 1:
-                    retriever = MultiVectorStoreRetriever(
-                        stores=self.stores,
-                        metric_type=metric_type,
-                        search_type=search_type,
-                        chain_type=chain_type,
-                        search_kwargs=search_kwargs
-                    )
-                else:
-                    vector = store.get_vector(metric_type=metric_type)
-                    retriever = VectorStoreRetriever(
-                        vectorstore=vector,
-                        search_type=search_type,
-                        chain_type=chain_type,
-                        search_kwargs=search_kwargs
-                    )
+                    store = self.stores[0]
+                #     retriever = MultiVectorStoreRetriever(
+                #         stores=self.stores,
+                #         metric_type=metric_type,
+                #         search_type=search_type,
+                #         chain_type=chain_type,
+                #         search_kwargs=search_kwargs
+                #     )
+                # else:
+                vector = store.get_vector(metric_type=metric_type)
+                retriever = VectorStoreRetriever(
+                    vectorstore=vector,
+                    search_type=search_type,
+                    chain_type=chain_type,
+                    search_kwargs=search_kwargs
+                )
             else:
                 retriever = EmptyRetriever()
             if self.kb:
