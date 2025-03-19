@@ -117,7 +117,14 @@ class ChatHandler(BaseView):
                 )
                 # Drop "memory" information:
                 result.chat_history = None
-                result.source_documents = None
+                if result.source_documents:
+                    documents = []
+                    for doc in result.source_documents:
+                        dc = {
+                            **doc.metadata
+                        }
+                        documents.append(dc)
+                    result.source_documents = documents
                 return self.json_response(response=result)
         except ValueError as exc:
             return self.error(

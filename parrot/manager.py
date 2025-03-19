@@ -61,9 +61,7 @@ class BotManager:
                     f"Failed to load chatbots from DB: {e}"
                 )
                 return
-            print('HERE >>>>>> ', len(bots))
             for bot in bots:
-                print('CREATING BOT > ', bot)
                 if bot.bot_type == 'chatbot':
                     self.logger.notice(
                         f"Loading chatbot '{bot.name}'..."
@@ -92,6 +90,7 @@ class BotManager:
                         company_information=bot.company_information,
                         vector_info=bot.database,
                         permissions=bot.permissions,
+                        attributes=bot.attributes,
                     )
                     try:
                         await chatbot.configure(

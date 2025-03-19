@@ -150,7 +150,9 @@ class AbstractBot(DBInterface, ABC):
         self.knowledge_base: list = []
         self.return_sources: bool = kwargs.pop('return_sources', False)
         self.description = self._get_default_attr(
-            'description', 'Navigator Chatbot', **kwargs
+            'description',
+            'Navigator Chatbot',
+            **kwargs
         )
         self.role = self._get_default_attr(
             'role', self.default_role(), **kwargs
@@ -543,6 +545,7 @@ class AbstractBot(DBInterface, ABC):
     def get_response(self, response: dict, query: str = None):
         if 'error' in response:
             return response  # return this error directly
+        print('GET DOCUMENTS > ', self.return_sources)
         try:
             response = ChatResponse(**response)
             response.query = query
@@ -652,7 +655,7 @@ class AbstractBot(DBInterface, ABC):
                     memory=self.memory,
                     chain_type=chain_type,  # e.g., 'stuff', 'map_reduce', etc.
                     verbose=True,
-                    return_source_documents=False,
+                    return_source_documents=return_docs,
                     return_generated_question=True,
                     combine_docs_chain_kwargs={
                         'prompt': chat_prompt
@@ -670,7 +673,7 @@ class AbstractBot(DBInterface, ABC):
                 f"Error in conversation: {e}"
             )
             raise
-        return self.get_response(response)
+        return self.get_response(response, question)
 
     async def question(
             self,
@@ -990,12 +993,13 @@ class AbstractBot(DBInterface, ABC):
                 )
             else:
                 retriever = EmptyRetriever()
-            if self.kb:
-                b25_retriever = BM25Retriever.from_documents(self.kb)
-                retriever = EnsembleRetriever(
-                    retrievers=[retriever, b25_retriever],
-                    weights=[0.8, 0.2]
-                )
+            print('Retriever ', retriever)
+            # if self.kb:
+            #     b25_retriever = BM25Retriever.from_documents(self.kb)
+            #     retriever = EnsembleRetriever(
+            #         retrievers=[retriever, b25_retriever],
+            #         weights=[0.8, 0.2]
+            #     )
             try:
                 # Create the ConversationalRetrievalChain with custom prompt
                 chain = ConversationalRetrievalChain.from_llm(
