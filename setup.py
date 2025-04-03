@@ -157,20 +157,14 @@ setup(
         "faiss-cpu>=1.9.0",
         "jq==1.7.0",
         "rank_bm25==0.2.2",
-        "matplotlib==3.9.2",
         "tabulate==0.9.0",
-        "selenium>=4.18.1",
-        "webdriver_manager>=4.0.1",
         "transitions==0.9.0",
         "sentencepiece==0.2.0",
-        "weasyprint==61.2",
         "markdown2==2.4.13",
-        "psycopg-binary==3.2.5",
+        "psycopg-binary==3.2.5"
     ],
     extras_require={
         "agents": [
-            "numexpr==2.10.2",
-            "numba==0.59.0",
             "yfinance==0.2.54",
             "youtube_search==2.1.2",
             "wikipedia==1.4.0",
@@ -182,9 +176,9 @@ setup(
             "stackapi==0.3.1",
             "duckduckgo-search==7.5.0",
             "google-search-results==2.4.2",
-            "google-api-python-client>=2.86.0",
-            "google-api-core==2.24.1",
-            "grpcio-status==1.67.1"
+            "google-api-python-client>=2.165.0",
+            "google-api-core==2.24.2",
+            # "grpcio-status==1.67.1"
         ],
         "vector": [
             "torch==2.5.1",
@@ -222,9 +216,10 @@ setup(
             "tiktoken==0.7.0"
         ],
         "google": [
-            "langchain-google-genai==2.0.1",
-            "langchain-google-vertexai==2.0.5",
-            "vertexai==1.71.1",
+            # "google-generativeai",
+            "langchain-google-genai",
+            "langchain-google-vertexai",
+            "vertexai>=1.71.1",
         ],
         "hunggingfaces": [
             "llama-index-llms-huggingface==0.2.7",
