@@ -16,12 +16,13 @@ install:
 	pip install --upgrade querysource
 	# and Parrot:
 	pip install -e .[google,milvus,groq,agents]
-	# downgrade pydantic (google requirement)
-	pip install pydantic==2.9.2
+	# (google requirement)
+	pip install google-cloud-aiplatform==1.85.0
+	# pip install pydantic==2.9.2
 	# avoid warning of google-gemini:
-	pip install grpcio==1.67.1
+	# pip install grpcio==1.67.1
 	# fix version of httpx:
-	pip install httpx==0.27.2
+	# pip install httpx==0.27.2
 
 develop:
 	# Install Parrot
