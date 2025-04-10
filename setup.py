@@ -147,10 +147,10 @@ setup(
     install_requires=[
         "Cython==3.0.11",
         "langchain>=0.3.19",
-        "langchain-core==0.3.40",
-        "langchain-community==0.3.18",
+        "langchain-core==0.3.51",
+        "langchain-community==0.3.21",
         "langchain-experimental==0.3.4",
-        "langchain-text-splitters==0.3.6",
+        "langchain-text-splitters==0.3.8",
         "langchainhub==0.1.21",
         "huggingface-hub==0.29.1",
         "langgraph==0.3.0",
@@ -161,7 +161,10 @@ setup(
         "transitions==0.9.0",
         "sentencepiece==0.2.0",
         "markdown2==2.4.13",
-        "psycopg-binary==3.2.5"
+        "psycopg-binary==3.2.6",
+        "langchain_postgres==0.0.14",
+        "python-datamodel>=0.10.17",
+        "backoff==2.2.1",
     ],
     extras_require={
         "agents": [
@@ -176,7 +179,7 @@ setup(
             "stackapi==0.3.1",
             "duckduckgo-search==7.5.0",
             "google-search-results==2.4.2",
-            "google-api-python-client>=2.165.0",
+            "google-api-python-client>=2.151.0",
             "google-api-core==2.24.2",
             # "grpcio-status==1.67.1"
         ],
@@ -225,8 +228,8 @@ setup(
             "llama-index-llms-huggingface==0.2.7",
         ],
         "groq": [
-            "groq==0.11.0",
-            "langchain-groq==0.2.0"
+            "groq==0.22.0",
+            "langchain-groq==0.3.2"
         ],
         "qdrant": [
             "qdrant-client==1.13.2",
