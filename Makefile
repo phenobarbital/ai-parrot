@@ -17,8 +17,7 @@ install:
 	# and Parrot:
 	pip install -e .[google,milvus,groq,agents]
 	# (google requirement)
-	pip install google-cloud-aiplatform==1.85.0
-	# pip install pydantic==2.9.2
+	pip install pydantic==2.9.2
 	# avoid warning of google-gemini:
 	# pip install grpcio==1.67.1
 	# fix version of httpx:
