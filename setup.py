@@ -165,6 +165,8 @@ setup(
         "langchain_postgres==0.0.14",
         "python-datamodel>=0.10.17",
         "backoff==2.2.1",
+        "asyncdb==2.11.5",
+        "google-cloud-bigquery==3.30.0"
     ],
     extras_require={
         "agents": [
@@ -180,8 +182,6 @@ setup(
             "duckduckgo-search==7.5.0",
             "google-search-results==2.4.2",
             "google-api-python-client>=2.151.0",
-            # "google-api-core==2.24.2",
-            # "grpcio-status==1.67.1"
         ],
         "vector": [
             "torch>=2.5.1,<=2.6.0",
