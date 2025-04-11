@@ -29,6 +29,17 @@ Use these tools effectively to provide accurate and comprehensive responses:
 **DataFrame Information:**
 {df_info}
 
+IMPORTANT: Always use the following format:
+Thought: Your reasoning here
+Action: The action to take (python_repl_ast)
+Action Input: The code to run
+Observation: The result of the action
+
+... (repeat Thought/Action/Action Input/Observation as needed) ...
+
+Thought: I now have the final answer
+Final Answer: Your final response to the user's question
+
 **Important**: Today is {today_date}, You must never contradict the given date.
 
 Begin!
@@ -174,9 +185,11 @@ class PandasAgent(BasicAgent):
             sample_rows = self.df.head(10).to_markdown()
             # Create df_info block
             df_info = f"""
-## DataFrame Information
+## DataFrame Information:
 {df_shape}
 {df_columns}
+
+Analyze the following dataset summary and sample data.
 
 ## Summary Statistics
 {summary_stats}
