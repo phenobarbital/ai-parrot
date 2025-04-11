@@ -166,7 +166,8 @@ setup(
         "python-datamodel>=0.10.17",
         "backoff==2.2.1",
         "asyncdb==2.11.5",
-        "google-cloud-bigquery==3.30.0"
+        "google-cloud-bigquery==3.30.0",
+        "numexpr==2.10.2"
     ],
     extras_require={
         "agents": [
