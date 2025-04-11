@@ -13,10 +13,6 @@ logging.getLogger(name='selenium').setLevel(logging.INFO)
 logging.getLogger(name='matplotlib').setLevel(logging.WARNING)
 logging.getLogger(name='PIL').setLevel(logging.INFO)
 logging.getLogger("grpc").setLevel(logging.CRITICAL)
-logging.getLogger('h5py').setLevel(logging.ERROR)
-logging.getLogger('tensorflow').setLevel(logging.ERROR)
-logging.getLogger('matplotlib').setLevel(logging.ERROR)
-logging.getLogger('langchain').setLevel(logging.ERROR)
 
 
 # Static directory
