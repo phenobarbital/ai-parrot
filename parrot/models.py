@@ -1,4 +1,4 @@
-from typing import List, Union, Optional
+from typing import Dict, List, Union, Optional
 import uuid
 import time
 from datetime import datetime
@@ -24,8 +24,8 @@ class AgentResponse(BaseModel):
     Response from Chatbots.
     """
     question: str = Field(required=False)
-    input: str = Field(required=False)
-    output: str = Field(required=False)
+    input: Union[str, Dict[str, str]] = Field(required=False)
+    output: Union[str, Dict[str, str]] = Field(required=False)
     response: str = Field(required=False)
     answer: str = Field(required=False)
     intermediate_steps: list = Field(default_factory=list)

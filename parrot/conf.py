@@ -8,11 +8,15 @@ from navigator.conf import default_dsn, CACHE_HOST, CACHE_PORT
 logging.getLogger(name='httpcore').setLevel(logging.INFO)
 logging.getLogger(name='httpx').setLevel(logging.INFO)
 logging.getLogger(name='groq').setLevel(logging.INFO)
-logging.getLogger(name='tensorflow').setLevel(logging.INFO)
 logging.getLogger(name='selenium.webdriver').setLevel(logging.WARNING)
 logging.getLogger(name='selenium').setLevel(logging.INFO)
 logging.getLogger(name='matplotlib').setLevel(logging.WARNING)
 logging.getLogger(name='PIL').setLevel(logging.INFO)
+logging.getLogger("grpc").setLevel(logging.CRITICAL)
+logging.getLogger('h5py').setLevel(logging.ERROR)
+logging.getLogger('tensorflow').setLevel(logging.ERROR)
+logging.getLogger('matplotlib').setLevel(logging.ERROR)
+logging.getLogger('langchain').setLevel(logging.ERROR)
 
 
 # Static directory

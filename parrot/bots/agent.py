@@ -51,7 +51,6 @@ from ..tools import AbstractTool, SearchTool, MathTool, DuckDuckGoSearchTool
 
 os.environ["GRPC_ENABLE_FORK_SUPPORT"] = "0"
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"  # Hide TensorFlow logs if present
-logging.getLogger("grpc").setLevel(logging.CRITICAL)
 
 class BasicAgent(AbstractBot):
     """Represents an Agent in Navigator.
@@ -108,7 +107,7 @@ class BasicAgent(AbstractBot):
     def default_tools(self, tools: list = None) -> List[AbstractTool]:
         ctools = [
             DuckDuckGoSearchTool(),
-            SearchTool(),
+            # SearchTool(),
             MathTool()
         ]
         if tools:
