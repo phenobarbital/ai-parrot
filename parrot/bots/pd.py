@@ -106,8 +106,6 @@ class PandasAgent(BasicAgent):
         """Basic Configuration of Pandas Agent.
         """
         await super(BasicAgent, self).configure(app)
-        print('PROMPT > ')
-        print(self.prompt)
         if df is not None:
             self.df = df
         # Configure LLM:
