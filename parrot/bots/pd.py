@@ -31,7 +31,7 @@ Use these tools effectively to provide accurate and comprehensive responses:
 
 IMPORTANT: Always use the following format:
 Thought: Your reasoning here
-Action: The action to take (python_repl_ast)
+Action: The action to take
 Action Input: The code to run
 Observation: The result of the action
 
@@ -92,25 +92,40 @@ class PandasAgent(BasicAgent):
 
         """
         df_locals = {}
-        dfs_head = ""
+        # dfs_head = ""
         df_locals["df"] = self.df
-        dfs_head += (
-            f"\n\n- This is the result of `print(df.head())`:\n"
-            + self.df.head().to_markdown() + "\n"
-        )
+        # dfs_head += (
+        #     f"\n\n- This is the result of `print(df.head())`:\n"
+        #     + self.df.head().to_markdown() + "\n"
+        # )
         # Create the Python REPL tool
         python_tool = PythonAstREPLTool(locals=df_locals)
         # Add it to the tools list
         additional_tools = [python_tool]
+        _prefix = """
+You are a data analysis expert working with a pandas dataframe.
+
+The dataframe is ALREADY loaded with the variable name `df`.
+DO NOT create a sample dataframe or example data. The user's actual data is already available.
+
+To analyze this DataFrame effectively:
+1. First examine the existing dataframe with df.head() and df.info()
+2. Perform analysis on the existing `df` variable
+3. DO NOT create new sample data or initialize a new dataframe
+
+Use the pandas_dataframe tool to work with this data.
+        """
         # Create the pandas agent
         return create_pandas_dataframe_agent(
             self._llm,
             df,
             number_of_head_rows=10,
             verbose=True,
+            prefix=_prefix,
             agent_type=self.agent_type,
             allow_dangerous_code=True,
             extra_tools=additional_tools,
+            include_df_in_prompt=True
         )
 
     async def configure(self, df: pd.DataFrame = None, app=None) -> None:
@@ -198,15 +213,21 @@ Analyze the following dataset summary and sample data.
 {sample_rows}
 
 ## Working with this DataFrame
-- Use `df` to access the entire DataFrame
-- You can access columns with `df['column_name']`
-- For numerical analysis, use functions like mean(), sum(), min(), max()
-- For categorical columns, consider using value_counts() to see distributions
-- You can create visualizations using matplotlib or seaborn through the Python tool
-- When creating charts, ensure proper labeling of axes and include a title
-- For visualization requests, use matplotlib or seaborn through the Python tool
-- Provide clear, concise explanations of your analysis steps
-- When appropriate, suggest additional insights beyond what was directly asked
+- Use `df` to access the entire DataFrame.
+- First examine the existing dataframe with `df.info()` and `df.describe()`.
+- Use `df.head()` to see the first few rows.
+- Use `df.tail()` to see the last few rows.
+- DO NOT create a sample daframe or example data, the user's actual data is already available.
+- You can access columns with `df['column_name']`.
+- For numerical analysis, use functions like mean(), sum(), min(), max().
+- For categorical columns, consider using value_counts() to see distributions.
+- You can create visualizations using matplotlib or seaborn through the Python tool.
+- Perform analysis over the entire DataFrame, not just a sample.
+- Use `df['column_name'].value_counts()` to get counts of unique values.
+- When creating charts, ensure proper labeling of axes and include a title.
+- For visualization requests, use matplotlib or seaborn through the Python tool.
+- Provide clear, concise explanations of your analysis steps.
+- When appropriate, suggest additional insights beyond what was directly asked.
 """
 
         final_prompt = prompt.format_map(
