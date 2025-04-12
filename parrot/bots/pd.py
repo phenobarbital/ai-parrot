@@ -2,11 +2,6 @@ from typing import List, Union
 from datetime import datetime, timezone
 import pandas as pd
 from datamodel.typedefs import SafeDict
-from langchain.agents import AgentExecutor
-from langchain.prompts import (
-    ChatPromptTemplate,
-    SystemMessagePromptTemplate,
-)
 from langchain_experimental.tools.python.tool import PythonAstREPLTool
 from langchain_experimental.agents.agent_toolkits import create_pandas_dataframe_agent
 from ..tools import AbstractTool
@@ -14,8 +9,10 @@ from .agent import BasicAgent
 from ..models import AgentResponse
 
 
-PANDAS_PROMPT = """
+PANDAS_PROMPT_PREFIX = """
 Your name is {name}.
+
+You are a data analysis expert working with a pandas dataframe.
 
 {system_prompt_base}
 
@@ -26,22 +23,61 @@ Your name is {name}.
 Use these tools effectively to provide accurate and comprehensive responses:
 {list_of_tools}
 
-**DataFrame Information:**
+## DataFrame Information:
 {df_info}
 
-IMPORTANT: Always use the following format:
-Thought: Your reasoning here
-Action: The action to take
-Action Input: The code to run
-Observation: The result of the action
+## Working with this DataFrame
+- The dataframe is already loaded and available for analysis in the variable name `df`.
+- First examine the existing dataframe with `df.info()` and `df.describe()`.
+- Use `df.head()` to see the first few rows.
+- Use `df.tail()` to see the last few rows.
+- DO NOT create a sample daframe or example data, the user's actual data is already available.
+- You can access columns with `df['column_name']`.
+- For numerical analysis, use functions like mean(), sum(), min(), max().
+- For categorical columns, consider using value_counts() to see distributions.
+- You can create visualizations using matplotlib or seaborn through the Python tool.
+- Perform analysis over the entire DataFrame, not just a sample.
+- Use `df['column_name'].value_counts()` to get counts of unique values.
+- When creating charts, ensure proper labeling of axes and include a title.
+- For visualization requests, use matplotlib or seaborn through the Python tool.
+- Provide clear, concise explanations of your analysis steps.
+- When appropriate, suggest additional insights beyond what was directly asked.
 
-... (repeat Thought/Action/Action Input/Observation as needed) ...
+{format_instructions}
 
-Thought: I now have the final answer
-Final Answer: Your final response to the user's question
+**IMPORTANT: When creating your final answer:**:
+- Today is {today_date}, You must never contradict the given date.
+- When you perform calculations (e.g., df.groupby().count()), store the results in variables
+- In your final answer, ONLY use the EXACT values from your Python calculations.
+- Use the EXACT values from your analysis (store names, customer names, numbers).
+- NEVER use placeholder text like [Store 1] or [Value].
+- Include complete, specific information from the data.
+- Copy the exact values from your code output into your narrative.
+- Your final answer must match exactly what you found in the data, no exceptions.
+- Use the provided data to support your analysis, do not regenerate, recalculate or create new data.
+- Do NOT repeat the same tool call multiple times for the same question.
 
-**Important**: Today is {today_date}, You must never contradict the given date.
+** Your Style: **
+- Maintain a professional and friendly tone.
+- Be clear and concise in your explanations.
+- Use simple language for complex topics to ensure user understanding.
 
+"""
+
+FORMAT_INSTRUCTIONS = """
+Please use the following format:
+
+Question: the input question you must answer
+Thought: you should always think about what to do
+Action: the action to take, should be one of [{tool_names}]
+Action Input: the input to the action
+Observation: the result of the action
+... (this Thought/Action/Action Input/Observation can repeat N times)
+Thought: I now know the final answer
+Final Answer: the final answer to the original input question"""
+
+
+PANDAS_PROMPT_SUFFIX = """
 Begin!
 
 Question: {input}
@@ -62,7 +98,7 @@ class PandasAgent(BasicAgent):
         tools: List[AbstractTool] = None,
         system_prompt: str = None,
         human_prompt: str = None,
-        prompt_template: str = PANDAS_PROMPT,
+        prompt_template: str = None,
         df: Union[list[pd.DataFrame], pd.DataFrame] = None,
         **kwargs
     ):
@@ -75,9 +111,13 @@ class PandasAgent(BasicAgent):
         )
         self.name = name or "Pandas Agent"
         self.description = "A simple agent that uses the pandas library to perform data analysis tasks."
-        self.agent_type = agent_type or "zero-shot-react-description"
+        self.agent_type = agent_type or "zero-shot-react-description"  # 'openai-tools'
+        # self.agent_type = "openai-functions"
         self.df = df
-        self.prompt = self.define_prompt(PANDAS_PROMPT)
+        self._prompt_prefix = PANDAS_PROMPT_PREFIX
+        self._prompt_suffix = PANDAS_PROMPT_SUFFIX
+        self._prompt_template = prompt_template
+        self.define_prompt(prompt_template)
 
     def pandas_agent(self, df: pd.DataFrame, **kwargs):
         """
@@ -91,41 +131,25 @@ class PandasAgent(BasicAgent):
         ✅ Use Case: Best for decision-making and reasoning tasks where the agent must break problems down into multiple steps.
 
         """
-        df_locals = {}
-        # dfs_head = ""
-        df_locals["df"] = self.df
-        # dfs_head += (
-        #     f"\n\n- This is the result of `print(df.head())`:\n"
-        #     + self.df.head().to_markdown() + "\n"
-        # )
         # Create the Python REPL tool
-        python_tool = PythonAstREPLTool(locals=df_locals)
+        python_tool = PythonAstREPLTool(locals={"df": df})
         # Add it to the tools list
         additional_tools = [python_tool]
-        _prefix = """
-You are a data analysis expert working with a pandas dataframe.
-
-The dataframe is ALREADY loaded with the variable name `df`.
-DO NOT create a sample dataframe or example data. The user's actual data is already available.
-
-To analyze this DataFrame effectively:
-1. First examine the existing dataframe with df.head() and df.info()
-2. Perform analysis on the existing `df` variable
-3. DO NOT create new sample data or initialize a new dataframe
-
-Use the pandas_dataframe tool to work with this data.
-        """
         # Create the pandas agent
         return create_pandas_dataframe_agent(
             self._llm,
             df,
-            number_of_head_rows=10,
             verbose=True,
-            prefix=_prefix,
             agent_type=self.agent_type,
             allow_dangerous_code=True,
             extra_tools=additional_tools,
-            include_df_in_prompt=True
+            #include_df_in_prompt=False,
+            # number_of_head_rows=10,
+            handle_parsing_errors=True,
+            prefix=self._prompt_prefix,
+            # suffix=self._prompt_suffix,
+            max_iterations=3,
+            **kwargs
         )
 
     async def configure(self, df: pd.DataFrame = None, app=None) -> None:
@@ -175,18 +199,13 @@ Use the pandas_dataframe tool to work with this data.
 
     def define_prompt(self, prompt, **kwargs):
         now = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        # List of Tools:
         list_of_tools = ""
         for tool in self.tools:
             name = tool.name
             description = tool.description  # noqa  pylint: disable=E1101
             list_of_tools += f'- {name}: {description}\n'
         list_of_tools += "\n"
-        final_prompt = prompt.format_map(
-            SafeDict(
-                today_date=now,
-                list_of_tools=list_of_tools
-            )
-        )
         # Add dataframe information
         df_info = ""
         if hasattr(self, 'df') and self.df is not None:
@@ -200,11 +219,11 @@ Use the pandas_dataframe tool to work with this data.
             sample_rows = self.df.head(10).to_markdown()
             # Create df_info block
             df_info = f"""
-## DataFrame Information:
+## DataFrame Shape
 {df_shape}
-{df_columns}
 
-Analyze the following dataset summary and sample data.
+## DataFrame Columns
+{df_columns}
 
 ## Summary Statistics
 {summary_stats}
@@ -212,49 +231,20 @@ Analyze the following dataset summary and sample data.
 ## Sample Rows (First 10)
 {sample_rows}
 
-## Working with this DataFrame
-- Use `df` to access the entire DataFrame.
-- First examine the existing dataframe with `df.info()` and `df.describe()`.
-- Use `df.head()` to see the first few rows.
-- Use `df.tail()` to see the last few rows.
-- DO NOT create a sample daframe or example data, the user's actual data is already available.
-- You can access columns with `df['column_name']`.
-- For numerical analysis, use functions like mean(), sum(), min(), max().
-- For categorical columns, consider using value_counts() to see distributions.
-- You can create visualizations using matplotlib or seaborn through the Python tool.
-- Perform analysis over the entire DataFrame, not just a sample.
-- Use `df['column_name'].value_counts()` to get counts of unique values.
-- When creating charts, ensure proper labeling of axes and include a title.
-- For visualization requests, use matplotlib or seaborn through the Python tool.
-- Provide clear, concise explanations of your analysis steps.
-- When appropriate, suggest additional insights beyond what was directly asked.
 """
-
-        final_prompt = prompt.format_map(
-            SafeDict(
-                today_date=now,
-                list_of_tools=list_of_tools,
-                df_info=df_info,
-                **kwargs
+            tools_names = [tool.name for tool in self.tools]
+            # Create the prompt
+            self._prompt_prefix = PANDAS_PROMPT_PREFIX.format_map(
+                SafeDict(
+                    name=self.name,
+                    list_of_tools=list_of_tools,
+                    today_date=now,
+                    system_prompt_base=prompt,
+                    tools=", ".join(tools_names),
+                    format_instructions=FORMAT_INSTRUCTIONS.format(
+                        tool_names=", ".join(tools_names)),
+                    df_info=df_info,
+                    **kwargs
+                )
             )
-        )
-        # Define a structured system message
-        system_message = f"""
-        Today is {now}.
-
-        You are a data analysis assistant working with pandas DataFrames.
-
-        If an event is expected to have occurred before this date, assume that results exist.
-        If you call a tool and receive a valid answer, finalize your response immediately.
-        Do NOT repeat the same tool call multiple times for the same question.
-        """
-        chat_prompt = ChatPromptTemplate.from_messages([
-            SystemMessagePromptTemplate.from_template(system_message),
-            ChatPromptTemplate.from_template(final_prompt)
-        ])
-        return chat_prompt.partial(
-            tools=self.tools,
-            tool_names=", ".join([tool.name for tool in self.tools]),
-            name=self.name,
-            **kwargs
-        )
+            self._prompt_suffix = PANDAS_PROMPT_SUFFIX
