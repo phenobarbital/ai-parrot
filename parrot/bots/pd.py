@@ -1,9 +1,13 @@
-from typing import List, Union
+from pathlib import Path
+from typing import List, Union, Optional
+from io import BytesIO, StringIO
 from datetime import datetime, timezone
+import uuid
 import pandas as pd
 from datamodel.typedefs import SafeDict
 from langchain_experimental.tools.python.tool import PythonAstREPLTool
 from langchain_experimental.agents.agent_toolkits import create_pandas_dataframe_agent
+from navconfig import BASE_DIR
 from ..tools import AbstractTool
 from .agent import BasicAgent
 from ..models import AgentResponse
@@ -12,9 +16,11 @@ from ..models import AgentResponse
 PANDAS_PROMPT_PREFIX = """
 Your name is {name}.
 
-You are a data analysis expert working with a pandas dataframe.
+{backstory}
 
-{system_prompt_base}
+{capabilities}
+
+You are working with {num_dfs} pandas dataframes in Python, all dataframes are already loaded and available for analysis in the variables named as df1, df2, etc.
 
 **Answer the following questions as best you can. You have access to the following tools:**
 
@@ -23,71 +29,71 @@ You are a data analysis expert working with a pandas dataframe.
 Use these tools effectively to provide accurate and comprehensive responses:
 {list_of_tools}
 
-## DataFrame Information:
+** DataFrames Information: **
 {df_info}
 
-## Working with this DataFrame
-- The dataframe is already loaded and available for analysis in the variable name `df`.
+## Working with DataFrames
 - First examine the existing dataframe with `df.info()` and `df.describe()`.
-- Use `df.head()` to see the first few rows.
-- Use `df.tail()` to see the last few rows.
 - DO NOT create a sample daframe or example data, the user's actual data is already available.
 - You can access columns with `df['column_name']`.
 - For numerical analysis, use functions like mean(), sum(), min(), max().
 - For categorical columns, consider using value_counts() to see distributions.
-- You can create visualizations using matplotlib or seaborn through the Python tool.
+- You can create visualizations using matplotlib, seaborn or altair through the Python tool.
 - Perform analysis over the entire DataFrame, not just a sample.
 - Use `df['column_name'].value_counts()` to get counts of unique values.
 - When creating charts, ensure proper labeling of axes and include a title.
 - For visualization requests, use matplotlib or seaborn through the Python tool.
 - Provide clear, concise explanations of your analysis steps.
 - When appropriate, suggest additional insights beyond what was directly asked.
-- When someone asks for a chart or visualization:
-    - Use matplotlib or seaborn to create the chart
-    - Set an appropriate figure size with plt.figure(figsize=(10, 6))
-    - Add proper titles, labels, and legend
-    - Use plt.savefig('chart.png') to save the chart
-    - Use display_image('chart.png') at the end to show the image
-    - Do NOT just return the code - execute it completely
 
-Example of chart creation:
+### EDA (Exploratory Data Analysis) Capabilities
+
+This agent has built-in Exploratory Data Analysis (EDA) capabilities:
+1. For comprehensive EDA reports, use:
 ```python
-import matplotlib.pyplot as plt
-import seaborn as sns
-
-# Create figure with good size
-plt.figure(figsize=(10, 6))
-
-# Create visualization (example: bar chart)
-sns.barplot(x='store_name', y='visit_count', data=top_stores.head(10))
-plt.title('Top 10 Stores by Visit Count')
-plt.xticks(rotation=45, ha='right')
-plt.tight_layout()
-
-# Save and display
-plt.savefig('store_visits.png')
-display_image('store_visits.png')
+generate_eda_report(dataframe=df, report_dir=agent_report_dir, df_name="my_data", minimal=False, explorative=True):
 ```
+This generates an interactive HTML report with visualizations and statistics.
+2. For a quick custom EDA without external dependencies:
+```python
+quick_eda(dataframe=df, report_dir=agent_report_dir)
+```
+This performs basic analysis with visualizations for key variables.
+When a user asks for "exploratory data analysis", "EDA", "data profiling", "understand the data",
+or "data exploration", use these functionss.
+- The report will be saved to the specified directory and the function will return the file path
+- The report includes basic statistics, correlations, distributions, and categorical value counts
 
 
+## Thoughts
 {format_instructions}
 
-**IMPORTANT: When creating your final answer:**:
+**IMPORTANT: When creating your final answer**
 - Today is {today_date}, You must never contradict the given date.
+- When creating visualizations, ALWAYS use the non-interactive Matplotlib backend (Agg)
+- For saving files, use the following directory: agent_report_dir={agent_report_dir}.
 - When you perform calculations (e.g., df.groupby().count()), store the results in variables
 - In your final answer, ONLY use the EXACT values from your Python calculations.
 - Use the EXACT values from your analysis (store names, customer names, numbers).
-- NEVER use placeholder text like [Store 1] or [Value].
-- Include complete, specific information from the data.
+- NEVER use placeholder text like [Store 1] or [Value], include complete, specific information from the data.
 - Copy the exact values from your code output into your narrative.
 - Your final answer must match exactly what you found in the data, no exceptions.
 - Use the provided data to support your analysis, do not regenerate, recalculate or create new data.
 - Do NOT repeat the same tool call multiple times for the same question.
 
-** Your Style: **
-- Maintain a professional and friendly tone.
-- Be clear and concise in your explanations.
-- Use simple language for complex topics to ensure user understanding.
+**IMPORTANT: HANDLING FILE RESULTS**
+
+When you generate a file like a chart or report, you MUST format your response exactly like this:
+
+Thought: I now know the final answer
+Final Answer: I've generated a [type] for your data.
+
+The [type] has been saved to:
+filename: [file_path]
+
+[Brief description of what you did and what the file contains]
+
+{rationale}
 
 """
 
@@ -120,6 +126,7 @@ class PandasAgent(BasicAgent):
     def __init__(
         self,
         name: str = 'Agent',
+        agent_id: str = None,
         agent_type: str = None,
         llm: str = 'vertexai',
         tools: List[AbstractTool] = None,
@@ -127,24 +134,49 @@ class PandasAgent(BasicAgent):
         human_prompt: str = None,
         prompt_template: str = None,
         df: Union[list[pd.DataFrame], pd.DataFrame] = None,
+        queries: List[str] = None,
         **kwargs
     ):
-        super().__init__(
-            name=name,
-            llm=llm,
-            system_prompt=system_prompt,
-            human_prompt=human_prompt,
-            **kwargs
+        if isinstance(df, pd.DataFrame):
+            self.df = [df]
+        elif isinstance(df, list):
+            self.df = df
+        else:
+            raise ValueError(
+                f"Expected pandas DataFrame, got {type(df)}"
+            )
+        self.df_locals: dict = {}
+        # Chatbot ID:
+        self.chatbot_id: uuid.UUID = kwargs.pop(
+            'chatbot_id',
+            str(uuid.uuid4().hex)
         )
-        self.name = name or "Pandas Agent"
-        self.description = "A simple agent that uses the pandas library to perform data analysis tasks."
-        self.agent_type = agent_type or "zero-shot-react-description"  # 'openai-tools'
-        # self.agent_type = "openai-functions"
-        self.df = df
+        if self.chatbot_id is None:
+            self.chatbot_id = uuid.uuid4().hex
+        # Agent ID:
         self._prompt_prefix = PANDAS_PROMPT_PREFIX
         self._prompt_suffix = PANDAS_PROMPT_SUFFIX
         self._prompt_template = prompt_template
-        self.define_prompt(prompt_template)
+        self._capabilities: str = kwargs.get('capabilities', None)
+        self.name = name or "Pandas Agent"
+        self.description = "A simple agent that uses the pandas library to perform data analysis tasks."
+        self.agent_report_dir = BASE_DIR.joinpath('static', 'reports', 'agents', self.chatbot_id)
+        if self.agent_report_dir.exists() is False:
+            self.agent_report_dir.mkdir(parents=True, exist_ok=True)
+        super().__init__(
+            name=name,
+            chatbot_id=self.chatbot_id,
+            llm=llm,
+            system_prompt=system_prompt,
+            human_prompt=human_prompt,
+            tools=tools,
+            **kwargs
+        )
+        self.agent_type = agent_type or "zero-shot-react-description"  # 'openai-tools'
+
+    def get_capabilities(self) -> str:
+        """Get the capabilities of the agent."""
+        return self._capabilities
 
     def pandas_agent(self, df: pd.DataFrame, **kwargs):
         """
@@ -159,7 +191,9 @@ class PandasAgent(BasicAgent):
 
         """
         # Create the Python REPL tool
-        python_tool = PythonAstREPLTool(locals={"df": df})
+        python_tool = PythonAstREPLTool(locals=self.df_locals)
+        # Add EDA functions to the tool's locals
+        python_tool.run("from parrot.bots.tools.eda import quick_eda, generate_eda_report, list_available_dataframes")
         # Add it to the tools list
         additional_tools = [python_tool]
         # Create the pandas agent
@@ -170,12 +204,9 @@ class PandasAgent(BasicAgent):
             agent_type=self.agent_type,
             allow_dangerous_code=True,
             extra_tools=additional_tools,
-            #include_df_in_prompt=False,
-            # number_of_head_rows=10,
-            handle_parsing_errors=True,
             prefix=self._prompt_prefix,
-            # suffix=self._prompt_suffix,
             max_iterations=3,
+            handle_parsing_errors=True,
             **kwargs
         )
 
@@ -193,6 +224,26 @@ class PandasAgent(BasicAgent):
         self.agent = self.pandas_agent(self.df)
         # 2. Create Agent Executor - This is where we typically run the agent.
         self._agent = self.agent
+
+    def mimefromext(self, ext: str) -> str:
+        """Get the mime type from the file extension."""
+        mime_types = {
+            '.csv': 'text/csv',
+            '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            '.xls': 'application/vnd.ms-excel',
+            '.json': 'application/json',
+            '.txt': 'text/plain',
+            '.html': 'text/html',
+            '.htm': 'text/html',
+            '.pdf': 'application/pdf',
+            '.png': 'image/png',
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.gif': 'image/gif',
+            '.svg': 'image/svg+xml',
+            '.md': 'text/markdown',
+        }
+        return mime_types.get(ext, 'application/octet-stream')
 
     async def invoke(self, query: str):
         """invoke.
@@ -212,6 +263,16 @@ class PandasAgent(BasicAgent):
         )
         try:
             response = AgentResponse(question=query, **result)
+            # check if return is a file:
+            if '\nfilename:' in response.output:
+                # extract all text after filename:
+                try:
+                    filename = Path(response.output.split('\nfilename:')[1].strip()).resolve()
+                    # define the response, content-type based on file extension:
+                    response.content_type = self.mimefromext(filename.suffix)
+                    response.filename = filename
+                except AttributeError:
+                    pass
             try:
                 return self.as_markdown(
                     response
@@ -234,32 +295,43 @@ class PandasAgent(BasicAgent):
             list_of_tools += f'- {name}: {description}\n'
         list_of_tools += "\n"
         # Add dataframe information
-        df_info = ""
-        if hasattr(self, 'df') and self.df is not None:
+        num_dfs = len(self.df)
+        for i, dataframe in enumerate(self.df):
+            df_name = f"df{i + 1}"
+            self.df_locals[df_name] = dataframe
+            self.df_locals['agent_report_dir'] = self.agent_report_dir
             # Get basic dataframe info
-            df_shape = f"DataFrame Shape: {self.df.shape[0]} rows × {self.df.shape[1]} columns"
-            df_columns = f"Columns: {', '.join(self.df.columns.tolist())}"
+            df_shape = f"DataFrame Shape: {dataframe.shape[0]} rows × {dataframe.shape[1]} columns"
+            df_columns = f"Columns: {', '.join(dataframe.columns.tolist())}"
             # Generate summary statistics
-            summary_stats = self.df.describe(include='all').to_markdown()
-
+            summary_stats = dataframe.describe(include='all').to_markdown()
             # Generate sample rows
-            sample_rows = self.df.head(10).to_markdown()
+            sample_rows = dataframe.head(10).to_markdown()
             # Create df_info block
             df_info = f"""
-## DataFrame Shape
+** DataFrame {df_name} Information **
+
+## {df_name} Shape
 {df_shape}
 
-## DataFrame Columns
+## {df_name} Columns
 {df_columns}
 
-## Summary Statistics
+## {df_name} Summary Statistics
 {summary_stats}
 
-## Sample Rows (First 10)
+## {df_name} Sample Rows (First 10)
 {sample_rows}
 
 """
             tools_names = [tool.name for tool in self.tools]
+            capabilities = ''
+            if self._capabilities:
+                capabilities = """
+                **Your Capabilities:**
+
+                {capabilities}
+                """
             # Create the prompt
             self._prompt_prefix = PANDAS_PROMPT_PREFIX.format_map(
                 SafeDict(
@@ -271,7 +343,15 @@ class PandasAgent(BasicAgent):
                     format_instructions=FORMAT_INSTRUCTIONS.format(
                         tool_names=", ".join(tools_names)),
                     df_info=df_info,
+                    num_dfs=num_dfs,
+                    capabilities=capabilities,
+                    rationale=self.rationale,
+                    backstory=self.backstory,
+                    agent_report_dir=self.agent_report_dir,
                     **kwargs
                 )
             )
             self._prompt_suffix = PANDAS_PROMPT_SUFFIX
+
+    def default_backstory(self) -> str:
+        return "You are a helpful assistant built to provide comprehensive guidance and support on data calculations and data analysis working with pandas dataframes."

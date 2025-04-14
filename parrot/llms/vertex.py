@@ -21,15 +21,19 @@ class VertexLLM(AbstractLLM):
     model: str = "gemini-2.0-pro"
     max_tokens: int = 1024
     supported_models: list = [
-        "gemini-1.0-pro",
+        "gemini-2.0-pro",
+        "gemini-2.5-pro-preview-03-25",
+        "gemini-2.0-flash",
         "gemini-1.5-pro-001",
+        "gemini-1.5-flash-8b",
         "gemini-1.5-pro-exp-0801",
         "gemini-1.5-flash-preview-0514",
         "gemini-1.5-flash-001",
         "chat-bison@001",
         "chat-bison@002",
-        "claude-3-opus@20240229",
-        'claude-3-5-sonnet@20240620'
+        "imagen-3.0-generate-002",
+        "gemini-2.0-flash-live-001",
+        "veo-2.0-generate-001"
     ]
 
     def __init__(self, *args, use_chat: bool = False, **kwargs):

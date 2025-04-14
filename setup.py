@@ -167,7 +167,8 @@ setup(
         "backoff==2.2.1",
         "asyncdb==2.11.5",
         "google-cloud-bigquery==3.30.0",
-        "numexpr==2.10.2"
+        "numexpr==2.10.2",
+        "altair==5.5.0"
     ],
     extras_require={
         "agents": [
