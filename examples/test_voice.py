@@ -29,12 +29,19 @@ async def test_voice_tool():
         # voice_model="en-GB-News-K",
         # output_format="MP3",
     )
-    print("Tool instantiated successfully.")
-    print(f"  > Using Voice Model: {voice_tool.voice_model}")
-    print(f"  > Using Output Format: {voice_tool.output_format}")
-    print(f"  > Using Language Code: {voice_tool.language_code}")
+    print(
+        f"  > Using Voice Model: {voice_tool.voice_model}"
+    )
+    print(
+        f"  > Using Output Format: {voice_tool.output_format}"
+    )
+    print(
+        f"  > Using Language Code: {voice_tool.language_code}"
+    )
     # 4. Run the Tool's Async Method
-    print(f"\nRunning tool with markdown summary...")
+    print(
+        f"\nRunning tool with markdown summary..."
+    )
     # Pass the markdown text as the 'query' argument to _arun
     result = await voice_tool._arun(query=SAMPLE_MARKDOWN_SUMMARY)
     # 5. Evaluate the Result

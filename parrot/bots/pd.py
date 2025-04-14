@@ -11,6 +11,7 @@ from navconfig import BASE_DIR
 from ..tools import AbstractTool
 from .agent import BasicAgent
 from ..models import AgentResponse
+from ..conf import BASE_STATIC_URL
 
 
 PANDAS_PROMPT_PREFIX = """
@@ -165,10 +166,10 @@ class PandasAgent(BasicAgent):
         self._capabilities: str = kwargs.get('capabilities', None)
         self.name = name or "Pandas Agent"
         self.description = "A simple agent that uses the pandas library to perform data analysis tasks."
-        self.agent_report_dir = BASE_DIR.joinpath('static', 'reports', 'agents', self.chatbot_id)
+        self._static_path = BASE_DIR.joinpath('static')
+        self.agent_report_dir = self._static_path.joinpath('reports', 'agents', self.chatbot_id)
         if self.agent_report_dir.exists() is False:
             self.agent_report_dir.mkdir(parents=True, exist_ok=True)
-        print('TOOLS > ', tools)
         super().__init__(
             name=name,
             chatbot_id=self.chatbot_id,
@@ -248,8 +249,39 @@ class PandasAgent(BasicAgent):
             '.gif': 'image/gif',
             '.svg': 'image/svg+xml',
             '.md': 'text/markdown',
+            '.ogg': 'audio/ogg',
+            '.wav': 'audio/wav',
+            '.mp3': 'audio/mpeg',
+            '.mp4': 'video/mp4',
         }
-        return mime_types.get(ext, 'application/octet-stream')
+        return mime_types.get(ext, None)
+
+    def extract_filenames(self, response: AgentResponse) -> List[Path]:
+        """Extract filenames from the content."""
+        # Split the content by lines
+        output_lines = response.output.splitlines()
+        current_filename = ""
+        filenames = {}
+        for line in output_lines:
+            if 'filename:' in line:
+                current_filename = line.split('filename:')[1].strip()
+                if current_filename:
+                    try:
+                        filename_path = Path(current_filename).resolve()
+                        if filename_path.is_file():
+                            content_type = self.mimefromext(filename_path.suffix)
+                            url = str(filename_path).replace(str(self._static_path), BASE_STATIC_URL)
+                            filenames[filename_path.name] = {
+                                'content_type': content_type,
+                                'file_path': filename_path,
+                                'filename': filename_path.name,
+                                'url': url
+                            }
+                        continue
+                    except AttributeError:
+                        pass
+        if filenames:
+            response.filename = filenames
 
     async def invoke(self, query: str):
         """invoke.
@@ -270,15 +302,12 @@ class PandasAgent(BasicAgent):
         try:
             response = AgentResponse(question=query, **result)
             # check if return is a file:
-            if '\nfilename:' in response.output:
-                # extract all text after filename:
-                try:
-                    filename = Path(response.output.split('\nfilename:')[1].strip()).resolve()
-                    # define the response, content-type based on file extension:
-                    response.content_type = self.mimefromext(filename.suffix)
-                    response.filename = filename
-                except AttributeError:
-                    pass
+            try:
+                self.extract_filenames(response)
+            except Exception as exc:
+                self.logger.error(
+                    f"Unable to extract filenames: {exc}"
+                )
             try:
                 return self.as_markdown(
                     response
