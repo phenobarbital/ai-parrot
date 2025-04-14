@@ -176,6 +176,9 @@ class AbstractBot(DBInterface, ABC):
         self._llm_class: str = None
         self._default_llm: str = kwargs.get('use_llm', 'vertexai')
         self._llm_model = kwargs.get('model_name', 'gemini-2.0-pro')
+        self._llm_temp = kwargs.get('temperature', 0.2)
+        self._llm_top_k = kwargs.get('top_k', 30)
+        self._llm_top_p = kwargs.get('top_p', 0.6)
         self._llm_config = kwargs.get('model_config', {})
         if self._llm_config:
             self._llm_model = self._llm_config.pop('model', self._llm_model)
@@ -270,11 +273,13 @@ class AbstractBot(DBInterface, ABC):
     def default_rationale(self) -> str:
         # TODO: read rationale from a file
         return (
-            "When responding to user queries, ensure that you provide accurate and up-to-date information.\n"
-            "Be polite and clear in your explanations, "
-            "ensuring that responses are based only on verified information from owned sources. "
-            "If you are unsure, let the user know and avoid making assumptions. Maintain a professional tone in all responses.\n"
-            "You are a fluent speaker, you can talk and respond fluently in English or Spanish, and you must answer in the same language as the user's question. If the user's language is not English, you should translate your response into their language.\n"
+            "** Your Style: **\n"
+            "- When responding to user queries, ensure that you provide accurate and up-to-date information.\n"
+            "- Be polite, clear and concise in your explanations.\n"
+            "- ensuring that responses are based only on verified information from owned sources.\n"
+            "- If you are unsure, let the user know and avoid making assumptions. Maintain a professional tone in all responses.\n"
+            "- Use simple language for complex topics to ensure user understanding.\n"
+            "- You are a fluent speaker, you can talk and respond fluently in English or Spanish, and you must answer in the same language as the user's question. If the user's language is not English, you should translate your response into their language.\n"
         )
 
     def default_backstory(self) -> str:
@@ -337,7 +342,9 @@ class AbstractBot(DBInterface, ABC):
         """
         Configuration of LLM.
         """
-        if not llm:
+        if self._llm_obj is not None and isinstance(self._llm_obj, AbstractLLM):
+            self._llm = self._llm_obj.get_llm()
+        elif not llm:
             # Using Configuration or Default
             if self._llm_class:
                 self._llm_obj = get_llm(
@@ -349,9 +356,9 @@ class AbstractBot(DBInterface, ABC):
                 # Using Default Configuration:
                 self._llm_obj = self.llm_chain(
                     llm=self._default_llm,
-                    temperature=0.2,
-                    top_k=30,
-                    Top_p=0.6,
+                    temperature=self._llm_temp,
+                    top_k=self._llm_top_k,
+                    top_p=self._llm_top_p,
                 )
             self._llm = self._llm_obj.get_llm()
         elif isinstance(llm, str):
@@ -373,8 +380,6 @@ class AbstractBot(DBInterface, ABC):
             self._llm = self._llm_obj.get_llm()
         elif isinstance(self._llm_obj, AbstractLLM):
             self._llm = self._llm_obj.get_llm()
-        elif self._llm_obj is not None:
-            self._llm = self._llm_obj
         else:
             # TODO: Calling a Default LLM
             # TODO: passing the default configuration
@@ -408,6 +413,20 @@ class AbstractBot(DBInterface, ABC):
                 )
         return new_docs
 
+    def safe_format_template(self, template, **kwargs):
+        """
+        Format a template string while preserving content inside triple backticks.
+        """
+        # Split the template by triple backticks
+        parts = template.split("```")
+
+        # Format only the odd-indexed parts (outside triple backticks)
+        for i in range(0, len(parts), 2):
+            parts[i] = parts[i].format_map(SafeDict(**kwargs))
+
+        # Rejoin with triple backticks
+        return "```".join(parts)
+
     def _define_prompt(self, config: Optional[dict] = None):
         """
         Define the System Prompt and replace variables.
@@ -416,15 +435,16 @@ class AbstractBot(DBInterface, ABC):
         if config:
             for key, val in config.items():
                 setattr(self, key, val)
-        # Creating the variables:
-        self.system_prompt_template = self.system_prompt_template.format_map(
-            SafeDict(
-                name=self.name,
-                role=self.role,
-                goal=self.goal,
-                backstory=self.backstory,
-                rationale=self.rationale
-            )
+
+        pre_context = "\n".join(f"- {a}." for a in self.pre_instructions)
+        self.system_prompt_template = self.safe_format_template(
+            self.system_prompt_template,
+            name=self.name,
+            role=self.role,
+            goal=self.goal,
+            backstory=self.backstory,
+            rationale=self.rationale,
+            pre_context=pre_context,
         )
         # print('Template Prompt: \n', self.system_prompt_template)
 
@@ -468,7 +488,6 @@ class AbstractBot(DBInterface, ABC):
 
     def configure_store(self, **kwargs):
         # TODO: Implement VectorStore Configuration
-        print('SELF > ', self._vector_store)
         if isinstance(self._vector_store, list):
             # Is a list of vector stores instances:
             for st in self._vector_store:
@@ -479,7 +498,6 @@ class AbstractBot(DBInterface, ABC):
                 except ImportError:
                     continue
         elif isinstance(self._vector_store, dict):
-            print('< ENTERING HERE > ', )
             # Is a single vector store instance:
             store_cls = self._get_database_store(self._vector_store)
             store_cls.use_database = self._use_vector
@@ -545,7 +563,6 @@ class AbstractBot(DBInterface, ABC):
     def get_response(self, response: dict, query: str = None):
         if 'error' in response:
             return response  # return this error directly
-        print('GET DOCUMENTS > ', self.return_sources)
         try:
             response = ChatResponse(**response)
             response.query = query
@@ -590,10 +607,14 @@ class AbstractBot(DBInterface, ABC):
             self.configure_llm(llm=new_llm, config=llm_config)
         # define the Pre-Context
         pre_context = "\n".join(f"- {a}." for a in self.pre_instructions)
-        custom_template = self.system_prompt_template.format_map(
-            SafeDict(
-                summaries=pre_context
-            )
+        # custom_template = self.system_prompt_template.format_map(
+        #     SafeDict(
+        #         summaries=pre_context
+        #     )
+        # )
+        custom_template = self.safe_format_template(
+            self.system_prompt_template,
+            summaries=pre_context
         )
 
         # Create prompt templates
@@ -685,12 +706,13 @@ class AbstractBot(DBInterface, ABC):
             metric_type: str = None,
             **kwargs
     ):
-        pre_context = "\n".join(f"- {a}." for a in self.pre_instructions)
-        system_prompt = self.system_prompt_template.format_map(
-            SafeDict(
-                summaries=pre_context
-            )
-        )
+        # pre_context = "\n".join(f"- {a}." for a in self.pre_instructions)
+        # system_prompt = self.system_prompt_template.format_map(
+        #     SafeDict(
+        #         summaries=pre_context
+        #     )
+        # )
+        system_prompt = self.system_prompt_template
         human_prompt = self.human_prompt_template.replace(
             '**Chat History:**', ''
         )
@@ -971,7 +993,6 @@ class AbstractBot(DBInterface, ABC):
                 return_messages=True
             )
         async with self.store as store:  #pylint: disable=E1101
-            print('STORES > ', self.stores, store)
             # Check if we have multiple stores:
             if self._use_vector:
                 if len(self.stores) > 1:

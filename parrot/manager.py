@@ -10,7 +10,9 @@ from navconfig.logging import logging
 from .bots.abstract import AbstractBot
 from .bots.basic import BasicBot
 from .bots.chatbot import Chatbot
+from .bots.pd import PandasAgent
 from .handlers.chat import ChatHandler, BotHandler
+from .handlers.agents import AgentHandler
 from .handlers import ChatbotHandler
 from .models import ChatbotModel
 
@@ -27,6 +29,7 @@ class BotManager:
     def __init__(self) -> None:
         self.app = None
         self._bots: Dict[str, AbstractBot] = {}
+        self._agents: Dict[str, AbstractBot] = {}
         self.logger = logging.getLogger(
             name='Parrot.Manager'
         )
@@ -144,6 +147,29 @@ class BotManager:
         """Get all Bots declared on Manager."""
         return self._bots
 
+    async def create_agent(self, class_name: Any = None, name: str = None, **kwargs) -> AbstractBot:
+        if class_name is None:
+            class_name = PandasAgent
+        agent = class_name(**kwargs)
+        self.add_agent(agent)
+        if 'llm' in kwargs:
+            llm = kwargs['llm']
+            llm_name = llm.pop('name')
+            model = llm.pop('model')
+            llm = agent.load_llm(
+                llm_name, model=model, **llm
+            )
+            agent.llm = llm
+        return agent
+
+    def add_agent(self, agent: AbstractBot) -> None:
+        """Add a Agent to the manager."""
+        self._agents[agent.chatbot_id] = agent
+
+    def get_agent(self, name: str) -> AbstractBot:
+        """Get a Agent by ID."""
+        return self._agents.get(name)
+
     def get_app(self) -> web.Application:
         """Get the app."""
         if self.app is None:
@@ -170,6 +196,15 @@ class BotManager:
         router.add_view(
             '/api/v1/chat/{chatbot_name}',
             ChatHandler
+        )
+        # Agent Handler:
+        router.add_view(
+            '/api/v1/agent',
+            AgentHandler
+        )
+        router.add_view(
+            '/api/v1/agent/{agent_name}',
+            AgentHandler
         )
         # ChatBot Manager
         ChatbotHandler.configure(self.app, '/api/v1/bots')
