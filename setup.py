@@ -222,6 +222,7 @@ setup(
         "google": [
             "langchain-google-genai==2.0.5",
             "langchain-google-vertexai==2.0.7",
+            "google-cloud-texttospeech==2.26.0"
             # "vertexai==1.71.1",
         ],
         "hunggingfaces": [

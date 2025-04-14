@@ -47,6 +47,7 @@ from .abstract import AbstractBot
 from .prompts import AGENT_PROMPT
 from ..models import AgentResponse
 from ..tools import AbstractTool, SearchTool, MathTool, DuckDuckGoSearchTool
+from ..tools.gvoice import GoogleVoiceTool
 
 
 os.environ["GRPC_ENABLE_FORK_SUPPORT"] = "0"
@@ -105,10 +106,14 @@ class BasicAgent(AbstractBot):
         )
 
     def default_tools(self, tools: list = None) -> List[AbstractTool]:
+        voice_tool = GoogleVoiceTool(
+            name="podcast_generator_tool"
+        )
         ctools = [
             DuckDuckGoSearchTool(),
             # SearchTool(),
-            MathTool()
+            MathTool(),
+            voice_tool,
         ]
         if tools:
             ctools.extend(tools)
