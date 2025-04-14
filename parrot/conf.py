@@ -120,7 +120,11 @@ if not GOOGLE_TTS_SERVICE.is_absolute():
 if not GOOGLE_TTS_SERVICE.exists():
     GOOGLE_TTS_SERVICE = None
 
-
+# BASE STATIC:
+BASE_STATIC_URL = config.get(
+    'BASE_STATIC_URL',
+    fallback='http://localhost:5000/static'
+)
 
 # Google SerpAPI:
 SERPAPI_API_KEY = config.get('SERPAPI_API_KEY')

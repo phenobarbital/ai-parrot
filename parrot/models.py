@@ -31,8 +31,7 @@ class AgentResponse(BaseModel):
     intermediate_steps: list = Field(default_factory=list)
     chat_history: list = Field(repr=True, default_factory=list)
     source_documents: list = Field(required=False, default_factory=list)
-    content_type: str = Field(required=False, default="text/plain")
-    filename: str = Field(required=False)
+    filename: Dict[Path, str] = Field(required=False)
 
     def __post_init__(self) -> None:
         super().__post_init__()

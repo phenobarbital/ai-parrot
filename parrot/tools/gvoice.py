@@ -43,28 +43,39 @@ class GoogleVoiceTool(BaseTool):
 
     def is_markdown(self, text: str) -> bool:
         """
-        Checks if a text string is likely Markdown by looking for common syntax.
+        Checks if a text string is likely Markdown by looking for structural and common syntax.
         """
-        markdown_patterns = [
-            r"#+\s",  # Headings (e.g., # Hello, ## World)
-            r"\*\*\w+\*\*",  # Bold (e.g., **bold**)
-            r"\*\w+\*",    # Italics (e.g., *italic*)
-            r"__\w+__",  # Bold (alternative)
-            r"_\w+_",    # Italics (alternative)
-            r"\[.+?\]\(.+?\)",  # Links (e.g., [Link](url))
-            r"\d+\.\s",  # Ordered lists (e.g., 1. Item)
-            r"-\s",      # Unordered lists (e.g., - Item)
-            r"\*\s",      # Unordered lists (alternative)
-            r"`[^`]+`",  # Inline code (e.g., `code`)
-            r"```",      # Code blocks
-            r"> .+",     # Blockquotes
-            r"---",      # Horizontal rules
-            r"\n\n",     # Multiple newlines (paragraph breaks)
-        ]
-        for pattern in markdown_patterns:
-            if re.search(pattern, text):
-                return True
+        if not text.strip():
+            return False  # Empty text is not Markdown
+
+        # Check for structural elements that often indicate Markdown
+        if re.search(r"^#+\s", text, re.MULTILINE):  # Headings at the start of lines
+            return True
+        if re.search(r"^\s*([-*]\s|\d+\.\s)", text, re.MULTILINE):  # Lists at the start of lines
+            return True
+        if re.search(r"```", text):  # Code blocks
+            return True
+        if re.search(r"\[.+?\]\(.+?\)", text):  # Links
+            return True
+        if re.search(r"> .+", text, re.MULTILINE):  # Blockquotes
+            return True
+        if re.search(r"^-{3,}$|^\*{3,}$|^_{3,}$", text, re.MULTILINE):  # Horizontal rules
+            return True
+        if re.search(r"\*\*\w+\*\*", text) or re.search(r"__\w+__", text):  # Bold
+            return True
+        if re.search(r"\*\w+\*", text) or re.search(r"_\w+_", text):  # Italics
+            return True
+        if re.search(r"`[^`]+`", text):  # Inline code
+            return True
+        if re.search(r"\n\n", text.strip()): # Paragraph breaks (more than one newline)
+            return True
+
+        # If none of the stronger structural indicators are found, do a more general check
+        if re.search(r"^[#*_>-\d`\[]", text.strip()[0]): # Check if the first non-space char is a common Markdown marker
+            return True
+
         return False
+
 
     def text_to_ssml(self, text: str) -> str:
         """Converts plain text to SSML."""
@@ -95,6 +106,14 @@ class GoogleVoiceTool(BaseTool):
 
             if line == "...":
                 ssml += '<break time="500ms"/>'  # Keep the pause for ellipses
+                continue
+
+            # Handle Markdown headings
+            heading_match = re.match(r"^(#+)\s+(.*)", line)
+            if heading_match:
+                heading_level = len(heading_match.group(1))  # Number of '#'
+                heading_text = heading_match.group(2).strip()
+                ssml += f'<p><emphasis level="strong">{escape(heading_text)}</emphasis></p>'
                 continue
 
             if line:

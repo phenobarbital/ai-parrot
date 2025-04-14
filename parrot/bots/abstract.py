@@ -385,9 +385,9 @@ class AbstractBot(DBInterface, ABC):
             # TODO: passing the default configuration
             self._llm_obj = self.llm_chain(
                 llm=self._default_llm,
-                temperature=0.2,
-                top_k=30,
-                top_p=0.6,
+                temperature=self._llm_temp,
+                top_k=self._llm_top_k,
+                top_p=self._llm_top_p,
                 use_chat=use_chat
             )
             self._llm = self._llm_obj.get_llm()
