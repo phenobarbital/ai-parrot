@@ -64,6 +64,11 @@ or "data exploration", use these functionss.
 - The report will be saved to the specified directory and the function will return the file path
 - The report includes basic statistics, correlations, distributions, and categorical value counts
 
+### Podcast capabilities
+
+if the user asks for a podcast, use the GoogleVoiceTool to generate a podcast-style audio file from the markdown text using Google Cloud Text-to-Speech.
+- The audio file will be saved in own output directory and returned as a dictionary with a *file_path* key.
+- Provide the summary text or executive summary in text format to the GoogleVoiceTool.
 
 ## Thoughts
 {format_instructions}
@@ -163,6 +168,7 @@ class PandasAgent(BasicAgent):
         self.agent_report_dir = BASE_DIR.joinpath('static', 'reports', 'agents', self.chatbot_id)
         if self.agent_report_dir.exists() is False:
             self.agent_report_dir.mkdir(parents=True, exist_ok=True)
+        print('TOOLS > ', tools)
         super().__init__(
             name=name,
             chatbot_id=self.chatbot_id,
@@ -195,7 +201,7 @@ class PandasAgent(BasicAgent):
         # Add EDA functions to the tool's locals
         python_tool.run("from parrot.bots.tools.eda import quick_eda, generate_eda_report, list_available_dataframes")
         # Add it to the tools list
-        additional_tools = [python_tool]
+        self.tools.append(python_tool)
         # Create the pandas agent
         return create_pandas_dataframe_agent(
             self._llm,
@@ -203,7 +209,7 @@ class PandasAgent(BasicAgent):
             verbose=True,
             agent_type=self.agent_type,
             allow_dangerous_code=True,
-            extra_tools=additional_tools,
+            extra_tools=self.tools,
             prefix=self._prompt_prefix,
             max_iterations=3,
             handle_parsing_errors=True,

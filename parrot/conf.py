@@ -101,11 +101,26 @@ MAX_BATCH_SIZE = config.get('MAX_BATCH_SIZE', fallback=768)
 # Enable Teams Bot:
 ENABLE_AZURE_BOT = config.getboolean('ENABLE_AZURE_BOT', fallback=True)
 
-## Google API:
+## Google Services:
 GOOGLE_API_KEY = config.get('GOOGLE_API_KEY')
 ### Google Service Credentials:
 GA_SERVICE_ACCOUNT_NAME = config.get('GA_SERVICE_ACCOUNT_NAME', fallback="google.json")
 GA_SERVICE_PATH = config.get('GA_SERVICE_PATH', fallback="env/google/")
+if isinstance(GA_SERVICE_PATH, str):
+    GA_SERVICE_PATH = Path(GA_SERVICE_PATH)
+
+GOOGLE_TTS_SERVICE = config.get(
+    'GOOGLE_TTS_SERVICE',
+    fallback=GA_SERVICE_PATH.joinpath('tts-service.json')
+)
+if isinstance(GOOGLE_TTS_SERVICE, str):
+    GOOGLE_TTS_SERVICE = Path(GOOGLE_TTS_SERVICE)
+if not GOOGLE_TTS_SERVICE.is_absolute():
+    GOOGLE_TTS_SERVICE = BASE_DIR.joinpath(GOOGLE_TTS_SERVICE)
+if not GOOGLE_TTS_SERVICE.exists():
+    GOOGLE_TTS_SERVICE = None
+
+
 
 # Google SerpAPI:
 SERPAPI_API_KEY = config.get('SERPAPI_API_KEY')
