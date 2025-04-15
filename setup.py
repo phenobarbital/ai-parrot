@@ -165,10 +165,9 @@ setup(
         "langchain_postgres==0.0.14",
         "python-datamodel>=0.10.17",
         "backoff==2.2.1",
-        "asyncdb==2.11.5",
+        "asyncdb>=2.11.6",
         "google-cloud-bigquery==3.30.0",
-        "numexpr==2.10.2",
-        "altair==5.5.0"
+        "numexpr==2.10.2"
     ],
     extras_require={
         "agents": [

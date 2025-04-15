@@ -104,7 +104,7 @@ class AgentHandler(BaseView):
         app = self.request.app
         _id = self.request.match_info.get('agent_name', None)
         data = await self.request.json()
-        name = data.get('name', None)
+        name = data.pop('name', None)
         if not name:
             return self.json_response(
                 {
@@ -112,10 +112,10 @@ class AgentHandler(BaseView):
                 },
                 status=404
             )
-        _id = data.get('chatbot_id', None)
+        _id = data.pop('chatbot_id', None)
         # To create a new agent, we need:
         # A list of queries (Query slugs) to be converted into dataframes
-        query = data.get('query', None)
+        query = data.pop('query', None)
         # A list of dataframes to be used as context for the agent
         if isinstance(query, dict):
             # is a MultiQuery execution, use the MultiQS class engine to do it:
@@ -140,10 +140,10 @@ class AgentHandler(BaseView):
                 status=400
             )
         # A list of tools to be used by the agent
-        tools = kwargs.get('tools', [])
+        tools = kwargs.pop('tools', [])
         # a backstory and an optional capabilities for Bot.
-        backstory = data.get('backstory', None)
-        capabilities = data.get('capabilities', None)
+        backstory = data.pop('backstory', None)
+        capabilities = data.pop('capabilities', None)
         try:
             manager = app['bot_manager']
         except KeyError:
@@ -167,6 +167,7 @@ class AgentHandler(BaseView):
                 "tools": tools,
                 "backstory": backstory,
                 "capabilities": capabilities,
+                **data
             }
             if _id:
                 args['chatbot_id'] = _id

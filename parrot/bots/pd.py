@@ -67,9 +67,9 @@ or "data exploration", use these functionss.
 
 ### Podcast capabilities
 
-if the user asks for a podcast, use the GoogleVoiceTool to generate a podcast-style audio file from the markdown text using Google Cloud Text-to-Speech.
+if the user asks for a podcast, use the GoogleVoiceTool to generate a podcast-style audio file from a summarized text using Google Cloud Text-to-Speech.
 - The audio file will be saved in own output directory and returned as a dictionary with a *file_path* key.
-- Provide the summary text or executive summary in text format to the GoogleVoiceTool.
+- Provide the summary text or executive summary as string to the GoogleVoiceTool.
 
 ## Thoughts
 {format_instructions}
