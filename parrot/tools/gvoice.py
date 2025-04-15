@@ -16,13 +16,13 @@ from parrot.conf import GOOGLE_TTS_SERVICE
 
 
 class GoogleVoiceTool(BaseTool):
-    """Generate a podcast-style audio file from markdown text using Google Cloud Text-to-Speech."""
+    """Generate a podcast-style audio file from Text using Google Cloud Text-to-Speech."""
     name: str = "podcast_generator_tool"
     description: str = (
-        "Generates a podcast-style audio file from Markdown text using Google Cloud Text-to-Speech."
+        "Generates a podcast-style audio file from a given text script using Google Cloud Text-to-Speech."
         " This tool is useful for creating audio content from text, such as articles or blog posts."
-        " Provide the text in Text or markdown format, provide the text *as-is* without enclosing on backticks or quotes."
         " It can also be used to convert text to speech for accessibility purposes."
+        " Provide the text *as-is* without enclosing on backticks or backquotes."
         " The audio file will be saved in the specified output directory and returned as a dictionary with a *file_path* key."
     )
     voice_model: str = "en-US-Neural2-F"  # "en-US-Studio-O"
@@ -84,6 +84,9 @@ class GoogleVoiceTool(BaseTool):
 
     def markdown_to_ssml(self, markdown_text: str) -> str:
         """Converts Markdown text to SSML, handling code blocks and ellipses."""
+
+        if markdown_text.startswith("```text"):
+            markdown_text = markdown_text[len("```text"):].strip()
 
         ssml = "<speak>"
         lines = markdown_text.split('\n')
