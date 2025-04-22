@@ -150,9 +150,10 @@ class PandasAgent(BasicAgent):
         elif isinstance(df, list):
             self.df = df
         else:
-            raise ValueError(
-                f"Expected pandas DataFrame, got {type(df)}"
-            )
+            self.df = []
+            # raise ValueError(
+            #     f"Expected pandas DataFrame, got {type(df)}"
+            # )
         self.df_locals: dict = {}
         # Chatbot ID:
         self.chatbot_id: uuid.UUID = kwargs.pop(
@@ -169,7 +170,7 @@ class PandasAgent(BasicAgent):
         self.name = name or "Pandas Agent"
         self.description = "A simple agent that uses the pandas library to perform data analysis tasks."
         self._static_path = BASE_DIR.joinpath('static')
-        self.agent_report_dir = self._static_path.joinpath('reports', 'agents', self.chatbot_id)
+        self.agent_report_dir = self._static_path.joinpath('reports', 'agents', str(self.chatbot_id))
         if self.agent_report_dir.exists() is False:
             self.agent_report_dir.mkdir(parents=True, exist_ok=True)
         super().__init__(
@@ -215,7 +216,7 @@ class PandasAgent(BasicAgent):
             extra_tools=self.tools,
             prefix=self._prompt_prefix,
             max_iterations=3,
-            handle_parsing_errors=True,
+            # handle_parsing_errors=True,
             **kwargs
         )
 

@@ -7,6 +7,7 @@ from typing import Any, Dict, Type
 from importlib import import_module
 from aiohttp import web
 from navconfig.logging import logging
+from asyncdb.exceptions import NoDataFound
 from .bots.abstract import AbstractBot
 from .bots.basic import BasicBot
 from .bots.chatbot import Chatbot
@@ -14,7 +15,7 @@ from .bots.pd import PandasAgent
 from .handlers.chat import ChatHandler, BotHandler
 from .handlers.agents import AgentHandler
 from .handlers import ChatbotHandler
-from .models import ChatbotModel
+from .models import ChatbotModel, AgentModel
 
 
 class BotManager:
@@ -114,6 +115,60 @@ class BotManager:
             ":: Chatbots loaded successfully."
         )
 
+    async def load_agents(self, app: web.Application) -> None:
+        """Load all Agents from DB."""
+        self.logger.info("Loading Agents from DB...")
+        db = app['database']
+        async with await db.acquire() as conn:
+            AgentModel.Meta.connection = conn
+            try:
+                agents = await AgentModel.filter(enabled=True)
+            except Exception as e:
+                self.logger.error(
+                    f"Failed to load Agents from DB: {e}"
+                )
+                return
+            for agent in agents:
+                cls_name = agent.agent_class
+                if cls_name is None:
+                    class_name = PandasAgent
+                else:
+                    class_name = self.get_bot_class(cls_name)
+                # Get the queries before agent creation.
+                # then, create the Agent:
+                try:
+                    chatbot = class_name(
+                        chatbot_id=agent.chatbot_id,
+                        name=agent.name,
+                        description=agent.description,
+                        use_llm=agent.llm,
+                        model_name=agent.model_name,
+                        temperature=agent.temperature,
+                        tools=agent.tools,
+                        model_config=agent.model_config,
+                        role=agent.role,
+                        goal=agent.goal,
+                        backstory=agent.backstory,
+                        rationale=agent.rationale,
+                        permissions=agent.permissions,
+                        attributes=agent.attributes,
+                    )
+                except Exception as e:
+                    self.logger.error(
+                        f"Failed to configure Agent '{agent.name}': {e}"
+                    )
+                if chatbot:
+                    await chatbot.configure(
+                        app=app
+                    )
+                    self.add_agent(chatbot)
+                    self.logger.notice(
+                        f"Loaded Agent '{agent.name}'..."
+                    )
+        self.logger.info(
+            ":: IA Agents were loaded successfully."
+        )
+
     def create_bot(self, class_name: Any = None, name: str = None, **kwargs) -> AbstractBot:
         """Create a Bot and add it to the manager."""
         if class_name is None:
@@ -150,7 +205,7 @@ class BotManager:
     async def create_agent(self, class_name: Any = None, name: str = None, **kwargs) -> AbstractBot:
         if class_name is None:
             class_name = PandasAgent
-        agent = class_name(**kwargs)
+        agent = class_name(name=name, **kwargs)
         self.add_agent(agent)
         if 'llm' in kwargs:
             llm = kwargs['llm']
@@ -169,6 +224,44 @@ class BotManager:
     def get_agent(self, name: str) -> AbstractBot:
         """Get a Agent by ID."""
         return self._agents.get(name)
+
+    def remove_agent(self, agent: AbstractBot) -> None:
+        """Remove a Bot by name."""
+        del self._agents[agent.chatbot_id]
+
+    async def save_agent(self, name: str, **kwargs) -> None:
+        """Save a Agent to the DB."""
+        self.logger.info(f"Saving Agent {name} into DB ...")
+        db = self.app['database']
+        async with await db.acquire() as conn:
+            AgentModel.Meta.connection = conn
+            try:
+                try:
+                    agent = await AgentModel.get(name=name)
+                except NoDataFound:
+                    agent = None
+                if agent:
+                    self.logger.info(f"Agent {name} already exists.")
+                    for key, val in kwargs.items():
+                        agent.set(key, val)
+                    await agent.update()
+                    self.logger.info(f"Agent {name} updated.")
+                else:
+                    self.logger.info(f"Agent {name} not found. Creating new one.")
+                    # Create a new Agent
+                    print('KWARGS > ', kwargs)
+                    new_agent = AgentModel(
+                        name=name,
+                        **kwargs
+                    )
+                    await new_agent.insert()
+                self.logger.info(f"Agent {name} saved into DB.")
+                return True
+            except Exception as e:
+                self.logger.error(
+                    f"Failed to Create new Agent {name} from DB: {e}"
+                )
+                return None
 
     def get_app(self) -> web.Application:
         """Get the app."""
@@ -214,6 +307,8 @@ class BotManager:
         """On startup."""
         # configure all pre-configured chatbots:
         await self.load_bots(app)
+        # configure all pre-configured agents:
+        await self.load_agents(app)
 
     async def on_shutdown(self, app: web.Application) -> None:
         """On shutdown."""
