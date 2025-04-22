@@ -11,6 +11,7 @@ from querysource.queries.multi import MultiQS
 from ..bots.abstract import AbstractBot
 from ..llms.vertex import VertexLLM
 from ..bots.pd import PandasAgent
+from ..models import AgentModel
 
 
 @is_authenticated()
@@ -24,77 +25,6 @@ class AgentHandler(BaseView):
     - Tool for doing an EDA (exploratory data-analysis) on a dataframe.
     - Tool for doing a data profiling on a dataframe.
     """
-    async def call_qs(self, queries: list) -> List[pd.DataFrame]:
-        """
-        call_qs.
-        description: Call the QuerySource queries.
-        """
-        dfs = []
-        for query in queries:
-            if not isinstance(query, str):
-                return self.json_response(
-                    {
-                    "message": f"Query {query} is not a string."
-                    },
-                    status=400
-                )
-            # now, the only query accepted is a slug:
-            qy = QS(
-                slug=query
-            )
-            df, error = await qy.query(output_format='pandas')
-            if error:
-                return self.json_response(
-                    {
-                    "message": f"Query {query} fail with error {error}."
-                    },
-                    status=404
-                )
-            if not isinstance(df, pd.DataFrame):
-                return self.json_response(
-                    {
-                    "message": f"Query {query} is not returning a dataframe."
-                    },
-                    status=404
-                )
-            dfs.append(df)
-        return dfs
-
-    async def call_multiquery(self, query: dict) -> List[pd.DataFrame]:
-        """
-        call_multiquery.
-        description: Call the MultiQuery queries.
-        """
-        data = {}
-        print('QUERIES > ', query)
-        _queries = query.pop('queries', {})
-        _files = query.pop('files', {})
-        if not _queries and not _files:
-            raise ValueError(
-                "Queries or files are required."
-            )
-        try:
-            ## Step 1: Running all Queries and Files on QueryObject
-            qs = MultiQS(
-                slug=[],
-                queries=_queries,
-                files=_files,
-                query=query,
-                conditions=data,
-                return_all=True
-            )
-            result, _ = await qs.execute()
-        except Exception as e:
-            raise ValueError(
-                f"Error executing MultiQuery: {e}"
-            )
-        if not isinstance(result, dict):
-            raise ValueError(
-                "MultiQuery is not returning a dictionary."
-            )
-        return list(result.values())
-
-
     async def put(self, *args, **kwargs):
         """
         put.
@@ -117,26 +47,10 @@ class AgentHandler(BaseView):
         # To create a new agent, we need:
         # A list of queries (Query slugs) to be converted into dataframes
         query = data.pop('query', None)
-        # A list of dataframes to be used as context for the agent
-        if isinstance(query, dict):
-            # is a MultiQuery execution, use the MultiQS class engine to do it:
-            try:
-                dfs = await self.call_multiquery(query)
-            except ValueError as e:
-                return self.json_response(
-                    {
-                    "message": f"Error creating agent: {e}"
-                    },
-                    status=400
-                )
-        elif isinstance(query, str):
-            query = [query]
-        elif isinstance(query, list):
-            dfs = await self.call_qs(query)
-        else:
+        if not query:
             return self.json_response(
                 {
-                "message": "Incompatible Query in the request."
+                "message": "No query was found."
                 },
                 status=400
             )
@@ -155,9 +69,30 @@ class AgentHandler(BaseView):
                 status=404
             )
         if agent := manager.get_agent(_id):
+            args = {
+                "message": f"Agent {name} already exists.",
+                "agent": agent.name,
+                "agent_id": agent.chatbot_id,
+                "description": agent.description,
+                "backstory": agent.backstory,
+                "capabilities": agent.get_capabilities(),
+                "type": 'PandasAgent',
+                "llm": f"{agent.llm!r}",
+                "temperature": agent.llm.temperature,
+            }
+            return self.json_response(
+                args,
+                status=208
+            )
+        try:
+            # Generate the Data Frames from the queries:
+            dfs = await PandasAgent.gen_data(
+                query=query
+            )
+        except Exception as e:
             return self.json_response(
                 {
-                "message": f"Agent {name} already exists."
+                "message": f"Error generating dataframes: {e}"
                 },
                 status=400
             )
@@ -165,6 +100,7 @@ class AgentHandler(BaseView):
             args = {
                 "name": name,
                 "df": dfs,
+                "query": query,
                 "tools": tools,
                 "backstory": backstory,
                 "capabilities": capabilities,
@@ -175,7 +111,12 @@ class AgentHandler(BaseView):
             agent = PandasAgent(
                 **args
             )
-            await agent.configure()
+            # Create and Add the agent to the manager
+            agent = await manager.create_agent(
+                class_name=PandasAgent,
+                **args
+            )
+            await agent.configure(app=app)
         except Exception as e:
             return self.json_response(
                 {
@@ -183,9 +124,36 @@ class AgentHandler(BaseView):
                 },
                 status=400
             )
-        # Add the agent to the manager
-        manager.add_agent(agent)
-        # Return the agent
+        # Check if the agent was created successfully
+        if not agent:
+            return self.json_response(
+                {
+                "message": f"Error creating agent: {e}"
+                },
+                status=400
+            )
+        # Saving Agent into DB:
+        try:
+            del args["df"]
+            args['query'] = query
+            result = await manager.save_agent(**args)
+            if not result:
+                manager.remove_agent(agent)
+                return self.json_response(
+                    {
+                    "message": f"Error saving agent {agent.name}"
+                    },
+                    status=400
+                )
+        except Exception as e:
+            manager.remove_agent(agent)
+            return self.json_response(
+                {
+                "message": f"Error saving agent {agent.name}: {e}"
+                },
+                status=400
+            )
+        # Return the agent information
         return self.json_response(
             {
                 "message": f"Agent {name} created successfully.",
@@ -234,6 +202,7 @@ class AgentHandler(BaseView):
                 status=400
             )
         if agent := manager.get_agent(name):
+            print('AGENT > ', agent)
             # doing a question to the agent:
             try:
                 response, result = await agent.invoke(
@@ -248,3 +217,10 @@ class AgentHandler(BaseView):
                     },
                     status=400
                 )
+        else:
+            return self.json_response(
+                {
+                "message": f"Agent {name} not found."
+                },
+                status=404
+            )

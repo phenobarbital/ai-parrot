@@ -394,27 +394,34 @@ class PromptLibrary(Model):
 
 ### Agent Information:
 # AgentModel Model:
+
+def agent_id() -> str:
+    """Generate a random UUID."""
+    return str(uuid.uuid4())
+
 class AgentModel(Model):
     """AgentModel.
-        --- drop table navigator.ai_agents;
+    ---- drop table if exists navigator.ai_agents;
     CREATE TABLE IF NOT EXISTS navigator.ai_agents (
         chatbot_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
         name VARCHAR NOT NULL DEFAULT 'Nav',
         description VARCHAR,
         avatar TEXT,
         enabled BOOLEAN NOT NULL DEFAULT TRUE,
-        agent_class VARCHAR DEFAULT 'PandasAgent',
+        agent_class VARCHAR,
         attributes JSONB DEFAULT '{}'::JSONB,
         role VARCHAR DEFAULT 'a Human Resources Assistant',
         goal VARCHAR NOT NULL DEFAULT 'Bring useful information to Users.',
         backstory VARCHAR NOT NULL DEFAULT 'I was created by a team of developers to assist with users tasks.',
         rationale VARCHAR NOT NULL DEFAULT 'Remember to maintain a professional tone. Please provide accurate and relevant information.',
         capabilities TEXT,
-        query jSONB,
+        query JSONB,
+        tools JSONB,
         system_prompt_template VARCHAR,
         human_prompt_template VARCHAR,
         llm VARCHAR DEFAULT 'vertexai',
         model_name VARCHAR DEFAULT 'gemini-2.0-pro',
+        temperature float DEFAULT 0.1,
         model_config JSONB DEFAULT '{}'::JSONB,
         created_at TIMESTAMPTZ DEFAULT NOW(),
         created_by INTEGER,
@@ -425,7 +432,7 @@ class AgentModel(Model):
     ALTER TABLE navigator.ai_agents
     ADD CONSTRAINT unq_navigator_agents_name UNIQUE (name);
     """
-    chatbot_id: uuid.UUID = Field(primary_key=True, required=False, default_factory=uuid.uuid4)
+    chatbot_id: Union[str, uuid.UUID] = Field(primary_key=True, required=False, default_factory=agent_id)
     name: str = Field(default='Nav', required=True, primary_key=True)
     description: str = Field(default='Nav Agent', required=False)
     agent_class: str = Field(required=False, default='PandasAgent')
