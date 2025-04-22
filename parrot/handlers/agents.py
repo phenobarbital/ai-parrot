@@ -249,7 +249,10 @@ class AgentHandler(BaseView):
                 },
                 status=404
             )
-        data = await self.request.json()
+        try:
+            data = await self.request.json()
+        except Exception as e:
+            data = {}
         query = data.pop('query', None)
         if agent := manager.get_agent(name):
             # extract the new query from the request, or from agent
