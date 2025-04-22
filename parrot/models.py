@@ -391,3 +391,107 @@ class PromptLibrary(Model):
 
     def __post_init__(self) -> None:
         super(PromptLibrary, self).__post_init__()
+
+### Agent Information:
+# AgentModel Model:
+class AgentModel(Model):
+    """AgentModel.
+        --- drop table navigator.ai_agents;
+    CREATE TABLE IF NOT EXISTS navigator.ai_agents (
+        chatbot_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        name VARCHAR NOT NULL DEFAULT 'Nav',
+        description VARCHAR,
+        avatar TEXT,
+        enabled BOOLEAN NOT NULL DEFAULT TRUE,
+        agent_class VARCHAR DEFAULT 'PandasAgent',
+        attributes JSONB DEFAULT '{}'::JSONB,
+        role VARCHAR DEFAULT 'a Human Resources Assistant',
+        goal VARCHAR NOT NULL DEFAULT 'Bring useful information to Users.',
+        backstory VARCHAR NOT NULL DEFAULT 'I was created by a team of developers to assist with users tasks.',
+        rationale VARCHAR NOT NULL DEFAULT 'Remember to maintain a professional tone. Please provide accurate and relevant information.',
+        capabilities TEXT,
+        query jSONB,
+        system_prompt_template VARCHAR,
+        human_prompt_template VARCHAR,
+        llm VARCHAR DEFAULT 'vertexai',
+        model_name VARCHAR DEFAULT 'gemini-2.0-pro',
+        model_config JSONB DEFAULT '{}'::JSONB,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        created_by INTEGER,
+        updated_at TIMESTAMPTZ DEFAULT NOW(),
+        disclaimer VARCHAR,
+        permissions JSONB
+    );
+    ALTER TABLE navigator.ai_agents
+    ADD CONSTRAINT unq_navigator_agents_name UNIQUE (name);
+    """
+    chatbot_id: uuid.UUID = Field(primary_key=True, required=False, default_factory=uuid.uuid4)
+    name: str = Field(default='Nav', required=True, primary_key=True)
+    description: str = Field(default='Nav Agent', required=False)
+    agent_class: str = Field(required=False, default='PandasAgent')
+    avatar: str
+    enabled: bool = Field(required=True, default=True)
+    attributes: Optional[dict] = Field(required=False, default_factory=dict)
+    # Agent Configuration
+    tools: List[str] = Field(
+        default_factory=list,
+        required=False
+    )
+    role: str = Field(
+        default="a Human Resources Assistant",
+        required=False
+    )
+    goal: str = Field(
+        default="Bring useful information to Users.",
+        required=True
+    )
+    backstory: str = Field(
+        default="I was created by a team of developers to assist with users tasks.",
+        required=True
+    )
+    rationale: str = Field(
+        default=(
+            "Remember to maintain a professional tone."
+            " Please provide accurate and relevant information."
+        ),
+        required=True
+    )
+    capabilities: str = Field(
+        default="",
+        required=False
+    )
+    query: Union[List[str], Dict[str, str]] = Field(
+        required=True,
+        default_factory={}
+    )
+    system_prompt_template: Union[str, PurePath] = Field(
+        default=None,
+        required=False
+    )
+    human_prompt_template: Union[str, PurePath] = Field(
+        default=None,
+        required=False
+    )
+    # Model Configuration:
+    llm: str = Field(default='vertexai', required=False)
+    model_name: str = Field(default='gemini-2.0-pro', required=False)
+    temperature: float = Field(default=0.1, required=False)
+    model_config: dict = Field(default_factory=dict, required=False)
+    # When created
+    created_at: datetime = Field(required=False, default=datetime.now)
+    created_by: int = Field(required=False)
+    updated_at: datetime = Field(required=False, default=datetime.now)
+    disclaimer: str = Field(required=False)
+    permissions: dict = Field(required=False, default_factory=dict)
+
+
+    def __post_init__(self) -> None:
+        super(AgentModel, self).__post_init__()
+
+    class Meta:
+        """Meta Agent."""
+        driver = 'pg'
+        name = "ai_agents"
+        schema = "navigator"
+        strict = True
+        frozen = False
