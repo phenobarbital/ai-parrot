@@ -186,6 +186,10 @@ class PandasAgent(BasicAgent):
         )
         self.agent_type = agent_type or "zero-shot-react-description"  # 'openai-tools'
 
+    def get_query(self) -> Union[List[str], dict]:
+        """Get the query."""
+        return self._queries
+
     def get_capabilities(self) -> str:
         """Get the capabilities of the agent."""
         return self._capabilities

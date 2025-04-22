@@ -224,3 +224,63 @@ class AgentHandler(BaseView):
                 },
                 status=404
             )
+
+    async def patch(self, *args, **kwargs):
+        """
+        patch.
+        description: Update the data of the Agent.
+        Use this method to update the dataframes assigned to the Agent.
+        """
+        app = self.request.app
+        try:
+            manager = app['bot_manager']
+        except KeyError:
+            return self.json_response(
+                {
+                "message": "Chatbot Manager is not installed."
+                },
+                status=404
+            )
+        name = self.request.match_info.get('agent_name', None)
+        if not name:
+            return self.json_response(
+                {
+                "message": "Agent name not found."
+                },
+                status=404
+            )
+        data = await self.request.json()
+        query = data.pop('query', None)
+        if agent := manager.get_agent(name):
+            # extract the new query from the request, or from agent
+            qry = query if query else agent.get_query()
+            try:
+                # Generate the Data Frames from the queries:
+                dfs = await PandasAgent.gen_data(
+                    query=qry
+                )
+                if dfs:
+                    # Update the agent with the new dataframes
+                    agent.df = dfs
+                    # Update the agent with the new query
+                    await agent.configure(df=dfs)
+                return self.json_response(
+                    {
+                    "message": f"{agent.name}: Agent Data was Updated."
+                    },
+                    status=202
+                )
+            except Exception as e:
+                return self.json_response(
+                    {
+                    "message": f"Error refreshing agent {agent.name}: {e}"
+                    },
+                    status=400
+                )
+        else:
+            return self.json_response(
+                {
+                "message": f"Agent {name} not found."
+                },
+                status=404
+            )
