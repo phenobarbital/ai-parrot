@@ -135,11 +135,22 @@ class BotManager:
                 else:
                     class_name = self.get_bot_class(cls_name)
                 # Get the queries before agent creation.
+                try:
+                    queries = await class_name.gen_data(
+                        query=agent.query
+                    )
+                except ValueError as e:
+                    self.logger.error(
+                        f"Failed to load queries for Agent '{agent.name}': {e}"
+                    )
+                    continue
                 # then, create the Agent:
                 try:
                     chatbot = class_name(
                         chatbot_id=agent.chatbot_id,
                         name=agent.name,
+                        df=queries,
+                        query=agent.query,
                         description=agent.description,
                         use_llm=agent.llm,
                         model_name=agent.model_name,
@@ -219,15 +230,17 @@ class BotManager:
 
     def add_agent(self, agent: AbstractBot) -> None:
         """Add a Agent to the manager."""
-        self._agents[agent.chatbot_id] = agent
+        self._agents[str(agent.chatbot_id)] = agent
 
     def get_agent(self, name: str) -> AbstractBot:
         """Get a Agent by ID."""
+        print(self._agents)
+        print('name > ', name)
         return self._agents.get(name)
 
     def remove_agent(self, agent: AbstractBot) -> None:
         """Remove a Bot by name."""
-        del self._agents[agent.chatbot_id]
+        del self._agents[str(agent.chatbot_id)]
 
     async def save_agent(self, name: str, **kwargs) -> None:
         """Save a Agent to the DB."""

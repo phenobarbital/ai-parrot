@@ -9,6 +9,8 @@ from datamodel.typedefs import SafeDict
 from langchain_experimental.tools.python.tool import PythonAstREPLTool
 from langchain_experimental.agents.agent_toolkits import create_pandas_dataframe_agent
 from navconfig import BASE_DIR
+from querysource.queries.qs import QS
+from querysource.queries.multi import MultiQS
 from ..tools import AbstractTool
 from .agent import BasicAgent
 from ..models import AgentResponse
@@ -134,7 +136,6 @@ class PandasAgent(BasicAgent):
     def __init__(
         self,
         name: str = 'Agent',
-        agent_id: str = None,
         agent_type: str = None,
         llm: str = 'vertexai',
         tools: List[AbstractTool] = None,
@@ -142,9 +143,10 @@ class PandasAgent(BasicAgent):
         human_prompt: str = None,
         prompt_template: str = None,
         df: Union[list[pd.DataFrame], pd.DataFrame] = None,
-        queries: List[str] = None,
+        query: Union[List[str], dict] = None,
         **kwargs
     ):
+        self._queries = query
         if isinstance(df, pd.DataFrame):
             self.df = [df]
         elif isinstance(df, list):
@@ -393,3 +395,102 @@ class PandasAgent(BasicAgent):
 
     def default_backstory(self) -> str:
         return "You are a helpful assistant built to provide comprehensive guidance and support on data calculations and data analysis working with pandas dataframes."
+
+    @staticmethod
+    async def call_qs(queries: list) -> List[pd.DataFrame]:
+        """
+        call_qs.
+        description: Call the QuerySource queries.
+        """
+        dfs = []
+        for query in queries:
+            if not isinstance(query, str):
+                raise ValueError(
+                    f"Query {query} is not a string."
+                )
+            # now, the only query accepted is a slug:
+            try:
+                qy = QS(
+                    slug=query
+                )
+                df, error = await qy.query(output_format='pandas')
+                if error:
+                    raise ValueError(
+                        f"Query {query} fail with error {error}."
+                    )
+                if not isinstance(df, pd.DataFrame):
+                    raise ValueError(
+                        f"Query {query} is not returning a dataframe."
+                    )
+                dfs.append(df)
+            except ValueError:
+                raise
+            except Exception as e:
+                raise ValueError(
+                    f"Error executing Query {query}: {e}"
+                )
+        return dfs
+
+    @staticmethod
+    async def call_multiquery(query: dict) -> List[pd.DataFrame]:
+        """
+        call_multiquery.
+        description: Call the MultiQuery queries.
+        """
+        data = {}
+        _queries = query.pop('queries', {})
+        _files = query.pop('files', {})
+        if not _queries and not _files:
+            raise ValueError(
+                "Queries or files are required."
+            )
+        try:
+            ## Step 1: Running all Queries and Files on QueryObject
+            qs = MultiQS(
+                slug=[],
+                queries=_queries,
+                files=_files,
+                query=query,
+                conditions=data,
+                return_all=True
+            )
+            result, _ = await qs.execute()
+        except Exception as e:
+            raise ValueError(
+                f"Error executing MultiQuery: {e}"
+            )
+        if not isinstance(result, dict):
+            raise ValueError(
+                "MultiQuery is not returning a dictionary."
+            )
+        return list(result.values())
+
+    @classmethod
+    async def gen_data(cls, query: Union[list, dict]) -> List[pd.DataFrame]:
+        """
+        gen_data.
+
+        Generate the dataframes required for the agent to work.
+        """
+        # A list of dataframes to be used as context for the agent
+        if isinstance(query, dict):
+            # is a MultiQuery execution, use the MultiQS class engine to do it:
+            try:
+                return await cls.call_multiquery(query)
+            except ValueError as e:
+                raise ValueError(
+                    f"Error creating Query For Agent: {e}"
+                )
+        elif isinstance(query, (str, list)):
+            if isinstance(query, str):
+                query = [query]
+            try:
+                return await cls.call_qs(query)
+            except ValueError as e:
+                raise ValueError(
+                    f"Error creating Query For Agent: {e}"
+                )
+        else:
+            raise ValueError(
+                f"Expected a list of queries or a dictionary, got {type(query)}"
+            )
