@@ -1,22 +1,17 @@
 import matplotlib
-import inspect
 matplotlib.use('Agg')  # Use non-interactive backend
 
 import matplotlib.pyplot as plt
 # Import profiling
 from ydata_profiling import ProfileReport
 import seaborn as sns
-
 import pandas as pd
-import numpy as np
 import base64
 import io
-from io import BytesIO
-from ydata_profiling import ProfileReport
 from html import escape
-import uuid
 import os
 from datetime import datetime
+import re
 
 
 def df_to_html_with_style(df_input, title=""):
