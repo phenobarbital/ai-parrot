@@ -66,9 +66,10 @@ class AgentHandler(BaseView):
         description: Call the MultiQuery queries.
         """
         data = {}
+        print('QUERIES > ', query)
         _queries = query.pop('queries', {})
         _files = query.pop('files', {})
-        if not _queries or not _files:
+        if not _queries and not _files:
             raise ValueError(
                 "Queries or files are required."
             )
@@ -128,9 +129,9 @@ class AgentHandler(BaseView):
                     },
                     status=400
                 )
-        if isinstance(query, str):
+        elif isinstance(query, str):
             query = [query]
-        if isinstance(query, list):
+        elif isinstance(query, list):
             dfs = await self.call_qs(query)
         else:
             return self.json_response(

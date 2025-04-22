@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import List, Union, Optional
 from io import BytesIO, StringIO
 from datetime import datetime, timezone
+import re
 import uuid
 import pandas as pd
 from datamodel.typedefs import SafeDict
@@ -43,7 +44,8 @@ Use these tools effectively to provide accurate and comprehensive responses:
 - Perform analysis over the entire DataFrame, not just a sample.
 - Use `df['column_name'].value_counts()` to get counts of unique values.
 - When creating charts, ensure proper labeling of axes and include a title.
-- For visualization requests, use matplotlib or seaborn through the Python tool.
+- For visualization requests, use matplotlib, altair or seaborn through the Python tool.
+- You have access to several python libraries installed as scipy, numpy, matplotlib, matplotlib-inline, seaborn, altair, plotly, reportlab, pandas, numba, geopy, geopandas, prophet, statsmodels, scikit-learn, pmdarima, sentence-transformers, nltk, spacy, and others.
 - Provide clear, concise explanations of your analysis steps.
 - When appropriate, suggest additional insights beyond what was directly asked.
 
