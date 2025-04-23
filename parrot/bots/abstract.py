@@ -181,9 +181,7 @@ class AbstractBot(DBInterface, ABC):
         # Definition of LLM
         self._llm_class: str = None
         self._default_llm: str = kwargs.get('use_llm', 'vertexai')
-        print('PRE > ', kwargs)
         self._llm_model = kwargs.get('model_name', 'gemini-1.5-pro')
-        print(' LLM MODEL > ', self._llm_model)
         self._llm_temp = kwargs.get('temperature', 0.2)
         self._llm_top_k = kwargs.get('top_k', 30)
         self._llm_top_p = kwargs.get('top_p', 0.6)
@@ -340,7 +338,6 @@ class AbstractBot(DBInterface, ABC):
         else:
             raise ValueError(f"Invalid llm: {llm}")
         # get the LLM:
-        print('MDL > ', mdl.model)
         return mdl
 
     def configure_llm(
@@ -353,7 +350,6 @@ class AbstractBot(DBInterface, ABC):
         """
         Configuration of LLM.
         """
-        print('LLM CONFIG > ', llm, 'LLM OBJ ', self._llm_obj)
         if isinstance(llm, str):
             # Get the LLM By Name:
             self._llm_obj = self.llm_chain(
@@ -386,7 +382,6 @@ class AbstractBot(DBInterface, ABC):
         else:
             # TODO: Calling a Default LLM
             # TODO: passing the default configuration
-            print('DEFAULT MODEL > ', self._llm_model)
             self._llm_obj = self.llm_chain(
                 llm=self._default_llm,
                 model=self._llm_model,
