@@ -10,6 +10,7 @@ from datamodel.typedefs import SafeDict
 from langchain_experimental.tools.python.tool import PythonAstREPLTool
 from langchain_experimental.agents.agent_toolkits import create_pandas_dataframe_agent
 from navconfig import BASE_DIR
+from navconfig.logging import logging
 from datamodel.parsers.json import json_encoder, json_decoder
 from querysource.queries.qs import QS
 from querysource.queries.multi import MultiQS
@@ -67,15 +68,31 @@ quick_eda(dataframe=df, report_dir=agent_report_dir)
 ```
 This performs basic analysis with visualizations for key variables.
 When a user asks for "exploratory data analysis", "EDA", "data profiling", "understand the data",
-or "data exploration", use these functionss.
+or "data exploration", use these functions.
 - The report will be saved to the specified directory and the function will return the file path
-- The report includes basic statistics, correlations, distributions, and categorical value counts
+- The report includes basic statistics, correlations, distributions, and categorical value counts.
 
 ### Podcast capabilities
 
 if the user asks for a podcast, use the GoogleVoiceTool to generate a podcast-style audio file from a summarized text using Google Cloud Text-to-Speech.
 - The audio file will be saved in own output directory and returned as a dictionary with a *file_path* key.
 - Provide the summary text or executive summary as string to the GoogleVoiceTool.
+
+### PDF Report Generation
+
+if the user asks for a PDF report, use the following steps:
+- First generate a complete report in HTML:
+    - Create a well-structured HTML document with proper sections, headings and styling.
+    - Include always all relevant information, charts, tables, summaries and insights.
+    - use seaborn or altair for charts and matplotlib for plots as embedded images.
+    - Use CSS for professional styling and formatting (margins, fonts, colors).
+    - Include a table of contents for easy navigation.
+- Convert the HTML report to PDF using the "weasyprint" library.
+- Return a python dictionary with the file path of the generated PDF report:
+    - "file_path": "pdf_path"
+    - "content_type": "application/pdf"
+    - "type": "pdf"
+    - "html_path": "html_path"
 
 ## Thoughts
 {format_instructions}
@@ -119,7 +136,8 @@ Action Input: the input to the action
 Observation: the result of the action
 ... (this Thought/Action/Action Input/Observation can repeat N times)
 Thought: I now know the final answer
-Final Answer: the final answer to the original input question"""
+Final Answer: the final answer to the original input question
+"""
 
 
 PANDAS_PROMPT_SUFFIX = """
@@ -171,6 +189,7 @@ class PandasAgent(BasicAgent):
         self._prompt_suffix = PANDAS_PROMPT_SUFFIX
         self._prompt_template = prompt_template
         self._capabilities: str = kwargs.get('capabilities', None)
+        self._format_instructions: str = kwargs.get('format_instructions', FORMAT_INSTRUCTIONS)
         self.name = name or "Pandas Agent"
         self.description = "A simple agent that uses the pandas library to perform data analysis tasks."
         self._static_path = BASE_DIR.joinpath('static')
@@ -211,7 +230,7 @@ class PandasAgent(BasicAgent):
         # Create the Python REPL tool
         python_tool = PythonAstREPLTool(locals=self.df_locals)
         # Add EDA functions to the tool's locals
-        python_tool.run("from parrot.bots.tools.eda import quick_eda, generate_eda_report, list_available_dataframes")
+        python_tool.run("from parrot.bots.tools import quick_eda, generate_eda_report, list_available_dataframes, create_plot")
         # Add it to the tools list
         self.tools.append(python_tool)
         # Create the pandas agent
@@ -224,7 +243,7 @@ class PandasAgent(BasicAgent):
             extra_tools=self.tools,
             prefix=self._prompt_prefix,
             max_iterations=3,
-            # handle_parsing_errors=True,
+            handle_parsing_errors=True,
             **kwargs
         )
 
@@ -386,7 +405,7 @@ class PandasAgent(BasicAgent):
                     today_date=now,
                     system_prompt_base=prompt,
                     tools=", ".join(tools_names),
-                    format_instructions=FORMAT_INSTRUCTIONS.format(
+                    format_instructions=self._format_instructions.format(
                         tool_names=", ".join(tools_names)),
                     df_info=df_info,
                     num_dfs=num_dfs,
@@ -619,7 +638,7 @@ class PandasAgent(BasicAgent):
             expiration = timedelta(hours=cache_expiration)
             await redis_conn.expire(key, int(expiration.total_seconds()))
 
-            self.logger.notice(
+            logging.notice(
                 f"Data was cached for agent {agent_name} with expiration of {cache_expiration} hours"
             )
 
