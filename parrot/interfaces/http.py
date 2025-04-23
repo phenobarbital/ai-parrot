@@ -390,7 +390,7 @@ class HTTPService:
             transport=transport,
             headers=headers,
             timeout=timeout,
-            http2=kwargs.pop('use_http2', True),
+            # http2=kwargs.pop('use_http2', True),
             follow_redirects=follow_redirects,
             **kwargs
         ) as client:

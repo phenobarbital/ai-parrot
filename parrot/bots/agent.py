@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import List, Any, Union
 import os
 from datetime import datetime, timezone
+from aiohttp import web
 from langchain_core.prompts import (
     PromptTemplate,
     ChatPromptTemplate
@@ -66,13 +67,14 @@ class BasicAgent(AbstractBot):
         self,
         name: str = 'Agent',
         agent_type: str = 'zero_shot',
-        llm: str = 'vertexai',
+        llm: str = None,
         tools: List[AbstractTool] = None,
         system_prompt: str = None,
         human_prompt: str = None,
         prompt_template: str = None,
         **kwargs
     ):
+        print('HERE > ', kwargs)
         super().__init__(
             name=name,
             llm=llm,
@@ -314,9 +316,22 @@ class BasicAgent(AbstractBot):
     async def configure(self, app=None) -> None:
         """Basic Configuration of Agent.
         """
-        await super(BasicAgent, self).configure(app)
+        if app:
+            if isinstance(app, web.Application):
+                self.app = app  # register the app into the Extension
+            else:
+                self.app = app.get_app()  # Nav Application
+        # adding this configured chatbot to app:
+        if self.app:
+            self.app[f"{self.name.lower()}_bot"] = self
         # Configure LLM:
+        print('LLM PRE CONF > ', self._llm_model)
         self.configure_llm(use_chat=True)
+        # And define Prompt:
+        self._define_prompt()
+        # Configure VectorStore if enabled:
+        if self._use_vector:
+            self.configure_store()
         # Conversation History:
         self.memory = self.get_memory()
         # 1. Initialize the Agent (as the base for RunnableMultiActionAgent)

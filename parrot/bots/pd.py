@@ -21,11 +21,6 @@ from ..conf import BASE_STATIC_URL, REDIS_HISTORY_URL
 
 
 PANDAS_PROMPT_PREFIX = """
-Your name is {name}.
-
-{backstory}
-
-{capabilities}
 
 You are working with {num_dfs} pandas dataframes in Python, all dataframes are already loaded and available for analysis in the variables named as df1, df2, etc.
 
@@ -94,6 +89,14 @@ if the user asks for a PDF report, use the following steps:
     - "type": "pdf"
     - "html_path": "html_path"
 
+### Gamma Presentation Capabilities
+
+if the user asks for a Gamma Presentation, use to generate a presentation link:
+```python
+gamma_link(summary_text)
+```
+- The presentation will be created using the Gamma API and the link will be returned as a url.
+
 ## Thoughts
 {format_instructions}
 
@@ -157,7 +160,7 @@ class PandasAgent(BasicAgent):
         self,
         name: str = 'Agent',
         agent_type: str = None,
-        llm: str = 'vertexai',
+        llm: Optional[str] = None,
         tools: List[AbstractTool] = None,
         system_prompt: str = None,
         human_prompt: str = None,
@@ -398,9 +401,12 @@ class PandasAgent(BasicAgent):
                 {capabilities}
                 """
             # Create the prompt
+            self._prompt_prefix = f"Your name is {self.name}\n"
+            self._prompt_prefix += self.backstory + "\n"
+            if capabilities:
+                self._prompt_prefix += capabilities + "\n"
             self._prompt_prefix = PANDAS_PROMPT_PREFIX.format_map(
                 SafeDict(
-                    name=self.name,
                     list_of_tools=list_of_tools,
                     today_date=now,
                     system_prompt_base=prompt,
@@ -409,9 +415,7 @@ class PandasAgent(BasicAgent):
                         tool_names=", ".join(tools_names)),
                     df_info=df_info,
                     num_dfs=num_dfs,
-                    capabilities=capabilities,
                     rationale=self.rationale,
-                    backstory=self.backstory,
                     agent_report_dir=self.agent_report_dir,
                     **kwargs
                 )
