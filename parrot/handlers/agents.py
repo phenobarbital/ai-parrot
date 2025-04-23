@@ -87,6 +87,7 @@ class AgentHandler(BaseView):
         try:
             # Generate the Data Frames from the queries:
             dfs = await PandasAgent.gen_data(
+                agent_name=_id,
                 query=query
             )
         except Exception as e:
@@ -202,7 +203,6 @@ class AgentHandler(BaseView):
                 status=400
             )
         if agent := manager.get_agent(name):
-            print('AGENT > ', agent)
             # doing a question to the agent:
             try:
                 response, result = await agent.invoke(
@@ -260,6 +260,7 @@ class AgentHandler(BaseView):
             try:
                 # Generate the Data Frames from the queries:
                 dfs = await PandasAgent.gen_data(
+                    agent_name=str(agent.chatbot_id),
                     query=qry
                 )
                 if dfs:
