@@ -192,7 +192,6 @@ class PandasAgent(BasicAgent):
         self.agent_report_dir = self._static_path.joinpath('reports', 'agents')
         super().__init__(
             name=name,
-            # chatbot_id=self.chatbot_id,
             llm=llm,
             system_prompt=system_prompt,
             human_prompt=human_prompt,
