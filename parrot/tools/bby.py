@@ -245,6 +245,7 @@ class BestBuyToolkit(BaseToolkit):
                         "User-Agent": random.choice(ua)
                     },
                     use_ssl=True,
+                    use_http2=False,
                     follow_redirects=True,
                     raise_for_status=True,
                     full_response=False
