@@ -18,13 +18,15 @@ class VertexLLM(AbstractLLM):
     Returns:
         _type_: VertexAI LLM.
     """
-    model: str = "gemini-2.0-pro"
+    model: str = "gemini-1.5-pro"
     max_tokens: int = 1024
     supported_models: list = [
-        "gemini-2.0-pro",
+        "gemini-2.5-pro-exp-03-25",
         "gemini-2.5-pro-preview-03-25",
+        "gemini-2.5-flash-preview-04-17",
         "gemini-2.0-flash",
-        "gemini-1.5-pro-001",
+        "gemini-2.0-flash-lite",
+        "gemini-1.5-pro",
         "gemini-1.5-flash-8b",
         "gemini-1.5-pro-exp-0801",
         "gemini-1.5-flash-preview-0514",

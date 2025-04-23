@@ -167,7 +167,9 @@ setup(
         "backoff==2.2.1",
         "asyncdb>=2.11.6",
         "google-cloud-bigquery==3.30.0",
-        "numexpr==2.10.2"
+        "numexpr==2.10.2",
+        "fpdf==1.7.2",
+        "python-docx==1.1.2"
     ],
     extras_require={
         "agents": [

@@ -175,7 +175,7 @@ class AbstractBot(DBInterface, ABC):
         # Definition of LLM
         self._llm_class: str = None
         self._default_llm: str = kwargs.get('use_llm', 'vertexai')
-        self._llm_model = kwargs.get('model_name', 'gemini-2.0-pro')
+        self._llm_model = kwargs.get('model_name', 'gemini-1.5-pro')
         self._llm_temp = kwargs.get('temperature', 0.2)
         self._llm_top_k = kwargs.get('top_k', 30)
         self._llm_top_p = kwargs.get('top_p', 0.6)
@@ -327,7 +327,7 @@ class AbstractBot(DBInterface, ABC):
         elif llm == 'mixtral' and GROQ_ENABLED:
             mdl = GroqLLM(model="mixtral-8x7b-32768", **kwargs)
         elif llm == 'google' and GOOGLE_ENABLED:
-            mdl = GoogleGenAI(model="models/gemini-1.5-pro-latest", **kwargs)
+            mdl = GoogleGenAI(model="models/gemini-2.5-pro-preview-03-25", **kwargs)
         else:
             raise ValueError(f"Invalid llm: {llm}")
         # get the LLM:

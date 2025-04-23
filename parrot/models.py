@@ -420,7 +420,7 @@ class AgentModel(Model):
         system_prompt_template VARCHAR,
         human_prompt_template VARCHAR,
         llm VARCHAR DEFAULT 'vertexai',
-        model_name VARCHAR DEFAULT 'gemini-2.0-pro',
+        model_name VARCHAR DEFAULT 'gemini-1.5-pro',
         temperature float DEFAULT 0.1,
         model_config JSONB DEFAULT '{}'::JSONB,
         created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -432,7 +432,7 @@ class AgentModel(Model):
     ALTER TABLE navigator.ai_agents
     ADD CONSTRAINT unq_navigator_agents_name UNIQUE (name);
     """
-    chatbot_id: Union[str, uuid.UUID] = Field(primary_key=True, required=False, default_factory=agent_id)
+    chatbot_id: str = Field(primary_key=True, required=False, default_factory=agent_id)
     name: str = Field(default='Nav', required=True, primary_key=True)
     description: str = Field(default='Nav Agent', required=False)
     agent_class: str = Field(required=False, default='PandasAgent')
@@ -467,9 +467,8 @@ class AgentModel(Model):
         default="",
         required=False
     )
-    query: Union[List[str], Dict[str, str]] = Field(
-        required=True,
-        default_factory={}
+    query: Union[list, dict] = Field(
+        required=True
     )
     system_prompt_template: Union[str, PurePath] = Field(
         default=None,
@@ -481,7 +480,7 @@ class AgentModel(Model):
     )
     # Model Configuration:
     llm: str = Field(default='vertexai', required=False)
-    model_name: str = Field(default='gemini-2.0-pro', required=False)
+    model_name: str = Field(default='gemini-2.5-pro-preview-03-25', required=False)
     temperature: float = Field(default=0.1, required=False)
     model_config: dict = Field(default_factory=dict, required=False)
     # When created
