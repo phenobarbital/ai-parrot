@@ -1,17 +1,22 @@
 from pathlib import Path
 from typing import List, Union, Optional
 from io import BytesIO, StringIO
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+import re
 import uuid
+import redis.asyncio as aioredis
 import pandas as pd
 from datamodel.typedefs import SafeDict
 from langchain_experimental.tools.python.tool import PythonAstREPLTool
 from langchain_experimental.agents.agent_toolkits import create_pandas_dataframe_agent
 from navconfig import BASE_DIR
+from datamodel.parsers.json import json_encoder, json_decoder
+from querysource.queries.qs import QS
+from querysource.queries.multi import MultiQS
 from ..tools import AbstractTool
 from .agent import BasicAgent
 from ..models import AgentResponse
-from ..conf import BASE_STATIC_URL
+from ..conf import BASE_STATIC_URL, REDIS_HISTORY_URL
 
 
 PANDAS_PROMPT_PREFIX = """
@@ -43,7 +48,8 @@ Use these tools effectively to provide accurate and comprehensive responses:
 - Perform analysis over the entire DataFrame, not just a sample.
 - Use `df['column_name'].value_counts()` to get counts of unique values.
 - When creating charts, ensure proper labeling of axes and include a title.
-- For visualization requests, use matplotlib or seaborn through the Python tool.
+- For visualization requests, use matplotlib, altair or seaborn through the Python tool.
+- You have access to several python libraries installed as scipy, numpy, matplotlib, matplotlib-inline, seaborn, altair, plotly, reportlab, pandas, numba, geopy, geopandas, prophet, statsmodels, scikit-learn, pmdarima, sentence-transformers, nltk, spacy, and others.
 - Provide clear, concise explanations of your analysis steps.
 - When appropriate, suggest additional insights beyond what was directly asked.
 
@@ -132,7 +138,6 @@ class PandasAgent(BasicAgent):
     def __init__(
         self,
         name: str = 'Agent',
-        agent_id: str = None,
         agent_type: str = None,
         llm: str = 'vertexai',
         tools: List[AbstractTool] = None,
@@ -140,17 +145,19 @@ class PandasAgent(BasicAgent):
         human_prompt: str = None,
         prompt_template: str = None,
         df: Union[list[pd.DataFrame], pd.DataFrame] = None,
-        queries: List[str] = None,
+        query: Union[List[str], dict] = None,
         **kwargs
     ):
+        self._queries = query
         if isinstance(df, pd.DataFrame):
             self.df = [df]
         elif isinstance(df, list):
             self.df = df
         else:
-            raise ValueError(
-                f"Expected pandas DataFrame, got {type(df)}"
-            )
+            self.df = []
+            # raise ValueError(
+            #     f"Expected pandas DataFrame, got {type(df)}"
+            # )
         self.df_locals: dict = {}
         # Chatbot ID:
         self.chatbot_id: uuid.UUID = kwargs.pop(
@@ -167,7 +174,7 @@ class PandasAgent(BasicAgent):
         self.name = name or "Pandas Agent"
         self.description = "A simple agent that uses the pandas library to perform data analysis tasks."
         self._static_path = BASE_DIR.joinpath('static')
-        self.agent_report_dir = self._static_path.joinpath('reports', 'agents', self.chatbot_id)
+        self.agent_report_dir = self._static_path.joinpath('reports', 'agents', str(self.chatbot_id))
         if self.agent_report_dir.exists() is False:
             self.agent_report_dir.mkdir(parents=True, exist_ok=True)
         super().__init__(
@@ -180,6 +187,10 @@ class PandasAgent(BasicAgent):
             **kwargs
         )
         self.agent_type = agent_type or "zero-shot-react-description"  # 'openai-tools'
+
+    def get_query(self) -> Union[List[str], dict]:
+        """Get the query."""
+        return self._queries
 
     def get_capabilities(self) -> str:
         """Get the capabilities of the agent."""
@@ -213,7 +224,7 @@ class PandasAgent(BasicAgent):
             extra_tools=self.tools,
             prefix=self._prompt_prefix,
             max_iterations=3,
-            handle_parsing_errors=True,
+            # handle_parsing_errors=True,
             **kwargs
         )
 
@@ -390,3 +401,230 @@ class PandasAgent(BasicAgent):
 
     def default_backstory(self) -> str:
         return "You are a helpful assistant built to provide comprehensive guidance and support on data calculations and data analysis working with pandas dataframes."
+
+    @staticmethod
+    async def call_qs(queries: list) -> List[pd.DataFrame]:
+        """
+        call_qs.
+        description: Call the QuerySource queries.
+        """
+        dfs = []
+        for query in queries:
+            if not isinstance(query, str):
+                raise ValueError(
+                    f"Query {query} is not a string."
+                )
+            # now, the only query accepted is a slug:
+            try:
+                qy = QS(
+                    slug=query
+                )
+                df, error = await qy.query(output_format='pandas')
+                if error:
+                    raise ValueError(
+                        f"Query {query} fail with error {error}."
+                    )
+                if not isinstance(df, pd.DataFrame):
+                    raise ValueError(
+                        f"Query {query} is not returning a dataframe."
+                    )
+                dfs.append(df)
+            except ValueError:
+                raise
+            except Exception as e:
+                raise ValueError(
+                    f"Error executing Query {query}: {e}"
+                )
+        return dfs
+
+    @staticmethod
+    async def call_multiquery(query: dict) -> List[pd.DataFrame]:
+        """
+        call_multiquery.
+        description: Call the MultiQuery queries.
+        """
+        data = {}
+        _queries = query.pop('queries', {})
+        _files = query.pop('files', {})
+        if not _queries and not _files:
+            raise ValueError(
+                "Queries or files are required."
+            )
+        try:
+            ## Step 1: Running all Queries and Files on QueryObject
+            qs = MultiQS(
+                slug=[],
+                queries=_queries,
+                files=_files,
+                query=query,
+                conditions=data,
+                return_all=True
+            )
+            result, _ = await qs.execute()
+        except Exception as e:
+            raise ValueError(
+                f"Error executing MultiQuery: {e}"
+            )
+        if not isinstance(result, dict):
+            raise ValueError(
+                "MultiQuery is not returning a dictionary."
+            )
+        return list(result.values())
+
+    @classmethod
+    async def gen_data(
+        cls,
+        query: Union[list, dict],
+        agent_name: Optional[str] = None,
+        refresh: bool = False,
+        cache_expiration: int = 48
+    ) -> List[pd.DataFrame]:
+        """
+        gen_data.
+
+        Generate the dataframes required for the agent to work, with Redis caching support.
+
+        Parameters:
+        -----------
+        query : Union[list, dict]
+            The query or queries to execute to generate dataframes.
+        agent_name : Optional[str]
+            Name of the agent, used for caching. If None, caching is disabled.
+        refresh : bool
+            If True, forces regeneration of dataframes even if cached versions exist.
+        cache_expiration_hours : int
+            Number of hours to keep the cached dataframes (default: 48).
+
+        Returns:
+        --------
+        List[pd.DataFrame]
+            A list of pandas DataFrames generated from the queries.
+        """
+        # If agent_name is provided, we'll use Redis caching
+        if agent_name and not refresh:
+            # Try to get cached dataframes
+            cached_dfs = await cls._get_cached_data(agent_name)
+            if cached_dfs:
+                return cached_dfs
+
+        # Generate dataframes from query if no cache exists or refresh is True
+        dfs = await cls._execute_query(query)
+
+        # If agent_name is provided, cache the generated dataframes
+        if agent_name:
+            await cls._cache_data(agent_name, dfs, cache_expiration)
+
+        return dfs
+
+    @classmethod
+    async def _execute_query(cls, query: Union[list, dict]) -> List[pd.DataFrame]:
+        """Execute the query and return the generated dataframes."""
+        if isinstance(query, dict):
+            # is a MultiQuery execution, use the MultiQS class engine to do it:
+            try:
+                return await cls.call_multiquery(query)
+            except ValueError as e:
+                raise ValueError(f"Error creating Query For Agent: {e}")
+        elif isinstance(query, (str, list)):
+            if isinstance(query, str):
+                query = [query]
+            try:
+                return await cls.call_qs(query)
+            except ValueError as e:
+                raise ValueError(f"Error creating Query For Agent: {e}")
+        else:
+            raise ValueError(
+                f"Expected a list of queries or a dictionary, got {type(query)}"
+            )
+
+    @classmethod
+    async def _get_redis_connection(cls):
+        """Get a connection to Redis."""
+        # You should adjust these parameters according to your Redis configuration
+        # Consider using environment variables for these settings
+        return await aioredis.Redis.from_url(
+            REDIS_HISTORY_URL,
+            decode_responses=False
+        )
+
+    @classmethod
+    async def _get_cached_data(cls, agent_name: str) -> Optional[List[pd.DataFrame]]:
+        """
+        Retrieve cached data from Redis if they exist.
+
+        Returns None if no cache exists or on error.
+        """
+        try:
+            redis_conn = await cls._get_redis_connection()
+            # Check if the agent key exists
+            key = f"agent_{agent_name}"
+            if not await redis_conn.exists(key):
+                await redis_conn.close()
+                return None
+
+            # Get all dataframe keys stored for this agent
+            df_keys = await redis_conn.hkeys(key)
+            if not df_keys:
+                await redis_conn.close()
+                return None
+
+            # Retrieve and convert each dataframe
+            dataframes = []
+            for df_key in df_keys:
+                df_json = await redis_conn.hget(key, df_key)
+                if df_json:
+                    # Convert from JSON to dataframe
+                    df_data = json_decoder(df_json.decode('utf-8'))
+                    df = pd.DataFrame.from_records(df_data)
+                    dataframes.append(df)
+
+            await redis_conn.close()
+            return dataframes if dataframes else None
+
+        except Exception as e:
+            # Log the error but continue execution without cache
+            print(f"Error retrieving cache: {e}")
+            return None
+
+    @classmethod
+    async def _cache_data(
+        cls,
+        agent_name: str,
+        dataframes: List[pd.DataFrame],
+        cache_expiration: int
+    ) -> None:
+        """
+        Cache the given dataframes in Redis.
+
+        The dataframes are stored as JSON records under a hash key named after the agent.
+        """
+        try:
+            if not dataframes:
+                return
+
+            redis_conn = await cls._get_redis_connection()
+            key = f"agent_{agent_name}"
+
+            # Delete any existing cache for this agent
+            await redis_conn.delete(key)
+
+            # Store each dataframe under the agent's hash
+            for i, df in enumerate(dataframes):
+                df_key = f"df{i+1}"
+                # Convert DataFrame to list of dictionaries
+                df_json = json_encoder(df.to_dict(orient='records'))
+                await redis_conn.hset(key, df_key, df_json)
+
+            # Set expiration time
+            expiration = timedelta(hours=cache_expiration)
+            await redis_conn.expire(key, int(expiration.total_seconds()))
+
+            self.logger.notice(
+                f"Data was cached for agent {agent_name} with expiration of {cache_expiration} hours"
+            )
+
+            await redis_conn.close()
+
+        except Exception as e:
+            # Log the error but continue execution
+            print(f"Error caching dataframes: {e}")
