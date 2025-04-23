@@ -1,20 +1,22 @@
 from pathlib import Path
 from typing import List, Union, Optional
 from io import BytesIO, StringIO
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import re
 import uuid
+import redis.asyncio as aioredis
 import pandas as pd
 from datamodel.typedefs import SafeDict
 from langchain_experimental.tools.python.tool import PythonAstREPLTool
 from langchain_experimental.agents.agent_toolkits import create_pandas_dataframe_agent
 from navconfig import BASE_DIR
+from datamodel.parsers.json import json_encoder, json_decoder
 from querysource.queries.qs import QS
 from querysource.queries.multi import MultiQS
 from ..tools import AbstractTool
 from .agent import BasicAgent
 from ..models import AgentResponse
-from ..conf import BASE_STATIC_URL
+from ..conf import BASE_STATIC_URL, REDIS_HISTORY_URL
 
 
 PANDAS_PROMPT_PREFIX = """
@@ -470,31 +472,155 @@ class PandasAgent(BasicAgent):
         return list(result.values())
 
     @classmethod
-    async def gen_data(cls, query: Union[list, dict]) -> List[pd.DataFrame]:
+    async def gen_data(
+        cls,
+        query: Union[list, dict],
+        agent_name: Optional[str] = None,
+        refresh: bool = False,
+        cache_expiration: int = 48
+    ) -> List[pd.DataFrame]:
         """
         gen_data.
 
-        Generate the dataframes required for the agent to work.
+        Generate the dataframes required for the agent to work, with Redis caching support.
+
+        Parameters:
+        -----------
+        query : Union[list, dict]
+            The query or queries to execute to generate dataframes.
+        agent_name : Optional[str]
+            Name of the agent, used for caching. If None, caching is disabled.
+        refresh : bool
+            If True, forces regeneration of dataframes even if cached versions exist.
+        cache_expiration_hours : int
+            Number of hours to keep the cached dataframes (default: 48).
+
+        Returns:
+        --------
+        List[pd.DataFrame]
+            A list of pandas DataFrames generated from the queries.
         """
-        # A list of dataframes to be used as context for the agent
+        # If agent_name is provided, we'll use Redis caching
+        if agent_name and not refresh:
+            # Try to get cached dataframes
+            cached_dfs = await cls._get_cached_data(agent_name)
+            if cached_dfs:
+                return cached_dfs
+
+        # Generate dataframes from query if no cache exists or refresh is True
+        dfs = await cls._execute_query(query)
+
+        # If agent_name is provided, cache the generated dataframes
+        if agent_name:
+            await cls._cache_data(agent_name, dfs, cache_expiration)
+
+        return dfs
+
+    @classmethod
+    async def _execute_query(cls, query: Union[list, dict]) -> List[pd.DataFrame]:
+        """Execute the query and return the generated dataframes."""
         if isinstance(query, dict):
             # is a MultiQuery execution, use the MultiQS class engine to do it:
             try:
                 return await cls.call_multiquery(query)
             except ValueError as e:
-                raise ValueError(
-                    f"Error creating Query For Agent: {e}"
-                )
+                raise ValueError(f"Error creating Query For Agent: {e}")
         elif isinstance(query, (str, list)):
             if isinstance(query, str):
                 query = [query]
             try:
                 return await cls.call_qs(query)
             except ValueError as e:
-                raise ValueError(
-                    f"Error creating Query For Agent: {e}"
-                )
+                raise ValueError(f"Error creating Query For Agent: {e}")
         else:
             raise ValueError(
                 f"Expected a list of queries or a dictionary, got {type(query)}"
             )
+
+    @classmethod
+    async def _get_redis_connection(cls):
+        """Get a connection to Redis."""
+        # You should adjust these parameters according to your Redis configuration
+        # Consider using environment variables for these settings
+        return await aioredis.Redis.from_url(
+            REDIS_HISTORY_URL,
+            decode_responses=False
+        )
+
+    @classmethod
+    async def _get_cached_data(cls, agent_name: str) -> Optional[List[pd.DataFrame]]:
+        """
+        Retrieve cached data from Redis if they exist.
+
+        Returns None if no cache exists or on error.
+        """
+        try:
+            redis_conn = await cls._get_redis_connection()
+            # Check if the agent key exists
+            key = f"agent_{agent_name}"
+            if not await redis_conn.exists(key):
+                await redis_conn.close()
+                return None
+
+            # Get all dataframe keys stored for this agent
+            df_keys = await redis_conn.hkeys(key)
+            if not df_keys:
+                await redis_conn.close()
+                return None
+
+            # Retrieve and convert each dataframe
+            dataframes = []
+            for df_key in df_keys:
+                df_json = await redis_conn.hget(key, df_key)
+                if df_json:
+                    # Convert from JSON to dataframe
+                    df_data = json_decoder(df_json.decode('utf-8'))
+                    df = pd.DataFrame.from_records(df_data)
+                    dataframes.append(df)
+
+            await redis_conn.close()
+            return dataframes if dataframes else None
+
+        except Exception as e:
+            # Log the error but continue execution without cache
+            print(f"Error retrieving cache: {e}")
+            return None
+
+    @classmethod
+    async def _cache_data(
+        cls,
+        agent_name: str,
+        dataframes: List[pd.DataFrame],
+        cache_expiration: int
+    ) -> None:
+        """
+        Cache the given dataframes in Redis.
+
+        The dataframes are stored as JSON records under a hash key named after the agent.
+        """
+        try:
+            if not dataframes:
+                return
+
+            redis_conn = await cls._get_redis_connection()
+            key = f"agent_{agent_name}"
+
+            # Delete any existing cache for this agent
+            await redis_conn.delete(key)
+
+            # Store each dataframe under the agent's hash
+            for i, df in enumerate(dataframes):
+                df_key = f"df{i+1}"
+                # Convert DataFrame to list of dictionaries
+                df_json = json_encoder(df.to_dict(orient='records'))
+                await redis_conn.hset(key, df_key, df_json)
+
+            # Set expiration time
+            expiration = timedelta(hours=cache_expiration)
+            await redis_conn.expire(key, int(expiration.total_seconds()))
+
+            await redis_conn.close()
+
+        except Exception as e:
+            # Log the error but continue execution
+            print(f"Error caching dataframes: {e}")
