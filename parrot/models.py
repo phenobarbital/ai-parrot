@@ -403,7 +403,7 @@ class AgentModel(Model):
     """AgentModel.
     ---- drop table if exists navigator.ai_agents;
     CREATE TABLE IF NOT EXISTS navigator.ai_agents (
-        chatbot_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        chatbot_id varchar PRIMARY KEY DEFAULT uuid_generate_v4(),
         name VARCHAR NOT NULL DEFAULT 'Nav',
         description VARCHAR,
         avatar TEXT,

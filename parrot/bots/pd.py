@@ -7,6 +7,7 @@ import uuid
 import redis.asyncio as aioredis
 import pandas as pd
 from datamodel.typedefs import SafeDict
+from langchain_core.exceptions import OutputParserException
 from langchain_experimental.tools.python.tool import PythonAstREPLTool
 from langchain_experimental.agents.agent_toolkits import create_pandas_dataframe_agent
 from navconfig import BASE_DIR
@@ -73,21 +74,81 @@ if the user asks for a podcast, use the GoogleVoiceTool to generate a podcast-st
 - The audio file will be saved in own output directory and returned as a dictionary with a *file_path* key.
 - Provide the summary text or executive summary as string to the GoogleVoiceTool.
 
+### PDF and HTML Report Generation
+
+When the user requests a PDF or HTML report, follow these detailed steps:
+1. HTML Document Structure
+Create a well-structured HTML document with:
+- Proper HTML5 doctype and structure
+- Responsive meta tags
+- Complete `<head>` section with title and character encoding
+- Organized sections with semantic HTML (`<header>`, `<section>`, `<footer>`, etc.)
+- Table of contents with anchor links when appropriate
+
+2. CSS Styling Framework
+- Use a lightweight CSS framework including in the `<head>` section of HTML
+
+3. For Data Tables
+- Apply appropriate classes for data tables
+- Use fixed headers when tables are long
+- Add zebra striping for better readability
+- Include hover effects for rows
+- Align numerical data right-aligned
+
+4. For Visualizations and Charts
+- Embed charts as SVG when possible for better quality
+- Include a figure container with caption
+- Add proper alt text for accessibility
+
+5. For Summary Cards
+- Use card components for key metrics and summaries
+- Group related metrics in a single card
+- Use a grid layout for multiple cards
+Example:
+```html
+
+
+
+            Key Metric
+
+                75.4%
+                Description of what this metric means
+
+
+
+
+```
+6. For Status Indicators
+- Use consistent visual indicators for status (green/red)
+- Include both color and symbol for colorblind accessibility
+```html
+✅ Compliant (83.5%)
+❌ Non-compliant (64.8%)
+```
+
 ### PDF Report Generation
 
 if the user asks for a PDF report, use the following steps:
 - First generate a complete report in HTML:
-    - Create a well-structured HTML document with proper sections, headings and styling.
-    - Include always all relevant information, charts, tables, summaries and insights.
-    - use seaborn or altair for charts and matplotlib for plots as embedded images.
-    - Use CSS for professional styling and formatting (margins, fonts, colors).
-    - Include a table of contents for easy navigation.
-- Convert the HTML report to PDF using the "weasyprint" library.
+    - Create a well-structured HTML document with proper sections, headings and styling
+    - Include always all relevant information, charts, tables, summaries and insights
+    - use seaborn or altair for charts and matplotlib for plots as embedded images
+    - Use CSS for professional styling and formatting (margins, fonts, colors)
+    - Include a table of contents for easy navigation
+- Set explicit page sizes and margins
+- Add proper page breaks before major sections
+- Define headers and footers for multi-page documents
+- Include page numbers
+- Convert the HTML report to PDF using this function:
+```python
+generate_pdf_from_html(html_content, report_dir=agent_report_dir):
+```
 - Return a python dictionary with the file path of the generated PDF report:
     - "file_path": "pdf_path"
     - "content_type": "application/pdf"
     - "type": "pdf"
     - "html_path": "html_path"
+- When converting to PDF, ensure all document requirements are met for professional presentation.
 
 ### Gamma Presentation Capabilities
 
@@ -124,6 +185,7 @@ The [type] has been saved to:
 filename: [file_path]
 
 [Brief description of what you did and what the file contains]
+[rest of answer]
 
 {rationale}
 
@@ -226,8 +288,7 @@ class PandasAgent(BasicAgent):
         python_tool = PythonAstREPLTool(locals=self.df_locals)
         # Add EDA functions to the tool's locals
         setup_code = """
-        import pandas as pd # Ensure pandas
-        from parrot.bots.tools import quick_eda, generate_eda_report, list_available_dataframes, create_plot
+        from parrot.bots.tools import quick_eda, generate_eda_report, list_available_dataframes, create_plot, generate_pdf_from_html
         """
         try:
             python_tool.run(setup_code)
@@ -248,7 +309,7 @@ class PandasAgent(BasicAgent):
             prefix=self._prompt_prefix,
             max_iterations=15,
             handle_parsing_errors=True,
-            return_intermediate_steps=True,
+            return_intermediate_steps=False,
             **kwargs
         )
 
@@ -400,14 +461,13 @@ class PandasAgent(BasicAgent):
             tools_names = [tool.name for tool in self.tools]
             capabilities = ''
             if self._capabilities:
-                capabilities = """
-                **Your Capabilities:**
-
-                {capabilities}
-                """
+                capabilities = "**Your Capabilities:**\n"
+                capabilities += self.sanitize_prompt_text(self._capabilities) + "\n"
             # Create the prompt
             self._prompt_prefix = f"Your name is {self.name}\n"
-            self._prompt_prefix += self.backstory + "\n"
+            if self.backstory:
+                sanitized_backstory = self.sanitize_prompt_text(self.backstory)
+                self._prompt_prefix += sanitized_backstory + "\n"
             if capabilities:
                 self._prompt_prefix += capabilities + "\n"
             self._prompt_prefix = PANDAS_PROMPT_PREFIX.format_map(
