@@ -619,6 +619,10 @@ class PandasAgent(BasicAgent):
             expiration = timedelta(hours=cache_expiration)
             await redis_conn.expire(key, int(expiration.total_seconds()))
 
+            self.logger.notice(
+                f"Data was cached for agent {agent_name} with expiration of {cache_expiration} hours"
+            )
+
             await redis_conn.close()
 
         except Exception as e:
