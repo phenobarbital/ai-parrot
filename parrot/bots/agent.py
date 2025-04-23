@@ -74,7 +74,6 @@ class BasicAgent(AbstractBot):
         prompt_template: str = None,
         **kwargs
     ):
-        print('HERE > ', kwargs)
         super().__init__(
             name=name,
             llm=llm,

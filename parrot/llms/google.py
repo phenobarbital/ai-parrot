@@ -29,5 +29,8 @@ class GoogleGenAI(AbstractLLM):
             model=self.model,
             api_key=self._api_key,
             temperature=self.temperature,
+            max_tokens=None,
+            timeout=None,
+            max_retries=3,
             **self.args
         )
