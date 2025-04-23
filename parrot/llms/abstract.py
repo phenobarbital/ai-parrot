@@ -18,9 +18,9 @@ class AbstractLLM(ABC):
         return cls.supported_models
 
     def __init__(self, *args, **kwargs):
-        self.model = kwargs.get("model", "databricks/dolly-v2-3b")
+        self.model = kwargs.get("model", self.model)
         self.task = kwargs.get("task", "text-generation")
-        self.temperature: float = kwargs.get('temperature', 0.6)
+        self.temperature: float = kwargs.get('temperature', 0.1)
         self.max_tokens: int = kwargs.get('max_tokens', 1024)
         self.top_k: float = kwargs.get('top_k', 10)
         self.top_p: float = kwargs.get('top_p', 0.90)

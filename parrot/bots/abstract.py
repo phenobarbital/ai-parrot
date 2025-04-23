@@ -145,6 +145,10 @@ class AbstractBot(DBInterface, ABC):
         self.logger = logging.getLogger(
             f'{self.name}.Bot'
         )
+        # Optional aiohttp Application:
+        self.app: Optional[web.Application] = None
+        # Optional Redis Memory Saver:
+        self.memory_saver: Optional[MemorySaver] = None
         # Start initialization:
         self.kb = None
         self.knowledge_base: list = []
@@ -175,7 +179,9 @@ class AbstractBot(DBInterface, ABC):
         # Definition of LLM
         self._llm_class: str = None
         self._default_llm: str = kwargs.get('use_llm', 'vertexai')
+        print('PRE > ', kwargs)
         self._llm_model = kwargs.get('model_name', 'gemini-1.5-pro')
+        print(' LLM MODEL > ', self._llm_model)
         self._llm_temp = kwargs.get('temperature', 0.2)
         self._llm_top_k = kwargs.get('top_k', 30)
         self._llm_top_p = kwargs.get('top_p', 0.6)
@@ -303,6 +309,7 @@ class AbstractBot(DBInterface, ABC):
     def llm_chain(
         self,
         llm: str = "vertexai",
+        model: str = None,
         **kwargs
     ) -> AbstractLLM:
         """llm_chain.
@@ -315,53 +322,37 @@ class AbstractBot(DBInterface, ABC):
 
         """
         if llm == 'openai' and OPENAI_ENABLED:
-            mdl = OpenAILLM(model="gpt-3.5-turbo", **kwargs)
+            mdl = OpenAILLM(model=model or "gpt-3.5-turbo", **kwargs)
         elif llm in ('vertexai', 'VertexLLM') and VERTEX_ENABLED:
-            mdl = VertexLLM(model="gemini-1.5-pro", **kwargs)
+            mdl = VertexLLM(model=model or "gemini-1.5-pro", **kwargs)
         elif llm == 'anthropic' and ANTHROPIC_ENABLED:
-            mdl = Anthropic(model="claude-3-opus-20240229", **kwargs)
+            mdl = Anthropic(model=model or "claude-3-opus-20240229", **kwargs)
         elif llm in ('groq', 'Groq') and GROQ_ENABLED:
-            mdl = GroqLLM(model="llama3-70b-8192", **kwargs)
+            mdl = GroqLLM(model=model or "llama3-70b-8192", **kwargs)
         elif llm == 'llama3' and GROQ_ENABLED:
-            mdl = GroqLLM(model="llama3-groq-70b-8192-tool-use-preview", **kwargs)
+            mdl = GroqLLM(model=model or "llama3-groq-70b-8192-tool-use-preview", **kwargs)
         elif llm == 'mixtral' and GROQ_ENABLED:
-            mdl = GroqLLM(model="mixtral-8x7b-32768", **kwargs)
+            mdl = GroqLLM(model=model or "mixtral-8x7b-32768", **kwargs)
         elif llm == 'google' and GOOGLE_ENABLED:
-            mdl = GoogleGenAI(model="models/gemini-2.5-pro-preview-03-25", **kwargs)
+            mdl = GoogleGenAI(model=model or "models/gemini-2.5-pro-preview-03-25", **kwargs)
         else:
             raise ValueError(f"Invalid llm: {llm}")
         # get the LLM:
+        print('MDL > ', mdl.model)
         return mdl
 
     def configure_llm(
         self,
         llm: Union[str, Callable] = None,
         config: Optional[dict] = None,
-        use_chat: bool = False
+        use_chat: bool = False,
+        **kwargs
     ):
         """
         Configuration of LLM.
         """
-        if self._llm_obj is not None and isinstance(self._llm_obj, AbstractLLM):
-            self._llm = self._llm_obj.get_llm()
-        elif not llm:
-            # Using Configuration or Default
-            if self._llm_class:
-                self._llm_obj = get_llm(
-                    llm_name=self._llm_class,
-                    model_name=self._llm_model,
-                    **self._llm_config
-                )
-            else:
-                # Using Default Configuration:
-                self._llm_obj = self.llm_chain(
-                    llm=self._default_llm,
-                    temperature=self._llm_temp,
-                    top_k=self._llm_top_k,
-                    top_p=self._llm_top_p,
-                )
-            self._llm = self._llm_obj.get_llm()
-        elif isinstance(llm, str):
+        print('LLM CONFIG > ', llm, 'LLM OBJ ', self._llm_obj)
+        if isinstance(llm, str):
             # Get the LLM By Name:
             self._llm_obj = self.llm_chain(
                 llm,
@@ -372,19 +363,31 @@ class AbstractBot(DBInterface, ABC):
         elif isinstance(llm, AbstractLLM):
             self._llm_obj = llm
             self._llm = llm.get_llm()
+        elif callable(llm):
+            # self._llm_obj = llm
+            self._llm = llm()
         elif isinstance(self._llm_obj, str):
             # is the name of the LLM object to be used:
             self._llm_obj = self.llm_chain(
-                llm=self._llm_obj
+                llm=self._llm_obj,
+                **kwargs
             )
             self._llm = self._llm_obj.get_llm()
         elif isinstance(self._llm_obj, AbstractLLM):
             self._llm = self._llm_obj.get_llm()
+        elif self._llm_class:
+            self._llm_obj = get_llm(
+                llm_name=self._llm_class,
+                model_name=self._llm_model,
+                **self._llm_config
+            )
         else:
             # TODO: Calling a Default LLM
             # TODO: passing the default configuration
+            print('DEFAULT MODEL > ', self._llm_model)
             self._llm_obj = self.llm_chain(
                 llm=self._default_llm,
+                model=self._llm_model,
                 temperature=self._llm_temp,
                 top_k=self._llm_top_k,
                 top_p=self._llm_top_p,
