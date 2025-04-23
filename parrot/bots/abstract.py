@@ -139,6 +139,8 @@ class AbstractBot(DBInterface, ABC):
             'chatbot_id',
             str(uuid.uuid4().hex)
         )
+        if self.chatbot_id is None:
+            self.chatbot_id = str(uuid.uuid4().hex)
         # Basic Information:
         self.name: str = name
         ##  Logging:

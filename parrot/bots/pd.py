@@ -180,13 +180,6 @@ class PandasAgent(BasicAgent):
             #     f"Expected pandas DataFrame, got {type(df)}"
             # )
         self.df_locals: dict = {}
-        # Chatbot ID:
-        self.chatbot_id: uuid.UUID = kwargs.pop(
-            'chatbot_id',
-            str(uuid.uuid4().hex)
-        )
-        if self.chatbot_id is None:
-            self.chatbot_id = uuid.uuid4().hex
         # Agent ID:
         self._prompt_prefix = PANDAS_PROMPT_PREFIX
         self._prompt_suffix = PANDAS_PROMPT_SUFFIX
@@ -196,19 +189,19 @@ class PandasAgent(BasicAgent):
         self.name = name or "Pandas Agent"
         self.description = "A simple agent that uses the pandas library to perform data analysis tasks."
         self._static_path = BASE_DIR.joinpath('static')
-        self.agent_report_dir = self._static_path.joinpath('reports', 'agents', str(self.chatbot_id))
-        if self.agent_report_dir.exists() is False:
-            self.agent_report_dir.mkdir(parents=True, exist_ok=True)
+        self.agent_report_dir = self._static_path.joinpath('reports', 'agents')
         super().__init__(
             name=name,
-            chatbot_id=self.chatbot_id,
+            # chatbot_id=self.chatbot_id,
             llm=llm,
             system_prompt=system_prompt,
             human_prompt=human_prompt,
             tools=tools,
             **kwargs
         )
-        self.agent_type = agent_type or "zero-shot-react-description"  # 'openai-tools'
+        # Must be one of 'tool-calling', 'openai-tools', 'openai-functions', or 'zero-shot-react-description'.
+        self.agent_type = agent_type or "zero-shot-react-description"
+        # self.agent_type = "openai-functions"
 
     def get_query(self) -> Union[List[str], dict]:
         """Get the query."""
@@ -233,7 +226,16 @@ class PandasAgent(BasicAgent):
         # Create the Python REPL tool
         python_tool = PythonAstREPLTool(locals=self.df_locals)
         # Add EDA functions to the tool's locals
-        python_tool.run("from parrot.bots.tools import quick_eda, generate_eda_report, list_available_dataframes, create_plot")
+        setup_code = """
+        import pandas as pd # Ensure pandas
+        from parrot.bots.tools import quick_eda, generate_eda_report, list_available_dataframes, create_plot
+        """
+        try:
+            python_tool.run(setup_code)
+        except Exception as e:
+            self.logger.error(
+                f"Error setting up python tool locals: {e}"
+            )
         # Add it to the tools list
         self.tools.append(python_tool)
         # Create the pandas agent
@@ -245,8 +247,9 @@ class PandasAgent(BasicAgent):
             allow_dangerous_code=True,
             extra_tools=self.tools,
             prefix=self._prompt_prefix,
-            max_iterations=3,
+            max_iterations=15,
             handle_parsing_errors=True,
+            return_intermediate_steps=True,
             **kwargs
         )
 
@@ -355,6 +358,9 @@ class PandasAgent(BasicAgent):
 
     def define_prompt(self, prompt, **kwargs):
         now = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        self.agent_report_dir = self._static_path.joinpath(str(self.chatbot_id))
+        if self.agent_report_dir.exists() is False:
+            self.agent_report_dir.mkdir(parents=True, exist_ok=True)
         # List of Tools:
         list_of_tools = ""
         for tool in self.tools:
