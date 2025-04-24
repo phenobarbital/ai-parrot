@@ -216,6 +216,9 @@ Question: {input}
 class PandasAgent(BasicAgent):
     """
     A simple agent that uses the pandas library to perform data analysis tasks.
+    TODO
+    - add notify tool (email, telegram, teams)
+    - specific teams tool to send private messages from agents
     """
 
     def __init__(
