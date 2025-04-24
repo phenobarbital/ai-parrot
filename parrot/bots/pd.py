@@ -40,6 +40,7 @@ Use these tools effectively to provide accurate and comprehensive responses:
 - DO NOT create a sample daframe or example data, the user's actual data is already available.
 - You can access columns with `df['column_name']`.
 - For numerical analysis, use functions like mean(), sum(), min(), max().
+- Always use copies of dataframes to avoid modifying the original data.
 - For categorical columns, consider using value_counts() to see distributions.
 - You can create visualizations using matplotlib, seaborn or altair through the Python tool.
 - Perform analysis over the entire DataFrame, not just a sample.
@@ -152,11 +153,9 @@ generate_pdf_from_html(html_content, report_dir=agent_report_dir):
 
 ### Gamma Presentation Capabilities
 
-if the user asks for a Gamma Presentation, use to generate a presentation link:
-```python
-gamma_link(summary_text)
-```
-- The presentation will be created using the Gamma API and the link will be returned as a url.
+if the user asks for a Gamma Presentation, generate a text summary of the data analysis and use the GammaLinkTool to create a presentation.
+- The summary should be concise and highlight key insights.
+- Use the GammaLinkTool to create an URL for presentation.
 
 ## Thoughts
 {format_instructions}
@@ -164,7 +163,7 @@ gamma_link(summary_text)
 **IMPORTANT: When creating your final answer**
 - Today is {today_date}, You must never contradict the given date.
 - When creating visualizations, ALWAYS use the non-interactive Matplotlib backend (Agg)
-- For saving files, use the following directory: agent_report_dir={agent_report_dir}.
+- For saving files, use the following directory: agent_report_dir={agent_report_dir}, variable can be called also *report_dir*.
 - When you perform calculations (e.g., df.groupby().count()), store the results in variables
 - In your final answer, ONLY use the EXACT values from your Python calculations.
 - Use the EXACT values from your analysis (store names, customer names, numbers).
@@ -288,7 +287,7 @@ class PandasAgent(BasicAgent):
         python_tool = PythonAstREPLTool(locals=self.df_locals)
         # Add EDA functions to the tool's locals
         setup_code = """
-        from parrot.bots.tools import quick_eda, generate_eda_report, list_available_dataframes, create_plot, generate_pdf_from_html
+        from parrot.bots.tools import quick_eda, generate_eda_report, list_available_dataframes, gamma_link, create_plot, generate_pdf_from_html
         """
         try:
             python_tool.run(setup_code)
@@ -432,7 +431,7 @@ class PandasAgent(BasicAgent):
         num_dfs = len(self.df)
         for i, dataframe in enumerate(self.df):
             df_name = f"df{i + 1}"
-            self.df_locals[df_name] = dataframe
+            self.df_locals[df_name] = dataframe.copy()
             self.df_locals['agent_report_dir'] = self.agent_report_dir
             # Get basic dataframe info
             df_shape = f"DataFrame Shape: {dataframe.shape[0]} rows × {dataframe.shape[1]} columns"
