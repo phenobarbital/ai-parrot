@@ -47,7 +47,7 @@ from navconfig.logging import logging
 from .abstract import AbstractBot
 from .prompts import AGENT_PROMPT
 from ..models import AgentResponse
-from ..tools import AbstractTool, SearchTool, MathTool, DuckDuckGoSearchTool
+from ..tools import AbstractTool, SearchTool, MathTool, DuckDuckGoSearchTool, GammaLink
 from ..tools.gvoice import GoogleVoiceTool
 
 
@@ -114,6 +114,7 @@ class BasicAgent(AbstractBot):
             DuckDuckGoSearchTool(),
             # SearchTool(),
             MathTool(),
+            GammaLink(),
             voice_tool,
         ]
         if tools:
