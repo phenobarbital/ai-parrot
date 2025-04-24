@@ -16,6 +16,7 @@ from datamodel.parsers.json import json_encoder, json_decoder
 from querysource.queries.qs import QS
 from querysource.queries.multi import MultiQS
 from ..tools import AbstractTool
+from ..tools.docx import DocxGeneratorTool
 from .agent import BasicAgent
 from ..models import AgentResponse
 from ..conf import BASE_STATIC_URL, REDIS_HISTORY_URL
@@ -420,6 +421,9 @@ class PandasAgent(BasicAgent):
         self.agent_report_dir = self._static_path.joinpath(str(self.chatbot_id))
         if self.agent_report_dir.exists() is False:
             self.agent_report_dir.mkdir(parents=True, exist_ok=True)
+        # Word Tool:
+        docx_tool = DocxGeneratorTool(output_dir=self.agent_report_dir)
+        self.tools.append(docx_tool)
         # List of Tools:
         list_of_tools = ""
         for tool in self.tools:
