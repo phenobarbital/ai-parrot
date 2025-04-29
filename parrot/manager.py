@@ -234,8 +234,6 @@ class BotManager:
 
     def get_agent(self, name: str) -> AbstractBot:
         """Get a Agent by ID."""
-        print(self._agents)
-        print('name > ', name)
         return self._agents.get(name)
 
     def remove_agent(self, agent: AbstractBot) -> None:

@@ -167,7 +167,9 @@ setup(
         "backoff==2.2.1",
         "asyncdb>=2.11.6",
         "google-cloud-bigquery==3.30.0",
-        "numexpr==2.10.2"
+        "numexpr==2.10.2",
+        "fpdf==1.7.2",
+        "python-docx==1.1.2"
     ],
     extras_require={
         "agents": [
@@ -221,7 +223,8 @@ setup(
         "google": [
             "langchain-google-genai==2.0.5",
             "langchain-google-vertexai==2.0.7",
-            "google-cloud-texttospeech==2.26.0"
+            "google-cloud-texttospeech==2.26.0",
+            "google-genai>=1.0.0",
             # "vertexai==1.71.1",
         ],
         "hunggingfaces": [

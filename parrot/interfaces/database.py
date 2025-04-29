@@ -1,12 +1,10 @@
 """DB (asyncdb) Extension.
 DB connection for any Application.
 """
-from abc import ABCMeta
 from asyncdb import AsyncDB
 
 
-
-class DBInterface(metaclass=ABCMeta):
+class DBInterface:
     """
     Interface for using database connections in an Application using AsyncDB.
     """

@@ -7,24 +7,22 @@ import uuid
 import redis.asyncio as aioredis
 import pandas as pd
 from datamodel.typedefs import SafeDict
+from langchain_core.exceptions import OutputParserException
 from langchain_experimental.tools.python.tool import PythonAstREPLTool
 from langchain_experimental.agents.agent_toolkits import create_pandas_dataframe_agent
 from navconfig import BASE_DIR
+from navconfig.logging import logging
 from datamodel.parsers.json import json_encoder, json_decoder
 from querysource.queries.qs import QS
 from querysource.queries.multi import MultiQS
 from ..tools import AbstractTool
+from ..tools.docx import DocxGeneratorTool
 from .agent import BasicAgent
 from ..models import AgentResponse
 from ..conf import BASE_STATIC_URL, REDIS_HISTORY_URL
 
 
 PANDAS_PROMPT_PREFIX = """
-Your name is {name}.
-
-{backstory}
-
-{capabilities}
 
 You are working with {num_dfs} pandas dataframes in Python, all dataframes are already loaded and available for analysis in the variables named as df1, df2, etc.
 
@@ -43,6 +41,7 @@ Use these tools effectively to provide accurate and comprehensive responses:
 - DO NOT create a sample daframe or example data, the user's actual data is already available.
 - You can access columns with `df['column_name']`.
 - For numerical analysis, use functions like mean(), sum(), min(), max().
+- Always use copies of dataframes to avoid modifying the original data.
 - For categorical columns, consider using value_counts() to see distributions.
 - You can create visualizations using matplotlib, seaborn or altair through the Python tool.
 - Perform analysis over the entire DataFrame, not just a sample.
@@ -67,9 +66,9 @@ quick_eda(dataframe=df, report_dir=agent_report_dir)
 ```
 This performs basic analysis with visualizations for key variables.
 When a user asks for "exploratory data analysis", "EDA", "data profiling", "understand the data",
-or "data exploration", use these functionss.
+or "data exploration", use these functions.
 - The report will be saved to the specified directory and the function will return the file path
-- The report includes basic statistics, correlations, distributions, and categorical value counts
+- The report includes basic statistics, correlations, distributions, and categorical value counts.
 
 ### Podcast capabilities
 
@@ -77,13 +76,95 @@ if the user asks for a podcast, use the GoogleVoiceTool to generate a podcast-st
 - The audio file will be saved in own output directory and returned as a dictionary with a *file_path* key.
 - Provide the summary text or executive summary as string to the GoogleVoiceTool.
 
+### PDF and HTML Report Generation
+
+When the user requests a PDF or HTML report, follow these detailed steps:
+1. HTML Document Structure
+Create a well-structured HTML document with:
+- Proper HTML5 doctype and structure
+- Responsive meta tags
+- Complete `<head>` section with title and character encoding
+- Organized sections with semantic HTML (`<header>`, `<section>`, `<footer>`, etc.)
+- Table of contents with anchor links when appropriate
+
+2. CSS Styling Framework
+- Use a lightweight CSS framework including in the `<head>` section of HTML
+
+3. For Data Tables
+- Apply appropriate classes for data tables
+- Use fixed headers when tables are long
+- Add zebra striping for better readability
+- Include hover effects for rows
+- Align numerical data right-aligned
+
+4. For Visualizations and Charts
+- Embed charts as SVG when possible for better quality
+- Include a figure container with caption
+- Add proper alt text for accessibility
+
+5. For Summary Cards
+- Use card components for key metrics and summaries
+- Group related metrics in a single card
+- Use a grid layout for multiple cards
+Example:
+```html
+
+
+
+            Key Metric
+
+                75.4%
+                Description of what this metric means
+
+
+
+
+```
+6. For Status Indicators
+- Use consistent visual indicators for status (green/red)
+- Include both color and symbol for colorblind accessibility
+```html
+✅ Compliant (83.5%)
+❌ Non-compliant (64.8%)
+```
+
+### PDF Report Generation
+
+if the user asks for a PDF report, use the following steps:
+- First generate a complete report in HTML:
+    - Create a well-structured HTML document with proper sections, headings and styling
+    - Include always all relevant information, charts, tables, summaries and insights
+    - use seaborn or altair for charts and matplotlib for plots as embedded images
+    - Use CSS for professional styling and formatting (margins, fonts, colors)
+    - Include a table of contents for easy navigation
+- Set explicit page sizes and margins
+- Add proper page breaks before major sections
+- Define headers and footers for multi-page documents
+- Include page numbers
+- Convert the HTML report to PDF using this function:
+```python
+generate_pdf_from_html(html_content, report_dir=agent_report_dir):
+```
+- Return a python dictionary with the file path of the generated PDF report:
+    - "file_path": "pdf_path"
+    - "content_type": "application/pdf"
+    - "type": "pdf"
+    - "html_path": "html_path"
+- When converting to PDF, ensure all document requirements are met for professional presentation.
+
+### Gamma Presentation Capabilities
+
+if the user asks for a Gamma Presentation, generate a text summary of the data analysis and use the GammaLinkTool to create a presentation.
+- The summary should be concise and highlight key insights.
+- Use the GammaLinkTool to create an URL for presentation.
+
 ## Thoughts
 {format_instructions}
 
 **IMPORTANT: When creating your final answer**
 - Today is {today_date}, You must never contradict the given date.
 - When creating visualizations, ALWAYS use the non-interactive Matplotlib backend (Agg)
-- For saving files, use the following directory: agent_report_dir={agent_report_dir}.
+- For saving files, use the following directory: agent_report_dir={agent_report_dir}, variable can be called also *report_dir*.
 - When you perform calculations (e.g., df.groupby().count()), store the results in variables
 - In your final answer, ONLY use the EXACT values from your Python calculations.
 - Use the EXACT values from your analysis (store names, customer names, numbers).
@@ -104,6 +185,7 @@ The [type] has been saved to:
 filename: [file_path]
 
 [Brief description of what you did and what the file contains]
+[rest of answer]
 
 {rationale}
 
@@ -119,7 +201,8 @@ Action Input: the input to the action
 Observation: the result of the action
 ... (this Thought/Action/Action Input/Observation can repeat N times)
 Thought: I now know the final answer
-Final Answer: the final answer to the original input question"""
+Final Answer: the final answer to the original input question
+"""
 
 
 PANDAS_PROMPT_SUFFIX = """
@@ -133,13 +216,16 @@ Question: {input}
 class PandasAgent(BasicAgent):
     """
     A simple agent that uses the pandas library to perform data analysis tasks.
+    TODO
+    - add notify tool (email, telegram, teams)
+    - specific teams tool to send private messages from agents
     """
 
     def __init__(
         self,
         name: str = 'Agent',
         agent_type: str = None,
-        llm: str = 'vertexai',
+        llm: Optional[str] = None,
         tools: List[AbstractTool] = None,
         system_prompt: str = None,
         human_prompt: str = None,
@@ -159,34 +245,27 @@ class PandasAgent(BasicAgent):
             #     f"Expected pandas DataFrame, got {type(df)}"
             # )
         self.df_locals: dict = {}
-        # Chatbot ID:
-        self.chatbot_id: uuid.UUID = kwargs.pop(
-            'chatbot_id',
-            str(uuid.uuid4().hex)
-        )
-        if self.chatbot_id is None:
-            self.chatbot_id = uuid.uuid4().hex
         # Agent ID:
         self._prompt_prefix = PANDAS_PROMPT_PREFIX
         self._prompt_suffix = PANDAS_PROMPT_SUFFIX
         self._prompt_template = prompt_template
         self._capabilities: str = kwargs.get('capabilities', None)
+        self._format_instructions: str = kwargs.get('format_instructions', FORMAT_INSTRUCTIONS)
         self.name = name or "Pandas Agent"
         self.description = "A simple agent that uses the pandas library to perform data analysis tasks."
         self._static_path = BASE_DIR.joinpath('static')
-        self.agent_report_dir = self._static_path.joinpath('reports', 'agents', str(self.chatbot_id))
-        if self.agent_report_dir.exists() is False:
-            self.agent_report_dir.mkdir(parents=True, exist_ok=True)
+        self.agent_report_dir = self._static_path.joinpath('reports', 'agents')
         super().__init__(
             name=name,
-            chatbot_id=self.chatbot_id,
             llm=llm,
             system_prompt=system_prompt,
             human_prompt=human_prompt,
             tools=tools,
             **kwargs
         )
-        self.agent_type = agent_type or "zero-shot-react-description"  # 'openai-tools'
+        # Must be one of 'tool-calling', 'openai-tools', 'openai-functions', or 'zero-shot-react-description'.
+        self.agent_type = agent_type or "zero-shot-react-description"
+        # self.agent_type = "openai-functions"
 
     def get_query(self) -> Union[List[str], dict]:
         """Get the query."""
@@ -211,7 +290,15 @@ class PandasAgent(BasicAgent):
         # Create the Python REPL tool
         python_tool = PythonAstREPLTool(locals=self.df_locals)
         # Add EDA functions to the tool's locals
-        python_tool.run("from parrot.bots.tools.eda import quick_eda, generate_eda_report, list_available_dataframes")
+        setup_code = """
+        from parrot.bots.tools import quick_eda, generate_eda_report, list_available_dataframes, gamma_link, create_plot, generate_pdf_from_html
+        """
+        try:
+            python_tool.run(setup_code)
+        except Exception as e:
+            self.logger.error(
+                f"Error setting up python tool locals: {e}"
+            )
         # Add it to the tools list
         self.tools.append(python_tool)
         # Create the pandas agent
@@ -223,8 +310,9 @@ class PandasAgent(BasicAgent):
             allow_dangerous_code=True,
             extra_tools=self.tools,
             prefix=self._prompt_prefix,
-            max_iterations=3,
-            # handle_parsing_errors=True,
+            max_iterations=15,
+            handle_parsing_errors=True,
+            return_intermediate_steps=False,
             **kwargs
         )
 
@@ -333,6 +421,12 @@ class PandasAgent(BasicAgent):
 
     def define_prompt(self, prompt, **kwargs):
         now = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        self.agent_report_dir = self._static_path.joinpath(str(self.chatbot_id))
+        if self.agent_report_dir.exists() is False:
+            self.agent_report_dir.mkdir(parents=True, exist_ok=True)
+        # Word Tool:
+        docx_tool = DocxGeneratorTool(output_dir=self.agent_report_dir)
+        self.tools.append(docx_tool)
         # List of Tools:
         list_of_tools = ""
         for tool in self.tools:
@@ -344,7 +438,7 @@ class PandasAgent(BasicAgent):
         num_dfs = len(self.df)
         for i, dataframe in enumerate(self.df):
             df_name = f"df{i + 1}"
-            self.df_locals[df_name] = dataframe
+            self.df_locals[df_name] = dataframe.copy()
             self.df_locals['agent_report_dir'] = self.agent_report_dir
             # Get basic dataframe info
             df_shape = f"DataFrame Shape: {dataframe.shape[0]} rows × {dataframe.shape[1]} columns"
@@ -373,26 +467,26 @@ class PandasAgent(BasicAgent):
             tools_names = [tool.name for tool in self.tools]
             capabilities = ''
             if self._capabilities:
-                capabilities = """
-                **Your Capabilities:**
-
-                {capabilities}
-                """
+                capabilities = "**Your Capabilities:**\n"
+                capabilities += self.sanitize_prompt_text(self._capabilities) + "\n"
             # Create the prompt
+            self._prompt_prefix = f"Your name is {self.name}\n"
+            if self.backstory:
+                sanitized_backstory = self.sanitize_prompt_text(self.backstory)
+                self._prompt_prefix += sanitized_backstory + "\n"
+            if capabilities:
+                self._prompt_prefix += capabilities + "\n"
             self._prompt_prefix = PANDAS_PROMPT_PREFIX.format_map(
                 SafeDict(
-                    name=self.name,
                     list_of_tools=list_of_tools,
                     today_date=now,
                     system_prompt_base=prompt,
                     tools=", ".join(tools_names),
-                    format_instructions=FORMAT_INSTRUCTIONS.format(
+                    format_instructions=self._format_instructions.format(
                         tool_names=", ".join(tools_names)),
                     df_info=df_info,
                     num_dfs=num_dfs,
-                    capabilities=capabilities,
                     rationale=self.rationale,
-                    backstory=self.backstory,
                     agent_report_dir=self.agent_report_dir,
                     **kwargs
                 )
@@ -619,7 +713,7 @@ class PandasAgent(BasicAgent):
             expiration = timedelta(hours=cache_expiration)
             await redis_conn.expire(key, int(expiration.total_seconds()))
 
-            self.logger.notice(
+            logging.notice(
                 f"Data was cached for agent {agent_name} with expiration of {cache_expiration} hours"
             )
 

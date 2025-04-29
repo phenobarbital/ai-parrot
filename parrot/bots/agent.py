@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import List, Any, Union
 import os
 from datetime import datetime, timezone
+from aiohttp import web
 from langchain_core.prompts import (
     PromptTemplate,
     ChatPromptTemplate
@@ -46,7 +47,7 @@ from navconfig.logging import logging
 from .abstract import AbstractBot
 from .prompts import AGENT_PROMPT
 from ..models import AgentResponse
-from ..tools import AbstractTool, SearchTool, MathTool, DuckDuckGoSearchTool
+from ..tools import AbstractTool, SearchTool, MathTool, DuckDuckGoSearchTool, GammaLink
 from ..tools.gvoice import GoogleVoiceTool
 
 
@@ -66,7 +67,7 @@ class BasicAgent(AbstractBot):
         self,
         name: str = 'Agent',
         agent_type: str = 'zero_shot',
-        llm: str = 'vertexai',
+        llm: str = None,
         tools: List[AbstractTool] = None,
         system_prompt: str = None,
         human_prompt: str = None,
@@ -113,6 +114,7 @@ class BasicAgent(AbstractBot):
             DuckDuckGoSearchTool(),
             # SearchTool(),
             MathTool(),
+            GammaLink(),
             voice_tool,
         ]
         if tools:
@@ -314,9 +316,22 @@ class BasicAgent(AbstractBot):
     async def configure(self, app=None) -> None:
         """Basic Configuration of Agent.
         """
-        await super(BasicAgent, self).configure(app)
+        if app:
+            if isinstance(app, web.Application):
+                self.app = app  # register the app into the Extension
+            else:
+                self.app = app.get_app()  # Nav Application
+        # adding this configured chatbot to app:
+        if self.app:
+            self.app[f"{self.name.lower()}_bot"] = self
         # Configure LLM:
+        print('LLM PRE CONF > ', self._llm_model)
         self.configure_llm(use_chat=True)
+        # And define Prompt:
+        self._define_prompt()
+        # Configure VectorStore if enabled:
+        if self._use_vector:
+            self.configure_store()
         # Conversation History:
         self.memory = self.get_memory()
         # 1. Initialize the Agent (as the base for RunnableMultiActionAgent)
@@ -406,3 +421,49 @@ class BasicAgent(AbstractBot):
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         self._agent = None
+
+    def sanitize_prompt_text(self, text: str) -> str:
+        """
+        Sanitize text for use in prompts to avoid parsing issues.
+
+        This function:
+        1. Escapes any triple backticks that might interfere with code blocks
+        2. Normalizes newlines
+        3. Removes any potentially problematic characters
+        4. Ensures proper escaping of markdown formatting
+
+        Args:
+            text (str): The text to sanitize
+
+        Returns:
+            str: The sanitized text
+        """
+        if not text:
+            return ""
+
+        # Convert None to empty string
+        if text is None:
+            return ""
+
+        # Normalize newlines
+        text = text.replace('\r\n', '\n').replace('\r', '\n')
+
+        # Escape triple backticks - this is crucial as they can interfere with code blocks
+        # Replace triple backticks with escaped version
+        text = text.replace("```", "\\`\\`\\`")
+
+        # Handle markdown code blocks more safely
+        # If we detect a python code block, ensure it's properly formatted
+        pattern = r'\\`\\`\\`python\n(.*?)\\`\\`\\`'
+        import re
+        text = re.sub(
+            pattern,
+            r'The following is Python code:\n\1\nEnd of Python code.',
+            text,
+            flags=re.DOTALL
+        )
+
+        # Remove any control characters that might cause issues
+        text = ''.join(ch for ch in text if ord(ch) >= 32 or ch in '\n\t')
+
+        return text
