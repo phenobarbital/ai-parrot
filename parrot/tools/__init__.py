@@ -6,6 +6,8 @@ from .abstract import AbstractTool
 from .basic import SearchTool, MathTool
 from .duck import DuckDuckGoSearchTool, DuckDuckGoRelevantSearch
 from .gamma import GammaLink
+from .gvoice import GoogleVoiceTool
+from .docx import WordToMarkdownTool
 
 # from langchain_community.tools.yahoo_finance_news import YahooFinanceNewsTool
 # from langchain_community.tools import YouTubeSearchTool
