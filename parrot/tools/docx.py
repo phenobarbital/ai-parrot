@@ -8,6 +8,13 @@ from docx import Document
 from docx.shared import Pt, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from langchain.tools import BaseTool
+import asyncio
+from typing import Optional, Dict, Any
+from urllib.parse import urlparse
+import aiohttp
+import aiofiles
+from markdownify import markdownify as md
+import mammoth
 
 
 class DocxGeneratorTool(BaseTool):
@@ -241,3 +248,97 @@ class DocxGeneratorTool(BaseTool):
                 for col_idx, cell in enumerate(cells):
                     if col_idx < len(header_cells):  # Ensure we don't exceed columns
                         table.cell(row_idx+1, col_idx).text = cell
+
+
+class WordToMarkdownTool(BaseTool):
+    """Converts a Word document to Markdown format by downloading it from a URL."""
+    name: str = "word_to_markdown_tool"
+    description: str = (
+        "Converts a Word document to Markdown format from a URL. "
+        "This tool downloads the Word document from the provided URL, "
+        "converts it to Markdown format, and returns the content. "
+        "Useful for processing Word documents and making them easier to analyze by LLMs."
+        "\nThe input must be the complete URL of the Word document."
+    )
+    return_direct: bool = False
+    _temp_dir: Optional[str] = None
+
+    async def _download_file(self, url: str) -> str:
+        """Downloads a file from a URL to a temporary file."""
+        # Create a temporary directory if it doesn't exist
+        if not self._temp_dir:
+            self._temp_dir = tempfile.mkdtemp()
+        
+        # Get the filename from the URL
+        parsed_url = urlparse(url)
+        filename = os.path.basename(parsed_url.path)
+        if not filename.endswith(('.docx', '.doc')):
+            filename += '.docx'  # Add extension if it doesn't exist
+        
+        # Complete path to the temporary file
+        file_path = os.path.join(self._temp_dir, filename)
+        
+        # Download the file
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as response:
+                if response.status != 200:
+                    raise Exception(f"Error downloading the file: {response.status}")
+                
+                # Save the file
+                async with aiofiles.open(file_path, 'wb') as f:
+                    await f.write(await response.read())
+        
+        return file_path
+
+    async def _convert_to_markdown(self, file_path: str) -> str:
+        """Converts a Word document to Markdown."""
+        # Use mammoth to convert to HTML and then to Markdown
+        with open(file_path, "rb") as docx_file:
+            result = mammoth.convert_to_html(docx_file)
+            html = result.value
+            markdown_text = md(html)
+            
+            # If there are warning messages, add them as a comment at the beginning
+            if result.messages:
+                warnings = "\n".join([f"<!-- Warning: {msg} -->" for msg in result.messages])
+                markdown_text = f"{warnings}\n\n{markdown_text}"
+            
+            return markdown_text
+
+    async def _process_word_document(self, url: str) -> Dict[str, Any]:
+        """Processes a Word document from a URL and converts it to Markdown."""
+        try:
+            file_path = await self._download_file(url)
+            markdown_text = await self._convert_to_markdown(file_path)
+            
+            # Cleanup of temporary files
+            if os.path.exists(file_path):
+                os.remove(file_path)
+            
+            return {
+                "markdown": markdown_text,
+                "source_url": url,
+                "success": True
+            }
+        except Exception as e:
+            return {
+                "error": str(e),
+                "source_url": url,
+                "success": False
+            }
+        finally:
+            # Ensure cleanup of the temporary directory if it's empty
+            if self._temp_dir and os.path.exists(self._temp_dir) and not os.listdir(self._temp_dir):
+                os.rmdir(self._temp_dir)
+
+    async def _arun(self, url: str) -> Dict[str, Any]:
+        """Runs the tool asynchronously."""
+        return await self._process_word_document(url)
+
+    def _run(self, url: str) -> Dict[str, Any]:
+        """Runs the tool synchronously."""
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            return loop.run_until_complete(self._process_word_document(url))
+        else:
+            return asyncio.run(self._process_word_document(url))
