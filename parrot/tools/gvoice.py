@@ -14,7 +14,6 @@ from langchain.tools import BaseTool
 from navconfig import BASE_DIR
 from parrot.conf import GOOGLE_TTS_SERVICE
 
-
 class GoogleVoiceTool(BaseTool):
     """Generate a podcast-style audio file from Text using Google Cloud Text-to-Speech."""
     name: str = "podcast_generator_tool"
@@ -31,9 +30,30 @@ class GoogleVoiceTool(BaseTool):
     output_format: str = "OGG_OPUS"  # OGG format is more podcast-friendly
     _key_service: Optional[str]
 
-    def __init__(self, **kwargs):
+    def __init__(self, 
+                 voice_model: str = "en-US-Neural2-F",
+                 output_format: str = "OGG_OPUS",
+                 output_dir: str = None,
+                 name: str = "podcast_generator_tool",
+                 **kwargs):
+        """Initialize the GoogleVoiceTool."""
+        
         super().__init__(**kwargs)
+        
+        # Using the config from conf.py, but with additional verification
         self._key_service = GOOGLE_TTS_SERVICE
+        
+        # If not found in the config, try a default location
+        if self._key_service is None:
+            default_path = BASE_DIR / "env" / "google" / "tts-service.json"
+            if os.path.exists(default_path):
+                self._key_service = str(default_path)
+                print(f"Using default credentials path: {self._key_service}")
+            else:
+                print(f"Warning: No credentials found in config or at default path {default_path}")
+        else:
+            print(f"Using credentials from config: {self._key_service}")
+        
         if self.voice_gender == 'FEMALE':
             self.voice_model = "en-US-Neural2-F"
         elif self.voice_gender == 'MALE':
@@ -42,38 +62,32 @@ class GoogleVoiceTool(BaseTool):
             self.voice_model = "en-US-Neural2-G"
 
     def is_markdown(self, text: str) -> bool:
-        """
-        Checks if a text string is likely Markdown by looking for structural and common syntax.
-        """
-        if not text.strip():
-            return False  # Empty text is not Markdown
-
-        # Check for structural elements that often indicate Markdown
-        if re.search(r"^#+\s", text, re.MULTILINE):  # Headings at the start of lines
+        """Determine if the text appears to be Markdown formatted."""
+        if not text or not isinstance(text, str):
+            return False
+        
+        # Corrección: Separar los caracteres problemáticos y el rango
+        if re.search(r"^[#*_>`\[\d-]", text.strip()[0]):  # Check if first char is a Markdown marker
             return True
-        if re.search(r"^\s*([-*]\s|\d+\.\s)", text, re.MULTILINE):  # Lists at the start of lines
+        
+        # Check for common Markdown patterns
+        if re.search(r"#{1,6}\s+", text):  # Headers
             return True
-        if re.search(r"```", text):  # Code blocks
+        if re.search(r"\*\*.*?\*\*", text):  # Bold
             return True
-        if re.search(r"\[.+?\]\(.+?\)", text):  # Links
+        if re.search(r"_.*?_", text):  # Italic
             return True
-        if re.search(r"> .+", text, re.MULTILINE):  # Blockquotes
+        if re.search(r"`.*?`", text):  # Code
             return True
-        if re.search(r"^-{3,}$|^\*{3,}$|^_{3,}$", text, re.MULTILINE):  # Horizontal rules
+        if re.search(r"\[.*?\]\(.*?\)", text):  # Links
             return True
-        if re.search(r"\*\*\w+\*\*", text) or re.search(r"__\w+__", text):  # Bold
+        if re.search(r"^\s*[\*\-\+]\s+", text, re.MULTILINE):  # Unordered lists
             return True
-        if re.search(r"\*\w+\*", text) or re.search(r"_\w+_", text):  # Italics
+        if re.search(r"^\s*\d+\.\s+", text, re.MULTILINE):  # Ordered lists
             return True
-        if re.search(r"`[^`]+`", text):  # Inline code
+        if re.search(r"```.*?```", text, re.DOTALL):  # Code blocks
             return True
-        if re.search(r"\n\n", text.strip()): # Paragraph breaks (more than one newline)
-            return True
-
-        # If none of the stronger structural indicators are found, do a more general check
-        if re.search(r"^[#*_>-\d`\[]", text.strip()[0]): # Check if the first non-space char is a common Markdown marker
-            return True
-
+        
         return False
 
 
@@ -126,7 +140,27 @@ class GoogleVoiceTool(BaseTool):
         return ssml
 
     async def _generate_podcast(self, query: str) -> dict:
+        """Main method to generate a podcast from query."""
         try:
+            if self._key_service and Path(self._key_service).exists():
+                try:
+                    credentials = service_account.Credentials.from_service_account_file(
+                        self._key_service
+                    )
+                except Exception as cred_error:
+                    print(f"Error loading credentials: {cred_error}")
+            
+            if isinstance(query, str):
+                try:
+                    # Try to parse as JSON
+                    import json
+                    query_dict = json.loads(query)
+                    if "output_file" in query_dict:
+                        print(f"Output file specified in query: {query_dict['output_file']}")
+                        print(f"Output directory exists: {os.path.isdir(os.path.dirname(query_dict['output_file']))}")
+                except json.JSONDecodeError:
+                    print("Query is plain text, not JSON")
+            
             print("1. Converting Markdown to SSML...")
             if self.is_markdown(query):
                 ssml_text = self.markdown_to_ssml(query)
@@ -208,7 +242,9 @@ class GoogleVoiceTool(BaseTool):
                 "filename": output_filename
             }
         except Exception as e:
-            print(f"An error occurred: {e}")
+            import traceback
+            print(f"Error in _generate_podcast: {e}")
+            print(traceback.format_exc())
             return {"error": str(e)}
 
     async def _arun(self, query: str) -> dict:
@@ -227,7 +263,13 @@ class GoogleVoiceTool(BaseTool):
             A dictionary containing the absolute path to the saved audio file
             under the key "file_path", or an error message under "error".
         """
-        return await self._generate_podcast(query)
+        try:
+            return await self._generate_podcast(query)
+        except Exception as e:
+            import traceback
+            print(f"Error in GoogleVoiceTool._arun: {e}")
+            print(traceback.format_exc())
+            return {"error": str(e)}
 
     def _run(self, query: str) -> dict:
         """

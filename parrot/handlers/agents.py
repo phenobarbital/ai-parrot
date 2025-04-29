@@ -261,7 +261,8 @@ class AgentHandler(BaseView):
                 # Generate the Data Frames from the queries:
                 dfs = await PandasAgent.gen_data(
                     agent_name=str(agent.chatbot_id),
-                    query=qry
+                    query=qry,
+                    refresh=True
                 )
                 if dfs:
                     # Update the agent with the new dataframes
