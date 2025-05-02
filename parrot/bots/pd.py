@@ -4,6 +4,7 @@ from io import BytesIO, StringIO
 from datetime import datetime, timezone, timedelta
 import re
 import uuid
+from string import Template
 import redis.asyncio as aioredis
 import pandas as pd
 from datamodel.typedefs import SafeDict
@@ -24,17 +25,22 @@ from ..conf import BASE_STATIC_URL, REDIS_HISTORY_URL
 
 PANDAS_PROMPT_PREFIX = """
 
-You are working with {num_dfs} pandas dataframes in Python, all dataframes are already loaded and available for analysis in the variables named as df1, df2, etc.
+Your name is $name, you are a helpful assistant built to provide comprehensive guidance and support on data calculations and data analysis working with pandas dataframes.
+$description\n\n
+$backstory\n
+$capabilities\n
+
+You are working with $num_dfs pandas dataframes in Python, all dataframes are already loaded and available for analysis in the variables named as df1, df2, etc.
 
 **Answer the following questions as best you can. You have access to the following tools:**
 
-- {tools}\n
+- $tools\n
 
 Use these tools effectively to provide accurate and comprehensive responses:
-{list_of_tools}
+$list_of_tools
 
 ** DataFrames Information: **
-{df_info}
+$df_info
 
 ## Working with DataFrames
 - First examine the existing dataframe with `df.info()` and `df.describe()`.
@@ -159,12 +165,12 @@ if the user asks for a Gamma Presentation, generate a text summary of the data a
 - Use the GammaLinkTool to create an URL for presentation.
 
 ## Thoughts
-{format_instructions}
+$format_instructions
 
 **IMPORTANT: When creating your final answer**
-- Today is {today_date}, You must never contradict the given date.
+- Today is $today_date, You must never contradict the given date.
 - When creating visualizations, ALWAYS use the non-interactive Matplotlib backend (Agg)
-- For saving files, use the following directory: agent_report_dir={agent_report_dir}, variable can be called also *report_dir*.
+- For saving files, use the following directory: agent_report_dir=$agent_report_dir, variable can be called also *report_dir*.
 - When you perform calculations (e.g., df.groupby().count()), store the results in variables
 - In your final answer, ONLY use the EXACT values from your Python calculations.
 - Use the EXACT values from your analysis (store names, customer names, numbers).
@@ -187,7 +193,7 @@ filename: [file_path]
 [Brief description of what you did and what the file contains]
 [rest of answer]
 
-{rationale}
+$rationale
 
 """
 
@@ -246,7 +252,7 @@ class PandasAgent(BasicAgent):
             # )
         self.df_locals: dict = {}
         # Agent ID:
-        self._prompt_prefix = PANDAS_PROMPT_PREFIX
+        self._prompt_prefix = None
         self._prompt_suffix = PANDAS_PROMPT_SUFFIX
         self._prompt_template = prompt_template
         self._capabilities: str = kwargs.get('capabilities', None)
@@ -470,27 +476,29 @@ class PandasAgent(BasicAgent):
                 capabilities = "**Your Capabilities:**\n"
                 capabilities += self.sanitize_prompt_text(self._capabilities) + "\n"
             # Create the prompt
-            self._prompt_prefix = f"Your name is {self.name}\n"
+            sanitized_backstory = ''
             if self.backstory:
                 sanitized_backstory = self.sanitize_prompt_text(self.backstory)
-                self._prompt_prefix += sanitized_backstory + "\n"
-            if capabilities:
-                self._prompt_prefix += capabilities + "\n"
-            self._prompt_prefix = PANDAS_PROMPT_PREFIX.format_map(
-                SafeDict(
-                    list_of_tools=list_of_tools,
-                    today_date=now,
-                    system_prompt_base=prompt,
-                    tools=", ".join(tools_names),
-                    format_instructions=self._format_instructions.format(
-                        tool_names=", ".join(tools_names)),
-                    df_info=df_info,
-                    num_dfs=num_dfs,
-                    rationale=self.rationale,
-                    agent_report_dir=self.agent_report_dir,
-                    **kwargs
-                )
+            # self._prompt_prefix = PANDAS_PROMPT_PREFIX.format_map(
+            tmpl = Template(PANDAS_PROMPT_PREFIX)
+            self._prompt_prefix = tmpl.safe_substitute(
+                name=self.name,
+                description=self.description,
+                list_of_tools=list_of_tools,
+                backstory=sanitized_backstory,
+                capabilities=capabilities,
+                today_date=now,
+                system_prompt_base=prompt,
+                tools=", ".join(tools_names),
+                format_instructions=self._format_instructions.format(
+                    tool_names=", ".join(tools_names)),
+                df_info=df_info,
+                num_dfs=num_dfs,
+                rationale=self.rationale,
+                agent_report_dir=self.agent_report_dir,
+                **kwargs
             )
+            print('PROMPT >> ', self._prompt_prefix)
             self._prompt_suffix = PANDAS_PROMPT_SUFFIX
 
     def default_backstory(self) -> str:
@@ -713,7 +721,7 @@ class PandasAgent(BasicAgent):
             expiration = timedelta(hours=cache_expiration)
             await redis_conn.expire(key, int(expiration.total_seconds()))
 
-            logging.notice(
+            logging.info(
                 f"Data was cached for agent {agent_name} with expiration of {cache_expiration} hours"
             )
 
