@@ -2,6 +2,7 @@ from navigator.handlers.types import AppHandler
 # Tasker:
 from navigator.background import BackgroundQueue
 from navigator_auth import AuthHandler
+from querysource.services import QuerySource
 from parrot.manager import BotManager
 from parrot.conf import STATIC_DIR
 from parrot.handlers.bots import (
@@ -33,6 +34,12 @@ class Main(AppHandler):
             max_workers=5,
             queue_size=5
         )
+        # Loading QUerySource
+        qry = QuerySource(
+            lazy=False,
+            loop=self.event_loop()
+        )
+        qry.setup(self.app)
         # Chatbot System
         self.bot_manager = BotManager()
         self.bot_manager.setup(self.app)
