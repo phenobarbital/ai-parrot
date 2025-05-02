@@ -218,6 +218,8 @@ Question: {input}
 {agent_scratchpad}
 """
 
+def brace_escape(text: str) -> str:
+    return text.replace('{', '{{').replace('}', '}}')
 
 class PandasAgent(BasicAgent):
     """
@@ -450,9 +452,9 @@ class PandasAgent(BasicAgent):
             df_shape = f"DataFrame Shape: {dataframe.shape[0]} rows × {dataframe.shape[1]} columns"
             df_columns = f"Columns: {', '.join(dataframe.columns.tolist())}"
             # Generate summary statistics
-            summary_stats = dataframe.describe(include='all').to_markdown()
+            summary_stats = brace_escape(dataframe.describe(include='all').to_markdown())
             # Generate sample rows
-            sample_rows = dataframe.head(10).to_markdown()
+            sample_rows = brace_escape(dataframe.head(10).to_markdown())
             # Create df_info block
             df_info = f"""
 ** DataFrame {df_name} Information **
