@@ -500,7 +500,7 @@ class PandasAgent(BasicAgent):
                 agent_report_dir=self.agent_report_dir,
                 **kwargs
             )
-            print('PROMPT >> ', self._prompt_prefix)
+            print('PROMPT > ', self._prompt_prefix)
             self._prompt_suffix = PANDAS_PROMPT_SUFFIX
 
     def default_backstory(self) -> str:
