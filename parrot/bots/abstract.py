@@ -47,8 +47,10 @@ from ..conf import (
     REDIS_HISTORY_URL,
     EMBEDDING_DEFAULT_MODEL
 )
+
 ## LLM configuration
 from ..llms import AbstractLLM
+
 # Vertex
 try:
     from ..llms.vertex import VertexLLM
@@ -83,8 +85,6 @@ try:
     GROQ_ENABLED = True
 except (ModuleNotFoundError, ImportError):
     GROQ_ENABLED = False
-# Function for get LLM configuration.
-from ..llms import get_llm
 
 from ..utils import SafeDict
 # Chat Response:
@@ -263,6 +263,9 @@ class AbstractBot(DBInterface, ABC):
 
     def permissions(self):
         return self._permissions
+
+    def get_supported_models(self) -> List[str]:
+        return self._llm_obj.get_supported_models()
 
     def _get_default_attr(self, key, default: Any = None, **kwargs):
         if key in kwargs:

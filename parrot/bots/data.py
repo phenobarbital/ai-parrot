@@ -2,18 +2,16 @@ from pathlib import Path
 from typing import List, Union, Optional
 from io import BytesIO, StringIO
 from datetime import datetime, timezone, timedelta
-import re
-import uuid
 from string import Template
 import redis.asyncio as aioredis
 import pandas as pd
 from datamodel.typedefs import SafeDict
+from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611 # noqa
 from langchain_core.exceptions import OutputParserException
 from langchain_experimental.tools.python.tool import PythonAstREPLTool
 from langchain_experimental.agents.agent_toolkits import create_pandas_dataframe_agent
 from navconfig import BASE_DIR
 from navconfig.logging import logging
-from datamodel.parsers.json import json_encoder, json_decoder
 from querysource.queries.qs import QS
 from querysource.queries.multi import MultiQS
 from ..tools import AbstractTool
@@ -319,7 +317,6 @@ class PandasAgent(BasicAgent):
             extra_tools=self.tools,
             prefix=self._prompt_prefix,
             max_iterations=15,
-            handle_parsing_errors=True,
             return_intermediate_steps=False,
             **kwargs
         )
@@ -454,7 +451,7 @@ class PandasAgent(BasicAgent):
             # Generate summary statistics
             summary_stats = brace_escape(dataframe.describe(include='all').to_markdown())
             # Generate sample rows
-            sample_rows = brace_escape(dataframe.head(10).to_markdown())
+            sample_rows = brace_escape(dataframe.head(5).to_markdown())
             # Create df_info block
             df_info = f"""
 ** DataFrame {df_name} Information **
@@ -468,9 +465,9 @@ class PandasAgent(BasicAgent):
 ## {df_name} Summary Statistics
 {summary_stats}
 
-## {df_name} Sample Rows (First 10)
+## {df_name} Sample Rows (First 5)
 {sample_rows}
-
+\n\n
 """
             tools_names = [tool.name for tool in self.tools]
             capabilities = ''
@@ -500,7 +497,6 @@ class PandasAgent(BasicAgent):
                 agent_report_dir=self.agent_report_dir,
                 **kwargs
             )
-            print('PROMPT > ', self._prompt_prefix)
             self._prompt_suffix = PANDAS_PROMPT_SUFFIX
 
     def default_backstory(self) -> str:
