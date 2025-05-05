@@ -163,3 +163,7 @@ GOOGLE_CREDENTIALS_FILE = Path(
         fallback=BASE_DIR.joinpath('env', 'google', 'key.json')
     )
 )
+
+## LLM default config:
+DEFAULT_LLM_MODEL = config.get('LLM_MODEL', fallback='gemini-1.5-pro')
+DEFAULT_LLM_TEMPERATURE = config.get('LLM_TEMPERATURE', fallback=0.1)
