@@ -7,6 +7,11 @@ import asyncio
 from langchain.docstore.document import Document
 from navconfig.logging import logging
 from navigator.libs.json import JSONContent  # pylint: disable=E0611
+from parrot.llms.vertex import VertexLLM
+from ..conf import (
+    DEFAULT_LLM_MODEL,
+    DEFAULT_LLM_TEMPERATURE,
+)
 
 
 T = TypeVar('T')
@@ -38,30 +43,57 @@ class AbstractLoader(ABC):
         self._recursive: bool = kwargs.get('recursive', False)
         self.category: str = kwargs.get('category', 'document')
         self.doctype: str = kwargs.get('doctype', 'text')
+        self._no_summarization = kwargs.get('no_summarization', True)
+        self._translation = kwargs.get('translation', False)
         if 'path' in kwargs:
             self.path = kwargs['path']
             if isinstance(self.path, str):
                 self.path = Path(self.path).resolve()
         # LLM (if required)
+        self._use_llm = kwargs.get('use_llm', False)
+        self._llm_model = kwargs.get('llm_model', None)
+        self._llm_model_kwargs = kwargs.get('model_kwargs', {})
         self._llm = kwargs.get('llm', None)
+        if self._use_llm:
+            self._llm = self.get_default_llm(
+                model=self._llm_model,
+                model_kwargs=self._llm_model_kwargs,
+            )
         self.logger = logging.getLogger(
             f"Parrot.Loaders.{self.__class__.__name__}"
         )
         # JSON encoder:
         self._encoder = JSONContent()
 
+    def get_default_llm(self, model: str = None, model_kwargs: dict = None):
+        """Return a VertexLLM instance."""
+        if not model_kwargs:
+            model_kwargs = {
+                "temperature": DEFAULT_LLM_TEMPERATURE,
+                "top_k": 30,
+                "top_p": 0.5,
+            }
+        return VertexLLM(
+            model=model or DEFAULT_LLM_MODEL,
+            **model_kwargs
+        )
+
     async def __aenter__(self):
+        """Open the loader if it has an open method."""
+        # Check if the loader has an open method and call it
         if hasattr(self, "open"):
             await self.open()
         return self
 
-    def supported_extensions(self):
-        return self.extensions
-
     async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Close the loader if it has a close method."""
         if hasattr(self, "close"):
             await self.close()
         return True
+
+    def supported_extensions(self):
+        """Get the supported file extensions."""
+        return self.extensions
 
     def is_valid_path(self, path: Union[str, Path]) -> bool:
         """Check if a path is valid."""
