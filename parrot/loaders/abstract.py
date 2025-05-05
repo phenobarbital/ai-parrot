@@ -4,7 +4,15 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from pathlib import Path, PurePath
 import asyncio
+from transformers import (
+    AutoModelForSeq2SeqLM,
+    AutoTokenizer,
+    pipeline
+)
+from langchain.schema.runnable import RunnablePassthrough
+from langchain.chains.summarize import load_summarize_chain
 from langchain.docstore.document import Document
+from langchain_core.prompts import PromptTemplate
 from navconfig.logging import logging
 from navigator.libs.json import JSONContent  # pylint: disable=E0611
 from parrot.llms.vertex import VertexLLM
@@ -37,14 +45,23 @@ class AbstractLoader(ABC):
         self.extensions = kwargs.get('extensions', self.extensions)
         self.skip_directories = kwargs.get('skip_directories', self.skip_directories)
         self.encoding = kwargs.get('encoding', 'utf-8')
-        self.tokenizer = tokenizer
-        self.text_splitter = text_splitter
         self._source_type = source_type
         self._recursive: bool = kwargs.get('recursive', False)
         self.category: str = kwargs.get('category', 'document')
         self.doctype: str = kwargs.get('doctype', 'text')
-        self._no_summarization = kwargs.get('no_summarization', True)
+        self._summarization = kwargs.get('summarization', False)
+        self._summary_model: Optional[Any] = kwargs.get('summary_model', None)
+        self._use_summary_pipeline: bool = kwargs.get('use_summary_pipeline', False)
+        self._use_translation_pipeline: bool = kwargs.get('use_translation_pipeline', False)
         self._translation = kwargs.get('translation', False)
+        # Tokenizer
+        self.tokenizer = tokenizer
+        # Text Splitter
+        self.text_splitter = text_splitter
+        # Summarization Model:
+        self.summarization_model = kwargs.get('summarizer', None)
+        # Markdown Splitter:
+        self.markdown_splitter = kwargs.get('markdown_splitter', None)
         if 'path' in kwargs:
             self.path = kwargs['path']
             if isinstance(self.path, str):
@@ -330,3 +347,232 @@ class AbstractLoader(ABC):
                 source_type=self._source_type
             )
         )
+
+
+    def summary_from_text(self, text: str, max_length: int = 500, min_length: int = 50) -> str:
+        """
+        Get a summary of a text.
+        """
+        if not text:
+            return ''
+        try:
+            summarizer = self.get_summarization_model()
+            if self._use_summary_pipeline:
+                # Use Huggingface pipeline
+                content = summarizer(
+                    text,
+                    max_length=max_length,
+                    min_length=min_length,
+                    do_sample=False,
+                    truncation=True
+                )
+                return content[0].get('summary_text', '')
+            # Use Summarize Chain from Langchain
+            doc = Document(page_content=text)
+            summary = summarizer.invoke(
+                {"input_documents": [doc]}, return_only_outputs=True
+            )
+            return summary.get('output_text', '')
+        except Exception as e:
+            self.logger.error(
+                f'ERROR on summary_from_text: {e}'
+            )
+            return ""
+
+    def get_summarization_model(
+        self,
+        model_name: str = 'facebook/bart-large-cnn'
+    ):
+        if not self._summary_model:
+            if self._use_summary_pipeline:
+                summarize_model = AutoModelForSeq2SeqLM.from_pretrained(
+                    model_name,
+                )
+                summarize_tokenizer = AutoTokenizer.from_pretrained(
+                    model_name,
+                    padding_side="left"
+                )
+                self._summary_model = pipeline(
+                    "summarization",
+                    model=summarize_model,
+                    tokenizer=summarize_tokenizer
+                )
+            else:
+                # Use Summarize Chain from Langchain
+                prompt_template = """Write a summary of the following, please also identify the main theme:
+                {text}
+                SUMMARY:"""
+                prompt = PromptTemplate.from_template(prompt_template)
+                refine_template = (
+                    "Your job is to produce a final summary\n"
+                    "We have provided an existing summary up to a certain point: {existing_answer}\n"
+                    "We have the opportunity to refine the existing summary"
+                    "(only if needed) with some more context below.\n"
+                    "------------\n"
+                    "{text}\n"
+                    "------------\n"
+                    "Given the new context, refine the original summary adding more explanation."
+                    "If the context isn't useful, return the original summary."
+                )
+                refine_prompt = PromptTemplate.from_template(refine_template)
+                llm = self.get_default_llm()
+                llm = llm.get_llm()
+                summarize_chain = load_summarize_chain(
+                    llm=llm,
+                    chain_type="refine",
+                    question_prompt=prompt,
+                    refine_prompt=refine_prompt,
+                    return_intermediate_steps=False,
+                    input_key="input_documents",
+                    output_key="output_text",
+                )
+                self._summary_model = summarize_chain
+        return self._summary_model
+
+    def translate_text(self, text: str, source_lang: str = "en", target_lang: str = "es") -> str:
+        """
+        Translate text from source language to target language.
+
+        Args:
+            text: Text to translate
+            source_lang: Source language code (default: 'en')
+            target_lang: Target language code (default: 'es')
+
+        Returns:
+            Translated text
+        """
+        if not text:
+            return ''
+        try:
+            translator = self.get_translation_model(source_lang, target_lang)
+            if self._use_translation_pipeline:
+                # Use Huggingface pipeline
+                content = translator(
+                    text,
+                    max_length=len(text) * 2,  # Allow for expansion in target language
+                    truncation=True
+                )
+                return content[0].get('translation_text', '')
+            else:
+                # Use LLM for translation
+                translation = translator.invoke(
+                    {
+                        "text": text,
+                        "source_lang": source_lang,
+                        "target_lang": target_lang
+                    }
+                )
+                return translation.get('text', '')
+        except Exception as e:
+            self.logger.error(f'ERROR on translate_text: {e}')
+            return ""
+
+    def get_translation_model(
+        self,
+        source_lang: str = "en",
+        target_lang: str = "es",
+        model_name: str = None
+    ):
+        """
+        Get or create a translation model.
+
+        Args:
+            source_lang: Source language code
+            target_lang: Target language code
+            model_name: Optional model name override
+
+        Returns:
+            Translation model/chain
+        """
+        # Create a cache key for the language pair
+        cache_key = f"{source_lang}_{target_lang}"
+
+        # Check if we already have a model for this language pair
+        if not hasattr(self, '_translation_models'):
+            self._translation_models = {}
+
+        if cache_key not in self._translation_models:
+            if self._use_translation_pipeline:
+                # Select appropriate model based on language pair if not specified
+                if model_name is None:
+                    if source_lang == "en" and target_lang in ["es", "fr", "de", "it", "pt", "ru"]:
+                        model_name = "Helsinki-NLP/opus-mt-en-ROMANCE"
+                    elif source_lang in ["es", "fr", "de", "it", "pt"] and target_lang == "en":
+                        model_name = "Helsinki-NLP/opus-mt-ROMANCE-en"
+                    else:
+                        # Default to a specific model for the language pair
+                        model_name = f"Helsinki-NLP/opus-mt-{source_lang}-{target_lang}"
+
+                try:
+                    translate_model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
+                    translate_tokenizer = AutoTokenizer.from_pretrained(model_name)
+
+                    self._translation_models[cache_key] = pipeline(
+                        "translation",
+                        model=translate_model,
+                        tokenizer=translate_tokenizer
+                    )
+                except Exception as e:
+                    self.logger.error(f"Error loading translation model {model_name}: {e}")
+                    # Fallback to using LLM for translation
+                    self._use_translation_pipeline = False
+
+            if not self._use_translation_pipeline:
+                # Use LLM Chain for translation
+                prompt_template = """Translate the following text from {source_lang} to {target_lang}:
+
+                Text: {text}
+
+                Translation:"""
+
+                prompt = PromptTemplate(
+                    template=prompt_template,
+                    input_variables=["text", "source_lang", "target_lang"]
+                )
+
+                llm = self.get_default_llm().get_llm()
+                # Create a simple translation chain
+                translation_chain = (
+                    {
+                        "text": RunnablePassthrough(),
+                        "source_lang": lambda x: source_lang,
+                        "target_lang": lambda x: target_lang,
+                    }
+                    | prompt
+                    | llm
+                    | (lambda x: {"text": x})
+                )
+                self._translation_models[cache_key] = translation_chain
+
+        return self._translation_models[cache_key]
+
+    def create_translated_document(
+        self,
+        content: str,
+        metadata: dict,
+        source_lang: str = "en",
+        target_lang: str = "es"
+    ) -> Document:
+        """
+        Create a document with translated content.
+
+        Args:
+            content: Original content
+            metadata: Document metadata
+            source_lang: Source language code
+            target_lang: Target language code
+
+        Returns:
+            Document with translated content
+        """
+        translated_content = self.translate_text(content, source_lang, target_lang)
+
+        # Clone the metadata and add translation info
+        translation_metadata = metadata.copy()
+        translation_metadata.update({
+            "original_language": source_lang,
+            "language": target_lang,
+            "is_translation": True
+        })
+
+        return Document(page_content=translated_content, metadata=translation_metadata)
