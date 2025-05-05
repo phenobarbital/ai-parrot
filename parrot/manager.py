@@ -11,7 +11,7 @@ from asyncdb.exceptions import NoDataFound
 from .bots.abstract import AbstractBot
 from .bots.basic import BasicBot
 from .bots.chatbot import Chatbot
-from .bots.pd import PandasAgent
+from .bots.data import PandasAgent
 from .handlers.chat import ChatHandler, BotHandler
 from .handlers.agents import AgentHandler
 from .handlers import ChatbotHandler
