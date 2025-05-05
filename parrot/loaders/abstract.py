@@ -131,6 +131,12 @@ class AbstractLoader(ABC):
         else:
             return torch.device(CUDA_DEFAULT_DEVICE)
 
+    def clear_cuda(self):
+        self.tokenizer = None  # Reset the tokenizer
+        self.text_splitter = None  # Reset the text splitter
+        torch.cuda.synchronize()  # Wait for all kernels to finish
+        torch.cuda.empty_cache()  # Clear unused memory
+
     async def __aenter__(self):
         """Open the loader if it has an open method."""
         # Check if the loader has an open method and call it
@@ -209,7 +215,11 @@ class AbstractLoader(ABC):
             self.logger.warning(f"Path {path} is not valid.")
         return tasks
 
-    async def from_url(self, url: Union[str, List[str]], **kwargs) -> List[asyncio.Task]:
+    async def from_url(
+        self,
+        url: Union[str, List[str]],
+        **kwargs
+    ) -> List[asyncio.Task]:
         """
         Load data from a URL. This method should be overridden by subclasses.
         """
@@ -277,7 +287,11 @@ class AbstractLoader(ABC):
                             results.append(res)
         return results
 
-    async def load(self, source: Optional[Any] = None, **kwargs) -> List[Document]:
+    async def load(
+        self,
+        source: Optional[Any] = None,
+        **kwargs
+    ) -> List[Document]:
         """Load data from a source and return it as a list of Langchain Documents.
 
         The source can be:
