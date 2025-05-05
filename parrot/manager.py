@@ -260,7 +260,6 @@ class BotManager:
                 else:
                     self.logger.info(f"Agent {name} not found. Creating new one.")
                     # Create a new Agent
-                    print('KWARGS > ', kwargs)
                     new_agent = AgentModel(
                         name=name,
                         **kwargs

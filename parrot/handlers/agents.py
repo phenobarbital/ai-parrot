@@ -87,8 +87,9 @@ class AgentHandler(BaseView):
         try:
             # Generate the Data Frames from the queries:
             dfs = await PandasAgent.gen_data(
+                query=query.copy(),
                 agent_name=_id,
-                query=query
+                refresh=True
             )
         except Exception as e:
             return self.json_response(
@@ -109,9 +110,6 @@ class AgentHandler(BaseView):
             }
             if _id:
                 args['chatbot_id'] = _id
-            agent = PandasAgent(
-                **args
-            )
             # Create and Add the agent to the manager
             agent = await manager.create_agent(
                 class_name=PandasAgent,
@@ -121,7 +119,7 @@ class AgentHandler(BaseView):
         except Exception as e:
             return self.json_response(
                 {
-                "message": f"Error creating agent: {e}"
+                "message": f"Error on Agent creation: {e}"
                 },
                 status=400
             )
@@ -135,7 +133,7 @@ class AgentHandler(BaseView):
             )
         # Saving Agent into DB:
         try:
-            del args["df"]
+            args.pop('df')
             args['query'] = query
             result = await manager.save_agent(**args)
             if not result:
