@@ -13,6 +13,9 @@ from transformers import (
 from langchain.schema.runnable import RunnablePassthrough
 from langchain.chains.summarize import load_summarize_chain
 from langchain.docstore.document import Document
+from langchain.text_splitter import (
+    TokenTextSplitter
+)
 from langchain_core.prompts import PromptTemplate
 from navconfig.logging import logging
 from navigator.libs.json import JSONContent  # pylint: disable=E0611
