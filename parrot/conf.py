@@ -95,7 +95,8 @@ EMBEDDING_DEFAULT_MODEL = config.get(
 )
 MAX_VRAM_AVAILABLE = config.get('MAX_VRAM_AVAILABLE', fallback=20000)
 RAM_AVAILABLE = config.get('RAM_AVAILABLE', fallback=819200)
-CUDA_DEFAULT_DEVICE = config.get('CUDA_DEFAULT_DEVICE', fallback=0)
+CUDA_DEFAULT_DEVICE = config.get('CUDA_DEFAULT_DEVICE', fallback='cpu')
+CUDA_DEFAULT_DEVICE_NUMBER = config.getint('CUDA_DEFAULT_DEVICE_NUMBER', fallback=0)
 MAX_BATCH_SIZE = config.get('MAX_BATCH_SIZE', fallback=768)
 
 # Enable Teams Bot:
