@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from pathlib import Path, PurePath
 import asyncio
+import torch
 from transformers import (
     AutoModelForSeq2SeqLM,
     AutoTokenizer,
@@ -19,6 +20,8 @@ from parrot.llms.vertex import VertexLLM
 from ..conf import (
     DEFAULT_LLM_MODEL,
     DEFAULT_LLM_TEMPERATURE,
+    CUDA_DEFAULT_DEVICE,
+    CUDA_DEFAULT_DEVICE_NUMBER
 )
 
 
@@ -81,6 +84,10 @@ class AbstractLoader(ABC):
         )
         # JSON encoder:
         self._encoder = JSONContent()
+        # Use CUDA if available:
+        self.device_name = kwargs.get('device', CUDA_DEFAULT_DEVICE)
+        self.cuda_number = kwargs.get('cuda_number', CUDA_DEFAULT_DEVICE_NUMBER)
+        self._device = None
 
     def get_default_llm(self, model: str = None, model_kwargs: dict = None):
         """Return a VertexLLM instance."""
@@ -94,6 +101,32 @@ class AbstractLoader(ABC):
             model=model or DEFAULT_LLM_MODEL,
             **model_kwargs
         )
+
+    def _get_device(
+        self,
+        device_type: str = None,
+        cuda_number: int = 0
+    ):
+        """Get Default device for Torch and transformers.
+
+        """
+        if device_type == 'cpu':
+            return torch.device('cpu')
+        if device_type == 'cuda':
+            return torch.device(f'cuda:{cuda_number}')
+        if CUDA_DEFAULT_DEVICE == 'cpu':
+            # Use CPU if CUDA is not available
+            return torch.device('cpu')
+        if torch.cuda.is_available():
+            # Use CUDA GPU if available
+            return torch.device(f'cuda:{cuda_number}')
+        if torch.backends.mps.is_available():
+            # Use CUDA Multi-Processing Service if available
+            return torch.device("mps")
+        if CUDA_DEFAULT_DEVICE == 'cuda':
+            return torch.device(f'cuda:{cuda_number}')
+        else:
+            return torch.device(CUDA_DEFAULT_DEVICE)
 
     async def __aenter__(self):
         """Open the loader if it has an open method."""
