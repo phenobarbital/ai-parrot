@@ -10,7 +10,7 @@ from querysource.queries.qs import QS
 from querysource.queries.multi import MultiQS
 from ..bots.abstract import AbstractBot
 from ..llms.vertex import VertexLLM
-from ..bots.pd import PandasAgent
+from ..bots.data import PandasAgent
 from ..models import AgentModel
 
 
@@ -255,7 +255,7 @@ class AgentHandler(BaseView):
             data = {}
         query = data.pop('query', None)
         if agent := manager.get_agent(name):
-            # extract the new query from the request, or from agent
+            # dextract the new query from the request, or from agent
             qry = query if query else agent.get_query()
             try:
                 # Generate the Data Frames from the queries:
