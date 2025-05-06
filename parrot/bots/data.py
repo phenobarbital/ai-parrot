@@ -22,6 +22,9 @@ from ..models import AgentResponse
 from ..conf import BASE_STATIC_URL, REDIS_HISTORY_URL
 
 
+# It's good practice to define the memory key
+CHAT_HISTORY_KEY = "chat_history"
+
 PANDAS_PROMPT_PREFIX = """
 
 Your name is $name, you are a helpful assistant built to provide comprehensive guidance and support on data calculations and data analysis working with pandas dataframes.
@@ -276,8 +279,7 @@ class PandasAgent(BasicAgent):
         # Agent ID:
         self._prompt_prefix = None
         # Must be one of 'tool-calling', 'openai-tools', 'openai-functions', or 'zero-shot-react-description'.
-        # self.agent_type = agent_type or "conversational-react-description"
-        self.agent_type = agent_type or "zero-shot-react-description"
+        self.agent_type = agent_type or 'zero-shot-react-description'
         if self.agent_type == 'tool-calling':
             self._prompt_template = TOOL_CALLING_PROMPT_PREFIX.replace('$format_instructions', '')
         else:
@@ -294,9 +296,10 @@ class PandasAgent(BasicAgent):
             system_prompt=system_prompt,
             human_prompt=human_prompt,
             tools=tools,
+            agent_type=self.agent_type,
             **kwargs
         )
-        self.agent_type = agent_type or "zero-shot-react-description"
+        # self.agent_type = agent_type or "zero-shot-react-description"
 
     def get_query(self) -> Union[List[str], dict]:
         """Get the query."""
@@ -318,8 +321,6 @@ class PandasAgent(BasicAgent):
         ✅ Use Case: Best for decision-making and reasoning tasks where the agent must break problems down into multiple steps.
 
         """
-        print('KARGS > ', kwargs)
-        print('AGENT TYPE > ', self.agent_type)
         # Create the pandas agent
         return create_pandas_dataframe_agent(
             self._llm,
@@ -355,7 +356,7 @@ class PandasAgent(BasicAgent):
         if self._use_vector:
             self.configure_store()
         # Conversation History:
-        self.memory = self.get_memory()
+        self.memory = self.get_memory(key=CHAT_HISTORY_KEY, input_key="input", output_key="output")
         # 1. Initialize the Agent (as the base for RunnableMultiActionAgent)
         self.agent = self.pandas_agent(self.df)
         # 2. Create Agent Executor - This is where we typically run the agent.
@@ -428,7 +429,6 @@ class PandasAgent(BasicAgent):
         result = await self._agent.ainvoke(
             {"input": input_question}
         )
-        print('RESULT > ', result)
         try:
             response = AgentResponse(question=query, **result)
             # check if return is a file:

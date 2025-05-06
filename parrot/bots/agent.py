@@ -66,7 +66,7 @@ class BasicAgent(AbstractBot):
     def __init__(
         self,
         name: str = 'Agent',
-        agent_type: str = 'tool-calling',
+        agent_type: str = None,
         llm: str = None,
         tools: List[AbstractTool] = None,
         system_prompt: str = None,
@@ -82,7 +82,7 @@ class BasicAgent(AbstractBot):
             **kwargs
         )
         self.agent = None
-        self.agent_type = agent_type
+        self.agent_type = agent_type or 'tool-calling'
         self._use_chat: bool = True  # For Agents, we use chat models
         self._agent = None # Agent Executor
         self.prompt_template = prompt_template or AGENT_PROMPT
