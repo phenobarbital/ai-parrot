@@ -1,6 +1,5 @@
 from pathlib import Path
 from typing import List, Dict, Union, Optional
-from io import BytesIO, StringIO
 from datetime import datetime, timezone, timedelta
 from string import Template
 import redis.asyncio as aioredis
@@ -20,10 +19,6 @@ from ..tools.docx import DocxGeneratorTool
 from .agent import BasicAgent
 from ..models import AgentResponse
 from ..conf import BASE_STATIC_URL, REDIS_HISTORY_URL
-
-
-# It's good practice to define the memory key
-CHAT_HISTORY_KEY = "chat_history"
 
 PANDAS_PROMPT_PREFIX = """
 
@@ -328,17 +323,18 @@ class PandasAgent(BasicAgent):
         """
         # Create the pandas agent
         df = list(self.df.values()) if isinstance(self.df, dict) else self.df
+        # bind the tools to the LLM:
+        llm = self._llm.bind_tools(self.tools)
         return create_pandas_dataframe_agent(
-            self._llm,
+            llm,
             df,
             verbose=True,
             agent_type=self.agent_type,
             allow_dangerous_code=True,
-            extra_tools=self.tools,
+            # extra_tools=self.tools,
             prefix=self._prompt_prefix,
             max_iterations=10,
-            # agent_executor_kwargs={"memory": self.memory},
-            # input_variables=["input", "agent_scratchpad", "chat_history"],
+            agent_executor_kwargs={"memory": self.memory, "handle_parsing_errors": True}
             return_intermediate_steps=True,
             **kwargs
         )
@@ -362,7 +358,7 @@ class PandasAgent(BasicAgent):
         if self._use_vector:
             self.configure_store()
         # Conversation History:
-        self.memory = self.get_memory(key=CHAT_HISTORY_KEY, input_key="input", output_key="output")
+        self.memory = self.get_memory(input_key="input", output_key="output")
         # 1. Initialize the Agent (as the base for RunnableMultiActionAgent)
         self.agent = self.pandas_agent()
         # 2. Create Agent Executor - This is where we typically run the agent.
