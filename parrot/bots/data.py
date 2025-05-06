@@ -516,7 +516,6 @@ def store_result(key, value):
         table += f"\nNote: {df_key} is also available as {df_name}\n"
         return table
 
-
     def define_prompt(self, prompt, **kwargs):
         now = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         self.agent_report_dir = self._static_path.joinpath(str(self.chatbot_id))
@@ -745,6 +744,7 @@ def store_result(key, value):
         # If agent_name is provided, we'll use Redis caching
         if not agent_name:
             agent_name = cls.chatbot_id
+
         if not refresh:
             # Try to get cached dataframes
             cached_dfs = await cls._get_cached_data(agent_name)
