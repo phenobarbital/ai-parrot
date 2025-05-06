@@ -10,7 +10,7 @@ from langchain.tools import BaseTool
 
 class DuckDuckGoSearchTool(BaseTool):
     """Web Search tool using Duck Duck Go API."""
-    name: str = "DuckDuckGo Web Search"
+    name: str = "duckduckgo_search"
     description: str = "Search the web using DuckDuckGo Search."
     source: Any = None
     max_results: int = 5
@@ -37,7 +37,7 @@ class DuckDuckGoSearchTool(BaseTool):
 
 class DuckDuckGoRelevantSearch(BaseTool):
     """Web Search tool using Duck Duck Go API."""
-    name: str = "DuckDuckGo Relevant Search"
+    name: str = "duckduckgo_relevant_search"
     description: str = "Search the web and extract most relevant information based on DuckDuckGo Search API"
     _max_results: PrivateAttr
     _region: PrivateAttr

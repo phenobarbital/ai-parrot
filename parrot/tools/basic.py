@@ -10,7 +10,7 @@ from ..conf import (
 
 class SearchTool:
     """Search Tool."""
-    name: str = "Web Search"
+    name: str = "web_search"
     def __new__(cls, *args, **kwargs):
         search = SerpAPIWrapper(
             serpapi_api_key=kwargs.get('serpapi_api_key', SERPAPI_API_KEY)
@@ -29,10 +29,9 @@ class SearchTool:
 
 class MathTool:
     """Math Tool."""
-    name: str = "Math Calculator"
     def __new__(cls, *args, **kwargs):
         groq = ChatGroq(
-            model="llama-3.3-70b-versatile",
+            model="llama-3.1-8b-instant",
             temperature=0.1,
             api_key=kwargs.get('GROQ_API_KEY', GROQ_API_KEY)
         )
@@ -42,12 +41,11 @@ class MathTool:
             verbose=True
         )
         tool = Tool(
-            name="Math Calculator",
+            name="math_calculator",
             func=math_chain.run,
             description="""
             useful for when you need to solve math problems or perform mathematical calculations. Input should be a math equation or a mathematical expression.
             """,
             coroutine=math_chain.arun
         )
-        tool.name = "Math Calculator"
         return tool

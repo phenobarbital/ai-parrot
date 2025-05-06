@@ -434,7 +434,7 @@ class AgentModel(Model):
     """
     chatbot_id: str = Field(primary_key=True, required=False, default_factory=agent_id)
     name: str = Field(default='Nav', required=True, primary_key=True)
-    description: str = Field(default='Nav Agent', required=False)
+    description: str = Field(required=False)
     agent_class: str = Field(required=False, default='PandasAgent')
     avatar: str
     enabled: bool = Field(required=True, default=True)

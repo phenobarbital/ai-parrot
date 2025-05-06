@@ -5,6 +5,7 @@ from datetime import datetime, timezone, timedelta
 from string import Template
 import redis.asyncio as aioredis
 import pandas as pd
+from aiohttp import web
 from datamodel.typedefs import SafeDict
 from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611 # noqa
 from langchain_core.exceptions import OutputParserException
@@ -30,31 +31,32 @@ $capabilities\n
 
 You are working with $num_dfs pandas dataframes in Python, all dataframes are already loaded and available for analysis in the variables named as df1, df2, etc.
 
-**Answer the following questions as best you can. You have access to the following tools:**
-
-- $tools\n
-
-Use these tools effectively to provide accurate and comprehensive responses:
+You have access to the following tools:
 $list_of_tools
 
-** DataFrames Information: **
+# DataFrames Information:
 $df_info
 
+Thoughts:
+$format_instructions
+
+Your goal is to answer questions and perform data analysis using the provided dataframes and tools accurately.
+
 ## Working with DataFrames
-- First examine the existing dataframe with `df.info()` and `df.describe()`.
-- DO NOT create a sample daframe or example data, the user's actual data is already available.
-- You can access columns with `df['column_name']`.
-- For numerical analysis, use functions like mean(), sum(), min(), max().
+- use df1, df2, etc. to refer to the dataframes.
+- Use the store_result(key, value) function to store results.
 - Always use copies of dataframes to avoid modifying the original data.
 - For categorical columns, consider using value_counts() to see distributions.
 - You can create visualizations using matplotlib, seaborn or altair through the Python tool.
 - Perform analysis over the entire DataFrame, not just a sample.
-- Use `df['column_name'].value_counts()` to get counts of unique values.
+- Use pandas function value_counts() to get counts of unique values.
 - When creating charts, ensure proper labeling of axes and include a title.
 - For visualization requests, use matplotlib, altair or seaborn through the Python tool.
 - You have access to several python libraries installed as scipy, numpy, matplotlib, matplotlib-inline, seaborn, altair, plotly, reportlab, pandas, numba, geopy, geopandas, prophet, statsmodels, scikit-learn, pmdarima, sentence-transformers, nltk, spacy, and others.
 - Provide clear, concise explanations of your analysis steps.
-- When appropriate, suggest additional insights beyond what was directly asked.
+- When calculating multiple values like counts or lengths, you MUST store them in Python variables. Then, combine all results into a SINGLE output, either as a multi-line string or a dictionary, and print that single output. Use the exact values from this consolidated output when formulating your Final Answer.
+    - Example (Dictionary): `results = {{'df1': len(df1), 'df2': len(df2)}}; print(str(results))`
+    - Example (String): `output = f"DF1: {{len(df1)}}\nDF2: {{len(df2)}}"; print(output)`
 
 ### EDA (Exploratory Data Analysis) Capabilities
 
@@ -162,23 +164,15 @@ if the user asks for a Gamma Presentation, generate a text summary of the data a
 - The summary should be concise and highlight key insights.
 - Use the GammaLinkTool to create an URL for presentation.
 
-## Thoughts
-$format_instructions
 
-**IMPORTANT: When creating your final answer**
+### Important Notes
 - Today is $today_date, You must never contradict the given date.
 - When creating visualizations, ALWAYS use the non-interactive Matplotlib backend (Agg)
-- For saving files, use the following directory: agent_report_dir=$agent_report_dir, variable can be called also *report_dir*.
-- When you perform calculations (e.g., df.groupby().count()), store the results in variables
-- In your final answer, ONLY use the EXACT values from your Python calculations.
-- Use the EXACT values from your analysis (store names, customer names, numbers).
-- NEVER use placeholder text like [Store 1] or [Value], include complete, specific information from the data.
-- Copy the exact values from your code output into your narrative.
-- Your final answer must match exactly what you found in the data, no exceptions.
-- Use the provided data to support your analysis, do not regenerate, recalculate or create new data.
+- Use the directory '$agent_report_dir' when saving any files requested by the user.
+- Base your final answer on the results obtained from using the tools.
 - Do NOT repeat the same tool call multiple times for the same question.
 
-**IMPORTANT: HANDLING FILE RESULTS**
+### IMPORTANT: HANDLING FILE RESULTS
 
 When you generate a file like a chart or report, you MUST format your response exactly like this:
 
@@ -191,7 +185,32 @@ filename: [file_path]
 [Brief description of what you did and what the file contains]
 [rest of answer]
 
+# Rationale:
 $rationale
+
+"""
+
+TOOL_CALLING_PROMPT_PREFIX = """
+Your name is $name, you are a helpful assistant built to provide comprehensive guidance and support on data calculations and data analysis working with pandas dataframes.
+
+$backstory\n
+$capabilities\n
+
+You are working with $num_dfs pandas dataframes in Python, all dataframes are already loaded and available for analysis in the variables named as df1, df2, etc.
+
+You have access to the following tools:
+$list_of_tools
+
+# DataFrames Information:
+$df_info
+
+Your goal is to answer questions and perform data analysis using the provided dataframes and tools accurately.
+
+
+You are working with $num_dfs pandas dataframes (df1, df2, etc.).
+
+Today is $today_date.
+Use the directory '$agent_report_dir' when saving any files requested by the user.
 
 """
 
@@ -253,8 +272,11 @@ class PandasAgent(BasicAgent):
         self.df_locals: dict = {}
         # Agent ID:
         self._prompt_prefix = None
-        self._prompt_suffix = PANDAS_PROMPT_SUFFIX
-        self._prompt_template = prompt_template
+        self.agent_type = agent_type or "conversational-react-description"
+        if self.agent_type == 'tool-calling':
+            self._prompt_template = TOOL_CALLING_PROMPT_PREFIX.replace('$format_instructions', '')
+        else:
+            self._prompt_template = prompt_template or PANDAS_PROMPT_PREFIX
         self._capabilities: str = kwargs.get('capabilities', None)
         self._format_instructions: str = kwargs.get('format_instructions', FORMAT_INSTRUCTIONS)
         self.name = name or "Pandas Agent"
@@ -270,8 +292,8 @@ class PandasAgent(BasicAgent):
             **kwargs
         )
         # Must be one of 'tool-calling', 'openai-tools', 'openai-functions', or 'zero-shot-react-description'.
-        self.agent_type = agent_type or "zero-shot-react-description"
-        # self.agent_type = "openai-functions"
+        # self.agent_type = agent_type or "zero-shot-react-description"
+
 
     def get_query(self) -> Union[List[str], dict]:
         """Get the query."""
@@ -293,21 +315,9 @@ class PandasAgent(BasicAgent):
         ✅ Use Case: Best for decision-making and reasoning tasks where the agent must break problems down into multiple steps.
 
         """
-        # Create the Python REPL tool
-        python_tool = PythonAstREPLTool(locals=self.df_locals)
-        # Add EDA functions to the tool's locals
-        setup_code = """
-        from parrot.bots.tools import quick_eda, generate_eda_report, list_available_dataframes, gamma_link, create_plot, generate_pdf_from_html
-        """
-        try:
-            python_tool.run(setup_code)
-        except Exception as e:
-            self.logger.error(
-                f"Error setting up python tool locals: {e}"
-            )
-        # Add it to the tools list
-        self.tools.append(python_tool)
         # Create the pandas agent
+
+
         return create_pandas_dataframe_agent(
             self._llm,
             df,
@@ -316,19 +326,31 @@ class PandasAgent(BasicAgent):
             allow_dangerous_code=True,
             extra_tools=self.tools,
             prefix=self._prompt_prefix,
-            max_iterations=15,
-            return_intermediate_steps=False,
+            max_iterations=10,
+            agent_executor_kwargs={"memory": self.memory},
+            # input_variables=["input", "agent_scratchpad", "chat_history"],
+            return_intermediate_steps=True,
             **kwargs
         )
 
     async def configure(self, df: pd.DataFrame = None, app=None) -> None:
         """Basic Configuration of Pandas Agent.
         """
-        await super(BasicAgent, self).configure(app)
+        if app:
+            if isinstance(app, web.Application):
+                self.app = app  # register the app into the Extension
+            else:
+                self.app = app.get_app()  # Nav Application
+        # adding this configured chatbot to app:
+        if self.app:
+            self.app[f"{self.name.lower()}_bot"] = self
         if df is not None:
             self.df = df
         # Configure LLM:
         self.configure_llm(use_chat=True)
+        # Configure VectorStore if enabled:
+        if self._use_vector:
+            self.configure_store()
         # Conversation History:
         self.memory = self.get_memory()
         # 1. Initialize the Agent (as the base for RunnableMultiActionAgent)
@@ -424,6 +446,35 @@ class PandasAgent(BasicAgent):
         except Exception as e:
             return result, e
 
+    def _configure_python_tool(self, df_locals: dict, **kwargs) -> PythonAstREPLTool:
+        """Configure the Python tool."""
+        # Create the Python tool with the given locals and globals
+        self.df_locals['execution_results'] = {}
+        # Create the Python REPL tool
+        python_tool = PythonAstREPLTool(
+            locals=self.df_locals,
+            globals=kwargs.get('globals', {}),
+            verbose=True,
+            **kwargs
+        )
+        # Add EDA functions to the tool's locals
+        setup_code = """
+        from parrot.bots.tools import quick_eda, generate_eda_report, list_available_dataframes, create_plot, generate_pdf_from_html
+        """
+        # Add a helper function to the REPL locals
+        setup_code += """
+def store_result(key, value):
+    execution_results[key] = value
+    return value
+"""
+        try:
+            python_tool.run(setup_code)
+        except Exception as e:
+            self.logger.error(
+                f"Error setting up python tool: {e}"
+            )
+        return python_tool
+
     def define_prompt(self, prompt, **kwargs):
         now = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         self.agent_report_dir = self._static_path.joinpath(str(self.chatbot_id))
@@ -432,72 +483,109 @@ class PandasAgent(BasicAgent):
         # Word Tool:
         docx_tool = DocxGeneratorTool(output_dir=self.agent_report_dir)
         self.tools.append(docx_tool)
-        # List of Tools:
-        list_of_tools = ""
-        for tool in self.tools:
-            name = tool.name
-            description = tool.description  # noqa  pylint: disable=E1101
-            list_of_tools += f'- {name}: {description}\n'
-        list_of_tools += "\n"
         # Add dataframe information
         num_dfs = len(self.df)
         for i, dataframe in enumerate(self.df):
             df_name = f"df{i + 1}"
+            row_count = len(dataframe)
             self.df_locals[df_name] = dataframe.copy()
+            self.df_locals[f"{df_name}_row_count"] = row_count
             self.df_locals['agent_report_dir'] = self.agent_report_dir
             # Get basic dataframe info
-            df_shape = f"DataFrame Shape: {dataframe.shape[0]} rows × {dataframe.shape[1]} columns"
-            df_columns = f"Columns: {', '.join(dataframe.columns.tolist())}"
+            # df_shape = f"DataFrame Shape: {dataframe.shape[0]} rows × {dataframe.shape[1]} columns"
+            df_columns = f"{', '.join(dataframe.columns.tolist())}"
             # Generate summary statistics
             summary_stats = brace_escape(dataframe.describe(include='all').to_markdown())
             # Generate sample rows
-            sample_rows = brace_escape(dataframe.head(5).to_markdown())
+            # sample_rows = brace_escape(dataframe.head(5).to_markdown())
             # Create df_info block
             df_info = f"""
-** DataFrame {df_name} Information **
+            ## DataFrame {df_name}:
 
-## {df_name} Shape
-{df_shape}
+            ### {df_name} Columns:
+            {df_columns}
 
-## {df_name} Columns
-{df_columns}
+            ### {df_name} Summary Statistics:
+            {summary_stats}
 
-## {df_name} Summary Statistics
-{summary_stats}
-
-## {df_name} Sample Rows (First 5)
-{sample_rows}
-\n\n
-"""
-            tools_names = [tool.name for tool in self.tools]
-            capabilities = ''
-            if self._capabilities:
-                capabilities = "**Your Capabilities:**\n"
-                capabilities += self.sanitize_prompt_text(self._capabilities) + "\n"
-            # Create the prompt
-            sanitized_backstory = ''
-            if self.backstory:
-                sanitized_backstory = self.sanitize_prompt_text(self.backstory)
-            # self._prompt_prefix = PANDAS_PROMPT_PREFIX.format_map(
-            tmpl = Template(PANDAS_PROMPT_PREFIX)
-            self._prompt_prefix = tmpl.safe_substitute(
-                name=self.name,
-                description=self.description,
-                list_of_tools=list_of_tools,
-                backstory=sanitized_backstory,
-                capabilities=capabilities,
-                today_date=now,
-                system_prompt_base=prompt,
-                tools=", ".join(tools_names),
-                format_instructions=self._format_instructions.format(
-                    tool_names=", ".join(tools_names)),
-                df_info=df_info,
-                num_dfs=num_dfs,
-                rationale=self.rationale,
-                agent_report_dir=self.agent_report_dir,
-                **kwargs
-            )
-            self._prompt_suffix = PANDAS_PROMPT_SUFFIX
+            """
+        # Configure Python tool:
+        python_tool = self._configure_python_tool(
+            df_locals=self.df_locals,
+            **kwargs
+        )
+        # Add the Python tool to the tools list
+        self.tools.append(python_tool)
+        # List of Tools:
+        list_of_tools = ""
+        if self.agent_type == 'tool-calling':
+            # Tool-calling agents use a different prompt structure
+            tools_json = []
+            tools_names = []
+            for tool in self.tools:
+                tool_dict = {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "input": {
+                                "type": "string",
+                                "description": "Input for the tool"
+                            }
+                        },
+                        "required": ["input"]
+                    }
+                }
+                # Handle special case for python_repl_ast tool
+                if tool.name == "python_repl_ast":
+                    tool_dict["parameters"] = {
+                        "type": "object",
+                        "properties": {
+                            "code": {
+                                "type": "string",
+                                "description": "Python code to execute"
+                            }
+                        },
+                        "required": ["code"]
+                    }
+                tools_json.append(tool_dict)
+            list_of_tools = brace_escape(json_encoder(tools_json))
+        else:
+            for tool in self.tools:
+                name = tool.name
+                description = tool.description  # noqa  pylint: disable=E1101
+                list_of_tools += f'- {name}: {description}\n'
+            list_of_tools += "\n"
+        tools_names = [tool.name for tool in self.tools]
+        capabilities = ''
+        if self._capabilities:
+            capabilities = "**Your Capabilities:**\n"
+            capabilities += self.sanitize_prompt_text(self._capabilities) + "\n"
+        # Create the prompt
+        sanitized_backstory = ''
+        if self.backstory:
+            sanitized_backstory = self.sanitize_prompt_text(self.backstory)
+        tmpl = Template(self._prompt_template)
+        self._prompt_prefix = tmpl.safe_substitute(
+            name=self.name,
+            description=self.description,
+            list_of_tools=list_of_tools,
+            backstory=sanitized_backstory,
+            capabilities=capabilities,
+            today_date=now,
+            system_prompt_base=prompt,
+            tools=", ".join(tools_names),
+            format_instructions=self._format_instructions.format(
+                tool_names=", ".join(tools_names)),
+            df_info=df_info,
+            num_dfs=num_dfs,
+            rationale=self.rationale,
+            agent_report_dir=self.agent_report_dir,
+            **kwargs
+        )
+        print('PROMPT > ', self._prompt_prefix)
+        self._prompt_suffix = PANDAS_PROMPT_SUFFIX
 
     def default_backstory(self) -> str:
         return "You are a helpful assistant built to provide comprehensive guidance and support on data calculations and data analysis working with pandas dataframes."

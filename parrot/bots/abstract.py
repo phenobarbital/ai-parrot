@@ -181,6 +181,7 @@ class AbstractBot(DBInterface, ABC):
         # Definition of LLM
         self._llm_class: str = None
         self._default_llm: str = kwargs.get('use_llm', 'vertexai')
+        self._use_chat: bool = kwargs.get('use_chat', False)
         self._llm_model = kwargs.get('model_name', 'gemini-1.5-pro')
         self._llm_temp = kwargs.get('temperature', 0.2)
         self._llm_top_k = kwargs.get('top_k', 30)
@@ -376,12 +377,6 @@ class AbstractBot(DBInterface, ABC):
             self._llm = self._llm_obj.get_llm()
         elif isinstance(self._llm_obj, AbstractLLM):
             self._llm = self._llm_obj.get_llm()
-        elif self._llm_class:
-            self._llm_obj = get_llm(
-                llm_name=self._llm_class,
-                model_name=self._llm_model,
-                **self._llm_config
-            )
         else:
             # TODO: Calling a Default LLM
             # TODO: passing the default configuration
