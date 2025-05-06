@@ -10,8 +10,8 @@ class AbstractLLM(ABC):
     model: str = "databricks/dolly-v2-3b"
     supported_models: List[str] = []
     embed_model: str = None
-    max_tokens: int = 1024
-    max_retries: int = 3
+    max_tokens: int = 2048
+    max_retries: int = 2
 
     @classmethod
     def get_supported_models(cls):

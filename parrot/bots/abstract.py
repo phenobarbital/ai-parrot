@@ -67,7 +67,7 @@ except (ModuleNotFoundError, ImportError):
 
 # Anthropic:
 try:
-    from ..llms.anthropic import Anthropic
+    from ..llms.anthropic import AnthropicLLM
     ANTHROPIC_ENABLED = True
 except (ModuleNotFoundError, ImportError):
     ANTHROPIC_ENABLED = False
@@ -330,7 +330,7 @@ class AbstractBot(DBInterface, ABC):
         elif llm in ('vertexai', 'VertexLLM') and VERTEX_ENABLED:
             mdl = VertexLLM(model=model or "gemini-1.5-pro", **kwargs)
         elif llm == 'anthropic' and ANTHROPIC_ENABLED:
-            mdl = Anthropic(model=model or "claude-3-opus-20240229", **kwargs)
+            mdl = AnthropicLLM(model=model or "claude-3-opus-20240229", **kwargs)
         elif llm in ('groq', 'Groq') and GROQ_ENABLED:
             mdl = GroqLLM(model=model or "llama3-70b-8192", **kwargs)
         elif llm == 'llama3' and GROQ_ENABLED:
