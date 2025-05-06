@@ -4,9 +4,20 @@ from google.cloud import aiplatform
 from vertexai.preview.vision_models import ImageGenerationModel
 from langchain_google_vertexai import (
     ChatVertexAI,
-    VertexAI
+    VertexAI,
+    HarmBlockThreshold,
+    HarmCategory
 )
 from .abstract import AbstractLLM
+
+
+safety_settings = {
+    HarmCategory.HARM_CATEGORY_UNSPECIFIED: HarmBlockThreshold.BLOCK_NONE,
+    HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+    HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
+    HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+    HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_ONLY_HIGH,
+}
 
 
 class VertexLLM(AbstractLLM):

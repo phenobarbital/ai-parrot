@@ -32,13 +32,13 @@ $capabilities\n
 You are working with $num_dfs pandas dataframes in Python, all dataframes are already loaded and available for analysis in the variables named as df1, df2, etc.
 
 You have access to the following tools:
+$tools\n
+
+Use these tools effectively to provide accurate and comprehensive responses:
 $list_of_tools
 
-# DataFrames Information:
+** DataFrames Information: **
 $df_info
-
-Thoughts:
-$format_instructions
 
 Your goal is to answer questions and perform data analysis using the provided dataframes and tools accurately.
 
@@ -164,15 +164,17 @@ if the user asks for a Gamma Presentation, generate a text summary of the data a
 - The summary should be concise and highlight key insights.
 - Use the GammaLinkTool to create an URL for presentation.
 
+## Thoughts
+$format_instructions
 
-### Important Notes
+**IMPORTANT: When creating your final answer**
 - Today is $today_date, You must never contradict the given date.
 - When creating visualizations, ALWAYS use the non-interactive Matplotlib backend (Agg)
 - Use the directory '$agent_report_dir' when saving any files requested by the user.
 - Base your final answer on the results obtained from using the tools.
 - Do NOT repeat the same tool call multiple times for the same question.
 
-### IMPORTANT: HANDLING FILE RESULTS
+**IMPORTANT: WHEN HANDLING FILE RESULTS**
 
 When you generate a file like a chart or report, you MUST format your response exactly like this:
 
@@ -185,7 +187,8 @@ filename: [file_path]
 [Brief description of what you did and what the file contains]
 [rest of answer]
 
-# Rationale:
+- The file is saved in the directory '$agent_report_dir'.
+
 $rationale
 
 """
@@ -272,7 +275,9 @@ class PandasAgent(BasicAgent):
         self.df_locals: dict = {}
         # Agent ID:
         self._prompt_prefix = None
-        self.agent_type = agent_type or "conversational-react-description"
+        # Must be one of 'tool-calling', 'openai-tools', 'openai-functions', or 'zero-shot-react-description'.
+        # self.agent_type = agent_type or "conversational-react-description"
+        self.agent_type = agent_type or "zero-shot-react-description"
         if self.agent_type == 'tool-calling':
             self._prompt_template = TOOL_CALLING_PROMPT_PREFIX.replace('$format_instructions', '')
         else:
@@ -291,9 +296,7 @@ class PandasAgent(BasicAgent):
             tools=tools,
             **kwargs
         )
-        # Must be one of 'tool-calling', 'openai-tools', 'openai-functions', or 'zero-shot-react-description'.
-        # self.agent_type = agent_type or "zero-shot-react-description"
-
+        self.agent_type = agent_type or "zero-shot-react-description"
 
     def get_query(self) -> Union[List[str], dict]:
         """Get the query."""
@@ -315,9 +318,9 @@ class PandasAgent(BasicAgent):
         ✅ Use Case: Best for decision-making and reasoning tasks where the agent must break problems down into multiple steps.
 
         """
+        print('KARGS > ', kwargs)
+        print('AGENT TYPE > ', self.agent_type)
         # Create the pandas agent
-
-
         return create_pandas_dataframe_agent(
             self._llm,
             df,
@@ -327,7 +330,7 @@ class PandasAgent(BasicAgent):
             extra_tools=self.tools,
             prefix=self._prompt_prefix,
             max_iterations=10,
-            agent_executor_kwargs={"memory": self.memory},
+            # agent_executor_kwargs={"memory": self.memory},
             # input_variables=["input", "agent_scratchpad", "chat_history"],
             return_intermediate_steps=True,
             **kwargs
@@ -425,6 +428,7 @@ class PandasAgent(BasicAgent):
         result = await self._agent.ainvoke(
             {"input": input_question}
         )
+        print('RESULT > ', result)
         try:
             response = AgentResponse(question=query, **result)
             # check if return is a file:
@@ -584,7 +588,7 @@ def store_result(key, value):
             agent_report_dir=self.agent_report_dir,
             **kwargs
         )
-        print('PROMPT > ', self._prompt_prefix)
+        # print('PROMPT > ', self._prompt_prefix)
         self._prompt_suffix = PANDAS_PROMPT_SUFFIX
 
     def default_backstory(self) -> str:
