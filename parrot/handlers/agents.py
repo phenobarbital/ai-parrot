@@ -89,7 +89,8 @@ class AgentHandler(BaseView):
             dfs = await PandasAgent.gen_data(
                 query=query.copy(),
                 agent_name=_id,
-                refresh=True
+                refresh=True,
+                no_cache=True
             )
         except Exception as e:
             return self.json_response(

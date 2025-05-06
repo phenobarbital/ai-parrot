@@ -138,7 +138,7 @@ class BotManager:
                 try:
                     queries = await class_name.gen_data(
                         query=agent.query,
-                        agent_name=agent.name,
+                        agent_name=agent.chatbot_id,
                         refresh=False
                     )
                 except ValueError as e:
