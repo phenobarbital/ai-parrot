@@ -2,7 +2,7 @@ import asyncio
 import pandas as pd
 from navconfig import BASE_DIR
 from parrot.llms.vertex import VertexLLM
-from parrot.bots.pd import PandasAgent
+from parrot.bots.data import PandasAgent
 
 
 async def get_agent(data):

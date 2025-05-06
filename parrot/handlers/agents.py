@@ -116,6 +116,7 @@ class AgentHandler(BaseView):
                 **args
             )
             await agent.configure(app=app)
+            print('POST CONF')
         except Exception as e:
             return self.json_response(
                 {

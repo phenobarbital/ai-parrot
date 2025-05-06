@@ -3,23 +3,22 @@ import tempfile
 import os
 from pathlib import Path
 import uuid
-import markdown
-from docx import Document
-from docx.shared import Pt, Inches
-from docx.enum.text import WD_ALIGN_PARAGRAPH
-from langchain.tools import BaseTool
 import asyncio
 from typing import Optional, Dict, Any
 from urllib.parse import urlparse
 import aiohttp
 import aiofiles
+from docx import Document
+from docx.shared import Pt, Inches
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from langchain.tools import BaseTool
 from markdownify import markdownify as md
 import mammoth
 
 
 class DocxGeneratorTool(BaseTool):
     """Microsoft Word DOCX Generator Tool."""
-    name: str = "Microsoft Word DOCX generator"
+    name: str = "generate_ms_word_document"
     description: str = "Use this tool for generating DOCX, provide text in markdown format with sections, headings."
     output_dir: str = None
 
@@ -268,26 +267,26 @@ class WordToMarkdownTool(BaseTool):
         # Create a temporary directory if it doesn't exist
         if not self._temp_dir:
             self._temp_dir = tempfile.mkdtemp()
-        
+
         # Get the filename from the URL
         parsed_url = urlparse(url)
         filename = os.path.basename(parsed_url.path)
         if not filename.endswith(('.docx', '.doc')):
             filename += '.docx'  # Add extension if it doesn't exist
-        
+
         # Complete path to the temporary file
         file_path = os.path.join(self._temp_dir, filename)
-        
+
         # Download the file
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as response:
                 if response.status != 200:
                     raise Exception(f"Error downloading the file: {response.status}")
-                
+
                 # Save the file
                 async with aiofiles.open(file_path, 'wb') as f:
                     await f.write(await response.read())
-        
+
         return file_path
 
     async def _convert_to_markdown(self, file_path: str) -> str:
@@ -297,12 +296,12 @@ class WordToMarkdownTool(BaseTool):
             result = mammoth.convert_to_html(docx_file)
             html = result.value
             markdown_text = md(html)
-            
+
             # If there are warning messages, add them as a comment at the beginning
             if result.messages:
                 warnings = "\n".join([f"<!-- Warning: {msg} -->" for msg in result.messages])
                 markdown_text = f"{warnings}\n\n{markdown_text}"
-            
+
             return markdown_text
 
     async def _process_word_document(self, url: str) -> Dict[str, Any]:
@@ -310,11 +309,11 @@ class WordToMarkdownTool(BaseTool):
         try:
             file_path = await self._download_file(url)
             markdown_text = await self._convert_to_markdown(file_path)
-            
+
             # Cleanup of temporary files
             if os.path.exists(file_path):
                 os.remove(file_path)
-            
+
             return {
                 "markdown": markdown_text,
                 "source_url": url,

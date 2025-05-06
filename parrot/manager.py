@@ -137,7 +137,9 @@ class BotManager:
                 # Get the queries before agent creation.
                 try:
                     queries = await class_name.gen_data(
-                        query=agent.query
+                        query=agent.query,
+                        agent_name=agent.name,
+                        refresh=False
                     )
                 except ValueError as e:
                     self.logger.error(

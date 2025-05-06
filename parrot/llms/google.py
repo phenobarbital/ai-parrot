@@ -17,11 +17,10 @@ class GoogleGenAI(AbstractLLM):
         "gemini-pro"
     ]
 
-    def __init__(self, *args, **kwargs):
-        self.model_type = kwargs.get("model_type", "chat")
+    def __init__(self, *args, use_chat: bool = False, **kwargs):
         super().__init__(*args, **kwargs)
         self._api_key = kwargs.pop('api_key', config.get('GOOGLE_API_KEY'))
-        if self.model_type == 'chat':
+        if use_chat:
             base_llm = ChatGoogleGenerativeAI
         else:
             base_llm = GoogleGenerativeAI

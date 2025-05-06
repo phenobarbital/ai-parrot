@@ -147,7 +147,7 @@ setup(
     install_requires=[
         "Cython==3.0.11",
         "langchain>=0.3.19",
-        "langchain-core==0.3.51",
+        "langchain-core==0.3.58",
         "langchain-community==0.3.21",
         "langchain-experimental==0.3.4",
         "langchain-text-splitters==0.3.8",
@@ -221,7 +221,7 @@ setup(
             "tiktoken==0.7.0"
         ],
         "google": [
-            "langchain-google-genai==2.0.5",
+            "langchain-google-genai==2.1.4",
             "langchain-google-vertexai==2.0.7",
             "google-cloud-texttospeech==2.26.0",
             "google-genai>=1.0.0",

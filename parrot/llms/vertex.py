@@ -61,7 +61,7 @@ class VertexLLM(AbstractLLM):
             base_llm = VertexAI
         self._llm = base_llm(
             model_name=self.model,
-            system_prompt="Always respond in the same language as the user's question. If the user's language is not English, translate your response into their language.",
+            # system_prompt="Always respond in the same language as the user's question. If the user's language is not English, translate your response into their language.",
             **self.args
         )
         # LLM
