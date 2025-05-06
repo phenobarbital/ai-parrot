@@ -265,6 +265,7 @@ class PandasAgent(BasicAgent):
         query: Union[List[str], dict] = None,
         **kwargs
     ):
+        self.chatbot_id: str = None
         self._queries = query
         self.df = self._define_dataframe(df)
         self.df_locals: dict = {}
@@ -380,6 +381,12 @@ class PandasAgent(BasicAgent):
         self.agent = self.pandas_agent()
         # 2. Create Agent Executor - This is where we typically run the agent.
         self._agent = self.agent
+        # 3. When agent is correctly created, caching the data:
+        await self._cache_data(
+            self.chatbot_id,
+            self.df,
+            cache_expiration=24
+        )
 
     def mimefromext(self, ext: str) -> str:
         """Get the mime type from the file extension."""
@@ -704,7 +711,8 @@ def store_result(key, value):
         query: Union[list, dict],
         agent_name: Optional[str] = None,
         refresh: bool = False,
-        cache_expiration: int = 48
+        cache_expiration: int = 48,
+        no_cache: bool = False
     ) -> Dict[str, pd.DataFrame]:
         """
         gen_data.
@@ -715,12 +723,12 @@ def store_result(key, value):
         -----------
         query : Union[list, dict]
             The query or queries to execute to generate dataframes.
-        agent_name : Optional[str]
-            Name of the agent, used for caching. If None, caching is disabled.
         refresh : bool
             If True, forces regeneration of dataframes even if cached versions exist.
         cache_expiration_hours : int
             Number of hours to keep the cached dataframes (default: 48).
+        no_cache : bool
+            If True, disables caching even if no agent_name is provided.
 
         Returns:
         --------
@@ -728,10 +736,11 @@ def store_result(key, value):
             A Dictionary of named pandas DataFrames generated from the queries.
         """
         # If agent_name is provided, we'll use Redis caching
-        if agent_name and not refresh:
+        if not agent_name:
+            agent_name = cls.chatbot_id
+        if not refresh:
             # Try to get cached dataframes
             cached_dfs = await cls._get_cached_data(agent_name)
-            print('::: CACHED DATA > ', cached_dfs.keys())
             if cached_dfs:
                 return cached_dfs
 
@@ -739,9 +748,8 @@ def store_result(key, value):
         dfs = await cls._execute_query(query)
 
         # If agent_name is provided, cache the generated dataframes
-        if agent_name:
+        if no_cache is False:
             await cls._cache_data(agent_name, dfs, cache_expiration)
-
         return dfs
 
     @classmethod
@@ -772,11 +780,11 @@ def store_result(key, value):
         # Consider using environment variables for these settings
         return await aioredis.Redis.from_url(
             REDIS_HISTORY_URL,
-            decode_responses=False
+            decode_responses=True
         )
 
     @classmethod
-    async def _get_cached_data(cls, agent_name: str) -> Optional[List[pd.DataFrame]]:
+    async def _get_cached_data(cls, agent_name: str) -> Optional[Dict[str, pd.DataFrame]]:
         """
         Retrieve cached data from Redis if they exist.
 
@@ -797,14 +805,14 @@ def store_result(key, value):
                 return None
 
             # Retrieve and convert each dataframe
-            dataframes = []
+            dataframes = {}
             for df_key in df_keys:
                 df_json = await redis_conn.hget(key, df_key)
                 if df_json:
                     # Convert from JSON to dataframe
-                    df_data = json_decoder(df_json.decode('utf-8'))
+                    df_data = json_decoder(df_json)
                     df = pd.DataFrame.from_records(df_data)
-                    dataframes.append(df)
+                    dataframes[df_key] = df
 
             await redis_conn.close()
             return dataframes if dataframes else None
@@ -835,6 +843,9 @@ def store_result(key, value):
 
             # Delete any existing cache for this agent
             await redis_conn.delete(key)
+            hkeys = await redis_conn.hkeys(key)
+            if hkeys:
+                await redis_conn.hdel(key, *hkeys)
 
             # Store each dataframe under the agent's hash
             for df_key, df in dataframes.items():
