@@ -11,7 +11,7 @@ from asyncdb.exceptions import NoDataFound
 from .bots.abstract import AbstractBot
 from .bots.basic import BasicBot
 from .bots.chatbot import Chatbot
-from .bots.pd import PandasAgent
+from .bots.data import PandasAgent
 from .handlers.chat import ChatHandler, BotHandler
 from .handlers.agents import AgentHandler
 from .handlers import ChatbotHandler
@@ -137,7 +137,9 @@ class BotManager:
                 # Get the queries before agent creation.
                 try:
                     queries = await class_name.gen_data(
-                        query=agent.query
+                        query=agent.query,
+                        agent_name=agent.chatbot_id,
+                        refresh=False
                     )
                 except ValueError as e:
                     self.logger.error(
@@ -260,7 +262,6 @@ class BotManager:
                 else:
                     self.logger.info(f"Agent {name} not found. Creating new one.")
                     # Create a new Agent
-                    print('KWARGS > ', kwargs)
                     new_agent = AgentModel(
                         name=name,
                         **kwargs

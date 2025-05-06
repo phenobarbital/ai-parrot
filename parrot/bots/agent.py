@@ -66,7 +66,7 @@ class BasicAgent(AbstractBot):
     def __init__(
         self,
         name: str = 'Agent',
-        agent_type: str = 'zero_shot',
+        agent_type: str = None,
         llm: str = None,
         tools: List[AbstractTool] = None,
         system_prompt: str = None,
@@ -82,7 +82,8 @@ class BasicAgent(AbstractBot):
             **kwargs
         )
         self.agent = None
-        self.agent_type = agent_type
+        self.agent_type = agent_type or 'tool-calling'
+        self._use_chat: bool = True  # For Agents, we use chat models
         self._agent = None # Agent Executor
         self.prompt_template = prompt_template or AGENT_PROMPT
         self.tools = tools or self.default_tools(tools)
@@ -325,7 +326,6 @@ class BasicAgent(AbstractBot):
         if self.app:
             self.app[f"{self.name.lower()}_bot"] = self
         # Configure LLM:
-        print('LLM PRE CONF > ', self._llm_model)
         self.configure_llm(use_chat=True)
         # And define Prompt:
         self._define_prompt()

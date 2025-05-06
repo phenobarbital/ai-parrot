@@ -1,19 +1,18 @@
 from pathlib import Path
-from typing import List, Union, Optional
+from typing import List, Dict, Union, Optional
 from io import BytesIO, StringIO
 from datetime import datetime, timezone, timedelta
-import re
-import uuid
 from string import Template
 import redis.asyncio as aioredis
 import pandas as pd
+from aiohttp import web
 from datamodel.typedefs import SafeDict
+from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611 # noqa
 from langchain_core.exceptions import OutputParserException
 from langchain_experimental.tools.python.tool import PythonAstREPLTool
 from langchain_experimental.agents.agent_toolkits import create_pandas_dataframe_agent
 from navconfig import BASE_DIR
 from navconfig.logging import logging
-from datamodel.parsers.json import json_encoder, json_decoder
 from querysource.queries.qs import QS
 from querysource.queries.multi import MultiQS
 from ..tools import AbstractTool
@@ -23,40 +22,37 @@ from ..models import AgentResponse
 from ..conf import BASE_STATIC_URL, REDIS_HISTORY_URL
 
 
+# It's good practice to define the memory key
+CHAT_HISTORY_KEY = "chat_history"
+
 PANDAS_PROMPT_PREFIX = """
 
 Your name is $name, you are a helpful assistant built to provide comprehensive guidance and support on data calculations and data analysis working with pandas dataframes.
 $description\n\n
-$backstory\n
+
+$backstory\n\n
 $capabilities\n
 
-You are working with $num_dfs pandas dataframes in Python, all dataframes are already loaded and available for analysis in the variables named as df1, df2, etc.
-
-**Answer the following questions as best you can. You have access to the following tools:**
-
-- $tools\n
-
-Use these tools effectively to provide accurate and comprehensive responses:
+You have access to the following tools:
 $list_of_tools
 
-** DataFrames Information: **
+# DataFrames Information:
 $df_info
 
+Your goal is to answer questions and perform data analysis using the provided dataframes and tools accurately.
+
 ## Working with DataFrames
-- First examine the existing dataframe with `df.info()` and `df.describe()`.
-- DO NOT create a sample daframe or example data, the user's actual data is already available.
-- You can access columns with `df['column_name']`.
-- For numerical analysis, use functions like mean(), sum(), min(), max().
+- You are working with $num_dfs pandas dataframes in Python, all dataframes are already loaded and available for analysis in the variables named as df1, df2, etc.
+- Use the store_result(key, value) function to store results.
 - Always use copies of dataframes to avoid modifying the original data.
-- For categorical columns, consider using value_counts() to see distributions.
 - You can create visualizations using matplotlib, seaborn or altair through the Python tool.
 - Perform analysis over the entire DataFrame, not just a sample.
-- Use `df['column_name'].value_counts()` to get counts of unique values.
 - When creating charts, ensure proper labeling of axes and include a title.
-- For visualization requests, use matplotlib, altair or seaborn through the Python tool.
 - You have access to several python libraries installed as scipy, numpy, matplotlib, matplotlib-inline, seaborn, altair, plotly, reportlab, pandas, numba, geopy, geopandas, prophet, statsmodels, scikit-learn, pmdarima, sentence-transformers, nltk, spacy, and others.
 - Provide clear, concise explanations of your analysis steps.
-- When appropriate, suggest additional insights beyond what was directly asked.
+- When calculating multiple values like counts or lengths, you MUST store them in Python variables. Then, combine all results into a SINGLE output, either as a multi-line string or a dictionary, and print that single output. Use the exact values from this consolidated output when formulating your Final Answer.
+    - Example (Dictionary): `results = {{'df1': len(df1), 'df2': len(df2)}}; print(str(results))`
+    - Example (String): `output = f"DF1: {{len(df1)}}\nDF2: {{len(df2)}}"; print(output)`
 
 ### EDA (Exploratory Data Analysis) Capabilities
 
@@ -158,29 +154,16 @@ generate_pdf_from_html(html_content, report_dir=agent_report_dir):
     - "html_path": "html_path"
 - When converting to PDF, ensure all document requirements are met for professional presentation.
 
-### Gamma Presentation Capabilities
-
-if the user asks for a Gamma Presentation, generate a text summary of the data analysis and use the GammaLinkTool to create a presentation.
-- The summary should be concise and highlight key insights.
-- Use the GammaLinkTool to create an URL for presentation.
-
-## Thoughts
+# Thoughts
 $format_instructions
 
 **IMPORTANT: When creating your final answer**
 - Today is $today_date, You must never contradict the given date.
-- When creating visualizations, ALWAYS use the non-interactive Matplotlib backend (Agg)
-- For saving files, use the following directory: agent_report_dir=$agent_report_dir, variable can be called also *report_dir*.
-- When you perform calculations (e.g., df.groupby().count()), store the results in variables
-- In your final answer, ONLY use the EXACT values from your Python calculations.
-- Use the EXACT values from your analysis (store names, customer names, numbers).
-- NEVER use placeholder text like [Store 1] or [Value], include complete, specific information from the data.
-- Copy the exact values from your code output into your narrative.
-- Your final answer must match exactly what you found in the data, no exceptions.
-- Use the provided data to support your analysis, do not regenerate, recalculate or create new data.
+- Use the directory '$agent_report_dir' when saving any files requested by the user.
+- Base your final answer on the results obtained from using the tools.
 - Do NOT repeat the same tool call multiple times for the same question.
 
-**IMPORTANT: HANDLING FILE RESULTS**
+**IMPORTANT: WHEN HANDLING FILE RESULTS**
 
 When you generate a file like a chart or report, you MUST format your response exactly like this:
 
@@ -193,7 +176,33 @@ filename: [file_path]
 [Brief description of what you did and what the file contains]
 [rest of answer]
 
+- The file is saved in the directory '$agent_report_dir'.
+
 $rationale
+
+"""
+
+TOOL_CALLING_PROMPT_PREFIX = """
+Your name is $name, you are a helpful assistant built to provide comprehensive guidance and support on data calculations and data analysis working with pandas dataframes.
+
+$backstory\n
+$capabilities\n
+
+You are working with $num_dfs pandas dataframes in Python, all dataframes are already loaded and available for analysis in the variables named as df1, df2, etc.
+
+You have access to the following tools:
+$list_of_tools
+
+# DataFrames Information:
+$df_info
+
+Your goal is to answer questions and perform data analysis using the provided dataframes and tools accurately.
+
+
+You are working with $num_dfs pandas dataframes (df1, df2, etc.).
+
+Today is $today_date.
+Use the directory '$agent_report_dir' when saving any files requested by the user.
 
 """
 
@@ -238,25 +247,22 @@ class PandasAgent(BasicAgent):
         system_prompt: str = None,
         human_prompt: str = None,
         prompt_template: str = None,
-        df: Union[list[pd.DataFrame], pd.DataFrame] = None,
+        df: Union[list[pd.DataFrame], Dict[str, pd.DataFrame]] = None,
         query: Union[List[str], dict] = None,
         **kwargs
     ):
+        self.chatbot_id: str = None
         self._queries = query
-        if isinstance(df, pd.DataFrame):
-            self.df = [df]
-        elif isinstance(df, list):
-            self.df = df
-        else:
-            self.df = []
-            # raise ValueError(
-            #     f"Expected pandas DataFrame, got {type(df)}"
-            # )
+        self.df = self._define_dataframe(df)
         self.df_locals: dict = {}
         # Agent ID:
         self._prompt_prefix = None
-        self._prompt_suffix = PANDAS_PROMPT_SUFFIX
-        self._prompt_template = prompt_template
+        # Must be one of 'tool-calling', 'openai-tools', 'openai-functions', or 'zero-shot-react-description'.
+        self.agent_type = agent_type or 'zero-shot-react-description'
+        if self.agent_type == 'tool-calling':
+            self._prompt_template = TOOL_CALLING_PROMPT_PREFIX.replace('$format_instructions', '')
+        else:
+            self._prompt_template = prompt_template or PANDAS_PROMPT_PREFIX
         self._capabilities: str = kwargs.get('capabilities', None)
         self._format_instructions: str = kwargs.get('format_instructions', FORMAT_INSTRUCTIONS)
         self.name = name or "Pandas Agent"
@@ -269,11 +275,36 @@ class PandasAgent(BasicAgent):
             system_prompt=system_prompt,
             human_prompt=human_prompt,
             tools=tools,
+            agent_type=self.agent_type,
             **kwargs
         )
-        # Must be one of 'tool-calling', 'openai-tools', 'openai-functions', or 'zero-shot-react-description'.
-        self.agent_type = agent_type or "zero-shot-react-description"
-        # self.agent_type = "openai-functions"
+
+    def _define_dataframe(
+        self,
+        df: Union[list[pd.DataFrame], Dict[str, pd.DataFrame]]
+    ) -> Dict[str, pd.DataFrame]:
+        """Define the dataframe."""
+        _df = {}
+        if isinstance(df, pd.DataFrame):
+            # if data is one single dataframe
+            _df['df1'] = df
+        elif isinstance(df, list):
+            # if data is a list of dataframes
+            for i, dataframe in enumerate(df):
+                df_name = f"df{i + 1}"
+                _df[df_name] = dataframe.copy()
+        elif isinstance(df, pd.Series):
+            # if data is a pandas series
+            # convert it to a dataframe
+            df = pd.DataFrame(df)
+            _df['df1'] = df
+        elif isinstance(df, dict):
+            _df = df
+        else:
+            raise ValueError(
+                f"Expected pandas DataFrame, got {type(df)}"
+            )
+        return _df
 
     def get_query(self) -> Union[List[str], dict]:
         """Get the query."""
@@ -283,7 +314,7 @@ class PandasAgent(BasicAgent):
         """Get the capabilities of the agent."""
         return self._capabilities
 
-    def pandas_agent(self, df: pd.DataFrame, **kwargs):
+    def pandas_agent(self, **kwargs):
         """
         Creates a Pandas Agent.
 
@@ -295,21 +326,8 @@ class PandasAgent(BasicAgent):
         ✅ Use Case: Best for decision-making and reasoning tasks where the agent must break problems down into multiple steps.
 
         """
-        # Create the Python REPL tool
-        python_tool = PythonAstREPLTool(locals=self.df_locals)
-        # Add EDA functions to the tool's locals
-        setup_code = """
-        from parrot.bots.tools import quick_eda, generate_eda_report, list_available_dataframes, gamma_link, create_plot, generate_pdf_from_html
-        """
-        try:
-            python_tool.run(setup_code)
-        except Exception as e:
-            self.logger.error(
-                f"Error setting up python tool locals: {e}"
-            )
-        # Add it to the tools list
-        self.tools.append(python_tool)
         # Create the pandas agent
+        df = list(self.df.values()) if isinstance(self.df, dict) else self.df
         return create_pandas_dataframe_agent(
             self._llm,
             df,
@@ -318,26 +336,43 @@ class PandasAgent(BasicAgent):
             allow_dangerous_code=True,
             extra_tools=self.tools,
             prefix=self._prompt_prefix,
-            max_iterations=15,
-            handle_parsing_errors=True,
-            return_intermediate_steps=False,
+            max_iterations=10,
+            # agent_executor_kwargs={"memory": self.memory},
+            # input_variables=["input", "agent_scratchpad", "chat_history"],
+            return_intermediate_steps=True,
             **kwargs
         )
 
     async def configure(self, df: pd.DataFrame = None, app=None) -> None:
         """Basic Configuration of Pandas Agent.
         """
-        await super(BasicAgent, self).configure(app)
+        if app:
+            if isinstance(app, web.Application):
+                self.app = app  # register the app into the Extension
+            else:
+                self.app = app.get_app()  # Nav Application
+        # adding this configured chatbot to app:
+        if self.app:
+            self.app[f"{self.name.lower()}_bot"] = self
         if df is not None:
-            self.df = df
+            self.df = self._define_dataframe(df)
         # Configure LLM:
         self.configure_llm(use_chat=True)
+        # Configure VectorStore if enabled:
+        if self._use_vector:
+            self.configure_store()
         # Conversation History:
-        self.memory = self.get_memory()
+        self.memory = self.get_memory(key=CHAT_HISTORY_KEY, input_key="input", output_key="output")
         # 1. Initialize the Agent (as the base for RunnableMultiActionAgent)
-        self.agent = self.pandas_agent(self.df)
+        self.agent = self.pandas_agent()
         # 2. Create Agent Executor - This is where we typically run the agent.
         self._agent = self.agent
+        # 3. When agent is correctly created, caching the data:
+        await self._cache_data(
+            self.chatbot_id,
+            self.df,
+            cache_expiration=24
+        )
 
     def mimefromext(self, ext: str) -> str:
         """Get the mime type from the file extension."""
@@ -427,6 +462,61 @@ class PandasAgent(BasicAgent):
         except Exception as e:
             return result, e
 
+    def _configure_python_tool(self, df_locals: dict, **kwargs) -> PythonAstREPLTool:
+        """Configure the Python tool."""
+        # Create the Python tool with the given locals and globals
+        self.df_locals['execution_results'] = {}
+        # Create the Python REPL tool
+        python_tool = PythonAstREPLTool(
+            locals=self.df_locals,
+            globals=kwargs.get('globals', {}),
+            verbose=True,
+            **kwargs
+        )
+        # Add EDA functions to the tool's locals
+        setup_code = """
+        from parrot.bots.tools import quick_eda, generate_eda_report, list_available_dataframes, create_plot, generate_pdf_from_html
+        """
+        # Add a helper function to the REPL locals
+        setup_code += """
+def store_result(key, value):
+    if 'execution_results' not in globals():
+        globals()['execution_results'] = {}
+    execution_results[key] = value
+    print(f"Stored result '{key}'")
+    return value
+"""
+        try:
+            python_tool.run(setup_code)
+        except Exception as e:
+            self.logger.error(
+                f"Error setting up python tool: {e}"
+            )
+        return python_tool
+
+    def _metrics_guide(self, df_key: str, df_name: str, columns: list) -> str:
+        """Generate a guide for the dataframe columns."""
+        # Create a markdown table with column category, column name, type and with dataframe is present:
+        table = "| Category | Column Name | Type | DataFrame | Dataframe Name |\n"
+        table += "|------------------|-------------|------|-----------|\n"
+        for column in columns:
+            # Get the column name
+            column_name = column
+            # split by "_" and first element is the category (if any):
+            # Get the column category
+            try:
+                column_category = column.split('_')[0]
+            except IndexError:
+                column_category = df_name
+            # Get the type of the column
+            column_type = str(self.df[df_name][column].dtype)
+            # Add the row to the table
+            table += f"| {column_category} | {column_name} | {column_type} | {df_key} | {df_name} |\n"
+        # Add a note about the dataframe
+        table += f"\nNote: {df_key} is also available as {df_name}\n"
+        return table
+
+
     def define_prompt(self, prompt, **kwargs):
         now = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         self.agent_report_dir = self._static_path.joinpath(str(self.chatbot_id))
@@ -435,84 +525,127 @@ class PandasAgent(BasicAgent):
         # Word Tool:
         docx_tool = DocxGeneratorTool(output_dir=self.agent_report_dir)
         self.tools.append(docx_tool)
-        # List of Tools:
-        list_of_tools = ""
-        for tool in self.tools:
-            name = tool.name
-            description = tool.description  # noqa  pylint: disable=E1101
-            list_of_tools += f'- {name}: {description}\n'
-        list_of_tools += "\n"
         # Add dataframe information
         num_dfs = len(self.df)
-        for i, dataframe in enumerate(self.df):
-            df_name = f"df{i + 1}"
-            self.df_locals[df_name] = dataframe.copy()
-            self.df_locals['agent_report_dir'] = self.agent_report_dir
+        self.df_locals['agent_report_dir'] = self.agent_report_dir
+
+        for i, (df_name, df) in enumerate(self.df.items()):
+            df_key = f"df{i + 1}"
+            self.df_locals[df_name] = df
+            self.df_locals[df_key] = df
+            row_count = len(df)
+            self.df_locals[f"{df_name}_row_count"] = row_count
             # Get basic dataframe info
-            df_shape = f"DataFrame Shape: {dataframe.shape[0]} rows × {dataframe.shape[1]} columns"
-            df_columns = f"Columns: {', '.join(dataframe.columns.tolist())}"
+            df_shape = f"DataFrame Shape: {df.shape[0]} rows × {df.shape[1]} columns"
+            df_columns = self._metrics_guide(df_key, df_name, df.columns.tolist())
+            # df_columns = f"{', '.join(df.columns.tolist())}"
             # Generate summary statistics
-            summary_stats = brace_escape(dataframe.describe(include='all').to_markdown())
-            # Generate sample rows
-            sample_rows = brace_escape(dataframe.head(10).to_markdown())
+            summary_stats = brace_escape(df.describe(include='all').to_markdown())
             # Create df_info block
             df_info = f"""
-** DataFrame {df_name} Information **
+            ## DataFrame {df_key}:
 
-## {df_name} Shape
-{df_shape}
+            ### {df_key} Shape:
+            {df_shape}
 
-## {df_name} Columns
-{df_columns}
+            ### {df_key} Info:
+            {df_columns}
 
-## {df_name} Summary Statistics
-{summary_stats}
+            ### {df_key} Summary Statistics:
+            {summary_stats}
 
-## {df_name} Sample Rows (First 10)
-{sample_rows}
-
-"""
-            tools_names = [tool.name for tool in self.tools]
-            capabilities = ''
-            if self._capabilities:
-                capabilities = "**Your Capabilities:**\n"
-                capabilities += self.sanitize_prompt_text(self._capabilities) + "\n"
-            # Create the prompt
-            sanitized_backstory = ''
-            if self.backstory:
-                sanitized_backstory = self.sanitize_prompt_text(self.backstory)
-            # self._prompt_prefix = PANDAS_PROMPT_PREFIX.format_map(
-            tmpl = Template(PANDAS_PROMPT_PREFIX)
-            self._prompt_prefix = tmpl.safe_substitute(
-                name=self.name,
-                description=self.description,
-                list_of_tools=list_of_tools,
-                backstory=sanitized_backstory,
-                capabilities=capabilities,
-                today_date=now,
-                system_prompt_base=prompt,
-                tools=", ".join(tools_names),
-                format_instructions=self._format_instructions.format(
-                    tool_names=", ".join(tools_names)),
-                df_info=df_info,
-                num_dfs=num_dfs,
-                rationale=self.rationale,
-                agent_report_dir=self.agent_report_dir,
-                **kwargs
-            )
-            print('PROMPT >> ', self._prompt_prefix)
-            self._prompt_suffix = PANDAS_PROMPT_SUFFIX
+            """
+        # Configure Python tool:
+        python_tool = self._configure_python_tool(
+            df_locals=self.df_locals,
+            **kwargs
+        )
+        # Add the Python tool to the tools list
+        self.tools.append(python_tool)
+        # List of Tools:
+        list_of_tools = ""
+        if self.agent_type == 'tool-calling':
+            # Tool-calling agents use a different prompt structure
+            tools_json = []
+            tools_names = []
+            for tool in self.tools:
+                tool_dict = {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "input": {
+                                "type": "string",
+                                "description": "Input for the tool"
+                            }
+                        },
+                        "required": ["input"]
+                    }
+                }
+                # Handle special case for python_repl_ast tool
+                if tool.name == "python_repl_ast":
+                    tool_dict["parameters"] = {
+                        "type": "object",
+                        "properties": {
+                            "code": {
+                                "type": "string",
+                                "description": "Python code to execute"
+                            }
+                        },
+                        "required": ["code"]
+                    }
+                tools_json.append(tool_dict)
+            list_of_tools = brace_escape(json_encoder(tools_json))
+        else:
+            for tool in self.tools:
+                name = tool.name
+                description = tool.description  # noqa  pylint: disable=E1101
+                list_of_tools += f'- {name}: {description}\n'
+            list_of_tools += "\n"
+        tools_names = [tool.name for tool in self.tools]
+        capabilities = ''
+        if self._capabilities:
+            capabilities = "**Your Capabilities:**\n"
+            capabilities += self.sanitize_prompt_text(self._capabilities) + "\n"
+        # Create the prompt
+        sanitized_backstory = ''
+        if self.backstory:
+            sanitized_backstory = self.sanitize_prompt_text(self.backstory)
+        tmpl = Template(self._prompt_template)
+        self._prompt_prefix = tmpl.safe_substitute(
+            name=self.name,
+            description=self.description,
+            list_of_tools=list_of_tools,
+            backstory=sanitized_backstory,
+            capabilities=capabilities,
+            today_date=now,
+            system_prompt_base=prompt,
+            tools=", ".join(tools_names),
+            format_instructions=self._format_instructions.format(
+                tool_names=", ".join(tools_names)),
+            df_info=df_info,
+            num_dfs=num_dfs,
+            rationale=self.rationale,
+            agent_report_dir=self.agent_report_dir,
+            **kwargs
+        )
+        # print('PROMPT > ', self._prompt_prefix)
+        self._prompt_suffix = PANDAS_PROMPT_SUFFIX
 
     def default_backstory(self) -> str:
         return "You are a helpful assistant built to provide comprehensive guidance and support on data calculations and data analysis working with pandas dataframes."
 
     @staticmethod
-    async def call_qs(queries: list) -> List[pd.DataFrame]:
+    async def call_qs(queries: list) -> Dict[str, pd.DataFrame]:
         """
         call_qs.
         description: Call the QuerySource queries.
+
+        This method is used to execute multiple queries and files on the QueryObject.
+        It returns a dictionary with the results.
         """
-        dfs = []
+        dfs = {}
         for query in queries:
             if not isinstance(query, str):
                 raise ValueError(
@@ -532,7 +665,7 @@ class PandasAgent(BasicAgent):
                     raise ValueError(
                         f"Query {query} is not returning a dataframe."
                     )
-                dfs.append(df)
+                dfs[query] = df
             except ValueError:
                 raise
             except Exception as e:
@@ -542,10 +675,13 @@ class PandasAgent(BasicAgent):
         return dfs
 
     @staticmethod
-    async def call_multiquery(query: dict) -> List[pd.DataFrame]:
+    async def call_multiquery(query: dict) -> Dict[str, pd.DataFrame]:
         """
         call_multiquery.
         description: Call the MultiQuery queries.
+
+        This method is used to execute multiple queries and files on the QueryObject.
+        It returns a dictionary with the results.
         """
         data = {}
         _queries = query.pop('queries', {})
@@ -573,7 +709,8 @@ class PandasAgent(BasicAgent):
             raise ValueError(
                 "MultiQuery is not returning a dictionary."
             )
-        return list(result.values())
+        # MultiQuery returns a dictionary with the results
+        return result
 
     @classmethod
     async def gen_data(
@@ -581,8 +718,9 @@ class PandasAgent(BasicAgent):
         query: Union[list, dict],
         agent_name: Optional[str] = None,
         refresh: bool = False,
-        cache_expiration: int = 48
-    ) -> List[pd.DataFrame]:
+        cache_expiration: int = 48,
+        no_cache: bool = False
+    ) -> Dict[str, pd.DataFrame]:
         """
         gen_data.
 
@@ -592,20 +730,22 @@ class PandasAgent(BasicAgent):
         -----------
         query : Union[list, dict]
             The query or queries to execute to generate dataframes.
-        agent_name : Optional[str]
-            Name of the agent, used for caching. If None, caching is disabled.
         refresh : bool
             If True, forces regeneration of dataframes even if cached versions exist.
         cache_expiration_hours : int
             Number of hours to keep the cached dataframes (default: 48).
+        no_cache : bool
+            If True, disables caching even if no agent_name is provided.
 
         Returns:
         --------
-        List[pd.DataFrame]
-            A list of pandas DataFrames generated from the queries.
+        Dict[str, pd.DataFrame]
+            A Dictionary of named pandas DataFrames generated from the queries.
         """
         # If agent_name is provided, we'll use Redis caching
-        if agent_name and not refresh:
+        if not agent_name:
+            agent_name = cls.chatbot_id
+        if not refresh:
             # Try to get cached dataframes
             cached_dfs = await cls._get_cached_data(agent_name)
             if cached_dfs:
@@ -615,13 +755,12 @@ class PandasAgent(BasicAgent):
         dfs = await cls._execute_query(query)
 
         # If agent_name is provided, cache the generated dataframes
-        if agent_name:
+        if no_cache is False:
             await cls._cache_data(agent_name, dfs, cache_expiration)
-
         return dfs
 
     @classmethod
-    async def _execute_query(cls, query: Union[list, dict]) -> List[pd.DataFrame]:
+    async def _execute_query(cls, query: Union[list, dict]) -> Dict[str, pd.DataFrame]:
         """Execute the query and return the generated dataframes."""
         if isinstance(query, dict):
             # is a MultiQuery execution, use the MultiQS class engine to do it:
@@ -648,11 +787,11 @@ class PandasAgent(BasicAgent):
         # Consider using environment variables for these settings
         return await aioredis.Redis.from_url(
             REDIS_HISTORY_URL,
-            decode_responses=False
+            decode_responses=True
         )
 
     @classmethod
-    async def _get_cached_data(cls, agent_name: str) -> Optional[List[pd.DataFrame]]:
+    async def _get_cached_data(cls, agent_name: str) -> Optional[Dict[str, pd.DataFrame]]:
         """
         Retrieve cached data from Redis if they exist.
 
@@ -673,14 +812,14 @@ class PandasAgent(BasicAgent):
                 return None
 
             # Retrieve and convert each dataframe
-            dataframes = []
+            dataframes = {}
             for df_key in df_keys:
                 df_json = await redis_conn.hget(key, df_key)
                 if df_json:
                     # Convert from JSON to dataframe
-                    df_data = json_decoder(df_json.decode('utf-8'))
+                    df_data = json_decoder(df_json)
                     df = pd.DataFrame.from_records(df_data)
-                    dataframes.append(df)
+                    dataframes[df_key] = df
 
             await redis_conn.close()
             return dataframes if dataframes else None
@@ -694,7 +833,7 @@ class PandasAgent(BasicAgent):
     async def _cache_data(
         cls,
         agent_name: str,
-        dataframes: List[pd.DataFrame],
+        dataframes: Dict[str, pd.DataFrame],
         cache_expiration: int
     ) -> None:
         """
@@ -711,11 +850,13 @@ class PandasAgent(BasicAgent):
 
             # Delete any existing cache for this agent
             await redis_conn.delete(key)
+            hkeys = await redis_conn.hkeys(key)
+            if hkeys:
+                await redis_conn.hdel(key, *hkeys)
 
             # Store each dataframe under the agent's hash
-            for i, df in enumerate(dataframes):
-                df_key = f"df{i+1}"
-                # Convert DataFrame to list of dictionaries
+            for df_key, df in dataframes.items():
+                # Convert DataFrame to JSON
                 df_json = json_encoder(df.to_dict(orient='records'))
                 await redis_conn.hset(key, df_key, df_json)
 
