@@ -29,15 +29,10 @@ PANDAS_PROMPT_PREFIX = """
 
 Your name is $name, you are a helpful assistant built to provide comprehensive guidance and support on data calculations and data analysis working with pandas dataframes.
 $description\n\n
-$backstory\n
+$backstory\n\n
 $capabilities\n
 
-You are working with $num_dfs pandas dataframes in Python, all dataframes are already loaded and available for analysis in the variables named as df1, df2, etc.
-
 You have access to the following tools:
-$tools\n
-
-Use these tools effectively to provide accurate and comprehensive responses:
 $list_of_tools
 
 ** DataFrames Information: **
@@ -46,6 +41,7 @@ $df_info
 Your goal is to answer questions and perform data analysis using the provided dataframes and tools accurately.
 
 ## Working with DataFrames
+- You are working with $num_dfs pandas dataframes in Python, all dataframes are already loaded and available for analysis in the variables named as df1, df2, etc.
 - use df1, df2, etc. to refer to the dataframes.
 - Use the store_result(key, value) function to store results.
 - Always use copies of dataframes to avoid modifying the original data.
@@ -508,6 +504,29 @@ def store_result(key, value):
             )
         return python_tool
 
+    def _metrics_guide(self, df_key: str, df_name: str, columns: list) -> str:
+        """Generate a guide for the dataframe columns."""
+        # Create a markdown table with column category, column name, type and with dataframe is present:
+        table = "| Category | Column Name | Type | DataFrame | Dataframe Name |\n"
+        table += "|------------------|-------------|------|-----------|\n"
+        for column in columns:
+            # Get the column name
+            column_name = column
+            # split by "_" and first element is the category (if any):
+            # Get the column category
+            try:
+                column_category = column.split('_')[0]
+            except IndexError:
+                column_category = df_name
+            # Get the type of the column
+            column_type = str(self.df[df_name][column].dtype)
+            # Add the row to the table
+            table += f"| {column_category} | {column_name} | {column_type} | {df_key} | {df_name} |\n"
+        # Add a note about the dataframe
+        table += f"\nNote: {df_key} is also available as {df_name}\n"
+        return table
+
+
     def define_prompt(self, prompt, **kwargs):
         now = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         self.agent_report_dir = self._static_path.joinpath(str(self.chatbot_id))
@@ -518,7 +537,6 @@ def store_result(key, value):
         self.tools.append(docx_tool)
         # Add dataframe information
         num_dfs = len(self.df)
-        print('HERE >> ', self.df.keys())
         self.df_locals['agent_report_dir'] = self.agent_report_dir
 
         for i, (df_name, df) in enumerate(self.df.items()):
@@ -529,19 +547,18 @@ def store_result(key, value):
             self.df_locals[f"{df_name}_row_count"] = row_count
             # Get basic dataframe info
             df_shape = f"DataFrame Shape: {df.shape[0]} rows × {df.shape[1]} columns"
-            df_columns = f"{', '.join(df.columns.tolist())}"
+            df_columns = self._metrics_guide(df_key, df_name, df.columns.tolist())
+            # df_columns = f"{', '.join(df.columns.tolist())}"
             # Generate summary statistics
             summary_stats = brace_escape(df.describe(include='all').to_markdown())
             # Create df_info block
             df_info = f"""
             ## DataFrame {df_key}:
 
-            Note: {df_key} is also available as {df_name}\n
-
             ### {df_key} Shape:
             {df_shape}
 
-            ### {df_key} Columns:
+            ### {df_key} Info:
             {df_columns}
 
             ### {df_key} Summary Statistics:
