@@ -10,7 +10,7 @@ from querysource.queries.qs import QS
 from querysource.queries.multi import MultiQS
 from ..bots.abstract import AbstractBot
 from ..llms.vertex import VertexLLM
-from ..bots.pd import PandasAgent
+from ..bots.data import PandasAgent
 from ..models import AgentModel
 
 
@@ -87,8 +87,10 @@ class AgentHandler(BaseView):
         try:
             # Generate the Data Frames from the queries:
             dfs = await PandasAgent.gen_data(
+                query=query.copy(),
                 agent_name=_id,
-                query=query
+                refresh=True,
+                no_cache=True
             )
         except Exception as e:
             return self.json_response(
@@ -109,9 +111,6 @@ class AgentHandler(BaseView):
             }
             if _id:
                 args['chatbot_id'] = _id
-            agent = PandasAgent(
-                **args
-            )
             # Create and Add the agent to the manager
             agent = await manager.create_agent(
                 class_name=PandasAgent,
@@ -121,7 +120,7 @@ class AgentHandler(BaseView):
         except Exception as e:
             return self.json_response(
                 {
-                "message": f"Error creating agent: {e}"
+                "message": f"Error on Agent creation: {e}"
                 },
                 status=400
             )
@@ -135,7 +134,7 @@ class AgentHandler(BaseView):
             )
         # Saving Agent into DB:
         try:
-            del args["df"]
+            args.pop('df')
             args['query'] = query
             result = await manager.save_agent(**args)
             if not result:
@@ -255,7 +254,7 @@ class AgentHandler(BaseView):
             data = {}
         query = data.pop('query', None)
         if agent := manager.get_agent(name):
-            # extract the new query from the request, or from agent
+            # dextract the new query from the request, or from agent
             qry = query if query else agent.get_query()
             try:
                 # Generate the Data Frames from the queries:

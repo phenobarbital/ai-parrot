@@ -1,5 +1,5 @@
 """
-NotebookAgent - Specialized agent for handling Word documents, converting to Markdown, 
+NotebookAgent - Specialized agent for handling Word documents, converting to Markdown,
 and generating narrated summaries.
 """
 import os
@@ -20,7 +20,6 @@ from navconfig import BASE_DIR
 from parrot.conf import BASE_STATIC_URL
 from parrot.tools import WordToMarkdownTool, GoogleVoiceTool
 from parrot.tools.abstract import AbstractTool
-from parrot.llms import get_llm
 from parrot.utils import SafeDict
 from parrot.models import AgentResponse
 
@@ -141,22 +140,22 @@ class NotebookAgent(BasicAgent):
         self._document_url = document_url
         self._document_content = None
         self._document_metadata = {}
-        
+
         # Agent ID and configuration
         self._prompt_prefix = NOTEBOOK_PROMPT_PREFIX
         self._prompt_suffix = NOTEBOOK_PROMPT_SUFFIX
         self._prompt_template = prompt_template
         self._capabilities: str = kwargs.get('capabilities', None)
         self._format_instructions: str = kwargs.get('format_instructions', FORMAT_INSTRUCTIONS)
-        
+
         self.name = name or "Document Assistant"
         self.description = "An agent specialized for working with documents, converting Word to Markdown, and generating narrated summaries."
-        
+
         # Set up directories for outputs
         self._static_path = BASE_DIR.joinpath('static')
         self.agent_audio_dir = self._static_path.joinpath('audio', 'agents')
         self.agent_docs_dir = self._static_path.joinpath('docs', 'agents')
-        
+
         # Convert string to SystemMessagePromptTemplate
         system_prompt_text = system_prompt or self.default_backstory()
         self.system_prompt = SystemMessagePromptTemplate.from_template(system_prompt_text)
@@ -175,23 +174,23 @@ class NotebookAgent(BasicAgent):
     async def configure(self, document_url: str = None, app=None) -> None:
         """Configure the NotebookAgent with necessary tools and setup."""
         await super().configure(app)
-        
+
         # Set document URL if provided
         if document_url:
             self._document_url = document_url
-            
+
         # Initialize document processing tools if not already present
         self._init_tools()
-        
+
         # Similar a PandasAgent: usa agent_type para decidir
         if self.agent_type == 'openai':
             self.agent = self.openai_agent()
-        elif self.agent_type == 'openai-tools':  
+        elif self.agent_type == 'openai-tools':
             self.agent = self.openai_tools_agent()
         else:
             # Fallback a react para compatibilidad con todos los modelos
             self.agent = self.react_agent()
-        
+
         # Create executor from agent
         self._agent = self.get_executor(self.agent, self.tools)
 
@@ -204,11 +203,11 @@ class NotebookAgent(BasicAgent):
             description = tool.description
             list_of_tools += f'- {name}: {description}\n'
         list_of_tools += "\n"
-        
+
         # Base prompts components
         format_instructions = self._format_instructions or FORMAT_INSTRUCTIONS
         rationale = self._capabilities or ""
-        
+
         # Format the prompt template with our specific values
         final_prompt = self._prompt_prefix.format_map(
             SafeDict(
@@ -221,24 +220,24 @@ class NotebookAgent(BasicAgent):
                 tools=", ".join([tool.name for tool in self.tools])
             )
         )
-        
+
         # Create the chat prompt template
         from langchain.prompts import (
-            ChatPromptTemplate, 
+            ChatPromptTemplate,
             SystemMessagePromptTemplate,
             HumanMessagePromptTemplate,
             MessagesPlaceholder
         )
-        
+
         # Define a structured system message
         system_message = f"""
         Today is {now}. You are {self.name}, a document processing assistant.
         Your job is to help users analyze documents, extract information, and generate summaries.
-        
+
         When working with documents, first convert them using the word_to_markdown_tool,
         then analyze the content and provide insights or summaries as requested.
         """
-        
+
         # Important: Add agent_scratchpad to the prompt
         chat_prompt = ChatPromptTemplate.from_messages([
             SystemMessagePromptTemplate.from_template(system_message),
@@ -246,7 +245,7 @@ class NotebookAgent(BasicAgent):
             # Add a placeholder for the agent's scratchpad/intermediate steps
             MessagesPlaceholder(variable_name="agent_scratchpad")
         ])
-        
+
         self.prompt = chat_prompt.partial(
             tools=self.tools,
             tool_names=", ".join([tool.name for tool in self.tools]),
@@ -256,35 +255,35 @@ class NotebookAgent(BasicAgent):
     async def load_document(self, url: str) -> Dict[str, Any]:
         """
         Load a document from a URL using WordToMarkdownTool.
-        
+
         Args:
             url: URL of the Word document to load
-            
+
         Returns:
             Dictionary with document content and metadata
         """
         if not url:
             return {"error": "No document URL provided"}
-            
+
         word_tool = next((tool for tool in self.tools if tool.name == "word_to_markdown_tool"), None)
-        
+
         if not word_tool:
             return {"error": "WordToMarkdownTool not available"}
-            
+
         try:
             # Use the tool to load and convert the document
             result = await word_tool._arun(url)
-            
+
             if not result.get("success", False):
                 return {"error": result.get("error", "Unknown error loading document")}
-                
+
             self._document_content = result.get("markdown", "")
             self._document_metadata = {
                 "source_url": url,
                 "loaded_at": datetime.now().isoformat(),
                 "format": "markdown"
             }
-            
+
             return {
                 "content": self._document_content,
                 "metadata": self._document_metadata,
@@ -298,44 +297,44 @@ class NotebookAgent(BasicAgent):
         if not self._document_content:
             print("Error: No document content available to summarize")
             return {"error": "No document content available to summarize"}
-        
+
         # Añadir un mensaje de depuración para ver el contenido del documento
         content_length = len(self._document_content)
         print(f"Generating summary directly with LLM for document with {content_length} characters")
-        
+
         try:
             # Create a more robust summarization prompt
             prompt = f"""
             I need you to analyze this document and create a clear summary.
-            
+
             {self._document_content[:10000]}
-            
+
             Please provide a comprehensive summary that:
             1. Captures the main points and themes
             2. Is well-structured with headers for major sections
             3. Uses bullet points for key details when appropriate
             4. Is suitable for audio narration
-            
+
             Focus on providing value and clarity in your summary.
             """
-            
+
             # Use direct invocation to debug the response
             print("Sending prompt to LLM...")
             print(f"Prompt preview: {prompt[:100]}...")
-            
+
             # Usar el LLM directamente (no el agente)
             summary_text = await self._llm.ainvoke(prompt)
-            
+
             if not summary_text:
                 print("Warning: Generated summary is empty!")
                 return {"error": "Failed to generate summary"}
-            
+
             print(f"Summary generated, length: {len(summary_text)} characters")
-            
+
             # Generate audio from the summary
             print("Generating audio...")
             audio_info = await self._generate_audio(summary_text)
-            
+
             return {
                 "summary": summary_text,
                 "audio": audio_info,
@@ -351,10 +350,10 @@ class NotebookAgent(BasicAgent):
         """
         Preprocesa el texto Markdown para convertirlo en texto conversacional para podcast.
         Elimina marcas de formato pero preserva el flujo natural del discurso.
-        
+
         Args:
             text: Texto en formato Markdown
-            
+
         Returns:
             Texto fluido y conversacional optimizado para síntesis de voz
         """
@@ -363,86 +362,86 @@ class NotebookAgent(BasicAgent):
         text = re.sub(r'\*(.*?)\*', r'\1', text)      # Quitar *cursiva*
         text = re.sub(r'__(.*?)__', r'\1', text)      # Quitar __negrita__
         text = re.sub(r'_(.*?)_', r'\1', text)        # Quitar _cursiva_
-        
+
         # Mejorar listas para que suenen naturales (sin "Punto:")
         text = re.sub(r'^\s*[\*\-\+]\s+', '', text, flags=re.MULTILINE)  # Listas sin orden
         text = re.sub(r'^\s*(\d+)\.\s+', '', text, flags=re.MULTILINE)   # Listas numeradas
-        
+
         # Convertir encabezados manteniendo el texto original (sin "Sección:")
         text = re.sub(r'^#{1,6}\s+(.*)', r'\1', text, flags=re.MULTILINE)
-        
+
         # Limpiar otros elementos Markdown
         text = re.sub(r'\[(.*?)\]\(.*?\)', r'\1', text)  # Enlaces: solo texto
         text = re.sub(r'`(.*?)`', r'\1', text)           # Quitar texto en `código`
         text = re.sub(r'~~(.*?)~~', r'\1', text)         # Quitar ~~tachado~~
-        
+
         # Eliminar bloques de código que no son relevantes para audio
         text = re.sub(r'```.*?```', '', text, flags=re.DOTALL)
-        
+
         # Eliminar caracteres especiales innecesarios para voz
         text = re.sub(r'[|]', ' ', text)  # Quitar pipes (comunes en tablas)
-        
+
         # Tratar con dobles puntos y viñetas para mejor fluidez
         text = re.sub(r':\s*\n', '. ', text)  # Convertir ":" seguido de salto de línea en punto
-        
+
         # Agregar pausas naturales después de párrafos para respiración
         text = re.sub(r'\n{2,}', '. ', text)  # Convertir múltiples saltos en pausa
-        
+
         # Normalizar espacios y puntuación para mejor fluidez
         text = re.sub(r'\s{2,}', ' ', text)      # Limitar espacios consecutivos
         text = re.sub(r'\.{2,}', '.', text)      # Convertir múltiples puntos en uno solo
         text = re.sub(r'\.\s*\.', '.', text)     # Eliminar dobles puntos consecutivos
-        
+
         # Mejorar la transición entre oraciones
         text = re.sub(r'([.!?])\s+([A-Z])', r'\1 \2', text)  # Asegurar espacio después de puntuación
-        
+
         print(f"Texto preprocesado para síntesis de voz. Longitud original: {len(text)}, nueva: {len(text)}")
-        
+
         # Opcional: Agregar instrucciones sutiles de narración si es necesario
         # text = "En este resumen: " + text
-        
+
         return text
 
     async def _generate_audio(self, text: str, voice_gender: str = "FEMALE") -> Dict[str, Any]:
         """
         Generate audio narration from text using GoogleVoiceTool.
-        
+
         Args:
             text: Text to convert to audio
             voice_gender: Gender of the voice (MALE or FEMALE)
-            
+
         Returns:
             Dictionary with audio file information
         """
         try:
             # Find the voice tool
             voice_tool = next((tool for tool in self.tools if tool.name == "podcast_generator_tool"), None)
-            
+
             if not voice_tool:
                 print("Voice tool not found! Available tools: " + ", ".join([t.name for t in self.tools]))
                 return {}
-            
+
             # Ensure output directory exists
             os.makedirs(str(self.agent_audio_dir), exist_ok=True)
-            
+
             # Preprocesar el texto para eliminar caracteres de Markdown y mejorar la lectura
             print("Preprocesando texto para síntesis de voz...")
             processed_text = await self._preprocess_text_for_speech(text)
-            
+
             print(f"Generating audio using voice tool (direct query)...")
-            
+
             # Pasar el texto preprocesado directamente
             result = await voice_tool._arun(query=processed_text)
-            
+
             # Process result
             if isinstance(result, str):
                 try:
                     result = json.loads(result)
                 except:
                     result = {"message": result}
-            
+
             print(f"Voice tool result: {result}")
-            
+
             # Verificar que el archivo exista
             if "file_path" in result and os.path.exists(result["file_path"]):
                 file_path = result["file_path"]
@@ -458,7 +457,7 @@ class NotebookAgent(BasicAgent):
                     print(f"Expected path was: {result['file_path']}")
                 if "error" in result:
                     print(f"Error reported by tool: {result['error']}")
-            
+
             return result
         except Exception as e:
             import traceback
@@ -472,7 +471,7 @@ class NotebookAgent(BasicAgent):
         output_lines = response.output.splitlines()
         current_filename = ""
         filenames = {}
-        
+
         for line in output_lines:
             if 'filename:' in line:
                 current_filename = line.split('filename:')[1].strip()
@@ -491,10 +490,10 @@ class NotebookAgent(BasicAgent):
                         continue
                     except AttributeError:
                         pass
-                    
+
         if filenames:
             response.filename = filenames
-            
+
         return filenames
 
     def mimefromext(self, ext: str) -> str:
@@ -530,18 +529,18 @@ class NotebookAgent(BasicAgent):
         # Check if we already have required tools
         has_word_tool = any(tool.name == "word_to_markdown_tool" for tool in self.tools)
         has_voice_tool = any(tool.name == "podcast_generator_tool" for tool in self.tools)
-        
+
         # Add WordToMarkdownTool if not present
         if not has_word_tool:
             word_tool = WordToMarkdownTool()
             self.tools.append(word_tool)
-        
+
         # Add GoogleVoiceTool if not present
         if not has_voice_tool:
             voice_tool = GoogleVoiceTool()
             print(f"Added voice tool with name: {voice_tool.name}")
             self.tools.append(voice_tool)
-        
+
         # Log the tools we're using
         tool_names = [tool.name for tool in self.tools]
         print(f"NotebookAgent initialized with tools: {', '.join(tool_names)}")
@@ -552,26 +551,26 @@ class NotebookAgent(BasicAgent):
         1. Load and convert document
         2. Generate a summary
         3. Create an audio narration
-        
+
         Args:
             document_url: URL to the Word document
-            
+
         Returns:
             Dictionary with document content, summary, and audio information
         """
         # Step 1: Load the document
         document_result = await self.load_document(document_url)
-        
+
         if "error" in document_result:
             return document_result
-            
+
         # Step 2: Generate summary and audio using direct method
         try:
             summary_result = await self.generate_summary_direct()
         except Exception as e:
             print(f"Error in direct summary generation: {e}")
             summary_result = {"error": str(e), "summary": "", "audio": {}}
-        
+
         # Combine results
         return {
             "document": {
@@ -586,11 +585,11 @@ class NotebookAgent(BasicAgent):
     def react_agent(self):
         """Create a ReAct agent for better compatibility with different LLMs."""
         from langchain.agents import create_react_agent
-        
+
         # Define a prompt template for the agent
         agent = create_react_agent(
-            llm=self._llm, 
-            tools=self.tools, 
+            llm=self._llm,
+            tools=self.tools,
             prompt=self.prompt
         )
         return agent
@@ -598,18 +597,18 @@ class NotebookAgent(BasicAgent):
     def openai_tools_agent(self):
         """Create an OpenAI Tools agent - this is the original method."""
         from langchain.agents import create_openai_tools_agent
-        
+
         agent = create_openai_tools_agent(
             self._llm,
             self.tools,
             self.prompt
         )
-        return agent 
+        return agent
 
     def get_executor(self, agent, tools):
         """Create an agent executor with proper output keys."""
         from langchain.agents.agent import AgentExecutor
-        
+
         # Creamos el executor con una clave de salida definida
         return AgentExecutor.from_agent_and_tools(
             agent=agent,
@@ -617,4 +616,4 @@ class NotebookAgent(BasicAgent):
             verbose=True,
             return_intermediate_steps=True,
             output_keys=["output"],  # Define explícitamente la clave de salida
-        ) 
+        )

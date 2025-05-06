@@ -1,14 +1,24 @@
 import os
 from navconfig import config, BASE_DIR
 from google.cloud import aiplatform
-import vertexai
 from vertexai.preview.vision_models import ImageGenerationModel
 from langchain_google_vertexai import (
     ChatVertexAI,
     VertexAI,
-    VertexAIModelGarden,
+    HarmBlockThreshold,
+    HarmCategory
 )
 from .abstract import AbstractLLM
+
+
+safety_settings = {
+    HarmCategory.HARM_CATEGORY_UNSPECIFIED: HarmBlockThreshold.BLOCK_NONE,
+    HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+    HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
+    HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+    HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_ONLY_HIGH,
+}
+
 
 class VertexLLM(AbstractLLM):
     """VertexLLM.
@@ -40,7 +50,6 @@ class VertexLLM(AbstractLLM):
 
     def __init__(self, *args, use_chat: bool = False, **kwargs):
         super().__init__(*args, **kwargs)
-        use_garden: bool = kwargs.get("use_garden", False)
         project_id = config.get("VERTEX_PROJECT_ID")
         region = config.get("VERTEX_REGION")
         # vertexai.init(project=project_id, location="us-central1")
@@ -57,21 +66,14 @@ class VertexLLM(AbstractLLM):
             "top_k": self.top_k,
             "verbose": True,
         }
-        if use_garden is True:
-            base_llm = VertexAIModelGarden
-            self._llm = VertexAIModelGarden(
-                endpoint_id=self.model,
-                **self.args
-            )
+        if use_chat is True:
+            base_llm = ChatVertexAI
         else:
-            if use_chat is True:
-                base_llm = ChatVertexAI
-            else:
-                base_llm = VertexAI
-            self._llm = base_llm(
-                model_name=self.model,
-                system_prompt="Always respond in the same language as the user's question. If the user's language is not English, translate your response into their language.",
-                **self.args
-            )
+            base_llm = VertexAI
+        self._llm = base_llm(
+            model_name=self.model,
+            # system_prompt="Always respond in the same language as the user's question. If the user's language is not English, translate your response into their language.",
+            **self.args
+        )
         # LLM
         self._version_ = aiplatform.__version__
