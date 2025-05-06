@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import List, Union, Optional
+from typing import List, Dict, Union, Optional
 from io import BytesIO, StringIO
 from datetime import datetime, timezone, timedelta
 from string import Template
@@ -261,20 +261,12 @@ class PandasAgent(BasicAgent):
         system_prompt: str = None,
         human_prompt: str = None,
         prompt_template: str = None,
-        df: Union[list[pd.DataFrame], pd.DataFrame] = None,
+        df: Union[list[pd.DataFrame], Dict[str, pd.DataFrame]] = None,
         query: Union[List[str], dict] = None,
         **kwargs
     ):
         self._queries = query
-        if isinstance(df, pd.DataFrame):
-            self.df = [df]
-        elif isinstance(df, list):
-            self.df = df
-        else:
-            self.df = []
-            # raise ValueError(
-            #     f"Expected pandas DataFrame, got {type(df)}"
-            # )
+        self.df = self._define_dataframe(df)
         self.df_locals: dict = {}
         # Agent ID:
         self._prompt_prefix = None
@@ -299,7 +291,33 @@ class PandasAgent(BasicAgent):
             agent_type=self.agent_type,
             **kwargs
         )
-        # self.agent_type = agent_type or "zero-shot-react-description"
+
+    def _define_dataframe(
+        self,
+        df: Union[list[pd.DataFrame], Dict[str, pd.DataFrame]]
+    ) -> Dict[str, pd.DataFrame]:
+        """Define the dataframe."""
+        _df = {}
+        if isinstance(df, pd.DataFrame):
+            # if data is one single dataframe
+            _df['df1'] = df
+        elif isinstance(df, list):
+            # if data is a list of dataframes
+            for i, dataframe in enumerate(df):
+                df_name = f"df{i + 1}"
+                _df[df_name] = dataframe.copy()
+        elif isinstance(df, pd.Series):
+            # if data is a pandas series
+            # convert it to a dataframe
+            df = pd.DataFrame(df)
+            _df['df1'] = df
+        elif isinstance(df, dict):
+            _df = df
+        else:
+            raise ValueError(
+                f"Expected pandas DataFrame, got {type(df)}"
+            )
+        return _df
 
     def get_query(self) -> Union[List[str], dict]:
         """Get the query."""
@@ -309,7 +327,7 @@ class PandasAgent(BasicAgent):
         """Get the capabilities of the agent."""
         return self._capabilities
 
-    def pandas_agent(self, df: pd.DataFrame, **kwargs):
+    def pandas_agent(self, **kwargs):
         """
         Creates a Pandas Agent.
 
@@ -322,6 +340,7 @@ class PandasAgent(BasicAgent):
 
         """
         # Create the pandas agent
+        df = list(self.df.values()) if isinstance(self.df, dict) else self.df
         return create_pandas_dataframe_agent(
             self._llm,
             df,
@@ -349,7 +368,7 @@ class PandasAgent(BasicAgent):
         if self.app:
             self.app[f"{self.name.lower()}_bot"] = self
         if df is not None:
-            self.df = df
+            self.df = self._define_dataframe(df)
         # Configure LLM:
         self.configure_llm(use_chat=True)
         # Configure VectorStore if enabled:
@@ -358,7 +377,7 @@ class PandasAgent(BasicAgent):
         # Conversation History:
         self.memory = self.get_memory(key=CHAT_HISTORY_KEY, input_key="input", output_key="output")
         # 1. Initialize the Agent (as the base for RunnableMultiActionAgent)
-        self.agent = self.pandas_agent(self.df)
+        self.agent = self.pandas_agent()
         # 2. Create Agent Executor - This is where we typically run the agent.
         self._agent = self.agent
 
@@ -468,7 +487,10 @@ class PandasAgent(BasicAgent):
         # Add a helper function to the REPL locals
         setup_code += """
 def store_result(key, value):
+    if 'execution_results' not in globals():
+        globals()['execution_results'] = {}
     execution_results[key] = value
+    print(f"Stored result '{key}'")
     return value
 """
         try:
@@ -489,27 +511,33 @@ def store_result(key, value):
         self.tools.append(docx_tool)
         # Add dataframe information
         num_dfs = len(self.df)
-        for i, dataframe in enumerate(self.df):
-            df_name = f"df{i + 1}"
-            row_count = len(dataframe)
-            self.df_locals[df_name] = dataframe.copy()
+        print('HERE >> ', self.df.keys())
+        self.df_locals['agent_report_dir'] = self.agent_report_dir
+
+        for i, (df_name, df) in enumerate(self.df.items()):
+            df_key = f"df{i + 1}"
+            self.df_locals[df_name] = df
+            self.df_locals[df_key] = df
+            row_count = len(df)
             self.df_locals[f"{df_name}_row_count"] = row_count
-            self.df_locals['agent_report_dir'] = self.agent_report_dir
             # Get basic dataframe info
-            # df_shape = f"DataFrame Shape: {dataframe.shape[0]} rows × {dataframe.shape[1]} columns"
-            df_columns = f"{', '.join(dataframe.columns.tolist())}"
+            df_shape = f"DataFrame Shape: {df.shape[0]} rows × {df.shape[1]} columns"
+            df_columns = f"{', '.join(df.columns.tolist())}"
             # Generate summary statistics
-            summary_stats = brace_escape(dataframe.describe(include='all').to_markdown())
-            # Generate sample rows
-            # sample_rows = brace_escape(dataframe.head(5).to_markdown())
+            summary_stats = brace_escape(df.describe(include='all').to_markdown())
             # Create df_info block
             df_info = f"""
-            ## DataFrame {df_name}:
+            ## DataFrame {df_key}:
 
-            ### {df_name} Columns:
+            Note: {df_key} is also available as {df_name}\n
+
+            ### {df_key} Shape:
+            {df_shape}
+
+            ### {df_key} Columns:
             {df_columns}
 
-            ### {df_name} Summary Statistics:
+            ### {df_key} Summary Statistics:
             {summary_stats}
 
             """
@@ -595,12 +623,15 @@ def store_result(key, value):
         return "You are a helpful assistant built to provide comprehensive guidance and support on data calculations and data analysis working with pandas dataframes."
 
     @staticmethod
-    async def call_qs(queries: list) -> List[pd.DataFrame]:
+    async def call_qs(queries: list) -> Dict[str, pd.DataFrame]:
         """
         call_qs.
         description: Call the QuerySource queries.
+
+        This method is used to execute multiple queries and files on the QueryObject.
+        It returns a dictionary with the results.
         """
-        dfs = []
+        dfs = {}
         for query in queries:
             if not isinstance(query, str):
                 raise ValueError(
@@ -620,7 +651,7 @@ def store_result(key, value):
                     raise ValueError(
                         f"Query {query} is not returning a dataframe."
                     )
-                dfs.append(df)
+                dfs[query] = df
             except ValueError:
                 raise
             except Exception as e:
@@ -630,10 +661,13 @@ def store_result(key, value):
         return dfs
 
     @staticmethod
-    async def call_multiquery(query: dict) -> List[pd.DataFrame]:
+    async def call_multiquery(query: dict) -> Dict[str, pd.DataFrame]:
         """
         call_multiquery.
         description: Call the MultiQuery queries.
+
+        This method is used to execute multiple queries and files on the QueryObject.
+        It returns a dictionary with the results.
         """
         data = {}
         _queries = query.pop('queries', {})
@@ -661,7 +695,8 @@ def store_result(key, value):
             raise ValueError(
                 "MultiQuery is not returning a dictionary."
             )
-        return list(result.values())
+        # MultiQuery returns a dictionary with the results
+        return result
 
     @classmethod
     async def gen_data(
@@ -670,7 +705,7 @@ def store_result(key, value):
         agent_name: Optional[str] = None,
         refresh: bool = False,
         cache_expiration: int = 48
-    ) -> List[pd.DataFrame]:
+    ) -> Dict[str, pd.DataFrame]:
         """
         gen_data.
 
@@ -689,13 +724,14 @@ def store_result(key, value):
 
         Returns:
         --------
-        List[pd.DataFrame]
-            A list of pandas DataFrames generated from the queries.
+        Dict[str, pd.DataFrame]
+            A Dictionary of named pandas DataFrames generated from the queries.
         """
         # If agent_name is provided, we'll use Redis caching
         if agent_name and not refresh:
             # Try to get cached dataframes
             cached_dfs = await cls._get_cached_data(agent_name)
+            print('::: CACHED DATA > ', cached_dfs.keys())
             if cached_dfs:
                 return cached_dfs
 
@@ -709,7 +745,7 @@ def store_result(key, value):
         return dfs
 
     @classmethod
-    async def _execute_query(cls, query: Union[list, dict]) -> List[pd.DataFrame]:
+    async def _execute_query(cls, query: Union[list, dict]) -> Dict[str, pd.DataFrame]:
         """Execute the query and return the generated dataframes."""
         if isinstance(query, dict):
             # is a MultiQuery execution, use the MultiQS class engine to do it:
@@ -782,7 +818,7 @@ def store_result(key, value):
     async def _cache_data(
         cls,
         agent_name: str,
-        dataframes: List[pd.DataFrame],
+        dataframes: Dict[str, pd.DataFrame],
         cache_expiration: int
     ) -> None:
         """
@@ -801,9 +837,8 @@ def store_result(key, value):
             await redis_conn.delete(key)
 
             # Store each dataframe under the agent's hash
-            for i, df in enumerate(dataframes):
-                df_key = f"df{i+1}"
-                # Convert DataFrame to list of dictionaries
+            for df_key, df in dataframes.items():
+                # Convert DataFrame to JSON
                 df_json = json_encoder(df.to_dict(orient='records'))
                 await redis_conn.hset(key, df_key, df_json)
 
