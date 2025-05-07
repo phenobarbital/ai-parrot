@@ -8,6 +8,7 @@ from aiohttp import web
 from datamodel.typedefs import SafeDict
 from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611 # noqa
 from langchain_core.exceptions import OutputParserException
+from langchain_core.messages import HumanMessage
 from langchain_experimental.tools.python.tool import PythonAstREPLTool
 from langchain_experimental.agents.agent_toolkits import create_pandas_dataframe_agent
 from navconfig import BASE_DIR
@@ -19,208 +20,21 @@ from ..tools.docx import DocxGeneratorTool
 from .agent import BasicAgent
 from ..models import AgentResponse
 from ..conf import BASE_STATIC_URL, REDIS_HISTORY_URL
+from .prompts import AGENT_PROMPT_SUFFIX
+from .prompts.data import (
+    TOOL_CALLING_PROMPT_PREFIX,
+    TOOL_CALLING_PROMPT_SUFFIX,
+    REACT_PROMPT_PREFIX,
+    FORMAT_INSTRUCTIONS
+)
 
-PANDAS_PROMPT_PREFIX = """
+# Enable Debug:
+# from langchain.globals import set_debug, set_verbose
 
-Your name is $name, you are a helpful assistant built to provide comprehensive guidance and support on data calculations and data analysis working with pandas dataframes.
-$description\n\n
+# # Enable verbosity for debugging
+# set_debug(True)
+# set_verbose(True)
 
-$backstory\n\n
-$capabilities\n
-
-You have access to the following tools:
-$list_of_tools
-
-# DataFrames Information:
-$df_info
-
-Your goal is to answer questions and perform data analysis using the provided dataframes and tools accurately.
-
-## Working with DataFrames
-- You are working with $num_dfs pandas dataframes in Python, all dataframes are already loaded and available for analysis in the variables named as df1, df2, etc.
-- Use the store_result(key, value) function to store results.
-- Always use copies of dataframes to avoid modifying the original data.
-- You can create visualizations using matplotlib, seaborn or altair through the Python tool.
-- Perform analysis over the entire DataFrame, not just a sample.
-- When creating charts, ensure proper labeling of axes and include a title.
-- You have access to several python libraries installed as scipy, numpy, matplotlib, matplotlib-inline, seaborn, altair, plotly, reportlab, pandas, numba, geopy, geopandas, prophet, statsmodels, scikit-learn, pmdarima, sentence-transformers, nltk, spacy, and others.
-- Provide clear, concise explanations of your analysis steps.
-- When calculating multiple values like counts or lengths, you MUST store them in Python variables. Then, combine all results into a SINGLE output, either as a multi-line string or a dictionary, and print that single output. Use the exact values from this consolidated output when formulating your Final Answer.
-    - Example (Dictionary): `results = {{'df1': len(df1), 'df2': len(df2)}}; print(str(results))`
-    - Example (String): `output = f"DF1: {{len(df1)}}\nDF2: {{len(df2)}}"; print(output)`
-
-### EDA (Exploratory Data Analysis) Capabilities
-
-This agent has built-in Exploratory Data Analysis (EDA) capabilities:
-1. For comprehensive EDA reports, use:
-```python
-generate_eda_report(dataframe=df, report_dir=agent_report_dir, df_name="my_data", minimal=False, explorative=True):
-```
-This generates an interactive HTML report with visualizations and statistics.
-2. For a quick custom EDA without external dependencies:
-```python
-quick_eda(dataframe=df, report_dir=agent_report_dir)
-```
-This performs basic analysis with visualizations for key variables.
-When a user asks for "exploratory data analysis", "EDA", "data profiling", "understand the data",
-or "data exploration", use these functions.
-- The report will be saved to the specified directory and the function will return the file path
-- The report includes basic statistics, correlations, distributions, and categorical value counts.
-
-### Podcast capabilities
-
-if the user asks for a podcast, use the GoogleVoiceTool to generate a podcast-style audio file from a summarized text using Google Cloud Text-to-Speech.
-- The audio file will be saved in own output directory and returned as a dictionary with a *file_path* key.
-- Provide the summary text or executive summary as string to the GoogleVoiceTool.
-
-### PDF and HTML Report Generation
-
-When the user requests a PDF or HTML report, follow these detailed steps:
-1. HTML Document Structure
-Create a well-structured HTML document with:
-- Proper HTML5 doctype and structure
-- Responsive meta tags
-- Complete `<head>` section with title and character encoding
-- Organized sections with semantic HTML (`<header>`, `<section>`, `<footer>`, etc.)
-- Table of contents with anchor links when appropriate
-
-2. CSS Styling Framework
-- Use a lightweight CSS framework including in the `<head>` section of HTML
-
-3. For Data Tables
-- Apply appropriate classes for data tables
-- Use fixed headers when tables are long
-- Add zebra striping for better readability
-- Include hover effects for rows
-- Align numerical data right-aligned
-
-4. For Visualizations and Charts
-- Embed charts as SVG when possible for better quality
-- Include a figure container with caption
-- Add proper alt text for accessibility
-
-5. For Summary Cards
-- Use card components for key metrics and summaries
-- Group related metrics in a single card
-- Use a grid layout for multiple cards
-Example:
-```html
-
-
-
-            Key Metric
-
-                75.4%
-                Description of what this metric means
-
-
-
-
-```
-6. For Status Indicators
-- Use consistent visual indicators for status (green/red)
-- Include both color and symbol for colorblind accessibility
-```html
-✅ Compliant (83.5%)
-❌ Non-compliant (64.8%)
-```
-
-### PDF Report Generation
-
-if the user asks for a PDF report, use the following steps:
-- First generate a complete report in HTML:
-    - Create a well-structured HTML document with proper sections, headings and styling
-    - Include always all relevant information, charts, tables, summaries and insights
-    - use seaborn or altair for charts and matplotlib for plots as embedded images
-    - Use CSS for professional styling and formatting (margins, fonts, colors)
-    - Include a table of contents for easy navigation
-- Set explicit page sizes and margins
-- Add proper page breaks before major sections
-- Define headers and footers for multi-page documents
-- Include page numbers
-- Convert the HTML report to PDF using this function:
-```python
-generate_pdf_from_html(html_content, report_dir=agent_report_dir):
-```
-- Return a python dictionary with the file path of the generated PDF report:
-    - "file_path": "pdf_path"
-    - "content_type": "application/pdf"
-    - "type": "pdf"
-    - "html_path": "html_path"
-- When converting to PDF, ensure all document requirements are met for professional presentation.
-
-# Thoughts
-$format_instructions
-
-**IMPORTANT: When creating your final answer**
-- Today is $today_date, You must never contradict the given date.
-- Use the directory '$agent_report_dir' when saving any files requested by the user.
-- Base your final answer on the results obtained from using the tools.
-- Do NOT repeat the same tool call multiple times for the same question.
-
-**IMPORTANT: WHEN HANDLING FILE RESULTS**
-
-When you generate a file like a chart or report, you MUST format your response exactly like this:
-
-Thought: I now know the final answer
-Final Answer: I've generated a [type] for your data.
-
-The [type] has been saved to:
-filename: [file_path]
-
-[Brief description of what you did and what the file contains]
-[rest of answer]
-
-- The file is saved in the directory '$agent_report_dir'.
-
-$rationale
-
-"""
-
-TOOL_CALLING_PROMPT_PREFIX = """
-Your name is $name, you are a helpful assistant built to provide comprehensive guidance and support on data calculations and data analysis working with pandas dataframes.
-
-$backstory\n
-$capabilities\n
-
-You are working with $num_dfs pandas dataframes in Python, all dataframes are already loaded and available for analysis in the variables named as df1, df2, etc.
-
-You have access to the following tools:
-$list_of_tools
-
-# DataFrames Information:
-$df_info
-
-Your goal is to answer questions and perform data analysis using the provided dataframes and tools accurately.
-
-
-You are working with $num_dfs pandas dataframes (df1, df2, etc.).
-
-Today is $today_date.
-Use the directory '$agent_report_dir' when saving any files requested by the user.
-
-"""
-
-FORMAT_INSTRUCTIONS = """
-Please use the following format:
-
-Question: the input question you must answer
-Thought: you should always think about what to do
-Action: the action to take, should be one of [{tool_names}]
-Action Input: the input to the action
-Observation: the result of the action
-... (this Thought/Action/Action Input/Observation can repeat N times)
-Thought: I now know the final answer
-Final Answer: the final answer to the original input question
-"""
-
-
-PANDAS_PROMPT_SUFFIX = """
-Begin!
-
-Question: {input}
-{agent_scratchpad}
-"""
 
 def brace_escape(text: str) -> str:
     return text.replace('{', '{{').replace('}', '}}')
@@ -253,13 +67,14 @@ class PandasAgent(BasicAgent):
         # Agent ID:
         self._prompt_prefix = None
         # Must be one of 'tool-calling', 'openai-tools', 'openai-functions', or 'zero-shot-react-description'.
-        self.agent_type = agent_type or 'zero-shot-react-description'
-        if self.agent_type == 'tool-calling':
-            self._prompt_template = TOOL_CALLING_PROMPT_PREFIX.replace('$format_instructions', '')
+        self.agent_type = agent_type or "tool-calling"
+        if self.agent_type == "tool-calling":
+            self._prompt_template = prompt_template or TOOL_CALLING_PROMPT_PREFIX
+            self._format_instructions = ''
         else:
-            self._prompt_template = prompt_template or PANDAS_PROMPT_PREFIX
+            self._prompt_template = prompt_template or REACT_PROMPT_PREFIX
+            self._format_instructions: str = kwargs.get('format_instructions', FORMAT_INSTRUCTIONS)
         self._capabilities: str = kwargs.get('capabilities', None)
-        self._format_instructions: str = kwargs.get('format_instructions', FORMAT_INSTRUCTIONS)
         self.name = name or "Pandas Agent"
         self.description = "A simple agent that uses the pandas library to perform data analysis tasks."
         self._static_path = BASE_DIR.joinpath('static')
@@ -322,19 +137,20 @@ class PandasAgent(BasicAgent):
 
         """
         # Create the pandas agent
-        df = list(self.df.values()) if isinstance(self.df, dict) else self.df
+        dfs = list(self.df.values()) if isinstance(self.df, dict) else self.df
         # bind the tools to the LLM:
-        llm = self._llm.bind_tools(self.tools)
+        python_tool = PythonAstREPLTool(locals=self.df_locals, verbose=True,)
+        llm = self._llm.bind_tools([python_tool])
         return create_pandas_dataframe_agent(
             llm,
-            df,
+            dfs,
             verbose=True,
             agent_type=self.agent_type,
             allow_dangerous_code=True,
-            # extra_tools=self.tools,
+            extra_tools=[python_tool],
             prefix=self._prompt_prefix,
             max_iterations=10,
-            agent_executor_kwargs={"memory": self.memory, "handle_parsing_errors": True}
+            agent_executor_kwargs={"memory": self.memory, "handle_parsing_errors": True},
             return_intermediate_steps=True,
             **kwargs
         )
@@ -431,12 +247,12 @@ class PandasAgent(BasicAgent):
             str: The response from the chatbot.
 
         """
-        input_question = {
-            "input": query
-        }
-        result = await self._agent.ainvoke(
-            {"input": input_question}
-        )
+        try:
+            result = await self._agent.ainvoke(
+                {"input": query}
+            )
+        except Exception as e:
+            return None, e
         try:
             response = AgentResponse(question=query, **result)
             # check if return is a file:
@@ -493,7 +309,7 @@ def store_result(key, value):
     def _metrics_guide(self, df_key: str, df_name: str, columns: list) -> str:
         """Generate a guide for the dataframe columns."""
         # Create a markdown table with column category, column name, type and with dataframe is present:
-        table = "| Category | Column Name | Type | DataFrame | Dataframe Name |\n"
+        table = "\n| Category | Column Name | Type | DataFrame | Dataframe Name |\n"
         table += "|------------------|-------------|------|-----------|\n"
         for column in columns:
             # Get the column name
@@ -507,7 +323,7 @@ def store_result(key, value):
             # Get the type of the column
             column_type = str(self.df[df_name][column].dtype)
             # Add the row to the table
-            table += f"| {column_category} | {column_name} | {column_type} | {df_key} | {df_name} |\n"
+            table += f"| {column_category} | {column_name} | {column_type} | {df_key} | {df_name} |\n\n\n"
         # Add a note about the dataframe
         table += f"\nNote: {df_key} is also available as {df_name}\n"
         return table
@@ -523,33 +339,42 @@ def store_result(key, value):
         # Add dataframe information
         num_dfs = len(self.df)
         self.df_locals['agent_report_dir'] = self.agent_report_dir
-
+        df_info = ''
         for i, (df_name, df) in enumerate(self.df.items()):
             df_key = f"df{i + 1}"
             self.df_locals[df_name] = df
             self.df_locals[df_key] = df
             row_count = len(df)
-            self.df_locals[f"{df_name}_row_count"] = row_count
+            self.df_locals[f"{df_key}_row_count"] = row_count
             # Get basic dataframe info
             df_shape = f"DataFrame Shape: {df.shape[0]} rows × {df.shape[1]} columns"
             df_columns = self._metrics_guide(df_key, df_name, df.columns.tolist())
-            # df_columns = f"{', '.join(df.columns.tolist())}"
             # Generate summary statistics
             summary_stats = brace_escape(df.describe(include='all').to_markdown())
+            df_head = brace_escape(df.head(5).to_markdown())
             # Create df_info block
-            df_info = f"""
-            ## DataFrame {df_key}:
+            if self.agent_type == "tool-calling":
+                df_info += f"""
+                ## Dataframe Name: {df_key}:
+                Note: {df_key} is also available as {df_name}
 
-            ### {df_key} Shape:
-            {df_shape}
+                ### This is the result of `print(df.head())` of {df_key}:
+                {df_head}
 
-            ### {df_key} Info:
-            {df_columns}
+                """
+            else:
+                df_info += f"""
+                ## DataFrame {df_key}:
 
-            ### {df_key} Summary Statistics:
-            {summary_stats}
+                ### {df_key} Shape:
+                {df_shape}
 
-            """
+                ### {df_key} Info:
+                {df_columns}
+
+                ### {df_key} Summary Statistics:
+                {summary_stats}
+                """
         # Configure Python tool:
         python_tool = self._configure_python_tool(
             df_locals=self.df_locals,
@@ -559,45 +384,11 @@ def store_result(key, value):
         self.tools.append(python_tool)
         # List of Tools:
         list_of_tools = ""
-        if self.agent_type == 'tool-calling':
-            # Tool-calling agents use a different prompt structure
-            tools_json = []
-            tools_names = []
-            for tool in self.tools:
-                tool_dict = {
-                    "name": tool.name,
-                    "description": tool.description,
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "input": {
-                                "type": "string",
-                                "description": "Input for the tool"
-                            }
-                        },
-                        "required": ["input"]
-                    }
-                }
-                # Handle special case for python_repl_ast tool
-                if tool.name == "python_repl_ast":
-                    tool_dict["parameters"] = {
-                        "type": "object",
-                        "properties": {
-                            "code": {
-                                "type": "string",
-                                "description": "Python code to execute"
-                            }
-                        },
-                        "required": ["code"]
-                    }
-                tools_json.append(tool_dict)
-            list_of_tools = brace_escape(json_encoder(tools_json))
-        else:
-            for tool in self.tools:
-                name = tool.name
-                description = tool.description  # noqa  pylint: disable=E1101
-                list_of_tools += f'- {name}: {description}\n'
-            list_of_tools += "\n"
+        for tool in self.tools:
+            name = tool.name
+            description = tool.description  # noqa  pylint: disable=E1101
+            list_of_tools += f'- {name}: {description}\n'
+        list_of_tools += "\n"
         tools_names = [tool.name for tool in self.tools]
         capabilities = ''
         if self._capabilities:
@@ -625,8 +416,14 @@ def store_result(key, value):
             agent_report_dir=self.agent_report_dir,
             **kwargs
         )
-        # print('PROMPT > ', self._prompt_prefix)
-        self._prompt_suffix = PANDAS_PROMPT_SUFFIX
+        if self.agent_type == "tool-calling":
+            tmpl = Template(TOOL_CALLING_PROMPT_SUFFIX)
+            self._prompt_suffix = tmpl.safe_substitute(
+                df_info=df_info,
+                num_dfs=num_dfs
+            )
+        else:
+            self._prompt_suffix = AGENT_PROMPT_SUFFIX
 
     def default_backstory(self) -> str:
         return "You are a helpful assistant built to provide comprehensive guidance and support on data calculations and data analysis working with pandas dataframes."
