@@ -91,3 +91,10 @@ Begin!
 Question: {input}
 {agent_scratchpad}
 """
+
+AGENT_PROMPT_SUFFIX = """
+Begin!
+
+Question: {input}
+{agent_scratchpad}
+"""

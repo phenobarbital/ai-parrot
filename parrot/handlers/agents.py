@@ -208,6 +208,8 @@ class AgentHandler(BaseView):
                     data['query']
                 )
                 result.response = response
+                # null the chat_history:
+                result.chat_history = []
                 return self.json_response(response=result)
             except Exception as e:
                 return self.json_response(

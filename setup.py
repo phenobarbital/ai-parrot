@@ -211,12 +211,12 @@ setup(
             "langchain-ollama==0.2.3"
         ],
         "anthropic": [
-            "langchain-anthropic==0.2.4",
-            "anthropic==0.25.2",
+            "anthropic-0.50.0",
+            "langchain_anthropic-0.3.12"
         ],
         "openai": [
-            "langchain-openai==0.1.21",
-            "openai==1.40.3",
+            "langchain_openai==0.3.16",
+            "openai==1.76.2",
             "llama-index-llms-openai==0.1.11",
             "tiktoken==0.7.0"
         ],

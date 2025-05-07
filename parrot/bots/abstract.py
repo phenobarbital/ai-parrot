@@ -67,7 +67,7 @@ except (ModuleNotFoundError, ImportError):
 
 # Anthropic:
 try:
-    from ..llms.anthropic import Anthropic
+    from ..llms.anthropic import AnthropicLLM
     ANTHROPIC_ENABLED = True
 except (ModuleNotFoundError, ImportError):
     ANTHROPIC_ENABLED = False
@@ -326,17 +326,19 @@ class AbstractBot(DBInterface, ABC):
 
         """
         if llm == 'openai' and OPENAI_ENABLED:
-            mdl = OpenAILLM(model=model or "gpt-3.5-turbo", **kwargs)
+            mdl = OpenAILLM(model=model or "gpt-4.1", **kwargs)
         elif llm in ('vertexai', 'VertexLLM') and VERTEX_ENABLED:
             mdl = VertexLLM(model=model or "gemini-1.5-pro", **kwargs)
         elif llm == 'anthropic' and ANTHROPIC_ENABLED:
-            mdl = Anthropic(model=model or "claude-3-opus-20240229", **kwargs)
+            mdl = AnthropicLLM(model=model or 'claude-3-5-sonnet-20240620', **kwargs)
         elif llm in ('groq', 'Groq') and GROQ_ENABLED:
-            mdl = GroqLLM(model=model or "llama3-70b-8192", **kwargs)
+            mdl = GroqLLM(model=model or "meta-llama/llama-4-maverick-17b-128e-instruct", **kwargs)
         elif llm == 'llama3' and GROQ_ENABLED:
-            mdl = GroqLLM(model=model or "llama3-groq-70b-8192-tool-use-preview", **kwargs)
-        elif llm == 'mixtral' and GROQ_ENABLED:
-            mdl = GroqLLM(model=model or "mixtral-8x7b-32768", **kwargs)
+            mdl = GroqLLM(model=model or "llama-3.3-70b-versatile", **kwargs)
+        elif llm == 'gemma' and GROQ_ENABLED:
+            mdl = GroqLLM(model=model or "gemma2-9b-it", **kwargs)
+        elif llm == 'mistral' and GROQ_ENABLED:
+            mdl = GroqLLM(model=model or "mistral-saba-24b", **kwargs)
         elif llm == 'google' and GOOGLE_ENABLED:
             mdl = GoogleGenAI(model=model or "models/gemini-2.5-pro-preview-03-25", **kwargs)
         else:

@@ -165,6 +165,7 @@ class BotManager:
                         rationale=agent.rationale,
                         permissions=agent.permissions,
                         attributes=agent.attributes,
+                        capabilities=agent.capabilities,
                     )
                 except Exception as e:
                     self.logger.error(

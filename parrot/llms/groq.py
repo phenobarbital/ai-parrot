@@ -9,15 +9,18 @@ class GroqLLM(AbstractLLM):
         Using Groq Open-source models.
     """
     model: str = "mixtral-8x7b-32768"
+    max_tokens: int = 4096
     supported_models: list = [
         "llama-3.3-70b-versatile",
         "qwen-2.5-32b",
         "qwen-2.5-coder-32b",
         "deepseek-r1-distill-qwen-32b",
         "deepseek-r1-distill-llama-70b",
+        "meta-llama/llama-4-scout-17b-16e-instruct",
         "gemma2-9b-it",
         "llama3-70b-8192",
         "llama3-80b-8192",
+        "llama3-8b-8192",
         "llama-guard-3-8b",
         "llama-3.1-8b-instant",
         "mistral-saba-24b",

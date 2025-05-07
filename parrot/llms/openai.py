@@ -3,8 +3,12 @@ from langchain_openai import (  # pylint: disable=E0401, E0611
     ChatOpenAI,
 )
 from navconfig import config
+from navconfig.logging import logging
 from .abstract import AbstractLLM
 
+
+logging.getLogger(name='openai').setLevel(logging.WARNING)
+logging.getLogger(name='httpcore').setLevel(logging.WARNING)
 
 class OpenAILLM(AbstractLLM):
     """OpenAI.
@@ -14,11 +18,14 @@ class OpenAILLM(AbstractLLM):
         _type_: an instance of OpenAI LLM Model.
     """
     model: str = "gpt-4-turbo"
-    max_tokens: int = 1024
+    max_tokens: int = 4096
     supported_models: list = [
-        'gpt-4o-mini',
+        "gpt-4.1",
+        "gpt-4o-mini",
+        'gpt-4.1-2025-04-14',
+        'o4-mini-2025-04-16',
+        "o3-2025-04-16",
         'gpt-4-turbo',
-        'gpt-4-turbo-preview',
         'gpt-4o',
         'gpt-3.5-turbo',
         'gpt-3.5-turbo-instruct',
@@ -26,13 +33,13 @@ class OpenAILLM(AbstractLLM):
         'tts-1',
     ]
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, use_chat: bool = False, **kwargs):
         self.model_type = kwargs.get("model_type", "text")
         super().__init__(*args, **kwargs)
         self.model = kwargs.get("model", "davinci")
         self._api_key = kwargs.pop('api_key', config.get('OPENAI_API_KEY'))
         organization = config.get("OPENAI_ORGANIZATION")
-        if self.model_type == 'chat':
+        if use_chat:
             base_llm = ChatOpenAI
         else:
             base_llm = OpenAI
@@ -42,5 +49,4 @@ class OpenAILLM(AbstractLLM):
             organization=organization,
             temperature=self.temperature,
             max_tokens=self.max_tokens,
-            **self.args
         )
