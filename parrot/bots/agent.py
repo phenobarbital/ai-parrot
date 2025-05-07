@@ -110,15 +110,11 @@ class BasicAgent(AbstractBot):
         )
 
     def default_tools(self, tools: list = None) -> List[AbstractTool]:
-        voice_tool = GoogleVoiceTool(
-            name="podcast_generator_tool"
-        )
         ctools = [
             DuckDuckGoSearchTool(),
             # SearchTool(),
             MathTool(),
-            GammaLink(),
-            voice_tool,
+            GoogleVoiceTool(),
         ]
         if tools:
             ctools.extend(tools)

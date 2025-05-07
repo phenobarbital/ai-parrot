@@ -3,20 +3,24 @@ from pathlib import Path
 from typing import Optional
 import os
 import re
-import html
 from xml.sax.saxutils import escape
 from datetime import datetime
 import aiofiles
 # Use v1 for wider feature set including SSML
 from google.cloud import texttospeech_v1 as texttospeech
 from google.oauth2 import service_account
+from pydantic import BaseModel, Field
 from langchain.tools import BaseTool
 from navconfig import BASE_DIR
 from parrot.conf import GOOGLE_TTS_SERVICE
 
+class PodcastInput(BaseModel):
+    """Input for podcast generator tool."""
+    text: str = Field(description="The text content to convert to speech")
+
 class GoogleVoiceTool(BaseTool):
     """Generate a podcast-style audio file from Text using Google Cloud Text-to-Speech."""
-    name: str = "podcast_generator_tool"
+    name: str = "generate_podcast_style_audio_file"
     description: str = (
         "Generates a podcast-style audio file from a given text script using Google Cloud Text-to-Speech."
         " This tool is useful for creating audio content from text, such as articles or blog posts."
@@ -30,19 +34,32 @@ class GoogleVoiceTool(BaseTool):
     output_format: str = "OGG_OPUS"  # OGG format is more podcast-friendly
     _key_service: Optional[str]
 
-    def __init__(self, 
-                 voice_model: str = "en-US-Neural2-F",
-                 output_format: str = "OGG_OPUS",
-                 output_dir: str = None,
-                 name: str = "podcast_generator_tool",
-                 **kwargs):
+    # Add a proper args_schema for tool-calling compatibility
+    args_schema: dict = {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "The text content to convert to speech"
+            }
+        },
+        "required": ["query"]
+    }
+
+    def __init__(self,
+        voice_model: str = "en-US-Neural2-F",
+        output_format: str = "OGG_OPUS",
+        output_dir: str = None,
+        name: str = "podcast_generator_tool",
+        **kwargs
+    ):
         """Initialize the GoogleVoiceTool."""
-        
+
         super().__init__(**kwargs)
-        
+
         # Using the config from conf.py, but with additional verification
         self._key_service = GOOGLE_TTS_SERVICE
-        
+
         # If not found in the config, try a default location
         if self._key_service is None:
             default_path = BASE_DIR / "env" / "google" / "tts-service.json"
@@ -53,7 +70,7 @@ class GoogleVoiceTool(BaseTool):
                 print(f"Warning: No credentials found in config or at default path {default_path}")
         else:
             print(f"Using credentials from config: {self._key_service}")
-        
+
         if self.voice_gender == 'FEMALE':
             self.voice_model = "en-US-Neural2-F"
         elif self.voice_gender == 'MALE':
@@ -65,11 +82,11 @@ class GoogleVoiceTool(BaseTool):
         """Determine if the text appears to be Markdown formatted."""
         if not text or not isinstance(text, str):
             return False
-        
+
         # Corrección: Separar los caracteres problemáticos y el rango
         if re.search(r"^[#*_>`\[\d-]", text.strip()[0]):  # Check if first char is a Markdown marker
             return True
-        
+
         # Check for common Markdown patterns
         if re.search(r"#{1,6}\s+", text):  # Headers
             return True
@@ -87,7 +104,7 @@ class GoogleVoiceTool(BaseTool):
             return True
         if re.search(r"```.*?```", text, re.DOTALL):  # Code blocks
             return True
-        
+
         return False
 
 
@@ -149,7 +166,7 @@ class GoogleVoiceTool(BaseTool):
                     )
                 except Exception as cred_error:
                     print(f"Error loading credentials: {cred_error}")
-            
+
             if isinstance(query, str):
                 try:
                     # Try to parse as JSON
@@ -160,7 +177,7 @@ class GoogleVoiceTool(BaseTool):
                         print(f"Output directory exists: {os.path.isdir(os.path.dirname(query_dict['output_file']))}")
                 except json.JSONDecodeError:
                     print("Query is plain text, not JSON")
-            
+
             print("1. Converting Markdown to SSML...")
             if self.is_markdown(query):
                 ssml_text = self.markdown_to_ssml(query)
