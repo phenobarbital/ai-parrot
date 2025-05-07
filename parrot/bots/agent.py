@@ -67,6 +67,7 @@ class BasicAgent(AbstractBot):
         self,
         name: str = 'Agent',
         agent_type: str = None,
+        use_llm: str = 'vertexai',
         llm: str = None,
         tools: List[AbstractTool] = None,
         system_prompt: str = None,
@@ -77,6 +78,7 @@ class BasicAgent(AbstractBot):
         super().__init__(
             name=name,
             llm=llm,
+            use_llm=use_llm,
             system_prompt=system_prompt,
             human_prompt=human_prompt,
             **kwargs

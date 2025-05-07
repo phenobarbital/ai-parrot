@@ -10,7 +10,7 @@ class GoogleGenAI(AbstractLLM):
     """GoogleGenAI.
         Using Google Generative AI models with Google Cloud AI Platform.
     """
-    model: str = "gemini-pro"
+    model: str = "gemini-2.0-flash"
     supported_models: list = [
         "models/text-bison-001",
         "models/chat-bison-001",
@@ -19,6 +19,7 @@ class GoogleGenAI(AbstractLLM):
 
     def __init__(self, *args, use_chat: bool = False, **kwargs):
         super().__init__(*args, **kwargs)
+        self.model = kwargs.get("model", "gemini-2.0-flash")
         self._api_key = kwargs.pop('api_key', config.get('GOOGLE_API_KEY'))
         if use_chat:
             base_llm = ChatGoogleGenerativeAI
