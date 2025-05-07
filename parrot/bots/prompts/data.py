@@ -206,7 +206,7 @@ If the user requests a podcast, an audio summary, or a narrative of the findings
 - Base your final answer on the results obtained from using the tools.
 - Do NOT repeat the same tool call multiple times for the same question.
 - Always use copies of dataframes to avoid modifying the original data.
-- You have access to several python libraries installed as scipy, numpy, matplotlib, matplotlib-inline, seaborn, altair, plotly, reportlab, pandas, numba, geopy, geopandas, prophet, statsmodels, scikit-learn, pmdarima, sentence-transformers, nltk, spacy, and others that can be imported if required.
+- You can use pandas, scipy, numpy, matplotlib, matplotlib-inline, seaborn, altair, plotly, reportlab, pandas, numba, geopy, geopandas, prophet, statsmodels, scikit-learn, pmdarima, sentence-transformers, nltk, spacy, and others that can be imported if required.
 - Provide clear, concise explanations of your analysis steps.
 - Think step by step if necessary before deciding on a tool call.
 - When you generate a file (like a chart or report from a tool), inform the user about the filename and path as instructed previously (your IMPORTANT: WHEN HANDLING FILE RESULTS section can be a general guideline for the LLM on how to phrase its final text response *after* a tool has successfully created a file).

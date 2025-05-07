@@ -114,7 +114,7 @@ class BasicAgent(AbstractBot):
             DuckDuckGoSearchTool(),
             # SearchTool(),
             MathTool(),
-            GoogleVoiceTool(),
+            GoogleVoiceTool(name="generate_podcast_style_audio_file"),
         ]
         if tools:
             ctools.extend(tools)
