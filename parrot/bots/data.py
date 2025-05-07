@@ -139,15 +139,15 @@ class PandasAgent(BasicAgent):
         # Create the pandas agent
         dfs = list(self.df.values()) if isinstance(self.df, dict) else self.df
         # bind the tools to the LLM:
-        python_tool = PythonAstREPLTool(locals=self.df_locals, verbose=True,)
-        llm = self._llm.bind_tools([python_tool])
+        # python_tool = PythonAstREPLTool(locals=self.df_locals, verbose=True,)
+        llm = self._llm.bind_tools(self.tools)
         return create_pandas_dataframe_agent(
             llm,
             dfs,
             verbose=True,
             agent_type=self.agent_type,
             allow_dangerous_code=True,
-            extra_tools=[python_tool],
+            extra_tools=self.tools,
             prefix=self._prompt_prefix,
             max_iterations=10,
             agent_executor_kwargs={"memory": self.memory, "handle_parsing_errors": True},
