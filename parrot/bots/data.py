@@ -27,8 +27,9 @@ from .prompts.data import (
     REACT_PROMPT_PREFIX,
     FORMAT_INSTRUCTIONS
 )
+from ..tools.gvoice import GoogleVoiceTool
 
-# Enable Debug:
+## Enable Debug:
 # from langchain.globals import set_debug, set_verbose
 
 # # Enable verbosity for debugging
@@ -139,7 +140,6 @@ class PandasAgent(BasicAgent):
         # Create the pandas agent
         dfs = list(self.df.values()) if isinstance(self.df, dict) else self.df
         # bind the tools to the LLM:
-        # python_tool = PythonAstREPLTool(locals=self.df_locals, verbose=True,)
         llm = self._llm.bind_tools(self.tools)
         return create_pandas_dataframe_agent(
             llm,
@@ -147,7 +147,11 @@ class PandasAgent(BasicAgent):
             verbose=True,
             agent_type=self.agent_type,
             allow_dangerous_code=True,
-            extra_tools=self.tools,
+            # extra_tools=[
+            #     GoogleVoiceTool(
+            #         name="generate_podcast_style_audio_file"
+            #     )
+            # ],
             prefix=self._prompt_prefix,
             max_iterations=10,
             agent_executor_kwargs={"memory": self.memory, "handle_parsing_errors": True},
