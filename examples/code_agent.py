@@ -28,7 +28,7 @@ vertex = VertexLLM(
 )
 
 groq = GroqLLM(
-    model="meta-llama/llama-4-maverick-17b-128e-instruct",
+    model="meta-llama/llama-4-scout-17b-16e-instruct",
     temperature=0.1,
     top_k=30,
     top_p=0.5
@@ -87,19 +87,19 @@ python_locals = {"df": df}
 python_tool = PythonAstREPLTool(locals=python_locals, verbose=True,)
 
 # Test with VertexAI
-llm = vertex.get_llm()
+# llm = vertex.get_llm()
 
-# Test with Groq
+# # Test with Groq
 llm = groq.get_llm()
 
-# Test with Anthropic
-llm = claude.get_llm()
+# # Test with Anthropic
+# llm = claude.get_llm()
 
-# Test with Google
-llm = google.get_llm()
+# # Test with Google
+# llm = google.get_llm()
 
-# Test with OpenAI
-llm = openai.get_llm()
+# # Test with OpenAI
+# llm = openai.get_llm()
 
 # Bind the tools to the LLM
 llm_with_tools = llm.bind_tools([python_tool, multiply_numbers])

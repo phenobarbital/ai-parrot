@@ -11,6 +11,7 @@ class GoogleGenAI(AbstractLLM):
         Using Google Generative AI models with Google Cloud AI Platform.
     """
     model: str = "gemini-2.0-flash"
+    max_tokens: int = 4096
     supported_models: list = [
         "models/text-bison-001",
         "models/chat-bison-001",
