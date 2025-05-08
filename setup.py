@@ -211,8 +211,8 @@ setup(
             "langchain-ollama==0.2.3"
         ],
         "anthropic": [
-            "anthropic-0.50.0",
-            "langchain_anthropic-0.3.12"
+            "anthropic==0.50.0",
+            "langchain_anthropic==0.3.12"
         ],
         "openai": [
             "langchain_openai==0.3.16",

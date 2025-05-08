@@ -1,7 +1,7 @@
 """
 Collection of useful prompts for Chatbots.
 """
-from .agents import AGENT_PROMPT, AGENT_PROMPT_SUFFIX
+from .agents import AGENT_PROMPT, AGENT_PROMPT_SUFFIX, FORMAT_INSTRUCTIONS
 
 
 BASIC_SYSTEM_PROMPT = """

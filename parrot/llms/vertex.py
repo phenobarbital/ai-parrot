@@ -29,7 +29,7 @@ class VertexLLM(AbstractLLM):
         _type_: VertexAI LLM.
     """
     model: str = "gemini-1.5-pro"
-    max_tokens: int = 1024
+    max_tokens: int = 4096
     supported_models: list = [
         "gemini-2.5-pro-exp-03-25",
         "gemini-2.5-pro-preview-03-25",
@@ -60,8 +60,9 @@ class VertexLLM(AbstractLLM):
         self.args = {
             "project": project_id,
             "location": region,
-            "max_output_tokens": self.max_tokens,
+            # "max_output_tokens": self.max_tokens,
             "temperature": self.temperature,
+            "max_tokens": 4096,
             "max_retries": 4,
             "top_p": self.top_p,
             "top_k": self.top_k,
