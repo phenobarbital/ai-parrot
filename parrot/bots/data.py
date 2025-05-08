@@ -20,21 +20,19 @@ from ..tools.docx import DocxGeneratorTool
 from .agent import BasicAgent
 from ..models import AgentResponse
 from ..conf import BASE_STATIC_URL, REDIS_HISTORY_URL
-from .prompts import AGENT_PROMPT_SUFFIX
+from .prompts import AGENT_PROMPT_SUFFIX, FORMAT_INSTRUCTIONS
 from .prompts.data import (
     TOOL_CALLING_PROMPT_PREFIX,
     TOOL_CALLING_PROMPT_SUFFIX,
-    REACT_PROMPT_PREFIX,
-    FORMAT_INSTRUCTIONS
+    REACT_PROMPT_PREFIX
 )
-from ..tools.gvoice import GoogleVoiceTool
 
 ## Enable Debug:
-# from langchain.globals import set_debug, set_verbose
+from langchain.globals import set_debug, set_verbose
 
-# # Enable verbosity for debugging
-# set_debug(True)
-# set_verbose(True)
+# Enable verbosity for debugging
+set_debug(True)
+set_verbose(True)
 
 
 def brace_escape(text: str) -> str:
@@ -289,25 +287,25 @@ class PandasAgent(BasicAgent):
             verbose=True,
             **kwargs
         )
-        # Add EDA functions to the tool's locals
-        setup_code = """
-        from parrot.bots.tools import quick_eda, generate_eda_report, list_available_dataframes, create_plot, generate_pdf_from_html
-        """
-        # Add a helper function to the REPL locals
-        setup_code += """
-def store_result(key, value):
-    if 'execution_results' not in globals():
-        globals()['execution_results'] = {}
-    execution_results[key] = value
-    print(f"Stored result '{key}'")
-    return value
-"""
-        try:
-            python_tool.run(setup_code)
-        except Exception as e:
-            self.logger.error(
-                f"Error setting up python tool: {e}"
-            )
+#         # Add EDA functions to the tool's locals
+#         setup_code = """
+#         from parrot.bots.tools import quick_eda, generate_eda_report, list_available_dataframes, create_plot, generate_pdf_from_html
+#         """
+#         # Add a helper function to the REPL locals
+#         setup_code += """
+# def store_result(key, value):
+#     if 'execution_results' not in globals():
+#         globals()['execution_results'] = {}
+#     execution_results[key] = value
+#     print(f"Stored result '{key}'")
+#     return value
+# """
+#         try:
+#             python_tool.run(setup_code)
+#         except Exception as e:
+#             self.logger.error(
+#                 f"Error setting up python tool: {e}"
+#             )
         return python_tool
 
     def _metrics_guide(self, df_key: str, df_name: str, columns: list) -> str:
@@ -355,7 +353,7 @@ def store_result(key, value):
             df_columns = self._metrics_guide(df_key, df_name, df.columns.tolist())
             # Generate summary statistics
             summary_stats = brace_escape(df.describe(include='all').to_markdown())
-            df_head = brace_escape(df.head(5).to_markdown())
+            df_head = brace_escape(df.head(4).to_markdown())
             # Create df_info block
             if self.agent_type == "tool-calling":
                 df_info += f"""
