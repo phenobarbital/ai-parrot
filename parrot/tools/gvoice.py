@@ -23,10 +23,9 @@ class GoogleVoiceTool(BaseTool):
     name: str = "generate_podcast_style_audio_file"
     description: str = (
         "Generates a podcast-style audio file from a given text script using Google Cloud Text-to-Speech."
-        " This tool is useful for creating audio content from text, such as articles or blog posts."
-        " It can also be used to convert text to speech for accessibility purposes."
+        " Use this tool if the user requests a podcast, an audio summary, or a narrative of the findings "
+        " First, ensure you have a clear and concise text summary of the information to be narrated. You might need to generate this summary based on your analysis or previous steps."
         " Provide the text *as-is* without enclosing on backticks or backquotes."
-        " The audio file will be saved in the specified output directory and returned as a dictionary with a *file_path* key."
     )
     voice_model: str = "en-US-Neural2-F"  # "en-US-Studio-O"
     voice_gender: str = "FEMALE"

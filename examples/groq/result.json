@@ -1,0 +1,479 @@
+[
+    {
+    "image": "2025-03-20 13.33.19.jpg",
+    "category": "entrance",
+    "evaluation": {
+        "Overall Organization and Condition": {
+            "description": "The store entrance appears to be well-organized, with clear signage directing customers to the correct entrance. The area outside the store is clean and free of clutter, creating a welcoming atmosphere for customers.",
+            "cleaning condition": "The store's exterior appears to be regularly cleaned, with no visible dirt, grime, or gum on the floor. The windows are clean and free of streaks, and the doors are free of dust and fingerprints. The surrounding area, including the sidewalk and parking lot, also appears to be well-maintained."
+        },
+        "Specific Observations": [
+            "The store's logo is prominently displayed on the awning above the entrance, making it easily visible from a distance.",
+            "The automatic sliding doors are clean and working properly, with clear and visible directionals indicating the correct direction for entry and exit.",
+            "The entrance is wide enough to accommodate strollers and wheelchairs, ensuring accessibility for all customers.",
+            "The floor inside the store is made of a durable material that appears to be easy to clean and maintain, with no visible stains or spills."
+        ],
+        "Overall Impression": "Overall, the store entrance and surrounding area appear to be well-maintained and organized, providing a positive first impression for customers. The cleaning condition is excellent, with no visible signs of neglect or poor maintenance. The specific observations of the entrance, doors, and floor indicate a commitment to accessibility and ease of use, making the store an enjoyable place to shop."
+    }
+},
+{
+    "image": "221.jpg",
+    "category": "shelf",
+    "evaluation": {
+        "report": "Retail Endcap Report",
+        "statistics": {
+            "number_of_shelves": 3,
+            "percent_occupation_per_shelf": {
+                "bottom": "75%",
+                "middle": "50%",
+                "top": "25%"
+            },
+            "shelves": [
+                "Bottom",
+                "Middle",
+                "Top"
+            ],
+            "number_of_products_on_shelves": {
+                "bottom": 40,
+                "middle": 20,
+                "top": 10
+            },
+            "product_types": {
+                "printers": {
+                    "bottom": [
+                        "Lexmark",
+                        "HP",
+                        "Canon"
+                    ],
+                    "middle": [
+                        "Epson",
+                        "HP",
+                        "Canon"
+                    ],
+                    "top": [
+                        "Epson",
+                        "HP",
+                        "Canon"
+                    ]
+                },
+                "ink_cartridges": {
+                    "bottom": [
+                        "2 boxes (Epson)",
+                        "1 box (HP)"
+                    ],
+                    "middle": [
+                        "1 box (Epson)",
+                        "1 box (HP)"
+                    ],
+                    "top": "No ink cartridges"
+                },
+                "competitive_product": "HP LaserJet printer (bottom shelf)"
+            }
+        },
+        "overall_organization_and_condition": {
+            "neatness": "The endcap is not particularly messy but can be improved.",
+            "alignment": "Products are generally aligned but not perfectly straight.",
+            "gaps": "No noticeable gaps, but some areas could use better product placement."
+        },
+        "cleaning_condition": {
+            "dust/dirt": "Light dusting visible on shelves and products.",
+            "spills": "No visible spills.",
+            "trash": "No visible trash.",
+            "non-printer/non-ink_products": "No non-printer or non-ink products present."
+        },
+        "specific_observations": {
+            "damaged_labels": "Some labels are damaged or missing.",
+            "safety_hazards": "None observed.",
+            "summary": "The endcap requires some attention to organization, cleaning, and label maintenance, but overall, it appears somewhat neglected."
+        },
+        "description": "The provided image showcases a retail endcap that needs improvement in terms of organization and cleanliness. While the products are generally aligned and facing forward, there are gaps and areas for better product placement. Dust and dirt are visible on shelves and products, and damaged labels need to be addressed. Overall, the endcap is not extremely messy but benefits from attention to detail in presentation. It is recommended on creating a neater and well-maintained endcap, conducive to a better customer shopping experience."
+    }
+},
+{
+    "image": "222.jpg",
+    "category": "shelf",
+    "evaluation": {
+        "statistics": {
+            "shelves": 2,
+            "top shelf occupancy": "100%",
+            "bottom shelf occupancy": "approx. 70%",
+            "products on shelves": "multiple, exact number difficult to determine"
+        },
+        "top shelf": {
+            "products": [
+                "Various Epson printers (models 4x00, ET-7500, and XP-15000)",
+                "A Canon printer (model PIXMA TR8520)",
+                "A non-printer product (a white box labeled \"HP\")"
+            ]
+        },
+        "bottom shelf": {
+            "products": [
+                "Various Epson ink sets (Epson 702, 706, 710, and 720 series)",
+                "A non-ink related product (a white box labeled \"Microsoft\")"
+            ]
+        },
+        "organization and condition": {
+            "layout and organization": "okay but somewhat disorganized and cluttered",
+            "product orientation": "mostly facing outwardly, some facing inwardly or at an angle",
+            "gaps on bottom shelf": "present, suggesting restocking necessary"
+        },
+        "cleaning condition": {
+            "endcap": "moderate condition, some signs of dust and dirt",
+            "shelves and products": "mostly clean, some minor stains and scuff marks",
+            "trash": "none visible",
+            "non-printer or non-ink related products": "none present in camera view"
+        },
+        "specific observations": {
+            "product alignment": "some not cleanly aligned or facing forward",
+            "damaged or misplaced labels": "present on some products",
+            "safety hazards": "none apparent"
+        },
+        "summary": "endcap could benefit from reorganization, restocking necessary for bottom shelf gaps, cleaning needed for neat appearance"
+    }
+},
+{
+    "image": "WhatsApp Image 2025-03-10 at 08.21.57.jpeg",
+    "category": "endcap",
+    "evaluation": {
+        "image": "retail endcap",
+        "brand": "Epson",
+        "products": {
+            "printers": [
+                {
+                    "name": "Epson EcoTank ET-3760",
+                    "quantity": 1,
+                    "shelf": "top"
+                },
+                {
+                    "name": "Epson WorkForce WF-2833",
+                    "quantity": 2,
+                    "shelf": "top"
+                },
+                {
+                    "name": "Epson EcoTank ET-2830",
+                    "quantity": 2,
+                    "shelf": "top"
+                },
+                {
+                    "name": "Epson WorkForce WF-2833",
+                    "quantity": 1,
+                    "shelf": "middle"
+                },
+                {
+                    "name": "Epson EcoTank ET-2830",
+                    "quantity": 1,
+                    "shelf": "middle"
+                },
+                {
+                    "name": "Epson EcoTank ET-3750",
+                    "quantity": 1,
+                    "shelf": "middle"
+                },
+                {
+                    "name": "Epson EcoTank ET-3760",
+                    "quantity": 1,
+                    "shelf": "bottom"
+                },
+                {
+                    "name": "Epson WorkForce WF-2833",
+                    "quantity": 2,
+                    "shelf": "bottom"
+                },
+                {
+                    "name": "Epson EcoTank ET-2830",
+                    "quantity": 1,
+                    "shelf": "bottom"
+                }
+            ],
+            "inks": [
+                {
+                    "name": "Epson EcoTank ET-3760",
+                    "quantity": 1,
+                    "shelf": "bottom"
+                },
+                {
+                    "name": "Epson WorkForce WF-2833",
+                    "quantity": 1,
+                    "shelf": "bottom"
+                },
+                {
+                    "name": "Epson EcoTank ET-2830",
+                    "quantity": 1,
+                    "shelf": "bottom"
+                }
+            ]
+        },
+        "shelf_occupancy": {
+            "total_shelves": 3,
+            "shelves": [
+                {
+                    "name": "top",
+                    "occupancy": "50%"
+                },
+                {
+                    "name": "middle",
+                    "occupancy": "100%"
+                },
+                {
+                    "name": "bottom",
+                    "occupancy": "50%"
+                }
+            ]
+        },
+        "other_products": [
+            {
+                "name": "Micellar cleansing water",
+                "location": "between shelves"
+            },
+            {
+                "name": "Black plastic basket with wire grid",
+                "location": "bottom shelf"
+            }
+        ],
+        "cleaning_condition": {
+            "dust_or_dirt": "none",
+            "labels": "clean and legible",
+            "shelf_surface": "no noticeable holes or rips"
+        },
+        "specific_observations": [
+            "Some product boxes are open",
+            "No safety hazards or spills"
+        ],
+        "recommendations": [
+            "Restock Epson products and ensure consistent alignment",
+            "Clean displayed products",
+            "Consider adding additional Epson products to bottom shelf"
+        ],
+        "overall_impression": "Positive image of Epson products with well-organized display"
+    }
+},
+{
+    "image": "Photo 3-7.jpeg",
+    "category": "endcap",
+    "evaluation": {
+        "overall_impression": {
+            "Statistical Analysis": "Number of Shelves and Percent of Occupation per Shelf",
+            "Image": "Single section from store endcap with two shelves stacked with Epson products and two fixed floor length metal frames",
+            "Description": "Products displayed at appropriate height for ease of use and customer interest",
+            "Number of Products": "Significant number of products showcasing various Epson printer and ink models",
+            "Layout": "Clear and neat arrangement to draw attention of potential buyers",
+            "Types": "Large format printer and ink products on top and bottom shelves, blend of Epson products displayed for customer comparison"
+        },
+        "organization and condition": {
+            "Overall Organization and Condition": "Well-organized with attention to detail according to Epson visual guidelines",
+            "Specific Observations and Cleaning Condition": {
+                "Condition": "Good overall, some signs of wear and tear",
+                "Metal Frame": {
+                    "Condition": "Discoloration present but not significant",
+                    "Position": "Perpendicular to shelves"
+                },
+                "Dust": "Noticeable in various areas but no significant accumulation or spillage",
+                "Trash": "No accumulation on shelves or products themselves",
+                "Floor": "No signs of trash accumulation"
+            }
+        },
+        "Additional Points": {
+            "Number of Printers": "2-3 on top shelf, 0-12 on bottom shelf, 5 on middle or bottom shelves, multiples of 5 on top shelf",
+            "Visual Representation": "Two visible products on each shelf with bright, high saturation colors, rest mostly black",
+            "Consistency at Location": "Endcap frequently replenished by store staff, high density of visible products",
+            "QR Code": "Located on bottom left shelf at top/lower end, difficult to discern content without clear and readable copy"
+        },
+        "recommendations": [
+            "Well-organized with minor issues, restocking needed for all products to be available, QR code positioning can be improved"
+        ]
+    }
+},
+{
+    "image": "Photo 3-5.jpeg",
+    "category": "endcap",
+    "evaluation": {
+        "description": "The image depicts a retail shelving unit with two products on display: an Epson printer Ink and an HP printer Ink. The Epson is positioned on the left, while the HP is on the right.",
+        "shelf_condition": {
+            "condition": "good",
+            "damage": "none",
+            "wear": "none",
+            "arrangement": "neat",
+            "epson_printer": "forward",
+            "hp_printer": "slightly angled",
+            "gaps": "none",
+            "empty_spaces": "none",
+            "cleanliness": "clean",
+            "dust": "none",
+            "dirt": "none"
+        },
+        "product_display": {
+            "epson_printer": {
+                "position": "left",
+                "packaging": "intact",
+                "facing_customer": true
+            },
+            "hp_printer": {
+                "position": "right",
+                "packaging": "intact",
+                "facing_customer": true
+            },
+            "labels": {
+                "epson_printer": {
+                    "brand_name": "Epson",
+                    "product_type": "ink",
+                    "model_number": "232XL"
+                },
+                "hp_printer": {
+                    "brand_name": "HP",
+                    "product_type": "ink",
+                    "model_number": "910"
+                }
+            }
+        },
+        "competitive_product": {
+            "present": false,
+            "hp_printer": {
+                "position": "similar",
+                "packaging": "intact",
+                "facing_customer": true
+            }
+        },
+        "overall_organization": {
+            "neatly_arranged": true,
+            "facing_customer": true,
+            "cleanliness": "clean",
+            "clutter": "none",
+            "disorganization": "none"
+        },
+        "cleaning_condition": {
+            "shelf": "clean",
+            "products": "clean",
+            "trash": "none"
+        },
+        "specific_observations": {
+            "labels": {
+                "epson_printer": {
+                    "clear": true,
+                    "accurate": true
+                },
+                "hp_printer": {
+                    "clear": true,
+                    "accurate": true
+                }
+            },
+            "packaging": {
+                "epson_printer": "intact",
+                "hp_printer": "intact"
+            },
+            "shelf_condition": {
+                "condition": "good",
+                "damage": "none",
+                "wear": "none"
+            }
+        },
+        "summary": "The retail endcap is well-organized, with products neatly arranged and facing the customer. The shelf is clean, with no visible signs of clutter or disorganization. Both products have clear and accurate labeling, and there are no competitive products present on the shelf."
+    }
+},
+{
+    "image": "Photo 3-4.jpeg",
+    "category": "endcap",
+    "evaluation": {
+        "statistics": {
+          "total_shelves": 5,
+          "shelf_occupancy": {
+            "top": "100%",
+            "middle": "90%",
+            "bottom": "80%"
+          },
+          "total_boxes": 25,
+          "products": {
+            "printers": [],
+            "inks": "Various Epson ink cartridges"
+          },
+          "competitive_products_found": true,
+          "competitive_products": [
+            "HP ink cartridges",
+            "Canon ink cartridges"
+          ],
+          "misplaced_products_found": false
+        },
+        "overall_organization_and_condition": {
+            "layout": "good but not perfect",
+            "alignment": "most products aligned with a few slightly askew",
+            "gaps_present": true,
+            "restocking_needed": true
+        },
+        "cleaning_condition": {
+            "shelves": "relatively clean with no visible dust or dirt",
+            "products": "clean with no visible spills or debris",
+            "trash_present": false,
+            "non_relevant_products_present": false
+        },
+        "specific_observations": {
+            "labels": "some labels are slightly damaged but legible",
+            "safety_hazards": false,
+            "middle_shelf": "contains a few empty spaces suggesting restocking is needed"
+        },
+        "summary": "The endcap is well-organized but could benefit from a thorough cleaning and restocking. Some labels are slightly damaged, and there are a few empty spaces on some shelves. Overall, the endcap presents a good opportunity for improvement."
+    }
+},
+{
+    "image": "353.jpg",
+    "category": "product_info",
+    "evaluation": {
+        "statistics": {
+            "percent_occupied_total": "55%",
+            "percent_occupied_top_shelf": "95%",
+            "percent_occupied_middle_shelf": "55%",
+            "percent_occupied_bottom_shelf": "82%",
+            "number_of_products": {
+            "top": null,
+            "middle": 3,
+            "bottom": 4
+            },
+            "product_types": [
+            "EPSON",
+            "HP",
+            "CANNON"
+            ]
+        },
+        "overall_organization_and_condition": {
+            "general_layout": "Products are not organized, well-arranged, nor aligned to the shelves; they’re placed haphazardly, and some empty spaces between products suggest restocking is needed.",
+            "products_aligned_and_facing_forward": "neither",
+            "competitive_products": "Competitive products from HP and Cannon are present."
+        },
+        "cleaning_condition": {
+            "top_shelf": "A product is placed haphazardly.",
+            "middle_shelf": "No visible signs of dust, dirt, spills or other debris exist.",
+            "bottom_shelf": "No visible signs of dust, dirt, spills or other debris exist.",
+            "trash_presence": "A product box on the top shelf (a non-shopping product) is present.",
+            "cleaning_products": "None",
+            "safety_hazards": "None",
+            "safety_related_products": "None"
+        },
+        "top_shelf": {
+            "products": [
+            "Epson ET-3830 All-In-One Wireless Color Inkjet Printer",
+            "Epson WorkForce WF-3620 Wireless All-In-One Printer",
+            "Canon Pricetac TF700C Driver Installation Software CD-ROM",
+            "Canon PIXMA TS202 Printer"
+            ]
+        },
+        "middle_shelf": {
+            "products": [
+            "Epson Workforce WF-5620 Color All-in-One Printer",
+            "Canon PIXMA TS203 Printer",
+            "Canon PIXMA TS202 Printer",
+            "Epson EcoTank Photo ET-8550 Printer"
+            ]
+        },
+        "bottom_shelf": {
+            "products": []
+        },
+        "endcap_display": {
+            "neat_and_organized": true,
+            "easy_to_read_price_tag": true,
+            "well_displayed": true,
+            "not_disrupted": true,
+            "condition": "good",
+            "free_of_damage": true,
+            "safety_hazards": false
+        }
+    }
+}
+]
