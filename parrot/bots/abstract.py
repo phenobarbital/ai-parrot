@@ -49,7 +49,7 @@ from ..conf import (
 )
 
 ## LLM configuration
-from ..llms import AbstractLLM
+from ..llms import LLM_PRESETS, AbstractLLM
 
 # Vertex
 try:
@@ -109,16 +109,6 @@ logging.getLogger("tensorflow").setLevel(logging.CRITICAL)
 logging.getLogger("transformers").setLevel(logging.CRITICAL)
 logging.getLogger("pymilvus").setLevel(logging.INFO)
 
-
-LLM_PRESETS = {
-    "analytical": {"temperature": 0.1, "max_tokens": 4000},
-    "creative": {"temperature": 0.7, "max_tokens": 6000},
-    "balanced": {"temperature": 0.4, "max_tokens": 4000},
-    "concise": {"temperature": 0.2, "max_tokens": 2000},
-    "detailed": {"temperature": 0.3, "max_tokens": 8000},
-    "comprehensive": {"temperature": 0.5, "max_tokens": 10000},
-    "verbose": {"temperature": 0.6, "max_tokens": 12000},
-}
 
 class AbstractBot(DBInterface, ABC):
     """AbstractBot.
@@ -204,15 +194,14 @@ class AbstractBot(DBInterface, ABC):
                 )
                 presetting = LLM_PRESETS['analytical']
             self._llm_temp = presetting.get('temperature', 0.2)
-            self._llm_top_k = presetting.get('top_k', 50)
-            self._llm_top_p = presetting.get('top_p', 0.9)
             self._max_tokens = presetting.get('max_tokens', 4096)
         else:
+            # Default LLM Presetting by LLMs
             self._llm_temp = kwargs.get('temperature', 0.2)
-            self._llm_top_k = kwargs.get('top_k', 50)
-            self._llm_top_p = kwargs.get('top_p', 0.9)
             self._max_tokens = presetting.get('max_tokens', 4096)
-            self._llm_config = kwargs.get('model_config', {})
+        self._llm_top_k = kwargs.get('top_k', 50)
+        self._llm_top_p = kwargs.get('top_p', 0.9)
+        self._llm_config = kwargs.get('model_config', {})
         if self._llm_config:
             self._llm_model = self._llm_config.pop('model', self._llm_model)
             self._llm_class = self._llm_config.pop('name', None)
