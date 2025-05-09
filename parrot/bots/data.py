@@ -28,11 +28,11 @@ from .prompts.data import (
 )
 
 ## Enable Debug:
-from langchain.globals import set_debug, set_verbose
+# from langchain.globals import set_debug, set_verbose
 
-# Enable verbosity for debugging
-set_debug(True)
-set_verbose(True)
+# # Enable verbosity for debugging
+# set_debug(True)
+# set_verbose(True)
 
 
 def brace_escape(text: str) -> str:
