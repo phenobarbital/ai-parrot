@@ -1,4 +1,5 @@
 # basic requirements:
+import os
 from typing import Union, List
 import asyncio
 # Parrot Agent
@@ -12,7 +13,7 @@ from parrot.llms.openai import OpenAILLM
 # Function: Agent Creation:
 # If use LLama4 with Groq (fastest model)
 vertex = VertexLLM(
-    model="gemini-2.0-flash",
+    model="gemini-2.0-flash-001",
     preset="analytical",
     use_chat=True
 )
@@ -58,11 +59,16 @@ async def create_agent(llm, backstory = '', capabilities = ''):
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
     agent = loop.run_until_complete(
-        create_agent(llm=groq)
+        create_agent(llm=vertex)
     )
-    text, response = loop.run_until_complete(
-        agent.invoke('return what columns are present in census df4 dataset')
-    )
-    print(':: RESPONSE == ')
-    print(text)
-    print(response)
+    print('LLM > ', vertex, ' Google : ', vertex._llm)
+    print('CREDENTIALS > ', os.environ["GOOGLE_APPLICATION_CREDENTIALS"])
+    query = input("Type in your query: \n")
+    EXIT_WORDS = ["exit", "quit", "bye"]
+    while query not in EXIT_WORDS:
+        if query:
+            answer, response = loop.run_until_complete(
+                agent.invoke(query=query)
+            )
+            print('::: Response: ', response)
+        query = input("Type in your query: \n")

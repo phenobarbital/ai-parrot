@@ -28,9 +28,9 @@ from .prompts.data import (
 )
 
 ## Enable Debug:
-# from langchain.globals import set_debug, set_verbose
+from langchain.globals import set_debug, set_verbose
 
-# # Enable verbosity for debugging
+# Enable verbosity for debugging
 # set_debug(True)
 # set_verbose(True)
 
@@ -308,16 +308,50 @@ class PandasAgent(BasicAgent):
             verbose=True,
             **kwargs
         )
-#         # Add EDA functions to the tool's locals
-#         setup_code = """
-#         from parrot.bots.tools import quick_eda, generate_eda_report, list_available_dataframes, create_plot, generate_pdf_from_html
 
-#         try:
-#             python_tool.run(setup_code)
-#         except Exception as e:
-#             self.logger.error(
-#                 f"Error setting up python tool: {e}"
-#             )
+        # Add essential library imports and helper functions
+        setup_code = """
+# Ensure essential libraries are imported
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from datetime import datetime, timedelta
+import os
+import json
+import re
+from collections import Counter, defaultdict
+from parrot.bots.tools import quick_eda, generate_eda_report, list_available_dataframes, create_plot, generate_pdf_from_html
+
+# Helper function for safe DataFrame operations
+def safe_head(df, n=5):
+    '''Safe alternative to df.head() that works with any LLM'''
+    return df.iloc[0:n]
+
+def safe_tail(df, n=5):
+    '''Safe alternative to df.tail() that works with any LLM'''
+    return df.iloc[-n:]
+
+def safe_sample(df, n=5, random_state=None):
+    '''Safe alternative to df.sample() that works with any LLM'''
+    if random_state is not None:
+        return df.sample(n=n, random_state=random_state)
+    else:
+        return df.iloc[0:n]  # Simplified fallback
+
+# Set plotting style
+plt.style.use('seaborn-v0_8-whitegrid')
+sns.set_palette('Set2')
+
+# Verify pandas is loaded correctly
+print(f"Pandas version: {pd.__version__}")
+"""
+        try:
+            python_tool.run(setup_code)
+        except Exception as e:
+            self.logger.error(
+                f"Error setting up python tool: {e}"
+            )
         return python_tool
 
     def _metrics_guide(self, df_key: str, df_name: str, columns: list) -> str:
@@ -348,8 +382,8 @@ class PandasAgent(BasicAgent):
         if self.agent_report_dir.exists() is False:
             self.agent_report_dir.mkdir(parents=True, exist_ok=True)
         # Word Tool:
-        docx_tool = DocxGeneratorTool(output_dir=self.agent_report_dir)
-        self.tools.append(docx_tool)
+        # docx_tool = DocxGeneratorTool(output_dir=self.agent_report_dir)
+        # self.tools.append(docx_tool)
         # Add dataframe information
         num_dfs = len(self.df)
         self.df_locals['agent_report_dir'] = self.agent_report_dir
@@ -374,6 +408,9 @@ class PandasAgent(BasicAgent):
 
                 ### This is the result of `print(df.head())` of {df_key}:
                 {df_head}
+
+                ### Column info: {df_key}:
+                {df_columns}
 
                 """
             else:
