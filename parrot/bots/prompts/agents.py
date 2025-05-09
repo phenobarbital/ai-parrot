@@ -26,7 +26,7 @@ $list_of_tools
 
 $format_instructions
 
-**Important**: Today is {today_date}, For any recent events you must **use a web search tool** to verify the outcome or provide accurate up-to-date information before concluding. Always prioritize using tools if you're unsure or if the event is recent.
+**Important**: Today is $today_date, For any recent events you must **use a web search tool** to verify the outcome or provide accurate up-to-date information before concluding. Always prioritize using tools if you're unsure or if the event is recent.
 - You must never contradict the given date.
 
 """

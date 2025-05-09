@@ -12,6 +12,7 @@ from parrot.llms.groq import GroqLLM
 from parrot.llms.anthropic import AnthropicLLM
 from parrot.llms.google import GoogleGenAI
 from parrot.llms.openai import OpenAILLM
+from parrot.llms.gemma import GemmaLLM
 
 
 # Enable verbosity for debugging
@@ -21,41 +22,44 @@ set_verbose(True)
 # Initialize the Gemini1.5 Pro model from Vertex AI
 vertex = VertexLLM(
     model="gemini-2.0-flash-001",
-    temperature=0.1,
-    top_k=30,
-    top_p=0.5,
+    preset='analytical',
     use_chat=True
 )
 
 groq = GroqLLM(
     model="meta-llama/llama-4-scout-17b-16e-instruct",
     temperature=0.1,
-    top_k=30,
-    top_p=0.5
 )
 
 claude = AnthropicLLM(
     model="claude-3-5-sonnet-20240620",
     temperature=0.1,
-    top_k=30,
-    top_p=0.5,
     use_tools=True
 )
 
 google = GoogleGenAI(
     model="gemini-2.0-flash-001",
     temperature=0.1,
-    top_k=30,
-    top_p=0.5,
     use_chat=True
 )
 
 openai = OpenAILLM(
     model="gpt-4.1",
     temperature=0.1,
-    top_k=30,
-    top_p=0.5,
     use_chat=True
+)
+
+# Specific LLMs:
+gemma = GemmaLLM(
+    temperature=0.1,
+    top_k=30,
+    top_p=0.5
+)
+
+# LLama3 instant
+llama3 = GroqLLM(
+    model="llama-3.1-8b-instant",
+    temperature=0.1,
 )
 
 # Create a sample DataFrame
@@ -87,10 +91,10 @@ python_locals = {"df": df}
 python_tool = PythonAstREPLTool(locals=python_locals, verbose=True,)
 
 # Test with VertexAI
-# llm = vertex.get_llm()
+llm = vertex.get_llm()
 
 # # Test with Groq
-llm = groq.get_llm()
+# llm = groq.get_llm()
 
 # # Test with Anthropic
 # llm = claude.get_llm()
@@ -100,6 +104,12 @@ llm = groq.get_llm()
 
 # # Test with OpenAI
 # llm = openai.get_llm()
+
+# Gemma:
+# llm = gemma.get_llm()
+
+# # Llama3:
+# llm = llama3.get_llm()
 
 # Bind the tools to the LLM
 llm_with_tools = llm.bind_tools([python_tool, multiply_numbers])

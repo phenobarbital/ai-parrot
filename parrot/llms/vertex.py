@@ -8,8 +8,11 @@ from langchain_google_vertexai import (
     HarmBlockThreshold,
     HarmCategory
 )
+from navconfig.logging import logging
 from .abstract import AbstractLLM
 
+logging.getLogger(name='httpcore').setLevel(logging.WARNING)
+logging.getLogger(name='httpx').setLevel(logging.WARNING)
 
 safety_settings = {
     HarmCategory.HARM_CATEGORY_UNSPECIFIED: HarmBlockThreshold.BLOCK_NONE,
@@ -29,7 +32,9 @@ class VertexLLM(AbstractLLM):
         _type_: VertexAI LLM.
     """
     model: str = "gemini-1.5-pro"
-    max_tokens: int = 4096
+    max_tokens: int = 8192
+    top_k: float = 40
+    top_p: float = 1.0
     supported_models: list = [
         "gemini-2.5-pro-exp-03-25",
         "gemini-2.5-pro-preview-03-25",
@@ -53,20 +58,19 @@ class VertexLLM(AbstractLLM):
         super().__init__(*args, **kwargs)
         project_id = config.get("VERTEX_PROJECT_ID")
         region = config.get("VERTEX_REGION")
-        # vertexai.init(project=project_id, location="us-central1")
         config_file = config.get('GOOGLE_CREDENTIALS_FILE', 'env/google/vertexai.json')
         config_dir = BASE_DIR.joinpath(config_file)
         os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = str(config_dir)
-        self.args = {
+        args = {
             "project": project_id,
             "location": region,
-            # "max_output_tokens": self.max_tokens,
             "temperature": self.temperature,
-            "max_tokens": 4096,
+            "max_tokens": self.max_tokens,
             "max_retries": 4,
             "top_p": self.top_p,
-            "top_k": self.top_k,
+            # "top_k": self.top_k,
             "verbose": True,
+            "safety_settings": safety_settings
         }
         if use_chat is True:
             base_llm = ChatVertexAI
@@ -74,8 +78,7 @@ class VertexLLM(AbstractLLM):
             base_llm = VertexAI
         self._llm = base_llm(
             model_name=self.model,
-            # system_prompt="Always respond in the same language as the user's question. If the user's language is not English, translate your response into their language.",
-            **self.args
+            **args
         )
         # LLM
         self._version_ = aiplatform.__version__
