@@ -1,10 +1,10 @@
 from pathlib import Path
-from typing import List, Any, Union
+from typing import Dict, List, Union, Any
 import os
+from string import Template
 from datetime import datetime, timezone
 from aiohttp import web
 from langchain_core.prompts import (
-    PromptTemplate,
     ChatPromptTemplate
 )
 from langchain_core.retrievers import BaseRetriever
@@ -45,14 +45,16 @@ from datamodel.typedefs import SafeDict
 from datamodel.parsers.json import json_decoder  # noqa  pylint: disable=E0611
 from navconfig.logging import logging
 from .abstract import AbstractBot
-from .prompts import AGENT_PROMPT
 from ..models import AgentResponse
 from ..tools import AbstractTool, SearchTool, MathTool, DuckDuckGoSearchTool
+from ..tools.results import ResultStoreTool, GetResultTool, ListResultsTool
 from ..tools.gvoice import GoogleVoiceTool
+from .prompts import AGENT_PROMPT, AGENT_PROMPT_SUFFIX, FORMAT_INSTRUCTIONS
 
 
 os.environ["GRPC_ENABLE_FORK_SUPPORT"] = "0"
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"  # Hide TensorFlow logs if present
+
 
 class BasicAgent(AbstractBot):
     """Represents an Agent in Navigator.
@@ -116,9 +118,27 @@ class BasicAgent(AbstractBot):
             MathTool(),
             GoogleVoiceTool(name="generate_podcast_style_audio_file"),
         ]
+        result_store_tool = ResultStoreTool()
+        get_result_tool = GetResultTool()
+        list_results_tool = ListResultsTool()
+        # adding result management:
+        ctools.extend([result_store_tool, get_result_tool, list_results_tool])
         if tools:
             ctools.extend(tools)
         return ctools
+
+    # Add helper methods to directly access the stored results
+    def get_stored_result(self, key: str) -> Any:
+        """Retrieve a stored result directly."""
+        return ResultStoreTool.get_result(key)
+
+    def list_stored_results(self) -> Dict[str, Dict[str, Any]]:
+        """List all stored results directly."""
+        return ResultStoreTool.list_results()
+
+    def clear_stored_results(self) -> None:
+        """Clear all stored results."""
+        ResultStoreTool.clear_results()
 
     def define_prompt(self, prompt, **kwargs):
         now = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -128,11 +148,15 @@ class BasicAgent(AbstractBot):
             description = tool.description  # noqa  pylint: disable=E1101
             list_of_tools += f'- {name}: {description}\n'
         list_of_tools += "\n"
-        final_prompt = prompt.format_map(
-            SafeDict(
-                today_date=now,
-                list_of_tools=list_of_tools
-            )
+        tools_names = [tool.name for tool in self.tools]
+        tmpl = Template(prompt)
+        final_prompt = tmpl.safe_substitute(
+            today_date=now,
+            list_of_tools=list_of_tools,
+            backstory=self.backstory,
+            rationale=self.rationale,
+            format_instructions=FORMAT_INSTRUCTIONS.format(
+                tool_names=", ".join(tools_names)),
         )
         # Define a structured system message
         system_message = f"""
@@ -142,6 +166,7 @@ class BasicAgent(AbstractBot):
         If you call a tool and receive a valid answer, finalize your response immediately.
         Do NOT repeat the same tool call multiple times for the same question.
         """
+        final_prompt += AGENT_PROMPT_SUFFIX
         chat_prompt = ChatPromptTemplate.from_messages([
             SystemMessagePromptTemplate.from_template(system_message),
             ChatPromptTemplate.from_template(final_prompt)
@@ -335,7 +360,7 @@ class BasicAgent(AbstractBot):
         # 1. Initialize the Agent (as the base for RunnableMultiActionAgent)
         if self.agent_type == 'zero_shot':
             self.agent = self.runnable_agent()
-        elif self.agent_type == 'function_calling':
+        elif self.agent_type in ('function_calling', 'tool-calling'):
             self.agent = self.function_calling_agent()
         elif self.agent_type == 'openai':
             self.agent = self.openai_agent()

@@ -9,6 +9,7 @@ from .abstract import AbstractLLM
 
 logging.getLogger(name='openai').setLevel(logging.WARNING)
 logging.getLogger(name='httpcore').setLevel(logging.WARNING)
+logging.getLogger(name='httpx').setLevel(logging.WARNING)
 
 class OpenAILLM(AbstractLLM):
     """OpenAI.
@@ -18,7 +19,9 @@ class OpenAILLM(AbstractLLM):
         _type_: an instance of OpenAI LLM Model.
     """
     model: str = "gpt-4-turbo"
-    max_tokens: int = 4096
+    max_tokens: int = 8192
+    top_k: float = 40
+    top_p: float = 1.0
     supported_models: list = [
         "gpt-4.1",
         "gpt-4o-mini",
@@ -43,10 +46,16 @@ class OpenAILLM(AbstractLLM):
             base_llm = ChatOpenAI
         else:
             base_llm = OpenAI
+        args = {
+            "api_key": self._api_key,
+            "organization": organization,
+            "temperature": self.temperature,
+            "max_tokens": self.max_tokens,
+            "max_retries": 4,
+            "top_p": self.top_p,
+            "verbose": True
+        }
         self._llm = base_llm(
             model_name=self.model,
-            api_key=self._api_key,
-            organization=organization,
-            temperature=self.temperature,
-            max_tokens=self.max_tokens,
+            **args
         )

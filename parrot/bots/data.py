@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import List, Dict, Union, Optional
+from typing import Any, List, Dict, Union, Optional
 from datetime import datetime, timezone, timedelta
 from string import Template
 import redis.asyncio as aioredis
@@ -28,11 +28,11 @@ from .prompts.data import (
 )
 
 ## Enable Debug:
-from langchain.globals import set_debug, set_verbose
+# from langchain.globals import set_debug, set_verbose
 
-# Enable verbosity for debugging
-set_debug(True)
-set_verbose(True)
+# # Enable verbosity for debugging
+# set_debug(True)
+# set_verbose(True)
 
 
 def brace_escape(text: str) -> str:
@@ -145,11 +145,6 @@ class PandasAgent(BasicAgent):
             verbose=True,
             agent_type=self.agent_type,
             allow_dangerous_code=True,
-            # extra_tools=[
-            #     GoogleVoiceTool(
-            #         name="generate_podcast_style_audio_file"
-            #     )
-            # ],
             prefix=self._prompt_prefix,
             max_iterations=10,
             agent_executor_kwargs={"memory": self.memory, "handle_parsing_errors": True},
@@ -239,17 +234,39 @@ class PandasAgent(BasicAgent):
         if filenames:
             response.filename = filenames
 
-    async def invoke(self, query: str):
-        """invoke.
+    async def invoke(
+        self,
+        query: str, llm: Optional[Any] = None,
+        llm_params: Optional[Dict[str, Any]] = None
+    ):
+        """Invoke the agent with optional LLM override.
 
         Args:
             query (str): The query to ask the chatbot.
+            llm (Optional[Any]): Optional LLM to use for this specific invocation.
+            llm_params (Optional[Dict[str, Any]]): Optional parameters to modify LLM behavior
+                                                (temperature, max_tokens, etc.)
 
         Returns:
             str: The response from the chatbot.
 
         """
+        original_agent = None
+        original_llm = None
         try:
+            # If a different LLM or parameters are provided, create a temporary agent
+            if llm is not None:
+                # Get the current LLM if we're just updating parameters
+                current_llm = llm if llm is not None else self._llm
+                # Store original LLM for reference
+                original_llm = self._llm
+                # Store original agent for reference
+                original_agent = self._agent
+                # Temporarily update the instance LLM
+                self._llm = current_llm
+                # Create a new agent with the updated LLM
+                self._agent = self.pandas_agent()
+            # Invoke the agent with the query
             result = await self._agent.ainvoke(
                 {"input": query}
             )
@@ -264,6 +281,10 @@ class PandasAgent(BasicAgent):
                 self.logger.error(
                     f"Unable to extract filenames: {exc}"
                 )
+            # Restore the original agent if any:
+            if original_llm is not None:
+                self._llm = original_llm
+                self._agent = original_agent
             try:
                 return self.as_markdown(
                     response
@@ -290,16 +311,7 @@ class PandasAgent(BasicAgent):
 #         # Add EDA functions to the tool's locals
 #         setup_code = """
 #         from parrot.bots.tools import quick_eda, generate_eda_report, list_available_dataframes, create_plot, generate_pdf_from_html
-#         """
-#         # Add a helper function to the REPL locals
-#         setup_code += """
-# def store_result(key, value):
-#     if 'execution_results' not in globals():
-#         globals()['execution_results'] = {}
-#     execution_results[key] = value
-#     print(f"Stored result '{key}'")
-#     return value
-# """
+
 #         try:
 #             python_tool.run(setup_code)
 #         except Exception as e:

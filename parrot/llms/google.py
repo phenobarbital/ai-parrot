@@ -12,10 +12,13 @@ class GoogleGenAI(AbstractLLM):
     """
     model: str = "gemini-2.0-flash"
     max_tokens: int = 4096
+    top_k: float = 40
+    top_p: float = 1.0
     supported_models: list = [
-        "models/text-bison-001",
-        "models/chat-bison-001",
-        "gemini-pro"
+        "gemini-2.0-flash-exp",
+        "gemini-2.0-flash",
+        "gemini-2.0-flash-lite",
+        "gemini-1.5-flash-001",
     ]
 
     def __init__(self, *args, use_chat: bool = False, **kwargs):
@@ -26,12 +29,16 @@ class GoogleGenAI(AbstractLLM):
             base_llm = ChatGoogleGenerativeAI
         else:
             base_llm = GoogleGenerativeAI
+        args = {
+            "temperature": self.temperature,
+            "api_key": self._api_key,
+            "max_tokens": self.max_tokens,
+            "max_retries": 4,
+            "top_p": self.top_p,
+            "top_k": self.top_k,
+            "verbose": True
+        }
         self._llm = base_llm(
             model=self.model,
-            api_key=self._api_key,
-            temperature=self.temperature,
-            max_tokens=None,
-            timeout=None,
-            max_retries=3,
-            **self.args
+            **args
         )
