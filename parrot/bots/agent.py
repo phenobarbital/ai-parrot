@@ -1,10 +1,9 @@
 from pathlib import Path
-from typing import List, Any, Union
+from typing import List, Union
 import os
 from datetime import datetime, timezone
 from aiohttp import web
 from langchain_core.prompts import (
-    PromptTemplate,
     ChatPromptTemplate
 )
 from langchain_core.retrievers import BaseRetriever
@@ -53,6 +52,7 @@ from ..tools.gvoice import GoogleVoiceTool
 
 os.environ["GRPC_ENABLE_FORK_SUPPORT"] = "0"
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"  # Hide TensorFlow logs if present
+
 
 class BasicAgent(AbstractBot):
     """Represents an Agent in Navigator.

@@ -12,6 +12,8 @@ class AbstractLLM(ABC):
     embed_model: str = None
     max_tokens: int = 2048
     max_retries: int = 2
+    top_k: float = 60
+    top_p: float = 0.90
 
     @classmethod
     def get_supported_models(cls):
@@ -21,9 +23,9 @@ class AbstractLLM(ABC):
         self.model = kwargs.get("model", self.model)
         self.task = kwargs.get("task", "text-generation")
         self.temperature: float = kwargs.get('temperature', 0.1)
-        self.max_tokens: int = kwargs.get('max_tokens', 1024)
-        self.top_k: float = kwargs.get('top_k', 10)
-        self.top_p: float = kwargs.get('top_p', 0.90)
+        self.max_tokens: int = kwargs.get('max_tokens', self.max_tokens)
+        self.top_k: float = kwargs.get('top_k', self.top_k)
+        self.top_p: float = kwargs.get('top_p', self.top_p)
         self.args = {
             "top_p": self.top_p,
             "top_k": self.top_k,
