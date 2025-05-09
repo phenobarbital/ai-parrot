@@ -194,10 +194,25 @@ class AbstractBot(DBInterface, ABC):
         self._default_llm: str = kwargs.get('use_llm', 'vertexai')
         self._use_chat: bool = kwargs.get('use_chat', False)
         self._llm_model = kwargs.get('model_name', 'gemini-1.5-pro')
-        self._llm_temp = kwargs.get('temperature', 0.2)
-        self._llm_top_k = kwargs.get('top_k', 30)
-        self._llm_top_p = kwargs.get('top_p', 0.6)
-        self._llm_config = kwargs.get('model_config', {})
+        self._llm_preset: str = kwargs.get('preset', None)
+        if self._llm_preset:
+            try:
+                presetting = LLM_PRESETS[self._llm_preset]
+            except KeyError:
+                self.logger.warning(
+                    f"Invalid preset: {self._llm_preset}, default to 'analytical'"
+                )
+                presetting = LLM_PRESETS['analytical']
+            self._llm_temp = presetting.get('temperature', 0.2)
+            self._llm_top_k = presetting.get('top_k', 50)
+            self._llm_top_p = presetting.get('top_p', 0.9)
+            self._max_tokens = presetting.get('max_tokens', 4096)
+        else:
+            self._llm_temp = kwargs.get('temperature', 0.2)
+            self._llm_top_k = kwargs.get('top_k', 50)
+            self._llm_top_p = kwargs.get('top_p', 0.9)
+            self._max_tokens = presetting.get('max_tokens', 4096)
+            self._llm_config = kwargs.get('model_config', {})
         if self._llm_config:
             self._llm_model = self._llm_config.pop('model', self._llm_model)
             self._llm_class = self._llm_config.pop('name', None)
@@ -399,6 +414,7 @@ class AbstractBot(DBInterface, ABC):
                 temperature=self._llm_temp,
                 top_k=self._llm_top_k,
                 top_p=self._llm_top_p,
+                max_tokens=self._max_tokens,
                 use_chat=use_chat
             )
             self._llm = self._llm_obj.get_llm()
