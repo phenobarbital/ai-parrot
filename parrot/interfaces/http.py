@@ -386,9 +386,9 @@ class HTTPService:
             )
         async with httpx.AsyncClient(
             cookies=cookies,
-            proxies=proxy_config or None,
             transport=transport,
             headers=headers,
+            proxy=proxy_config or None,
             timeout=timeout,
             # http2=kwargs.pop('use_http2', True),
             follow_redirects=follow_redirects,

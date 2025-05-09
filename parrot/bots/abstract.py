@@ -198,8 +198,8 @@ class AbstractBot(DBInterface, ABC):
         else:
             # Default LLM Presetting by LLMs
             self._llm_temp = kwargs.get('temperature', 0.2)
-            self._max_tokens = presetting.get('max_tokens', 4096)
-        self._llm_top_k = kwargs.get('top_k', 50)
+            self._max_tokens = kwargs.get('max_tokens', 4096)
+        self._llm_top_k = kwargs.get('top_k', 41)
         self._llm_top_p = kwargs.get('top_p', 0.9)
         self._llm_config = kwargs.get('model_config', {})
         if self._llm_config:
@@ -615,8 +615,8 @@ class AbstractBot(DBInterface, ABC):
             'llm_config',
             {
                 "temperature": 0.2,
-                "top_k": 30,
-                "Top_p": 0.6
+                "top_k": 41,
+                "Top_p": 0.9
             }
         )
         if new_llm:
@@ -744,8 +744,8 @@ class AbstractBot(DBInterface, ABC):
                 'llm_config',
                 {
                     "temperature": 0.2,
-                    "top_k": 30,
-                    "Top_p": 0.6
+                    "top_k": 41,
+                    "Top_p": 0.9
                 }
             )
             self.configure_llm(llm=new_llm, config=llm_config)
@@ -973,8 +973,8 @@ class AbstractBot(DBInterface, ABC):
                 'llm_config',
                 {
                     "temperature": 0.2,
-                    "top_k": 30,
-                    "Top_p": 0.6
+                    "top_k": 41,
+                    "Top_p": 0.9
                 }
             )
             self.configure_llm(llm=new_llm, config=llm_config)
