@@ -109,6 +109,17 @@ logging.getLogger("tensorflow").setLevel(logging.CRITICAL)
 logging.getLogger("transformers").setLevel(logging.CRITICAL)
 logging.getLogger("pymilvus").setLevel(logging.INFO)
 
+
+LLM_PRESETS = {
+    "analytical": {"temperature": 0.1, "max_tokens": 4000},
+    "creative": {"temperature": 0.7, "max_tokens": 6000},
+    "balanced": {"temperature": 0.4, "max_tokens": 4000},
+    "concise": {"temperature": 0.2, "max_tokens": 2000},
+    "detailed": {"temperature": 0.3, "max_tokens": 8000},
+    "comprehensive": {"temperature": 0.5, "max_tokens": 10000},
+    "verbose": {"temperature": 0.6, "max_tokens": 12000},
+}
+
 class AbstractBot(DBInterface, ABC):
     """AbstractBot.
 
