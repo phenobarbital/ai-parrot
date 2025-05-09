@@ -22,7 +22,7 @@ set_verbose(True)
 # Initialize the Gemini1.5 Pro model from Vertex AI
 vertex = VertexLLM(
     model="gemini-2.0-flash-001",
-    temperature=0.1,
+    preset='analytical',
     use_chat=True
 )
 
@@ -91,13 +91,13 @@ python_locals = {"df": df}
 python_tool = PythonAstREPLTool(locals=python_locals, verbose=True,)
 
 # Test with VertexAI
-# llm = vertex.get_llm()
+llm = vertex.get_llm()
 
 # # Test with Groq
 # llm = groq.get_llm()
 
 # # Test with Anthropic
-llm = claude.get_llm()
+# llm = claude.get_llm()
 
 # # Test with Google
 # llm = google.get_llm()
