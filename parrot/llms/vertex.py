@@ -34,7 +34,7 @@ class VertexLLM(AbstractLLM):
     model: str = "gemini-1.5-pro"
     max_tokens: int = 8192
     top_k: float = 40
-    top_p: float = 1.0
+    top_p: float = 0.95
     supported_models: list = [
         "gemini-2.5-pro-exp-03-25",
         "gemini-2.5-pro-preview-03-25",
@@ -70,7 +70,7 @@ class VertexLLM(AbstractLLM):
             "top_p": self.top_p,
             # "top_k": self.top_k,
             "verbose": True,
-            "safety_settings": safety_settings
+            # "safety_settings": safety_settings
         }
         if use_chat is True:
             base_llm = ChatVertexAI

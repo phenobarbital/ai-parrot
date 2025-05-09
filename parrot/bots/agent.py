@@ -118,11 +118,11 @@ class BasicAgent(AbstractBot):
             MathTool(),
             GoogleVoiceTool(name="generate_podcast_style_audio_file"),
         ]
-        result_store_tool = ResultStoreTool()
-        get_result_tool = GetResultTool()
-        list_results_tool = ListResultsTool()
+        # result_store_tool = ResultStoreTool()
+        # get_result_tool = GetResultTool()
+        # list_results_tool = ListResultsTool()
         # adding result management:
-        ctools.extend([result_store_tool, get_result_tool, list_results_tool])
+        # ctools.extend([result_store_tool, get_result_tool, list_results_tool])
         if tools:
             ctools.extend(tools)
         return ctools
