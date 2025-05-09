@@ -185,6 +185,8 @@ setup(
             "duckduckgo-search==7.5.0",
             "google-search-results==2.4.2",
             "google-api-python-client>=2.151.0",
+            "mammoth==1.9.0",
+            "markdownify==1.1.0"
         ],
         "vector": [
             "torch>=2.5.1,<=2.6.0",
@@ -217,12 +219,14 @@ setup(
         "openai": [
             "langchain_openai==0.3.16",
             "openai==1.76.2",
-            "llama-index-llms-openai==0.1.11",
+            # "llama-index-llms-openai==0.1.11",
             "tiktoken==0.7.0"
         ],
         "google": [
-            "langchain-google-genai==2.1.4",
-            "langchain-google-vertexai==2.0.21",
+            # "langchain-google-genai==2.1.4",
+            # "langchain-google-vertexai==2.0.21",
+            "langchain-google-genai>=2.1.4",
+            "langchain-google-vertexai>=2.0.10",
             "google-cloud-texttospeech==2.26.0",
             "google-genai>=1.0.0",
             # "vertexai==1.71.1",
