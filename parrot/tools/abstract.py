@@ -7,6 +7,10 @@ from langchain_core.tools import BaseTool
 from navconfig.logging import logging
 
 
+logging.getLogger(name='cookie_store').setLevel(logging.INFO)
+logging.getLogger(name='httpx').setLevel(logging.INFO)
+logging.getLogger(name='httpcore').setLevel(logging.WARNING)
+logging.getLogger(name='primp').setLevel(logging.WARNING)
 
 class AbstractToolArgsSchema(BaseModel):
     """Schema for the arguments to the AbstractTool."""

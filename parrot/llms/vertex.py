@@ -61,14 +61,14 @@ class VertexLLM(AbstractLLM):
         config_file = config.get('GOOGLE_CREDENTIALS_FILE', 'env/google/vertexai.json')
         config_dir = BASE_DIR.joinpath(config_file)
         os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = str(config_dir)
-        self.args = {
+        args = {
             "project": project_id,
             "location": region,
             "temperature": self.temperature,
             "max_tokens": self.max_tokens,
             "max_retries": 4,
             "top_p": self.top_p,
-            "top_k": self.top_k,
+            # "top_k": self.top_k,
             "verbose": True,
             "safety_settings": safety_settings
         }
@@ -78,7 +78,7 @@ class VertexLLM(AbstractLLM):
             base_llm = VertexAI
         self._llm = base_llm(
             model_name=self.model,
-            **self.args
+            **args
         )
         # LLM
         self._version_ = aiplatform.__version__

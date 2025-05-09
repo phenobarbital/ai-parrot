@@ -23,7 +23,7 @@ class AbstractLLM(ABC):
     embed_model: str = None
     max_tokens: int = 2048
     max_retries: int = 2
-    top_k: float = 60
+    top_k: float = 41
     top_p: float = 0.90
 
     @classmethod
