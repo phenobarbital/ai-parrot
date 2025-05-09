@@ -7,10 +7,9 @@ from parrot.bots.data import PandasAgent
 
 async def get_agent(data):
     llm = VertexLLM(
-        model='gemini-pro-2.0',
-        temperature=0,
-        top_k=30,
-        Top_p=0.5,
+        model='gemini-2.0-flash',
+        preset='concise',
+        use_chat=True,
     )
     agent = PandasAgent(
         name='PandasAgent',
@@ -42,4 +41,3 @@ if __name__ == '__main__':
         agent.invoke(prompt)
     )
     print(answer)
-    # answer, response = agent.invoke("What is the capital of France and calculate 5 * 7.")
