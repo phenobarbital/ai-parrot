@@ -1,5 +1,6 @@
 from typing import Dict, Any, Optional, Union
 from datetime import datetime
+import pandas as pd
 import json
 from langchain_core.tools import BaseTool
 from langchain_core.callbacks.manager import CallbackManagerForToolRun
@@ -151,3 +152,127 @@ class ListResultsTool(BaseTool):
             return "No results have been stored yet."
 
         return results
+
+
+class DataFrameStoreTool(BaseTool):
+    """Tool specifically for storing and retrieving pandas DataFrames."""
+    name: str = "store_dataframe"
+    description: str = """
+    Store a pandas DataFrame for later use or reference.
+
+    Args:
+        key (str): A unique identifier for the stored DataFrame
+        df_variable (str): The variable name of the DataFrame to store
+        description (str, optional): A brief description of what this DataFrame contains
+
+    Returns:
+        str: Confirmation message indicating the DataFrame was stored
+    """
+
+    # Storage for DataFrames, shared across all instances
+    _df_storage: Dict[str, Dict[str, Any]] = {}
+
+    def __init__(self, df_locals: Dict[str, Any]):
+        """Initialize with access to the locals dictionary."""
+        super().__init__()
+        self.df_locals = df_locals
+
+    def _run(
+        self,
+        key: str,
+        df_variable: str,
+        description: Optional[str] = None,
+        run_manager: Optional[CallbackManagerForToolRun] = None,
+    ) -> str:
+        """Store a DataFrame with the given key."""
+        try:
+            # Check if the variable exists in df_locals
+            if df_variable not in self.df_locals:
+                return f"Error: DataFrame '{df_variable}' not found in available variables."
+
+            df = self.df_locals[df_variable]
+
+            # Verify it's actually a DataFrame
+            if not str(type(df)).endswith("'pandas.core.frame.DataFrame'>"):
+                return f"Error: '{df_variable}' is not a pandas DataFrame, it's a {type(df).__name__}."
+
+            # Store the actual DataFrame (not just a representation)
+            self._df_storage[key] = {
+                "dataframe": df.copy(),  # Store a copy to avoid mutation
+                "description": description,
+                "timestamp": import_time().strftime("%Y-%m-%d %H:%M:%S"),
+                "shape": df.shape,
+                "columns": df.columns.tolist()
+            }
+
+            # Add a reference to the df_locals so it can be accessed in Python code
+            self.df_locals[f"stored_df_{key}"] = df.copy()
+
+            return f"Successfully stored DataFrame '{key}' with shape {df.shape}"
+
+        except Exception as e:
+            return f"Error storing DataFrame: {str(e)}"
+
+    @classmethod
+    def get_dataframe(cls, key: str) -> Union[pd.DataFrame, None]:
+        """Retrieve a stored DataFrame."""
+        if key in cls._df_storage:
+            return cls._df_storage[key]["dataframe"]
+        return None
+
+    @classmethod
+    def list_dataframes(cls) -> Dict[str, Dict[str, Any]]:
+        """List all stored DataFrames with their metadata."""
+        return {
+            k: {
+                "description": v.get("description", "No description provided"),
+                "timestamp": v.get("timestamp", "Unknown"),
+                "shape": v.get("shape", "Unknown"),
+                "columns": v.get("columns", [])
+            }
+            for k, v in cls._df_storage.items()
+        }
+
+class GetDataFrameTool(BaseTool):
+    """Tool for retrieving stored DataFrames."""
+    name: str = "get_dataframe"
+    description: str = """
+    Retrieve a previously stored DataFrame by its key.
+
+    Args:
+        key (str): The unique identifier of the stored DataFrame
+        target_variable (str, optional): If provided, store the retrieved DataFrame in this variable
+
+    Returns:
+        str: Information about the retrieved DataFrame
+    """
+
+    def __init__(self, df_locals: Dict[str, Any]):
+        """Initialize with access to the locals dictionary."""
+        super().__init__()
+        self.df_locals = df_locals
+
+    def _run(
+        self,
+        key: str,
+        target_variable: Optional[str] = None,
+        run_manager: Optional[CallbackManagerForToolRun] = None,
+    ) -> str:
+        """Retrieve a DataFrame with the given key."""
+        df = DataFrameStoreTool.get_dataframe(key)
+
+        if df is None:
+            available_keys = list(DataFrameStoreTool._df_storage.keys())
+            return f"Error: No DataFrame found with key '{key}'. Available DataFrame keys: {available_keys}"
+
+        # If a target variable is specified, store the DataFrame there
+        if target_variable:
+            self.df_locals[target_variable] = df
+            return f"Retrieved DataFrame '{key}' and stored in variable '{target_variable}' with shape {df.shape}"
+        else:
+            # Otherwise, use a default variable name
+            default_var = f"retrieved_df_{key}"
+            self.df_locals[default_var] = df
+            return (
+                f"Retrieved DataFrame '{key}' with shape {df.shape}. "
+            )
