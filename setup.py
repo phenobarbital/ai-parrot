@@ -185,8 +185,29 @@ setup(
             "duckduckgo-search==7.5.0",
             "google-search-results==2.4.2",
             "google-api-python-client>=2.151.0",
-            "mammoth==1.9.0",
-            "markdownify==1.1.0"
+        ],
+        "loaders": [
+            # Loaders:
+            "mammoth==1.8.0",
+            "markdownify==1.1.0",
+            "python-docx==1.1.2",
+            "pymupdf==1.25.5",
+            "pymupdf4llm==0.0.22",
+            "pdf4llm==0.0.22",
+            "langchain-huggingface==0.1.2",
+        ],
+        "images": [
+            # Image Analytics
+            "torchvision==0.21.0",
+            "timm==1.0.15",  # image-processor
+            "ultralytics==8.3.121",  # image-processor
+            "albumentations==2.0.6",
+            # Feature-extraction:
+            "filetype==1.2.0",
+            "imagehash==4.3.1",
+            "pgvector==0.3.6",
+            "pyheif==0.8.0",
+            "exif==1.6.1",
         ],
         "vector": [
             "torch>=2.5.1,<=2.6.0",
@@ -202,7 +223,6 @@ setup(
             "transformers>=4.44.2,<=4.51.2",
             "sentence-transformers==4.0.2",
             "tokenizers==0.20.1",
-            "torchvision==0.20.1",
             "tensorflow==2.18.0",
             "tf-keras==2.18.0",
             "simsimd==4.3.1",
@@ -261,10 +281,6 @@ setup(
             "gradio_tools==0.0.9",
             "gradio-client==0.2.9",
             "streamlit==1.37.1",
-            # "timm==0.9.16", # image-processor
-            # "ultralytics==8.2.4", # image-processor
-            # "albumentations-1.4.4",
-            # "yolov8-0.0.2"
         ]
     },
     tests_require=[
