@@ -185,6 +185,9 @@ setup(
             "duckduckgo-search==7.5.0",
             "google-search-results==2.4.2",
             "google-api-python-client>=2.151.0",
+            "pomegranate==1.1.0",
+            "autoviz==0.1.905",
+            "spacy==3.8.5"
         ],
         "loaders": [
             # Loaders:
@@ -225,7 +228,7 @@ setup(
             "tokenizers==0.20.1",
             "tensorflow==2.18.0",
             "tf-keras==2.18.0",
-            "simsimd==4.3.1",
+            "simsimd>=4.3.1",
             "opencv-python==4.10.0.84",
             "langchain_chroma==0.2.2",
             "chromadb==0.6.3",
