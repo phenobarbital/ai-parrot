@@ -75,7 +75,7 @@ class VertexLLM(AbstractLLM):
             # "top_k": self.top_k,
             "verbose": True,
             "credentials": vertex_credentials,
-            "safety_settings": safety_settings
+            # "safety_settings": safety_settings
         }
         if use_chat is True:
             base_llm = ChatVertexAI
