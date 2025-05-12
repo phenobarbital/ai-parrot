@@ -15,9 +15,9 @@ install:
 	# pip install --upgrade querysource[analytics]
 	pip install --upgrade querysource
 	# and Parrot:
-	pip install -e .[google,milvus,groq,agents,vector]
+	pip install -e .[google,milvus,groq,agents,vector,images,loaders,openai,anthropic,google]
 	# (google requirement)
-	pip install pydantic==2.9.2
+	# pip install pydantic==2.9.2
 	# avoid warning of google-gemini:
 	# pip install grpcio==1.67.1
 	# fix version of httpx:

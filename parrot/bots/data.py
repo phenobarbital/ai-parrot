@@ -1,5 +1,6 @@
 from pathlib import Path
 from typing import Any, List, Dict, Union, Optional
+import re
 from datetime import datetime, timezone, timedelta
 from string import Template
 import redis.asyncio as aioredis
@@ -28,9 +29,9 @@ from .prompts.data import (
 )
 
 ## Enable Debug:
-# from langchain.globals import set_debug, set_verbose
+from langchain.globals import set_debug, set_verbose
 
-# # Enable verbosity for debugging
+# Enable verbosity for debugging
 # set_debug(True)
 # set_verbose(True)
 
@@ -145,8 +146,9 @@ class PandasAgent(BasicAgent):
             verbose=True,
             agent_type=self.agent_type,
             allow_dangerous_code=True,
-            prefix=self._prompt_prefix,
+            # prefix=self._prompt_prefix,
             max_iterations=10,
+            extra_tools=self.tools,
             agent_executor_kwargs={"memory": self.memory, "handle_parsing_errors": True},
             return_intermediate_steps=True,
             **kwargs
@@ -273,6 +275,26 @@ class PandasAgent(BasicAgent):
         except Exception as e:
             return None, e
         try:
+            # Parse tool outputs if present
+            try:
+                if isinstance(result, dict):
+                    output = result.get('output', '')
+                    if '```tool_outputs' in output:
+                        tool_json_match = re.search(r'```tool_outputs\n(.*?)\n```', output, re.DOTALL)
+                        if tool_json_match:
+                            tool_json = tool_json_match.group(1)
+                            # Parse the JSON
+                            tool_data = json_decoder(tool_json)
+                            # Get the actual content
+                            if "python_repl_ast_response" in tool_data:
+                                python_response = tool_data["python_repl_ast_response"]
+                                if isinstance(python_response, dict) and "content" in python_response:
+                                    # Replace the output with just the content
+                                    result['output'] = python_response["content"].strip()
+            except Exception as parse_error:
+                self.logger.error(
+                    f"Error parsing tool output: {parse_error}"
+                )
             response = AgentResponse(question=query, **result)
             # check if return is a file:
             try:
@@ -300,24 +322,46 @@ class PandasAgent(BasicAgent):
     def _configure_python_tool(self, df_locals: dict, **kwargs) -> PythonAstREPLTool:
         """Configure the Python tool."""
         # Create the Python tool with the given locals and globals
-        self.df_locals['execution_results'] = {}
+        df_locals['execution_results'] = {}
         # Create the Python REPL tool
+        PythonAstREPLTool_init = PythonAstREPLTool.__init__
+
+        def PythonAstREPLTool_init_wrapper(self, *args, **kwargs):
+            PythonAstREPLTool_init(self, *args, **kwargs)
+            self.globals = self.locals
+
+        PythonAstREPLTool.__init__ = PythonAstREPLTool_init_wrapper
         python_tool = PythonAstREPLTool(
-            locals=self.df_locals,
+            locals=df_locals,
             globals=kwargs.get('globals', {}),
             verbose=True,
             **kwargs
         )
-#         # Add EDA functions to the tool's locals
-#         setup_code = """
-#         from parrot.bots.tools import quick_eda, generate_eda_report, list_available_dataframes, create_plot, generate_pdf_from_html
 
-#         try:
-#             python_tool.run(setup_code)
-#         except Exception as e:
-#             self.logger.error(
-#                 f"Error setting up python tool: {e}"
-#             )
+        # Add essential library imports and helper functions
+        setup_code = """
+# Ensure essential libraries are imported
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from collections import Counter, defaultdict
+from parrot.bots.tools import quick_eda, generate_eda_report, list_available_dataframes, create_plot, generate_pdf_from_html
+
+# Set plotting style
+plt.style.use('seaborn-v0_8-whitegrid')
+sns.set_palette('Set2')
+
+# Verify pandas is loaded correctly
+print(f"Pandas version: {pd.__version__}")
+"""
+        try:
+            python_tool.run(setup_code)
+        except Exception as e:
+            self.logger.error(
+                f"Error setting up python tool: {e}"
+            )
+        print(':: PYTHON TOOL > ', python_tool)
         return python_tool
 
     def _metrics_guide(self, df_key: str, df_name: str, columns: list) -> str:
@@ -347,9 +391,6 @@ class PandasAgent(BasicAgent):
         self.agent_report_dir = self._static_path.joinpath(str(self.chatbot_id))
         if self.agent_report_dir.exists() is False:
             self.agent_report_dir.mkdir(parents=True, exist_ok=True)
-        # Word Tool:
-        docx_tool = DocxGeneratorTool(output_dir=self.agent_report_dir)
-        self.tools.append(docx_tool)
         # Add dataframe information
         num_dfs = len(self.df)
         self.df_locals['agent_report_dir'] = self.agent_report_dir
@@ -370,11 +411,18 @@ class PandasAgent(BasicAgent):
             if self.agent_type == "tool-calling":
                 df_info += f"""
                 ## Dataframe Name: {df_key}:
-                Note: {df_key} is also available as {df_name}
+                ## DataFrame: {df_key} (also accessible as {df_name} in Python code)
 
-                ### This is the result of `print(df.head())` of {df_key}:
+                **Shape {df_key}**: {df_shape}
+
+                **Column Details (Name, Type, Category)**:
+                {df_columns}
+
+                **First 4 Rows (`print({df_key}.head(4).to_markdown())`)**:
                 {df_head}
 
+                **Summary Statistics (`print({df_key}.describe(include='all').to_markdown())`)**:
+                {summary_stats}
                 """
             else:
                 df_info += f"""

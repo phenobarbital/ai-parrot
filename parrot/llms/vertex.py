@@ -1,6 +1,7 @@
 import os
 from navconfig import config, BASE_DIR
 from google.cloud import aiplatform
+from google.oauth2 import service_account
 from vertexai.preview.vision_models import ImageGenerationModel
 from langchain_google_vertexai import (
     ChatVertexAI,
@@ -60,7 +61,10 @@ class VertexLLM(AbstractLLM):
         region = config.get("VERTEX_REGION")
         config_file = config.get('GOOGLE_CREDENTIALS_FILE', 'env/google/vertexai.json')
         config_dir = BASE_DIR.joinpath(config_file)
-        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = str(config_dir)
+        vertex_credentials = service_account.Credentials.from_service_account_file(
+            str(config_dir)
+        )
+        # os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = str(config_dir)
         args = {
             "project": project_id,
             "location": region,
@@ -70,6 +74,7 @@ class VertexLLM(AbstractLLM):
             "top_p": self.top_p,
             # "top_k": self.top_k,
             "verbose": True,
+            "credentials": vertex_credentials,
             # "safety_settings": safety_settings
         }
         if use_chat is True:

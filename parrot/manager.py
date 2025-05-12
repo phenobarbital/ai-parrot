@@ -6,6 +6,7 @@ Tool for instanciate, managing and interacting with Chatbot through APIs.
 from typing import Any, Dict, Type
 from importlib import import_module
 from aiohttp import web
+from datamodel.exceptions import ValidationError
 from navconfig.logging import logging
 from asyncdb.exceptions import NoDataFound
 from .bots.abstract import AbstractBot
@@ -100,9 +101,13 @@ class BotManager:
                         await chatbot.configure(
                             app=app
                         )
+                    except ValidationError as e:
+                        self.logger.error(
+                            f"Invalid configuration for chatbot '{chatbot.name}': {e}"
+                        )
                     except Exception as e:
                         self.logger.error(
-                            f"Failed to configure chatbot '{chatbot.name}': {e}"
+                            f"Failed to configure Bot '{chatbot.name}': {e}"
                         )
                 elif bot.bot_type == 'agent':
                     self.logger.notice(
