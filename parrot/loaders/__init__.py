@@ -5,4 +5,5 @@
 # Loaders.
 # Open, extract and load data from different sources.
 #####
+from langchain.docstore.document import Document
 from .abstract import AbstractLoader
