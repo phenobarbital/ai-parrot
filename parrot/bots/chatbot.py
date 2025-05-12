@@ -6,6 +6,7 @@ from pathlib import Path, PurePath
 import uuid
 from aiohttp import web
 # Navconfig
+from datamodel.exceptions import ValidationError
 from navconfig import BASE_DIR
 from navconfig.exceptions import ConfigError  # pylint: disable=E0611
 from asyncdb.exceptions import NoDataFound
@@ -149,6 +150,14 @@ class Chatbot(AbstractBot):
                             bot = await ChatbotModel.get(name=self.name)
                     else:
                         bot = await ChatbotModel.get(name=self.name)
+                except ValidationError as ex:
+                    # Handle ValidationError
+                    self.logger.error(
+                        f"Validation error: {ex}"
+                    )
+                    raise ConfigError(
+                        f"Chatbot {self.name} with errors: {ex.payload()}."
+                    )
                 except NoDataFound:
                     # Fallback to File configuration:
                     raise ConfigError(

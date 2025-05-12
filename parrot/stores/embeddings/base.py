@@ -22,19 +22,24 @@ class BaseEmbed(AbstractEmbed):
         if device_type is not None:
             return torch.device(device_type)
         if torch.cuda.is_available():
+            if CUDA_DEFAULT_DEVICE == 'cpu':
+                # Use CPU even if CUDA is available
+                return torch.device('cpu')
+            if cuda_number is not None:
+                # Use specified CUDA GPU
+                return torch.device(f'cuda:{cuda_number}')
             # Use CUDA GPU if available
             if cuda_number is None:
-                cuda_number = CUDA_DEFAULT_DEVICE
-            return torch.device(f'cuda:{cuda_number}')
+                return torch.device(f'cuda:0')
         if torch.backends.mps.is_available():
             # Use CUDA Multi-Processing Service if available
             return torch.device("mps")
         if EMBEDDING_DEVICE == 'cuda':
-            if cuda_number is None:
+            if cuda_number is None and CUDA_DEFAULT_DEVICE != 'cpu':
+                # Use CUDA GPU if available
                 cuda_number = CUDA_DEFAULT_DEVICE
-            return torch.device(f'cuda:{cuda_number}')
-        else:
-            return torch.device(EMBEDDING_DEVICE)
+                return torch.device(f'cuda:{cuda_number}')
+        return torch.device(EMBEDDING_DEVICE)
 
     def free(self):
         """

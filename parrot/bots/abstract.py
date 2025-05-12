@@ -7,6 +7,7 @@ from typing import Any, List, Union, Optional
 from collections.abc import Callable
 import os
 import uuid
+from string import Template
 import asyncio
 from aiohttp import web
 from langgraph.checkpoint.memory import MemorySaver
@@ -34,15 +35,14 @@ from langchain_community.chat_message_histories import (
 )
 from langchain_community.retrievers import BM25Retriever
 # for exponential backoff
-from tenacity import (
-    retry,
-    stop_after_attempt,
-    wait_random_exponential,
-)  # for exponential backoff
-from datamodel.exceptions import ValidationError  # pylint: disable=E0611
+from pydantic_core._pydantic_core import ValidationError
+
+import backoff # for exponential backoff
+from datamodel.exceptions import ValidationError as DataError  # pylint: disable=E0611
 from navconfig.logging import logging
 from navigator_auth.conf import AUTH_SESSION_OBJECT
 from ..interfaces import DBInterface
+from ..exceptions import ConfigError
 from ..conf import (
     REDIS_HISTORY_URL,
     EMBEDDING_DEFAULT_MODEL
@@ -108,6 +108,11 @@ logging.getLogger("grpc").setLevel(logging.CRITICAL)
 logging.getLogger("tensorflow").setLevel(logging.CRITICAL)
 logging.getLogger("transformers").setLevel(logging.CRITICAL)
 logging.getLogger("pymilvus").setLevel(logging.INFO)
+
+
+def predicate(exception):
+    """Return True if we should retry, False otherwise."""
+    return not isinstance(exception, (ValidationError, RuntimeError, DataError))
 
 
 class AbstractBot(DBInterface, ABC):
@@ -324,7 +329,13 @@ class AbstractBot(DBInterface, ABC):
         self._llm_obj = model
         self._llm = model.get_llm()
 
-    @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(6))
+    @backoff.on_exception(
+        backoff.expo,
+        Exception,
+        max_tries=3,
+        max_time=60,
+        giveup=lambda e: not predicate(e)  # Don't retry if predicate returns False
+    )
     def llm_chain(
         self,
         llm: str = "vertexai",
@@ -340,26 +351,29 @@ class AbstractBot(DBInterface, ABC):
             AbstractLLM: The language model to use.
 
         """
-        if llm == 'openai' and OPENAI_ENABLED:
-            mdl = OpenAILLM(model=model or "gpt-4.1", **kwargs)
-        elif llm in ('vertexai', 'VertexLLM') and VERTEX_ENABLED:
-            mdl = VertexLLM(model=model or "gemini-1.5-pro", **kwargs)
-        elif llm == 'anthropic' and ANTHROPIC_ENABLED:
-            mdl = AnthropicLLM(model=model or 'claude-3-5-sonnet-20240620', **kwargs)
-        elif llm in ('groq', 'Groq') and GROQ_ENABLED:
-            mdl = GroqLLM(model=model or "meta-llama/llama-4-maverick-17b-128e-instruct", **kwargs)
-        elif llm == 'llama3' and GROQ_ENABLED:
-            mdl = GroqLLM(model=model or "llama-3.3-70b-versatile", **kwargs)
-        elif llm == 'gemma' and GROQ_ENABLED:
-            mdl = GroqLLM(model=model or "gemma2-9b-it", **kwargs)
-        elif llm == 'mistral' and GROQ_ENABLED:
-            mdl = GroqLLM(model=model or "mistral-saba-24b", **kwargs)
-        elif llm == 'google' and GOOGLE_ENABLED:
-            mdl = GoogleGenAI(model=model or "models/gemini-2.5-pro-preview-03-25", **kwargs)
-        else:
-            raise ValueError(f"Invalid llm: {llm}")
-        # get the LLM:
-        return mdl
+        try:
+            if llm == 'openai' and OPENAI_ENABLED:
+                mdl = OpenAILLM(model=model or "gpt-4.1", **kwargs)
+            elif llm in ('vertexai', 'VertexLLM') and VERTEX_ENABLED:
+                mdl = VertexLLM(model=model or "gemini-1.5-pro", **kwargs)
+            elif llm == 'anthropic' and ANTHROPIC_ENABLED:
+                mdl = AnthropicLLM(model=model or 'claude-3-5-sonnet-20240620', **kwargs)
+            elif llm in ('groq', 'Groq') and GROQ_ENABLED:
+                mdl = GroqLLM(model=model or "meta-llama/llama-4-maverick-17b-128e-instruct", **kwargs)
+            elif llm == 'llama3' and GROQ_ENABLED:
+                mdl = GroqLLM(model=model or "llama-3.3-70b-versatile", **kwargs)
+            elif llm == 'gemma' and GROQ_ENABLED:
+                mdl = GroqLLM(model=model or "gemma2-9b-it", **kwargs)
+            elif llm == 'mistral' and GROQ_ENABLED:
+                mdl = GroqLLM(model=model or "mistral-saba-24b", **kwargs)
+            elif llm == 'google' and GOOGLE_ENABLED:
+                mdl = GoogleGenAI(model=model or "models/gemini-2.5-pro-preview-03-25", **kwargs)
+            else:
+                raise ValueError(f"Invalid llm: {llm}")
+            # get the LLM:
+            return mdl
+        except Exception:
+            raise
 
     def configure_llm(
         self,
@@ -397,15 +411,23 @@ class AbstractBot(DBInterface, ABC):
         else:
             # TODO: Calling a Default LLM
             # TODO: passing the default configuration
-            self._llm_obj = self.llm_chain(
-                llm=self._default_llm,
-                model=self._llm_model,
-                temperature=self._llm_temp,
-                top_k=self._llm_top_k,
-                top_p=self._llm_top_p,
-                max_tokens=self._max_tokens,
-                use_chat=use_chat
-            )
+            try:
+                self._llm_obj = self.llm_chain(
+                    llm=self._default_llm,
+                    model=self._llm_model,
+                    temperature=self._llm_temp,
+                    top_k=self._llm_top_k,
+                    top_p=self._llm_top_p,
+                    max_tokens=self._max_tokens,
+                    use_chat=use_chat
+                )
+            except Exception as e:
+                self.logger.error(
+                    f"Error configuring Default LLM {self._llm_model}: {e}"
+                )
+                raise ConfigError(
+                    f"Error configuring Default LLM {self._llm_model}: {e}"
+                )
             self._llm = self._llm_obj.get_llm()
 
     def create_kb(self, documents: list):
@@ -477,12 +499,31 @@ class AbstractBot(DBInterface, ABC):
         if self.app:
             self.app[f"{self.name.lower()}_bot"] = self
         # Configure LLM:
-        self.configure_llm()
+        try:
+            self.configure_llm()
+        except Exception as e:
+            self.logger.error(
+                f"Error configuring LLM: {e}"
+            )
+            raise
         # And define Prompt:
-        self._define_prompt()
+        try:
+            self._define_prompt()
+        except Exception as e:
+            self.logger.error(
+                f"Error defining prompt: {e}"
+            )
+            raise
         # Configure VectorStore if enabled:
         if self._use_vector:
-            self.configure_store()
+            try:
+                self.configure_store()
+            except Exception as e:
+                self.logger.error(
+                    f"Error configuring VectorStore: {e}"
+                )
+                raise
+
 
     def _get_database_store(self, store: dict) -> AbstractStore:
         name = store.get('name', 'milvus')
@@ -952,6 +993,17 @@ class AbstractBot(DBInterface, ABC):
         raise web.HTTPUnauthorized(
             reason=f"User {user.username} is not Unauthorized"
         )
+
+    async def shutdown(self, **kwargs) -> None:
+        """
+        Shutdown.
+
+        Optional shutdown method to clean up resources.
+        This method can be overridden in subclasses to perform any necessary cleanup tasks,
+        such as closing database connections, releasing resources, etc.
+        Args:
+            **kwargs: Additional keyword arguments.
+        """
 
     async def invoke(
         self,

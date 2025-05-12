@@ -17,7 +17,9 @@ class FilePlugin(ABC):
 
         :param image: Path to the image file.
         """
-        self.logger = logging.getLogger(f'parrot.FileLoader.{self.__class__.__name__}')
+        self.logger = logging.getLogger(
+            f'parrot.FileLoader.{self.__class__.__name__}'
+        )
 
     async def __aenter__(self):
         if hasattr(self, "open"):

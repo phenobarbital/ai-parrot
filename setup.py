@@ -185,6 +185,32 @@ setup(
             "duckduckgo-search==7.5.0",
             "google-search-results==2.4.2",
             "google-api-python-client>=2.151.0",
+            "pomegranate==1.1.0",
+            "autoviz==0.1.905",
+            "spacy==3.8.5"
+        ],
+        "loaders": [
+            # Loaders:
+            "mammoth==1.8.0",
+            "markdownify==1.1.0",
+            "python-docx==1.1.2",
+            "pymupdf==1.25.5",
+            "pymupdf4llm==0.0.22",
+            "pdf4llm==0.0.22",
+            "langchain-huggingface==0.1.2",
+        ],
+        "images": [
+            # Image Analytics
+            "torchvision==0.21.0",
+            "timm==1.0.15",  # image-processor
+            "ultralytics==8.3.121",  # image-processor
+            "albumentations==2.0.6",
+            # Feature-extraction:
+            "filetype==1.2.0",
+            "imagehash==4.3.1",
+            "pgvector==0.3.6",
+            "pyheif==0.8.0",
+            "exif==1.6.1",
         ],
         "vector": [
             "torch>=2.5.1,<=2.6.0",
@@ -200,10 +226,9 @@ setup(
             "transformers>=4.44.2,<=4.51.2",
             "sentence-transformers==4.0.2",
             "tokenizers==0.20.1",
-            "torchvision==0.20.1",
             "tensorflow==2.18.0",
             "tf-keras==2.18.0",
-            "simsimd==4.3.1",
+            "simsimd>=4.3.1",
             "opencv-python==4.10.0.84",
             "langchain_chroma==0.2.2",
             "chromadb==0.6.3",
@@ -217,12 +242,14 @@ setup(
         "openai": [
             "langchain_openai==0.3.16",
             "openai==1.76.2",
-            "llama-index-llms-openai==0.1.11",
+            # "llama-index-llms-openai==0.1.11",
             "tiktoken==0.7.0"
         ],
         "google": [
-            "langchain-google-genai==2.1.4",
-            "langchain-google-vertexai==2.0.21",
+            # "langchain-google-genai==2.1.4",
+            # "langchain-google-vertexai==2.0.21",
+            "langchain-google-genai>=2.1.4",
+            "langchain-google-vertexai>=2.0.10",
             "google-cloud-texttospeech==2.26.0",
             "google-genai>=1.0.0",
             # "vertexai==1.71.1",
@@ -257,10 +284,6 @@ setup(
             "gradio_tools==0.0.9",
             "gradio-client==0.2.9",
             "streamlit==1.37.1",
-            # "timm==0.9.16", # image-processor
-            # "ultralytics==8.2.4", # image-processor
-            # "albumentations-1.4.4",
-            # "yolov8-0.0.2"
         ]
     },
     tests_require=[
