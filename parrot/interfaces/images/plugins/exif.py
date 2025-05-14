@@ -3,11 +3,15 @@ from typing import Any, Dict, Optional
 import re
 import struct
 from io import BytesIO
-from PIL import Image
-from PIL.ExifTags import TAGS, GPSTAGS
+from PIL import Image, ExifTags
+from PIL.ExifTags import TAGS, GPSTAGS, IFD
 from PIL import TiffImagePlugin
 from PIL.TiffImagePlugin import IFDRational
+from pillow_heif import register_heif_opener
 from .abstract import ImagePlugin
+
+
+register_heif_opener()  # ADD HEIF support
 
 
 def _json_safe(obj):
@@ -299,22 +303,36 @@ class EXIFPlugin(ImagePlugin):
         try:
             exif = {}
 
-            if hasattr(image, '_getexif'):
+            if hasattr(image, 'getexif'):
                 # For JPEG and some other formats that support _getexif()
-                exif_data = image._getexif()
+                exif_data = image.getexif()
                 if exif_data:
                     gps_info = {}
                     for tag, value in exif_data.items():
-                        # Convert EXIF data to a readable format
-                        decoded = TAGS.get(tag, tag)
-                        if decoded == "GPSInfo":
-                            for t in value:
-                                sub_decoded = GPSTAGS.get(t, t)
-                                gps_info[sub_decoded] = value[t]
-                            exif["GPSInfo"] = gps_info
-                        else:
+                        if tag in ExifTags.TAGS:
+                            print(f'{ExifTags.TAGS[tag]}:{value}')
+                            decoded = TAGS.get(tag, tag)
+                            # Convert EXIF data to a readable format
                             exif[decoded] = _make_serialisable(value)
-
+                            if decoded == "GPSInfo":
+                                for t in value:
+                                    sub_decoded = GPSTAGS.get(t, t)
+                                    gps_info[sub_decoded] = value[t]
+                                exif["GPSInfo"] = gps_info
+                        for ifd_id in IFD:
+                            print('>>>>>>>>>', ifd_id.name, '<<<<<<<<<<')
+                            try:
+                                ifd = exif_data.get_ifd(ifd_id)
+                                if ifd_id == IFD.GPSInfo:
+                                    resolve = GPSTAGS
+                                else:
+                                    resolve = TAGS
+                                for k, v in ifd.items():
+                                    tag = resolve.get(k, k)
+                                    print(tag, v)
+                                    exif[tag] = _make_serialisable(v)
+                            except KeyError:
+                                pass
             elif hasattr(image, 'tag') and hasattr(image, 'tag_v2'):
                 # For TIFF images which store data in tag and tag_v2 attributes
                 # Extract from tag_v2 first (more detailed)

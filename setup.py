@@ -211,6 +211,8 @@ setup(
             "pgvector==0.3.6",
             "pyheif==0.8.0",
             "exif==1.6.1",
+            "pillow-avif-plugin==1.5.2",
+            "pillow-heif==0.22.0",
         ],
         "vector": [
             "torch>=2.5.1,<=2.6.0",
