@@ -213,6 +213,8 @@ setup(
             "exif==1.6.1",
             "pillow-avif-plugin==1.5.2",
             "pillow-heif==0.22.0",
+            "python-xmp-toolkit==2.0.2",
+            "exifread==3.3.1"
         ],
         "vector": [
             "torch>=2.5.1,<=2.6.0",
