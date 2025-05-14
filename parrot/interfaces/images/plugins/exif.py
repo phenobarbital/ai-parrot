@@ -3,11 +3,16 @@ from typing import Any, Dict, Optional
 import re
 import struct
 from io import BytesIO
-from PIL import Image
-from PIL.ExifTags import TAGS, GPSTAGS
+from PIL import Image, ExifTags, PngImagePlugin
+from PIL.ExifTags import TAGS, GPSTAGS, IFD
 from PIL import TiffImagePlugin
 from PIL.TiffImagePlugin import IFDRational
+from libxmp import XMPFiles, consts
+from pillow_heif import register_heif_opener
 from .abstract import ImagePlugin
+
+
+register_heif_opener()  # ADD HEIF support
 
 
 def _json_safe(obj):
@@ -39,6 +44,29 @@ def _make_serialisable(val):
     if isinstance(val, bytes):
         return val.decode(errors="replace")
     return val
+
+def get_xmp_modify_date(image, path: Optional[str] = None) -> str | None:
+    # 1) Try to grab the raw XMP packet from the JPEG APP1 segment
+    raw_xmp = image.info.get("XML:com.adobe.xmp")
+    if raw_xmp:
+        # 2) Feed it to XMPFiles via a buffer
+        xmpfile = XMPFiles(buffer=raw_xmp)
+    else:
+        # fallback: let XMPFiles pull directly from the file
+        # xmpfile = XMPFiles(file_path=path)
+        return None
+
+    xmp = xmpfile.get_xmp()
+    if not xmp:
+        return None
+
+    # 3) Common XMP namespaces & properties for modification history:
+    #    - consts.XMP_NS_XMP / "ModifyDate"
+    modify = xmp.get_property(consts.XMP_NS_XMP, "ModifyDate")
+
+    xmpfile.close_file()
+
+    return modify
 
 
 class EXIFPlugin(ImagePlugin):
@@ -114,6 +142,232 @@ class EXIFPlugin(ImagePlugin):
             "latitude": latitude,
             "longitude": longitude
         }
+
+    async def extract_iptc_data(self, image) -> dict:
+        """
+        Extract IPTC metadata from an image.
+
+        Args:
+            image: The PIL Image object.
+        Returns:
+            Dictionary of IPTC data or empty dict if no IPTC data exists.
+        """
+        try:
+            iptc_data = {}
+
+            # Try to get IPTC data from image.info
+            if 'photoshop' in image.info:
+                photoshop = image.info['photoshop']
+                # Extract IPTC information from photoshop data
+                iptc_data = self._parse_photoshop_data(photoshop)
+
+            # Try alternate keys for IPTC data in image.info
+            elif 'iptc' in image.info:
+                iptc = image.info['iptc']
+                if isinstance(iptc, bytes):
+                    iptc_records = self._parse_iptc_data(iptc)
+                    iptc_data.update(iptc_records)
+                elif isinstance(iptc, dict):
+                    iptc_data.update(iptc)
+
+            # Check for IPTCDigest directly
+            if 'IPTCDigest' in image.info:
+                iptc_data['IPTCDigest'] = image.info['IPTCDigest']
+
+            # For JPEG images, try to get IPTC from APP13 segment directly
+            if not iptc_data and hasattr(image, 'applist'):
+                for segment, content in image.applist:
+                    if segment == 'APP13' and b'Photoshop 3.0' in content:
+                        iptc_data = self._parse_photoshop_data(content)
+                        break
+
+            # For TIFF, check for IPTC data in specific tags
+            if not iptc_data and hasattr(image, 'tag_v2'):
+                # 33723 is the IPTC tag in TIFF
+                if 33723 in image.tag_v2:
+                    iptc_raw = image.tag_v2[33723]
+                    if isinstance(iptc_raw, bytes):
+                        iptc_records = self._parse_iptc_data(iptc_raw)
+                        iptc_data.update(iptc_records)
+
+                # Check for additional IPTC-related tags in TIFF
+                iptc_related_tags = [700, 33723, 34377]  # Various tags that might contain IPTC data
+                for tag in iptc_related_tags:
+                    if tag in image.tag_v2:
+                        tag_name = TAGS.get(tag, f"Tag_{tag}")
+                        iptc_data[tag_name] = _make_serialisable(image.tag_v2[tag])
+
+            # For PNG, try to get iTXt or tEXt chunks that might contain IPTC
+            if not iptc_data and hasattr(image, 'text'):
+                for key, value in image.text.items():
+                    if key.startswith('IPTC') or key == 'XML:com.adobe.xmp':
+                        iptc_data[key] = value
+                    elif key == 'IPTCDigest':
+                        iptc_data['IPTCDigest'] = value
+
+            # For XMP metadata in any image format
+            if 'XML:com.adobe.xmp' in image.info:
+                # Extract IPTCDigest from XMP if present
+                xmp_data = image.info['XML:com.adobe.xmp']
+                if isinstance(xmp_data, str) and 'IPTCDigest' in xmp_data:
+                    # Simple pattern matching for IPTCDigest in XMP
+                    match = re.search(r'IPTCDigest="([^"]+)"', xmp_data)
+                    if match:
+                        iptc_data['IPTCDigest'] = match.group(1)
+
+            return _json_safe(iptc_data) if iptc_data else {}
+        except Exception as e:
+            self.logger.error(f'Error extracting IPTC data: {e}')
+            return {}
+
+    def _parse_photoshop_data(self, data) -> dict:
+        """
+        Parse Photoshop data block to extract IPTC metadata.
+
+        Args:
+            data: Raw Photoshop data (bytes or dict) from APP13 segment.
+        Returns:
+            Dictionary of extracted IPTC data.
+        """
+        iptc_data = {}
+        try:
+            # Handle the case where data is already a dictionary
+            if isinstance(data, dict):
+                # If it's a dictionary, check for IPTCDigest key directly
+                if 'IPTCDigest' in data:
+                    iptc_data['IPTCDigest'] = data['IPTCDigest']
+
+                # Check for IPTC data
+                if 'IPTC' in data or 1028 in data:  # 1028 (0x0404) is the IPTC identifier
+                    iptc_block = data.get('IPTC', data.get(1028, b''))
+                    if isinstance(iptc_block, bytes):
+                        iptc_records = self._parse_iptc_data(iptc_block)
+                        iptc_data.update(iptc_records)
+
+                return iptc_data
+
+            # If it's bytes, proceed with the original implementation
+            if not isinstance(data, bytes):
+                self.logger.debug(f"Expected bytes for Photoshop data, got {type(data)}")
+                return {}
+
+            # Find Photoshop resource markers
+            offset = data.find(b'8BIM')
+            if offset < 0:
+                return {}
+
+            io_data = BytesIO(data)
+            io_data.seek(offset)
+
+            while True:
+                # Try to read a Photoshop resource block
+                try:
+                    signature = io_data.read(4)
+                    if signature != b'8BIM':
+                        break
+
+                    # Resource identifier (2 bytes)
+                    resource_id = int.from_bytes(io_data.read(2), byteorder='big')
+
+                    # Skip name: Pascal string padded to even length
+                    name_len = io_data.read(1)[0]
+                    name_bytes_to_read = name_len + (1 if name_len % 2 == 0 else 0)
+                    io_data.read(name_bytes_to_read)
+
+                    # Resource data
+                    size = int.from_bytes(io_data.read(4), byteorder='big')
+                    padded_size = size + (1 if size % 2 == 1 else 0)
+
+                    resource_data = io_data.read(padded_size)[:size]  # Trim padding if present
+
+                    # Process specific resource types
+                    if resource_id == 0x0404:  # IPTC-NAA record (0x0404)
+                        iptc_records = self._parse_iptc_data(resource_data)
+                        iptc_data.update(iptc_records)
+                    elif resource_id == 0x040F:  # IPTCDigest (0x040F)
+                        iptc_data['IPTCDigest'] = resource_data.hex()
+                    elif resource_id == 0x0425:  # EXIF data (1045)
+                        # Already handled by the EXIF extraction but could process here if needed
+                        pass
+
+                except Exception as e:
+                    self.logger.debug(f"Error parsing Photoshop resource block: {e}")
+                    break
+
+            return iptc_data
+        except Exception as e:
+            self.logger.debug(f"Error parsing Photoshop data: {e}")
+            return {}
+
+    def _parse_iptc_data(self, data: bytes) -> dict:
+        """
+        Parse raw IPTC data bytes.
+
+        Args:
+            data: Raw IPTC data bytes.
+        Returns:
+            Dictionary of extracted IPTC fields.
+        """
+        iptc_data = {}
+        try:
+            # IPTC marker (0x1C) followed by record number (1 byte) and dataset number (1 byte)
+            i = 0
+            while i < len(data):
+                # Look for IPTC marker
+                if i + 4 <= len(data) and data[i] == 0x1C:
+                    record = data[i+1]
+                    dataset = data[i+2]
+
+                    # Length of the data field (can be 1, 2, or 4 bytes)
+                    if data[i+3] & 0x80:  # Check if the high bit is set
+                        # Extended length - 4 bytes
+                        if i + 8 <= len(data):
+                            length = int.from_bytes(data[i+4:i+8], byteorder='big')
+                            i += 8
+                        else:
+                            break
+                    else:
+                        # Standard length - 1 byte
+                        length = data[i+3]
+                        i += 4
+
+                    # Check if we have enough data
+                    if i + length <= len(data):
+                        field_data = data[i:i+length]
+
+                        # Convert to string if possible
+                        try:
+                            field_value = field_data.decode('utf-8', errors='replace')
+                        except UnicodeDecodeError:
+                            field_value = field_data.hex()
+
+                        # Map record:dataset to meaningful names - simplified example
+                        key = f"{record}:{dataset}"
+                        # Known IPTC fields
+                        iptc_fields = {
+                            "2:5": "ObjectName",
+                            "2:25": "Keywords",
+                            "2:80": "By-line",
+                            "2:105": "Headline",
+                            "2:110": "Credit",
+                            "2:115": "Source",
+                            "2:120": "Caption-Abstract",
+                            "2:122": "Writer-Editor",
+                        }
+
+                        field_name = iptc_fields.get(key, f"IPTC_{key}")
+                        iptc_data[field_name] = field_value
+
+                        i += length
+                    else:
+                        break
+                else:
+                    i += 1
+
+            return iptc_data
+        except Exception as e:
+            self.logger.debug(f"Error parsing IPTC data: {e}")
+            return {}
 
     def _extract_apple_gps_from_mime(self, mime_data: bytes, exif_data: Dict) -> None:
         """
@@ -298,23 +552,48 @@ class EXIFPlugin(ImagePlugin):
         """
         try:
             exif = {}
+            # Check Modify Date (if any):
+            try:
+                modify_date = get_xmp_modify_date(image)
+                if modify_date:
+                    exif["ModifyDate"] = modify_date
+            except Exception as e:
+                self.logger.debug(f"Error getting XMP ModifyDate: {e}")
 
-            if hasattr(image, '_getexif'):
+            if hasattr(image, 'getexif'):
                 # For JPEG and some other formats that support _getexif()
-                exif_data = image._getexif()
+                exif_data = image.getexif()
                 if exif_data:
                     gps_info = {}
                     for tag, value in exif_data.items():
-                        # Convert EXIF data to a readable format
-                        decoded = TAGS.get(tag, tag)
-                        if decoded == "GPSInfo":
-                            for t in value:
-                                sub_decoded = GPSTAGS.get(t, t)
-                                gps_info[sub_decoded] = value[t]
-                            exif["GPSInfo"] = gps_info
-                        else:
+                        if tag in ExifTags.TAGS:
+                            decoded = TAGS.get(tag, tag)
+                            # Convert EXIF data to a readable format
                             exif[decoded] = _make_serialisable(value)
-
+                            if decoded == "GPSInfo":
+                                for t in value:
+                                    sub_decoded = GPSTAGS.get(t, t)
+                                    gps_info[sub_decoded] = value[t]
+                                exif["GPSInfo"] = gps_info
+                    # Aperture, shutter, flash, lens, tz offset, etc
+                    ifd = exif_data.get_ifd(0x8769)
+                    for key, val in ifd.items():
+                        exif[ExifTags.TAGS[key]] = _make_serialisable(val)
+                    for ifd_id in IFD:
+                        try:
+                            ifd = exif_data.get_ifd(ifd_id)
+                            if ifd_id == IFD.GPSInfo:
+                                resolve = GPSTAGS
+                            else:
+                                resolve = TAGS
+                            for k, v in ifd.items():
+                                tag = resolve.get(k, k)
+                                try:
+                                    exif[tag] = _make_serialisable(v)
+                                except Exception:
+                                    exif[tag] = v
+                        except KeyError:
+                            pass
             elif hasattr(image, 'tag') and hasattr(image, 'tag_v2'):
                 # For TIFF images which store data in tag and tag_v2 attributes
                 # Extract from tag_v2 first (more detailed)
@@ -384,6 +663,16 @@ class EXIFPlugin(ImagePlugin):
         try:
             exif_data = {}
 
+            # Process HEIF image if provided (prioritize over PIL)
+            if heif is not None:
+                try:
+                    heif_exif = await self.extract_exif_heif(heif)
+                    if heif_exif:
+                        # Update with HEIF data, prioritizing it over PIL data if both exist
+                        exif_data.update(heif_exif)
+                except Exception as e:
+                    self.logger.error(f"Error extracting EXIF from HEIF image: {e}")
+
             # Process PIL image if provided
             if image is not None:
                 try:
@@ -393,15 +682,16 @@ class EXIFPlugin(ImagePlugin):
                 except Exception as e:
                     self.logger.error(f"Error extracting EXIF from PIL image: {e}")
 
-            # Process HEIF image if provided
-            if heif is not None:
+                # Extract IPTC data
                 try:
-                    heif_exif = await self.extract_exif_heif(heif)
-                    if heif_exif:
-                        # Update with HEIF data, prioritizing it over PIL data if both exist
-                        exif_data.update(heif_exif)
+                    pil_iptc = await self.extract_iptc_data(image)
+                    if pil_iptc:
+                        exif_data.update(pil_iptc)
                 except Exception as e:
-                    self.logger.error(f"Error extracting EXIF from HEIF image: {e}")
+                    self.logger.error(
+                        f"Error extracting IPTC data from PIL image: {e}"
+                    )
+
 
             return exif_data
         except Exception as e:
