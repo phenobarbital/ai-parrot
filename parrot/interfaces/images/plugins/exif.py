@@ -10,6 +10,7 @@ from PIL.TiffImagePlugin import IFDRational
 from libxmp import XMPFiles, consts
 from pillow_heif import register_heif_opener
 from .abstract import ImagePlugin
+from exif import Image as ExifImage  # Add this import
 
 
 register_heif_opener()  # ADD HEIF support
@@ -652,23 +653,64 @@ class EXIFPlugin(ImagePlugin):
             self.logger.error(f'Unexpected error extracting PIL EXIF data: {e}')
             return {}
 
+    async def extract_exif_with_exif_lib(self, image_bytes: bytes) -> dict:
+        """
+        Extract EXIF data using the exif library.
+        
+        Args:
+            image_bytes: Raw image bytes
+        Returns:
+            Dictionary of EXIF data
+        """
+        try:
+            exif_image = ExifImage(image_bytes)
+            if not exif_image.has_exif:
+                return {}
+
+            # Get all available EXIF tags
+            exif_data = {}
+            for tag in exif_image.list_all():
+                try:
+                    # Skip private attributes
+                    if tag.startswith('_'):
+                        continue
+                    value = getattr(exif_image, tag)
+                    exif_data[tag] = _json_safe(value)
+                except Exception as e:
+                    self.logger.debug(f"Error extracting tag {tag}: {e}")
+
+            return exif_data
+        except Exception as e:
+            self.logger.debug(f"Error using exif library: {e}")
+            return {}
+
     async def analyze(self, image: Optional[Image.Image] = None, heif: Any = None, **kwargs) -> dict:
         """
         Extract EXIF data from the given image.
 
-        :param image: PIL Image object (optional)
-        :param heif: HEIF image object (optional)
-        :return: Dictionary containing EXIF data
+        Args:
+            image: PIL Image object (optional)
+            heif: HEIF image object (optional)
+        Returns:
+            Dictionary containing EXIF data
         """
         try:
             exif_data = {}
 
-            # Process HEIF image if provided (prioritize over PIL)
+            # Try extracting with exif library first if we have access to raw bytes
+            if 'raw_bytes' in kwargs:
+                try:
+                    exif_lib_data = await self.extract_exif_with_exif_lib(kwargs['raw_bytes'])
+                    if exif_lib_data:
+                        exif_data.update(exif_lib_data)
+                except Exception as e:
+                    self.logger.debug(f"Error with exif library extraction: {e}")
+
+            # Process HEIF image if provided
             if heif is not None:
                 try:
                     heif_exif = await self.extract_exif_heif(heif)
                     if heif_exif:
-                        # Update with HEIF data, prioritizing it over PIL data if both exist
                         exif_data.update(heif_exif)
                 except Exception as e:
                     self.logger.error(f"Error extracting EXIF from HEIF image: {e}")
@@ -678,7 +720,10 @@ class EXIFPlugin(ImagePlugin):
                 try:
                     pil_exif = await self.extract_exif_data(image)
                     if pil_exif:
-                        exif_data.update(pil_exif)
+                        # Only update with PIL data if we don't already have the information
+                        for key, value in pil_exif.items():
+                            if key not in exif_data:
+                                exif_data[key] = value
                 except Exception as e:
                     self.logger.error(f"Error extracting EXIF from PIL image: {e}")
 
@@ -688,10 +733,7 @@ class EXIFPlugin(ImagePlugin):
                     if pil_iptc:
                         exif_data.update(pil_iptc)
                 except Exception as e:
-                    self.logger.error(
-                        f"Error extracting IPTC data from PIL image: {e}"
-                    )
-
+                    self.logger.error(f"Error extracting IPTC data from PIL image: {e}")
 
             return exif_data
         except Exception as e:
