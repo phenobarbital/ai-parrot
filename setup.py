@@ -177,7 +177,7 @@ setup(
             "youtube_search==2.1.2",
             "wikipedia==1.4.0",
             "mediawikiapi==1.2",
-            "wikibase-rest-api-client==0.2.2",
+            # "wikibase-rest-api-client==0.2.2",
             # "asknews>=0.10.0",
             "pyowm==3.3.0",
             "O365==2.0.35",
@@ -187,7 +187,7 @@ setup(
             "google-api-python-client>=2.151.0",
             "pomegranate==1.1.0",
             "autoviz==0.1.905",
-            "spacy==3.8.5"
+            "spacy==3.8.6"
         ],
         "loaders": [
             # Loaders:
@@ -227,9 +227,9 @@ setup(
             "bitsandbytes==0.44.1",
             "datasets>=3.0.2",
             "safetensors>=0.4.3",
-            "transformers>=4.44.2,<=4.51.2",
+            "transformers>=4.51.1,<=4.51.3",
             "sentence-transformers==4.0.2",
-            "tokenizers==0.20.1",
+            "tokenizers>=0.20.0,<=0.21.1",
             "tensorflow==2.18.0",
             "tf-keras==2.18.0",
             "simsimd>=4.3.1",
@@ -252,8 +252,9 @@ setup(
         "google": [
             # "langchain-google-genai==2.1.4",
             # "langchain-google-vertexai==2.0.21",
+            "langchain-google-vertexai>=2.0.24",
             "langchain-google-genai>=2.1.4",
-            "langchain-google-vertexai>=2.0.10",
+            # "langchain-google-vertexai>=2.0.10",
             "google-cloud-texttospeech==2.26.0",
             "google-genai>=1.0.0",
             # "vertexai==1.71.1",
