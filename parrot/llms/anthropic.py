@@ -44,7 +44,11 @@ class AnthropicLLM(AbstractLLM):
             "top_p": self.top_p,
             "top_k": self.top_k,
             "verbose": True,
-            "stream": True # Helpful for interactive data exploration
+            "streaming": True, # Helpful for interactive data exploration
+            "max_tokens": self.max_tokens,
+            "model_kwargs": {
+                "stream": True
+            }
         }
         if self.use_tools:
             self.model = self.tool_calling_models[0]
