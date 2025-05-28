@@ -147,8 +147,8 @@ setup(
     install_requires=[
         "Cython==3.0.11",
         "langchain>=0.3.25",
-        "langchain-core==0.3.58",
-        "langchain-community==0.3.21",
+        "langchain-core==0.3.61",
+        "langchain-community==0.3.24",
         "langchain-experimental==0.3.4",
         "langchain-text-splitters==0.3.8",
         "langchainhub==0.1.21",
@@ -240,12 +240,12 @@ setup(
             "langchain-ollama==0.2.3"
         ],
         "anthropic": [
-            "anthropic==0.50.0",
-            "langchain_anthropic==0.3.12"
+            "anthropic==0.52.0",
+            "langchain_anthropic==0.3.13"
         ],
         "openai": [
-            "langchain_openai==0.3.16",
-            "openai==1.76.2",
+            "langchain_openai==0.3.18",
+            "openai==1.82.0",
             # "llama-index-llms-openai==0.1.11",
             "tiktoken==0.7.0"
         ],
@@ -263,7 +263,7 @@ setup(
             "llama-index-llms-huggingface==0.2.7",
         ],
         "groq": [
-            "groq==0.22.0",
+            "groq==0.25.0",
             "langchain-groq==0.3.2"
         ],
         "qdrant": [

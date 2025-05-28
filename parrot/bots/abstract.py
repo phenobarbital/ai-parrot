@@ -92,6 +92,9 @@ from ..models import ChatResponse
 from .prompts import (
     BASIC_SYSTEM_PROMPT,
     BASIC_HUMAN_PROMPT,
+    DEFAULT_GOAL,
+    DEFAULT_ROLE,
+    DEFAULT_CAPABILITIES,
     DEFAULT_BACKHISTORY
 )
 from .interfaces import EmptyRetriever
@@ -102,6 +105,7 @@ from .retrievals import MultiVectorStoreRetriever
 
 os.environ["GRPC_ENABLE_FORK_SUPPORT"] = "0"
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"  # Hide TensorFlow logs if present
+
 logging.getLogger(name='primp').setLevel(logging.INFO)
 logging.getLogger(name='rquest').setLevel(logging.INFO)
 logging.getLogger("grpc").setLevel(logging.CRITICAL)
@@ -166,24 +170,11 @@ class AbstractBot(DBInterface, ABC):
             'Navigator Chatbot',
             **kwargs
         )
-        self.role = self._get_default_attr(
-            'role', self.default_role(), **kwargs
-        )
-        self.goal = self._get_default_attr(
-            'goal',
-            'provide helpful information to users',
-            **kwargs
-        )
-        self.backstory = self._get_default_attr(
-            'backstory',
-            default=self.default_backstory(),
-            **kwargs
-        )
-        self.rationale = self._get_default_attr(
-            'rationale',
-            default=self.default_rationale(),
-            **kwargs
-        )
+        self.role = kwargs.get('role', DEFAULT_ROLE)
+        self.goal = kwargs.get('goal', DEFAULT_GOAL)
+        self.capabilities = kwargs.get('capabilities', DEFAULT_CAPABILITIES)
+        self.backstory = kwargs.get('backstory', DEFAULT_BACKHISTORY)
+        self.rationale = kwargs.get('rationale', self.default_rationale())
         # Definition of LLM
         self._llm_class: str = None
         self._default_llm: str = kwargs.get('use_llm', 'vertexai')
@@ -312,13 +303,6 @@ class AbstractBot(DBInterface, ABC):
             "- You are a fluent speaker, you can talk and respond fluently in English or Spanish, and you must answer in the same language as the user's question. If the user's language is not English, you should translate your response into their language.\n"
         )
 
-    def default_backstory(self) -> str:
-        return (
-            DEFAULT_BACKHISTORY
-        )
-
-    def default_role(self) -> str:
-        return "Assisting with queries"
 
     @property
     def llm(self):
@@ -475,8 +459,11 @@ class AbstractBot(DBInterface, ABC):
                 setattr(self, key, val)
 
         pre_context = "\n".join(f"- {a}." for a in self.pre_instructions)
-        self.system_prompt_template = self.safe_format_template(
-            self.system_prompt_template,
+
+        tmpl = Template(self.system_prompt_template)
+        final_prompt = tmpl.safe_substitute(
+        # self.system_prompt_template = self.safe_format_template(
+            # self.system_prompt_template,
             name=self.name,
             role=self.role,
             goal=self.goal,
@@ -484,7 +471,8 @@ class AbstractBot(DBInterface, ABC):
             rationale=self.rationale,
             pre_context=pre_context,
         )
-        # print('Template Prompt: \n', self.system_prompt_template)
+        print('Template Prompt: \n', final_prompt)
+        self.system_prompt_template = final_prompt
 
     async def configure(self, app=None) -> None:
         """Basic Configuration of Bot.
