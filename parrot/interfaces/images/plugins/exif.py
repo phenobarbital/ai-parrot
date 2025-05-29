@@ -10,6 +10,7 @@ from PIL.TiffImagePlugin import IFDRational
 from libxmp import XMPFiles, consts
 from pillow_heif import register_heif_opener
 from .abstract import ImagePlugin
+import base64
 
 
 register_heif_opener()  # ADD HEIF support
@@ -569,7 +570,16 @@ class EXIFPlugin(ImagePlugin):
                         if tag in ExifTags.TAGS:
                             decoded = TAGS.get(tag, tag)
                             # Convert EXIF data to a readable format
-                            exif[decoded] = _make_serialisable(value)
+                            if decoded == "UserComment" and isinstance(value, str):
+                                try:
+                                    # Try to decode base64 UserComment
+                                    decoded_value = base64.b64decode(value).decode('utf-8', errors='replace')
+                                    exif[decoded] = decoded_value
+                                except Exception:
+                                    # If decoding fails, use original value
+                                    exif[decoded] = _make_serialisable(value)
+                            else:
+                                exif[decoded] = _make_serialisable(value)
                             if decoded == "GPSInfo":
                                 for t in value:
                                     sub_decoded = GPSTAGS.get(t, t)
