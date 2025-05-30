@@ -179,3 +179,6 @@ docs/youtube/*
 
 # more documents:
 documents/*
+
+# start db
+start_milvus.sh
