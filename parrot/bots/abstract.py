@@ -175,6 +175,7 @@ class AbstractBot(DBInterface, ABC):
         self.capabilities = kwargs.get('capabilities', DEFAULT_CAPABILITIES)
         self.backstory = kwargs.get('backstory', DEFAULT_BACKHISTORY)
         self.rationale = kwargs.get('rationale', self.default_rationale())
+        self.context = kwargs.get('use_context', True)
         # Definition of LLM
         self._llm_class: str = None
         self._default_llm: str = kwargs.get('use_llm', 'vertexai')
@@ -459,17 +460,25 @@ class AbstractBot(DBInterface, ABC):
                 setattr(self, key, val)
 
         pre_context = "\n".join(f"- {a}." for a in self.pre_instructions)
+        context = "{context}"
+        if self.context:
+            context = """
+            Here is a brief summary of relevant information:
+            Context: {context}
+            End of Context.
 
+            Given this information, please provide answers to the following question adding detailed and useful insights.
+            """
         tmpl = Template(self.system_prompt_template)
         final_prompt = tmpl.safe_substitute(
-        # self.system_prompt_template = self.safe_format_template(
-            # self.system_prompt_template,
             name=self.name,
             role=self.role,
             goal=self.goal,
+            capabilities=self.capabilities,
             backstory=self.backstory,
             rationale=self.rationale,
             pre_context=pre_context,
+            context=context
         )
         print('Template Prompt: \n', final_prompt)
         self.system_prompt_template = final_prompt
