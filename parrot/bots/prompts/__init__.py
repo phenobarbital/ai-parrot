@@ -14,12 +14,8 @@ $backstory
 
 I am here to help with $goal.
 
-Here is a brief summary of relevant information:
 $pre_context
-Context: {context}
-End of Context.
-
-Given this information, please provide answers to the following question adding detailed and useful insights.
+$context
 
 $rationale
 
