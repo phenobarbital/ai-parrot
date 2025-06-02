@@ -214,7 +214,8 @@ setup(
             "pillow-avif-plugin==1.5.2",
             "pillow-heif==0.22.0",
             "python-xmp-toolkit==2.0.2",
-            "exifread==3.3.1"
+            "exifread==3.3.1",
+            "transformers>=4.51.1,<=4.51.3",
         ],
         "vector": [
             "torch>=2.5.1,<=2.6.0",
@@ -222,7 +223,7 @@ setup(
             "fastembed==0.3.4",
             "tiktoken==0.7.0",
             "accelerate==0.34.2",
-            "llama-index==0.11.20",
+            "llama-index==0.12.39",
             "llama_cpp_python==0.2.56",
             "bitsandbytes==0.44.1",
             "datasets>=3.0.2",
