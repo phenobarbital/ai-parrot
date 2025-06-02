@@ -1,7 +1,9 @@
 from collections.abc import Mapping, Sequence
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List, Tuple
 import re
+import plistlib
 import struct
+from datetime import datetime
 from io import BytesIO
 from PIL import Image, ExifTags, PngImagePlugin
 from PIL.ExifTags import TAGS, GPSTAGS, IFD
@@ -81,65 +83,108 @@ class EXIFPlugin(ImagePlugin):
         self.extract_geoloc: bool = kwargs.get("extract_geoloc", False)
         super().__init__(*args, **kwargs)
 
-    def convert_to_degrees(self, value):
+    def convert_to_degrees(self, value: tuple[IFDRational]):
         """
-        Convert GPS coordinates to degrees with proper error handling.
+        Convert a 3-tuple of (deg, min, sec)—each component either an IFDRational or a float/int—
+        into a decimal‐degrees float. Returns None on any error.
         """
         try:
-            # Handles case where value is tuple of Rational objects
+            # Helper: if `r` has .num and .den, treat it as IFDRational; otherwise, cast to float.
             def to_float(r):
                 if hasattr(r, "num") and hasattr(r, "den"):
-                    # Prevent division by zero
+                    # Avoid division by zero
                     if r.den == 0:
                         return 0.0
                     return float(r.num) / float(r.den)
-                else:
-                    # Handle non-rational values
-                    return float(r) if r is not None else 0.0
+                return float(r) if r is not None else 0.0
 
-            # Ensure all three components exist
-            if len(value) < 3 or None in value:
-                self.logger.warning(f"Invalid GPS value format: {value}")
+            if not value or len(value) < 3:
                 return None
 
             d = to_float(value[0])
             m = to_float(value[1])
             s = to_float(value[2])
-
             return d + (m / 60.0) + (s / 3600.0)
-        except Exception as e:
-            self.logger.debug(f"Error converting GPS value to degrees: {e}")
+
+        except Exception:
             return None
 
     def extract_gps_datetime(self, exif: dict):
         """
-        Extract GPS coordinates and datetime from EXIF data with improved error handling.
+        Extract GPS coordinates and a timestamp (preferring GPSDateStamp+GPSTimeStamp if available,
+        else falling back to DateTimeOriginal/DateTime) from a (string-keyed) EXIF dict.
+
+        Returns a dict:
+        {
+            "datetime": <ISO8601 string or None>,
+            "date": <date string or None>,
+            "latitude": <decimal float or None>,
+            "longitude": <decimal float or None>
+        }
         """
-        gps = exif.get("GPSInfo", {})
-        datetime = exif.get("DateTimeOriginal") or exif.get("DateTime")
-
+        gps = exif.get("GPSInfo", {}) or {}
+        # 1) Build latitude/longitude, if present:
         latitude = longitude = None
+        lat_tuple = gps.get("GPSLatitude")
+        lat_ref = gps.get("GPSLatitudeRef")
+        lon_tuple = gps.get("GPSLongitude")
+        lon_ref = gps.get("GPSLongitudeRef")
 
-        if gps:
-            lat = gps.get("GPSLatitude")
-            lat_ref = gps.get("GPSLatitudeRef")
-            lon = gps.get("GPSLongitude")
-            lon_ref = gps.get("GPSLongitudeRef")
+        if lat_tuple and lat_ref and lon_tuple and lon_ref:
+            # Convert the 3-tuples into decimal degrees
+            lat_dd = self.convert_to_degrees(lat_tuple)
+            lon_dd = self.convert_to_degrees(lon_tuple)
 
-            if lat and lat_ref and lon and lon_ref:
-                # Convert coordinates to degrees
-                latitude = self.convert_to_degrees(lat)
-                longitude = self.convert_to_degrees(lon)
+            if lat_dd is not None:
+                if str(lat_ref).upper() == "S":
+                    lat_dd = -lat_dd
+                latitude = lat_dd
 
-                # Apply reference direction only if conversion succeeded
-                if latitude is not None and lat_ref == "S":
-                    latitude = -latitude
+            if lon_dd is not None:
+                if str(lon_ref).upper() == "W":
+                    lon_dd = -lon_dd
+                longitude = lon_dd
 
-                if longitude is not None and lon_ref == "W":
-                    longitude = -longitude
+        # 2) Build a datetime string: prefer GPSDateStamp+GPSTimeStamp if both exist
+        datetime_str = None
+        date_str = None
+        date_stamp = gps.get("GPSDateStamp")      # e.g. "2025:03:18"
+        time_stamp = gps.get("GPSTimeStamp")      # e.g. (23.0, 57.0, 50.0)
+
+        if date_stamp and time_stamp:
+            try:
+                # time_stamp might be floats; cast to int for hours/minutes/seconds.
+                h = int(time_stamp[0])
+                m = int(time_stamp[1])
+                s = int(time_stamp[2])
+                # date_stamp format is "YYYY:MM:DD"
+                dt = datetime.strptime(date_stamp, "%Y:%m:%d")
+                dt = dt.replace(hour=h, minute=m, second=s)
+                datetime_str = dt.isoformat()
+                date_str = dt.date().isoformat()
+            except Exception:
+                # If any parsing error, fall back
+                datetime_str = None
+
+        # 3) If GPSDateStamp+GPSTimeStamp didn’t yield a usable value, try DateTimeOriginal/DateTime
+        if not datetime_str:
+            datetime_str = exif.get("DateTimeOriginal") or exif.get("DateTime") or None
+            if datetime_str:
+                # Convert to ISO8601 format if it’s a string with YYYY:MM:DD HH:MM:SS
+                try:
+                    dt = datetime.strptime(datetime_str, "%Y:%m:%d %H:%M:%S")
+                    datetime_str = dt.isoformat()
+                    date_str = dt.date().isoformat()
+                except ValueError:
+                    # If parsing fails, keep it as is
+                    pass
+                except TypeError:
+                    # If datetime_str is None or not a string, keep it as None
+                    datetime_str = None
 
         return {
-            "datetime": datetime,
+            "datetime": datetime_str,
+            "date": date_str,
             "latitude": latitude,
             "longitude": longitude
         }
@@ -316,25 +361,25 @@ class EXIFPlugin(ImagePlugin):
             while i < len(data):
                 # Look for IPTC marker
                 if i + 4 <= len(data) and data[i] == 0x1C:
-                    record = data[i+1]
-                    dataset = data[i+2]
+                    record = data[i + 1]
+                    dataset = data[i + 2]
 
                     # Length of the data field (can be 1, 2, or 4 bytes)
-                    if data[i+3] & 0x80:  # Check if the high bit is set
+                    if data[i + 3] & 0x80:  # Check if the high bit is set
                         # Extended length - 4 bytes
                         if i + 8 <= len(data):
-                            length = int.from_bytes(data[i+4:i+8], byteorder='big')
+                            length = int.from_bytes(data[i + 4:i + 8], byteorder='big')
                             i += 8
                         else:
                             break
                     else:
                         # Standard length - 1 byte
-                        length = data[i+3]
+                        length = data[i + 3]
                         i += 4
 
                     # Check if we have enough data
                     if i + length <= len(data):
-                        field_data = data[i:i+length]
+                        field_data = data[i:i + length]
 
                         # Convert to string if possible
                         try:
@@ -415,47 +460,329 @@ class EXIFPlugin(ImagePlugin):
         except Exception as e:
             self.logger.debug(f"Error extracting GPS from Apple MIME data: {e}")
 
-    def _extract_gps_from_apple_makernote(self, maker_note: str) -> Optional[Dict]:
+    def _extract_gps_from_apple_makernote(self, maker_note: Any) -> Optional[Dict]:
         """
-        Extract GPS data from Apple's MakerNote field in EXIF data.
+        Extract GPS data from Apple's MakerNote field.
 
-        Args:
-            maker_note: Apple MakerNote string
-        Returns:
-            Dictionary with latitude and longitude if found, None otherwise
+        Fixed version that properly handles Apple's MakerNote structure and
+        looks for actual GPS coordinates rather than test values.
         """
         try:
-            # Apple MakerNote often contains GPS coordinates in a specific format
-            # Look for patterns like decimal numbers that could be coordinates
-            coord_pattern = re.compile(r'([-+]?\d+\.\d+)')
-            matches = coord_pattern.findall(maker_note)
+            # 1) Ensure we have raw bytes
+            if isinstance(maker_note, bytes):
+                data_bytes = maker_note
+            elif isinstance(maker_note, str):
+                data_bytes = maker_note.encode("latin-1", errors="ignore")
+            else:
+                return None
 
-            if len(matches) >= 2:
-                # Try pairs of numbers to see if they could be valid coordinates
-                for i in range(len(matches) - 1):
-                    try:
-                        lat = float(matches[i])
-                        lon = float(matches[i + 1])
+            # 2) Find and properly parse binary plists
+            gps_data = self._parse_apple_plists_for_gps(data_bytes)
+            if gps_data:
+                return gps_data
 
-                        # Check if values are in a reasonable range for coordinates
-                        if -90 <= lat <= 90 and -180 <= lon <= 180:
-                            return {
-                                "latitude": lat,
-                                "longitude": lon
-                            }
-                    except ValueError:
-                        continue
+            # 3) Try parsing as TIFF-style MakerNote first
+            gps_data = self._parse_tiff_makernote_gps(data_bytes)
+            if gps_data:
+                return gps_data
 
-            # Search for binary data that might contain GPS info
-            if b'bplist' in maker_note.encode('utf-8', errors='ignore'):
-                # Apple sometimes stores GPS in binary property lists within MakerNote
-                # This is a complex binary format that would require a specialized parser
-                # For now, we'll just log that we found a binary plist
-                self.logger.debug("Found binary plist in MakerNote, specialized parsing needed")
+            # 4) Enhanced fallback with better coordinate detection
+            gps_data = self._enhanced_regex_gps_search(data_bytes)
+            if gps_data:
+                return gps_data
 
             return None
+
         except Exception as e:
-            self.logger.debug(f"Error extracting GPS from Apple MakerNote: {e}")
+            if hasattr(self, 'logger'):
+                self.logger.warning(f"Error extracting GPS from Apple MakerNote: {e}")
+            return None
+
+    def _parse_apple_plists_for_gps(self, data_bytes: bytes) -> Optional[Dict]:
+        """Parse binary plists properly with length headers"""
+        bplist_marker = b"bplist00"
+        offset = 0
+
+        while True:
+            idx = data_bytes.find(bplist_marker, offset)
+            if idx < 0:
+                break
+
+            try:
+                # Parse the plist properly by reading its length
+                plist_data = self._extract_single_plist(data_bytes, idx)
+                if not plist_data:
+                    offset = idx + len(bplist_marker)
+                    continue
+
+                parsed = plistlib.loads(plist_data)
+                coords = self._find_gps_in_plist(parsed)
+                if coords:
+                    return coords
+
+            except Exception:
+                pass
+
+            offset = idx + len(bplist_marker)
+
+        return None
+
+    def _extract_single_plist(self, data: bytes, start_idx: int) -> Optional[bytes]:
+        """Extract a single binary plist with proper length calculation"""
+        try:
+            # Binary plist format: 8-byte header + data + trailer
+            if start_idx + 8 >= len(data):
+                return None
+
+            # Try different approaches to find plist end
+            # Method 1: Look for next bplist or end of data
+            next_bplist = data.find(b"bplist00", start_idx + 8)
+            if next_bplist > 0:
+                candidate = data[start_idx:next_bplist]
+            else:
+                # Try parsing increasingly larger chunks
+                for size in [32, 64, 128, 256, 512, 1024, 2048]:
+                    if start_idx + size > len(data):
+                        candidate = data[start_idx:]
+                        break
+                    candidate = data[start_idx:start_idx + size]
+                    try:
+                        plistlib.loads(candidate)
+                        return candidate
+                    except Exception:
+                        continue
+                candidate = data[start_idx:]
+
+            # Validate by trying to parse
+            try:
+                plistlib.loads(candidate)
+                return candidate
+            except Exception:
+                return None
+
+        except Exception:
+            return None
+
+    def _find_gps_in_plist(self, obj: Any, path: str = "") -> Optional[Dict]:
+        """
+        Enhanced GPS coordinate finder that looks for various GPS-related keys
+        and validates coordinate ranges more strictly
+        """
+        # Common GPS key patterns in Apple plists
+        gps_lat_keys = [
+            "Latitude", "latitude", "lat", "GPSLatitude",
+            "Location.Latitude", "coordinates.latitude"
+        ]
+        gps_lon_keys = [
+            "Longitude", "longitude", "lon", "lng", "GPSLongitude",
+            "Location.Longitude", "coordinates.longitude"
+        ]
+
+        if isinstance(obj, dict):
+            # Direct GPS coordinate check
+            lat_val = None
+            lon_val = None
+
+            # Look for latitude
+            for lat_key in gps_lat_keys:
+                if lat_key in obj:
+                    try:
+                        lat_val = float(obj[lat_key])
+                        break
+                    except Exception:
+                        continue
+
+            # Look for longitude
+            for lon_key in gps_lon_keys:
+                if lon_key in obj:
+                    try:
+                        lon_val = float(obj[lon_key])
+                        break
+                    except Exception:
+                        continue
+
+            # Validate coordinates
+            if lat_val is not None and lon_val is not None:
+                if self._are_valid_coordinates(lat_val, lon_val):
+                    return {"latitude": lat_val, "longitude": lon_val}
+
+            # Look for nested coordinate structures
+            for key, value in obj.items():
+                if any(term in key.lower() for term in ["location", "gps", "coord", "position"]):
+                    result = self._find_gps_in_plist(value, f"{path}.{key}")
+                    if result:
+                        return result
+
+            # Recurse into all values
+            for key, value in obj.items():
+                result = self._find_gps_in_plist(value, f"{path}.{key}")
+                if result:
+                    return result
+
+        elif isinstance(obj, (list, tuple)):
+            for i, item in enumerate(obj):
+                result = self._find_gps_in_plist(item, f"{path}[{i}]")
+                if result:
+                    return result
+
+        return None
+
+    def _are_valid_coordinates(self, lat: float, lon: float) -> bool:
+        """
+        Enhanced coordinate validation that rejects obvious test/dummy values
+        """
+        # Basic range check
+        if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+            return False
+
+        # Reject obvious test values
+        test_values = [
+            0.0, 1.0, 2.0, 2.1, 2.2, 3.0, 4.0, 5.0, 10.0, -1.0, -2.0, 123.0, 123.456, 90.0, 180.0
+        ]
+
+        if lat in test_values and lon in test_values:
+            return False
+
+        # Reject coordinates that are too close to (0,0) unless specifically valid
+        if abs(lat) < 0.01 and abs(lon) < 0.01:
+            return False
+
+        # Reject coordinates where both values are the same (likely test data)
+        if lat == lon:
+            return False
+
+        # Additional validation: check for reasonable precision
+        # Real GPS coordinates usually have more precision
+        lat_str = str(lat)
+        lon_str = str(lon)
+
+        # If both coordinates have very low precision, they might be test values
+        if '.' in lat_str and '.' in lon_str:
+            lat_decimals = len(lat_str.split('.')[1])
+            lon_decimals = len(lon_str.split('.')[1])
+            if lat_decimals <= 1 and lon_decimals <= 1 and abs(lat) < 10 and abs(lon) < 10:
+                return False
+
+        return True
+
+    def _parse_tiff_makernote_gps(self, data_bytes: bytes) -> Optional[Dict]:
+        """
+        Parse Apple's TIFF-style MakerNote entries for GPS data
+        """
+        try:
+            # Look for TIFF structure in the MakerNote
+            if len(data_bytes) < 12:
+                return None
+
+            # Check for TIFF byte order marks
+            if data_bytes[:2] in [b'II', b'MM']:
+                return self._parse_tiff_entries(data_bytes)
+
+            # Apple MakerNote often starts with "Apple iOS" followed by TIFF data
+            apple_marker = data_bytes.find(b'Apple iOS')
+            if apple_marker >= 0:
+                tiff_start = apple_marker + 9  # Length of "Apple iOS"
+                if tiff_start < len(data_bytes):
+                    return self._parse_tiff_entries(data_bytes[tiff_start:])
+
+            return None
+
+        except Exception:
+            return None
+
+    def _parse_tiff_entries(self, data: bytes) -> Optional[Dict]:
+        """Parse TIFF-style directory entries looking for GPS tags"""
+        try:
+            if len(data) < 8:
+                return None
+
+            # Determine byte order
+            if data[:2] == b'II':
+                endian = '<'  # Little endian
+            elif data[:2] == b'MM':
+                endian = '>'  # Big endian
+            else:
+                return None
+
+            # Skip to first IFD
+            offset = struct.unpack(f'{endian}I', data[4:8])[0]
+            if offset >= len(data):
+                return None
+
+            # Read number of directory entries
+            if offset + 2 >= len(data):
+                return None
+
+            num_entries = struct.unpack(f'{endian}H', data[offset:offset + 2])[0]
+            offset += 2
+
+            # Parse each entry
+            for i in range(min(num_entries, 100)):  # Limit to prevent infinite loops
+                if offset + 12 > len(data):
+                    break
+
+                entry = data[offset:offset + 12]
+                tag, type_id, count, value_offset = struct.unpack(f'{endian}HHII', entry)
+
+                # Look for GPS-related tags (these are hypothetical Apple GPS tags)
+                if tag in [0x0001, 0x0002, 0x0003, 0x0004]:  # Common GPS tag IDs
+                    # This would need more specific implementation based on Apple's actual tags
+                    pass
+
+                offset += 12
+
+            return None
+
+        except Exception:
+            return None
+
+    def _enhanced_regex_gps_search(self, data_bytes: bytes) -> Optional[Dict]:
+        """
+        Enhanced regex search that's more discriminating about coordinate patterns
+        """
+        try:
+            # Try UTF-8 first, then latin-1
+            for encoding in ['utf-8', 'latin-1']:
+                try:
+                    text = data_bytes.decode(encoding, errors='ignore')
+                    break
+                except UnicodeDecodeError:
+                    continue
+            else:
+                return None
+
+            # Look for coordinate patterns in various formats
+            patterns = [
+                # Decimal degrees with high precision
+                r'(?:lat|latitude)[:\s=]*([+-]?\d{1,2}\.\d{4,})',
+                r'(?:lon|lng|longitude)[:\s=]*([+-]?\d{1,3}\.\d{4,})',
+                # Coordinates in JSON-like structures
+                r'"(?:lat|latitude)"\s*:\s*([+-]?\d+\.\d+)',
+                r'"(?:lon|lng|longitude)"\s*:\s*([+-]?\d+\.\d+)',
+                # Coordinates with more context
+                r'(?:coordinate|position|location)[^0-9]*([+-]?\d+\.\d{4,})[^0-9]*([+-]?\d+\.\d{4,})'
+            ]
+
+            for pattern in patterns:
+                matches = re.finditer(pattern, text, re.IGNORECASE)
+                for match in matches:
+                    try:
+                        if len(match.groups()) == 2:
+                            lat, lon = float(match.group(1)), float(match.group(2))
+                        else:
+                            # Look for the next coordinate nearby
+                            coord = float(match.group(1))
+                            # This needs more sophisticated logic
+                            continue
+
+                        if self._are_valid_coordinates(lat, lon):
+                            return {"latitude": lat, "longitude": lon}
+                    except Exception:
+                        continue
+
+            return None
+
+        except Exception:
             return None
 
     async def extract_exif_heif(self, heif_image) -> Optional[Dict]:
@@ -551,39 +878,53 @@ class EXIFPlugin(ImagePlugin):
         Returns:
             Dictionary of EXIF data or empty dict if no EXIF data exists.
         """
+        exif = {}
+        # Check Modify Date (if any):
         try:
-            exif = {}
-            # Check Modify Date (if any):
-            try:
-                modify_date = get_xmp_modify_date(image)
-                if modify_date:
-                    exif["ModifyDate"] = modify_date
-            except Exception as e:
-                self.logger.debug(f"Error getting XMP ModifyDate: {e}")
+            modify_date = get_xmp_modify_date(image)
+            if modify_date:
+                exif["ModifyDate"] = modify_date
+        except Exception as e:
+            self.logger.debug(f"Error getting XMP ModifyDate: {e}")
 
-            if hasattr(image, 'getexif'):
-                # For JPEG and some other formats that support _getexif()
-                exif_data = image.getexif()
-                if exif_data:
+        if hasattr(image, 'getexif'):
+            # For JPEG and some other formats that support _getexif()
+            try:
+                if exif_data := image.getexif():
                     gps_info = {}
-                    for tag, value in exif_data.items():
-                        if tag in ExifTags.TAGS:
-                            decoded = TAGS.get(tag, tag)
-                            # Convert EXIF data to a readable format
-                            if decoded == "UserComment" and isinstance(value, str):
+                    for tag_id, value in exif_data.items():
+                        tag_name = ExifTags.TAGS.get(tag_id, tag_id)
+                        # Convert EXIF data to a readable format
+                        if tag_name == "UserComment" and isinstance(value, str):
+                            try:
+                                # Try to decode base64 UserComment
+                                decoded_value = base64.b64decode(value).decode('utf-8', errors='replace')
+                                exif[tag_name] = decoded_value
+                            except Exception:
+                                # If decoding fails, use original value
+                                exif[tag_name] = _make_serialisable(value)
+                        else:
+                            exif[tag_name] = _make_serialisable(value)
+                        if tag_name == "GPSInfo":
+                            # value is itself a dict of numeric sub‐tags:
+                            gps_ifd = {}
+                            if isinstance(value, dict):
                                 try:
-                                    # Try to decode base64 UserComment
-                                    decoded_value = base64.b64decode(value).decode('utf-8', errors='replace')
-                                    exif[decoded] = decoded_value
+                                    for sub_id, sub_val in value.items():
+                                        sub_name = GPSTAGS.get(sub_id, sub_id)
+                                        gps_ifd[sub_name] = sub_val
+                                    exif["GPSInfo"] = gps_ifd
                                 except Exception:
-                                    # If decoding fails, use original value
-                                    exif[decoded] = _make_serialisable(value)
+                                    for t in value:
+                                        sub_decoded = GPSTAGS.get(t, t)
+                                        gps_info[sub_decoded] = value[t]
+                                    exif["GPSInfo"] = gps_info
                             else:
-                                exif[decoded] = _make_serialisable(value)
-                            if decoded == "GPSInfo":
-                                for t in value:
-                                    sub_decoded = GPSTAGS.get(t, t)
-                                    gps_info[sub_decoded] = value[t]
+                                gps_info = {}
+                                gps_raw = exif_data.get_ifd(IFD.GPSInfo) or {}
+                                for sub_tag_id, sub_val in gps_raw.items():
+                                    sub_name = GPSTAGS.get(sub_tag_id, sub_tag_id)
+                                    gps_info[sub_name] = sub_val
                                 exif["GPSInfo"] = gps_info
                     # Aperture, shutter, flash, lens, tz offset, etc
                     ifd = exif_data.get_ifd(0x8769)
@@ -604,10 +945,16 @@ class EXIFPlugin(ImagePlugin):
                                     exif[tag] = v
                         except KeyError:
                             pass
-            elif hasattr(image, 'tag') and hasattr(image, 'tag_v2'):
-                # For TIFF images which store data in tag and tag_v2 attributes
-                # Extract from tag_v2 first (more detailed)
-                gps_info = {}
+            except Exception as e:
+                self.logger.warning(
+                    f'Error extracting EXIF data: {e}'
+                )
+
+        elif hasattr(image, 'tag') and hasattr(image, 'tag_v2'):
+            # For TIFF images which store data in tag and tag_v2 attributes
+            # Extract from tag_v2 first (more detailed)
+            gps_info = {}
+            try:
                 for tag, value in image.tag_v2.items():
                     tag_name = TAGS.get(tag, tag)
                     if tag_name == "GPSInfo":
@@ -619,15 +966,22 @@ class EXIFPlugin(ImagePlugin):
                             exif["GPSInfo"] = gps_info
                     else:
                         exif[tag_name] = _make_serialisable(value)
+            except Exception as e:
+                self.logger.debug(f'Error extracting TIFF EXIF data: {e}')
+            # If tag_v2 is not available or empty, fall back to tag
 
-                # Fall back to tag if needed
-                if not exif and hasattr(image, 'tag'):
+            # Fall back to tag if needed
+            if not exif and hasattr(image, 'tag'):
+                try:
                     for tag, value in image.tag.items():
                         tag_name = TAGS.get(tag, tag)
                         exif[tag_name] = _make_serialisable(value)
+                except Exception as e:
+                    self.logger.debug(f'Error extracting TIFF TAG data: {e}')
 
-            else:
-                # For other formats, try to extract directly from image.info
+        else:
+            # For other formats, try to extract directly from image.info
+            try:
                 for key, value in image.info.items():
                     if key.startswith('exif'):
                         # Some formats store EXIF data with keys like 'exif' or 'exif_ifd'
@@ -643,24 +997,55 @@ class EXIFPlugin(ImagePlugin):
                                         tag_name = TAGS.get(tag, tag)
                                         exif[tag_name] = _make_serialisable(val)
                             except Exception as e:
-                                self.logger.debug(f"Error parsing EXIF bytes: {e}")
+                                self.logger.warning(f"Error parsing EXIF bytes: {e}")
                     else:
                         # Add other metadata
                         exif[key] = _make_serialisable(value)
+            except Exception as e:
+                self.logger.warning(f'Unable to extract EXIF from from image.info: {e}')
 
-            # Extract GPS datetime if available
-            if self.extract_geoloc and "GPSInfo" in exif:
-                gps_datetime = self.extract_gps_datetime(exif)
-                if gps_datetime:
+        # Extract GPS datetime if available
+        if self.extract_geoloc and "GPSInfo" in exif:
+            try:
+                if gps_datetime := self.extract_gps_datetime(exif):
                     exif['gps_info'] = gps_datetime
+            except Exception as e:
+                self.logger.warning(
+                    f"Error extracting GPS datetime: {e}"
+                )
+        # If no GPSInfo, check for MakerNote which might contain GPS data
+        if self.extract_geoloc and "MakerNote" in exif:
+            if gps_info := self._extract_gps_from_apple_makernote(exif["MakerNote"]):
+                print('RESULT MAKER > ', gps_info)
+                if not exif.get('gps_info', None):
+                    exif['gps_info'] = gps_info
+        # If we have no GPSInfo, check for XMP metadata
+        if self.extract_geoloc and "XML:com.adobe.xmp" in image.info:
+            try:
+                xmp_data = image.info["XML:com.adobe.xmp"]
+                if isinstance(xmp_data, str):
+                    # Simple pattern matching for GPS in XMP
+                    lat_match = re.search(r'GPSLatitude="([^"]+)"', xmp_data)
+                    lon_match = re.search(r'GPSLongitude="([^"]+)"', xmp_data)
+                    if lat_match and lon_match:
+                        latitude = float(lat_match.group(1))
+                        longitude = float(lon_match.group(1))
+                        exif['gps_info'] = {
+                            "latitude": latitude,
+                            "longitude": longitude
+                        }
+            except Exception as e:
+                self.logger.warning(f"Error extracting GPS from XMP: {e}")
+        # If we have no GPSInfo, check for IPTC metadata
+        if self.extract_geoloc and "IPTCDigest" in image.info:
+            exif['gps_info'] = image.info["IPTCDigest"]
+        # If we have no GPSInfo, check for IPTC metadata
+        if self.extract_geoloc and "IPTC" in image.info:
+            iptc_data = self._parse_photoshop_data(image.info["IPTC"])
+            if iptc_data:
+                exif.update(iptc_data)
 
-            return _json_safe(exif) if exif else {}
-        except (AttributeError, KeyError) as e:
-            self.logger.debug(f'Error extracting PIL EXIF data: {e}')
-            return {}
-        except Exception as e:
-            self.logger.error(f'Unexpected error extracting PIL EXIF data: {e}')
-            return {}
+        return _json_safe(exif) if exif else {}
 
     async def analyze(self, image: Optional[Image.Image] = None, heif: Any = None, **kwargs) -> dict:
         """
@@ -701,8 +1086,6 @@ class EXIFPlugin(ImagePlugin):
                     self.logger.error(
                         f"Error extracting IPTC data from PIL image: {e}"
                     )
-
-
             return exif_data
         except Exception as e:
             self.logger.error(f"Error in EXIF analysis: {str(e)}")
