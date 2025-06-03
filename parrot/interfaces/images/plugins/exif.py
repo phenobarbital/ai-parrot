@@ -894,6 +894,9 @@ class EXIFPlugin(ImagePlugin):
                     gps_info = {}
                     for tag_id, value in exif_data.items():
                         tag_name = ExifTags.TAGS.get(tag_id, tag_id)
+                        if isinstance(tag_name, (int, float)):
+                            # Skip numeric tags that are not strings
+                            continue
                         # Convert EXIF data to a readable format
                         if tag_name == "UserComment" and isinstance(value, str):
                             try:
@@ -939,6 +942,8 @@ class EXIFPlugin(ImagePlugin):
                                 resolve = TAGS
                             for k, v in ifd.items():
                                 tag = resolve.get(k, k)
+                                if isinstance(tag, int):
+                                    continue
                                 try:
                                     exif[tag] = _make_serialisable(v)
                                 except Exception:
@@ -957,6 +962,10 @@ class EXIFPlugin(ImagePlugin):
             try:
                 for tag, value in image.tag_v2.items():
                     tag_name = TAGS.get(tag, tag)
+                    if isinstance(tag_name, int):
+                        # Skip numeric tags that are not strings
+                        continue
+                    # Convert EXIF data to a readable format
                     if tag_name == "GPSInfo":
                         # For TIFF images, GPS data might be in a nested IFD
                         if isinstance(value, dict):
@@ -983,6 +992,8 @@ class EXIFPlugin(ImagePlugin):
             # For other formats, try to extract directly from image.info
             try:
                 for key, value in image.info.items():
+                    if isinstance(key, int):
+                        continue
                     if key.startswith('exif'):
                         # Some formats store EXIF data with keys like 'exif' or 'exif_ifd'
                         if isinstance(value, dict):
