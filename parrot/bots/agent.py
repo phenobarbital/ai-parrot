@@ -89,23 +89,9 @@ class BasicAgent(AbstractBot):
         self.agent_type = agent_type or 'tool-calling'
         self._use_chat: bool = True  # For Agents, we use chat models
         self._agent = None # Agent Executor
-        self.prompt_template = prompt_template or AGENT_PROMPT
+        self.system_prompt_template = prompt_template or AGENT_PROMPT
+        self._system_prompt_base = system_prompt or ''
         self.tools = tools or self.default_tools(tools)
-        if system_prompt:
-            self.prompt_template = self.prompt_template.format_map(
-                SafeDict(
-                    system_prompt_base=system_prompt
-                )
-            )
-        else:
-            self.prompt_template = self.prompt_template.format_map(
-                SafeDict(
-                    system_prompt_base="""
-                    Whether you need help with a specific question or just want to have a conversation about a particular topic, Assistant is here to assist.
-                    """
-                )
-            )
-        self.prompt = self.define_prompt(self.prompt_template)
         ##  Logging:
         self.logger = logging.getLogger(
             f'{self.name}.Agent'
@@ -140,7 +126,7 @@ class BasicAgent(AbstractBot):
         """Clear all stored results."""
         ResultStoreTool.clear_results()
 
-    def define_prompt(self, prompt, **kwargs):
+    def _define_prompt(self, **kwargs):
         now = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         list_of_tools = ""
         for tool in self.tools:
@@ -149,29 +135,27 @@ class BasicAgent(AbstractBot):
             list_of_tools += f'- {name}: {description}\n'
         list_of_tools += "\n"
         tools_names = [tool.name for tool in self.tools]
-        tmpl = Template(prompt)
+        tmpl = Template(self.system_prompt_template)
         final_prompt = tmpl.safe_substitute(
+            name=self.name,
+            role=self.role,
+            goal=self.goal,
+            capabilities=self.capabilities,
+            system_prompt_base=self._system_prompt_base,
             today_date=now,
+            tools=tools_names,
             list_of_tools=list_of_tools,
             backstory=self.backstory,
             rationale=self.rationale,
-            format_instructions=FORMAT_INSTRUCTIONS.format(
-                tool_names=", ".join(tools_names)),
+            format_instructions=""
         )
         # Define a structured system message
-        system_message = f"""
-        Today is {now}. If an event is expected to have occurred before this date,
-        assume that results exist and verify using a web search tool.
-
-        If you call a tool and receive a valid answer, finalize your response immediately.
-        Do NOT repeat the same tool call multiple times for the same question.
-        """
         final_prompt += AGENT_PROMPT_SUFFIX
         chat_prompt = ChatPromptTemplate.from_messages([
-            SystemMessagePromptTemplate.from_template(system_message),
+            # SystemMessagePromptTemplate.from_template(system_message),
             ChatPromptTemplate.from_template(final_prompt)
         ])
-        return chat_prompt.partial(
+        self.system_prompt_template = chat_prompt.partial(
             tools=self.tools,
             tool_names=", ".join([tool.name for tool in self.tools]),
             name=self.name,
@@ -213,9 +197,9 @@ class BasicAgent(AbstractBot):
             llm=self._llm,
             toolkit=json_toolkit,
             verbose=True,
-            prompt=self.prompt,
+            prompt=self.system_prompt_template,
         )
-        return self.prompt | self._llm | agent
+        return self.system_prompt_template | self._llm | agent
 
     def runnable_agent(self, **kwargs):
         """
@@ -233,7 +217,7 @@ class BasicAgent(AbstractBot):
             runnable = create_react_agent(
                 self._llm,
                 self.tools,
-                prompt=self.prompt,
+                prompt=self.system_prompt_template,
             ),  # type: ignore
             input_keys_arg=["input"],
             return_keys_arg=["output"],
@@ -256,7 +240,7 @@ class BasicAgent(AbstractBot):
             runnable = create_tool_calling_agent(
                 self._llm,
                 self.tools,
-                prompt=self.prompt,
+                prompt=self.system_prompt_template,
             ),  # type: ignore
             input_keys_arg=["input"],
             return_keys_arg=["output"],
@@ -279,7 +263,7 @@ class BasicAgent(AbstractBot):
             runnable = create_openai_functions_agent(
                 self._llm,
                 self.tools,
-                prompt=self.prompt
+                prompt=self.system_prompt_template
             ),  # type: ignore
             input_keys_arg=["input"],
             return_keys_arg=["output"],
@@ -309,7 +293,7 @@ class BasicAgent(AbstractBot):
             max_iterations=5,
             handle_parsing_errors=True,
             verbose=True,
-            prompt=self.prompt,
+            prompt=self.system_prompt_template,
             agent_executor_kwargs = {"return_intermediate_steps": False}
         )
 
@@ -326,11 +310,11 @@ class BasicAgent(AbstractBot):
             agent=agent,
             tools=tools,
             verbose=verbose,
-            return_intermediate_steps=False,
+            return_intermediate_steps=True,
             max_iterations=5,
             max_execution_time=360,
             handle_parsing_errors=True,
-            # memory=self.memory,
+            memory=self.memory,
             **kwargs,
         )
 
@@ -356,7 +340,7 @@ class BasicAgent(AbstractBot):
         if self._use_vector:
             self.configure_store()
         # Conversation History:
-        self.memory = self.get_memory()
+        self.memory = self.get_memory(input_key="input", output_key="output")
         # 1. Initialize the Agent (as the base for RunnableMultiActionAgent)
         if self.agent_type == 'zero_shot':
             self.agent = self.runnable_agent()
@@ -428,7 +412,7 @@ class BasicAgent(AbstractBot):
             try:
                 return self.as_markdown(
                     response
-                ), response
+                ), response, result
             except Exception as exc:
                 self.logger.exception(
                     f"Error on response: {exc}"
