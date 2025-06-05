@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 from langchain_core.callbacks import CallbackManagerForToolRun
 from langchain_core.tools import BaseTool, BaseToolkit, StructuredTool
 from navconfig.logging import logging
-from navconfig.utils.json import json_encoder, json_decoder  # noqa
+from datamodel.parsers.json import json_decoder, json_encoder  # noqa  pylint: disable=E0611
 
 
 logging.getLogger(name='cookie_store').setLevel(logging.INFO)
@@ -24,6 +24,8 @@ class AbstractTool(BaseTool):
     """Abstract class for tools."""
 
     args_schema: Type[BaseModel] = AbstractToolArgsSchema
+    _json_encoder: Type[Any] = json_encoder
+    _json_decoder: Type[Any] = json_decoder
 
     class Config:
         """Configuration for this pydantic object."""

@@ -5,8 +5,16 @@ import json
 import asyncio
 # Pydantic:
 from pydantic import BaseModel, Field
+# Pandas:
+import pandas as pd
 # Langchain Tools:
-from langchain_core.tools import BaseTool, BaseToolkit, StructuredTool, ToolException, Tool
+from langchain_core.tools import (
+    BaseTool,
+    BaseToolkit,
+    StructuredTool,
+    ToolException,
+    Tool
+)
 # Parrot Agent
 from parrot.bots.agent import BasicAgent
 from parrot.llms.vertex import VertexLLM
@@ -456,6 +464,26 @@ class StoreToolkit(AbstractToolkit):
             # …
         })
 
+    async def get_analytics_dataframe(self, store_id: str) -> pd.DataFrame:
+        """
+        Return Analytics information About the Store as a Pandas DataFrame.
+        This tool provides a structured way to retrieve store analytics data
+        directly as a pandas DataFrame object, allowing for easy data manipulation
+        and analysis within the agent's workflow.
+        """
+        await asyncio.sleep(0.1)
+
+        # Create sample DataFrame
+        dates = pd.date_range('2025-05-01', '2025-06-05', freq='D')
+        data = {
+            'date': dates,
+            'store_id': store_id,
+            'visits': [45 + i % 30 for i in range(len(dates))],
+            'revenue': [1200 + (i * 50) % 800 for i in range(len(dates))],
+            'satisfaction': [3.8 + (i % 10) * 0.1 for i in range(len(dates))]
+        }
+
+        return pd.DataFrame(data)  # Return DataFrame directly!
 
 # Toolkit for NextStop Copilot:
 tools = StoreInfo().get_tools() + StoreToolkit().get_tools()
@@ -496,13 +524,19 @@ if __name__ == "__main__":
             answer, response, result = loop.run_until_complete(
                 agent.invoke(query=query)
             )
-            print('::: Response: ', response)
-            # Show if tools were actually called
-            if result.get('intermediate_steps'):
-                print('\n::: Tools Used:')
-                for step in result['intermediate_steps']:
-                    action, observation = step
-                    print(f"- {action.tool}: {action.tool_input}")
+            if isinstance(response, Exception):
+                print(f"Error: {response}")
+            else:
+                print('::: Response: ', response)
+                if isinstance(result, Exception):
+                    print(f"Error: {result}")
+                else:
+                    # Show if tools were actually called
+                    if result.get('intermediate_steps'):
+                        print('\n::: Tools Used:')
+                        for step in result['intermediate_steps']:
+                            action, observation = step
+                            print(f"- {action.tool}: {action.tool_input}")
         query = input(
             "Type in your query: \n"
         )
