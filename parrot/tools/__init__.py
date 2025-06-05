@@ -2,7 +2,7 @@
 Tools infrastructure for building Agents.
 """
 # Abstract Agent interface
-from .abstract import AbstractTool
+from .abstract import AbstractTool, AbstractToolkit
 from .basic import SearchTool, MathTool
 from .duck import DuckDuckGoSearchTool, DuckDuckGoRelevantSearch
 from .gamma import GammaLink
