@@ -1,6 +1,6 @@
 # basic requirements:
 import os
-from typing import Union, List
+from typing import Any, Dict, Type, Union, List
 import json
 import asyncio
 # Pydantic:
@@ -13,6 +13,7 @@ from parrot.llms.vertex import VertexLLM
 from parrot.llms.groq import GroqLLM
 from parrot.llms.anthropic import AnthropicLLM
 from parrot.llms.openai import OpenAILLM
+from parrot.tools import AbstractToolkit
 
 # Function: Agent Creation:
 # If use LLama4 with Groq (fastest model)
@@ -42,6 +43,9 @@ claude = AnthropicLLM(
 
 # Visit info Tool:
 # Input Models:
+class StoreIdInput(BaseModel):
+    store_id: str
+
 class StoreInfoInput(BaseModel):
     """Input schema for store-related operations requiring a Store ID."""
     store_id: str = Field(
@@ -59,6 +63,18 @@ class StoreInfoInput(BaseModel):
             "required": ["store_id"]
         }
     }
+
+class DemographicsOutput(BaseModel):
+    zipcode: str
+    data_source: str
+    reference_year: int
+    geographic_area: Dict[str, Any]
+    population: Dict[str, Any]
+    age_distribution: Dict[str, Any] = None
+    income_statistics: Dict[str, Any] = None
+    education: Dict[str, Any]
+    employment: Dict[str, Any]
+    housing: Dict[str, Any]
 
 
 class DemographicsInput(BaseModel):
@@ -228,7 +244,7 @@ class StoreInfo(BaseToolkit):
             handle_tool_error=True
         )
 
-    async def get_store_information(self, store_id: str) -> str:
+    async def get_store_information(self, store_id: str) -> dict:
         """Get comprehensive store information for a specific store.
 
         This coroutine retrieves complete store details including location,
@@ -319,6 +335,8 @@ class StoreInfo(BaseToolkit):
                 "Useful for market analysis, customer segmentation, and business planning."
             ),
             args_schema=DemographicsInput,
+            # return_direct=True,
+            output_schema=DemographicsOutput,
             handle_tool_error=True
         )
 
@@ -327,7 +345,7 @@ class StoreInfo(BaseToolkit):
         zipcode: str,
         include_income: bool = True,
         include_age: bool = True
-    ) -> str:
+    ) -> Dict[str, Any]:
         """Extract demographics data from US Census for a specific ZIP code.
 
         This coroutine retrieves comprehensive demographic information from US Census
@@ -418,11 +436,29 @@ class StoreInfo(BaseToolkit):
             }
         })
 
-        return json.dumps(dummy_demographics, indent=2)
+        # return dummy_demographics
+        return DemographicsOutput(**dummy_demographics)
+
+
+class StoreToolkit(AbstractToolkit):
+    """Toolkit for NextStop Copilot providing store-related tools."""
+    input_class: Type[BaseModel] = StoreIdInput
+
+    async def store_schedule(self, store_id: str) -> dict:
+        """
+        Fetch the upcoming schedule (hours, events) for store_id.
+        """
+        # … maybe you call some calendar API …
+        return self.json_encoder({
+            "store_id": store_id,
+            "monday": "09:00-21:00",
+            "tuesday": "09:00-21:00",
+            # …
+        })
 
 
 # Toolkit for NextStop Copilot:
-tools = StoreInfo().get_tools()
+tools = StoreInfo().get_tools() + StoreToolkit().get_tools()
 
 async def get_agent(llm):
     """Create and configure a NextStop Copilot agent with store analysis tools.

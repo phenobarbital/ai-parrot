@@ -1,12 +1,18 @@
-from pathlib import Path
-from typing import Dict, List, Union, Any
 import os
+from typing import Dict, List, Union, Any, Optional, AsyncGenerator, Type
 from string import Template
+import json
+from pathlib import Path
 from datetime import datetime, timezone
+from typing_extensions import Annotated, TypedDict
 from aiohttp import web
+from pydantic import BaseModel
+import pandas as pd
+from langchain_core.tools import BaseTool
 from langchain_core.prompts import (
     ChatPromptTemplate
 )
+from langchain_core.tools import BaseTool, BaseToolkit, StructuredTool
 from langchain_core.retrievers import BaseRetriever
 from langchain import hub
 from langchain.callbacks.base import BaseCallbackHandler
@@ -46,7 +52,7 @@ from datamodel.parsers.json import json_decoder  # noqa  pylint: disable=E0611
 from navconfig.logging import logging
 from .abstract import AbstractBot
 from ..models import AgentResponse
-from ..tools import AbstractTool, SearchTool, MathTool, DuckDuckGoSearchTool
+from ..tools import AbstractTool, MathTool, DuckDuckGoSearchTool
 from ..tools.results import ResultStoreTool, GetResultTool, ListResultsTool
 from ..tools.gvoice import GoogleVoiceTool
 from .prompts import AGENT_PROMPT, AGENT_PROMPT_SUFFIX, FORMAT_INSTRUCTIONS
@@ -54,6 +60,30 @@ from .prompts import AGENT_PROMPT, AGENT_PROMPT_SUFFIX, FORMAT_INSTRUCTIONS
 
 os.environ["GRPC_ENABLE_FORK_SUPPORT"] = "0"
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"  # Hide TensorFlow logs if present
+
+
+class StructuredDataTool(StructuredTool):
+    """Tool that can return structured data types instead of strings."""
+
+    def __init__(self, return_type: Type = str, **kwargs):
+        super().__init__(**kwargs)
+        self.return_type = return_type
+
+    def _run(self, *args, **kwargs):
+        """Override to handle structured returns."""
+        result = super()._run(*args, **kwargs)
+
+        # If the tool is designed to return non-string data, return it directly
+        if self.return_type != str:
+            return result
+
+        # Otherwise, convert to string as usual
+        if isinstance(result, (dict, list)):
+            return json.dumps(result, indent=2)
+        elif isinstance(result, pd.DataFrame):
+            return result.to_json(orient='records', indent=2)
+
+        return str(result)
 
 
 class BasicAgent(AbstractBot):
@@ -91,7 +121,8 @@ class BasicAgent(AbstractBot):
         self._agent = None # Agent Executor
         self.system_prompt_template = prompt_template or AGENT_PROMPT
         self._system_prompt_base = system_prompt or ''
-        self.tools = tools or self.default_tools(tools)
+        self.tools = self.default_tools(tools)
+        self._structured_llm: Any = None
         ##  Logging:
         self.logger = logging.getLogger(
             f'{self.name}.Agent'
@@ -100,7 +131,6 @@ class BasicAgent(AbstractBot):
     def default_tools(self, tools: list = None) -> List[AbstractTool]:
         ctools = [
             DuckDuckGoSearchTool(),
-            # SearchTool(),
             MathTool(),
             GoogleVoiceTool(name="generate_podcast_style_audio_file"),
         ]
@@ -471,3 +501,119 @@ class BasicAgent(AbstractBot):
         text = ''.join(ch for ch in text if ord(ch) >= 32 or ch in '\n\t')
 
         return text
+
+    def with_structured_output(
+        self,
+        schema: Union[Type[BaseModel], TypedDict, Dict],
+        include_raw: bool = False,
+        few_shot_examples: Optional[List[Dict]] = None
+    ):
+        """
+        Create a structured output version of the agent's LLM.
+
+        Args:
+            schema: The output schema (Pydantic model, TypedDict, or JSON schema dict)
+            include_raw: Whether to include raw response alongside structured
+            few_shot_examples: List of example inputs/outputs for few-shot prompting
+
+        Returns:
+            A structured LLM that enforces the given schema
+        """
+        # Build few-shot prompt if examples provided
+        few_shot_prompt = ""
+        if few_shot_examples:
+            few_shot_prompt = "\n\nHere are some examples:\n"
+            for i, example in enumerate(few_shot_examples, 1):
+                few_shot_prompt += f"\nExample {i}:\n"
+                few_shot_prompt += f"Input: {example.get('input', '')}\n"
+                few_shot_prompt += f"Output: {json.dumps(example.get('output', {}), indent=2)}\n"
+
+        # Create structured LLM with enhanced prompt
+        if few_shot_examples:
+            # Wrap the LLM with few-shot prompting
+            enhanced_prompt = ChatPromptTemplate.from_messages([
+                ("system", f"You are an expert assistant. Follow the examples below and provide responses in the exact same format.{few_shot_prompt}"),
+                ("human", "{input}")
+            ])
+
+            structured_chain = enhanced_prompt | self._llm.with_structured_output(
+                schema, include_raw=include_raw
+            )
+            self._structured_llm = structured_chain
+        else:
+            self._structured_llm = self._llm.with_structured_output(
+                schema, include_raw=include_raw
+            )
+
+        return self._structured_llm
+
+    def get_json_output(self, schema: str) -> JsonSpec:
+        """
+        Define a JSON output parser for the agent.
+        This allows the agent to return structured JSON responses based on a schema.
+        Args:
+            schema (str): The JSON schema to use for output parsing.
+        Returns:
+            JsonSpec: A JSON output parser.
+
+        Example:
+        ```python
+        my_json_schema = {
+            "type": "object",
+            "properties": {
+                "zipcode": {"type": "string"},
+                "population": {"type": "number"},
+                "income_by_bracket": {
+                    "type": "object",
+                    "properties": {
+                        "0-25k": {"type": "number"},
+                        "25k-50k": {"type": "number"},
+                        # …
+                    },
+                },
+            },
+            "required": ["zipcode", "population"],
+        }
+        ```
+        tool = Tool(
+            name="get_demographics_data",
+            func=get_demographics_data,
+            description="…",
+            return_direct=True,
+            args_schema=DemographicsInput,
+            output_parser=agent.get_json_output(schema=my_json_schema),
+        )
+        """
+        return JsonSpec(schema=schema)
+
+
+    def create_structured_tool(
+        self,
+        name: str,
+        func: callable,
+        description: str,
+        schema: Type[BaseModel],
+        return_type: Type = dict,
+        **kwargs
+    ) -> StructuredDataTool:
+        """
+        Create a tool that returns structured data instead of string.
+
+        Args:
+            name: Tool name
+            func: Tool function
+            description: Tool description
+            args_schema: Input schema
+            return_type: Expected return type (dict, DataFrame, etc.)
+
+        Returns:
+            StructuredDataTool instance
+        """
+        return StructuredDataTool(
+            name=name,
+            func=func,
+            description=description,
+            args_schema=schema,
+            return_type=return_type,
+            **kwargs
+        )
