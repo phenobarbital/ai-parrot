@@ -322,7 +322,12 @@ class StoreInfo(BaseToolkit):
             handle_tool_error=True
         )
 
-    async def get_demographics_data(self, zipcode: str, include_income: bool = True, include_age: bool = True) -> str:
+    async def get_demographics_data(
+        self,
+        zipcode: str,
+        include_income: bool = True,
+        include_age: bool = True
+    ) -> str:
         """Extract demographics data from US Census for a specific ZIP code.
 
         This coroutine retrieves comprehensive demographic information from US Census

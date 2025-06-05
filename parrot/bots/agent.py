@@ -382,10 +382,7 @@ class BasicAgent(AbstractBot):
         result = self._agent.invoke(input_question)
         try:
             response = AgentResponse(question=question, **result)
-            # response.response = self.as_markdown(
-            #     response
-            # )
-            return response
+            return response, result
         except Exception as e:
             self.logger.exception(
                 f"Error on response: {e}"
