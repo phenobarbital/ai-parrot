@@ -57,6 +57,9 @@ Then you should query the schema of the most relevant tables.
 """
 
 AGENT_PROMPT_SUFFIX = """
+Previous conversation:
+{chat_history}
+
 Begin!
 
 Question: {input}

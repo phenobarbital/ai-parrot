@@ -275,6 +275,7 @@ class BasicAgent(AbstractBot):
             ),  # type: ignore
             input_keys_arg=["input"],
             return_keys_arg=["output"],
+            memory=self.memory,
             **kwargs
         )
 
