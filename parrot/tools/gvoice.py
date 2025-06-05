@@ -1,10 +1,12 @@
 import asyncio
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, Optional, Type, Union
 import os
 import re
 from xml.sax.saxutils import escape
 from datetime import datetime
+import traceback
+import json
 import aiofiles
 # Use v1 for wider feature set including SSML
 from google.cloud import texttospeech_v1 as texttospeech
@@ -15,39 +17,65 @@ from navconfig import BASE_DIR
 from parrot.conf import GOOGLE_TTS_SERVICE
 
 class PodcastInput(BaseModel):
-    """Input for podcast generator tool."""
-    text: str = Field(description="The text content to convert to speech")
+    """
+    Input schema for the GoogleVoiceTool.  Users can supply:
+    • text (required): the transcript or Markdown to render.
+    • voice_gender: choose “MALE” or “FEMALE” (default is FEMALE).
+    • voice_model: a specific voice name if you want to override the default.
+    • language_code: e.g. “en-US” or “es-ES” (default is “en-US”).
+    • output_format: one of “OGG_OPUS”, “MP3”, “LINEAR16”, etc. (default is “OGG_OPUS”).
+    """
+    text: str = Field(..., description="The text (plaintext or Markdown) to convert to speech")
+    voice_gender: Optional[str] = Field(
+        None,
+        description="Optionally override the gender of the chosen voice (MALE or FEMALE)."
+    )
+    voice_model: Optional[str] = Field(
+        None,
+        description=(
+            "Optionally specify a precise Google voice model name "
+            "(e.g. “en-US-Neural2-F”, “en-US-Neural2-M”, etc.)."
+        )
+    )
+    language_code: Optional[str] = Field(
+        None,
+        description="BCP-47 language code (e.g. “en-US” or “es-ES”). Defaults to en-US."
+    )
+    output_format: Optional[str] = Field(
+        None,
+        description=(
+            "Audio encoding format: one of [“OGG_OPUS”, “MP3”, “LINEAR16”, “WEBM_OPUS”, “FLAC”, “OGG_VORBIS”]."
+        )
+    )
+    # If you’d like users to control the output filename/location:
+    output_filename: Optional[str] = Field(
+        None,
+        description="(Optional) A custom filename (including extension) for the generated audio."
+    )
 
 class GoogleVoiceTool(BaseTool):
     """Generate a podcast-style audio file from Text using Google Cloud Text-to-Speech."""
-    name: str = "generate_podcast_style_audio_file"
+    name: str = "podcast_generator_tool"
     description: str = (
-        "Generates a podcast-style audio file from a given text script using Google Cloud Text-to-Speech."
-        " Use this tool if the user requests a podcast, an audio summary, or a narrative of the findings "
+        "Generates a podcast-style audio file from a given text (plain or markdown) script using Google Cloud Text-to-Speech."
+        " Use this tool if the user requests a podcast, an audio summary, or a narrative of your findings."
+        " The user must supply a JSON object matching the PodcastInput schema."
         " First, ensure you have a clear and concise text summary of the information to be narrated. You might need to generate this summary based on your analysis or previous steps."
-        " Provide the text *as-is* without enclosing on backticks or backquotes."
     )
     voice_model: str = "en-US-Neural2-F"  # "en-US-Studio-O"
     voice_gender: str = "FEMALE"
     language_code: str = "en-US"
     output_format: str = "OGG_OPUS"  # OGG format is more podcast-friendly
     _key_service: Optional[str]
+    output_dir: Optional[Path] = BASE_DIR.joinpath("static", "audio", "podcasts")
 
     # Add a proper args_schema for tool-calling compatibility
-    args_schema: dict = {
-        "type": "object",
-        "properties": {
-            "query": {
-                "type": "string",
-                "description": "The text content to convert to speech"
-            }
-        },
-        "required": ["query"]
-    }
+    args_schema: Type[BaseModel] = PodcastInput
 
     def __init__(self,
         voice_model: str = "en-US-Neural2-F",
         output_format: str = "OGG_OPUS",
+        language_code: str = "en-US",
         output_dir: str = None,
         name: str = "podcast_generator_tool",
         **kwargs
@@ -62,20 +90,24 @@ class GoogleVoiceTool(BaseTool):
         # If not found in the config, try a default location
         if self._key_service is None:
             default_path = BASE_DIR / "env" / "google" / "tts-service.json"
-            if os.path.exists(default_path):
+            if default_path.exists():
                 self._key_service = str(default_path)
-                print(f"Using default credentials path: {self._key_service}")
+                print(f"🔑 Using default credentials path: {self._key_service}")
             else:
-                print(f"Warning: No credentials found in config or at default path {default_path}")
+                print(
+                    f"⚠️ Warning: No TTS credentials found in config or at {default_path}"
+                )
         else:
-            print(f"Using credentials from config: {self._key_service}")
+            print(f"🔑 Using credentials from config: {self._key_service}")
 
-        if self.voice_gender == 'FEMALE':
-            self.voice_model = "en-US-Neural2-F"
-        elif self.voice_gender == 'MALE':
-            self.voice_model = "en-US-Neural2-M"
-        else:
-            self.voice_model = "en-US-Neural2-G"
+        # Set the defaults from constructor arguments
+        self.voice_model = voice_model
+        self.output_format = output_format
+        self.language_code = language_code or "en-US"
+
+        # You could optionally store output_dir if you want to let user override that too
+        # self.output_dir = Path(output_dir) if output_dir else (BASE_DIR / "static" / "audio" / "podcasts")
+
 
     def is_markdown(self, text: str) -> bool:
         """Determine if the text appears to be Markdown formatted."""
@@ -155,8 +187,39 @@ class GoogleVoiceTool(BaseTool):
         ssml += "</speak>"
         return ssml
 
-    async def _generate_podcast(self, query: str) -> dict:
+    async def _generate_podcast(self, payload: PodcastInput) -> dict:
         """Main method to generate a podcast from query."""
+        # define voice gender:
+        if payload.voice_gender:
+            self.voice_gender = payload.voice_gender
+        # Select voice based on language_code:
+        if payload.language_code:
+            self.language_code = payload.language_code
+        if self.language_code == "es-ES":
+            if self.voice_gender == "MALE":
+                self.voice_model = "es-ES-Polyglot-1"
+            else:
+                self.voice_model = "es-ES-Neural2-H"
+        elif self.language_code == "en-US":
+            if self.voice_gender == "MALE":
+                self.voice_model = "en-US-Neural2-M"
+            else:
+                self.voice_model = "en-US-Neural2-F"
+        elif self.language_code == "fr-FR":
+            if self.voice_gender == "MALE":
+                self.voice_model = "fr-FR-Neural2-G"
+            else:
+                self.voice_model = "fr-FR-Neural2-F"
+        elif self.language_code == "de-DE":
+            if self.voice_gender == "MALE":
+                self.voice_model = "de-DE-Neural2-G"
+            else:
+                self.voice_model = "de-DE-Neural2-F"
+        elif self.language_code in ("cmn-CN", "zh-CN"):
+            if self.voice_gender == "MALE":
+                self.voice_model = "cmn-CN-Standard-B"
+            else:
+                self.voice_model = "cmn-CN-Standard-D"
         try:
             if self._key_service and Path(self._key_service).exists():
                 try:
@@ -166,22 +229,11 @@ class GoogleVoiceTool(BaseTool):
                 except Exception as cred_error:
                     print(f"Error loading credentials: {cred_error}")
 
-            if isinstance(query, str):
-                try:
-                    # Try to parse as JSON
-                    import json
-                    query_dict = json.loads(query)
-                    if "output_file" in query_dict:
-                        print(f"Output file specified in query: {query_dict['output_file']}")
-                        print(f"Output directory exists: {os.path.isdir(os.path.dirname(query_dict['output_file']))}")
-                except json.JSONDecodeError:
-                    print("Query is plain text, not JSON")
-
             print("1. Converting Markdown to SSML...")
-            if self.is_markdown(query):
-                ssml_text = self.markdown_to_ssml(query)
+            if self.is_markdown(payload.text):
+                ssml_text = self.markdown_to_ssml(payload.text)
             else:
-                ssml_text = self.text_to_ssml(query)
+                ssml_text = self.text_to_ssml(payload.text)
             print(f"Generated SSML:\n{ssml_text}\n") # Uncomment for debugging
             print(
                 f"2. Initializing Text-to-Speech client (Voice: {self.voice_model})..."
@@ -207,23 +259,27 @@ class GoogleVoiceTool(BaseTool):
             # Generate a unique filename based on the current timestamp
             output_filename = f"podcast_{timestamp}.ogg"  # Default output filename
             # default to OGG
+            if payload.output_format:
+                output_format = payload.output_format.upper()
+            else:
+                output_format = self.output_format.upper()
             encoding = texttospeech.AudioEncoding.OGG_OPUS
-            if self.output_format == "OGG_OPUS":
+            if output_format == "OGG_OPUS":
                 encoding = texttospeech.AudioEncoding.OGG_OPUS
                 output_filename = f"podcast_{timestamp}.ogg"
-            elif self.output_format == "MP3":
+            elif output_format == "MP3":
                 encoding = texttospeech.AudioEncoding.MP3
                 output_filename = f"podcast_{timestamp}.mp3"
-            elif self.output_format == "LINEAR16":
+            elif output_format == "LINEAR16":
                 encoding = texttospeech.AudioEncoding.LINEAR16
                 output_filename = f"podcast_{timestamp}.wav"
-            elif self.output_format == "WEBM_OPUS":
+            elif output_format == "WEBM_OPUS":
                 encoding = texttospeech.AudioEncoding.WEBM_OPUS
                 output_filename = f"podcast_{timestamp}.webm"
-            elif self.output_format == "FLAC":
+            elif output_format == "FLAC":
                 encoding = texttospeech.AudioEncoding.FLAC
                 output_filename = f"podcast_{timestamp}.flac"
-            elif self.output_format == "OGG_VORBIS":
+            elif output_format == "OGG_VORBIS":
                 encoding = texttospeech.AudioEncoding.OGG_VORBIS
                 output_filename = f"podcast_{timestamp}.ogg"
 
@@ -250,52 +306,87 @@ class GoogleVoiceTool(BaseTool):
                 await audio_file.write(response.audio_content)
             print("6. Audio content saved successfully.")
             return {
+                "status": "success",
+                "message": "Podcast audio generated successfully.",
+                "text": payload.text,
+                "ssml": ssml_text,
                 "file_path": output_filepath,
-                "output_format": self.output_format,
+                "output_format": output_format,
                 "language_code": self.language_code,
                 "voice_model": self.voice_model,
+                "voice_gender": self.voice_gender,
                 "timestamp": timestamp,
                 "filename": output_filename
             }
         except Exception as e:
-            import traceback
             print(f"Error in _generate_podcast: {e}")
             print(traceback.format_exc())
             return {"error": str(e)}
 
-    async def _arun(self, query: str) -> dict:
+    async def _arun(
+        self,
+        text: str,
+        voice_gender: Optional[str] = None,
+        voice_model: Optional[str] = None,
+        language_code: Optional[str] = None,
+        output_format: Optional[str] = None,
+        output_filename: Optional[str] = None
+    ) -> Dict[str, Any]:
         """
-        Generates a podcast-style audio file from Markdown text using
-        Google Cloud Text-to-Speech.
+        LangChain will call this with keyword args matching PodcastInput, e.g.:
+          _arun(text="Hello", voice_gender="MALE", output_format="MP3", …)
 
-        Args:
-            markdown_summary: The input text in Markdown format.
-            output_filename: The desired name for the output audio file (e.g., "my_podcast.ogg").
-            language_code: The language code (e.g., "en-US", "es-ES").
-            voice_name: The specific voice model name. Find names here:
-                        https://cloud.google.com/text-to-speech/docs/voices
-
-        Returns:
-            A dictionary containing the absolute path to the saved audio file
-            under the key "file_path", or an error message under "error".
+        We rebuild a PodcastInput object internally so that we benefit from Pydantic’s
+        validation and type‐casting, then delegate to _generate_podcast().
         """
         try:
-            return await self._generate_podcast(query)
+            # 1) Build a dict of everything LangChain passed us
+            payload_dict = {
+                "text": text,
+                "voice_gender": voice_gender,
+                "voice_model": voice_model,
+                "language_code": language_code,
+                "output_format": output_format,
+                "output_filename": output_filename
+            }
+            # 2) Let Pydantic validate & coerce
+            payload = PodcastInput(**{k: v for k, v in payload_dict.items() if v is not None})
+            # 3) Call the “real” generator
+            return await self._generate_podcast(payload)
         except Exception as e:
-            import traceback
-            print(f"Error in GoogleVoiceTool._arun: {e}")
+            print(f"❌ Error in GoogleVoiceTool._arun: {e}")
             print(traceback.format_exc())
             return {"error": str(e)}
 
-    def _run(self, query: str) -> dict:
+    # Mirror the same signature for the synchronous runner:
+    def _run(
+        self,
+        text: Union[str, Dict[str, Any]],
+        voice_gender: Optional[str] = None,
+        voice_model: Optional[str] = None,
+        language_code: Optional[str] = None,
+        output_format: Optional[str] = None,
+        output_filename: Optional[str] = None
+    ) -> Dict[str, Any]:
         """
-        Synchronous method to generate a podcast-style audio file from Markdown text.
-        This method is not recommended for production use due to blocking I/O.
+        Synchronous entrypoint. If text_or_json is a JSON string, we load it first.
+        Otherwise, assume it’s already a dict of the correct shape.
         """
+        try:
+            if isinstance(text, str):
+                data = json.loads(text)
+                # We expect a JSON‐dict with keys matching PodcastInput
+            elif isinstance(text, dict):
+                data = text
+            else:
+                return {"error": "Invalid payload type. Must be JSON string or dict."}
+            # Validate with PodcastInput
+            payload = PodcastInput(**data)
+        except Exception as e:
+            return {"error": f"Invalid input: {e}"}
+
         loop = asyncio.get_event_loop()
         if loop.is_running():
-            # If the event loop is already running, use run_until_complete
-            return loop.run_until_complete(self._generate_podcast(query))
+            return loop.run_until_complete(self._generate_podcast(payload))
         else:
-            # If not, use run
-            return loop.run(self._generate_podcast(query))
+            return loop.run_until_complete(self._generate_podcast(payload))

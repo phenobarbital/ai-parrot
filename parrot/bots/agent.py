@@ -48,6 +48,7 @@ from tenacity import (
     wait_random_exponential,
 )  # for exponential backoff
 from datamodel.typedefs import SafeDict
+from datamodel.exceptions import ValidationError # noqa  pylint: disable=E0611
 from datamodel.parsers.json import json_decoder  # noqa  pylint: disable=E0611
 from navconfig.logging import logging
 from .abstract import AbstractBot
@@ -132,7 +133,7 @@ class BasicAgent(AbstractBot):
         ctools = [
             DuckDuckGoSearchTool(),
             MathTool(),
-            GoogleVoiceTool(name="generate_podcast_style_audio_file"),
+            GoogleVoiceTool(name="podcast_generator_tool"),
         ]
         # result_store_tool = ResultStoreTool()
         # get_result_tool = GetResultTool()
@@ -433,20 +434,37 @@ class BasicAgent(AbstractBot):
         input_question = {
             "input": query
         }
-        result = await self._agent.ainvoke(input_question)
+        result = None
         try:
-            response = AgentResponse(question=query, **result)
-            try:
-                return self.as_markdown(
-                    response
-                ), response, result
-            except Exception as exc:
-                self.logger.exception(
-                    f"Error on response: {exc}"
-                )
-                return result.get('output', None), None
+            result = await self._agent.ainvoke(input_question)
         except Exception as e:
-            return result, e
+            return 'Empty Answer', result, e
+        try:
+            output = result.get('output', None)
+            if isinstance(output, pd.DataFrame):
+                result['output'] = output.to_json(orient='records', indent=2)
+            response = AgentResponse(question=query, **result)
+        except ValueError as ve:
+            self.logger.exception(
+                f"Error creating AgentResponse: {ve}"
+            )
+            return result.get('output', None), ve, result
+        except ValidationError as e:
+            self.logger.exception(
+                "Validation error in AgentResponse creation"
+            )
+            return result.get('output', None), e, result
+        try:
+            return self.as_markdown(
+                response
+            ), response, result
+        except Exception as exc:
+            self.logger.exception(
+                f"Error on response: {exc}"
+            )
+            return result.get('output', None), exc, result
+        except Exception as e:
+            return 'Empty Answer', result, e
 
     async def __aenter__(self):
         if not self._agent:
