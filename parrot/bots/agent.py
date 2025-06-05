@@ -1,12 +1,18 @@
-from pathlib import Path
-from typing import Dict, List, Union, Any
 import os
+from typing import Dict, List, Union, Any, Optional, AsyncGenerator, Type
 from string import Template
+import json
+from pathlib import Path
 from datetime import datetime, timezone
+from typing_extensions import Annotated, TypedDict
 from aiohttp import web
+from pydantic import BaseModel
+import pandas as pd
+from langchain_core.tools import BaseTool
 from langchain_core.prompts import (
     ChatPromptTemplate
 )
+from langchain_core.tools import BaseTool, BaseToolkit, StructuredTool
 from langchain_core.retrievers import BaseRetriever
 from langchain import hub
 from langchain.callbacks.base import BaseCallbackHandler
@@ -42,11 +48,12 @@ from tenacity import (
     wait_random_exponential,
 )  # for exponential backoff
 from datamodel.typedefs import SafeDict
+from datamodel.exceptions import ValidationError # noqa  pylint: disable=E0611
 from datamodel.parsers.json import json_decoder  # noqa  pylint: disable=E0611
 from navconfig.logging import logging
 from .abstract import AbstractBot
 from ..models import AgentResponse
-from ..tools import AbstractTool, SearchTool, MathTool, DuckDuckGoSearchTool
+from ..tools import AbstractTool, MathTool, DuckDuckGoSearchTool
 from ..tools.results import ResultStoreTool, GetResultTool, ListResultsTool
 from ..tools.gvoice import GoogleVoiceTool
 from .prompts import AGENT_PROMPT, AGENT_PROMPT_SUFFIX, FORMAT_INSTRUCTIONS
@@ -54,6 +61,30 @@ from .prompts import AGENT_PROMPT, AGENT_PROMPT_SUFFIX, FORMAT_INSTRUCTIONS
 
 os.environ["GRPC_ENABLE_FORK_SUPPORT"] = "0"
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"  # Hide TensorFlow logs if present
+
+
+class StructuredDataTool(StructuredTool):
+    """Tool that can return structured data types instead of strings."""
+
+    def __init__(self, return_type: Type = str, **kwargs):
+        super().__init__(**kwargs)
+        self.return_type = return_type
+
+    def _run(self, *args, **kwargs):
+        """Override to handle structured returns."""
+        result = super()._run(*args, **kwargs)
+
+        # If the tool is designed to return non-string data, return it directly
+        if self.return_type != str:
+            return result
+
+        # Otherwise, convert to string as usual
+        if isinstance(result, (dict, list)):
+            return json.dumps(result, indent=2)
+        elif isinstance(result, pd.DataFrame):
+            return result.to_json(orient='records', indent=2)
+
+        return str(result)
 
 
 class BasicAgent(AbstractBot):
@@ -89,23 +120,10 @@ class BasicAgent(AbstractBot):
         self.agent_type = agent_type or 'tool-calling'
         self._use_chat: bool = True  # For Agents, we use chat models
         self._agent = None # Agent Executor
-        self.prompt_template = prompt_template or AGENT_PROMPT
-        self.tools = tools or self.default_tools(tools)
-        if system_prompt:
-            self.prompt_template = self.prompt_template.format_map(
-                SafeDict(
-                    system_prompt_base=system_prompt
-                )
-            )
-        else:
-            self.prompt_template = self.prompt_template.format_map(
-                SafeDict(
-                    system_prompt_base="""
-                    Whether you need help with a specific question or just want to have a conversation about a particular topic, Assistant is here to assist.
-                    """
-                )
-            )
-        self.prompt = self.define_prompt(self.prompt_template)
+        self.system_prompt_template = prompt_template or AGENT_PROMPT
+        self._system_prompt_base = system_prompt or ''
+        self.tools = self.default_tools(tools)
+        self._structured_llm: Any = None
         ##  Logging:
         self.logger = logging.getLogger(
             f'{self.name}.Agent'
@@ -114,9 +132,8 @@ class BasicAgent(AbstractBot):
     def default_tools(self, tools: list = None) -> List[AbstractTool]:
         ctools = [
             DuckDuckGoSearchTool(),
-            # SearchTool(),
             MathTool(),
-            GoogleVoiceTool(name="generate_podcast_style_audio_file"),
+            GoogleVoiceTool(name="podcast_generator_tool"),
         ]
         # result_store_tool = ResultStoreTool()
         # get_result_tool = GetResultTool()
@@ -140,7 +157,7 @@ class BasicAgent(AbstractBot):
         """Clear all stored results."""
         ResultStoreTool.clear_results()
 
-    def define_prompt(self, prompt, **kwargs):
+    def _define_prompt(self, **kwargs):
         now = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         list_of_tools = ""
         for tool in self.tools:
@@ -149,29 +166,27 @@ class BasicAgent(AbstractBot):
             list_of_tools += f'- {name}: {description}\n'
         list_of_tools += "\n"
         tools_names = [tool.name for tool in self.tools]
-        tmpl = Template(prompt)
+        tmpl = Template(self.system_prompt_template)
         final_prompt = tmpl.safe_substitute(
+            name=self.name,
+            role=self.role,
+            goal=self.goal,
+            capabilities=self.capabilities,
+            system_prompt_base=self._system_prompt_base,
             today_date=now,
+            tools=tools_names,
             list_of_tools=list_of_tools,
             backstory=self.backstory,
             rationale=self.rationale,
-            format_instructions=FORMAT_INSTRUCTIONS.format(
-                tool_names=", ".join(tools_names)),
+            format_instructions=""
         )
         # Define a structured system message
-        system_message = f"""
-        Today is {now}. If an event is expected to have occurred before this date,
-        assume that results exist and verify using a web search tool.
-
-        If you call a tool and receive a valid answer, finalize your response immediately.
-        Do NOT repeat the same tool call multiple times for the same question.
-        """
         final_prompt += AGENT_PROMPT_SUFFIX
         chat_prompt = ChatPromptTemplate.from_messages([
-            SystemMessagePromptTemplate.from_template(system_message),
+            # SystemMessagePromptTemplate.from_template(system_message),
             ChatPromptTemplate.from_template(final_prompt)
         ])
-        return chat_prompt.partial(
+        self.system_prompt_template = chat_prompt.partial(
             tools=self.tools,
             tool_names=", ".join([tool.name for tool in self.tools]),
             name=self.name,
@@ -213,9 +228,9 @@ class BasicAgent(AbstractBot):
             llm=self._llm,
             toolkit=json_toolkit,
             verbose=True,
-            prompt=self.prompt,
+            prompt=self.system_prompt_template,
         )
-        return self.prompt | self._llm | agent
+        return self.system_prompt_template | self._llm | agent
 
     def runnable_agent(self, **kwargs):
         """
@@ -233,7 +248,7 @@ class BasicAgent(AbstractBot):
             runnable = create_react_agent(
                 self._llm,
                 self.tools,
-                prompt=self.prompt,
+                prompt=self.system_prompt_template,
             ),  # type: ignore
             input_keys_arg=["input"],
             return_keys_arg=["output"],
@@ -256,10 +271,11 @@ class BasicAgent(AbstractBot):
             runnable = create_tool_calling_agent(
                 self._llm,
                 self.tools,
-                prompt=self.prompt,
+                prompt=self.system_prompt_template,
             ),  # type: ignore
             input_keys_arg=["input"],
             return_keys_arg=["output"],
+            memory=self.memory,
             **kwargs
         )
 
@@ -279,7 +295,7 @@ class BasicAgent(AbstractBot):
             runnable = create_openai_functions_agent(
                 self._llm,
                 self.tools,
-                prompt=self.prompt
+                prompt=self.system_prompt_template
             ),  # type: ignore
             input_keys_arg=["input"],
             return_keys_arg=["output"],
@@ -309,7 +325,7 @@ class BasicAgent(AbstractBot):
             max_iterations=5,
             handle_parsing_errors=True,
             verbose=True,
-            prompt=self.prompt,
+            prompt=self.system_prompt_template,
             agent_executor_kwargs = {"return_intermediate_steps": False}
         )
 
@@ -326,11 +342,11 @@ class BasicAgent(AbstractBot):
             agent=agent,
             tools=tools,
             verbose=verbose,
-            return_intermediate_steps=False,
+            return_intermediate_steps=True,
             max_iterations=5,
             max_execution_time=360,
             handle_parsing_errors=True,
-            # memory=self.memory,
+            memory=self.memory,
             **kwargs,
         )
 
@@ -356,7 +372,7 @@ class BasicAgent(AbstractBot):
         if self._use_vector:
             self.configure_store()
         # Conversation History:
-        self.memory = self.get_memory()
+        self.memory = self.get_memory(input_key="input", output_key="output")
         # 1. Initialize the Agent (as the base for RunnableMultiActionAgent)
         if self.agent_type == 'zero_shot':
             self.agent = self.runnable_agent()
@@ -398,10 +414,7 @@ class BasicAgent(AbstractBot):
         result = self._agent.invoke(input_question)
         try:
             response = AgentResponse(question=question, **result)
-            # response.response = self.as_markdown(
-            #     response
-            # )
-            return response
+            return response, result
         except Exception as e:
             self.logger.exception(
                 f"Error on response: {e}"
@@ -422,20 +435,37 @@ class BasicAgent(AbstractBot):
         input_question = {
             "input": query
         }
-        result = await self._agent.ainvoke(input_question)
+        result = None
         try:
-            response = AgentResponse(question=query, **result)
-            try:
-                return self.as_markdown(
-                    response
-                ), response
-            except Exception as exc:
-                self.logger.exception(
-                    f"Error on response: {exc}"
-                )
-                return result.get('output', None), None
+            result = await self._agent.ainvoke(input_question)
         except Exception as e:
-            return result, e
+            return 'Empty Answer', result, e
+        try:
+            output = result.get('output', None)
+            if isinstance(output, pd.DataFrame):
+                result['output'] = output.to_json(orient='records', indent=2)
+            response = AgentResponse(question=query, **result)
+        except ValueError as ve:
+            self.logger.exception(
+                f"Error creating AgentResponse: {ve}"
+            )
+            return result.get('output', None), ve, result
+        except ValidationError as e:
+            self.logger.exception(
+                "Validation error in AgentResponse creation"
+            )
+            return result.get('output', None), e, result
+        try:
+            return self.as_markdown(
+                response
+            ), response, result
+        except Exception as exc:
+            self.logger.exception(
+                f"Error on response: {exc}"
+            )
+            return result.get('output', None), exc, result
+        except Exception as e:
+            return 'Empty Answer', result, e
 
     async def __aenter__(self):
         if not self._agent:
@@ -490,3 +520,119 @@ class BasicAgent(AbstractBot):
         text = ''.join(ch for ch in text if ord(ch) >= 32 or ch in '\n\t')
 
         return text
+
+    def with_structured_output(
+        self,
+        schema: Union[Type[BaseModel], TypedDict, Dict],
+        include_raw: bool = False,
+        few_shot_examples: Optional[List[Dict]] = None
+    ):
+        """
+        Create a structured output version of the agent's LLM.
+
+        Args:
+            schema: The output schema (Pydantic model, TypedDict, or JSON schema dict)
+            include_raw: Whether to include raw response alongside structured
+            few_shot_examples: List of example inputs/outputs for few-shot prompting
+
+        Returns:
+            A structured LLM that enforces the given schema
+        """
+        # Build few-shot prompt if examples provided
+        few_shot_prompt = ""
+        if few_shot_examples:
+            few_shot_prompt = "\n\nHere are some examples:\n"
+            for i, example in enumerate(few_shot_examples, 1):
+                few_shot_prompt += f"\nExample {i}:\n"
+                few_shot_prompt += f"Input: {example.get('input', '')}\n"
+                few_shot_prompt += f"Output: {json.dumps(example.get('output', {}), indent=2)}\n"
+
+        # Create structured LLM with enhanced prompt
+        if few_shot_examples:
+            # Wrap the LLM with few-shot prompting
+            enhanced_prompt = ChatPromptTemplate.from_messages([
+                ("system", f"You are an expert assistant. Follow the examples below and provide responses in the exact same format.{few_shot_prompt}"),
+                ("human", "{input}")
+            ])
+
+            structured_chain = enhanced_prompt | self._llm.with_structured_output(
+                schema, include_raw=include_raw
+            )
+            self._structured_llm = structured_chain
+        else:
+            self._structured_llm = self._llm.with_structured_output(
+                schema, include_raw=include_raw
+            )
+
+        return self._structured_llm
+
+    def get_json_output(self, schema: str) -> JsonSpec:
+        """
+        Define a JSON output parser for the agent.
+        This allows the agent to return structured JSON responses based on a schema.
+        Args:
+            schema (str): The JSON schema to use for output parsing.
+        Returns:
+            JsonSpec: A JSON output parser.
+
+        Example:
+        ```python
+        my_json_schema = {
+            "type": "object",
+            "properties": {
+                "zipcode": {"type": "string"},
+                "population": {"type": "number"},
+                "income_by_bracket": {
+                    "type": "object",
+                    "properties": {
+                        "0-25k": {"type": "number"},
+                        "25k-50k": {"type": "number"},
+                        # …
+                    },
+                },
+            },
+            "required": ["zipcode", "population"],
+        }
+        ```
+        tool = Tool(
+            name="get_demographics_data",
+            func=get_demographics_data,
+            description="…",
+            return_direct=True,
+            args_schema=DemographicsInput,
+            output_parser=agent.get_json_output(schema=my_json_schema),
+        )
+        """
+        return JsonSpec(schema=schema)
+
+
+    def create_structured_tool(
+        self,
+        name: str,
+        func: callable,
+        description: str,
+        schema: Type[BaseModel],
+        return_type: Type = dict,
+        **kwargs
+    ) -> StructuredDataTool:
+        """
+        Create a tool that returns structured data instead of string.
+
+        Args:
+            name: Tool name
+            func: Tool function
+            description: Tool description
+            args_schema: Input schema
+            return_type: Expected return type (dict, DataFrame, etc.)
+
+        Returns:
+            StructuredDataTool instance
+        """
+        return StructuredDataTool(
+            name=name,
+            func=func,
+            description=description,
+            args_schema=schema,
+            return_type=return_type,
+            **kwargs
+        )
