@@ -202,7 +202,7 @@ class GoogleVoiceTool(BaseTool):
                 self.voice_model = "es-ES-Neural2-H"
         elif self.language_code == "en-US":
             if self.voice_gender == "MALE":
-                self.voice_model = "en-US-Neural2-M"
+                self.voice_model = "en-US-Neural2-D"
             else:
                 self.voice_model = "en-US-Neural2-F"
         elif self.language_code == "fr-FR":
