@@ -15,6 +15,8 @@ from langchain_core.tools import (
     ToolException,
     Tool
 )
+# AsyncDB database connections
+from asyncdb import AsyncDB
 # Parrot Agent
 from parrot.bots.agent import BasicAgent
 from parrot.llms.vertex import VertexLLM
@@ -22,6 +24,8 @@ from parrot.llms.groq import GroqLLM
 from parrot.llms.anthropic import AnthropicLLM
 from parrot.llms.openai import OpenAILLM
 from parrot.tools import AbstractToolkit
+# configuration:
+from querysource.conf import default_dsn
 
 # Function: Agent Creation:
 # If use LLama4 with Groq (fastest model)
@@ -134,6 +138,28 @@ class StoreInfo(BaseToolkit):
         "arbitrary_types_allowed": True
     }
 
+    async def get_dataset(self, query: str, output: str = 'pandas') -> pd.DataFrame:
+        """Fetch a dataset based on the provided query.
+
+        Args:
+            query (str): The query string to fetch the dataset.
+
+        Returns:
+            pd.DataFrame: A pandas DataFrame containing the dataset.
+        """
+        db = AsyncDB('pg', dsn=default_dsn)
+        async with await db.connection() as conn:  # pylint: disable=E1101  # noqa
+            conn.output_format(output)
+            result, error = await conn.query(
+                query
+            )
+            if error:
+                raise ToolException(
+                    f"Error fetching dataset: {error}"
+                )
+            return result
+
+
     def get_tools(self) -> List[BaseTool]:
         """Get all available tools in the toolkit.
 
@@ -182,55 +208,57 @@ class StoreInfo(BaseToolkit):
             In production, this will connect to the database using asyncpg.
             Current implementation returns dummy data for development.
         """
-        # Simulate async database call
-        await asyncio.sleep(0.1)
-
-        # Generate dummy data - replace with actual database query
-        dummy_visits = {
-            "store_id": store_id,
-            "total_recent_visits": 3,
-            "data_period": "last_3_visits",
-            "visits": [
-                {
-                    "visit_id": "V001",
-                    "timestamp": "2025-06-05T14:30:00Z",
-                    "duration_minutes": 45,
-                    "customer_type": "returning",
-                    "visit_purpose": "purchase",
-                    "items_viewed": 8,
-                    "purchase_amount": 156.99,
-                    "customer_satisfaction": 4.2
-                },
-                {
-                    "visit_id": "V002",
-                    "timestamp": "2025-06-05T11:15:00Z",
-                    "duration_minutes": 23,
-                    "customer_type": "new",
-                    "visit_purpose": "browsing",
-                    "items_viewed": 12,
-                    "purchase_amount": 0.00,
-                    "customer_satisfaction": 3.8
-                },
-                {
-                    "visit_id": "V003",
-                    "timestamp": "2025-06-04T16:45:00Z",
-                    "duration_minutes": 67,
-                    "customer_type": "returning",
-                    "visit_purpose": "purchase",
-                    "items_viewed": 15,
-                    "purchase_amount": 298.45,
-                    "customer_satisfaction": 4.7
-                }
-            ],
-            "summary": {
-                "avg_duration_minutes": 45.0,
-                "total_purchase_amount": 455.44,
-                "avg_satisfaction": 4.23,
-                "conversion_rate": 0.67
-            }
-        }
-
-        return json.dumps(dummy_visits, indent=2)
+        sql = f"""
+        SELECT
+        form_id,
+        formid,
+        visit_date,
+        visit_timestamp,
+        visit_length,
+        time_in,
+        time_out,
+        store_id,
+        store_number,
+        jsonb_agg(
+            jsonb_build_object(
+            'column_name',   column_name,
+            'question',      question,
+            'data',          data
+            ) ORDER BY column_name
+        ) AS visit_data,
+        jsonb_agg(
+            DISTINCT
+            jsonb_build_object(
+            'visitor_name',     visitor_name,
+            'username', visitor_username,
+            'role', visitor_role
+            )
+        ) AS visitor
+        FROM hisense.form_data
+        WHERE visit_date::date
+        BETWEEN (CURRENT_DATE - INTERVAL '20 days') AND CURRENT_DATE
+        AND store_id = '{store_id}'
+        AND column_name IN ('9733','9731','9732','9730')
+        GROUP BY
+        form_id,
+        formid,
+        visit_date,
+        visit_timestamp,
+        visit_length,
+        store_id,
+        store_number,
+        time_in,
+        time_out
+        ORDER BY
+        form_id,
+        visit_timestamp DESC;
+        """
+        visit_data = await self.get_dataset(sql, output='json')
+        if not visit_data:
+            raise ToolException(
+                f"No visit data found for store with ID {store_id}."
+            )
+        return visit_data
 
     def _get_store_info_tool(self) -> StructuredTool:
         """Create the store information retrieval tool.
@@ -271,60 +299,20 @@ class StoreInfo(BaseToolkit):
         # Simulate async database call
         await asyncio.sleep(0.1)
         print(f"DEBUG: Tool called with store_id: {store_id}")
-
-        # Generate dummy data - replace with actual database query
-        dummy_store_info = {
-            "store_id": store_id,
-            "store_name": f"NextStop Location {store_id}",
-            "location": {
-                "address": "1234 Commerce Street",
-                "city": "Beverly Hills",
-                "state": "CA",
-                "zipcode": "90210",
-                "country": "USA",
-                "coordinates": {
-                    "latitude": 34.0736,
-                    "longitude": -118.4004
-                }
-            },
-            "contact": {
-                "phone": "+1-555-0123",
-                "email": f"{store_id.lower()}@nextstop.com",
-                "manager": "Sarah Johnson"
-            },
-            "operating_hours": {
-                "monday": "09:00-21:00",
-                "tuesday": "09:00-21:00",
-                "wednesday": "09:00-21:00",
-                "thursday": "09:00-21:00",
-                "friday": "09:00-22:00",
-                "saturday": "08:00-22:00",
-                "sunday": "10:00-20:00"
-            },
-            "store_details": {
-                "size_sqft": 15000,
-                "established": "2019-03-15",
-                "store_type": "flagship",
-                "departments": ["electronics", "home", "fashion", "groceries"]
-            },
-            "visit_statistics": {
-                "total_visits": 45678,
-                "unique_visitors": 28934,
-                "average_visit_duration": 42.5,
-                "peak_hours": ["11:00-13:00", "17:00-19:00"],
-                "busiest_day": "saturday",
-                "monthly_growth_rate": 0.12,
-                "last_updated": "2025-06-05T12:00:00Z"
-            },
-            "performance_metrics": {
-                "customer_satisfaction": 4.3,
-                "conversion_rate": 0.68,
-                "avg_basket_size": 87.45,
-                "return_customer_rate": 0.73
-            }
-        }
-        print(f"DEBUG: Tool returning: {dummy_store_info}...")  # Add this
-        return json.dumps(dummy_store_info, indent=2)
+        sql = f"""
+        SELECT store_id, store_name, street_address, city, latitude, longitude, zipcode,
+        state_code market_name, district_name, account_name FROM hisense.stores
+        WHERE store_id = '{store_id}';
+        """
+        store = await self.get_dataset(sql)
+        if store.empty:
+            raise ToolException(
+                f"Store with ID {store_id} not found."
+            )
+        print(f"DEBUG: Fetched store data: {store.head(1).to_dict(orient='records')}")
+        # convert dataframe to dictionary:
+        store_info = store.head(1).to_dict(orient='records')[0]
+        return json.dumps(store_info, indent=2)
 
     def _get_demographics_tool(self) -> StructuredTool:
         """Create the US Census demographics data extraction tool.

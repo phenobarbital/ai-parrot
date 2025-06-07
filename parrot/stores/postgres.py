@@ -4,6 +4,7 @@ Powerful PostgreSQL Vector Database Store with Custom Table Support.
 from typing import (
     Any,
     Dict,
+    Iterable,
     List,
     Tuple,
     Union,
@@ -13,6 +14,8 @@ from typing import (
 from collections.abc import Callable
 import asyncio
 import uuid
+import traceback
+import numpy as np
 # SQL Alchemy
 import sqlalchemy
 from sqlalchemy import inspect, text
@@ -35,6 +38,7 @@ from langchain_postgres.vectorstores import (
     _get_embedding_collection_store,
     _results_to_docs
 )
+from langchain_postgres._utils import maximal_marginal_relevance
 from datamodel.parsers.json import json_encoder  # pylint: disable=E0611
 from .abstract import AbstractStore
 
@@ -45,14 +49,15 @@ Base = declarative_base()
 
 # Define the async classmethods to be attached to our ORM model.
 async def aget_by_name(cls, session: AsyncSession, name: str) -> Optional["CustomEmbeddingStore"]:
-    # result = await session.execute(select(cls).where(cls.name == name))
-    # return result.scalars().first()
     return cls(cmetadata={})
-
 
 class PgVector(PGVector):
     """
     PgVector extends PGVector so that it uses an existing table from a specified schema.
+    Enhanced PgVector that supports:
+    - Configurable embedding column name
+    - Different distance strategies (COSINE, L2/EUCLIDEAN, MAX_INNER_PRODUCT)
+    - Working with existing tables from specified schemas
 
     When instantiating, you provide:
     - connection: an AsyncEngine (or synchronous engine) to your PostgreSQL database.
@@ -75,11 +80,15 @@ class PgVector(PGVector):
         schema: str = 'public',
         collection_name: Optional[str] = None,
         id_column: str = 'id',
+        embedding_column: str = 'embedding',
+        distance_strategy: DistanceStrategy = DistanceStrategy.COSINE,
         **kwargs
     ) -> None:
         self.table_name = table_name
         self.schema = schema
         self._id_column: str = id_column
+        self._embedding_column: str = embedding_column
+        self._distance_strategy = distance_strategy
         self._schema_based: bool = False
         if self.table_name:
             self._schema_based: bool = True
@@ -89,6 +98,7 @@ class PgVector(PGVector):
         super().__init__(
             embeddings=embeddings,
             collection_name=collection_name,
+            distance_strategy=distance_strategy,
             **kwargs
         )
 
@@ -96,7 +106,7 @@ class PgVector(PGVector):
         self,
         table: str,
         schema: str,
-        dimension: int = 768,
+        dimension: int = 384,
         **kwargs
     ) -> Tuple[type, type]:
         """
@@ -124,16 +134,117 @@ class PgVector(PGVector):
                 unique=True,
                 default=lambda: str(uuid.uuid4())
             ),
-            'embedding': sqlalchemy.Column(Vector(dimension)),
+            self._embedding_column: sqlalchemy.Column(Vector(dimension)),
+            'collection_id': sqlalchemy.Column(
+                sqlalchemy.dialects.postgresql.UUID(as_uuid=True),
+                default='00000000-0000-0000-0000-000000000000',
+                nullable=False,
+                index=True
+            ),
             'document': sqlalchemy.Column(sqlalchemy.String, nullable=True),
             'cmetadata': sqlalchemy.Column(JSONB, nullable=True),
             # Attach the async classmethods.
             'aget_by_name': classmethod(aget_by_name),
+            # '__aquery_collection': classmethod(__aquery_collection),
             # 'aget_or_create': classmethod(aget_or_create)
         }
         EmbeddingStore = type("CustomEmbeddingStore", (Base,), attrs)
         EmbeddingStore.__name__ = "EmbeddingStore"
         return (EmbeddingStore, EmbeddingStore)
+
+    async def _PgVector__aquery_collection(
+        self,
+        session: AsyncSession,
+        embedding: List[float],
+        k: int = 4,
+        score_threshold: Optional[float] = None,
+        filter: Optional[Dict[str, str]] = None,
+    ) -> Sequence[Any]:
+        """
+        Query directly from the current table (no collection filtering/join).
+        """
+        filter_by = []
+
+        # If you want to support JSONB metadata filtering
+        if filter:
+            if self.use_jsonb:
+                filter_clauses = self._create_filter_clause(filter)
+                if filter_clauses is not None:
+                    filter_by.append(filter_clauses)
+            else:
+                filter_clauses = self._create_filter_clause_json_deprecated(filter)
+                filter_by.extend(filter_clauses)
+
+        # Build distance expression as usual
+        distance_expr = self.distance_strategy(embedding).label("distance")
+
+        stmt = (
+            select(
+                self.EmbeddingStore,
+                distance_expr
+            )
+            .filter(*filter_by)
+            .order_by(sqlalchemy.asc(distance_expr))
+            .limit(k)
+        )
+
+        if score_threshold is not None:
+            stmt = stmt.filter(distance_expr < score_threshold)
+
+        results: Sequence[Any] = (await session.execute(stmt)).all()
+        return results
+
+    async def amax_marginal_relevance_search_with_score_by_vector(
+        self,
+        embedding: List[float],
+        k: int = 4,
+        fetch_k: int = 20,
+        lambda_mult: float = 0.5,
+        filter: Optional[Dict[str, str]] = None,
+        **kwargs: Any,
+    ) -> List[Tuple[Document, float]]:
+        await self.__apost_init__()
+        async with self._make_async_session() as session:
+            results = await self.__aquery_collection(
+                session=session, embedding=embedding, k=fetch_k, filter=filter
+            )
+            embedding_list = [
+                getattr(result.EmbeddingStore, self._embedding_column)
+                for result in results
+            ]
+            mmr_selected = maximal_marginal_relevance(
+                np.array(embedding, dtype=np.float32),
+                embedding_list,
+                k=k,
+                lambda_mult=lambda_mult,
+            )
+
+            candidates = self._results_to_docs_and_scores(results)
+            return [r for i, r in enumerate(candidates) if i in mmr_selected]
+
+
+    @property
+    def distance_strategy(self) -> Any:
+        """
+        Return the appropriate distance function based on the configured strategy
+        and embedding column name.
+        """
+        # Get the embedding column from the EmbeddingStore model
+        embedding_column = getattr(self.EmbeddingStore, self._embedding_column)
+
+        if self._distance_strategy == DistanceStrategy.EUCLIDEAN_DISTANCE:
+            return embedding_column.l2_distance
+        elif self._distance_strategy == DistanceStrategy.COSINE:
+            return embedding_column.cosine_distance
+        elif self._distance_strategy == DistanceStrategy.MAX_INNER_PRODUCT:
+            return embedding_column.max_inner_product
+        elif self._distance_strategy == DistanceStrategy.DOT_PRODUCT:
+            return embedding_column.dot_product
+        else:
+            raise ValueError(
+                f"Got unexpected value for distance: {self._distance_strategy}. "
+                f"Should be one of {', '.join([ds.value for ds in DistanceStrategy])}."
+            )
 
     async def __apost_init__(
         self,
@@ -163,6 +274,7 @@ class PgVector(PGVector):
         self,
         query: str,
         k: int = 4,
+        limit: Optional[int] = None,
         score_threshold: Optional[float] = None,
         filter: Optional[dict] = None,
         **kwargs: Any,
@@ -177,6 +289,7 @@ class PgVector(PGVector):
         Returns:
             List of Documents most similar to the query.
         """
+        k = limit if limit is not None else k
         await self.__apost_init__()  # Lazy async init
         embedding = await self.embeddings.aembed_query(query)
         return await self.asimilarity_search_by_vector(
@@ -233,12 +346,10 @@ class PgVector(PGVector):
         score_threshold: Optional[float] = None,
         filter: Optional[Dict[str, str]] = None,
     ) -> List[Tuple[Document, float]]:
-        """Search for similar documents in the collection.
-
-        If score_threshold is provided, returns all documents whose computed distance is below that threshold.
-        Otherwise, if k is provided, returns at most k documents.
         """
-        async with self._make_async_session() as session:  # type: ignore[arg-type]
+        Enhanced search method that uses the configurable distance strategy.
+        """
+        async with self._make_async_session() as session:
             filter_by = []
             if filter:
                 if self.use_jsonb:
@@ -246,38 +357,35 @@ class PgVector(PGVector):
                     if filter_clause is not None:
                         filter_by.append(filter_clause)
                 else:
-                    # For non-JSONB cases, you might use a deprecated method:
                     filter_clauses = self._create_filter_clause_json_deprecated(filter)
                     filter_by.extend(filter_clauses)
 
-            # Compute the distance expression
+            # Use the distance_strategy property which now respects the configurable column
             distance_expr = self.distance_strategy(embedding).label("distance")
+
             stmt = (
                 sqlalchemy.select(
                     self.EmbeddingStore,
-                    self.distance_strategy(embedding).label("distance")
+                    distance_expr
                 )
                 .filter(*filter_by)
             )
-            # If a score threshold is provided, add a filter on the distance.
+
             if score_threshold is not None:
                 stmt = stmt.filter(distance_expr < score_threshold)
             else:
-                # Otherwise, limit the number of results.
                 stmt = stmt.order_by(distance_expr).limit(k)
 
             stmt = stmt.order_by(sqlalchemy.asc(distance_expr))
-            # Execute the query and return the results.
             results: Sequence[Any] = (await session.execute(stmt)).all()
             return results
 
     def _results_to_docs_and_scores(self, results: Any) -> List[Tuple[Document, float]]:
-        """Return docs and scores from results."""
-        id_col = getattr(self, "_id_column", "id")
+        """Return docs and scores from results using configurable id column."""
         docs = [
             (
                 Document(
-                    id=str(getattr(result.EmbeddingStore, id_col)),
+                    id=str(getattr(result.EmbeddingStore, self._id_column)),
                     page_content=result.EmbeddingStore.document,
                     metadata=result.EmbeddingStore.cmetadata,
                 ),
@@ -287,6 +395,171 @@ class PgVector(PGVector):
         ]
         return docs
 
+    # Helper method to change distance strategy after initialization
+    def set_distance_strategy(self, strategy: DistanceStrategy) -> None:
+        """
+        Change the distance strategy after initialization.
+
+        Args:
+            strategy: New DistanceStrategy to use
+        """
+        if strategy not in [DistanceStrategy.COSINE, DistanceStrategy.DOT_PRODUCT, DistanceStrategy.EUCLIDEAN_DISTANCE, DistanceStrategy.MAX_INNER_PRODUCT]:
+            raise ValueError(f"Invalid distance strategy: {strategy}")
+        self._distance_strategy = strategy
+
+    # Helper method to change embedding column after initialization
+    def set_embedding_column(self, column_name: str) -> None:
+        """
+        Change the embedding column name after initialization.
+        Note: This requires recreating the ORM models.
+
+        Args:
+            column_name: New embedding column name
+        """
+        self._embedding_column = column_name
+        # Force recreation of ORM models on next operation
+        self._async_init = False
+
+    async def aadd_embeddings(
+        self,
+        texts: Sequence[str],
+        embeddings: List[List[float]],
+        metadatas: Optional[List[dict]] = None,
+        ids: Optional[List[str]] = None,
+        **kwargs: Any,
+    ) -> List[str]:
+        """Async add embeddings to the vectorstore.
+
+        Args:
+            texts: Iterable of strings to add to the vectorstore.
+            embeddings: List of list of embedding vectors.
+            metadatas: List of metadatas associated with the texts.
+            ids: Optional list of ids for the texts.
+                If not provided, will generate a new id for each text.
+            kwargs: vectorstore specific parameters
+        """
+        await self.__apost_init__()  # Lazy async init
+
+        if ids is None:
+            ids_ = [str(uuid.uuid4()) for _ in texts]
+        else:
+            ids_ = [id if id is not None else str(uuid.uuid4()) for id in ids]
+
+        if not metadatas:
+            metadatas = [{} for _ in texts]
+
+        async with self._make_async_session() as session:  # type: ignore[arg-type]
+            # Build data dictionary using configurable column names
+            data = []
+            for text, metadata, embedding, id in zip(texts, metadatas, embeddings, ids_):
+                row_data = {
+                    self._id_column: id,
+                    self._embedding_column: embedding,
+                    'document': text,
+                    'cmetadata': metadata or {},
+                }
+
+                # Only add collection_id if not using schema-based approach
+                if not self._schema_based:
+                    collection = await self.aget_collection(session)
+                    if not collection:
+                        raise ValueError("Collection not found")
+                    row_data['collection_id'] = collection.uuid
+                else:
+                    # For schema-based approach, use default collection_id
+                    row_data['collection_id'] = '00000000-0000-0000-0000-000000000000'
+
+                data.append(row_data)
+
+            stmt = insert(self.EmbeddingStore).values(data)
+
+            # Use configurable ID column for conflict detection
+            on_conflict_stmt = stmt.on_conflict_do_update(
+                index_elements=[self._id_column],
+                set_={
+                    self._embedding_column: stmt.excluded.__getattr__(self._embedding_column),
+                    'document': stmt.excluded.document,
+                    'cmetadata': stmt.excluded.cmetadata,
+                },
+            )
+            await session.execute(on_conflict_stmt)
+            await session.commit()
+
+        return ids_
+
+    async def aadd_texts(
+        self,
+        texts: Iterable[str],
+        metadatas: Optional[List[dict]] = None,
+        ids: Optional[List[str]] = None,
+        **kwargs: Any,
+    ) -> List[str]:
+        """Run more texts through the embeddings and add to the vectorstore.
+
+        Args:
+            texts: Iterable of strings to add to the vectorstore.
+            metadatas: Optional list of metadatas associated with the texts.
+            ids: Optional list of ids for the texts.
+                If not provided, will generate a new id for each text.
+            kwargs: vectorstore specific parameters
+
+        Returns:
+            List of ids from adding the texts into the vectorstore.
+        """
+        await self.__apost_init__()  # Lazy async init
+        texts_ = list(texts)
+
+        # Use self.embeddings instead of self.embedding_function
+        print('EMBEDDDINGs > ', self.embeddings)
+        embeddings = await self.embeddings.aembed_documents(texts_)
+
+        return await self.aadd_embeddings(
+            texts=texts_,
+            embeddings=list(embeddings),
+            metadatas=list(metadatas) if metadatas else None,
+            ids=list(ids) if ids else None,
+            **kwargs,
+        )
+
+
+    async def aadd_documents(
+        self,
+        documents: List[Document],
+        ids: Optional[List[str]] = None,
+        **kwargs: Any,
+    ) -> List[str]:
+        """Add documents to the vectorstore.
+
+        Args:
+            documents: List of Document objects to add to the vectorstore.
+            ids: Optional list of ids for the documents.
+                If not provided, will generate a new id for each document.
+            kwargs: vectorstore specific parameters
+
+        Returns:
+            List of ids from adding the documents into the vectorstore.
+        """
+        await self.__apost_init__()  # Lazy async init
+
+        texts = [doc.page_content for doc in documents]
+        metadatas = [doc.metadata for doc in documents]
+
+        # Use document IDs if available, otherwise use provided ids
+        doc_ids = []
+        for i, doc in enumerate(documents):
+            if hasattr(doc, 'id') and doc.id:
+                doc_ids.append(doc.id)
+            elif ids and i < len(ids) and ids[i]:
+                doc_ids.append(ids[i])
+            else:
+                doc_ids.append(str(uuid.uuid4()))
+
+        return await self.aadd_texts(
+            texts=texts,
+            metadatas=metadatas,
+            ids=doc_ids,
+            **kwargs,
+        )
 
 class PgvectorStore(AbstractStore):
     """Pgvector Store Class.
@@ -295,6 +568,11 @@ class PgvectorStore(AbstractStore):
     """
     def __init__(
         self,
+        table: str = None,
+        schema: str = 'public',
+        id_column: str = 'id',
+        embedding_column: str = 'embedding',
+        distance_strategy: str = 'COSINE',
         embedding_model: Union[dict, str] = None,
         embedding: Union[dict, Callable] = None,
         **kwargs
@@ -304,14 +582,48 @@ class PgvectorStore(AbstractStore):
             embedding=embedding,
             **kwargs
         )
-        self.table: str = kwargs.get('table', None)
-        self.schema: str = kwargs.get('schema', 'public')
-        self._id_column = kwargs.get('id_column', 'id')
+        self.table: str = table
+        self.schema: str = schema
+        if self.schema is not None:
+            self.collection_name = f"{self.schema}.{self.collection_name}"
         if self.table and not self.collection_name:
             self.collection_name = f"{self.schema}.{self.table}"
+        self.database: str = kwargs.get('database', None)
+        self._id_column = id_column
+        self._embedding_column: str = embedding_column
+        self.dimension: int = kwargs.get('dimension', 384)
         self.dsn = kwargs.get('dsn', self.database)
         self._drop: bool = kwargs.pop('drop', False)
         self._connection: AsyncEngine = None
+        # Convert string to DistanceStrategy enum
+        strategy_mapping = {
+            'COSINE': DistanceStrategy.COSINE,
+            'L2': DistanceStrategy.EUCLIDEAN_DISTANCE,
+            'EUCLIDEAN': DistanceStrategy.EUCLIDEAN_DISTANCE,
+            'IP': DistanceStrategy.MAX_INNER_PRODUCT,
+            'MAX_INNER_PRODUCT': DistanceStrategy.MAX_INNER_PRODUCT,
+            'DOT_PRODUCT': DistanceStrategy.DOT_PRODUCT,
+        }
+        # By Default use COSINE distance strategy
+        self.distance_strategy = strategy_mapping.get(
+            distance_strategy.upper(),
+            DistanceStrategy.COSINE
+        )
+        self.vector: PgVector = None  # Store the vector instance
+        self._context_depth = 0  # Track context depth
+
+    def set_distance_strategy(self, strategy: DistanceStrategy) -> None:
+        """
+        Change the distance strategy after initialization.
+
+        Args:
+            strategy: New DistanceStrategy to use
+        """
+        if strategy not in [DistanceStrategy.COSINE, DistanceStrategy.DOT_PRODUCT, DistanceStrategy.EUCLIDEAN_DISTANCE, DistanceStrategy.MAX_INNER_PRODUCT]:
+            raise ValueError(f"Invalid distance strategy: {strategy}")
+        self.distance_strategy = strategy
+        if self.vector is not None:
+            self.vector.set_distance_strategy(strategy)
 
     async def collection_exists(self, collection: str = None) -> bool:
         """Check if a collection exists in the database."""
@@ -329,32 +641,37 @@ class PgvectorStore(AbstractStore):
             return bool(result.scalar())
 
     async def connection(self, alias: str = None):
-        """Connection to DuckDB.
+        """Connection to PgVector Store.
 
         Args:
             alias (str): Database alias.
 
         Returns:
-            Callable: DuckDB connection.
+            Callable: PgVector connection.
 
         """
         self._connection = create_async_engine(self.dsn, future=True, echo=False)
         async with self._connection.begin() as conn:
             if getattr(self, "_drop", False):
-                vectorstore = PgVector(
+                self.vector = PgVector(
                     embeddings=self._embed_.embedding,
                     table_name=self.table,
                     schema=self.schema,
-                    id_column=self._id_column,
                     collection_name=self.collection_name,
                     embedding_length=self.dimension,
                     connection=self._connection,
+                    id_column=self._id_column,
+                    embedding_column=self._embedding_column,
+                    distance_strategy=self.distance_strategy,
+                    async_mode=True,
                     use_jsonb=True,
                     create_extension=False
                 )
-                await vectorstore.adrop_tables()
+                await self.vector.adrop_tables()
             if not await self.collection_exists(self.collection_name):
-                print(f"⚠️ Collection `{self.collection_name}` not found. Creating a new one...")
+                # print(
+                #     f"⚠️ Collection `{self.collection_name}` not found. Creating a new one..."
+                # )
                 await self.create_collection(self.collection_name)
         self._connected = True
         return self._connection
@@ -376,6 +693,7 @@ class PgvectorStore(AbstractStore):
         finally:
             self._connection = None
             self._connected = False
+        print("✅ Connection closed successfully.")
 
     async def create_collection(self, collection: str) -> None:
         """Create a new collection in the database."""
@@ -392,9 +710,6 @@ class PgvectorStore(AbstractStore):
                 use_jsonb=True,
                 create_extension=False
             )
-            print(
-                f"✅ Collection `{self.collection_name}` created successfully."
-            )
 
     def get_vector(
         self,
@@ -402,6 +717,9 @@ class PgvectorStore(AbstractStore):
         schema: Optional[str] = None,
         collection: Union[str, None] = None,
         embedding: Optional[Callable] = None,
+        metric_type: Optional[str] = None,
+        embedding_column: Optional[str] = None,
+        score_threshold: Optional[float] = None,
         **kwargs
     ) -> PGVector:
         """
@@ -423,19 +741,27 @@ class PgvectorStore(AbstractStore):
             schema = self.schema
         if not collection:
             collection = self.collection_name
+        if self.vector is not None:
+            return self.vector
         if embedding is not None:
             _embed_ = embedding
         else:
             _embed_ = self.create_embedding(
                 embedding_model=self.embedding_model
             )
-        return PgVector(
+        if not metric_type:
+            metric_type = self.distance_strategy
+        if not embedding_column:
+            embedding_column = self._embedding_column
+        self.vector = PgVector(
             connection=self._connection,
             table_name=table,
             schema=schema,
             id_column=self._id_column,
+            embedding_column=embedding_column,
             collection_name=collection,
             embedding_length=self.dimension,
+            distance_strategy=metric_type,
             embeddings=_embed_.embedding,
             logger=self.logger,
             async_mode=True,
@@ -443,6 +769,7 @@ class PgvectorStore(AbstractStore):
             create_extension=False,
             **kwargs
         )
+        return self.vector
 
     def memory_retriever(
         self,
@@ -473,10 +800,15 @@ class PgvectorStore(AbstractStore):
         documents: List[Document],
         table: Optional[str] = None,
         schema: Optional[str] = 'public',
+        embedding_column: Optional[str] = None,
         collection: Union[str, None] = None,
         **kwargs
     ) -> None:
         """Save Documents as Vectors in VectorStore."""
+        if not self._connected or not self._connection:
+            raise RuntimeError(
+                "Store is not connected. Use 'async with store:' context manager."
+            )
         _embed_ = self._embed_ or self.create_embedding(
                 embedding_model=self.embedding_model
         )
@@ -488,9 +820,11 @@ class PgvectorStore(AbstractStore):
             table_name=table,
             schema=schema,
             id_column=self._id_column,
+            embedding_column=embedding_column or self._embedding_column,
             collection_name=collection,
             embedding=_embed_.embedding,
             embedding_length=self.dimension,
+            distance_strategy=self.distance_strategy,
             use_jsonb=True,
             async_mode=True,
         )
@@ -505,9 +839,14 @@ class PgvectorStore(AbstractStore):
         """Save Documents as Vectors in VectorStore."""
         if not collection:
             collection = self.collection_name
+        if not self._connected or not self._connection:
+            raise RuntimeError(
+                "Store is not connected. Use 'async with store:' context manager."
+            )
         vectordb = self.get_vector(collection=collection, **kwargs)
+        doc_ids = [doc.id for doc in documents]
         # Asynchronously add documents to PGVector
-        await vectordb.aadd_documents(documents)
+        await vectordb.aadd_documents(documents, ids=doc_ids)
 
     async def similarity_search(
         self,
@@ -517,24 +856,227 @@ class PgvectorStore(AbstractStore):
         collection: Union[str, None] = None,
         limit: int = 2,
         score_threshold: Optional[float] = None,
+        search_strategy: str = "auto",
         filter: Optional[dict] = None,
         **kwargs
     ) -> List[Document]:
-        """Search for similar documents in VectorStore."""
+        """
+        Search for similar documents in VectorStore.
+
+        Args:
+            search_strategy:
+                - "auto": Automatically choose best strategy
+                - "exact": Exact ID/code matching
+                - "semantic": Semantic similarity search
+                - "location": Location-focused search
+        """
         if not table:
             table = self.table
         if not schema:
             schema = self.schema
         if collection is None:
             collection = self.collection_name
-        async with self:
-            vector_db = self.get_vector(table=table, schema=schema, collection=collection, **kwargs)
-            return await vector_db.asimilarity_search(
-                query,
-                k=limit,
-                score_threshold=score_threshold,
-                filter=filter
+
+        # print(f"🔍 Starting similarity_search with query: '{query}'")
+        # print(f"📊 Context depth: {self._context_depth}")
+        # print(f"🔌 Connected: {self._connected}")
+        # print(f"🗄️ Connection: {self._connection}")
+        # print(f"🔍 Smart search: '{query}' using strategy: {search_strategy}")
+        # Just ensure connection exists, don't create nested context
+        if not self._connected or not self._connection:
+            raise RuntimeError(
+                "Store is not connected. Use 'async with store:' context manager."
             )
+
+        vector_db = self.get_vector(table=table, schema=schema, collection=collection, **kwargs)
+        return await vector_db.asimilarity_search(
+            query,
+            k=limit,
+            score_threshold=score_threshold,
+            filter=filter
+        )
+
+    async def similarity_search_with_score(
+        self,
+        query: str,
+        table: Optional[str] = None,
+        schema: Optional[str] = None,
+        collection: Union[str, None] = None,
+        limit: int = 2,
+    ) -> List[Document]:
+        """Search for similar documents in VectorStore with scores."""
+        if not table:
+            table = self.table
+        if not schema:
+            schema = self.schema
+        if collection is None:
+            collection = self.collection_name
+
+        if not self._connected or not self._connection:
+            raise RuntimeError(
+                "Store is not connected. Use 'async with store:' context manager."
+            )
+
+        vector_db = self.get_vector(table=table, schema=schema, collection=collection)
+        return await vector_db.asimilarity_search_with_score(query, k=limit)
+
+    async def prepare_embedding_table(
+        self,
+        tablename: str,
+        conn:  AsyncEngine = None,
+        embedding_column: str = 'embedding',
+        document_column: str = 'document',
+        metadata_column: str = 'cmetadata',
+        dimension: int = None,
+        id_column: str = 'id',
+        use_jsonb: bool = True,
+        drop_columns: bool = True,
+        create_all_indexes: bool = True,
+        **kwargs
+    ):
+        """
+        Prepare a Postgres Table as an embedding table in PostgreSQL with advanced features.
+        This method prepares a table with the following columns:
+        - id: unique identifier (String)
+        - embedding: the vector column (Vector(dimension) or JSONB)
+        - document: text column containing the document
+        - collection_id: UUID column for collection identification.
+        - metadata: JSONB column for metadata
+        - Additional columns based on the provided `columns` list
+        - Enhanced indexing strategies for efficient querying
+        - Support for multiple distance strategies (COSINE, L2, IP, etc.)
+        Args:
+        - tablename (str): Name of the table to create.
+        - embedding_column (str): Name of the column for storing embeddings.
+        - document_column (str): Name of the column for storing document text.
+        - metadata_column (str): Name of the column for storing metadata.
+        - dimension (int): Dimension of the embedding vector.
+        - id_column (str): Name of the column for storing unique identifiers.
+        - use_jsonb (bool): Whether to use JSONB for metadata storage.
+        - drop_columns (bool): Whether to drop existing columns.
+        - create_all_indexes (bool): Whether to create all distance strategies.
+    """
+        # Drop existing columns if requested
+        if drop_columns:
+            for column in (document_column, embedding_column, metadata_column):
+                await conn.execute(
+                    sqlalchemy.text(
+                        f'ALTER TABLE {tablename} DROP COLUMN IF EXISTS {column};'
+                    )
+                )
+        # Create metadata column as a jsonb field
+        if use_jsonb:
+            await conn.execute(
+                sqlalchemy.text(
+                    f'ALTER TABLE {tablename} ADD COLUMN IF NOT EXISTS {metadata_column} JSONB;'
+                )
+            )
+        # Use pgvector type
+        await conn.execute(
+            sqlalchemy.text(
+                f'ALTER TABLE {tablename} ADD COLUMN IF NOT EXISTS {embedding_column} vector({dimension});'
+            )
+        )
+        # Create additional columns
+        for col_name, col_type in [
+            (document_column, 'TEXT'),
+            (id_column, 'varchar'),
+        ]:
+            await conn.execute(
+                sqlalchemy.text(
+                    f'ALTER TABLE {tablename} ADD COLUMN IF NOT EXISTS {col_name} {col_type};'
+                )
+            )
+        # Create the Collection Column:
+        await conn.execute(
+            sqlalchemy.text(
+                f"ALTER TABLE {tablename} ADD COLUMN IF NOT EXISTS collection_id UUID;"
+            )
+        )
+        await conn.execute(
+            sqlalchemy.text(
+                f"UPDATE {tablename} SET collection_id = '00000000-0000-0000-0000-000000000000';"
+            )
+        )
+        await conn.execute(
+            sqlalchemy.text(
+                f"ALTER TABLE {tablename} ALTER COLUMN collection_id SET NOT NULL;"
+            )
+        )
+        # ✅ CREATE COMPREHENSIVE INDEXES
+        if create_all_indexes:
+            print("🔧 Creating indexes for all distance strategies...")
+
+            # COSINE index (most common for text embeddings)
+            await conn.execute(
+                sqlalchemy.text(
+                    f"CREATE INDEX IF NOT EXISTS idx_{tablename.replace('.', '_')}_cosine "
+                    f"ON {tablename} USING ivfflat ({embedding_column} vector_cosine_ops);"
+                )
+            )
+            print("✅ Created COSINE index")
+            # L2/Euclidean index
+            await conn.execute(
+                sqlalchemy.text(
+                    f"CREATE INDEX IF NOT EXISTS idx_{tablename.replace('.', '_')}_l2 "
+                    f"ON {tablename} USING ivfflat ({embedding_column} vector_l2_ops);"
+                )
+            )
+            print("✅ Created L2 index")
+
+            # Inner Product index
+            try:
+                await conn.execute(
+                    sqlalchemy.text(
+                        f"CREATE INDEX IF NOT EXISTS idx_{tablename.replace('.', '_')}_ip "
+                        f"ON {tablename} USING ivfflat ({embedding_column} vector_ip_ops);"
+                    )
+                )
+                print("✅ Created Inner Product index")
+            except Exception as e:
+                print(f"⚠️ Inner Product index creation failed: {e}")
+
+            # HNSW indexes for better performance (requires more memory)
+            try:
+                await conn.execute(
+                    sqlalchemy.text(
+                        f"CREATE INDEX IF NOT EXISTS idx_{tablename.replace('.', '_')}_hnsw_cosine "
+                        f"ON {tablename} USING hnsw ({embedding_column} vector_cosine_ops);"
+                    )
+                )
+                print("✅ Created HNSW COSINE index")
+            except Exception as e:
+                print(f"⚠️ HNSW index creation failed (this is optional): {e}")
+
+        else:
+            # Create index only for current strategy
+            distance_strategy_ops = {
+                DistanceStrategy.COSINE: "vector_cosine_ops",
+                DistanceStrategy.EUCLIDEAN_DISTANCE: "vector_l2_ops",
+                DistanceStrategy.MAX_INNER_PRODUCT: "vector_ip_ops",
+                DistanceStrategy.DOT_PRODUCT: "vector_ip_ops"
+            }
+
+            ops = distance_strategy_ops.get(self.distance_strategy, "vector_cosine_ops")
+            strategy_name = str(self.distance_strategy).rsplit('.', maxsplit=1)[-1].lower()
+
+            await conn.execute(
+                sqlalchemy.text(
+                    f"CREATE INDEX IF NOT EXISTS idx_{tablename.replace('.', '_')}_{strategy_name} "
+                    f"ON {tablename} USING ivfflat ({embedding_column} {ops});"
+                )
+            )
+            print(f"✅ Created {strategy_name.upper()} index")
+
+        # Create JSONB indexes for better performance
+        await self._create_jsonb_indexes(
+            conn,
+            tablename,
+            metadata_column,
+            id_column
+        )
+        return True
+
 
     async def create_embedding_table(
         self,
@@ -543,111 +1085,248 @@ class PgvectorStore(AbstractStore):
         schema: str = 'public',
         embedding_column: str = 'embedding',
         document_column: str = 'document',
-        metadata_column: str = 'metadata',
+        metadata_column: str = 'cmetadata',
+        dimension: int = None,
         id_column: str = 'id',
-        dimension: int = 768,
-        use_jsonb: bool = False,
-        drop_columns: bool = False,
+        use_jsonb: bool = True,
+        drop_columns: bool = True,
+        create_all_indexes: bool = True,
         **kwargs
     ):
         """
-        Create an embedding column and vectorize Table information.
+        Create an embedding table in PostgreSQL with advanced features.
+        This method creates a table with the following columns:
+        - id: unique identifier (String)
+        - embedding: the vector column (Vector(dimension) or JSONB)
+        - document: text column containing the document
+        - cmetadata: JSONB column for metadata
+        - Additional columns based on the provided `columns` list
+        - Enhanced indexing strategies for efficient querying
+        - Support for multiple distance strategies (COSINE, L2, IP, etc.)
+        Args:
+        - table (str): Name of the table to create.
+        - columns (List[str]): List of column names to include in the table.
+        - schema (str): Database schema where the table will be created.
+        - embedding_column (str): Name of the column for storing embeddings.
+        - document_column (str): Name of the column for storing document text.
+        - metadata_column (str): Name of the column for storing metadata.
+        - dimension (int): Dimension of the embedding vector.
+        - id_column (str): Name of the column for storing unique identifiers.
+        - use_jsonb (bool): Whether to use JSONB for metadata storage.
+        - drop_columns (bool): Whether to drop existing columns.
+        - create_all_indexes (bool): Whether to create all distance strategies.
+
+        Enhanced embedding table creation with JSONB strategy for better semantic search.
+
+        This approach creates multiple document representations:
+        1. Primary search content (emphasizing store ID)
+        2. Location-based content
+        3. Structured metadata for filtering
+        4. Multiple embedding variations
         """
         tablename = f'{schema}.{table}'
         cols = ', '.join(columns)
         _qry = f'SELECT {cols} FROM {tablename};'
+        dimension = dimension or self.dimension
+
         # Generate a sample embedding to determine its dimension
         sample_vector = self._embed_.embedding.embed_query("sample text")
         vector_dim = len(sample_vector)
-        # Compare it with the expected dimension
+        self.logger.notice(
+            f"USING EMBED {self._embed_} with dimension {vector_dim}"
+        )
+
         if vector_dim != dimension:
             raise ValueError(
-                f"Expected embedding dimension {self.dimension}, but got {vector_dim}"
+                f"Expected embedding dimension {dimension}, but got {vector_dim}"
             )
+
         async with self._connection.begin() as conn:
-            result = await conn.execute(
-                sqlalchemy.text(_qry)
-            )
+            result = await conn.execute(sqlalchemy.text(_qry))
             rows = result.fetchall()
-            # Concatenate column names and values to form an input string:
-            # 'store_name: BestBuy, location_code: 123456, ...'
-            # data = [
-            #     ', '.join([f"{col}: {row[col]}" for col in columns])
-            #     for row in rows
-            # ]
-            # if drop columns, then first remove the existing columns:
-            if drop_columns:
-                for column in (document_column, embedding_column, metadata_column):
-                    await conn.execute(
-                        sqlalchemy.text(
-                            f'ALTER TABLE {tablename} DROP COLUMN IF EXISTS {column};'
-                        )
-                    )
-            # Create a new column for embeddings
-            if use_jsonb:
-                await conn.execute(
-                    sqlalchemy.text(
-                        f'ALTER TABLE {tablename} ADD COLUMN IF NOT EXISTS {embedding_column} JSONB;'  # pylint: disable=C0301
-                    )
-                )
-            else:
-                # Use Embedding pgvector type:
-                await conn.execute(
-                    sqlalchemy.text(
-                        f'ALTER TABLE {tablename} ADD COLUMN IF NOT EXISTS {embedding_column} vector({dimension});'  # pylint: disable=C0301
-                    )
-                )
-                # Create a Index for vector:
-                # TODO: define index algorithm and options.
-                await conn.execute(
-                    sqlalchemy.text(
-                        f"CREATE INDEX IF NOT EXISTS idx_{schema}_{table}_embeddings ON {tablename} USING hnsw ({embedding_column} vector_l2_ops);"  # pylint: disable=C0301
-                    )
-                )
-                # And also, an index IVFLAT:
-                await conn.execute(
-                    sqlalchemy.text(
-                        f"CREATE INDEX IF NOT EXISTS idx_{schema}_{table}_ivflat ON {tablename} USING ivfflat ({embedding_column} vector_cosine_ops);"  # pylint: disable=C0301
-                    )
-                )
-            # Then, create the info column and id column (if required):
-            # Text info Column (content)
-            await conn.execute(
-                sqlalchemy.text(
-                    f'ALTER TABLE {tablename} ADD COLUMN IF NOT EXISTS {document_column} TEXT;'
-                )
+
+            await self.prepare_embedding_table(
+                tablename=tablename,
+                embedding_column=embedding_column,
+                document_column=document_column,
+                metadata_column=metadata_column,
+                dimension=dimension,
+                id_column=id_column,
+                use_jsonb=use_jsonb,
+                drop_columns=drop_columns,
+                create_all_indexes=create_all_indexes,
+                **kwargs
             )
-            # ID Column (if required)
-            await conn.execute(
-                sqlalchemy.text(
-                    f'ALTER TABLE {tablename} ADD COLUMN IF NOT EXISTS {id_column} varchar;'
-                )
-            )
-            # Metadata Column (JSONB):
-            await conn.execute(
-                sqlalchemy.text(
-                    f'ALTER TABLE {tablename} ADD COLUMN IF NOT EXISTS {metadata_column} jsonb;'
-                )
-            )
-            # And ID Column:
-            await conn.execute(
-                sqlalchemy.text(
-                    f'ALTER TABLE {tablename} ADD COLUMN IF NOT EXISTS {id_column} varchar;'
-                )
-            )
-            for row in rows:
+
+            # Populate the embedding data
+            for i, row in enumerate(rows):
                 _id = getattr(row, id_column)
                 metadata = {col: getattr(row, col) for col in columns}
-                data = " ".join([f"{col}: {metadata[col]}" for col in columns])
-                # Get the vector information from data:
-                vector = self._embed_.embedding.embed_query(data)
+                data = await self._create_metadata_structure(metadata, id_column, _id)
+
+                # Generate embedding
+                searchable_text = data['structured_search']
+                print(f"🔍 Row {i + 1}/{len(rows)} - {_id}")
+                print(f"   Text: {searchable_text[:100]}...")
+
+                vector = self._embed_.embedding.embed_query(searchable_text)
                 vector_str = "[" + ",".join(str(v) for v in vector) + "]"
+
                 await conn.execute(
-                sqlalchemy.text(f"""
-                    UPDATE {tablename}
-                    SET {embedding_column} = :vector, {document_column} = :info, {metadata_column} = :metadata
-                    WHERE {id_column} = :id
-                """),
-                {"vector": vector_str, "id": _id, "info": data, "metadata": json_encoder(metadata)}
-            )
-        print("✅ Updated Table embeddings.")
+                    sqlalchemy.text(f"""
+                        UPDATE {tablename}
+                        SET {embedding_column} = :embeddings,
+                            {document_column} = :document,
+                            {metadata_column} = :metadata
+                        WHERE {id_column} = :id
+                    """),
+                    {
+                        "embeddings": vector_str,
+                        "document": searchable_text,
+                        "metadata": json_encoder(data),
+                        "id": _id
+                    }
+                )
+
+        print("✅ Updated Table embeddings with comprehensive indexes.")
+
+    def _create_natural_searchable_text(
+        self,
+        metadata: dict,
+        id_column: str,
+        record_id: str
+    ) -> str:
+        """
+        Create well-structured, natural language text with proper separation.
+
+        This creates clean, readable text that embedding models can understand better.
+        """
+        # Start with the ID in multiple formats for exact matching
+        text_parts = [
+            f"ID: {record_id}",
+            f"Identifier: {record_id}",
+            id_column + ": " + record_id
+        ]
+
+        # Process each field to create natural language descriptions
+        for key, value in metadata.items():
+            if value is None or value == '':
+                continue
+            clean_value = value.strip() if isinstance(value, str) else str(value)
+            text_parts.append(f"{key}: {clean_value}")
+            # Add the field in natural language format
+            clean_key = key.replace('_', ' ').title()
+            text_parts.append(f"{clean_key}={clean_value}")
+
+        # Join with spaces and clean up
+        searchable_text = ', '.join(text_parts) + '.'
+
+        return searchable_text
+
+    def _create_structured_search_text(self, metadata: dict, id_column:str, record_id: str) -> str:
+        """
+        Create a more structured but still readable search text.
+
+        This emphasizes key-value relationships while staying readable.
+        """
+        # ID section with emphasis
+        kv_sections = [
+            f"ID: {record_id}",
+            f"Identifier: {record_id}",
+            id_column + ": " + record_id
+        ]
+
+        # Key-value sections with clean separation
+        for key, value in metadata.items():
+            if value is None or value == '':
+                continue
+
+            # Clean key-value representation
+            clean_key = key.replace('_', ' ').title()
+            kv_sections.append(f"{clean_key}: {value}")
+            kv_sections.append(f"{key}: {value}")
+
+        # Combine with proper separation
+        return ' | '.join(kv_sections)
+
+    async def _create_metadata_structure(
+        self,
+        metadata: dict,
+        id_column: str,
+        _id: str
+    ):
+        """Create a structured metadata representation for the document."""
+        # Create a structured metadata representation
+        enhanced_metadata = {
+            "id": _id,
+            id_column: _id,
+            "_variants": [
+                _id,
+                _id.lower(),
+                _id.upper()
+            ]
+        }
+        for key, value in metadata.items():
+            enhanced_metadata[key] = value
+            # Create searchable variants for key fields
+            if value and isinstance(value, str):
+                variants = [value, value.lower(), value.upper()]
+                # Add variants without special characters
+                clean_value = ''.join(c for c in str(value) if c.isalnum() or c.isspace())
+                if clean_value != value:
+                    variants.append(clean_value)
+                enhanced_metadata[f"_{key}_variants"] = list(set(variants))
+        # create a full-text search field of searchable content
+        enhanced_metadata['searchable_content'] = self._create_natural_searchable_text(
+            metadata, id_column, _id
+        )
+
+        # Also create a structured search text that emphasizes important fields
+        enhanced_metadata['structured_search'] = self._create_structured_search_text(
+            metadata, id_column, _id
+        )
+
+        return enhanced_metadata
+
+    async def _create_jsonb_indexes(
+        self,
+        conn,
+        tablename: str,
+        metadata_col: str,
+        id_column: str
+    ):
+        """Create optimized JSONB indexes for better search performance."""
+
+        print("🔧 Creating JSONB indexes on Metadata for optimized search...")
+
+        # Index for ID searches
+        await conn.execute(
+            sqlalchemy.text(f"""
+                CREATE INDEX IF NOT EXISTS idx_{tablename.replace('.', '_')}_{id_column}
+                ON {tablename} USING BTREE (({metadata_col}->>'{id_column}'));
+            """)
+        )
+        await conn.execute(
+            sqlalchemy.text(f"""
+                CREATE INDEX IF NOT EXISTS idx_{tablename.replace('.', '_')}_id
+                ON {tablename} USING BTREE (({metadata_col}->>'id'));
+            """)
+        )
+
+        # GIN index for full-text search on searchable content
+        await conn.execute(
+            sqlalchemy.text(f"""
+                CREATE INDEX IF NOT EXISTS idx_{tablename.replace('.', '_')}_fulltext
+                ON {tablename} USING GIN (to_tsvector('english', {metadata_col}->>'searchable_content'));
+            """)
+        )
+
+        # GIN index for JSONB structure searches
+        await conn.execute(
+            sqlalchemy.text(f"""
+                CREATE INDEX IF NOT EXISTS idx_{tablename.replace('.', '_')}_metadata_gin
+                ON {tablename} USING GIN ({metadata_col});
+            """)
+        )
+
+        print("✅ Created optimized JSONB indexes")
