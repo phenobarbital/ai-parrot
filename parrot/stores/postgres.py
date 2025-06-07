@@ -14,7 +14,7 @@ from collections.abc import Callable
 import asyncio
 import uuid
 import traceback
-import inspect as iinspect
+import numpy as np
 # SQL Alchemy
 import sqlalchemy
 from sqlalchemy import inspect, text
@@ -37,6 +37,7 @@ from langchain_postgres.vectorstores import (
     _get_embedding_collection_store,
     _results_to_docs
 )
+from langchain_postgres._utils import maximal_marginal_relevance
 from datamodel.parsers.json import json_encoder  # pylint: disable=E0611
 from .abstract import AbstractStore
 
@@ -47,9 +48,49 @@ Base = declarative_base()
 
 # Define the async classmethods to be attached to our ORM model.
 async def aget_by_name(cls, session: AsyncSession, name: str) -> Optional["CustomEmbeddingStore"]:
-    # result = await session.execute(select(cls).where(cls.name == name))
-    # return result.scalars().first()
     return cls(cmetadata={})
+
+async def __aquery_collection(
+    cls,
+    session: AsyncSession,
+    embedding: List[float],
+    k: int = 4,
+    score_threshold: Optional[float] = None,
+    filter: Optional[Dict[str, str]] = None,
+) -> Sequence[Any]:
+    """
+    Query directly from the current table (no collection filtering/join).
+    """
+    filter_by = []
+
+    # If you want to support JSONB metadata filtering
+    if filter:
+        if cls.use_jsonb:
+            filter_clauses = cls._create_filter_clause(filter)
+            if filter_clauses is not None:
+                filter_by.append(filter_clauses)
+        else:
+            filter_clauses = cls._create_filter_clause_json_deprecated(filter)
+            filter_by.extend(filter_clauses)
+
+    # Build distance expression as usual
+    distance_expr = cls.distance_strategy(embedding).label("distance")
+
+    stmt = (
+        select(
+            cls.EmbeddingStore,
+            distance_expr
+        )
+        .filter(*filter_by)
+        .order_by(sqlalchemy.asc(distance_expr))
+        .limit(k)
+    )
+
+    if score_threshold is not None:
+        stmt = stmt.filter(distance_expr < score_threshold)
+
+    results: Sequence[Any] = (await session.execute(stmt)).all()
+    return results
 
 
 class PgVector(PGVector):
@@ -136,15 +177,93 @@ class PgVector(PGVector):
                 default=lambda: str(uuid.uuid4())
             ),
             self._embedding_column: sqlalchemy.Column(Vector(dimension)),
+            'collection_id': sqlalchemy.Column(
+                sqlalchemy.dialects.postgresql.UUID(as_uuid=True),
+                default='00000000-0000-0000-0000-000000000000',
+                nullable=False,
+                index=True
+            ),
             'document': sqlalchemy.Column(sqlalchemy.String, nullable=True),
             'cmetadata': sqlalchemy.Column(JSONB, nullable=True),
             # Attach the async classmethods.
             'aget_by_name': classmethod(aget_by_name),
+            # '__aquery_collection': classmethod(__aquery_collection),
             # 'aget_or_create': classmethod(aget_or_create)
         }
         EmbeddingStore = type("CustomEmbeddingStore", (Base,), attrs)
         EmbeddingStore.__name__ = "EmbeddingStore"
         return (EmbeddingStore, EmbeddingStore)
+
+    async def _PgVector__aquery_collection(
+        self,
+        session: AsyncSession,
+        embedding: List[float],
+        k: int = 4,
+        score_threshold: Optional[float] = None,
+        filter: Optional[Dict[str, str]] = None,
+    ) -> Sequence[Any]:
+        """
+        Query directly from the current table (no collection filtering/join).
+        """
+        filter_by = []
+
+        # If you want to support JSONB metadata filtering
+        if filter:
+            if self.use_jsonb:
+                filter_clauses = self._create_filter_clause(filter)
+                if filter_clauses is not None:
+                    filter_by.append(filter_clauses)
+            else:
+                filter_clauses = self._create_filter_clause_json_deprecated(filter)
+                filter_by.extend(filter_clauses)
+
+        # Build distance expression as usual
+        distance_expr = self.distance_strategy(embedding).label("distance")
+
+        stmt = (
+            select(
+                self.EmbeddingStore,
+                distance_expr
+            )
+            .filter(*filter_by)
+            .order_by(sqlalchemy.asc(distance_expr))
+            .limit(k)
+        )
+
+        if score_threshold is not None:
+            stmt = stmt.filter(distance_expr < score_threshold)
+
+        results: Sequence[Any] = (await session.execute(stmt)).all()
+        return results
+
+    async def amax_marginal_relevance_search_with_score_by_vector(
+        self,
+        embedding: List[float],
+        k: int = 4,
+        fetch_k: int = 20,
+        lambda_mult: float = 0.5,
+        filter: Optional[Dict[str, str]] = None,
+        **kwargs: Any,
+    ) -> List[Tuple[Document, float]]:
+        await self.__apost_init__()
+        async with self._make_async_session() as session:
+            results = await self.__aquery_collection(
+                session=session, embedding=embedding, k=fetch_k, filter=filter
+            )
+            embedding_list = [
+                getattr(result.EmbeddingStore, self._embedding_column)
+                for result in results
+            ]
+            mmr_selected = maximal_marginal_relevance(
+                np.array(embedding, dtype=np.float32),
+                embedding_list,
+                k=k,
+                lambda_mult=lambda_mult,
+            )
+
+            candidates = self._results_to_docs_and_scores(results)
+            return [r for i, r in enumerate(candidates) if i in mmr_selected]
+
 
     @property
     def distance_strategy(self) -> Any:
@@ -533,7 +652,6 @@ class PgvectorStore(AbstractStore):
             _embed_ = self.create_embedding(
                 embedding_model=self.embedding_model
             )
-        print('EMBEDDING > ', _embed_._embedding)
         if not metric_type:
             metric_type = self.distance_strategy
         if not embedding_column:
@@ -680,6 +798,162 @@ class PgvectorStore(AbstractStore):
             filter=filter
         )
 
+    async def prepare_embedding_table(
+        self,
+        tablename: str,
+        table: str,
+        columns: List[str],
+        schema: str = 'public',
+        conn:  AsyncEngine = None,
+        embedding_column: str = 'embedding',
+        document_column: str = 'document',
+        metadata_column: str = 'metadata',
+        dimension: int = None,
+        id_column: str = 'id',
+        use_jsonb: bool = True,
+        drop_columns: bool = True,
+        create_all_indexes: bool = True,
+        **kwargs
+    ):
+        """
+        Prepare a Postgres Table as an embedding table in PostgreSQL with advanced features.
+        This method prepares a table with the following columns:
+        - id: unique identifier (String)
+        - embedding: the vector column (Vector(dimension) or JSONB)
+        - document: text column containing the document
+        - collection_id: UUID column for collection identification.
+        - metadata: JSONB column for metadata
+        - Additional columns based on the provided `columns` list
+        - Enhanced indexing strategies for efficient querying
+        - Support for multiple distance strategies (COSINE, L2, IP, etc.)
+        Args:
+        - table (str): Name of the table to create.
+        - columns (List[str]): List of column names to include in the table.
+        - schema (str): Database schema where the table will be created.
+        - embedding_column (str): Name of the column for storing embeddings.
+        - document_column (str): Name of the column for storing document text.
+        - metadata_column (str): Name of the column for storing metadata.
+        - dimension (int): Dimension of the embedding vector.
+        - id_column (str): Name of the column for storing unique identifiers.
+        - use_jsonb (bool): Whether to use JSONB for metadata storage.
+        - drop_columns (bool): Whether to drop existing columns.
+        - create_all_indexes (bool): Whether to create all distance strategies.
+    """
+        # Drop existing columns if requested
+        if drop_columns:
+            for column in (document_column, embedding_column, metadata_column):
+                await conn.execute(
+                    sqlalchemy.text(
+                        f'ALTER TABLE {tablename} DROP COLUMN IF EXISTS {column};'
+                    )
+                )
+        # Create metadata column as a jsonb field
+        if use_jsonb:
+            await conn.execute(
+                sqlalchemy.text(
+                    f'ALTER TABLE {tablename} ADD COLUMN IF NOT EXISTS {metadata_column} JSONB;'
+                )
+            )
+        # Use pgvector type
+        await conn.execute(
+            sqlalchemy.text(
+                f'ALTER TABLE {tablename} ADD COLUMN IF NOT EXISTS {embedding_column} vector({dimension});'
+            )
+        )
+        # Create additional columns
+        for col_name, col_type in [
+            (document_column, 'TEXT'),
+            (id_column, 'varchar'),
+        ]:
+            await conn.execute(
+                sqlalchemy.text(
+                    f'ALTER TABLE {tablename} ADD COLUMN IF NOT EXISTS {col_name} {col_type};'
+                )
+            )
+        # Create the Collection Column:
+        await conn.execute(
+            sqlalchemy.text(
+                f"""ALTER TABLE {tablename} ADD COLUMN IF NOT EXISTS collection_id UUID;
+                UPDATE {tablename} SET collection_id = '00000000-0000-0000-0000-000000000000';
+                ALTER TABLE {tablename} ALTER COLUMN collection_id SET NOT NULL;
+                """
+            )
+        )
+        # ✅ CREATE COMPREHENSIVE INDEXES
+        if create_all_indexes:
+            print("🔧 Creating indexes for all distance strategies...")
+
+            # COSINE index (most common for text embeddings)
+            await conn.execute(
+                sqlalchemy.text(
+                    f"CREATE INDEX IF NOT EXISTS idx_{schema}_{table}_cosine "
+                    f"ON {tablename} USING ivfflat ({embedding_column} vector_cosine_ops);"
+                )
+            )
+            print("✅ Created COSINE index")
+            # L2/Euclidean index
+            await conn.execute(
+                sqlalchemy.text(
+                    f"CREATE INDEX IF NOT EXISTS idx_{schema}_{table}_l2 "
+                    f"ON {tablename} USING ivfflat ({embedding_column} vector_l2_ops);"
+                )
+            )
+            print("✅ Created L2 index")
+
+            # Inner Product index
+            try:
+                await conn.execute(
+                    sqlalchemy.text(
+                        f"CREATE INDEX IF NOT EXISTS idx_{schema}_{table}_ip "
+                        f"ON {tablename} USING ivfflat ({embedding_column} vector_ip_ops);"
+                    )
+                )
+                print("✅ Created Inner Product index")
+            except Exception as e:
+                print(f"⚠️ Inner Product index creation failed: {e}")
+
+            # HNSW indexes for better performance (requires more memory)
+            try:
+                await conn.execute(
+                    sqlalchemy.text(
+                        f"CREATE INDEX IF NOT EXISTS idx_{schema}_{table}_hnsw_cosine "
+                        f"ON {tablename} USING hnsw ({embedding_column} vector_cosine_ops);"
+                    )
+                )
+                print("✅ Created HNSW COSINE index")
+            except Exception as e:
+                print(f"⚠️ HNSW index creation failed (this is optional): {e}")
+
+        else:
+            # Create index only for current strategy
+            distance_strategy_ops = {
+                DistanceStrategy.COSINE: "vector_cosine_ops",
+                DistanceStrategy.EUCLIDEAN_DISTANCE: "vector_l2_ops",
+                DistanceStrategy.MAX_INNER_PRODUCT: "vector_ip_ops",
+                DistanceStrategy.DOT_PRODUCT: "vector_ip_ops"
+            }
+
+            ops = distance_strategy_ops.get(self.distance_strategy, "vector_cosine_ops")
+            strategy_name = str(self.distance_strategy).rsplit('.', maxsplit=1)[-1].lower()
+
+            await conn.execute(
+                sqlalchemy.text(
+                    f"CREATE INDEX IF NOT EXISTS idx_{schema}_{table}_{strategy_name} "
+                    f"ON {tablename} USING ivfflat ({embedding_column} {ops});"
+                )
+            )
+            print(f"✅ Created {strategy_name.upper()} index")
+
+        # Create JSONB indexes for better performance
+        await self._create_jsonb_indexes(
+            conn,
+            tablename,
+            metadata_column,
+            id_column
+        )
+        return True
+
+
     async def create_embedding_table(
         self,
         table: str,
@@ -747,111 +1021,19 @@ class PgvectorStore(AbstractStore):
             result = await conn.execute(sqlalchemy.text(_qry))
             rows = result.fetchall()
 
-            # Drop existing columns if requested
-            if drop_columns:
-                for column in (document_column, embedding_column, metadata_column):
-                    await conn.execute(
-                        sqlalchemy.text(
-                            f'ALTER TABLE {tablename} DROP COLUMN IF EXISTS {column};'
-                        )
-                    )
-
-            # Create metadata column as a jsonb field
-            if use_jsonb:
-                await conn.execute(
-                    sqlalchemy.text(
-                        f'ALTER TABLE {tablename} ADD COLUMN IF NOT EXISTS {metadata_column} JSONB;'
-                    )
-                )
-            # Use pgvector type
-            await conn.execute(
-                sqlalchemy.text(
-                    f'ALTER TABLE {tablename} ADD COLUMN IF NOT EXISTS {embedding_column} vector({dimension});'
-                )
-            )
-
-            # Create additional columns
-            for col_name, col_type in [
-                (document_column, 'TEXT'),
-                (id_column, 'varchar'),
-            ]:
-                await conn.execute(
-                    sqlalchemy.text(
-                        f'ALTER TABLE {tablename} ADD COLUMN IF NOT EXISTS {col_name} {col_type};'
-                    )
-                )
-
-            # ✅ CREATE COMPREHENSIVE INDEXES
-            if create_all_indexes:
-                print("🔧 Creating indexes for all distance strategies...")
-
-                # COSINE index (most common for text embeddings)
-                await conn.execute(
-                    sqlalchemy.text(
-                        f"CREATE INDEX IF NOT EXISTS idx_{schema}_{table}_cosine "
-                        f"ON {tablename} USING ivfflat ({embedding_column} vector_cosine_ops);"
-                    )
-                )
-                print("✅ Created COSINE index")
-                # L2/Euclidean index
-                await conn.execute(
-                    sqlalchemy.text(
-                        f"CREATE INDEX IF NOT EXISTS idx_{schema}_{table}_l2 "
-                        f"ON {tablename} USING ivfflat ({embedding_column} vector_l2_ops);"
-                    )
-                )
-                print("✅ Created L2 index")
-
-                # Inner Product index
-                try:
-                    await conn.execute(
-                        sqlalchemy.text(
-                            f"CREATE INDEX IF NOT EXISTS idx_{schema}_{table}_ip "
-                            f"ON {tablename} USING ivfflat ({embedding_column} vector_ip_ops);"
-                        )
-                    )
-                    print("✅ Created Inner Product index")
-                except Exception as e:
-                    print(f"⚠️ Inner Product index creation failed: {e}")
-
-                # HNSW indexes for better performance (requires more memory)
-                try:
-                    await conn.execute(
-                        sqlalchemy.text(
-                            f"CREATE INDEX IF NOT EXISTS idx_{schema}_{table}_hnsw_cosine "
-                            f"ON {tablename} USING hnsw ({embedding_column} vector_cosine_ops);"
-                        )
-                    )
-                    print("✅ Created HNSW COSINE index")
-                except Exception as e:
-                    print(f"⚠️ HNSW index creation failed (this is optional): {e}")
-
-            else:
-                # Create index only for current strategy
-                distance_strategy_ops = {
-                    DistanceStrategy.COSINE: "vector_cosine_ops",
-                    DistanceStrategy.EUCLIDEAN_DISTANCE: "vector_l2_ops",
-                    DistanceStrategy.MAX_INNER_PRODUCT: "vector_ip_ops",
-                    DistanceStrategy.DOT_PRODUCT: "vector_ip_ops"
-                }
-
-                ops = distance_strategy_ops.get(self.distance_strategy, "vector_cosine_ops")
-                strategy_name = str(self.distance_strategy).rsplit('.', maxsplit=1)[-1].lower()
-
-                await conn.execute(
-                    sqlalchemy.text(
-                        f"CREATE INDEX IF NOT EXISTS idx_{schema}_{table}_{strategy_name} "
-                        f"ON {tablename} USING ivfflat ({embedding_column} {ops});"
-                    )
-                )
-                print(f"✅ Created {strategy_name.upper()} index")
-
-            # Create JSONB indexes for better performance
-            await self._create_jsonb_indexes(
-                conn,
-                tablename,
-                metadata_column,
-                id_column
+            await self.prepare_embedding_table(
+                table=table,
+                columns=columns,
+                schema=schema,
+                embedding_column=embedding_column,
+                document_column=document_column,
+                metadata_column=metadata_column,
+                dimension=dimension,
+                id_column=id_column,
+                use_jsonb=use_jsonb,
+                drop_columns=drop_columns,
+                create_all_indexes=create_all_indexes,
+                **kwargs
             )
 
             # Populate the embedding data
@@ -1027,42 +1209,42 @@ class PgvectorStore(AbstractStore):
 
         print("✅ Created optimized JSONB indexes")
 
-    async def __aenter__(self):
-        self._context_depth += 1
-        print(f'============ ENTERING STORE (depth: {self._context_depth}) ============')
+    # async def __aenter__(self):
+    #     self._context_depth += 1
+    #     print(f'============ ENTERING STORE (depth: {self._context_depth}) ============')
 
-        # Print stack trace to see who called this
-        stack = iinspect.stack()
-        print("📍 Context entry called from:")
-        for frame in stack[1:4]:  # Show calling frames
-            print(f"  📁 {frame.filename}:{frame.lineno} in {frame.function}")
+    #     # Print stack trace to see who called this
+    #     stack = iinspect.stack()
+    #     print("📍 Context entry called from:")
+    #     for frame in stack[1:4]:  # Show calling frames
+    #         print(f"  📁 {frame.filename}:{frame.lineno} in {frame.function}")
 
-        if self._use_database:
-            if not self._connection:
-                await self.connection()
-        return self
+    #     if self._use_database:
+    #         if not self._connection:
+    #             await self.connection()
+    #     return self
 
-    async def __aexit__(self, exc_type, exc_value, traceback):
-        self._context_depth -= 1
-        print(f'============ EXITING STORE (depth: {self._context_depth}) ============')
+    # async def __aexit__(self, exc_type, exc_value, traceback):
+    #     self._context_depth -= 1
+    #     print(f'============ EXITING STORE (depth: {self._context_depth}) ============')
 
-        # Print stack trace to see who called this
-        stack = iinspect.stack()
-        print("📍 Context exit called from:")
-        for frame in stack[1:4]:  # Show calling frames
-            print(f"  📁 {frame.filename}:{frame.lineno} in {frame.function}")
+    #     # Print stack trace to see who called this
+    #     stack = iinspect.stack()
+    #     print("📍 Context exit called from:")
+    #     for frame in stack[1:4]:  # Show calling frames
+    #         print(f"  📁 {frame.filename}:{frame.lineno} in {frame.function}")
 
-        if exc_type:
-            print(f"⚠️ Exception in context: {exc_type.__name__}: {exc_value}")
+    #     if exc_type:
+    #         print(f"⚠️ Exception in context: {exc_type.__name__}: {exc_value}")
 
-        # Only disconnect if this is the outermost context
-        if self._context_depth == 0:
-            print("🔒 This is the outermost context - proceeding with cleanup")
-            if self._embed_:
-                await self._free_resources()
-            try:
-                await self.disconnect()
-            except RuntimeError:
-                pass
-        else:
-            print(f"⚠️ WARNING: Nested context detected! Not disconnecting (depth: {self._context_depth})")
+    #     # Only disconnect if this is the outermost context
+    #     if self._context_depth == 0:
+    #         print("🔒 This is the outermost context - proceeding with cleanup")
+    #         if self._embed_:
+    #             await self._free_resources()
+    #         try:
+    #             await self.disconnect()
+    #         except RuntimeError:
+    #             pass
+    #     else:
+    #         print(f"⚠️ WARNING: Nested context detected! Not disconnecting (depth: {self._context_depth})")
