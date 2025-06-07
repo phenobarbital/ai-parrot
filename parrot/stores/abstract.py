@@ -12,6 +12,8 @@ from ..exceptions import ConfigError  # pylint: disable=E0611
 from .embeddings import supported_embeddings
 
 
+logging.getLogger(name='datasets').setLevel(logging.WARNING)
+
 class AbstractStore(ABC):
     """AbstractStore class.
 
@@ -53,7 +55,7 @@ class AbstractStore(ABC):
         self._use_database: bool = kwargs.get('use_database', True)
         # Database Information:
         self.collection_name: str = kwargs.get('collection_name', 'my_collection')
-        self.dimension: int = kwargs.get("dimension", 768)
+        self.dimension: int = kwargs.get("dimension", 384)
         self._metric_type: str = kwargs.get("metric_type", 'COSINE')
         self._index_type: str = kwargs.get("index_type", 'IVF_FLAT')
         self.database: str = kwargs.get('database', '')
@@ -111,6 +113,8 @@ class AbstractStore(ABC):
 
     async def __aexit__(self, exc_type, exc_value, traceback):
         # closing Embedding
+        if self._embed_:
+            await self._free_resources()
         try:
             await self.disconnect()
         except RuntimeError:

@@ -34,15 +34,14 @@ from langchain_community.chat_message_histories import (
     RedisChatMessageHistory
 )
 from langchain_community.retrievers import BM25Retriever
+from pydantic_core._pydantic_core import ValidationError  # pylint: disable=E0611
 # for exponential backoff
-from pydantic_core._pydantic_core import ValidationError
-
 import backoff # for exponential backoff
 from datamodel.exceptions import ValidationError as DataError  # pylint: disable=E0611
 from navconfig.logging import logging
 from navigator_auth.conf import AUTH_SESSION_OBJECT
 from ..interfaces import DBInterface
-from ..exceptions import ConfigError
+from ..exceptions import ConfigError  # pylint: disable=E0611
 from ..conf import (
     REDIS_HISTORY_URL,
     EMBEDDING_DEFAULT_MODEL
@@ -141,9 +140,9 @@ class AbstractBot(DBInterface, ABC):
         """Initialize the Chatbot with the given configuration."""
         self._request: Optional[web.Request] = None
         if system_prompt:
-            self.system_prompt_template = system_prompt or BASIC_SYSTEM_PROMPT
+            self.system_prompt_template = system_prompt or self.system_prompt_template
         if human_prompt:
-            self.human_prompt_template = human_prompt or BASIC_HUMAN_PROMPT
+            self.human_prompt_template = human_prompt or self.human_prompt_template
         # Chatbot ID:
         self.chatbot_id: uuid.UUID = kwargs.get(
             'chatbot_id',
@@ -223,7 +222,7 @@ class AbstractBot(DBInterface, ABC):
         self._vector_info_: dict = kwargs.get('vector_info', {})
         self._vector_store: dict = kwargs.get('vector_store', None)
         self.chunk_size: int = int(kwargs.get('chunk_size', 2048))
-        self.dimension: int = int(kwargs.get('dimension', 768))
+        self.dimension: int = int(kwargs.get('dimension', 384))
         self.store: Callable = None
         self.stores: List[AbstractStore] = []
         self.memory: Callable = None
@@ -301,9 +300,8 @@ class AbstractBot(DBInterface, ABC):
             "- ensuring that responses are based only on verified information from owned sources.\n"
             "- If you are unsure, let the user know and avoid making assumptions. Maintain a professional tone in all responses.\n"
             "- Use simple language for complex topics to ensure user understanding.\n"
-            "- You are a fluent speaker, you can talk and respond fluently in English or Spanish, and you must answer in the same language as the user's question. If the user's language is not English, you should translate your response into their language.\n"
+            "- Detect user language: respond in English if the user writes in English; respond in Spanish if the user writes in Spanish."
         )
-
 
     @property
     def llm(self):
@@ -450,7 +448,7 @@ class AbstractBot(DBInterface, ABC):
         # Rejoin with triple backticks
         return "```".join(parts)
 
-    def _define_prompt(self, config: Optional[dict] = None):
+    def _define_prompt(self, config: Optional[dict] = None, **kwargs):
         """
         Define the System Prompt and replace variables.
         """
@@ -478,7 +476,8 @@ class AbstractBot(DBInterface, ABC):
             backstory=self.backstory,
             rationale=self.rationale,
             pre_context=pre_context,
-            context=context
+            context=context,
+            **kwargs
         )
         print('Template Prompt: \n', final_prompt)
         self.system_prompt_template = final_prompt
@@ -523,12 +522,19 @@ class AbstractBot(DBInterface, ABC):
 
 
     def _get_database_store(self, store: dict) -> AbstractStore:
-        name = store.get('name', 'milvus')
+        """Get the VectorStore Class from the store configuration."""
+        name = store.get('name', None)
+        if not name:
+            vector_driver = store.get('vector_database', 'PgvectorStore')
+            name = next((k for k, v in supported_stores.items() if v == vector_driver), None)
         store_cls = supported_stores.get(name)
         cls_path = f"parrot.stores.{name}"
         try:
             module = importlib.import_module(cls_path, package=name)
             store_cls = getattr(module, store_cls)
+            self.logger.notice(
+                f"Using VectorStore: {store_cls.__name__} for {name} with Embedding {self.embedding_model}"
+            )
             return store_cls(
                 embedding_model=self.embedding_model,
                 embedding=self.embeddings,
@@ -643,7 +649,7 @@ class AbstractBot(DBInterface, ABC):
             search_type: str = 'similarity',
             search_kwargs: dict = {"k": 4, "fetch_k": 10, "lambda_mult": 0.89},
             return_docs: bool = True,
-            metric_type: str = None,
+            metric_type: str = 'EUCLIDEAN_DISTANCE',
             memory: Any = None,
             **kwargs
     ):
@@ -659,30 +665,18 @@ class AbstractBot(DBInterface, ABC):
         )
         if new_llm:
             self.configure_llm(llm=new_llm, config=llm_config)
-        # define the Pre-Context
-        pre_context = "\n".join(f"- {a}." for a in self.pre_instructions)
-        # custom_template = self.system_prompt_template.format_map(
-        #     SafeDict(
-        #         summaries=pre_context
-        #     )
-        # )
-        custom_template = self.safe_format_template(
-            self.system_prompt_template,
-            summaries=pre_context
-        )
-
         # Create prompt templates
-        self.system_prompt = SystemMessagePromptTemplate.from_template(
-            custom_template
+        system_prompt = SystemMessagePromptTemplate.from_template(
+            self.system_prompt_template
         )
-        self.human_prompt = HumanMessagePromptTemplate.from_template(
+        human_prompt = HumanMessagePromptTemplate.from_template(
             self.human_prompt_template,
             input_variables=['question', 'chat_history']
         )
         # Combine into a ChatPromptTemplate
         chat_prompt = ChatPromptTemplate.from_messages([
-            self.system_prompt,
-            self.human_prompt
+            system_prompt,
+            human_prompt
         ])
         if not memory:
             memory = self.memory
@@ -698,10 +692,14 @@ class AbstractBot(DBInterface, ABC):
             if self._use_vector:
                 async with self.store as store:  #pylint: disable=E1101
                     vector = store.get_vector(metric_type=metric_type)
-                    retriever = VectorStoreRetriever(
-                        vectorstore=vector,
+                    # retriever = VectorStoreRetriever(
+                    #     vectorstore=vector,
+                    #     search_type=search_type,
+                    #     chain_type=chain_type,
+                    #     search_kwargs=search_kwargs
+                    # )
+                    retriever = vector.as_retriever(
                         search_type=search_type,
-                        chain_type=chain_type,
                         search_kwargs=search_kwargs
                     )
                     # Create the ConversationalRetrievalChain with custom prompt
@@ -760,12 +758,6 @@ class AbstractBot(DBInterface, ABC):
             metric_type: str = None,
             **kwargs
     ):
-        # pre_context = "\n".join(f"- {a}." for a in self.pre_instructions)
-        # system_prompt = self.system_prompt_template.format_map(
-        #     SafeDict(
-        #         summaries=pre_context
-        #     )
-        # )
         system_prompt = self.system_prompt_template
         human_prompt = self.human_prompt_template.replace(
             '**Chat History:**', ''
