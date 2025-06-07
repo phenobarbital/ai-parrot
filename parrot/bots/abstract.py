@@ -692,16 +692,16 @@ class AbstractBot(DBInterface, ABC):
             if self._use_vector:
                 async with self.store as store:  #pylint: disable=E1101
                     vector = store.get_vector(metric_type=metric_type)
-                    # retriever = VectorStoreRetriever(
-                    #     vectorstore=vector,
-                    #     search_type=search_type,
-                    #     chain_type=chain_type,
-                    #     search_kwargs=search_kwargs
-                    # )
-                    retriever = vector.as_retriever(
+                    retriever = VectorStoreRetriever(
+                        vectorstore=vector,
                         search_type=search_type,
+                        chain_type=chain_type,
                         search_kwargs=search_kwargs
                     )
+                    # retriever = vector.as_retriever(
+                    #     search_type=search_type,
+                    #     search_kwargs=search_kwargs
+                    # )
                     # Create the ConversationalRetrievalChain with custom prompt
                     chain = ConversationalRetrievalChain.from_llm(
                         llm=self._llm,

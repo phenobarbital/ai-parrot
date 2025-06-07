@@ -533,7 +533,7 @@ class PgvectorStore(AbstractStore):
             _embed_ = self.create_embedding(
                 embedding_model=self.embedding_model
             )
-        print('EMBEDDING > ', _embed_)
+        print('EMBEDDING > ', _embed_._embedding)
         if not metric_type:
             metric_type = self.distance_strategy
         if not embedding_column:
@@ -640,10 +640,20 @@ class PgvectorStore(AbstractStore):
         collection: Union[str, None] = None,
         limit: int = 2,
         score_threshold: Optional[float] = None,
+        search_strategy: str = "auto",
         filter: Optional[dict] = None,
         **kwargs
     ) -> List[Document]:
-        """Search for similar documents in VectorStore."""
+        """
+        Search for similar documents in VectorStore.
+
+        Args:
+            search_strategy:
+                - "auto": Automatically choose best strategy
+                - "exact": Exact ID/code matching
+                - "semantic": Semantic similarity search
+                - "location": Location-focused search
+        """
         if not table:
             table = self.table
         if not schema:
@@ -655,6 +665,7 @@ class PgvectorStore(AbstractStore):
         print(f"📊 Context depth: {self._context_depth}")
         print(f"🔌 Connected: {self._connected}")
         print(f"🗄️ Connection: {self._connection}")
+        print(f"🔍 Smart search: '{query}' using strategy: {search_strategy}")
         # Just ensure connection exists, don't create nested context
         if not self._connected or not self._connection:
             raise RuntimeError(
@@ -679,14 +690,41 @@ class PgvectorStore(AbstractStore):
         metadata_column: str = 'metadata',
         dimension: int = None,
         id_column: str = 'id',
-        use_jsonb: bool = False,
-        drop_columns: bool = False,
-        create_all_indexes: bool = True,  # NEW: Create indexes for all distance strategies
+        use_jsonb: bool = True,
+        drop_columns: bool = True,
+        create_all_indexes: bool = True,
         **kwargs
     ):
         """
-        Create an embedding column and vectorize Table information.
-        Now with comprehensive index management for all distance strategies.
+        Create an embedding table in PostgreSQL with advanced features.
+        This method creates a table with the following columns:
+        - id: unique identifier (String)
+        - embedding: the vector column (Vector(dimension) or JSONB)
+        - document: text column containing the document
+        - metadata: JSONB column for metadata
+        - Additional columns based on the provided `columns` list
+        - Enhanced indexing strategies for efficient querying
+        - Support for multiple distance strategies (COSINE, L2, IP, etc.)
+        Args:
+        - table (str): Name of the table to create.
+        - columns (List[str]): List of column names to include in the table.
+        - schema (str): Database schema where the table will be created.
+        - embedding_column (str): Name of the column for storing embeddings.
+        - document_column (str): Name of the column for storing document text.
+        - metadata_column (str): Name of the column for storing metadata.
+        - dimension (int): Dimension of the embedding vector.
+        - id_column (str): Name of the column for storing unique identifiers.
+        - use_jsonb (bool): Whether to use JSONB for metadata storage.
+        - drop_columns (bool): Whether to drop existing columns.
+        - create_all_indexes (bool): Whether to create all distance strategies.
+
+        Enhanced embedding table creation with JSONB strategy for better semantic search.
+
+        This approach creates multiple document representations:
+        1. Primary search content (emphasizing store ID)
+        2. Location-based content
+        3. Structured metadata for filtering
+        4. Multiple embedding variations
         """
         tablename = f'{schema}.{table}'
         cols = ', '.join(columns)
@@ -696,6 +734,9 @@ class PgvectorStore(AbstractStore):
         # Generate a sample embedding to determine its dimension
         sample_vector = self._embed_.embedding.embed_query("sample text")
         vector_dim = len(sample_vector)
+        self.logger.notice(
+            f"USING EMBED {self._embed_} with dimension {vector_dim}"
+        )
 
         if vector_dim != dimension:
             raise ValueError(
@@ -715,89 +756,24 @@ class PgvectorStore(AbstractStore):
                         )
                     )
 
-            # Create embedding column
+            # Create metadata column as a jsonb field
             if use_jsonb:
                 await conn.execute(
                     sqlalchemy.text(
-                        f'ALTER TABLE {tablename} ADD COLUMN IF NOT EXISTS {embedding_column} JSONB;'
+                        f'ALTER TABLE {tablename} ADD COLUMN IF NOT EXISTS {metadata_column} JSONB;'
                     )
                 )
-            else:
-                # Use pgvector type
-                await conn.execute(
-                    sqlalchemy.text(
-                        f'ALTER TABLE {tablename} ADD COLUMN IF NOT EXISTS {embedding_column} vector({dimension});'
-                    )
+            # Use pgvector type
+            await conn.execute(
+                sqlalchemy.text(
+                    f'ALTER TABLE {tablename} ADD COLUMN IF NOT EXISTS {embedding_column} vector({dimension});'
                 )
-
-                # ✅ CREATE COMPREHENSIVE INDEXES
-                if create_all_indexes:
-                    print("🔧 Creating indexes for all distance strategies...")
-
-                    # COSINE index (most common for text embeddings)
-                    await conn.execute(
-                        sqlalchemy.text(
-                            f"CREATE INDEX IF NOT EXISTS idx_{schema}_{table}_cosine "
-                            f"ON {tablename} USING ivfflat ({embedding_column} vector_cosine_ops);"
-                        )
-                    )
-                    print("✅ Created COSINE index")
-
-                    # L2/Euclidean index
-                    await conn.execute(
-                        sqlalchemy.text(
-                            f"CREATE INDEX IF NOT EXISTS idx_{schema}_{table}_l2 "
-                            f"ON {tablename} USING ivfflat ({embedding_column} vector_l2_ops);"
-                        )
-                    )
-                    print("✅ Created L2 index")
-
-                    # Inner Product index
-                    await conn.execute(
-                        sqlalchemy.text(
-                            f"CREATE INDEX IF NOT EXISTS idx_{schema}_{table}_ip "
-                            f"ON {tablename} USING ivfflat ({embedding_column} vector_ip_ops);"
-                        )
-                    )
-                    print("✅ Created Inner Product index")
-
-                    # HNSW indexes for better performance (requires more memory)
-                    try:
-                        await conn.execute(
-                            sqlalchemy.text(
-                                f"CREATE INDEX IF NOT EXISTS idx_{schema}_{table}_hnsw_cosine "
-                                f"ON {tablename} USING hnsw ({embedding_column} vector_cosine_ops);"
-                            )
-                        )
-                        print("✅ Created HNSW COSINE index")
-                    except Exception as e:
-                        print(f"⚠️ HNSW index creation failed (this is optional): {e}")
-
-                else:
-                    # Create index only for current strategy
-                    distance_strategy_ops = {
-                        DistanceStrategy.COSINE: "vector_cosine_ops",
-                        DistanceStrategy.EUCLIDEAN_DISTANCE: "vector_l2_ops",
-                        DistanceStrategy.MAX_INNER_PRODUCT: "vector_ip_ops",
-                        DistanceStrategy.DOT_PRODUCT: "vector_ip_ops"
-                    }
-
-                    ops = distance_strategy_ops.get(self.distance_strategy, "vector_cosine_ops")
-                    strategy_name = str(self.distance_strategy).split('.')[-1].lower()
-
-                    await conn.execute(
-                        sqlalchemy.text(
-                            f"CREATE INDEX IF NOT EXISTS idx_{schema}_{table}_{strategy_name} "
-                            f"ON {tablename} USING ivfflat ({embedding_column} {ops});"
-                        )
-                    )
-                    print(f"✅ Created {strategy_name.upper()} index")
+            )
 
             # Create additional columns
             for col_name, col_type in [
                 (document_column, 'TEXT'),
                 (id_column, 'varchar'),
-                (metadata_column, 'jsonb')
             ]:
                 await conn.execute(
                     sqlalchemy.text(
@@ -805,26 +781,251 @@ class PgvectorStore(AbstractStore):
                     )
                 )
 
+            # ✅ CREATE COMPREHENSIVE INDEXES
+            if create_all_indexes:
+                print("🔧 Creating indexes for all distance strategies...")
+
+                # COSINE index (most common for text embeddings)
+                await conn.execute(
+                    sqlalchemy.text(
+                        f"CREATE INDEX IF NOT EXISTS idx_{schema}_{table}_cosine "
+                        f"ON {tablename} USING ivfflat ({embedding_column} vector_cosine_ops);"
+                    )
+                )
+                print("✅ Created COSINE index")
+                # L2/Euclidean index
+                await conn.execute(
+                    sqlalchemy.text(
+                        f"CREATE INDEX IF NOT EXISTS idx_{schema}_{table}_l2 "
+                        f"ON {tablename} USING ivfflat ({embedding_column} vector_l2_ops);"
+                    )
+                )
+                print("✅ Created L2 index")
+
+                # Inner Product index
+                try:
+                    await conn.execute(
+                        sqlalchemy.text(
+                            f"CREATE INDEX IF NOT EXISTS idx_{schema}_{table}_ip "
+                            f"ON {tablename} USING ivfflat ({embedding_column} vector_ip_ops);"
+                        )
+                    )
+                    print("✅ Created Inner Product index")
+                except Exception as e:
+                    print(f"⚠️ Inner Product index creation failed: {e}")
+
+                # HNSW indexes for better performance (requires more memory)
+                try:
+                    await conn.execute(
+                        sqlalchemy.text(
+                            f"CREATE INDEX IF NOT EXISTS idx_{schema}_{table}_hnsw_cosine "
+                            f"ON {tablename} USING hnsw ({embedding_column} vector_cosine_ops);"
+                        )
+                    )
+                    print("✅ Created HNSW COSINE index")
+                except Exception as e:
+                    print(f"⚠️ HNSW index creation failed (this is optional): {e}")
+
+            else:
+                # Create index only for current strategy
+                distance_strategy_ops = {
+                    DistanceStrategy.COSINE: "vector_cosine_ops",
+                    DistanceStrategy.EUCLIDEAN_DISTANCE: "vector_l2_ops",
+                    DistanceStrategy.MAX_INNER_PRODUCT: "vector_ip_ops",
+                    DistanceStrategy.DOT_PRODUCT: "vector_ip_ops"
+                }
+
+                ops = distance_strategy_ops.get(self.distance_strategy, "vector_cosine_ops")
+                strategy_name = str(self.distance_strategy).rsplit('.', maxsplit=1)[-1].lower()
+
+                await conn.execute(
+                    sqlalchemy.text(
+                        f"CREATE INDEX IF NOT EXISTS idx_{schema}_{table}_{strategy_name} "
+                        f"ON {tablename} USING ivfflat ({embedding_column} {ops});"
+                    )
+                )
+                print(f"✅ Created {strategy_name.upper()} index")
+
+            # Create JSONB indexes for better performance
+            await self._create_jsonb_indexes(
+                conn,
+                tablename,
+                metadata_column,
+                id_column
+            )
+
             # Populate the embedding data
-            for row in rows:
+            for i, row in enumerate(rows):
                 _id = getattr(row, id_column)
                 metadata = {col: getattr(row, col) for col in columns}
-                data = " ".join([f"{col}: {metadata[col]}" for col in columns])
+                data = await self._create_metadata_structure(metadata, id_column, _id)
 
                 # Generate embedding
-                vector = self._embed_.embedding.embed_query(data)
+                searchable_text = data['structured_search']
+                print(f"🔍 Row {i + 1}/{len(rows)} - {_id}")
+                print(f"   Text: {searchable_text[:100]}...")
+
+                vector = self._embed_.embedding.embed_query(searchable_text)
                 vector_str = "[" + ",".join(str(v) for v in vector) + "]"
 
                 await conn.execute(
                     sqlalchemy.text(f"""
                         UPDATE {tablename}
-                        SET {embedding_column} = :vector, {document_column} = :info, {metadata_column} = :metadata
+                        SET {embedding_column} = :embeddings,
+                            {document_column} = :document,
+                            {metadata_column} = :metadata
                         WHERE {id_column} = :id
                     """),
-                    {"vector": vector_str, "id": _id, "info": data, "metadata": json_encoder(metadata)}
+                    {
+                        "embeddings": vector_str,
+                        "document": searchable_text,
+                        "metadata": json_encoder(data),
+                        "id": _id
+                    }
                 )
 
         print("✅ Updated Table embeddings with comprehensive indexes.")
+
+    def _create_natural_searchable_text(
+        self,
+        metadata: dict,
+        id_column: str,
+        record_id: str
+    ) -> str:
+        """
+        Create well-structured, natural language text with proper separation.
+
+        This creates clean, readable text that embedding models can understand better.
+        """
+        # Start with the ID in multiple formats for exact matching
+        text_parts = [
+            f"ID: {record_id}",
+            f"Identifier: {record_id}",
+            id_column + ": " + record_id
+        ]
+
+        # Process each field to create natural language descriptions
+        for key, value in metadata.items():
+            if value is None or value == '':
+                continue
+            clean_value = value.strip() if isinstance(value, str) else str(value)
+            text_parts.append(f"{key}: {clean_value}")
+            # Add the field in natural language format
+            clean_key = key.replace('_', ' ').title()
+            text_parts.append(f"{clean_key}={clean_value}")
+
+        # Join with spaces and clean up
+        searchable_text = ', '.join(text_parts) + '.'
+
+        return searchable_text
+
+    def _create_structured_search_text(self, metadata: dict, id_column:str, record_id: str) -> str:
+        """
+        Create a more structured but still readable search text.
+
+        This emphasizes key-value relationships while staying readable.
+        """
+        # ID section with emphasis
+        kv_sections = [
+            f"ID: {record_id}",
+            f"Identifier: {record_id}",
+            id_column + ": " + record_id
+        ]
+
+        # Key-value sections with clean separation
+        for key, value in metadata.items():
+            if value is None or value == '':
+                continue
+
+            # Clean key-value representation
+            clean_key = key.replace('_', ' ').title()
+            kv_sections.append(f"{clean_key}: {value}")
+            kv_sections.append(f"{key}: {value}")
+
+        # Combine with proper separation
+        return ' | '.join(kv_sections)
+
+    async def _create_metadata_structure(
+        self,
+        metadata: dict,
+        id_column: str,
+        _id: str
+    ):
+        """Create a structured metadata representation for the document."""
+        # Create a structured metadata representation
+        enhanced_metadata = {
+            "id": _id,
+            id_column: _id,
+            "_variants": [
+                _id,
+                _id.lower(),
+                _id.upper()
+            ]
+        }
+        for key, value in metadata.items():
+            enhanced_metadata[key] = value
+            # Create searchable variants for key fields
+            if value and isinstance(value, str):
+                variants = [value, value.lower(), value.upper()]
+                # Add variants without special characters
+                clean_value = ''.join(c for c in str(value) if c.isalnum() or c.isspace())
+                if clean_value != value:
+                    variants.append(clean_value)
+                enhanced_metadata[f"_{key}_variants"] = list(set(variants))
+        # create a full-text search field of searchable content
+        enhanced_metadata['searchable_content'] = self._create_natural_searchable_text(
+            metadata, id_column, _id
+        )
+
+        # Also create a structured search text that emphasizes important fields
+        enhanced_metadata['structured_search'] = self._create_structured_search_text(
+            metadata, id_column, _id
+        )
+
+        return enhanced_metadata
+
+    async def _create_jsonb_indexes(
+        self,
+        conn,
+        tablename: str,
+        metadata_col: str,
+        id_column: str
+    ):
+        """Create optimized JSONB indexes for better search performance."""
+
+        print("🔧 Creating JSONB indexes on Metadata for optimized search...")
+
+        # Index for ID searches
+        await conn.execute(
+            sqlalchemy.text(f"""
+                CREATE INDEX IF NOT EXISTS idx_{tablename.replace('.', '_')}_{id_column}
+                ON {tablename} USING BTREE (({metadata_col}->>'{id_column}'));
+            """)
+        )
+        await conn.execute(
+            sqlalchemy.text(f"""
+                CREATE INDEX IF NOT EXISTS idx_{tablename.replace('.', '_')}_id
+                ON {tablename} USING BTREE (({metadata_col}->>'id'));
+            """)
+        )
+
+        # GIN index for full-text search on searchable content
+        await conn.execute(
+            sqlalchemy.text(f"""
+                CREATE INDEX IF NOT EXISTS idx_{tablename.replace('.', '_')}_fulltext
+                ON {tablename} USING GIN (to_tsvector('english', {metadata_col}->>'searchable_content'));
+            """)
+        )
+
+        # GIN index for JSONB structure searches
+        await conn.execute(
+            sqlalchemy.text(f"""
+                CREATE INDEX IF NOT EXISTS idx_{tablename.replace('.', '_')}_metadata_gin
+                ON {tablename} USING GIN ({metadata_col});
+            """)
+        )
+
+        print("✅ Created optimized JSONB indexes")
 
     async def __aenter__(self):
         self._context_depth += 1

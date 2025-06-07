@@ -4,7 +4,7 @@ from parrot.stores.postgres import PgvectorStore
 
 
 embed_model = {
-    "model_name": "sentence-transformers/all-MiniLM-L12-v2",
+    "model_name": "thenlper/gte-base",
     "model_type": "transformers"
 }
 
@@ -12,7 +12,12 @@ embed_model = {
 async def create_locator():
     _store = PgvectorStore(
         embedding_model=embed_model,
-        dsn="postgresql+asyncpg://troc_pgdata:12345678@127.0.0.1:5432/navigator"
+        dsn="postgresql+asyncpg://troc_pgdata:12345678@127.0.0.1:5432/navigator",
+        dimension=768,
+        table='stores',
+        schema='bestbuy',
+        id_column='store_id',
+        embedding_column='store_vector'
     )
     async with _store as store:
         # Compute the embedding and update an existing Table.
@@ -30,25 +35,27 @@ async def create_locator():
                 'country_code',
             ],
             id_column='store_id',
-            dimension=384
+            embedding_column='store_vector',
+            dimension=768
         )
 
 async def test_locator():
     _store = PgvectorStore(
         embedding_model=embed_model,
         dsn="postgresql+asyncpg://troc_pgdata:12345678@127.0.0.1:5432/navigator",
-        dimension=384,
+        dimension=768,
         table='stores',
         schema='bestbuy',
-        id_column='store_id'
+        id_column='store_id',
+        embedding_column='store_vector',
     )
     async with _store as store:
         # Do a Similarity Search over a existing Store:
-        query = "an store near of Naples boulevard, Florida"
+        query = "store with Id BBY1030"
         results = await store.similarity_search(
             query,
             limit=None,
-            score_threshold=0.51,
+            score_threshold=0.10,
             collection='bestbuy.stores',
         )
         for doc in results:
@@ -56,4 +63,5 @@ async def test_locator():
 
 
 if __name__ == "__main__":
+    asyncio.run(create_locator())
     asyncio.run(test_locator())

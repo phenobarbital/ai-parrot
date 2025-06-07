@@ -192,7 +192,7 @@ class AbstractStore(ABC):
 
         """
         model_type = embedding_model.get('model_type', 'huggingface')
-        model_name = embedding_model.get('model_name', EMBEDDING_DEFAULT_MODEL)
+        model_name = embedding_model.get('model', EMBEDDING_DEFAULT_MODEL)
         if model_type not in supported_embeddings:
             raise ConfigError(
                 f"Embedding Model Type: {model_type} not supported."

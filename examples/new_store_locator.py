@@ -53,7 +53,7 @@ async def test_locator_l2_distance():
         results = await store.similarity_search(
             query,
             limit=5,
-            score_threshold=0.51,
+            score_threshold=0.12,
             collection='bestbuy.stores',
         )
         for doc in results:
