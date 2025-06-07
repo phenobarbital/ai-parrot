@@ -2,6 +2,7 @@ from collections.abc import Callable
 from typing import List, Optional, Union
 from uuid import uuid4
 from langchain.docstore.document import Document
+from langchain.memory import VectorStoreRetrieverMemory
 # Milvus Database
 from pymilvus import (
     db,
@@ -14,7 +15,6 @@ from pymilvus import (
 )
 from pymilvus.exceptions import MilvusException
 from langchain_milvus import Milvus  # pylint: disable=import-error, E0611
-from langchain.memory import VectorStoreRetrieverMemory
 from navconfig.logging import logging
 from .abstract import AbstractStore
 from ..conf import (
