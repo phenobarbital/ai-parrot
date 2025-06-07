@@ -194,7 +194,6 @@ class AbstractStore(ABC):
             Callable: Embedding Model.
 
         """
-        print(':: HERE > ', embedding_model)
         model_type = embedding_model.get('model_type', 'huggingface')
         model_name = embedding_model.get('model', EMBEDDING_DEFAULT_MODEL)
         if model_type not in supported_embeddings:
