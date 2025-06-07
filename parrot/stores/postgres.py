@@ -4,6 +4,7 @@ Powerful PostgreSQL Vector Database Store with Custom Table Support.
 from typing import (
     Any,
     Dict,
+    Iterable,
     List,
     Tuple,
     Union,
@@ -50,49 +51,6 @@ Base = declarative_base()
 async def aget_by_name(cls, session: AsyncSession, name: str) -> Optional["CustomEmbeddingStore"]:
     return cls(cmetadata={})
 
-async def __aquery_collection(
-    cls,
-    session: AsyncSession,
-    embedding: List[float],
-    k: int = 4,
-    score_threshold: Optional[float] = None,
-    filter: Optional[Dict[str, str]] = None,
-) -> Sequence[Any]:
-    """
-    Query directly from the current table (no collection filtering/join).
-    """
-    filter_by = []
-
-    # If you want to support JSONB metadata filtering
-    if filter:
-        if cls.use_jsonb:
-            filter_clauses = cls._create_filter_clause(filter)
-            if filter_clauses is not None:
-                filter_by.append(filter_clauses)
-        else:
-            filter_clauses = cls._create_filter_clause_json_deprecated(filter)
-            filter_by.extend(filter_clauses)
-
-    # Build distance expression as usual
-    distance_expr = cls.distance_strategy(embedding).label("distance")
-
-    stmt = (
-        select(
-            cls.EmbeddingStore,
-            distance_expr
-        )
-        .filter(*filter_by)
-        .order_by(sqlalchemy.asc(distance_expr))
-        .limit(k)
-    )
-
-    if score_threshold is not None:
-        stmt = stmt.filter(distance_expr < score_threshold)
-
-    results: Sequence[Any] = (await session.execute(stmt)).all()
-    return results
-
-
 class PgVector(PGVector):
     """
     PgVector extends PGVector so that it uses an existing table from a specified schema.
@@ -137,6 +95,7 @@ class PgVector(PGVector):
         elif '.' in collection_name:
             self.schema, self.table_name = collection_name.split('.')
             self._schema_based: bool = True
+        print('RECEIVED EMBEDDING > ', embeddings)
         super().__init__(
             embeddings=embeddings,
             collection_name=collection_name,
@@ -462,6 +421,147 @@ class PgVector(PGVector):
         # Force recreation of ORM models on next operation
         self._async_init = False
 
+    async def aadd_embeddings(
+        self,
+        texts: Sequence[str],
+        embeddings: List[List[float]],
+        metadatas: Optional[List[dict]] = None,
+        ids: Optional[List[str]] = None,
+        **kwargs: Any,
+    ) -> List[str]:
+        """Async add embeddings to the vectorstore.
+
+        Args:
+            texts: Iterable of strings to add to the vectorstore.
+            embeddings: List of list of embedding vectors.
+            metadatas: List of metadatas associated with the texts.
+            ids: Optional list of ids for the texts.
+                If not provided, will generate a new id for each text.
+            kwargs: vectorstore specific parameters
+        """
+        await self.__apost_init__()  # Lazy async init
+
+        if ids is None:
+            ids_ = [str(uuid.uuid4()) for _ in texts]
+        else:
+            ids_ = [id if id is not None else str(uuid.uuid4()) for id in ids]
+
+        if not metadatas:
+            metadatas = [{} for _ in texts]
+
+        async with self._make_async_session() as session:  # type: ignore[arg-type]
+            # Build data dictionary using configurable column names
+            data = []
+            for text, metadata, embedding, id in zip(texts, metadatas, embeddings, ids_):
+                row_data = {
+                    self._id_column: id,
+                    self._embedding_column: embedding,
+                    'document': text,
+                    'cmetadata': metadata or {},
+                }
+
+                # Only add collection_id if not using schema-based approach
+                if not self._schema_based:
+                    collection = await self.aget_collection(session)
+                    if not collection:
+                        raise ValueError("Collection not found")
+                    row_data['collection_id'] = collection.uuid
+                else:
+                    # For schema-based approach, use default collection_id
+                    row_data['collection_id'] = '00000000-0000-0000-0000-000000000000'
+
+                data.append(row_data)
+
+            stmt = insert(self.EmbeddingStore).values(data)
+
+            # Use configurable ID column for conflict detection
+            on_conflict_stmt = stmt.on_conflict_do_update(
+                index_elements=[self._id_column],
+                set_={
+                    self._embedding_column: stmt.excluded.__getattr__(self._embedding_column),
+                    'document': stmt.excluded.document,
+                    'cmetadata': stmt.excluded.cmetadata,
+                },
+            )
+            await session.execute(on_conflict_stmt)
+            await session.commit()
+
+        return ids_
+
+    async def aadd_texts(
+        self,
+        texts: Iterable[str],
+        metadatas: Optional[List[dict]] = None,
+        ids: Optional[List[str]] = None,
+        **kwargs: Any,
+    ) -> List[str]:
+        """Run more texts through the embeddings and add to the vectorstore.
+
+        Args:
+            texts: Iterable of strings to add to the vectorstore.
+            metadatas: Optional list of metadatas associated with the texts.
+            ids: Optional list of ids for the texts.
+                If not provided, will generate a new id for each text.
+            kwargs: vectorstore specific parameters
+
+        Returns:
+            List of ids from adding the texts into the vectorstore.
+        """
+        await self.__apost_init__()  # Lazy async init
+        texts_ = list(texts)
+
+        # Use self.embeddings instead of self.embedding_function
+        print('EMBEDDDINGs > ', self.embeddings)
+        embeddings = await self.embeddings.aembed_documents(texts_)
+
+        return await self.aadd_embeddings(
+            texts=texts_,
+            embeddings=list(embeddings),
+            metadatas=list(metadatas) if metadatas else None,
+            ids=list(ids) if ids else None,
+            **kwargs,
+        )
+
+
+    async def aadd_documents(
+        self,
+        documents: List[Document],
+        ids: Optional[List[str]] = None,
+        **kwargs: Any,
+    ) -> List[str]:
+        """Add documents to the vectorstore.
+
+        Args:
+            documents: List of Document objects to add to the vectorstore.
+            ids: Optional list of ids for the documents.
+                If not provided, will generate a new id for each document.
+            kwargs: vectorstore specific parameters
+
+        Returns:
+            List of ids from adding the documents into the vectorstore.
+        """
+        await self.__apost_init__()  # Lazy async init
+
+        texts = [doc.page_content for doc in documents]
+        metadatas = [doc.metadata for doc in documents]
+
+        # Use document IDs if available, otherwise use provided ids
+        doc_ids = []
+        for i, doc in enumerate(documents):
+            if hasattr(doc, 'id') and doc.id:
+                doc_ids.append(doc.id)
+            elif ids and i < len(ids) and ids[i]:
+                doc_ids.append(ids[i])
+            else:
+                doc_ids.append(str(uuid.uuid4()))
+
+        return await self.aadd_texts(
+            texts=texts,
+            metadatas=metadatas,
+            ids=doc_ids,
+            **kwargs,
+        )
+
 class PgvectorStore(AbstractStore):
     """Pgvector Store Class.
 
@@ -552,6 +652,8 @@ class PgvectorStore(AbstractStore):
 
         """
         self._connection = create_async_engine(self.dsn, future=True, echo=False)
+
+        print(':: EMBED > ', self._embed_.embedding, self.embedding_model, self.dimension)
         async with self._connection.begin() as conn:
             if getattr(self, "_drop", False):
                 self.vector = PgVector(
@@ -652,6 +754,7 @@ class PgvectorStore(AbstractStore):
             _embed_ = self.create_embedding(
                 embedding_model=self.embedding_model
             )
+        print('EMBED > ', _embed_, self.embedding_model, self.dimension)
         if not metric_type:
             metric_type = self.distance_strategy
         if not embedding_column:
@@ -747,8 +850,9 @@ class PgvectorStore(AbstractStore):
                 "Store is not connected. Use 'async with store:' context manager."
             )
         vectordb = self.get_vector(collection=collection, **kwargs)
+        doc_ids = [doc.id for doc in documents]
         # Asynchronously add documents to PGVector
-        await vectordb.aadd_documents(documents)
+        await vectordb.aadd_documents(documents, ids=doc_ids)
 
     async def similarity_search(
         self,
@@ -801,13 +905,10 @@ class PgvectorStore(AbstractStore):
     async def prepare_embedding_table(
         self,
         tablename: str,
-        table: str,
-        columns: List[str],
-        schema: str = 'public',
         conn:  AsyncEngine = None,
         embedding_column: str = 'embedding',
         document_column: str = 'document',
-        metadata_column: str = 'metadata',
+        metadata_column: str = 'cmetadata',
         dimension: int = None,
         id_column: str = 'id',
         use_jsonb: bool = True,
@@ -827,9 +928,7 @@ class PgvectorStore(AbstractStore):
         - Enhanced indexing strategies for efficient querying
         - Support for multiple distance strategies (COSINE, L2, IP, etc.)
         Args:
-        - table (str): Name of the table to create.
-        - columns (List[str]): List of column names to include in the table.
-        - schema (str): Database schema where the table will be created.
+        - tablename (str): Name of the table to create.
         - embedding_column (str): Name of the column for storing embeddings.
         - document_column (str): Name of the column for storing document text.
         - metadata_column (str): Name of the column for storing metadata.
@@ -873,10 +972,17 @@ class PgvectorStore(AbstractStore):
         # Create the Collection Column:
         await conn.execute(
             sqlalchemy.text(
-                f"""ALTER TABLE {tablename} ADD COLUMN IF NOT EXISTS collection_id UUID;
-                UPDATE {tablename} SET collection_id = '00000000-0000-0000-0000-000000000000';
-                ALTER TABLE {tablename} ALTER COLUMN collection_id SET NOT NULL;
-                """
+                f"ALTER TABLE {tablename} ADD COLUMN IF NOT EXISTS collection_id UUID;"
+            )
+        )
+        await conn.execute(
+            sqlalchemy.text(
+                f"UPDATE {tablename} SET collection_id = '00000000-0000-0000-0000-000000000000';"
+            )
+        )
+        await conn.execute(
+            sqlalchemy.text(
+                f"ALTER TABLE {tablename} ALTER COLUMN collection_id SET NOT NULL;"
             )
         )
         # ✅ CREATE COMPREHENSIVE INDEXES
@@ -886,7 +992,7 @@ class PgvectorStore(AbstractStore):
             # COSINE index (most common for text embeddings)
             await conn.execute(
                 sqlalchemy.text(
-                    f"CREATE INDEX IF NOT EXISTS idx_{schema}_{table}_cosine "
+                    f"CREATE INDEX IF NOT EXISTS idx_{tablename.replace('.', '_')}_cosine "
                     f"ON {tablename} USING ivfflat ({embedding_column} vector_cosine_ops);"
                 )
             )
@@ -894,7 +1000,7 @@ class PgvectorStore(AbstractStore):
             # L2/Euclidean index
             await conn.execute(
                 sqlalchemy.text(
-                    f"CREATE INDEX IF NOT EXISTS idx_{schema}_{table}_l2 "
+                    f"CREATE INDEX IF NOT EXISTS idx_{tablename.replace('.', '_')}_l2 "
                     f"ON {tablename} USING ivfflat ({embedding_column} vector_l2_ops);"
                 )
             )
@@ -904,7 +1010,7 @@ class PgvectorStore(AbstractStore):
             try:
                 await conn.execute(
                     sqlalchemy.text(
-                        f"CREATE INDEX IF NOT EXISTS idx_{schema}_{table}_ip "
+                        f"CREATE INDEX IF NOT EXISTS idx_{tablename.replace('.', '_')}_ip "
                         f"ON {tablename} USING ivfflat ({embedding_column} vector_ip_ops);"
                     )
                 )
@@ -916,7 +1022,7 @@ class PgvectorStore(AbstractStore):
             try:
                 await conn.execute(
                     sqlalchemy.text(
-                        f"CREATE INDEX IF NOT EXISTS idx_{schema}_{table}_hnsw_cosine "
+                        f"CREATE INDEX IF NOT EXISTS idx_{tablename.replace('.', '_')}_hnsw_cosine "
                         f"ON {tablename} USING hnsw ({embedding_column} vector_cosine_ops);"
                     )
                 )
@@ -938,7 +1044,7 @@ class PgvectorStore(AbstractStore):
 
             await conn.execute(
                 sqlalchemy.text(
-                    f"CREATE INDEX IF NOT EXISTS idx_{schema}_{table}_{strategy_name} "
+                    f"CREATE INDEX IF NOT EXISTS idx_{tablename.replace('.', '_')}_{strategy_name} "
                     f"ON {tablename} USING ivfflat ({embedding_column} {ops});"
                 )
             )
@@ -961,7 +1067,7 @@ class PgvectorStore(AbstractStore):
         schema: str = 'public',
         embedding_column: str = 'embedding',
         document_column: str = 'document',
-        metadata_column: str = 'metadata',
+        metadata_column: str = 'cmetadata',
         dimension: int = None,
         id_column: str = 'id',
         use_jsonb: bool = True,
@@ -975,7 +1081,7 @@ class PgvectorStore(AbstractStore):
         - id: unique identifier (String)
         - embedding: the vector column (Vector(dimension) or JSONB)
         - document: text column containing the document
-        - metadata: JSONB column for metadata
+        - cmetadata: JSONB column for metadata
         - Additional columns based on the provided `columns` list
         - Enhanced indexing strategies for efficient querying
         - Support for multiple distance strategies (COSINE, L2, IP, etc.)
@@ -1022,9 +1128,7 @@ class PgvectorStore(AbstractStore):
             rows = result.fetchall()
 
             await self.prepare_embedding_table(
-                table=table,
-                columns=columns,
-                schema=schema,
+                tablename=tablename,
                 embedding_column=embedding_column,
                 document_column=document_column,
                 metadata_column=metadata_column,
