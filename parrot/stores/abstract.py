@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import List, Union
+from typing import Any, List, Union
 import importlib
 from collections.abc import Callable
 from langchain.docstore.document import Document
@@ -96,6 +96,9 @@ class AbstractStore(ABC):
     async def connection(self) -> tuple:
         pass
 
+    def get_connection(self) -> Any:
+        return self._connection
+
     @abstractmethod
     async def disconnect(self) -> None:
         pass
@@ -191,6 +194,7 @@ class AbstractStore(ABC):
             Callable: Embedding Model.
 
         """
+        print(':: HERE > ', embedding_model)
         model_type = embedding_model.get('model_type', 'huggingface')
         model_name = embedding_model.get('model', EMBEDDING_DEFAULT_MODEL)
         if model_type not in supported_embeddings:
