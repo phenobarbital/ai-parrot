@@ -4,7 +4,7 @@ from parrot.llms.vertex import VertexLLM
 
 async def get_agent():
     llm = VertexLLM(
-        model='gemini-1.5-pro',
+        model="gemini-2.0-flash-001",
         temperature=0.2,
         top_k=30,
         Top_p=0.5,

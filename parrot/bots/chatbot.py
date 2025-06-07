@@ -6,7 +6,7 @@ from pathlib import Path, PurePath
 import uuid
 from aiohttp import web
 # Navconfig
-from datamodel.exceptions import ValidationError
+from datamodel.exceptions import ValidationError # pylint: disable=E0611
 from navconfig import BASE_DIR
 from navconfig.exceptions import ConfigError  # pylint: disable=E0611
 from asyncdb.exceptions import NoDataFound
@@ -24,6 +24,8 @@ class Chatbot(AbstractBot):
         Each Chatbot has a name, a role, a goal, a backstory,
         and an optional language model (llm).
     """
+    company_information: dict = {}
+
     def __init__(
         self,
         name: str = 'Nav',
@@ -40,6 +42,11 @@ class Chatbot(AbstractBot):
         self.documents_dir = kwargs.get(
             'documents_dir',
             None
+        )
+        # Company Information:
+        self.company_information = kwargs.get(
+            'company_information',
+            self.company_information
         )
         super().__init__(
             name=name,
@@ -70,7 +77,12 @@ class Chatbot(AbstractBot):
 
     async def configure(self, app = None) -> None:
         """Load configuration for this Chatbot."""
-        await super().configure(app)
+        self.app = None
+        if app:
+            if isinstance(app, web.Application):
+                self.app = app  # register the app into the Extension
+            else:
+                self.app = app.get_app()  # Nav Application
         # Check if a Config File exists for this Bot instance:
         config_file = BASE_DIR.joinpath(
             'etc',
@@ -97,6 +109,9 @@ class Chatbot(AbstractBot):
             raise ValueError(
                 f'Bad configuration procedure for bot {self.name}'
             )
+        # adding this configured chatbot to app:
+        if self.app:
+            self.app[f"{self.name.lower()}_bot"] = self
 
     def _from_bot(self, bot, key, config, default) -> Any:
         value = getattr(bot, key, None)
@@ -262,8 +277,23 @@ class Chatbot(AbstractBot):
         # after configuration, setup the chatbot
         if 'template_prompt' in basic:
             self.template_prompt = basic.get('template_prompt')
+        # convert company_information into an string bulleted:
+        if isinstance(self.company_information, str):
+            # Convert string to dict
+            self.company_information = {
+                'information': self.company_information
+            }
+        elif isinstance(self.company_information, dict):
+            # Convert dict to string
+            self.company_information = "\n".join(
+                    f"- {key}: {value}"
+                    for key, value in self.company_information.items()
+            )
         self._define_prompt(
-            config=basic
+            config=basic,
+            **{
+                "company_information": self.company_information,
+            }
         )
         # Last: permissions:
         permissions = file_config.get('permissions', {})

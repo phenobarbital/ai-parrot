@@ -13,6 +13,8 @@ from typing import (
 from collections.abc import Callable
 import asyncio
 import uuid
+import traceback
+import inspect as iinspect
 # SQL Alchemy
 import sqlalchemy
 from sqlalchemy import inspect, text
@@ -53,6 +55,10 @@ async def aget_by_name(cls, session: AsyncSession, name: str) -> Optional["Custo
 class PgVector(PGVector):
     """
     PgVector extends PGVector so that it uses an existing table from a specified schema.
+    Enhanced PgVector that supports:
+    - Configurable embedding column name
+    - Different distance strategies (COSINE, L2/EUCLIDEAN, MAX_INNER_PRODUCT)
+    - Working with existing tables from specified schemas
 
     When instantiating, you provide:
     - connection: an AsyncEngine (or synchronous engine) to your PostgreSQL database.
@@ -75,11 +81,15 @@ class PgVector(PGVector):
         schema: str = 'public',
         collection_name: Optional[str] = None,
         id_column: str = 'id',
+        embedding_column: str = 'embedding',
+        distance_strategy: DistanceStrategy = DistanceStrategy.COSINE,
         **kwargs
     ) -> None:
         self.table_name = table_name
         self.schema = schema
         self._id_column: str = id_column
+        self._embedding_column: str = embedding_column
+        self._distance_strategy = distance_strategy
         self._schema_based: bool = False
         if self.table_name:
             self._schema_based: bool = True
@@ -89,6 +99,7 @@ class PgVector(PGVector):
         super().__init__(
             embeddings=embeddings,
             collection_name=collection_name,
+            distance_strategy=distance_strategy,
             **kwargs
         )
 
@@ -96,7 +107,7 @@ class PgVector(PGVector):
         self,
         table: str,
         schema: str,
-        dimension: int = 768,
+        dimension: int = 384,
         **kwargs
     ) -> Tuple[type, type]:
         """
@@ -124,7 +135,7 @@ class PgVector(PGVector):
                 unique=True,
                 default=lambda: str(uuid.uuid4())
             ),
-            'embedding': sqlalchemy.Column(Vector(dimension)),
+            self._embedding_column: sqlalchemy.Column(Vector(dimension)),
             'document': sqlalchemy.Column(sqlalchemy.String, nullable=True),
             'cmetadata': sqlalchemy.Column(JSONB, nullable=True),
             # Attach the async classmethods.
@@ -134,6 +145,29 @@ class PgVector(PGVector):
         EmbeddingStore = type("CustomEmbeddingStore", (Base,), attrs)
         EmbeddingStore.__name__ = "EmbeddingStore"
         return (EmbeddingStore, EmbeddingStore)
+
+    @property
+    def distance_strategy(self) -> Any:
+        """
+        Return the appropriate distance function based on the configured strategy
+        and embedding column name.
+        """
+        # Get the embedding column from the EmbeddingStore model
+        embedding_column = getattr(self.EmbeddingStore, self._embedding_column)
+
+        if self._distance_strategy == DistanceStrategy.EUCLIDEAN_DISTANCE:
+            return embedding_column.l2_distance
+        elif self._distance_strategy == DistanceStrategy.COSINE:
+            return embedding_column.cosine_distance
+        elif self._distance_strategy == DistanceStrategy.MAX_INNER_PRODUCT:
+            return embedding_column.max_inner_product
+        elif self._distance_strategy == DistanceStrategy.DOT_PRODUCT:
+            return embedding_column.dot_product
+        else:
+            raise ValueError(
+                f"Got unexpected value for distance: {self._distance_strategy}. "
+                f"Should be one of {', '.join([ds.value for ds in DistanceStrategy])}."
+            )
 
     async def __apost_init__(
         self,
@@ -163,6 +197,7 @@ class PgVector(PGVector):
         self,
         query: str,
         k: int = 4,
+        limit: Optional[int] = None,
         score_threshold: Optional[float] = None,
         filter: Optional[dict] = None,
         **kwargs: Any,
@@ -177,6 +212,7 @@ class PgVector(PGVector):
         Returns:
             List of Documents most similar to the query.
         """
+        k = limit if limit is not None else k
         await self.__apost_init__()  # Lazy async init
         embedding = await self.embeddings.aembed_query(query)
         return await self.asimilarity_search_by_vector(
@@ -233,12 +269,10 @@ class PgVector(PGVector):
         score_threshold: Optional[float] = None,
         filter: Optional[Dict[str, str]] = None,
     ) -> List[Tuple[Document, float]]:
-        """Search for similar documents in the collection.
-
-        If score_threshold is provided, returns all documents whose computed distance is below that threshold.
-        Otherwise, if k is provided, returns at most k documents.
         """
-        async with self._make_async_session() as session:  # type: ignore[arg-type]
+        Enhanced search method that uses the configurable distance strategy.
+        """
+        async with self._make_async_session() as session:
             filter_by = []
             if filter:
                 if self.use_jsonb:
@@ -246,38 +280,35 @@ class PgVector(PGVector):
                     if filter_clause is not None:
                         filter_by.append(filter_clause)
                 else:
-                    # For non-JSONB cases, you might use a deprecated method:
                     filter_clauses = self._create_filter_clause_json_deprecated(filter)
                     filter_by.extend(filter_clauses)
 
-            # Compute the distance expression
+            # Use the distance_strategy property which now respects the configurable column
             distance_expr = self.distance_strategy(embedding).label("distance")
+
             stmt = (
                 sqlalchemy.select(
                     self.EmbeddingStore,
-                    self.distance_strategy(embedding).label("distance")
+                    distance_expr
                 )
                 .filter(*filter_by)
             )
-            # If a score threshold is provided, add a filter on the distance.
+
             if score_threshold is not None:
                 stmt = stmt.filter(distance_expr < score_threshold)
             else:
-                # Otherwise, limit the number of results.
                 stmt = stmt.order_by(distance_expr).limit(k)
 
             stmt = stmt.order_by(sqlalchemy.asc(distance_expr))
-            # Execute the query and return the results.
             results: Sequence[Any] = (await session.execute(stmt)).all()
             return results
 
     def _results_to_docs_and_scores(self, results: Any) -> List[Tuple[Document, float]]:
-        """Return docs and scores from results."""
-        id_col = getattr(self, "_id_column", "id")
+        """Return docs and scores from results using configurable id column."""
         docs = [
             (
                 Document(
-                    id=str(getattr(result.EmbeddingStore, id_col)),
+                    id=str(getattr(result.EmbeddingStore, self._id_column)),
                     page_content=result.EmbeddingStore.document,
                     metadata=result.EmbeddingStore.cmetadata,
                 ),
@@ -287,6 +318,30 @@ class PgVector(PGVector):
         ]
         return docs
 
+    # Helper method to change distance strategy after initialization
+    def set_distance_strategy(self, strategy: DistanceStrategy) -> None:
+        """
+        Change the distance strategy after initialization.
+
+        Args:
+            strategy: New DistanceStrategy to use
+        """
+        if strategy not in [DistanceStrategy.COSINE, DistanceStrategy.DOT_PRODUCT, DistanceStrategy.EUCLIDEAN_DISTANCE, DistanceStrategy.MAX_INNER_PRODUCT]:
+            raise ValueError(f"Invalid distance strategy: {strategy}")
+        self._distance_strategy = strategy
+
+    # Helper method to change embedding column after initialization
+    def set_embedding_column(self, column_name: str) -> None:
+        """
+        Change the embedding column name after initialization.
+        Note: This requires recreating the ORM models.
+
+        Args:
+            column_name: New embedding column name
+        """
+        self._embedding_column = column_name
+        # Force recreation of ORM models on next operation
+        self._async_init = False
 
 class PgvectorStore(AbstractStore):
     """Pgvector Store Class.
@@ -295,6 +350,11 @@ class PgvectorStore(AbstractStore):
     """
     def __init__(
         self,
+        table: str = None,
+        schema: str = 'public',
+        id_column: str = 'id',
+        embedding_column: str = 'embedding',
+        distance_strategy: str = 'COSINE',
         embedding_model: Union[dict, str] = None,
         embedding: Union[dict, Callable] = None,
         **kwargs
@@ -304,14 +364,48 @@ class PgvectorStore(AbstractStore):
             embedding=embedding,
             **kwargs
         )
-        self.table: str = kwargs.get('table', None)
-        self.schema: str = kwargs.get('schema', 'public')
-        self._id_column = kwargs.get('id_column', 'id')
+        self.table: str = table
+        self.schema: str = schema
+        if self.schema is not None:
+            self.collection_name = f"{self.schema}.{self.collection_name}"
         if self.table and not self.collection_name:
             self.collection_name = f"{self.schema}.{self.table}"
+        self.database: str = kwargs.get('database', None)
+        self._id_column = id_column
+        self._embedding_column: str = embedding_column
+        self.dimension: int = kwargs.get('dimension', 384)
         self.dsn = kwargs.get('dsn', self.database)
         self._drop: bool = kwargs.pop('drop', False)
         self._connection: AsyncEngine = None
+        # Convert string to DistanceStrategy enum
+        strategy_mapping = {
+            'COSINE': DistanceStrategy.COSINE,
+            'L2': DistanceStrategy.EUCLIDEAN_DISTANCE,
+            'EUCLIDEAN': DistanceStrategy.EUCLIDEAN_DISTANCE,
+            'IP': DistanceStrategy.MAX_INNER_PRODUCT,
+            'MAX_INNER_PRODUCT': DistanceStrategy.MAX_INNER_PRODUCT,
+            'DOT_PRODUCT': DistanceStrategy.DOT_PRODUCT,
+        }
+        # By Default use COSINE distance strategy
+        self.distance_strategy = strategy_mapping.get(
+            distance_strategy.upper(),
+            DistanceStrategy.COSINE
+        )
+        self.vector: PgVector = None  # Store the vector instance
+        self._context_depth = 0  # Track context depth
+
+    def set_distance_strategy(self, strategy: DistanceStrategy) -> None:
+        """
+        Change the distance strategy after initialization.
+
+        Args:
+            strategy: New DistanceStrategy to use
+        """
+        if strategy not in [DistanceStrategy.COSINE, DistanceStrategy.DOT_PRODUCT, DistanceStrategy.EUCLIDEAN_DISTANCE, DistanceStrategy.MAX_INNER_PRODUCT]:
+            raise ValueError(f"Invalid distance strategy: {strategy}")
+        self.distance_strategy = strategy
+        if self.vector is not None:
+            self.vector.set_distance_strategy(strategy)
 
     async def collection_exists(self, collection: str = None) -> bool:
         """Check if a collection exists in the database."""
@@ -329,32 +423,37 @@ class PgvectorStore(AbstractStore):
             return bool(result.scalar())
 
     async def connection(self, alias: str = None):
-        """Connection to DuckDB.
+        """Connection to PgVector Store.
 
         Args:
             alias (str): Database alias.
 
         Returns:
-            Callable: DuckDB connection.
+            Callable: PgVector connection.
 
         """
         self._connection = create_async_engine(self.dsn, future=True, echo=False)
         async with self._connection.begin() as conn:
             if getattr(self, "_drop", False):
-                vectorstore = PgVector(
+                self.vector = PgVector(
                     embeddings=self._embed_.embedding,
                     table_name=self.table,
                     schema=self.schema,
-                    id_column=self._id_column,
                     collection_name=self.collection_name,
                     embedding_length=self.dimension,
                     connection=self._connection,
+                    id_column=self._id_column,
+                    embedding_column=self._embedding_column,
+                    distance_strategy=self.distance_strategy,
+                    async_mode=True,
                     use_jsonb=True,
                     create_extension=False
                 )
-                await vectorstore.adrop_tables()
+                await self.vector.adrop_tables()
             if not await self.collection_exists(self.collection_name):
-                print(f"⚠️ Collection `{self.collection_name}` not found. Creating a new one...")
+                print(
+                    f"⚠️ Collection `{self.collection_name}` not found. Creating a new one..."
+                )
                 await self.create_collection(self.collection_name)
         self._connected = True
         return self._connection
@@ -376,6 +475,7 @@ class PgvectorStore(AbstractStore):
         finally:
             self._connection = None
             self._connected = False
+        print("✅ Connection closed successfully.")
 
     async def create_collection(self, collection: str) -> None:
         """Create a new collection in the database."""
@@ -402,6 +502,8 @@ class PgvectorStore(AbstractStore):
         schema: Optional[str] = None,
         collection: Union[str, None] = None,
         embedding: Optional[Callable] = None,
+        metric_type: Optional[str] = None,
+        embedding_column: Optional[str] = None,
         **kwargs
     ) -> PGVector:
         """
@@ -423,19 +525,28 @@ class PgvectorStore(AbstractStore):
             schema = self.schema
         if not collection:
             collection = self.collection_name
+        if self.vector is not None:
+            return self.vector
         if embedding is not None:
             _embed_ = embedding
         else:
             _embed_ = self.create_embedding(
                 embedding_model=self.embedding_model
             )
-        return PgVector(
+        print('EMBEDDING > ', _embed_)
+        if not metric_type:
+            metric_type = self.distance_strategy
+        if not embedding_column:
+            embedding_column = self._embedding_column
+        self.vector = PgVector(
             connection=self._connection,
             table_name=table,
             schema=schema,
             id_column=self._id_column,
+            embedding_column=embedding_column,
             collection_name=collection,
             embedding_length=self.dimension,
+            distance_strategy=metric_type,
             embeddings=_embed_.embedding,
             logger=self.logger,
             async_mode=True,
@@ -443,6 +554,7 @@ class PgvectorStore(AbstractStore):
             create_extension=False,
             **kwargs
         )
+        return self.vector
 
     def memory_retriever(
         self,
@@ -473,10 +585,15 @@ class PgvectorStore(AbstractStore):
         documents: List[Document],
         table: Optional[str] = None,
         schema: Optional[str] = 'public',
+        embedding_column: Optional[str] = None,
         collection: Union[str, None] = None,
         **kwargs
     ) -> None:
         """Save Documents as Vectors in VectorStore."""
+        if not self._connected or not self._connection:
+            raise RuntimeError(
+                "Store is not connected. Use 'async with store:' context manager."
+            )
         _embed_ = self._embed_ or self.create_embedding(
                 embedding_model=self.embedding_model
         )
@@ -488,9 +605,11 @@ class PgvectorStore(AbstractStore):
             table_name=table,
             schema=schema,
             id_column=self._id_column,
+            embedding_column=embedding_column or self._embedding_column,
             collection_name=collection,
             embedding=_embed_.embedding,
             embedding_length=self.dimension,
+            distance_strategy=self.distance_strategy,
             use_jsonb=True,
             async_mode=True,
         )
@@ -505,6 +624,10 @@ class PgvectorStore(AbstractStore):
         """Save Documents as Vectors in VectorStore."""
         if not collection:
             collection = self.collection_name
+        if not self._connected or not self._connection:
+            raise RuntimeError(
+                "Store is not connected. Use 'async with store:' context manager."
+            )
         vectordb = self.get_vector(collection=collection, **kwargs)
         # Asynchronously add documents to PGVector
         await vectordb.aadd_documents(documents)
@@ -527,14 +650,24 @@ class PgvectorStore(AbstractStore):
             schema = self.schema
         if collection is None:
             collection = self.collection_name
-        async with self:
-            vector_db = self.get_vector(table=table, schema=schema, collection=collection, **kwargs)
-            return await vector_db.asimilarity_search(
-                query,
-                k=limit,
-                score_threshold=score_threshold,
-                filter=filter
+
+        print(f"🔍 Starting similarity_search with query: '{query}'")
+        print(f"📊 Context depth: {self._context_depth}")
+        print(f"🔌 Connected: {self._connected}")
+        print(f"🗄️ Connection: {self._connection}")
+        # Just ensure connection exists, don't create nested context
+        if not self._connected or not self._connection:
+            raise RuntimeError(
+                "Store is not connected. Use 'async with store:' context manager."
             )
+
+        vector_db = self.get_vector(table=table, schema=schema, collection=collection, **kwargs)
+        return await vector_db.asimilarity_search(
+            query,
+            k=limit,
+            score_threshold=score_threshold,
+            filter=filter
+        )
 
     async def create_embedding_table(
         self,
@@ -544,38 +677,36 @@ class PgvectorStore(AbstractStore):
         embedding_column: str = 'embedding',
         document_column: str = 'document',
         metadata_column: str = 'metadata',
+        dimension: int = None,
         id_column: str = 'id',
-        dimension: int = 768,
         use_jsonb: bool = False,
         drop_columns: bool = False,
+        create_all_indexes: bool = True,  # NEW: Create indexes for all distance strategies
         **kwargs
     ):
         """
         Create an embedding column and vectorize Table information.
+        Now with comprehensive index management for all distance strategies.
         """
         tablename = f'{schema}.{table}'
         cols = ', '.join(columns)
         _qry = f'SELECT {cols} FROM {tablename};'
+        dimension = dimension or self.dimension
+
         # Generate a sample embedding to determine its dimension
         sample_vector = self._embed_.embedding.embed_query("sample text")
         vector_dim = len(sample_vector)
-        # Compare it with the expected dimension
+
         if vector_dim != dimension:
             raise ValueError(
-                f"Expected embedding dimension {self.dimension}, but got {vector_dim}"
+                f"Expected embedding dimension {dimension}, but got {vector_dim}"
             )
+
         async with self._connection.begin() as conn:
-            result = await conn.execute(
-                sqlalchemy.text(_qry)
-            )
+            result = await conn.execute(sqlalchemy.text(_qry))
             rows = result.fetchall()
-            # Concatenate column names and values to form an input string:
-            # 'store_name: BestBuy, location_code: 123456, ...'
-            # data = [
-            #     ', '.join([f"{col}: {row[col]}" for col in columns])
-            #     for row in rows
-            # ]
-            # if drop columns, then first remove the existing columns:
+
+            # Drop existing columns if requested
             if drop_columns:
                 for column in (document_column, embedding_column, metadata_column):
                     await conn.execute(
@@ -583,71 +714,154 @@ class PgvectorStore(AbstractStore):
                             f'ALTER TABLE {tablename} DROP COLUMN IF EXISTS {column};'
                         )
                     )
-            # Create a new column for embeddings
+
+            # Create embedding column
             if use_jsonb:
                 await conn.execute(
                     sqlalchemy.text(
-                        f'ALTER TABLE {tablename} ADD COLUMN IF NOT EXISTS {embedding_column} JSONB;'  # pylint: disable=C0301
+                        f'ALTER TABLE {tablename} ADD COLUMN IF NOT EXISTS {embedding_column} JSONB;'
                     )
                 )
             else:
-                # Use Embedding pgvector type:
+                # Use pgvector type
                 await conn.execute(
                     sqlalchemy.text(
-                        f'ALTER TABLE {tablename} ADD COLUMN IF NOT EXISTS {embedding_column} vector({dimension});'  # pylint: disable=C0301
+                        f'ALTER TABLE {tablename} ADD COLUMN IF NOT EXISTS {embedding_column} vector({dimension});'
                     )
                 )
-                # Create a Index for vector:
-                # TODO: define index algorithm and options.
+
+                # ✅ CREATE COMPREHENSIVE INDEXES
+                if create_all_indexes:
+                    print("🔧 Creating indexes for all distance strategies...")
+
+                    # COSINE index (most common for text embeddings)
+                    await conn.execute(
+                        sqlalchemy.text(
+                            f"CREATE INDEX IF NOT EXISTS idx_{schema}_{table}_cosine "
+                            f"ON {tablename} USING ivfflat ({embedding_column} vector_cosine_ops);"
+                        )
+                    )
+                    print("✅ Created COSINE index")
+
+                    # L2/Euclidean index
+                    await conn.execute(
+                        sqlalchemy.text(
+                            f"CREATE INDEX IF NOT EXISTS idx_{schema}_{table}_l2 "
+                            f"ON {tablename} USING ivfflat ({embedding_column} vector_l2_ops);"
+                        )
+                    )
+                    print("✅ Created L2 index")
+
+                    # Inner Product index
+                    await conn.execute(
+                        sqlalchemy.text(
+                            f"CREATE INDEX IF NOT EXISTS idx_{schema}_{table}_ip "
+                            f"ON {tablename} USING ivfflat ({embedding_column} vector_ip_ops);"
+                        )
+                    )
+                    print("✅ Created Inner Product index")
+
+                    # HNSW indexes for better performance (requires more memory)
+                    try:
+                        await conn.execute(
+                            sqlalchemy.text(
+                                f"CREATE INDEX IF NOT EXISTS idx_{schema}_{table}_hnsw_cosine "
+                                f"ON {tablename} USING hnsw ({embedding_column} vector_cosine_ops);"
+                            )
+                        )
+                        print("✅ Created HNSW COSINE index")
+                    except Exception as e:
+                        print(f"⚠️ HNSW index creation failed (this is optional): {e}")
+
+                else:
+                    # Create index only for current strategy
+                    distance_strategy_ops = {
+                        DistanceStrategy.COSINE: "vector_cosine_ops",
+                        DistanceStrategy.EUCLIDEAN_DISTANCE: "vector_l2_ops",
+                        DistanceStrategy.MAX_INNER_PRODUCT: "vector_ip_ops",
+                        DistanceStrategy.DOT_PRODUCT: "vector_ip_ops"
+                    }
+
+                    ops = distance_strategy_ops.get(self.distance_strategy, "vector_cosine_ops")
+                    strategy_name = str(self.distance_strategy).split('.')[-1].lower()
+
+                    await conn.execute(
+                        sqlalchemy.text(
+                            f"CREATE INDEX IF NOT EXISTS idx_{schema}_{table}_{strategy_name} "
+                            f"ON {tablename} USING ivfflat ({embedding_column} {ops});"
+                        )
+                    )
+                    print(f"✅ Created {strategy_name.upper()} index")
+
+            # Create additional columns
+            for col_name, col_type in [
+                (document_column, 'TEXT'),
+                (id_column, 'varchar'),
+                (metadata_column, 'jsonb')
+            ]:
                 await conn.execute(
                     sqlalchemy.text(
-                        f"CREATE INDEX IF NOT EXISTS idx_{schema}_{table}_embeddings ON {tablename} USING hnsw ({embedding_column} vector_l2_ops);"  # pylint: disable=C0301
+                        f'ALTER TABLE {tablename} ADD COLUMN IF NOT EXISTS {col_name} {col_type};'
                     )
                 )
-                # And also, an index IVFLAT:
-                await conn.execute(
-                    sqlalchemy.text(
-                        f"CREATE INDEX IF NOT EXISTS idx_{schema}_{table}_ivflat ON {tablename} USING ivfflat ({embedding_column} vector_cosine_ops);"  # pylint: disable=C0301
-                    )
-                )
-            # Then, create the info column and id column (if required):
-            # Text info Column (content)
-            await conn.execute(
-                sqlalchemy.text(
-                    f'ALTER TABLE {tablename} ADD COLUMN IF NOT EXISTS {document_column} TEXT;'
-                )
-            )
-            # ID Column (if required)
-            await conn.execute(
-                sqlalchemy.text(
-                    f'ALTER TABLE {tablename} ADD COLUMN IF NOT EXISTS {id_column} varchar;'
-                )
-            )
-            # Metadata Column (JSONB):
-            await conn.execute(
-                sqlalchemy.text(
-                    f'ALTER TABLE {tablename} ADD COLUMN IF NOT EXISTS {metadata_column} jsonb;'
-                )
-            )
-            # And ID Column:
-            await conn.execute(
-                sqlalchemy.text(
-                    f'ALTER TABLE {tablename} ADD COLUMN IF NOT EXISTS {id_column} varchar;'
-                )
-            )
+
+            # Populate the embedding data
             for row in rows:
                 _id = getattr(row, id_column)
                 metadata = {col: getattr(row, col) for col in columns}
                 data = " ".join([f"{col}: {metadata[col]}" for col in columns])
-                # Get the vector information from data:
+
+                # Generate embedding
                 vector = self._embed_.embedding.embed_query(data)
                 vector_str = "[" + ",".join(str(v) for v in vector) + "]"
+
                 await conn.execute(
-                sqlalchemy.text(f"""
-                    UPDATE {tablename}
-                    SET {embedding_column} = :vector, {document_column} = :info, {metadata_column} = :metadata
-                    WHERE {id_column} = :id
-                """),
-                {"vector": vector_str, "id": _id, "info": data, "metadata": json_encoder(metadata)}
-            )
-        print("✅ Updated Table embeddings.")
+                    sqlalchemy.text(f"""
+                        UPDATE {tablename}
+                        SET {embedding_column} = :vector, {document_column} = :info, {metadata_column} = :metadata
+                        WHERE {id_column} = :id
+                    """),
+                    {"vector": vector_str, "id": _id, "info": data, "metadata": json_encoder(metadata)}
+                )
+
+        print("✅ Updated Table embeddings with comprehensive indexes.")
+
+    async def __aenter__(self):
+        self._context_depth += 1
+        print(f'============ ENTERING STORE (depth: {self._context_depth}) ============')
+
+        # Print stack trace to see who called this
+        stack = iinspect.stack()
+        print("📍 Context entry called from:")
+        for frame in stack[1:4]:  # Show calling frames
+            print(f"  📁 {frame.filename}:{frame.lineno} in {frame.function}")
+
+        if self._use_database:
+            if not self._connection:
+                await self.connection()
+        return self
+
+    async def __aexit__(self, exc_type, exc_value, traceback):
+        self._context_depth -= 1
+        print(f'============ EXITING STORE (depth: {self._context_depth}) ============')
+
+        # Print stack trace to see who called this
+        stack = iinspect.stack()
+        print("📍 Context exit called from:")
+        for frame in stack[1:4]:  # Show calling frames
+            print(f"  📁 {frame.filename}:{frame.lineno} in {frame.function}")
+
+        if exc_type:
+            print(f"⚠️ Exception in context: {exc_type.__name__}: {exc_value}")
+
+        # Only disconnect if this is the outermost context
+        if self._context_depth == 0:
+            print("🔒 This is the outermost context - proceeding with cleanup")
+            if self._embed_:
+                await self._free_resources()
+            try:
+                await self.disconnect()
+            except RuntimeError:
+                pass
+        else:
+            print(f"⚠️ WARNING: Nested context detected! Not disconnecting (depth: {self._context_depth})")

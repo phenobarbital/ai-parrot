@@ -1,4 +1,5 @@
 from .chatbot import Chatbot
+from .prompts import COMPANY_SYSTEM_PROMPT
 
 class AskTROC(Chatbot):
     """Represents an Human Resources agent in Navigator.
@@ -14,3 +15,4 @@ class AskTROC(Chatbot):
     }
     role: str = 'Expert T-ROCer'
     goal = 'Bring useful information about T-ROC Global to employees.'
+    system_prompt_template = COMPANY_SYSTEM_PROMPT

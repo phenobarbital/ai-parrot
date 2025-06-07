@@ -82,7 +82,7 @@ class ChatResponse(BaseModel):
         return super().__post_init__()
 
 def default_embed_model():
-    return {"model_name": "thenlper/gte-base", "model_type": "huggingface"}
+    return {"model_name": "sentence-transformers/all-MiniLM-L12-v2", "model_type": "huggingface"}
 
 # Chatbot Model:
 class ChatbotModel(Model):
@@ -110,7 +110,7 @@ class ChatbotModel(Model):
         llm VARCHAR DEFAULT 'vertexai',
         model_name VARCHAR DEFAULT 'gemini-1.5-pro',
         model_config JSONB DEFAULT '{}'::JSONB,
-        embedding_model JSONB DEFAULT '{"model_name": "thenlper/gte-base", "model_type": "huggingface"}',
+        embedding_model JSONB DEFAULT '{"model_name": "sentence-transformers/all-MiniLM-L12-v2", "model_type": "huggingface"}',
         summarize_model JSONB DEFAULT '{"model_name": "facebook/bart-large-cnn", "model_type": "huggingface"}',
         classification_model JSONB DEFAULT '{"model_name": "facebook/bart-large-cnn", "model_type": "huggingface"}',
         vector_store BOOLEAN not null default FALSE,
