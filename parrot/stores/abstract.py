@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import List, Union
+from typing import Any, List, Union
 import importlib
 from collections.abc import Callable
 from langchain.docstore.document import Document
@@ -11,6 +11,8 @@ from ..conf import (
 from ..exceptions import ConfigError  # pylint: disable=E0611
 from .embeddings import supported_embeddings
 
+
+logging.getLogger(name='datasets').setLevel(logging.WARNING)
 
 class AbstractStore(ABC):
     """AbstractStore class.
@@ -53,7 +55,7 @@ class AbstractStore(ABC):
         self._use_database: bool = kwargs.get('use_database', True)
         # Database Information:
         self.collection_name: str = kwargs.get('collection_name', 'my_collection')
-        self.dimension: int = kwargs.get("dimension", 768)
+        self.dimension: int = kwargs.get("dimension", 384)
         self._metric_type: str = kwargs.get("metric_type", 'COSINE')
         self._index_type: str = kwargs.get("index_type", 'IVF_FLAT')
         self.database: str = kwargs.get('database', '')
@@ -94,6 +96,9 @@ class AbstractStore(ABC):
     async def connection(self) -> tuple:
         pass
 
+    def get_connection(self) -> Any:
+        return self._connection
+
     @abstractmethod
     async def disconnect(self) -> None:
         pass
@@ -111,6 +116,8 @@ class AbstractStore(ABC):
 
     async def __aexit__(self, exc_type, exc_value, traceback):
         # closing Embedding
+        if self._embed_:
+            await self._free_resources()
         try:
             await self.disconnect()
         except RuntimeError:
@@ -188,7 +195,7 @@ class AbstractStore(ABC):
 
         """
         model_type = embedding_model.get('model_type', 'huggingface')
-        model_name = embedding_model.get('model_name', EMBEDDING_DEFAULT_MODEL)
+        model_name = embedding_model.get('model', EMBEDDING_DEFAULT_MODEL)
         if model_type not in supported_embeddings:
             raise ConfigError(
                 f"Embedding Model Type: {model_type} not supported."
