@@ -669,9 +669,9 @@ class PgvectorStore(AbstractStore):
                 )
                 await self.vector.adrop_tables()
             if not await self.collection_exists(self.collection_name):
-                print(
-                    f"⚠️ Collection `{self.collection_name}` not found. Creating a new one..."
-                )
+                # print(
+                #     f"⚠️ Collection `{self.collection_name}` not found. Creating a new one..."
+                # )
                 await self.create_collection(self.collection_name)
         self._connected = True
         return self._connection
@@ -709,9 +709,6 @@ class PgvectorStore(AbstractStore):
                 connection=self._connection,
                 use_jsonb=True,
                 create_extension=False
-            )
-            print(
-                f"✅ Collection `{self.collection_name}` created successfully."
             )
 
     def get_vector(
