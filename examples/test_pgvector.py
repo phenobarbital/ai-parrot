@@ -127,7 +127,93 @@ async def save_store():
             print(f"Error adding documents: {e}")
             raise
 
+async def test_store():
+    table = 'test_table'
+    schema = 'troc'
+    id_column = 'id'
+    _store = PgvectorStore(
+        embedding_model=embed_model,
+        dsn="postgresql+asyncpg://troc_pgdata:12345678@127.0.0.1:5432/navigator",
+        dimension=768,
+        table=table,
+        schema=schema,
+        id_column=id_column,
+        embedding_column='embedding'
+    )
+
+    async with _store as store:
+        # find similar documents
+        """Test similarity search functionality."""
+        print("\nTesting similarity search...")
+
+        test_queries = [
+            "programming languages and coding",
+            "artificial intelligence and learning",
+            "database systems and storage",
+            "text processing and language"
+        ]
+        for query in test_queries:
+            print(f"\n--- Searching for: '{query}' ---")
+            try:
+                # Perform similarity search
+                results = await store.similarity_search(
+                    query,
+                    limit=3,
+                    score_threshold=0.16
+                )
+                print(f"Found {len(results)} results:")
+                for i, doc in enumerate(results, 1):
+                    print(f"{i}. {doc.page_content[:100]}...")
+                    print(f"   Metadata: {doc.metadata}")
+                    print()
+
+            except Exception as e:
+                print(f"Error during search: {e}")
+
+async def test_store_with_score():
+    table = 'test_table'
+    schema = 'troc'
+    id_column = 'id'
+    _store = PgvectorStore(
+        embedding_model=embed_model,
+        dsn="postgresql+asyncpg://troc_pgdata:12345678@127.0.0.1:5432/navigator",
+        dimension=768,
+        table=table,
+        schema=schema,
+        id_column=id_column,
+        embedding_column='embedding'
+    )
+
+    async with _store as store:
+        # find similar documents with score
+        """Test similarity search functionality with scores."""
+        print("\nTesting similarity search with scores...")
+
+        test_queries = [
+            "programming languages and coding",
+            "artificial intelligence and learning",
+            "database systems and storage",
+            "text processing and language"
+        ]
+        for query in test_queries:
+            print(f"\n--- Searching for: '{query}' ---")
+            try:
+                # Perform similarity search with scores
+                results = await store.similarity_search_with_score(
+                    query,
+                    limit=3
+                )
+                print(f"Found {len(results)} results:")
+                for i, (doc, score) in enumerate(results, 1):
+                    print(f"{i}. {doc.page_content[:100]}... (Score: {score})")
+                    print(f"   Metadata: {doc.metadata}")
+                    print()
+
+            except Exception as e:
+                print(f"Error during search: {e}")
+
 if __name__ == "__main__":
     # asyncio.run(create_store())
-    asyncio.run(save_store())
+    # asyncio.run(save_store())
     # asyncio.run(test_store())
+    asyncio.run(test_store_with_score())

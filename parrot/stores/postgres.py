@@ -95,7 +95,6 @@ class PgVector(PGVector):
         elif '.' in collection_name:
             self.schema, self.table_name = collection_name.split('.')
             self._schema_based: bool = True
-        print('RECEIVED EMBEDDING > ', embeddings)
         super().__init__(
             embeddings=embeddings,
             collection_name=collection_name,
@@ -652,8 +651,6 @@ class PgvectorStore(AbstractStore):
 
         """
         self._connection = create_async_engine(self.dsn, future=True, echo=False)
-
-        print(':: EMBED > ', self._embed_.embedding, self.embedding_model, self.dimension)
         async with self._connection.begin() as conn:
             if getattr(self, "_drop", False):
                 self.vector = PgVector(
@@ -725,6 +722,7 @@ class PgvectorStore(AbstractStore):
         embedding: Optional[Callable] = None,
         metric_type: Optional[str] = None,
         embedding_column: Optional[str] = None,
+        score_threshold: Optional[float] = None,
         **kwargs
     ) -> PGVector:
         """
@@ -754,7 +752,6 @@ class PgvectorStore(AbstractStore):
             _embed_ = self.create_embedding(
                 embedding_model=self.embedding_model
             )
-        print('EMBED > ', _embed_, self.embedding_model, self.dimension)
         if not metric_type:
             metric_type = self.distance_strategy
         if not embedding_column:
@@ -883,11 +880,11 @@ class PgvectorStore(AbstractStore):
         if collection is None:
             collection = self.collection_name
 
-        print(f"🔍 Starting similarity_search with query: '{query}'")
-        print(f"📊 Context depth: {self._context_depth}")
-        print(f"🔌 Connected: {self._connected}")
-        print(f"🗄️ Connection: {self._connection}")
-        print(f"🔍 Smart search: '{query}' using strategy: {search_strategy}")
+        # print(f"🔍 Starting similarity_search with query: '{query}'")
+        # print(f"📊 Context depth: {self._context_depth}")
+        # print(f"🔌 Connected: {self._connected}")
+        # print(f"🗄️ Connection: {self._connection}")
+        # print(f"🔍 Smart search: '{query}' using strategy: {search_strategy}")
         # Just ensure connection exists, don't create nested context
         if not self._connected or not self._connection:
             raise RuntimeError(
@@ -901,6 +898,30 @@ class PgvectorStore(AbstractStore):
             score_threshold=score_threshold,
             filter=filter
         )
+
+    async def similarity_search_with_score(
+        self,
+        query: str,
+        table: Optional[str] = None,
+        schema: Optional[str] = None,
+        collection: Union[str, None] = None,
+        limit: int = 2,
+    ) -> List[Document]:
+        """Search for similar documents in VectorStore with scores."""
+        if not table:
+            table = self.table
+        if not schema:
+            schema = self.schema
+        if collection is None:
+            collection = self.collection_name
+
+        if not self._connected or not self._connection:
+            raise RuntimeError(
+                "Store is not connected. Use 'async with store:' context manager."
+            )
+
+        vector_db = self.get_vector(table=table, schema=schema, collection=collection)
+        return await vector_db.asimilarity_search_with_score(query, k=limit)
 
     async def prepare_embedding_table(
         self,
@@ -1312,43 +1333,3 @@ class PgvectorStore(AbstractStore):
         )
 
         print("✅ Created optimized JSONB indexes")
-
-    # async def __aenter__(self):
-    #     self._context_depth += 1
-    #     print(f'============ ENTERING STORE (depth: {self._context_depth}) ============')
-
-    #     # Print stack trace to see who called this
-    #     stack = iinspect.stack()
-    #     print("📍 Context entry called from:")
-    #     for frame in stack[1:4]:  # Show calling frames
-    #         print(f"  📁 {frame.filename}:{frame.lineno} in {frame.function}")
-
-    #     if self._use_database:
-    #         if not self._connection:
-    #             await self.connection()
-    #     return self
-
-    # async def __aexit__(self, exc_type, exc_value, traceback):
-    #     self._context_depth -= 1
-    #     print(f'============ EXITING STORE (depth: {self._context_depth}) ============')
-
-    #     # Print stack trace to see who called this
-    #     stack = iinspect.stack()
-    #     print("📍 Context exit called from:")
-    #     for frame in stack[1:4]:  # Show calling frames
-    #         print(f"  📁 {frame.filename}:{frame.lineno} in {frame.function}")
-
-    #     if exc_type:
-    #         print(f"⚠️ Exception in context: {exc_type.__name__}: {exc_value}")
-
-    #     # Only disconnect if this is the outermost context
-    #     if self._context_depth == 0:
-    #         print("🔒 This is the outermost context - proceeding with cleanup")
-    #         if self._embed_:
-    #             await self._free_resources()
-    #         try:
-    #             await self.disconnect()
-    #         except RuntimeError:
-    #             pass
-    #     else:
-    #         print(f"⚠️ WARNING: Nested context detected! Not disconnecting (depth: {self._context_depth})")
