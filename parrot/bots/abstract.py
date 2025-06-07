@@ -646,7 +646,7 @@ class AbstractBot(DBInterface, ABC):
             self,
             question: str,
             chain_type: str = 'stuff',
-            search_type: str = 'mmr',  # 'similarity', 'mmr', 'ensemble'
+            search_type: str = 'similarity',  # 'similarity', 'mmr', 'ensemble'
             search_kwargs: dict = None,
             return_docs: bool = True,
             metric_type: str = 'EUCLIDEAN_DISTANCE',
