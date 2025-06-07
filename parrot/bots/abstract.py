@@ -479,7 +479,7 @@ class AbstractBot(DBInterface, ABC):
             context=context,
             **kwargs
         )
-        print('Template Prompt: \n', final_prompt)
+        # print('Template Prompt: \n', final_prompt)
         self.system_prompt_template = final_prompt
 
     async def configure(self, app=None) -> None:
@@ -646,11 +646,13 @@ class AbstractBot(DBInterface, ABC):
             self,
             question: str,
             chain_type: str = 'stuff',
-            search_type: str = 'similarity',
-            search_kwargs: dict = {"k": 4, "fetch_k": 10, "lambda_mult": 0.89},
+            search_type: str = 'mmr',  # 'similarity', 'mmr', 'ensemble'
+            search_kwargs: dict = None,
             return_docs: bool = True,
             metric_type: str = 'EUCLIDEAN_DISTANCE',
             memory: Any = None,
+            limit: Optional[int] = 5,
+            score_threshold: float = None,
             **kwargs
     ):
         # re-configure LLM:
@@ -663,6 +665,12 @@ class AbstractBot(DBInterface, ABC):
                 "Top_p": 0.9
             }
         )
+        if search_kwargs is None:
+            search_kwargs = {
+                "k": limit,
+                "fetch_k": limit * 2,  # Fetch 2x for MMR, but still limited
+                "lambda_mult": 0.4,  # Balance relevance vs diversity
+            }
         if new_llm:
             self.configure_llm(llm=new_llm, config=llm_config)
         # Create prompt templates
@@ -698,10 +706,6 @@ class AbstractBot(DBInterface, ABC):
                         chain_type=chain_type,
                         search_kwargs=search_kwargs
                     )
-                    # retriever = vector.as_retriever(
-                    #     search_type=search_type,
-                    #     search_kwargs=search_kwargs
-                    # )
                     # Create the ConversationalRetrievalChain with custom prompt
                     chain = ConversationalRetrievalChain.from_llm(
                         llm=self._llm,
@@ -753,7 +757,7 @@ class AbstractBot(DBInterface, ABC):
             question: str,
             chain_type: str = 'stuff',
             search_type: str = 'similarity',
-            search_kwargs: dict = {"k": 4, "fetch_k": 10, "lambda_mult": 0.89},
+            search_kwargs: dict = {"k": 4, "fetch_k": 10, "lambda_mult": 0.15},
             return_docs: bool = True,
             metric_type: str = None,
             **kwargs

@@ -245,7 +245,6 @@ class Chatbot(AbstractBot):
         # Other models and embedding models:
         models = file_config.get('models', {})
         self.dimension = models.get('dimension', 768)
-        print('MODELS AND DIMENSIONS > ', models, self.dimension)
         # definition of embedding model for Chatbot
         self.embedding_model = models.get(
             'embedding_model',
@@ -254,7 +253,6 @@ class Chatbot(AbstractBot):
                 'model_type': 'transformers'
             }
         )
-        print('EMBEDDING MODEL > ', self.embedding_model)
         # pre-instructions
         instructions = file_config.get('pre-instructions')
         if instructions:
