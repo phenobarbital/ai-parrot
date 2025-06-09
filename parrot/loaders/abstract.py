@@ -2,7 +2,7 @@ from typing import Generator, Union, List, Any, Optional, TypeVar
 from collections.abc import Callable
 from abc import ABC, abstractmethod
 from datetime import datetime
-from pathlib import Path, PurePath
+from pathlib import Path, PosixPath, PurePath
 import asyncio
 import torch
 from transformers import (
@@ -48,6 +48,7 @@ class AbstractLoader(ABC):
         **kwargs
     ):
         self.chunk_size: int = kwargs.get('chunk_size', 5000)
+        self.chunk_overlap: int = kwargs.get('chunk_overlap', 20)
         self.token_size: int = kwargs.get('token_size', 20)
         self.semaphore = asyncio.Semaphore(kwargs.get('semaphore', 10))
         self.extensions = kwargs.get('extensions', self.extensions)
@@ -69,7 +70,7 @@ class AbstractLoader(ABC):
         if not self.text_splitter:
             self.text_splitter = TokenTextSplitter(
                 chunk_size=self.token_size,
-                chunk_overlap=10,
+                chunk_overlap=self.chunk_overlap,
                 add_start_index=False
             )
         # Summarization Model:
@@ -108,7 +109,7 @@ class AbstractLoader(ABC):
             return self.text_splitter
         return MarkdownTextSplitter(
             chunk_size=self.chunk_size,
-            chunk_overlap=20,
+            chunk_overlap=self.chunk_overlap,
             add_start_index=False
         )
 
@@ -176,6 +177,8 @@ class AbstractLoader(ABC):
 
     def is_valid_path(self, path: Union[str, Path]) -> bool:
         """Check if a path is valid."""
+        if self.extensions == '*':
+            return True
         if isinstance(path, str):
             path = Path(path)
         if not path.exists():
@@ -336,10 +339,11 @@ class AbstractLoader(ABC):
                 )
             source = self.path
 
-        if isinstance(source, (str, Path, PurePath)):
+        if isinstance(source, (str, Path, PosixPath, PurePath)):
             # Check if it's a URL
-            if isinstance(source, str) and (source.startswith('http://') or
-                                        source.startswith('https://')):
+            if isinstance(source, str) and (
+                source.startswith('http://') or source.startswith('https://')
+            ):
                 tasks = await self.from_url(source, **kwargs)
             else:
                 # Assume it's a file path or directory

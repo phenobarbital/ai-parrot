@@ -50,7 +50,9 @@ class QAFileLoader(AbstractLoader):
                 doctype=self.doctype,
                 source_type=self._source_type,
                 doc_metadata=document_meta,
-                type="QA"
+                type="QA",
+                question=qs,
+                answer=answer,
             )
             doc = Document(
                 page_content=f"{idx}. Question: {qs}: Answer: {answer}",
