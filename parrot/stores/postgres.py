@@ -640,6 +640,105 @@ class PgvectorStore(AbstractStore):
             result = await conn.execute(sqlalchemy.text(check_query))
             return bool(result.scalar())
 
+
+    async def is_connection_alive(self) -> bool:
+        """
+        Check if the PostgreSQL connection is still alive and functional.
+
+        Returns:
+            bool: True if connection is alive, False otherwise
+        """
+        if not self._connection:
+            return False
+
+        if not self._connected:
+            return False
+
+        try:
+            # Test the connection with a simple query
+            async with self._connection.connect() as conn:
+                result = await conn.execute(sqlalchemy.text("SELECT 1"))
+                result.scalar()
+                return True
+        except Exception as e:
+            self.logger.warning(f"Connection health check failed: {e}")
+            return False
+
+    async def ensure_connection(self, force_reconnect: bool = False) -> bool:
+        """
+        Ensure that the connection is alive and reconnect if necessary.
+
+        Args:
+            force_reconnect: If True, force a reconnection even if connection appears alive
+
+        Returns:
+            bool: True if connection is ready, False if reconnection failed
+        """
+        if force_reconnect:
+            self.logger.info("Forcing reconnection to PostgreSQL...")
+            await self.disconnect()
+            self._connected = False
+            self._connection = None
+
+        # Check if we need to establish a connection
+        if not await self.is_connection_alive():
+            self.logger.info("Connection is not alive, attempting to reconnect...")
+            try:
+                await self.connection()
+                self.logger.info("Successfully reconnected to PostgreSQL")
+                return True
+            except Exception as e:
+                self.logger.error(f"Failed to reconnect to PostgreSQL: {e}")
+                return False
+
+        return True
+
+    async def reconnect(self) -> bool:
+        """
+        Force a reconnection to PostgreSQL.
+
+        Returns:
+            bool: True if reconnection successful, False otherwise
+        """
+        return await self.ensure_connection(force_reconnect=True)
+
+    async def get_connection_info(self) -> dict:
+        """
+        Get information about the current connection status.
+
+        Returns:
+            dict: Connection information including status, pool info, etc.
+        """
+        info = {
+            "connected": self._connected,
+            "has_engine": self._connection is not None,
+            "dsn": self.dsn,
+            "schema": self.schema,
+            "table": self.table,
+            "alive": False,
+            "pool_info": None
+        }
+
+        if self._connection:
+            try:
+                # Check if connection is alive
+                info["alive"] = await self.is_connection_alive()
+
+                # Get pool information
+                pool = self._connection.pool
+                if pool:
+                    info["pool_info"] = {
+                        "size": pool.size(),
+                        "checked_in": pool.checkedin(),
+                        "checked_out": pool.checkedout(),
+                        "overflow": pool.overflow(),
+                        "invalid": pool.invalid()
+                    }
+            except Exception as e:
+                info["error"] = str(e)
+
+        return info
+
     async def connection(self, alias: str = None):
         """Connection to PgVector Store.
 
@@ -694,6 +793,27 @@ class PgvectorStore(AbstractStore):
             self._connection = None
             self._connected = False
         print("✅ Connection closed successfully.")
+
+    # Enhanced context manager methods
+    async def __aenter__(self):
+        """Enhanced async context manager entry with connection validation."""
+        # Ensure connection is alive before proceeding
+        if not await self.ensure_connection():
+            raise RuntimeError(
+                "Failed to establish connection to PostgreSQL"
+            )
+
+        self._context_depth += 1
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Enhanced async context manager exit."""
+        self._context_depth -= 1
+
+        # Only disconnect if we're exiting the outermost context
+        if self._context_depth <= 0:
+            await self.disconnect()
+            self._context_depth = 0
 
     async def create_collection(self, collection: str) -> None:
         """Create a new collection in the database."""
@@ -839,10 +959,8 @@ class PgvectorStore(AbstractStore):
         """Save Documents as Vectors in VectorStore."""
         if not collection:
             collection = self.collection_name
-        if not self._connected or not self._connection:
-            raise RuntimeError(
-                "Store is not connected. Use 'async with store:' context manager."
-            )
+        if not self._connected or not await self.ensure_connection():
+            raise RuntimeError("Cannot establish connection to PostgreSQL")
         vectordb = self.get_vector(collection=collection, **kwargs)
         doc_ids = [doc.id for doc in documents]
         # Asynchronously add documents to PGVector
@@ -1330,3 +1448,321 @@ class PgvectorStore(AbstractStore):
         )
 
         print("✅ Created optimized JSONB indexes")
+
+
+    async def delete_documents(
+        self,
+        documents: Optional[List[Document]] = None,
+        pk: str = 'source_type',
+        values: Optional[Union[str, List[str]]] = None,
+        table: Optional[str] = None,
+        schema: Optional[str] = None,
+        collection: Optional[str] = None,
+        **kwargs
+    ) -> int:
+        """
+        Delete documents from the vector store based on metadata field values.
+
+        Args:
+            documents: List of documents whose metadata values will be used for deletion.
+                    If provided, the pk field values will be extracted from these documents.
+            pk: The metadata field name to use for deletion (default: 'source_type')
+            values: Specific values to delete. Can be a single string or list of strings.
+                If provided, this takes precedence over extracting from documents.
+            table: Override table name
+            schema: Override schema name
+            collection: Override collection name
+
+        Returns:
+            int: Number of documents deleted
+
+        Examples:
+            # Delete all documents with source_type 'papers'
+            deleted_count = await store.delete_documents(values='papers')
+
+            # Delete documents with multiple source types
+            deleted_count = await store.delete_documents(values=['papers', 'reports'])
+
+            # Delete based on documents' metadata
+            docs_to_delete = [Document(page_content="test", metadata={"source_type": "papers"})]
+            deleted_count = await store.delete_documents(documents=docs_to_delete)
+
+            # Delete by different metadata field
+            deleted_count = await store.delete_documents(pk='category', values='obsolete')
+        """
+        if not self._connected or not self._connection:
+            raise RuntimeError(
+                "Store is not connected. Use 'async with store:' context manager."
+            )
+
+        # Determine table details
+        if not table:
+            table = self.table
+        if not schema:
+            schema = self.schema
+        if not collection:
+            collection = self.collection_name
+
+        # Extract values to delete
+        delete_values = []
+
+        if values is not None:
+            # Use provided values
+            if isinstance(values, str):
+                delete_values = [values]
+            else:
+                delete_values = list(values)
+        elif documents:
+            # Extract values from documents metadata
+            for doc in documents:
+                if hasattr(doc, 'metadata') and doc.metadata and pk in doc.metadata:
+                    value = doc.metadata[pk]
+                    if value and value not in delete_values:
+                        delete_values.append(value)
+        else:
+            raise ValueError("Either 'documents' or 'values' parameter must be provided")
+
+        if not delete_values:
+            self.logger.warning(f"No values found for field '{pk}' to delete")
+            return 0
+
+        # Construct table name with schema
+        if schema and schema != 'public':
+            full_table_name = f"{schema}.{table}"
+        else:
+            full_table_name = table
+
+        deleted_count = 0
+
+        try:
+            async with self._connection.begin() as conn:
+                for value in delete_values:
+                    # Use JSONB operator to find matching metadata
+                    delete_query = sqlalchemy.text(f"""
+                        DELETE FROM {full_table_name}
+                        WHERE cmetadata->>:pk = :value
+                    """)
+
+                    result = await conn.execute(
+                        delete_query,
+                        {"pk": pk, "value": str(value)}
+                    )
+
+                    rows_deleted = result.rowcount
+                    deleted_count += rows_deleted
+
+                    self.logger.info(
+                        f"Deleted {rows_deleted} documents with {pk}='{value}' from {full_table_name}"
+                    )
+
+            self.logger.info(f"Total deleted: {deleted_count} documents")
+            return deleted_count
+
+        except Exception as e:
+            self.logger.error(f"Error deleting documents: {e}")
+            raise RuntimeError(f"Failed to delete documents: {e}") from e
+
+    async def delete_documents_by_filter(
+        self,
+        filter_dict: Dict[str, Union[str, List[str]]],
+        table: Optional[str] = None,
+        schema: Optional[str] = None,
+        collection: Optional[str] = None,
+        **kwargs
+    ) -> int:
+        """
+        Delete documents based on multiple metadata field conditions.
+
+        Args:
+            filter_dict: Dictionary of field_name: value(s) pairs for deletion criteria
+            table: Override table name
+            schema: Override schema name
+            collection: Override collection name
+
+        Returns:
+            int: Number of documents deleted
+
+        Example:
+            # Delete documents with source_type='papers' AND category='research'
+            deleted = await store.delete_documents_by_filter({
+                'source_type': 'papers',
+                'category': 'research'
+            })
+
+            # Delete documents with source_type in ['papers', 'reports']
+            deleted = await store.delete_documents_by_filter({
+                'source_type': ['papers', 'reports']
+            })
+        """
+        if not self._connected or not self._connection:
+            raise RuntimeError(
+                "Store is not connected. Use 'async with store:' context manager."
+            )
+
+        if not filter_dict:
+            raise ValueError("filter_dict cannot be empty")
+
+        # Determine table details
+        if not table:
+            table = self.table
+        if not schema:
+            schema = self.schema
+        if not collection:
+            collection = self.collection_name
+
+        # Construct table name with schema
+        if schema and schema != 'public':
+            full_table_name = f"{schema}.{table}"
+        else:
+            full_table_name = table
+
+        # Build WHERE conditions
+        where_conditions = []
+        params = {}
+
+        for field, values in filter_dict.items():
+            if isinstance(values, (list, tuple)):
+                # Handle multiple values with IN operator
+                placeholders = []
+                for i, value in enumerate(values):
+                    param_name = f"{field}_{i}"
+                    placeholders.append(f":{param_name}")
+                    params[param_name] = str(value)
+
+                condition = f"cmetadata->>'{field}' IN ({', '.join(placeholders)})"
+                where_conditions.append(condition)
+            else:
+                # Handle single value
+                param_name = f"{field}_single"
+                where_conditions.append(f"cmetadata->>'{field}' = :{param_name}")
+                params[param_name] = str(values)
+
+        # Combine conditions with AND
+        where_clause = " AND ".join(where_conditions)
+
+        delete_query = sqlalchemy.text(f"""
+            DELETE FROM {full_table_name}
+            WHERE {where_clause}
+        """)
+
+        try:
+            async with self._connection.begin() as conn:
+                result = await conn.execute(delete_query, params)
+                deleted_count = result.rowcount
+
+                self.logger.info(
+                    f"Deleted {deleted_count} documents from {full_table_name} "
+                    f"with filter: {filter_dict}"
+                )
+
+                return deleted_count
+
+        except Exception as e:
+            self.logger.error(f"Error deleting documents by filter: {e}")
+            raise RuntimeError(f"Failed to delete documents by filter: {e}") from e
+
+    async def delete_all_documents(
+        self,
+        table: Optional[str] = None,
+        schema: Optional[str] = None,
+        collection: Optional[str] = None,
+        confirm: bool = False,
+        **kwargs
+    ) -> int:
+        """
+        Delete ALL documents from the vector store table.
+
+        WARNING: This will delete all data in the table!
+
+        Args:
+            table: Override table name
+            schema: Override schema name
+            collection: Override collection name
+            confirm: Must be set to True to proceed with deletion
+
+        Returns:
+            int: Number of documents deleted
+        """
+        if not confirm:
+            raise ValueError(
+                "This operation will delete ALL documents. "
+                "Set confirm=True to proceed."
+            )
+
+        if not self._connected or not self._connection:
+            raise RuntimeError(
+                "Store is not connected. Use 'async with store:' context manager."
+            )
+
+        # Determine table details
+        if not table:
+            table = self.table
+        if not schema:
+            schema = self.schema
+        if not collection:
+            collection = self.collection_name
+
+        # Construct table name with schema
+        if schema and schema != 'public':
+            full_table_name = f"{schema}.{table}"
+        else:
+            full_table_name = table
+
+        try:
+            async with self._connection.begin() as conn:
+                # First count existing documents
+                count_query = sqlalchemy.text(f"SELECT COUNT(*) FROM {full_table_name}")
+                count_result = await conn.execute(count_query)
+                total_docs = count_result.scalar()
+
+                if total_docs == 0:
+                    self.logger.info(f"No documents to delete from {full_table_name}")
+                    return 0
+
+                # Delete all documents
+                delete_query = sqlalchemy.text(f"DELETE FROM {full_table_name}")
+                result = await conn.execute(delete_query)
+                deleted_count = result.rowcount
+
+                self.logger.warning(
+                    f"DELETED ALL {deleted_count} documents from {full_table_name}"
+                )
+
+                return deleted_count
+
+        except Exception as e:
+            self.logger.error(f"Error deleting all documents: {e}")
+            raise RuntimeError(f"Failed to delete all documents: {e}") from e
+
+    # Utility method for connection monitoring
+    async def monitor_connection(self, interval: int = 30, max_attempts: int = 3) -> None:
+        """
+        Monitor connection health and auto-reconnect if needed.
+
+        Args:
+            interval: Check interval in seconds
+            max_attempts: Maximum reconnection attempts before giving up
+        """
+        reconnect_attempts = 0
+
+        while True:
+            try:
+                if not await self.is_connection_alive():
+                    self.logger.warning(
+                        f"Connection lost, attempting reconnect (attempt {reconnect_attempts + 1}/{max_attempts})"
+                    )
+
+                    if await self.ensure_connection(force_reconnect=True):
+                        self.logger.info("Connection restored successfully")
+                        reconnect_attempts = 0
+                    else:
+                        reconnect_attempts += 1
+                        if reconnect_attempts >= max_attempts:
+                            self.logger.error(f"Failed to reconnect after {max_attempts} attempts")
+                            break
+
+                await asyncio.sleep(interval)
+
+            except Exception as e:
+                self.logger.error(f"Connection monitoring error: {e}")
+                await asyncio.sleep(interval)
