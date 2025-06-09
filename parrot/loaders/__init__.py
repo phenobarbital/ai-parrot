@@ -10,3 +10,8 @@ from .abstract import AbstractLoader
 from .txt import TextLoader
 from .docx import MSWordLoader
 from .qa import QAFileLoader
+from .html import HTMLLoader
+from .pdfmark import PDFMarkdownLoader
+from .pdftables import PDFTables
+from .pdfblock import PDFBlock
+from .csv import CSVLoader
