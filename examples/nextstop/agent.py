@@ -17,6 +17,7 @@ from langchain_core.tools import (
 )
 # AsyncDB database connections
 from asyncdb import AsyncDB
+from querysource.conf import default_dsn
 # Parrot Agent
 from parrot.bots.agent import BasicAgent
 from parrot.llms.vertex import VertexLLM
@@ -24,8 +25,7 @@ from parrot.llms.groq import GroqLLM
 from parrot.llms.anthropic import AnthropicLLM
 from parrot.llms.openai import OpenAILLM
 from parrot.tools import AbstractToolkit
-# configuration:
-from querysource.conf import default_dsn
+
 
 # Function: Agent Creation:
 # If use LLama4 with Groq (fastest model)
