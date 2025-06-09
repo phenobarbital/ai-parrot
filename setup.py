@@ -198,6 +198,9 @@ setup(
             "pymupdf4llm==0.0.22",
             "pdf4llm==0.0.22",
             "langchain-huggingface==0.1.2",
+            "pydub==0.25.1",
+            "pytube==15.0.0",
+            "youtube_transcript_api==1.0.3"
         ],
         "images": [
             # Image Analytics
