@@ -7,3 +7,6 @@
 #####
 from langchain.docstore.document import Document
 from .abstract import AbstractLoader
+from .txt import TextLoader
+from .docx import MSWordLoader
+from .qa import QAFileLoader
