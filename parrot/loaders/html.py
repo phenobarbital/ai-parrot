@@ -16,7 +16,7 @@ class HTMLLoader(AbstractLoader):
     and associates metadata with each document.
     """
 
-    _extension = ['.html', '.htm']
+    extensions: List[str] = ['.html', '.htm']
 
     def __init__(
         self,

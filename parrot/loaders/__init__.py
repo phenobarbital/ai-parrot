@@ -15,3 +15,9 @@ from .pdfmark import PDFMarkdownLoader
 from .pdftables import PDFTables
 from .pdfblock import PDFBlock
 from .csv import CSVLoader
+from .video import VideoLoader
+from .videolocal import VideoLocalLoader
+from .youtube import YoutubeLoader
+from .vimeo import VimeoLoader
+from .web import WebLoader
+from .audio import AudioLoader
