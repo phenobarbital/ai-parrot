@@ -14,7 +14,8 @@ from langchain.schema.runnable import RunnablePassthrough
 from langchain.chains.summarize import load_summarize_chain
 from langchain.docstore.document import Document
 from langchain.text_splitter import (
-    TokenTextSplitter
+    TokenTextSplitter,
+    MarkdownTextSplitter
 )
 from langchain_core.prompts import PromptTemplate
 from navconfig.logging import logging
@@ -46,7 +47,8 @@ class AbstractLoader(ABC):
         source_type: str = 'file',
         **kwargs
     ):
-        self.chunk_size: int = kwargs.get('chunk_size', 50)
+        self.chunk_size: int = kwargs.get('chunk_size', 5000)
+        self.token_size: int = kwargs.get('token_size', 20)
         self.semaphore = asyncio.Semaphore(kwargs.get('semaphore', 10))
         self.extensions = kwargs.get('extensions', self.extensions)
         self.skip_directories = kwargs.get('skip_directories', self.skip_directories)
@@ -64,10 +66,18 @@ class AbstractLoader(ABC):
         self.tokenizer = tokenizer
         # Text Splitter
         self.text_splitter = text_splitter
+        if not self.text_splitter:
+            self.text_splitter = TokenTextSplitter(
+                chunk_size=self.token_size,
+                chunk_overlap=10,
+                add_start_index=False
+            )
         # Summarization Model:
         self.summarization_model = kwargs.get('summarizer', None)
         # Markdown Splitter:
         self.markdown_splitter = kwargs.get('markdown_splitter', None)
+        if not self.markdown_splitter:
+            self.markdown_splitter = self._get_markdown_splitter()
         if 'path' in kwargs:
             self.path = kwargs['path']
             if isinstance(self.path, str):
@@ -91,6 +101,16 @@ class AbstractLoader(ABC):
         self.device_name = kwargs.get('device', CUDA_DEFAULT_DEVICE)
         self.cuda_number = kwargs.get('cuda_number', CUDA_DEFAULT_DEVICE_NUMBER)
         self._device = None
+
+    def _get_markdown_splitter(self):
+        """Get a MarkdownTextSplitter instance."""
+        if self.text_splitter:
+            return self.text_splitter
+        return MarkdownTextSplitter(
+            chunk_size=self.chunk_size,
+            chunk_overlap=20,
+            add_start_index=False
+        )
 
     def get_default_llm(self, model: str = None, model_kwargs: dict = None):
         """Return a VertexLLM instance."""
@@ -326,9 +346,9 @@ class AbstractLoader(ABC):
                 tasks = await self.from_path(source, recursive=self._recursive, **kwargs)
         elif isinstance(source, list):
             # Check if it's a list of URLs or paths
-            if all(isinstance(item, str) and (item.startswith('http://') or
-                                            item.startswith('https://'))
-                for item in source):
+            if all(
+                isinstance(item, str) and (item.startswith('http://') or item.startswith('https://')) for item in source
+            ):
                 tasks = await self.from_url(source, **kwargs)
             else:
                 # Assume it's a list of file paths
@@ -353,7 +373,6 @@ class AbstractLoader(ABC):
         doctype: str = 'document',
         source_type: str = 'source',
         doc_metadata: Optional[dict] = None,
-        summary: Optional[str] = '',
         **kwargs
     ):
         if not doc_metadata:
@@ -371,7 +390,6 @@ class AbstractLoader(ABC):
             "source": origin,
             "filename": str(filename),
             "type": doctype,
-            "summary": summary,
             "source_type": source_type or self._source_type,
             "created_at": datetime.now().strftime("%Y-%m-%d, %H:%M:%S"),
             "category": self.category,
@@ -382,22 +400,32 @@ class AbstractLoader(ABC):
         }
         return metadata
 
-    def create_document(self, content: Any, path: Union[str, PurePath]) -> Document:
+    def create_document(
+        self,
+        content: Any,
+        path: Union[str, PurePath],
+        metadata: Optional[dict] = None,
+        **kwargs
+    ) -> Document:
         """Create a Langchain Document from the content.
         Args:
             content (Any): The content to create the document from.
         Returns:
             Document: A Langchain Document.
         """
-        return Document(
-            page_content=content,
-            metadata=self.create_metadata(
+        if metadata:
+            _meta = metadata
+        else:
+            _meta = self.create_metadata(
                 path=path,
                 doctype=self.doctype,
-                source_type=self._source_type
+                source_type=self._source_type,
+                **kwargs
             )
+        return Document(
+            page_content=content,
+            metadata=_meta
         )
-
 
     def summary_from_text(self, text: str, max_length: int = 500, min_length: int = 50) -> str:
         """
