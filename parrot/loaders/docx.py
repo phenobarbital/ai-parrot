@@ -83,10 +83,10 @@ class MSWordLoader(AbstractLoader):
         with open(path, "rb") as docx_file:
             doc = docx.Document(str(path))
             properties = doc.core_properties
-            result = mammoth.convert_to_html(docx_file)
+            # result = mammoth.convert_to_html(docx_file)
             # text_file = mammoth.extract_raw_text(docx_file)  # Use text File for summary
             md_text = self.docx_to_markdown(path)
-            html = result.value  # The generated HTML
+            # html = result.value  # The generated HTML
             # print('HTML > ', html)
             # md_text = md(html)  # The generated Markdown
             # print(f"Type of HTML result: {type(html)}")
