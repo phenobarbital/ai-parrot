@@ -457,7 +457,10 @@ class AbstractBot(DBInterface, ABC):
             for key, val in config.items():
                 setattr(self, key, val)
 
-        pre_context = "\n".join(f"- {a}." for a in self.pre_instructions)
+        pre_context = ''
+        if self.pre_instructions:
+            pre_context = "Pre-Instructions: \n"
+            pre_context += "\n".join(f"- {a}." for a in self.pre_instructions)
         context = "{context}"
         if self.context:
             context = """
