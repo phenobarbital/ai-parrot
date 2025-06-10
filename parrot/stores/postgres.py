@@ -40,6 +40,7 @@ from langchain_postgres.vectorstores import (
 from langchain_postgres._utils import maximal_marginal_relevance
 from datamodel.parsers.json import json_encoder  # pylint: disable=E0611
 from .abstract import AbstractStore
+from ..conf import default_sqlalchemy_pg
 
 
 Base = declarative_base()
@@ -654,7 +655,7 @@ class PgvectorStore(AbstractStore):
         self._id_column = id_column
         self._embedding_column: str = embedding_column
         self.dimension: int = kwargs.get('dimension', 384)
-        self.dsn = kwargs.get('dsn', self.database)
+        self.dsn = kwargs.get('dsn', default_sqlalchemy_pg)
         self._drop: bool = kwargs.pop('drop', False)
         self._connection: AsyncEngine = None
         # Convert string to DistanceStrategy enum
@@ -712,7 +713,7 @@ class PgvectorStore(AbstractStore):
         if isinstance(sql, str):
             sql = sqlalchemy.text(sql)
 
-        async with self._connection.connect() as conn:
+        async with self._connection.begin() as conn:
             result = await conn.execute(sql, params or {})
             if fetch:
                 if hasattr(result, 'fetchall'):
@@ -881,6 +882,8 @@ class PgvectorStore(AbstractStore):
             Callable: PgVector connection.
 
         """
+        if not self.dsn:
+            self.dsn = default_sqlalchemy_pg
         self._connection = create_async_engine(self.dsn, future=True, echo=False)
         async with self._connection.begin() as conn:
             if getattr(self, "_drop", False):
