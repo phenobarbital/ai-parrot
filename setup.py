@@ -169,7 +169,8 @@ setup(
         "google-cloud-bigquery==3.30.0",
         "numexpr==2.10.2",
         "fpdf==1.7.2",
-        "python-docx==1.1.2"
+        "python-docx==1.1.2",
+        "typing_extensions>=4.13.2,<=4.14.0"
     ],
     extras_require={
         "agents": [
