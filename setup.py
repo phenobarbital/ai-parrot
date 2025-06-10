@@ -200,7 +200,8 @@ setup(
             "langchain-huggingface==0.1.2",
             "pydub==0.25.1",
             "pytube==15.0.0",
-            "youtube_transcript_api==1.0.3"
+            "youtube_transcript_api==1.0.3",
+            "python-pptx==1.0.2"
         ],
         "images": [
             # Image Analytics
