@@ -11,6 +11,7 @@ from .txt import TextLoader
 from .docx import MSWordLoader
 from .qa import QAFileLoader
 from .html import HTMLLoader
+from .pdf import PDFLoader
 from .pdfmark import PDFMarkdownLoader
 from .pdftables import PDFTables
 from .pdfblock import PDFBlock
@@ -21,3 +22,4 @@ from .youtube import YoutubeLoader
 from .vimeo import VimeoLoader
 from .web import WebLoader
 from .audio import AudioLoader
+from .ppt import PowerPointLoader
