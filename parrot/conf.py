@@ -41,6 +41,15 @@ MILVUS_SERVER_CERT = config.get('MILVUS_SERVER_CERT', fallback=None)
 MILVUS_SERVER_KEY = config.get('MILVUS_SERVER_KEY', fallback=None)
 MILVUS_USE_TLSv2 = config.getboolean('MILVUS_USE_TLSv2', fallback=False)
 
+# Postgres Database:
+DBHOST = config.get("DBHOST", fallback="localhost")
+DBUSER = config.get("DBUSER")
+DBPWD = config.get("DBPWD")
+DBNAME = config.get("DBNAME", fallback="navigator")
+DBPORT = config.get("DBPORT", fallback=5432)
+# sqlalchemy+asyncpg connector:
+default_sqlalchemy_pg = f"postgresql+asyncpg://{DBUSER}:{DBPWD}@{DBHOST}:{DBPORT}/{DBNAME}"
+
 # ScyllaDB Database:
 SCYLLADB_DRIVER = config.get('SCYLLADB_DRIVER', fallback='scylladb')
 SCYLLADB_HOST = config.get('SCYLLADB_HOST', fallback='localhost')

@@ -11,7 +11,6 @@ $capabilities
 I am here to help with $goal.
 $backstory
 
-** Pre-Instructions: **
 $pre_context
 
 **Context:**
@@ -51,7 +50,6 @@ $backstory
 
 I am here to help with $goal.
 
-** Pre-Instructions: **
 $pre_context
 
 for more information please refer to the company information below:

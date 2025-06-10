@@ -1,5 +1,6 @@
 import os
-from typing import Dict, List, Union, Any, Optional, AsyncGenerator, Type
+from typing import Dict, List, Mapping, Union, Any, Optional, AsyncGenerator, Type
+import re
 from string import Template
 import json
 from pathlib import Path
@@ -508,7 +509,6 @@ class BasicAgent(AbstractBot):
         # Handle markdown code blocks more safely
         # If we detect a python code block, ensure it's properly formatted
         pattern = r'\\`\\`\\`python\n(.*?)\\`\\`\\`'
-        import re
         text = re.sub(
             pattern,
             r'The following is Python code:\n\1\nEnd of Python code.',
@@ -523,7 +523,7 @@ class BasicAgent(AbstractBot):
 
     def with_structured_output(
         self,
-        schema: Union[Type[BaseModel], TypedDict, Dict],
+        schema: Union[Type[BaseModel], Mapping[str, Any],],
         include_raw: bool = False,
         few_shot_examples: Optional[List[Dict]] = None
     ):
