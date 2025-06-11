@@ -1,4 +1,5 @@
 from aiohttp import web
+from datamodel.exceptions import ValidationError
 from navigator_auth.decorators import (
     is_authenticated,
     user_session,
@@ -6,6 +7,7 @@ from navigator_auth.decorators import (
 )
 from navigator.views import BaseView
 from ..bots.abstract import AbstractBot
+from ..models import ChatbotModel
 
 
 @is_authenticated()
@@ -176,8 +178,33 @@ class BotHandler(BaseView):
                 status=400
             )
         try:
-            chatbot = manager.create_chatbot(name=name, **data)
-            await chatbot.configure(name=name, app=self.request.app)
+            bot = manager.create_bot(name=name, **data)
+            await bot.configure(app=self.request.app)
+            if bot:
+                db = self.request.app['database']
+                async with await db.acquire() as conn:
+                    ChatbotModel.Meta.connection = conn
+                    # check first if chatbot already exists:
+                    exists = await ChatbotModel.get(name=name)
+                    if exists:
+                        return self.json_response(
+                            {
+                                "message": f"Chatbot {name} already exists with id {exists.chatbot_id}"
+                            },
+                            status=202
+                        )
+                    try:
+                        chatbot_model = ChatbotModel(
+                            **data
+                        )
+                        print('Chatbot Model: ', chatbot_model)
+                        await chatbot_model.insert()
+                    except ValidationError as exc:
+                        return self.error(
+                            f"Error when insert chatbot {name}: {exc}",
+                            exception=exc,
+                            status=400
+                        )
             return self.json_response(
                 {
                     "message": f"Chatbot {name} created successfully."

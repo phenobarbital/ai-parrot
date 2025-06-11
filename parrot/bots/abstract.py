@@ -179,7 +179,9 @@ class AbstractBot(DBInterface, ABC):
         self._llm_class: str = None
         self._default_llm: str = kwargs.get('use_llm', 'vertexai')
         self._use_chat: bool = kwargs.get('use_chat', False)
-        self._llm_model = kwargs.get('model_name', 'gemini-1.5-pro')
+        self._llm_model = kwargs.get('model_name', 'gemini-2.0-flash-001')
+        print(' ::: LLM  > ', self._default_llm)
+        print(' ::: LLM MODEL > ', self._llm_model)
         self._llm_preset: str = kwargs.get('preset', None)
         if self._llm_preset:
             try:
@@ -189,18 +191,27 @@ class AbstractBot(DBInterface, ABC):
                     f"Invalid preset: {self._llm_preset}, default to 'analytical'"
                 )
                 presetting = LLM_PRESETS['analytical']
-            self._llm_temp = presetting.get('temperature', 0.2)
+            self._llm_temp = presetting.get('temperature', 0.1)
             self._max_tokens = presetting.get('max_tokens', 4096)
         else:
             # Default LLM Presetting by LLMs
-            self._llm_temp = kwargs.get('temperature', 0.2)
+            self._llm_temp = kwargs.get('temperature', 0.1)
             self._max_tokens = kwargs.get('max_tokens', 4096)
         self._llm_top_k = kwargs.get('top_k', 41)
         self._llm_top_p = kwargs.get('top_p', 0.9)
         self._llm_config = kwargs.get('model_config', {})
+        print('::::: MODEL CONFIG > ', self._llm_config)
         if self._llm_config:
             self._llm_model = self._llm_config.pop('model', self._llm_model)
-            self._llm_class = self._llm_config.pop('name', None)
+            self._llm_class = self._llm_config.pop('name', 'VertexLLM')
+        else:
+            self._llm_config = {
+                "name":  self._llm_class,
+                "model": self._llm_model,
+                "temperature": self._llm_temp,
+                "top_k": self._llm_top_k,
+                "top_p": self._llm_top_p
+            }
         # Overrriding LLM object
         self._llm_obj: Callable = kwargs.get('llm', None)
         # LLM base Object:
@@ -368,7 +379,6 @@ class AbstractBot(DBInterface, ABC):
         """
         Configuration of LLM.
         """
-        print('HERE LLM > ', llm, config, use_chat)
         if isinstance(llm, str):
             # Get the LLM By Name:
             self._llm_obj = self.llm_chain(
@@ -483,7 +493,7 @@ class AbstractBot(DBInterface, ABC):
             context=context,
             **kwargs
         )
-        # print('Template Prompt: \n', final_prompt)
+        print('Template Prompt: \n', final_prompt)
         self.system_prompt_template = final_prompt
 
     async def configure(self, app=None) -> None:

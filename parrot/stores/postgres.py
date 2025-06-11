@@ -81,6 +81,7 @@ class PgVector(PGVector):
         id_column: str = 'id',
         embedding_column: str = 'embedding',
         distance_strategy: DistanceStrategy = DistanceStrategy.COSINE,
+        score_threshold: Optional[float] = None,
         use_uuid: bool = False,
         **kwargs
     ) -> None:
@@ -89,6 +90,7 @@ class PgVector(PGVector):
         self._id_column: str = id_column
         self._embedding_column: str = embedding_column
         self._distance_strategy = distance_strategy
+        self._score_threshold: float = score_threshold
         self._schema_based: bool = False
         if self.table_name:
             self._schema_based: bool = True
@@ -163,6 +165,7 @@ class PgVector(PGVector):
                 nullable=False,
                 index=True
             ),
+            'text':  sqlalchemy.Column(sqlalchemy.String, nullable=True),
             'document': sqlalchemy.Column(sqlalchemy.String, nullable=True),
             'cmetadata': sqlalchemy.Column(JSONB, nullable=True),
             # Attach the async classmethods.
@@ -313,12 +316,15 @@ class PgVector(PGVector):
         k = limit if limit is not None else k
         await self.__apost_init__()  # Lazy async init
         embedding = await self.embeddings.aembed_query(query)
-        return await self.asimilarity_search_by_vector(
+        docs = await self.asimilarity_search_by_vector(
             embedding=embedding,
             k=k,
-            score_threshold=score_threshold,
+            score_threshold=score_threshold or self._score_threshold,
             filter=filter,
         )
+        for doc in docs:
+            print(doc.page_content[:100], '...')  # Print first 100 chars of each doc
+        return docs
 
     async def asimilarity_search_by_vector(
         self,
@@ -972,8 +978,8 @@ class PgvectorStore(AbstractStore):
         embedding: Optional[Callable] = None,
         metric_type: Optional[str] = None,
         embedding_column: Optional[str] = None,
-        score_threshold: Optional[float] = None,
         use_uuid: bool = False,
+        score_threshold: float = None,
         **kwargs
     ) -> PGVector:
         """
@@ -1016,6 +1022,7 @@ class PgvectorStore(AbstractStore):
             collection_name=collection,
             embedding_length=self.dimension,
             distance_strategy=metric_type,
+            score_threshold=score_threshold,
             embeddings=_embed_.embedding,
             logger=self.logger,
             async_mode=True,
@@ -1143,12 +1150,14 @@ class PgvectorStore(AbstractStore):
             schema = self.schema
         if collection is None:
             collection = self.collection_name
+        if not score_threshold:
+            score_threshold = 0.2
 
-        # print(f"🔍 Starting similarity_search with query: '{query}'")
-        # print(f"📊 Context depth: {self._context_depth}")
-        # print(f"🔌 Connected: {self._connected}")
-        # print(f"🗄️ Connection: {self._connection}")
-        # print(f"🔍 Smart search: '{query}' using strategy: {search_strategy}")
+        print(f"🔍 Starting similarity_search with query: '{query}'")
+        print(f"📊 Context depth: {self._context_depth}")
+        print(f"🔌 Connected: {self._connected}")
+        print(f"🗄️ Connection: {self._connection}")
+        print(f"🔍 Smart search: '{query}' using strategy: {search_strategy}")
         # Just ensure connection exists, don't create nested context
         if not self._connected or not self._connection:
             raise RuntimeError(
@@ -1156,12 +1165,14 @@ class PgvectorStore(AbstractStore):
             )
 
         vector_db = self.get_vector(table=table, schema=schema, collection=collection, **kwargs)
-        return await vector_db.asimilarity_search(
+        result = await vector_db.asimilarity_search(
             query,
             k=limit,
             score_threshold=score_threshold,
             filter=filter
         )
+        print(result)
+        return result
 
     async def similarity_search_with_score(
         self,

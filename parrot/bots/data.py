@@ -160,7 +160,6 @@ class PandasAgent(BasicAgent):
             return_intermediate_steps=True,
             **kwargs
         )
-        print('AGENT > ', agent)
         return agent
 
     async def configure(self, df: pd.DataFrame = None, app=None) -> None:
