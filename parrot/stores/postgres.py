@@ -165,7 +165,7 @@ class PgVector(PGVector):
                 nullable=False,
                 index=True
             ),
-            'text':  sqlalchemy.Column(sqlalchemy.String, nullable=True),
+            'text': sqlalchemy.Column(sqlalchemy.String, nullable=True),
             'document': sqlalchemy.Column(sqlalchemy.String, nullable=True),
             'cmetadata': sqlalchemy.Column(JSONB, nullable=True),
             # Attach the async classmethods.
@@ -478,6 +478,7 @@ class PgVector(PGVector):
                 for txt, metadata, embedding in zip(texts, metadatas, embeddings):
                     row_data = {
                         self._embedding_column: embedding,
+                        'text': txt,
                         'document': txt,
                         'cmetadata': metadata or {},
                     }
@@ -507,6 +508,7 @@ class PgVector(PGVector):
                         self._id_column: id,
                         self._embedding_column: embedding,
                         'document': txt,
+                        'text': txt,
                         'cmetadata': metadata or {},
                     }
 
@@ -532,6 +534,7 @@ class PgVector(PGVector):
                         set_={
                             self._embedding_column: stmt.excluded.__getattr__(self._embedding_column),
                             'document': stmt.excluded.document,
+                            'text': stmt.excluded.document,
                             'cmetadata': stmt.excluded.cmetadata,
                         },
                     )
@@ -978,8 +981,8 @@ class PgvectorStore(AbstractStore):
         embedding: Optional[Callable] = None,
         metric_type: Optional[str] = None,
         embedding_column: Optional[str] = None,
+        score_threshold: Optional[float] = None,
         use_uuid: bool = False,
-        score_threshold: float = None,
         **kwargs
     ) -> PGVector:
         """
@@ -1150,14 +1153,12 @@ class PgvectorStore(AbstractStore):
             schema = self.schema
         if collection is None:
             collection = self.collection_name
-        if not score_threshold:
-            score_threshold = 0.2
 
-        print(f"🔍 Starting similarity_search with query: '{query}'")
-        print(f"📊 Context depth: {self._context_depth}")
-        print(f"🔌 Connected: {self._connected}")
-        print(f"🗄️ Connection: {self._connection}")
-        print(f"🔍 Smart search: '{query}' using strategy: {search_strategy}")
+        # print(f"🔍 Starting similarity_search with query: '{query}'")
+        # print(f"📊 Context depth: {self._context_depth}")
+        # print(f"🔌 Connected: {self._connected}")
+        # print(f"🗄️ Connection: {self._connection}")
+        # print(f"🔍 Smart search: '{query}' using strategy: {search_strategy}")
         # Just ensure connection exists, don't create nested context
         if not self._connected or not self._connection:
             raise RuntimeError(
@@ -1165,14 +1166,12 @@ class PgvectorStore(AbstractStore):
             )
 
         vector_db = self.get_vector(table=table, schema=schema, collection=collection, **kwargs)
-        result = await vector_db.asimilarity_search(
+        return await vector_db.asimilarity_search(
             query,
             k=limit,
             score_threshold=score_threshold,
             filter=filter
         )
-        print(result)
-        return result
 
     async def similarity_search_with_score(
         self,
@@ -1201,7 +1200,7 @@ class PgvectorStore(AbstractStore):
     async def prepare_embedding_table(
         self,
         tablename: str,
-        conn:  AsyncEngine = None,
+        conn: AsyncEngine = None,
         embedding_column: str = 'embedding',
         document_column: str = 'document',
         metadata_column: str = 'cmetadata',
@@ -1323,6 +1322,16 @@ class PgvectorStore(AbstractStore):
                     )
                 )
                 print("✅ Created HNSW COSINE index")
+                await conn.execute(
+                    sqlalchemy.text(
+                        f"""CREATE INDEX IF NOT EXISTS idx_{tablename.replace('.', '_')}_hnsw_l2
+                            ON {tablename} USING hnsw ({embedding_column} vector_l2_ops) WITH (
+                            m = 16,  -- graph connectivity (higher → better recall, more memory)
+                            ef_construction = 200 -- controls indexing time vs. recall
+                        );"""
+                    )
+                )
+                print("✅ Created HNSW EUCLIDEAN index")
             except Exception as e:
                 print(f"⚠️ HNSW index creation failed (this is optional): {e}")
 
