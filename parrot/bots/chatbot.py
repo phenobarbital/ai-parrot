@@ -207,6 +207,13 @@ class Chatbot(AbstractBot):
         # Database Configuration:
         self._use_vector = bot.vector_store
         self._vector_store = bot.database
+        print('DATABASE ====================================')
+        print(bot.database)
+        self._metric_type = bot.database.get(
+            'metric_type',
+            self._metric_type
+        )
+        print('METRIC > , ', self._metric_type)
         self.configure_store()
         # after configuration, setup the chatbot
         if bot.system_prompt_template:
@@ -244,7 +251,6 @@ class Chatbot(AbstractBot):
         self.configure_llm(llm, cfg)
         # Other models and embedding models:
         models = file_config.get('models', {})
-        self.dimension = models.get('dimension', 768)
         # definition of embedding model for Chatbot
         self.embedding_model = models.get(
             'embedding_model',
@@ -253,6 +259,7 @@ class Chatbot(AbstractBot):
                 'model_type': 'transformers'
             }
         )
+        self.dimension = self.embedding_model.get('dimension', 768)
         # pre-instructions
         instructions = file_config.get('pre-instructions')
         if instructions:
@@ -265,6 +272,7 @@ class Chatbot(AbstractBot):
             )
         database = file_config.get('database', {})
         vector_store = database.get('vector_store', False)
+
         if database or vector_store is True:
             self._use_database = True
         vector_db = database.pop('vector_database', None)
@@ -276,6 +284,10 @@ class Chatbot(AbstractBot):
             self._use_vector = vector_store
             self._vector_store = database
             self.configure_store()
+            self._metric_type = database.get(
+                'metric_type',
+                self._metric_type
+            )
         # after configuration, setup the chatbot
         if 'template_prompt' in basic:
             self.template_prompt = basic.get('template_prompt')

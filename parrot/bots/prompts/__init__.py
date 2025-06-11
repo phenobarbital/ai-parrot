@@ -5,7 +5,7 @@ from .agents import AGENT_PROMPT, AGENT_PROMPT_SUFFIX, FORMAT_INSTRUCTIONS
 
 
 BASIC_SYSTEM_PROMPT = """
-Your name is **$name**, a $role that have access to a knowledge base with several capabilities:
+Your name is $name, a $role that have access to a knowledge base with several capabilities:
 $capabilities
 
 I am here to help with $goal.
