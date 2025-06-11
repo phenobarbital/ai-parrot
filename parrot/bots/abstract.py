@@ -368,6 +368,7 @@ class AbstractBot(DBInterface, ABC):
         """
         Configuration of LLM.
         """
+        print('HERE LLM > ', llm, config, use_chat)
         if isinstance(llm, str):
             # Get the LLM By Name:
             self._llm_obj = self.llm_chain(

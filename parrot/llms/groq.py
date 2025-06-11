@@ -14,7 +14,7 @@ class GroqLLM(AbstractLLM):
         Using Groq Open-source models.
     """
     model: str = "llama-3.3-70b-versatile"
-    max_tokens: int = 8192
+    max_tokens: int = 1024
     top_k: float = 40
     top_p: float = 1.0
     supported_models: list = [
