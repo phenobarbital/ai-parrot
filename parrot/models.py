@@ -479,7 +479,7 @@ class AgentModel(Model):
         required=False
     )
     # Model Configuration:
-    llm: str = Field(default='vertexai', required=False)
+    llm: str = Field(required=False)
     use_llm: Optional[str] = Field(default='vertexai', required=False)
     model_name: str = Field(default='gemini-2.5-pro-preview-03-25', required=False)
     temperature: float = Field(default=0.1, required=False)

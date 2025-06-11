@@ -81,6 +81,7 @@ class PgVector(PGVector):
         id_column: str = 'id',
         embedding_column: str = 'embedding',
         distance_strategy: DistanceStrategy = DistanceStrategy.COSINE,
+        score_threshold: Optional[float] = None,
         use_uuid: bool = False,
         **kwargs
     ) -> None:
@@ -89,6 +90,7 @@ class PgVector(PGVector):
         self._id_column: str = id_column
         self._embedding_column: str = embedding_column
         self._distance_strategy = distance_strategy
+        self._score_threshold: float = score_threshold
         self._schema_based: bool = False
         if self.table_name:
             self._schema_based: bool = True
@@ -163,6 +165,7 @@ class PgVector(PGVector):
                 nullable=False,
                 index=True
             ),
+            'text': sqlalchemy.Column(sqlalchemy.String, nullable=True),
             'document': sqlalchemy.Column(sqlalchemy.String, nullable=True),
             'cmetadata': sqlalchemy.Column(JSONB, nullable=True),
             # Attach the async classmethods.
@@ -199,7 +202,7 @@ class PgVector(PGVector):
 
         # Build distance expression as usual
         distance_expr = self.distance_strategy(embedding).label("distance")
-
+        self.logger.debug(f"Compiled distance expr → {distance_expr}")
         stmt = (
             select(
                 self.EmbeddingStore,
@@ -252,7 +255,9 @@ class PgVector(PGVector):
         """
         # Get the embedding column from the EmbeddingStore model
         embedding_column = getattr(self.EmbeddingStore, self._embedding_column)
-
+        self.logger.debug(
+            f"PgVector: using distance strategy → {self._distance_strategy}"
+        )
         if self._distance_strategy == DistanceStrategy.EUCLIDEAN_DISTANCE:
             return embedding_column.l2_distance
         elif self._distance_strategy == DistanceStrategy.COSINE:
@@ -313,12 +318,13 @@ class PgVector(PGVector):
         k = limit if limit is not None else k
         await self.__apost_init__()  # Lazy async init
         embedding = await self.embeddings.aembed_query(query)
-        return await self.asimilarity_search_by_vector(
+        docs = await self.asimilarity_search_by_vector(
             embedding=embedding,
             k=k,
-            score_threshold=score_threshold,
+            score_threshold=score_threshold or self._score_threshold,
             filter=filter,
         )
+        return docs
 
     async def asimilarity_search_by_vector(
         self,
@@ -383,7 +389,7 @@ class PgVector(PGVector):
 
             # Use the distance_strategy property which now respects the configurable column
             distance_expr = self.distance_strategy(embedding).label("distance")
-
+            self.logger.debug(f"Compiled distance expr → {distance_expr}")
             stmt = (
                 sqlalchemy.select(
                     self.EmbeddingStore,
@@ -472,10 +478,10 @@ class PgVector(PGVector):
                 for txt, metadata, embedding in zip(texts, metadatas, embeddings):
                     row_data = {
                         self._embedding_column: embedding,
+                        'text': txt,
                         'document': txt,
                         'cmetadata': metadata or {},
                     }
-
                     if not self._schema_based:
                         collection = await self.aget_collection(session)
                         if not collection:
@@ -500,9 +506,11 @@ class PgVector(PGVector):
                     row_data = {
                         self._id_column: id,
                         self._embedding_column: embedding,
+                        'text': txt,
                         'document': txt,
                         'cmetadata': metadata or {},
                     }
+                    data.append(row_data)
 
                 # Only add collection_id if not using schema-based approach
                 if not self._schema_based:
@@ -514,8 +522,9 @@ class PgVector(PGVector):
                     # For schema-based approach, use default collection_id
                     row_data['collection_id'] = '00000000-0000-0000-0000-000000000000'
 
-                data.append(row_data)
-
+            self.logger.notice(
+                f"Writing {len(data)} rows to pgvector (should be {len(texts)})"
+            )
             stmt = insert(self.EmbeddingStore).values(data)
             try:
                 if not self._use_uuid:
@@ -526,6 +535,7 @@ class PgVector(PGVector):
                         set_={
                             self._embedding_column: stmt.excluded.__getattr__(self._embedding_column),
                             'document': stmt.excluded.document,
+                            'text': stmt.excluded.document,
                             'cmetadata': stmt.excluded.cmetadata,
                         },
                     )
@@ -575,7 +585,10 @@ class PgVector(PGVector):
         texts_ = list(texts)
 
         # Use self.embeddings instead of self.embedding_function
-        embeddings = await self.embeddings.aembed_documents(texts_)
+        try:
+            embeddings = await self.embeddings.aembed_documents(texts_)
+        except Exception as e:
+            self.logger.error(f"Error generating embeddings: {e}")
 
         return await self.aadd_embeddings(
             texts=texts_,
@@ -749,7 +762,6 @@ class PgvectorStore(AbstractStore):
                 {"schema": schema, "table": table}
             )
             exists = result.scalar_one()
-            print("EXISTS >", exists)
             return bool(exists)
 
     async def table_exists(self, table: str, schema: str) -> bool:
@@ -769,7 +781,6 @@ class PgvectorStore(AbstractStore):
                 {"schema": schema, "table": table}
             )
             exists = result.scalar()
-            print("EXISTS >", exists)
             return bool(exists)
 
     async def is_connection_alive(self) -> bool:
@@ -884,7 +895,12 @@ class PgvectorStore(AbstractStore):
         """
         if not self.dsn:
             self.dsn = default_sqlalchemy_pg
-        self._connection = create_async_engine(self.dsn, future=True, echo=False)
+        self._connection = create_async_engine(
+            self.dsn,
+            future=True,
+            echo=False,
+            # echo_pool='debug',
+        )
         async with self._connection.begin() as conn:
             if getattr(self, "_drop", False):
                 self.vector = PgVector(
@@ -902,7 +918,6 @@ class PgvectorStore(AbstractStore):
                     create_extension=False
                 )
                 # await self.vector.adrop_tables()
-            # print('COLLECTIN NAME > ', self.collection_name)
             # if not await self.collection_exists(self.collection_name):
             #     await self.create_collection(self.collection_name)
         self._connected = True
@@ -1016,6 +1031,7 @@ class PgvectorStore(AbstractStore):
             collection_name=collection,
             embedding_length=self.dimension,
             distance_strategy=metric_type,
+            score_threshold=score_threshold,
             embeddings=_embed_.embedding,
             logger=self.logger,
             async_mode=True,
@@ -1190,14 +1206,14 @@ class PgvectorStore(AbstractStore):
     async def prepare_embedding_table(
         self,
         tablename: str,
-        conn:  AsyncEngine = None,
+        conn: AsyncEngine = None,
         embedding_column: str = 'embedding',
         document_column: str = 'document',
         metadata_column: str = 'cmetadata',
         dimension: int = None,
         id_column: str = 'id',
         use_jsonb: bool = True,
-        drop_columns: bool = True,
+        drop_columns: bool = False,
         create_all_indexes: bool = True,
         **kwargs
     ):
@@ -1312,6 +1328,16 @@ class PgvectorStore(AbstractStore):
                     )
                 )
                 print("✅ Created HNSW COSINE index")
+                await conn.execute(
+                    sqlalchemy.text(
+                        f"""CREATE INDEX IF NOT EXISTS idx_{tablename.replace('.', '_')}_hnsw_l2
+                            ON {tablename} USING hnsw ({embedding_column} vector_l2_ops) WITH (
+                            m = 16,  -- graph connectivity (higher → better recall, more memory)
+                            ef_construction = 200 -- controls indexing time vs. recall
+                        );"""
+                    )
+                )
+                print("✅ Created HNSW EUCLIDEAN index")
             except Exception as e:
                 print(f"⚠️ HNSW index creation failed (this is optional): {e}")
 

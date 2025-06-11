@@ -32,8 +32,8 @@ from .prompts.data import (
 from langchain.globals import set_debug, set_verbose
 
 # Enable verbosity for debugging
-# set_debug(True)
-# set_verbose(True)
+set_debug(True)
+set_verbose(True)
 
 
 def brace_escape(text: str) -> str:
@@ -68,12 +68,6 @@ class PandasAgent(BasicAgent):
         self._prompt_prefix = None
         # Must be one of 'tool-calling', 'openai-tools', 'openai-functions', or 'zero-shot-react-description'.
         self.agent_type = agent_type or "tool-calling"
-        if self.agent_type == "tool-calling":
-            self._prompt_template = prompt_template or TOOL_CALLING_PROMPT_PREFIX
-            self._format_instructions = ''
-        else:
-            self._prompt_template = prompt_template or REACT_PROMPT_PREFIX
-            self._format_instructions: str = kwargs.get('format_instructions', FORMAT_INSTRUCTIONS)
         self._capabilities: str = kwargs.get('capabilities', None)
         self.name = name or "Pandas Agent"
         self.description = "A simple agent that uses the pandas library to perform data analysis tasks."
@@ -88,6 +82,12 @@ class PandasAgent(BasicAgent):
             agent_type=self.agent_type,
             **kwargs
         )
+        if self.agent_type == "tool-calling":
+            self.system_prompt_template = prompt_template or TOOL_CALLING_PROMPT_PREFIX
+            self._format_instructions = ''
+        else:
+            self.system_prompt_template = prompt_template or REACT_PROMPT_PREFIX
+            self._format_instructions: str = kwargs.get('format_instructions', FORMAT_INSTRUCTIONS)
 
     def _define_dataframe(
         self,
@@ -138,21 +138,29 @@ class PandasAgent(BasicAgent):
         """
         # Create the pandas agent
         dfs = list(self.df.values()) if isinstance(self.df, dict) else self.df
+        # print('DATAFRAMES >> ', dfs)
+        print(' ============ ')
+        # print('PROMPT PREFIX >> ', self._prompt_prefix)
         # bind the tools to the LLM:
         llm = self._llm.bind_tools(self.tools)
-        return create_pandas_dataframe_agent(
+        # llm = self._llm
+        agent = create_pandas_dataframe_agent(
             llm,
             dfs,
             verbose=True,
             agent_type=self.agent_type,
             allow_dangerous_code=True,
-            # prefix=self._prompt_prefix,
+            prefix=self._prompt_prefix,
             max_iterations=10,
             extra_tools=self.tools,
-            agent_executor_kwargs={"memory": self.memory, "handle_parsing_errors": True},
+            agent_executor_kwargs={
+                "memory": self.memory,
+                "handle_parsing_errors": True
+            },
             return_intermediate_steps=True,
             **kwargs
         )
+        return agent
 
     async def configure(self, df: pd.DataFrame = None, app=None) -> None:
         """Basic Configuration of Pandas Agent.
@@ -167,6 +175,8 @@ class PandasAgent(BasicAgent):
             self.app[f"{self.name.lower()}_bot"] = self
         if df is not None:
             self.df = self._define_dataframe(df)
+        # And define Prompt:
+        self._define_prompt()
         # Configure LLM:
         self.configure_llm(use_chat=True)
         # Configure VectorStore if enabled:
@@ -361,7 +371,6 @@ print(f"Pandas version: {pd.__version__}")
             self.logger.error(
                 f"Error setting up python tool: {e}"
             )
-        print(':: PYTHON TOOL > ', python_tool)
         return python_tool
 
     def _metrics_guide(self, df_key: str, df_name: str, columns: list) -> str:
@@ -386,7 +395,7 @@ print(f"Pandas version: {pd.__version__}")
         table += f"\nNote: {df_key} is also available as {df_name}\n"
         return table
 
-    def define_prompt(self, prompt, **kwargs):
+    def _define_prompt(self, prompt: str = None, **kwargs):
         now = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         self.agent_report_dir = self._static_path.joinpath(str(self.chatbot_id))
         if self.agent_report_dir.exists() is False:
@@ -460,7 +469,7 @@ print(f"Pandas version: {pd.__version__}")
         sanitized_backstory = ''
         if self.backstory:
             sanitized_backstory = self.sanitize_prompt_text(self.backstory)
-        tmpl = Template(self._prompt_template)
+        tmpl = Template(self.system_prompt_template)
         self._prompt_prefix = tmpl.safe_substitute(
             name=self.name,
             description=self.description,
