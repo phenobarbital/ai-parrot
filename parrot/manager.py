@@ -94,6 +94,7 @@ class BotManager:
                         pre_instructions=bot.pre_instructions,
                         company_information=bot.company_information,
                         vector_info=bot.database,
+                        metric_type=bot.database.get('metric_type', 'COSINE'),
                         permissions=bot.permissions,
                         attributes=bot.attributes,
                     )
@@ -159,11 +160,11 @@ class BotManager:
                         df=queries,
                         query=agent.query,
                         description=agent.description,
-                        use_llm=agent.llm,
+                        use_llm=agent.use_llm,
                         model_name=agent.model_name,
+                        model_config=agent.model_config,
                         temperature=agent.temperature,
                         tools=agent.tools,
-                        model_config=agent.model_config,
                         role=agent.role,
                         goal=agent.goal,
                         backstory=agent.backstory,
@@ -197,8 +198,12 @@ class BotManager:
         self.add_bot(chatbot)
         if 'llm' in kwargs:
             llm = kwargs['llm']
-            llm_name = llm.pop('name')
-            model = llm.pop('model')
+            if isinstance(llm, dict):
+                llm_name = llm.pop('name')
+                model = llm.pop('model')
+            else:
+                llm_name = llm
+                model = None
             llm = chatbot.load_llm(
                 llm_name, model=model, **llm
             )
@@ -319,6 +324,15 @@ class BotManager:
         )
         # ChatBot Manager
         ChatbotHandler.configure(self.app, '/api/v1/bots')
+        # Bot Handler
+        router.add_view(
+            '/api/v1/chatbots',
+            BotHandler
+        )
+        router.add_view(
+            '/api/v1/chatbots/{name}',
+            BotHandler
+        )
         return self.app
 
     async def on_startup(self, app: web.Application) -> None:

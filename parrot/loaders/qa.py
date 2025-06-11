@@ -50,7 +50,7 @@ class QAFileLoader(AbstractLoader):
                 doctype=self.doctype,
                 source_type=self._source_type,
                 doc_metadata=document_meta,
-                type="QA",
+                type="FAQ",
                 question=qs,
                 answer=answer,
             )

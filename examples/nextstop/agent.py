@@ -25,6 +25,7 @@ from parrot.llms.groq import GroqLLM
 from parrot.llms.anthropic import AnthropicLLM
 from parrot.llms.openai import OpenAILLM
 from parrot.tools import AbstractToolkit
+from parrot.tools.weather import OpenWeather
 
 
 # Function: Agent Creation:
@@ -32,6 +33,12 @@ from parrot.tools import AbstractToolkit
 vertex = VertexLLM(
     model="gemini-2.0-flash-001",
     preset="analytical",
+    use_chat=True
+)
+
+vertex_pro = VertexLLM(
+    model="gemini-2.5-pro-preview-05-06",
+    preset="concise",
     use_chat=True
 )
 
@@ -169,8 +176,48 @@ class StoreInfo(BaseToolkit):
         return [
             self._get_visit_info_tool(),
             self._get_store_info_tool(),
-            self._get_demographics_tool()
+            self._get_demographics_tool(),
+            self._get_foot_traffic_tool(),
         ]
+
+    def _get_foot_traffic_tool(self) -> StructuredTool:
+        """Create the traffic information retrieval tool.
+
+        Returns:
+            StructuredTool: Configured tool for getting recent foot traffic data for a store.
+        """
+        return StructuredTool.from_function(
+            name="get_foot_traffic",
+            func=self.get_foot_traffic,
+            coroutine=self.get_foot_traffic,
+            description=(
+                "Get the Foot Traffic and average visits by day from a specific store. "
+            ),
+            args_schema=StoreInfoInput,
+            handle_tool_error=True
+        )
+
+    async def get_foot_traffic(self, store_id: str) -> str:
+        """Get foot traffic data for a specific store.
+        This coroutine retrieves the foot traffic data for the specified store,
+        including the number of visitors and average visits per day.
+
+        Args:
+            store_id (str): The unique identifier of the store.
+        Returns:
+            str: JSON string containing foot traffic data for the store.
+        """
+        sql = f"""
+        SELECT avg_visits_per_day, foottraffic FROM placerai.weekly_traffic
+        where store_id = '{store_id}'
+        AND start_date::date BETWEEN (CURRENT_DATE - INTERVAL '20 days') AND CURRENT_DATE LIMIT 1;
+        """
+        visit_data = await self.get_dataset(sql, output='json')
+        if not visit_data:
+            raise ToolException(
+                f"No Foot Traffic data found for store with ID {store_id}."
+            )
+        return visit_data
 
     def _get_visit_info_tool(self) -> StructuredTool:
         """Create the visit information retrieval tool.
@@ -440,17 +487,17 @@ class StoreToolkit(AbstractToolkit):
     """Toolkit for NextStop Copilot providing store-related tools."""
     input_class: Type[BaseModel] = StoreIdInput
 
-    async def store_schedule(self, store_id: str) -> dict:
-        """
-        Fetch the upcoming schedule (hours, events) for store_id.
-        """
-        # … maybe you call some calendar API …
-        return self.json_encoder({
-            "store_id": store_id,
-            "monday": "09:00-21:00",
-            "tuesday": "09:00-21:00",
-            # …
-        })
+    # async def store_schedule(self, store_id: str) -> dict:
+    #     """
+    #     Fetch the upcoming schedule (hours, events) for store_id.
+    #     """
+    #     # … maybe you call some calendar API …
+    #     return self.json_encoder({
+    #         "store_id": store_id,
+    #         "monday": "09:00-21:00",
+    #         "tuesday": "09:00-21:00",
+    #         # …
+    #     })
 
     async def get_analytics_dataframe(self, store_id: str) -> pd.DataFrame:
         """
@@ -474,7 +521,10 @@ class StoreToolkit(AbstractToolkit):
         return pd.DataFrame(data)  # Return DataFrame directly!
 
 # Toolkit for NextStop Copilot:
-tools = StoreInfo().get_tools() + StoreToolkit().get_tools()
+tools = StoreInfo().get_tools() # + StoreToolkit().get_tools()
+tools.append(
+    OpenWeather(request='weather')
+)
 
 async def get_agent(llm):
     """Create and configure a NextStop Copilot agent with store analysis tools.
@@ -488,7 +538,8 @@ async def get_agent(llm):
     agent = BasicAgent(
         name='NextStop Copilot',
         llm=llm,
-        tools=tools
+        tools=tools,
+        agent_type='tool-calling'
     )
     await agent.configure()
     return agent

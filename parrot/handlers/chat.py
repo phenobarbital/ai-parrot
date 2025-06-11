@@ -1,4 +1,6 @@
 from aiohttp import web
+from asyncdb.exceptions.exceptions import NoDataFound
+from datamodel.exceptions import ValidationError
 from navigator_auth.decorators import (
     is_authenticated,
     user_session,
@@ -6,6 +8,7 @@ from navigator_auth.decorators import (
 )
 from navigator.views import BaseView
 from ..bots.abstract import AbstractBot
+from ..models import ChatbotModel
 
 
 @is_authenticated()
@@ -150,10 +153,41 @@ class ChatHandler(BaseView):
 @user_session()
 class BotHandler(BaseView):
     """BotHandler.
-
-
+    description: Bot Handler for Parrot Application.
     Use this handler to interact with a brand new chatbot, consuming a configuration.
     """
+    async def _create_bot(self, name: str, data: dict):
+        """Create a New Bot (passing a configuration).
+        """
+        db = self.request.app['database']
+        async with await db.acquire() as conn:
+            ChatbotModel.Meta.connection = conn
+            # check first if chatbot already exists:
+            exists = None
+            try:
+                exists = await ChatbotModel.get(name=name)
+            except NoDataFound:
+                exists = False
+            if exists:
+                return self.json_response(
+                    {
+                        "message": f"Chatbot {name} already exists with id {exists.chatbot_id}"
+                    },
+                    status=202
+                )
+            try:
+                chatbot_model = ChatbotModel(
+                    name=name,
+                    **data
+                )
+                print('Chatbot Model: ', chatbot_model)
+                chatbot_model = await chatbot_model.insert()
+                return chatbot_model
+            except ValidationError:
+                raise
+            except Exception:
+                raise
+
     async def put(self):
         """Create a New Bot (passing a configuration).
         """
@@ -177,8 +211,41 @@ class BotHandler(BaseView):
                 status=400
             )
         try:
-            chatbot = manager.create_chatbot(name=name, **data)
-            await chatbot.configure(name=name, app=self.request.app)
+            bot = manager.create_bot(name=name, **data)
+        except Exception as exc:
+            print(exc.__traceback__)
+            return self.error(
+                response={
+                    "message": f"Error creating chatbot {name}.",
+                    "exception": str(exc),
+                    "stacktrace": str(exc.__traceback__)
+                },
+                exception=exc,
+                status=400
+            )
+        try:
+            # if bot is created:
+            await self._create_bot(name=name, data=data)
+        except ValidationError as exc:
+            return self.error(
+                f"Validation Error for {name}: {exc}",
+                exception=exc.payload,
+                status=400
+            )
+        except Exception as exc:
+            print(exc.__traceback__)
+            return self.error(
+                response={
+                    "message": f"Error creating chatbot {name}.",
+                    "exception": str(exc),
+                    "stacktrace": str(exc.__traceback__)
+                },
+                exception=exc,
+                status=400
+            )
+        try:
+            # Then Configure the bot:
+            await bot.configure(app=self.request.app)
             return self.json_response(
                 {
                     "message": f"Chatbot {name} created successfully."
@@ -186,7 +253,7 @@ class BotHandler(BaseView):
             )
         except Exception as exc:
             return self.error(
-                f"Error creating chatbot {name}: {exc}",
+                f"Error on chatbot configuration: {name}: {exc}",
                 exception=exc,
                 status=400
             )

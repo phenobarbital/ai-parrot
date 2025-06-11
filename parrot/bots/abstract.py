@@ -162,7 +162,7 @@ class AbstractBot(DBInterface, ABC):
         self.memory_saver: Optional[MemorySaver] = None
         # Start initialization:
         self.kb = None
-        self.knowledge_base: list = []
+        self.knowledge_base: List[str] = []
         self.return_sources: bool = kwargs.pop('return_sources', False)
         self.description = self._get_default_attr(
             'description',
@@ -179,7 +179,7 @@ class AbstractBot(DBInterface, ABC):
         self._llm_class: str = None
         self._default_llm: str = kwargs.get('use_llm', 'vertexai')
         self._use_chat: bool = kwargs.get('use_chat', False)
-        self._llm_model = kwargs.get('model_name', 'gemini-1.5-pro')
+        self._llm_model = kwargs.get('model_name', 'gemini-2.0-flash-001')
         self._llm_preset: str = kwargs.get('preset', None)
         if self._llm_preset:
             try:
@@ -189,18 +189,26 @@ class AbstractBot(DBInterface, ABC):
                     f"Invalid preset: {self._llm_preset}, default to 'analytical'"
                 )
                 presetting = LLM_PRESETS['analytical']
-            self._llm_temp = presetting.get('temperature', 0.2)
+            self._llm_temp = presetting.get('temperature', 0.1)
             self._max_tokens = presetting.get('max_tokens', 4096)
         else:
             # Default LLM Presetting by LLMs
-            self._llm_temp = kwargs.get('temperature', 0.2)
+            self._llm_temp = kwargs.get('temperature', 0.1)
             self._max_tokens = kwargs.get('max_tokens', 4096)
         self._llm_top_k = kwargs.get('top_k', 41)
         self._llm_top_p = kwargs.get('top_p', 0.9)
         self._llm_config = kwargs.get('model_config', {})
         if self._llm_config:
             self._llm_model = self._llm_config.pop('model', self._llm_model)
-            self._llm_class = self._llm_config.pop('name', None)
+            self._llm_class = self._llm_config.pop('name', 'VertexLLM')
+        else:
+            self._llm_config = {
+                "name":  self._llm_class,
+                "model": self._llm_model,
+                "temperature": self._llm_temp,
+                "top_k": self._llm_top_k,
+                "top_p": self._llm_top_p
+            }
         # Overrriding LLM object
         self._llm_obj: Callable = kwargs.get('llm', None)
         # LLM base Object:
@@ -223,6 +231,8 @@ class AbstractBot(DBInterface, ABC):
         self._vector_store: dict = kwargs.get('vector_store', None)
         self.chunk_size: int = int(kwargs.get('chunk_size', 2048))
         self.dimension: int = int(kwargs.get('dimension', 384))
+        # Metric Type:
+        self._metric_type: str = kwargs.get('metric_type', 'COSINE')
         self.store: Callable = None
         self.stores: List[AbstractStore] = []
         self.memory: Callable = None
@@ -482,7 +492,7 @@ class AbstractBot(DBInterface, ABC):
             context=context,
             **kwargs
         )
-        # print('Template Prompt: \n', final_prompt)
+        print('Template Prompt: \n', final_prompt)
         self.system_prompt_template = final_prompt
 
     async def configure(self, app=None) -> None:
@@ -663,7 +673,7 @@ class AbstractBot(DBInterface, ABC):
         llm_config = kwargs.pop(
             'llm_config',
             {
-                "temperature": 0.2,
+                "temperature": 0.1,
                 "top_k": 41,
                 "Top_p": 0.9
             }
@@ -702,7 +712,10 @@ class AbstractBot(DBInterface, ABC):
         try:
             if self._use_vector:
                 async with self.store as store:  #pylint: disable=E1101
-                    vector = store.get_vector(metric_type=metric_type)
+                    vector = store.get_vector(
+                        metric_type=metric_type,
+                        score_threshold=score_threshold
+                    )
                     retriever = VectorStoreRetriever(
                         vectorstore=vector,
                         search_type=search_type,
@@ -1006,7 +1019,8 @@ class AbstractBot(DBInterface, ABC):
         question: str,
         chain_type: str = 'stuff',
         search_type: str = 'similarity',
-        search_kwargs: dict = {"k": 4, "fetch_k": 10, "lambda_mult": 0.89},
+        search_kwargs: dict = {"k": 6, "fetch_k": 12, "lambda_mult": 0.4},
+        score_threshold: float = 0.16,
         return_docs: bool = True,
         metric_type: str = None,
         memory: Any = None,
@@ -1020,9 +1034,9 @@ class AbstractBot(DBInterface, ABC):
             llm_config = kwargs.pop(
                 'llm_config',
                 {
-                    "temperature": 0.2,
+                    "temperature": 0.1,
                     "top_k": 41,
-                    "Top_p": 0.9
+                    "top_p": 0.9
                 }
             )
             self.configure_llm(llm=new_llm, config=llm_config)
@@ -1069,16 +1083,19 @@ class AbstractBot(DBInterface, ABC):
                 #         search_kwargs=search_kwargs
                 #     )
                 # else:
-                vector = store.get_vector(metric_type=metric_type)
+                vector = store.get_vector(
+                    metric_type=metric_type or self._metric_type,
+                    score_threshold=score_threshold
+                )
                 retriever = VectorStoreRetriever(
                     vectorstore=vector,
                     search_type=search_type,
                     chain_type=chain_type,
-                    search_kwargs=search_kwargs
+                    search_kwargs=search_kwargs,
+                    verbose=True
                 )
             else:
                 retriever = EmptyRetriever()
-            print('Retriever ', retriever)
             # if self.kb:
             #     b25_retriever = BM25Retriever.from_documents(self.kb)
             #     retriever = EnsembleRetriever(
