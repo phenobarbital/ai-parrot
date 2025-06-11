@@ -39,6 +39,7 @@ from langchain_postgres.vectorstores import (
 )
 from langchain_postgres._utils import maximal_marginal_relevance
 from datamodel.parsers.json import json_encoder  # pylint: disable=E0611
+from navconfig.logging import logging
 from .abstract import AbstractStore
 from ..conf import default_sqlalchemy_pg
 
@@ -104,6 +105,7 @@ class PgVector(PGVector):
             distance_strategy=distance_strategy,
             **kwargs
         )
+        self.logger = logging.getLogger(name='PgVector')
 
     def get_id_column(self, use_uuid: bool) -> sqlalchemy.Column:
         """
@@ -324,6 +326,9 @@ class PgVector(PGVector):
             score_threshold=score_threshold or self._score_threshold,
             filter=filter,
         )
+        self.logger.debug(
+            f"Found {len(docs)} documents for query '{query}' with k={k}."
+        )
         return docs
 
     async def asimilarity_search_by_vector(
@@ -359,9 +364,10 @@ class PgVector(PGVector):
         filter: Optional[dict] = None,
     ) -> List[Tuple[Document, float]]:
         await self.__apost_init__()  # Lazy async init
+        score = score_threshold or self._score_threshold
         async with self._make_async_session() as session:  # type: ignore[arg-type]
             results = await self._aquery_collection(
-                session=session, embedding=embedding, k=k, score_threshold=score_threshold, filter=filter
+                session=session, embedding=embedding, k=k, score_threshold=score, filter=filter
             )
             return self._results_to_docs_and_scores(results)
 

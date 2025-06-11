@@ -579,7 +579,7 @@ print(f"Pandas version: {pd.__version__}")
     async def gen_data(
         cls,
         query: Union[list, dict],
-        agent_name: Optional[str] = None,
+        agent_name: str,
         refresh: bool = False,
         cache_expiration: int = 48,
         no_cache: bool = False
@@ -606,9 +606,6 @@ print(f"Pandas version: {pd.__version__}")
             A Dictionary of named pandas DataFrames generated from the queries.
         """
         # If agent_name is provided, we'll use Redis caching
-        if not agent_name:
-            agent_name = cls.chatbot_id
-
         if not refresh:
             # Try to get cached dataframes
             cached_dfs = await cls._get_cached_data(agent_name)
