@@ -202,7 +202,7 @@ class PgVector(PGVector):
 
         # Build distance expression as usual
         distance_expr = self.distance_strategy(embedding).label("distance")
-
+        self.logger.debug(f"Compiled distance expr → {distance_expr}")
         stmt = (
             select(
                 self.EmbeddingStore,
@@ -255,7 +255,9 @@ class PgVector(PGVector):
         """
         # Get the embedding column from the EmbeddingStore model
         embedding_column = getattr(self.EmbeddingStore, self._embedding_column)
-
+        self.logger.debug(
+            f"PgVector: using distance strategy → {self._distance_strategy}"
+        )
         if self._distance_strategy == DistanceStrategy.EUCLIDEAN_DISTANCE:
             return embedding_column.l2_distance
         elif self._distance_strategy == DistanceStrategy.COSINE:
@@ -389,7 +391,7 @@ class PgVector(PGVector):
 
             # Use the distance_strategy property which now respects the configurable column
             distance_expr = self.distance_strategy(embedding).label("distance")
-
+            self.logger.debug(f"Compiled distance expr → {distance_expr}")
             stmt = (
                 sqlalchemy.select(
                     self.EmbeddingStore,
@@ -893,7 +895,12 @@ class PgvectorStore(AbstractStore):
         """
         if not self.dsn:
             self.dsn = default_sqlalchemy_pg
-        self._connection = create_async_engine(self.dsn, future=True, echo=False)
+        self._connection = create_async_engine(
+            self.dsn,
+            future=True,
+            echo=True,
+            echo_pool='debug',
+        )
         async with self._connection.begin() as conn:
             if getattr(self, "_drop", False):
                 self.vector = PgVector(
