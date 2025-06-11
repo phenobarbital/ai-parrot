@@ -163,7 +163,7 @@ class AbstractBot(DBInterface, ABC):
         # Start initialization:
         self.kb = None
         self.knowledge_base: List[str] = []
-        self.return_sources: bool = kwargs.pop('return_sources', False)
+        self.return_sources: bool = kwargs.pop('return_sources', True)
         self.description = self._get_default_attr(
             'description',
             'Navigator Chatbot',
@@ -1019,8 +1019,8 @@ class AbstractBot(DBInterface, ABC):
         question: str,
         chain_type: str = 'stuff',
         search_type: str = 'similarity',
-        search_kwargs: dict = {"k": 6, "fetch_k": 12, "lambda_mult": 0.4},
-        score_threshold: float = 0.16,
+        search_kwargs: dict = {"k": 4, "fetch_k": 12, "lambda_mult": 0.4},
+        score_threshold: float = None,
         return_docs: bool = True,
         metric_type: str = None,
         memory: Any = None,
@@ -1083,8 +1083,13 @@ class AbstractBot(DBInterface, ABC):
                 #         search_kwargs=search_kwargs
                 #     )
                 # else:
+                metric = metric_type or self._metric_type
+                if metric == 'COSINE':
+                    score_threshold = score_threshold or 0.16
+                elif metric == 'EUCLIDEAN_DISTANCE':
+                    score_threshold = score_threshold or 1.0
                 vector = store.get_vector(
-                    metric_type=metric_type or self._metric_type,
+                    metric_type=metric,
                     score_threshold=score_threshold
                 )
                 retriever = VectorStoreRetriever(
@@ -1096,12 +1101,12 @@ class AbstractBot(DBInterface, ABC):
                 )
             else:
                 retriever = EmptyRetriever()
-            # if self.kb:
-            #     b25_retriever = BM25Retriever.from_documents(self.kb)
-            #     retriever = EnsembleRetriever(
-            #         retrievers=[retriever, b25_retriever],
-            #         weights=[0.8, 0.2]
-            #     )
+            if self.kb:
+                b25_retriever = BM25Retriever.from_documents(self.kb)
+                retriever = EnsembleRetriever(
+                    retrievers=[retriever, b25_retriever],
+                    weights=[0.9, 0.1]
+                )
             try:
                 # Create the ConversationalRetrievalChain with custom prompt
                 chain = ConversationalRetrievalChain.from_llm(
