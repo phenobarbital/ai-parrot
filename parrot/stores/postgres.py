@@ -324,8 +324,6 @@ class PgVector(PGVector):
             score_threshold=score_threshold or self._score_threshold,
             filter=filter,
         )
-        for doc in docs:
-            print(doc.page_content[:100], '...')  # Print first 100 chars of each doc
         return docs
 
     async def asimilarity_search_by_vector(
@@ -484,7 +482,6 @@ class PgVector(PGVector):
                         'document': txt,
                         'cmetadata': metadata or {},
                     }
-
                     if not self._schema_based:
                         collection = await self.aget_collection(session)
                         if not collection:
@@ -509,10 +506,11 @@ class PgVector(PGVector):
                     row_data = {
                         self._id_column: id,
                         self._embedding_column: embedding,
-                        'document': txt,
                         'text': txt,
+                        'document': txt,
                         'cmetadata': metadata or {},
                     }
+                    data.append(row_data)
 
                 # Only add collection_id if not using schema-based approach
                 if not self._schema_based:
@@ -524,8 +522,9 @@ class PgVector(PGVector):
                     # For schema-based approach, use default collection_id
                     row_data['collection_id'] = '00000000-0000-0000-0000-000000000000'
 
-                data.append(row_data)
-
+            self.logger.notice(
+                f"Writing {len(data)} rows to pgvector (should be {len(texts)})"
+            )
             stmt = insert(self.EmbeddingStore).values(data)
             try:
                 if not self._use_uuid:
@@ -586,7 +585,10 @@ class PgVector(PGVector):
         texts_ = list(texts)
 
         # Use self.embeddings instead of self.embedding_function
-        embeddings = await self.embeddings.aembed_documents(texts_)
+        try:
+            embeddings = await self.embeddings.aembed_documents(texts_)
+        except Exception as e:
+            self.logger.error(f"Error generating embeddings: {e}")
 
         return await self.aadd_embeddings(
             texts=texts_,
@@ -760,7 +762,6 @@ class PgvectorStore(AbstractStore):
                 {"schema": schema, "table": table}
             )
             exists = result.scalar_one()
-            print("EXISTS >", exists)
             return bool(exists)
 
     async def table_exists(self, table: str, schema: str) -> bool:
@@ -780,7 +781,6 @@ class PgvectorStore(AbstractStore):
                 {"schema": schema, "table": table}
             )
             exists = result.scalar()
-            print("EXISTS >", exists)
             return bool(exists)
 
     async def is_connection_alive(self) -> bool:
@@ -898,8 +898,8 @@ class PgvectorStore(AbstractStore):
         self._connection = create_async_engine(
             self.dsn,
             future=True,
-            echo=True,
-            echo_pool='debug',
+            echo=False,
+            # echo_pool='debug',
         )
         async with self._connection.begin() as conn:
             if getattr(self, "_drop", False):
@@ -918,7 +918,6 @@ class PgvectorStore(AbstractStore):
                     create_extension=False
                 )
                 # await self.vector.adrop_tables()
-            # print('COLLECTIN NAME > ', self.collection_name)
             # if not await self.collection_exists(self.collection_name):
             #     await self.create_collection(self.collection_name)
         self._connected = True
@@ -1214,7 +1213,7 @@ class PgvectorStore(AbstractStore):
         dimension: int = None,
         id_column: str = 'id',
         use_jsonb: bool = True,
-        drop_columns: bool = True,
+        drop_columns: bool = False,
         create_all_indexes: bool = True,
         **kwargs
     ):
