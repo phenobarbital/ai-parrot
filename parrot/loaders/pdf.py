@@ -105,7 +105,9 @@ class PDFLoader(AbstractLoader):
                 pending_title = None
 
             document_meta = {
-                "page_number": i+1,
+                "filename": path.name,
+                "file_path": str(path),
+                "page_number": i + 1,
                 "title": doc.metadata.get("title", ""),
                 "creationDate": doc.metadata.get("creationDate", ""),
                 "author": doc.metadata.get("author", ""),
@@ -116,17 +118,12 @@ class PDFLoader(AbstractLoader):
                 source_type="pdf",
                 doc_metadata=document_meta,
             )
-            # Optionally add a header
-            context = (
-                f"File Name: {path.name}\n"
-                f"Page Number: {i+1}\n"
-                f"Document Type: pdf\n"
-                f"Source Type: pdf\n"
-                "======\n"
-            )
+            if len(content) < 10:
+                self.logger.warning(f"Page {i+1} content too short, skipping.")
+                continue
             docs.append(
                 self.create_document(
-                    content=context + content,
+                    content=content,
                     path=path,
                     metadata=meta
                 )
@@ -147,7 +144,7 @@ class PDFLoader(AbstractLoader):
             )
             docs.append(
                 self.create_document(
-                    content=f"SUMMARY OF DOCUMENT\n\n{summary}",
+                    content=f"SUMMARY:\n\n{summary}",
                     path=path,
                     metadata=summary_meta
                 )
