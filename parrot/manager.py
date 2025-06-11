@@ -94,6 +94,7 @@ class BotManager:
                         pre_instructions=bot.pre_instructions,
                         company_information=bot.company_information,
                         vector_info=bot.database,
+                        metric_type=bot.database.get('metric_type', 'COSINE'),
                         permissions=bot.permissions,
                         attributes=bot.attributes,
                     )
@@ -197,8 +198,12 @@ class BotManager:
         self.add_bot(chatbot)
         if 'llm' in kwargs:
             llm = kwargs['llm']
-            llm_name = llm.pop('name')
-            model = llm.pop('model')
+            if isinstance(llm, dict):
+                llm_name = llm.pop('name')
+                model = llm.pop('model')
+            else:
+                llm_name = llm
+                model = None
             llm = chatbot.load_llm(
                 llm_name, model=model, **llm
             )
