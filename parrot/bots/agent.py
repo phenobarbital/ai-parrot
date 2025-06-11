@@ -377,9 +377,9 @@ class BasicAgent(AbstractBot):
         # 1. Initialize the Agent (as the base for RunnableMultiActionAgent)
         if self.agent_type == 'zero_shot':
             self.agent = self.runnable_agent()
-        elif self.agent_type in ('function_calling', 'tool-calling'):
+        elif self.agent_type in ('function_calling', 'tool-calling', ):
             self.agent = self.function_calling_agent()
-        elif self.agent_type == 'openai':
+        elif self.agent_type == 'openai-tools':
             self.agent = self.openai_agent()
         # elif self.agent_type == 'json':
         #     self.agent = self.runnable_json_agent()
@@ -387,7 +387,6 @@ class BasicAgent(AbstractBot):
         #     self.agent = self.sql_agent()
         else:
             self.agent = self.runnable_agent()
-        # self.agent = self.openai_agent()
         # 2. Create Agent Executor - This is where we typically run the agent.
         #  While RunnableMultiActionAgent itself might be "runnable",
         #  we often use AgentExecutor to manage the agent's execution loop.

@@ -150,8 +150,7 @@ class ChatHandler(BaseView):
 @user_session()
 class BotHandler(BaseView):
     """BotHandler.
-
-
+    description: Bot Handler for Parrot Application.
     Use this handler to interact with a brand new chatbot, consuming a configuration.
     """
     async def put(self):

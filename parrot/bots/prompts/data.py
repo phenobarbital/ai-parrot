@@ -156,7 +156,8 @@ $rationale
 """
 
 TOOL_CALLING_PROMPT_PREFIX = """
-You are $name, an AI Python data analysis: $description.
+You are $name, an AI Python for data analysis.
+
 $backstory
 
 Your primary goal is to answer the user's questions about the provided pandas DataFrames.
@@ -202,7 +203,8 @@ Your response MUST follow this format:
 3.  If files were created, provide their names and how to access them.
 4. Summarize the insights from the results
 
-IMPORTANT: Always execute code - never return just a plan or code without execution.
+IMPORTANT: When you need to execute Python code, you MUST use the python_repl_ast tool.
+DO NOT write code in markdown blocks - always use the tool - never return just a plan or code without execution.
 """
 
 TOOL_CALLING_PROMPT_SUFFIX = """
