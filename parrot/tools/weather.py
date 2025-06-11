@@ -38,7 +38,7 @@ class OpenWeather(BaseTool):
         "Get weather information about a location, use this tool to answer questions about weather or weather forecast."
         " Input should be a dictionary with the latitude and longitude of the location you want weather information about."
         " Example input: 'latitude': 37.7749, 'longitude': -122.4194. "
-        " Note: Temperature is returned on Farenheit by default, not Kelvin."
+        " Note: Temperature is returned on Fahrenheit by default, not Kelvin."
     )
     base_url: str = 'http://api.openweathermap.org/'
     units: str = 'imperial'  # 'metric', 'imperial', 'standard'
