@@ -48,9 +48,12 @@ class PDFPrintTool(BaseTool):
         "You can also specify a custom filename for the output PDF."
     )
     output_dir: Optional[Path] = BASE_DIR.joinpath("static", "documents", "pdf")
+    env: Optional[Environment] = None
+    templates_dir: Optional[Path] = None
 
     # Add a proper args_schema for tool-calling compatibility
     args_schema: Type[BaseModel] = PDFPrintInput
+
 
     def __init__(
         self,
@@ -125,6 +128,10 @@ class PDFPrintTool(BaseTool):
         for css_file in payload.stylesheets or []:
             css_path = self.templates_dir / css_file
             css_list.append( CSS(filename=str(css_path)) )
+        # add the tables CSS:
+        css_list.append(
+            CSS(filename=str(self.templates_dir / "css" / "tables.css"))
+        )
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         # Generate a unique filename based on the current timestamp

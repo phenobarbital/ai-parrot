@@ -48,12 +48,32 @@ claude = AnthropicLLM(
     use_tools=True
 )
 
+backstory = """
+You have a pandas DataFrame with financial projections, it is the projected revenue by projectfor the end of the month, with slight variations day after day. every day is only corrections over the projected revenue at end of month.
+columns:
+- description (str): business division
+- project (str): project name
+- revenue (float): projected revenue at end of month
+- budget (float): budgeted revenue at end of month
+- percent_to_budget (float): percentage of revenue compared to budget
+- ebitda (float):  earnings before interest, taxes, depreciation, and amortization
+- budget_ebitda (float): budgeted ebitda
+- margin (float): profit margin
+- budget_margin (float): percentage to budget
+- budgeted_margin (float): budgeted profit margin (percentage)
+- projection_date (date): date of the projection
+
+IMPORTANT:
+- The data is not cumulative, every day it is the projected revenue at end of month, only work with the last projected revenue for each project.
+"""
+
 async def get_agent(llm):
-    data = await PandasAgent.gen_data(agent_name='RevenueBot', query="troc_revenue_projections")
+    data = await PandasAgent.gen_data(agent_name='RevenueAgent', query="troc_revenue_projections")
     agent = PandasAgent(
-        name='RevenueBot',
+        name='RevenueAgent',
         llm=llm,
-        df=data
+        df=data,
+        backstory=backstory
     )
     await agent.configure()
     return agent
@@ -63,6 +83,9 @@ if __name__ == '__main__':
     agent = asyncio.run(get_agent(openai))
     prompt = f"""
     Generate a business-style narrative for CEO and CFO of the company based on the Revenue projections provided in the Pandas DataFrame, considering the above description.
+    Use the last projected revenue for each project, not cumulative data.
+    Ensure the narrative is directly relevant to business decision-making, oriented for CEO and CFO of the company.
+
     The narrative should include the following sections:
 
     1.  **Executive Summary:** Provide a brief overview of the key findings and insights derived from the data analysis.
@@ -85,9 +108,56 @@ if __name__ == '__main__':
     8. **Summarize overall trends:** is revenue running above or below budget on average, and how is profitability trending over the period?
     9. **Conclusion:** Summarize the key takeaways from the analysis and their implications for the business.
 
-    Ensure the narrative is concise, professional, and directly relevant to business decision-making, then exports as PDF using pdf_print_tool and generate a podcast using the podcast_generator_tool
+    And the end, exports the detailed analysis as a PDF file using pdf_print_tool and generate a summary as a podcast using the podcast_generator_tool
     """
-    # prompt = """Return the total rows and list of columns in provided dataframe."""
+    prompt = """
+🧠 Revised Executive Summary Section
+Begin with a concise, insights-packed overview that helps leadership quickly grasp the financial pulse of the business. This section should highlight:
+Use the last projected revenue for each project, not cumulative data.
+Ensure the narrative is directly relevant to business decision-making, oriented for CEO and CFO of the company.
+
+📊 Performance Highlights
+Top Revenue and EBITDA Leaders: Name the highest performing projects by total revenue and EBITDA margin.
+
+MTD Trend vs Budget:
+
+Show Month-to-Date (MTD) performance for Revenue and EBITDA, compared to budget.
+
+Highlight % variance and whether the trend is improving or worsening.
+
+Include a sparkline or trendline if visuals are part of the output.
+
+Revenue Contribution by Program:
+Show each project’s % contribution to total monthly revenue.
+Identify top contributors and underperformers.
+
+Week-over-Week Change:
+- Report overall financial change compared to last week.
+
+Include program-level deltas, especially for key initiatives.
+Color code or flag major swings (+/-) for fast scanning.
+
+🚦 Quick Signals
+Create a Table:
+
+Use simple indicators (✔️, ⚠️, ❌) to flag:
+- Above-budget performance
+- Margin concerns
+- Projects exceeding growth expectations
+- Areas needing attention
+- Any red flags or risks
+- Always return the project names when enumerate them.
+- Any significant deviations from budget or expectations
+- Any projects with significant day-over-day changes in revenue
+
+
+
+IMPORTANT:
+- Use the complete version with quick signals table, revenue contribution, and week-over-week changes to export as a PDF file using pdf_print_tool
+- Use a concise summary to generate a podcast using the podcast_generator_tool.
+"""
+    # prompt = """what is the total projected revenue for all projects."""
+
     answer, response = asyncio.run(
         agent.invoke(prompt)
     )

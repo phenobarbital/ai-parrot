@@ -9,6 +9,7 @@ from .gamma import GammaLink
 from .gvoice import GoogleVoiceTool
 from .docx import WordToMarkdownTool
 from .pdf import PDFPrintTool
+from .np import PythonREPLTool
 
 # from langchain_community.tools.yahoo_finance_news import YahooFinanceNewsTool
 # from langchain_community.tools import YouTubeSearchTool
