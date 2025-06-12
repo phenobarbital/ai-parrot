@@ -1,0 +1,37 @@
+/* Make every table span the full page width */
+table {
+  width: 100% !important;
+  border-collapse: collapse;
+  margin-bottom: 1em;
+  page-break-inside: avoid;
+}
+
+/* Style headers and cells with clear borders & padding */
+th, td {
+  border: 1px solid #444;
+  padding: 0.3em 0.6em;
+  vertical-align: top;
+  text-align: left;
+}
+
+/* Header row gets a background tint */
+thead th {
+  background-color: #f0f0f0;
+  font-weight: bold;
+}
+
+/* Ensure table headers repeat at the top of each PDF page */
+thead {
+  display: table-header-group;
+}
+
+/* Prevent rows from splitting across pages */
+tr {
+  page-break-inside: avoid;
+}
+
+/* Optional: zebra-stripe for readability */
+tbody tr:nth-of-type(odd) {
+  background-color: #fcfcfc;
+}
+
