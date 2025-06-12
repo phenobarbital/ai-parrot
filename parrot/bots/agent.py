@@ -51,10 +51,11 @@ from tenacity import (
 from datamodel.typedefs import SafeDict
 from datamodel.exceptions import ValidationError # noqa  pylint: disable=E0611
 from datamodel.parsers.json import json_decoder  # noqa  pylint: disable=E0611
+from navconfig import BASE_DIR
 from navconfig.logging import logging
 from .abstract import AbstractBot
 from ..models import AgentResponse
-from ..tools import AbstractTool, MathTool, DuckDuckGoSearchTool
+from ..tools import AbstractTool, MathTool, DuckDuckGoSearchTool, PDFPrintTool
 from ..tools.results import ResultStoreTool, GetResultTool, ListResultsTool
 from ..tools.gvoice import GoogleVoiceTool
 from .prompts import AGENT_PROMPT, AGENT_PROMPT_SUFFIX, FORMAT_INSTRUCTIONS
@@ -135,7 +136,10 @@ class BasicAgent(AbstractBot):
             DuckDuckGoSearchTool(),
             MathTool(),
             GoogleVoiceTool(name="podcast_generator_tool"),
+            PDFPrintTool(name="pdf_print_tool", output_dir=BASE_DIR.joinpath('static', self.name, 'documents', 'pdf')),
         ]
+        # TODO: configure PDF tool to use a per-agent directory:
+
         # result_store_tool = ResultStoreTool()
         # get_result_tool = GetResultTool()
         # list_results_tool = ListResultsTool()
