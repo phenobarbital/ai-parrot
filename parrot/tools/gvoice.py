@@ -138,7 +138,6 @@ class GoogleVoiceTool(BaseTool):
 
         return False
 
-
     def text_to_ssml(self, text: str) -> str:
         """Converts plain text to SSML."""
         ssml = f"<speak><p>{escape(text)}</p></speak>"
