@@ -10,8 +10,10 @@ from datamodel.typedefs import SafeDict
 from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611 # noqa
 from langchain_core.exceptions import OutputParserException
 from langchain_core.messages import HumanMessage
+from langchain_core.runnables.retry import RunnableRetry
 from langchain_experimental.tools.python.tool import PythonAstREPLTool
 from langchain_experimental.agents.agent_toolkits import create_pandas_dataframe_agent
+from openai import RateLimitError
 from navconfig import BASE_DIR
 from navconfig.logging import logging
 from querysource.queries.qs import QS
@@ -141,9 +143,14 @@ class PandasAgent(BasicAgent):
         # print('DATAFRAMES >> ', dfs)
         print(' ============ ')
         # print('PROMPT PREFIX >> ', self._prompt_prefix)
+        # llm = self._llm
+        # llm = self._llm.with_retry(
+        #     retry_if_exception_type=(RateLimitError,),
+        #     wait_exponential_jitter=True,
+        #     stop_after_attempt=4  # Example: retry up to 5 times (initial + 5 retries)
+        # )
         # bind the tools to the LLM:
         llm = self._llm.bind_tools(self.tools)
-        # llm = self._llm
         agent = create_pandas_dataframe_agent(
             llm,
             dfs,
@@ -151,7 +158,7 @@ class PandasAgent(BasicAgent):
             agent_type=self.agent_type,
             allow_dangerous_code=True,
             prefix=self._prompt_prefix,
-            max_iterations=10,
+            max_iterations=20,
             extra_tools=self.tools,
             agent_executor_kwargs={
                 "memory": self.memory,
