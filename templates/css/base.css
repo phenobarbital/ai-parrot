@@ -1,0 +1,85 @@
+/* templates/css/base.css */
+
+/* --- Page & Typography --- */
+body {
+  font-family: Arial, sans-serif;
+  line-height: 1.6;
+  margin: 1in;
+  color: #333;
+}
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Helvetica Neue', sans-serif;
+  margin-top: 1.2em;
+  margin-bottom: 0.6em;
+}
+p {
+  margin: 0.6em 0;
+}
+.meta, .footer {
+  font-size: 0.85em;
+  color: #666;
+  text-align: center;
+}
+
+/* --- Lists --- */
+ul, ol {
+  margin: 0.6em 0 0.6em 1.2em;
+}
+li {
+  margin: 0.3em 0;
+}
+
+/* --- Blockquotes --- */
+blockquote {
+  margin: 0.8em 1em;
+  padding: 0.4em 1em;
+  border-left: 4px solid #ccc;
+  color: #555;
+  background: #f9f9f9;
+}
+
+/* --- Code & Preformatted --- */
+code {
+  font-family: Consolas, monospace;
+  background: #f4f4f4;
+  padding: 0.2em 0.4em;
+  border-radius: 3px;
+}
+pre {
+  background: #f4f4f4;
+  padding: 0.8em;
+  overflow: auto;
+  border-radius: 3px;
+}
+
+/* --- Tables --- */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.8em 0;
+  page-break-inside: avoid;
+}
+th, td {
+  border: 1px solid #bbb;
+  padding: 0.4em 0.6em;
+  vertical-align: top;
+}
+th {
+  background: #eaeaea;
+  font-weight: bold;
+}
+/* Optional: zebra-stripe for readability */
+tr:nth-child(even) td {
+  background: #fbfbfb;
+}
+tbody tr:nth-of-type(odd) {
+  background-color: #fcfcfc;
+}
+
+
+/* --- Images (if any) --- */
+img {
+  max-width: 100%;
+  height: auto;
+  page-break-inside: avoid;
+}
