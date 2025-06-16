@@ -1,7 +1,5 @@
 # basic requirements:
-import os
-from time import sleep
-from typing import Any, Dict, Type, Union, List
+from typing import List
 import textwrap
 import asyncio
 # Pydantic:
@@ -18,13 +16,15 @@ from langchain_core.tools import (
 # AsyncDB database connections
 from asyncdb import AsyncDB
 from querysource.conf import default_dsn
-# Parrot Agent
-from parrot.bots.agent import BasicAgent
+# LLMs
 from parrot.llms.vertex import VertexLLM
 from parrot.llms.groq import GroqLLM
 from parrot.llms.anthropic import AnthropicLLM
 from parrot.llms.openai import OpenAILLM
+# Tools:
 from parrot.tools import PythonREPLTool
+# Parrot Agent
+from parrot.bots.agent import BasicAgent
 from parrot.bots.data import PandasAgent
 
 
@@ -48,11 +48,8 @@ groq = GroqLLM(
 )
 
 openai = OpenAILLM(
-    # model="gpt-4.1",
-    # model="gpt-4.1-mini",
-    # model="o4-mini",
-    model="gpt-4o",
-    temperature=0,
+    model="gpt-4.1",
+    temperature=0.1,
     max_tokens=2048,
     use_chat=True
 )
@@ -65,7 +62,8 @@ claude = AnthropicLLM(
 
 backstory = """
 You have a pandas DataFrame with visits made by Reps to stores.
-**Store Visit Analytics - Column Descriptions**
+
+**Store Visit - Column Descriptions**
 Basic Visit Information:
 - form_id (int): Unique identifier for the form used during the visit
 - formid (int): Secondary identifier of the form
@@ -182,7 +180,7 @@ Employee Performance Rankings:
 
 """
 
-sql = f"""
+visits_sql = """
 WITH visit_data AS (
     SELECT
         form_id,
@@ -237,6 +235,7 @@ WITH visit_data AS (
     FROM hisense.form_data
     WHERE visit_date::date >= CURRENT_DATE - INTERVAL '21 days'
     AND column_name IN ('9733','9731','9732','9730')
+    AND store_id = '{store_id}'
     GROUP BY
         form_id, formid, visit_date, visit_timestamp, visit_length,
         time_in, time_out, store_id, store_number, visitor_name, visitor_username, visitor_role
@@ -510,10 +509,165 @@ CROSS JOIN variance_stats vs
 ORDER BY vd.visit_timestamp ASC;
 """
 
-# Toolkit for NextStop Copilot:
-tools = [PythonREPLTool()]
+class StoreInfoInput(BaseModel):
+    """Input schema for store-related operations requiring a Store ID."""
+    store_id: str = Field(
+        ...,
+        description="The unique identifier of the store you want to visit or know about.",
+        example="BBY123",
+        title="Store ID",
+        min_length=1,
+        max_length=50
+    )
+    model_config = {
+        "arbitrary_types_allowed": True,
+        "extra": "forbid",
+        "json_schema_extra": {
+            "required": ["store_id"]
+        }
+    }
 
-async def get_agent(llm, backstory=None) -> BasicAgent:
+
+class StoreInfo(BaseToolkit):
+    """Comprehensive toolkit for store information and demographic analysis.
+
+    This toolkit provides tools to:
+    1. Get detailed visit information for specific stores including recent visit history
+    2. Retrieve comprehensive store information including location and visit statistics
+
+    All tools are designed to work asynchronously with database connections and external APIs.
+    The toolkit is compatible with Langchain agents and supports structured input/output.
+
+    Tools included:
+    - get_foot_traffic: Retrieves foot traffic and average visits by day for a specific store.
+    - get_visit_info: Retrieves the last 3 visits for a specific store
+    """
+
+    model_config = {
+        "arbitrary_types_allowed": True
+    }
+
+    async def get_dataset(self, query: str, output: str = 'pandas') -> pd.DataFrame:
+        """Fetch a dataset based on the provided query.
+
+        Args:
+            query (str): The query string to fetch the dataset.
+
+        Returns:
+            pd.DataFrame: A pandas DataFrame containing the dataset.
+        """
+        db = AsyncDB('pg', dsn=default_dsn)
+        async with await db.connection() as conn:  # pylint: disable=E1101  # noqa
+            conn.output_format(output)
+            result, error = await conn.query(
+                query
+            )
+            if error:
+                raise ToolException(
+                    f"Error fetching dataset: {error}"
+                )
+            return result
+
+
+    def get_tools(self) -> List[BaseTool]:
+        """Get all available tools in the toolkit.
+
+        Returns:
+            List[BaseTool]: A list of configured Langchain tools ready for agent use.
+        """
+        return [
+            self._get_visit_info_tool(),
+            self._get_foot_traffic_tool(),
+        ]
+
+    def _get_foot_traffic_tool(self) -> StructuredTool:
+        """Create the traffic information retrieval tool.
+
+        Returns:
+            StructuredTool: Configured tool for getting recent foot traffic data for a store.
+        """
+        return StructuredTool.from_function(
+            name="get_foot_traffic",
+            func=self.get_foot_traffic,
+            coroutine=self.get_foot_traffic,
+            description=(
+                "Get the Foot Traffic and average visits by day from a specific store. "
+            ),
+            args_schema=StoreInfoInput,
+            handle_tool_error=True
+        )
+
+    async def get_foot_traffic(self, store_id: str) -> str:
+        """Get foot traffic data for a specific store.
+        This coroutine retrieves the foot traffic data for the specified store,
+        including the number of visitors and average visits per day.
+
+        Args:
+            store_id (str): The unique identifier of the store.
+        Returns:
+            str: JSON string containing foot traffic data for the store.
+        """
+        sql = f"""
+        SELECT avg_visits_per_day, foottraffic FROM placerai.weekly_traffic
+        where store_id = '{store_id}'
+        AND start_date::date BETWEEN (CURRENT_DATE - INTERVAL '21 days') AND CURRENT_DATE LIMIT 1;
+        """
+        visit_data = await self.get_dataset(sql, output='json')
+        if not visit_data:
+            raise ToolException(
+                f"No Foot Traffic data found for store with ID {store_id}."
+            )
+        return visit_data
+
+    def _get_visit_info_tool(self) -> StructuredTool:
+        """Create the visit information retrieval tool.
+
+        Returns:
+            StructuredTool: Configured tool for getting recent visit data for a store.
+        """
+        return StructuredTool.from_function(
+            name="get_visit_info",
+            func=self.get_visit_info,
+            coroutine=self.get_visit_info,
+            description=(
+                "Retrieve the last 3 visits made to a specific store. "
+                "Returns detailed information including visit timestamps, duration, "
+                "customer types, and visit purposes. Useful for understanding recent "
+                "customer activity patterns and store performance."
+            ),
+            args_schema=StoreInfoInput,
+            handle_tool_error=True
+        )
+
+    async def get_visit_info(self, store_id: str) -> pd.DataFrame:
+        """Get visit information for a specific store.
+
+        This coroutine retrieves the most recent 3 visits for the specified store,
+        including detailed visit metrics and customer information.
+
+        Args:
+            store_id (str): The unique identifier of the store.
+
+        Returns:
+            str: JSON string containing the last 3 visits with detailed information.
+
+        Note:
+            In production, this will connect to the database using asyncpg.
+            Current implementation returns dummy data for development.
+        """
+        visit_data = await self.get_dataset(visits_sql.format(store_id=store_id), output='pandas')
+        if visit_data.empty:
+            raise ToolException(
+                f"No visit data found for store with ID {store_id}."
+            )
+        return visit_data
+
+# Toolkit for NextStop Copilot:
+storeinfo = StoreInfo()
+tools = storeinfo.get_tools()
+tools.append(PythonREPLTool())
+
+async def get_agent(llm, store_id: str, backstory=None) -> BasicAgent:
     """Create and configure a NextStop Copilot agent with store analysis tools.
 
     Args:
@@ -526,208 +680,86 @@ async def get_agent(llm, backstory=None) -> BasicAgent:
     errors = None
     async with await db.connection() as conn:  # pylint: disable=E1101  # noqa
         conn.output_format('pandas')
-        data, errors = await conn.query(sql)
-    if errors:
-        raise ToolException(f"Error executing SQL query: {errors}")
-    if not isinstance(data, pd.DataFrame):
-        raise TypeError("Expected a pandas DataFrame from the SQL query.")
-    if data.empty:
-        raise ValueError("No data found for the specified query.")
+        data, errors = await conn.query(visits_sql.format(store_id=store_id))
     agent = PandasAgent(
-        name='NextStop Analytics',
+        name='NextStop Copilot',
         llm=llm,
-        df=data,
         tools=tools,
+        df=data,
         backstory=backstory,
         agent_type='tool-calling'
     )
     await agent.configure()
     return agent
 
-async def answer_question(agent, question, sleep: int = None):
-    q = textwrap.dedent(question)
-    _, response = await agent.invoke(q)
-    if sleep:
-        print(f'Waiting for {sleep} seconds...')
-        await asyncio.sleep(sleep)
-    return response.output
-
 
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
+    store_id = 'BBY1031'
     agent = loop.run_until_complete(
-        get_agent(llm=openai, backstory=backstory)
+        get_agent(llm=openai, store_id=store_id, backstory=backstory)
     )
-    # Create the list of prompts sections:
-    sections = []
-    executive = """
-Generate a detailed, comprehensive store visit performance report using the pre-calculated metrics provided in the DataFrame. Strictly follow this markdown format without exception. Do NOT omit or summarize any sections.
-Analyze store visit performance across three time horizons: 7 days (1 week), 14 days (2 weeks), and 21 days (3 weeks).
 
-## 1. Executive Summary
-- **Average Visit Length (7 Days):** avg_daily_visits_7_days
-- **Average Visit Length Comparison (14 Days):** avg_daily_visits_14_days
-- **Average Visit Length Comparison (21 Days):** avg_daily_visits_21_days
-- **Variance in Average Visit Length (7 Days vs 14 Days):** compare avg_daily_visits_7_days vs avg_daily_visits_14_days
-- **Total Visits (7 Days):** total_visits_7_days
-- **Total Visits (14 Days):** total_visits_14_days
-- **Variance in Average Visit Length (7 Days vs 14 Days):** compare avg_daily_visits_14_days vs avg_daily_visits_21_days
-- **Total Unique Stores Visited (7 Days):** stores_visited_7_days
-- **Percent of Unique Store Visits to Total Visits:** stores_visited_7_vs_21_day_trend_pct
-- **Average and Total Duration per Rep (7 Days):** (employee_avg_daily_7d, employee_visits_7_days)
-- **Average and Total Duration per Rep (14 Days):** (employee_avg_daily_14d, employee_visits_14_days)
-- **Average and Total Duration per Rep (21 Days):** (employee_avg_daily_21d, employee_visits_21_days)
-- **Average Duration of Visits:** average visit_length
-- **Median Duration of Visits (7 Days):** median_visits_per_store_7_days
-- **Median Duration Comparison (14 Days):** median_visits_per_store_14_days
+    prompt = textwrap.dedent(f"""
+Perform a comprehensive analysis of the store's visit performance using the pre-calculated metrics across three time horizons: 7 days (1 week), 14 days (2 weeks), and 21 days (3 weeks).
+store_id = '{store_id}'
 
-IMPORTANT INSTRUCTIONS:
-- Always return EVERY section and sub-section EXACTLY as formatted above.
-- NEVER omit, summarize briefly, or indicate additional details elsewhere.
-- NEVER reference external tables or bullet lists or say "see table below." Always provide tables or lists explicitly inline.
-- Use the provided DataFrame metrics directly in your analysis.
-- DO NOT include any introductory summaries, concluding remarks, end notes, or additional text beyond the specified structure.
-- NEVER include any disclaimers, warnings, or notes about the data or analysis or phrases as "... from the provided DataFrame".
-    """
-    sections.append(executive)
+IMPORTANT FORMAT RULES:
+- Follow every numbered item and sub-bullet exactly as written.
+- NEVER say “omitting for brevity” or shorten any section.
+- For each question (9730, 9731, 9732, 9733), produce **all** six bullets.
 
-    # Generate Visit context per-question:
-    questions = {
-        9730: "Key Wins",
-        9731: "Challenges/Opportunities",
-        9732: "Next Visit Focus",
-        9733: "Competitive Landscape"
-    }
-    visit_content =  ["## 2. Visit Content Analysis (7 Days)"]
-    for question_id, question in questions.items():
-        q = f"""
-Analyze the visit content for the last 7 days, focusing on key phrases, sentiment. Use the provided DataFrame metrics to extract and analyze the visit content.
-### Question {question_id}: {question}
-- **Top Phrases:** Meaningful Phrase Extraction, use n-gram analysis to extract key phrases from responses that appear frequently.
-  - phrase1, phrase2, phrase3
-- **Themes:** Identify business-relevant terms like product names, competitor names, specific issues, store features, customer behaviors
-  - theme1, theme2, theme3
-- **Theme Clusters:** Group similar concepts together (e.g., "low foot traffic" + "fewer customers" = "Customer Volume Issues")
-  - Cluster1: count
-  - Cluster2: count
-- **Sentiment Counts:**
-  - Positive: X, Negative: Y, Neutral: Z
-- **Sentiment Trend Comparison:**
-  - 14 Days: Positive X, Negative Y, Neutral Z
-  - 21 Days: Positive X, Negative Y, Neutral Z
-- **Sample Comments:** (add the store_id where the comment was found)
-  - Positive: Select a distinct comment clearly reflecting positive sentiment.
-  - Negative: Select a distinct comment clearly reflecting negative sentiment.
-  - Neutral: Select a distinct comment clearly reflecting neutral sentiment.
-- **Insights:** Identify actionable insights: data-driven findings that provide a clear understanding of the visit content and can inform business decisions.
-  - Actionable Insight 1
-  - Actionable Insight 2
+do a detailed report including:
+1. **Executive Summary:**
+Use the pre-calculated metrics to summarize the store visit performance:
 
-(Repeat this structure EXACTLY for questions 9731, 9732, and 9733)
+- Average visit length (avg_daily_visits_7_days) and time spent per store for the past 7 days and a comparison withith the average of the past 2 weeks (avg_daily_visits_14_days).
+- Total number of visits due to the store in the past 7 days (total_visits_7_days, stores_visited_7_days).
+- average and total duration for the past 7 days (employee_avg_daily_7d, employee_visits_7_days).
+- Median duration of the visits (median_visits_per_store_7_days) and comparison with the past 2 weeks (median_visits_per_store_14_days).
+- Compare the average visit length to the past 2 weeks (avg_daily_visits_14_days).
+- Average and total foot traffic (foottraffic, avg_visits_per_day)
+
+2. **Visit Content Analysis (7 Days)**
+Use the calculated metrics to analyze visit content:
+
+Extract and analyze the four key questions (column_names: '9730', '9731', '9732', '9733'):
+- Question 9730 (Key Wins): Summarize positive outcomes and successes
+- Question 9731 (Challenges/Opportunities): Identify recurring issues and improvement areas
+- Question 9732 (Next Visit Focus): Analyze follow-up priorities and action items
+- Question 9733 (Competitive Landscape): Evaluate market positioning and visibility concerns
+
+For each of the four questions below, you must use **exactly** this format—no “omitting for brevity,” no skipping, no renaming, no extra commentary. Repeat it four separate times (9730, 9731, 9732, 9733):
+• **Top Phrases:** Meaningful Phrase Extraction, use n-gram analysis to extract key phrases from responses that appear frequently
+• **Themes:** Identify business-relevant terms like product names, competitor names, specific issues, store features, customer behaviors
+• **Theme clustering**: Group similar concepts together (e.g., "low foot traffic" + "fewer customers" = "Customer Volume Issues")
+• **Sentiment:** Perform sentiment analysis (positive/negative/neutral classification) (e.g 327 positive, 54 negative, 367 neutral)
+• **Sentiment Trend comparison:** Compare sentiment patterns to 14-day and 21-day periods if data available
+• **Sample Comments:** Put a sample comment for each question, with a positive, negative, and neutral comment
+• **Insights:** Identify actionable insights
+
 **Do NOT** aggregate multiple questions together. **Do NOT** summarize across questions. **Do NOT** omit any of the seven bullets above.
 
-IMPORTANT INSTRUCTIONS:
-- Always return EVERY section and sub-section EXACTLY as formatted above.
-- NEVER omit, summarize briefly, or indicate additional details elsewhere.
-- Use the provided DataFrame metrics directly in your analysis.
-- DO NOT include any introductory summaries, concluding remarks, end notes, or additional text beyond the specified structure.
-- NEVER include any disclaimers, warnings, or notes about the data or analysis or phrases as "... from the provided DataFrame".
-            """
-        out = asyncio.run(
-            answer_question(agent, q, sleep=1)
-        )
-        visit_content.append(out)
-        sleep(5)
-    sections.append("\n\n".join(visit_content))
-    employee = """
-## 3. Employee Performance Deep Dive
-Provide inline table clearly.
-- **Top Performers:** compare employee_7day_visits_rank vs employee_21day_visits_rank
-- **Reps with Most Visits:** List of reps
-- **Reps with Least Visits:** List of reps
-- **Productivity Analysis:** use employee_avg_daily_7d to compare reps.
-- **Store Coverage Effectiveness:** use the employee_stores_7d to analyze territory management effectiveness.
-- **Trend Identification:** Variance columns identifying performance changes
-- **Significant Changes in Stores Visited:** stores_visited_7_vs_21_day_trend_pct
+3. **Employee Performance Deep Dive**
+Use the calculated metrics to analyze employee performance:
 
-IMPORTANT INSTRUCTIONS:
-- Always return EVERY section and sub-section EXACTLY as formatted above.
-- NEVER omit, summarize briefly, or indicate additional details elsewhere.
-- Use the provided DataFrame metrics directly in your analysis.
-- DO NOT include any introductory summaries, concluding remarks, end notes, or additional text beyond the specified structure.
-- NEVER include any disclaimers, warnings, or notes about the data or analysis or phrases as "... from the provided DataFrame".
-        """
-    sections.append(employee)
+- Productivity Analysis: Compare employee_avg_daily_7d with other time horizons (employee_avg_daily_14d, employee_avg_daily_21d)
+- Trend Identification: Use variance columns to identify improving/declining performance of employee.
 
-    store_section = """
-## 4. Store Performance Deep Dive
-- **High-Traffic Stores:** Top stores by total visits (store_id) as a bullet list with store_id and visit count.
-- **Low-Traffic Stores:** Bottom stores by total visits (store_id) as a bullet list with store_id and visit count.
-- **Store Visit Frequency by Day**: Analyze visit patterns by day of week and hour of day.
-- **Coverage Gaps:** Stores with declining visit frequency as a bullet list with store_id and percentage of decline.
-- **Performance Optimization:** Stores and reps with declining variance percentages
-    - Variance Interpretation: Positive = improvement, Negative = decline
-- **Time Investment**: Analyze time_spent_minutes by store to identify efficiency patterns
-- **Top 10 Stores by 7-Day Visits**: Group by store_id, use in_7_days filter
-        """
-    sections.append(store_section)
-    other = """
-## 5. Trend Analysis & Patterns
-- **Growth/Decline Patterns:** Percentage changes in variance columns
-- **Efficiency Trends:** Time spent vs. visits completed
-- **Outlier Detection:**
-    - List any unusual ranking and variance patterns clearly
+4. **Actionable Recommendations**
+Use the insights to provide actionable recommendations:
 
-## 6. Actionable Recommendations
-- **Performance Optimization:** Stores and reps requiring attention
-- **Resource Allocation Recommendations:** Based on visit frequency/efficiency
-- **Training Needs:** Reps with declining performance trends
-- **Store Prioritization:** Identified focus areas from patterns and sentiment
+- Resource Allocation: Recommendations based on visit frequency and efficiency data
+- Store Prioritization: Focus areas based on visit patterns and sentiment analysis
+- Variance Interpretation: Positive variance = improvement, negative = decline
+- Efficiency Focus: Balance visit quantity with quality (time spent and outcomes)
 
-## 7. **Summary of Insights:**
-- **Key Findings:** Summarize the most impactful insights from the analysis.
-- **Critical Challenges:** Highlight major issues identified in the visits.
-- **Opportunities for Improvement:** Areas where performance can be enhanced.
-- **Next Steps:** Outline immediate actions based on findings.
-- **Recommended actions:** Provide specific recommendations for improving store visit performance.
+5. **Exporting and Reporting**
 
-IMPORTANT INSTRUCTIONS:
-- Always return EVERY section and sub-section EXACTLY as formatted above.
-- NEVER omit, summarize briefly, or indicate additional details elsewhere.
-- Use the provided DataFrame metrics directly in your analysis.
-- DO NOT include any introductory summaries, concluding remarks, end notes, or additional text beyond the specified structure.
-- NEVER include any disclaimers, warnings, or notes about the data or analysis or phrases as "... from the provided DataFrame".
-- **Do NOT** aggregate multiple questions together. **Do NOT** summarize across questions. **Do NOT** omit any of the seven bullets above.
-
-    """
-    sections.append(other)
-
-    report = []
-    for question in sections:
-        response = asyncio.run(
-            answer_question(agent, question, sleep=1)
-        )
-        report.append(response)
-    final_report_markdown = "\n\n".join(report)
-#     for_export = textwrap.dedent(
-#         f"""
-# Using this report in markdown format:
-# ```markdown
-# {final_report_markdown}
-# ```
-# Generate a **Summary of Insights** section that captures the key findings, trends, and actionable recommendations from the report, in the following format:
-# And Export this COMPLETE markdown report using the pdf_print_tool.
-# Use the podcast_generator_tool to create an audio of this report using a MALE gender voice in mp3 format.
-# * Include explicit salutation: "Hello, this is the NextStop for store visit performance analysis."
-
-# IMPORTANT INSTRUCTIONS:
-# - Always return EVERY section and sub-section EXACTLY as formatted above.
-# - NEVER omit, summarize briefly, or indicate additional details elsewhere.
-# - The PDF must contain the ENTIRE content above exactly as generated here.
-#         """)
-#     print(final_report_markdown)
-#     response = asyncio.run(
-#         answer_question(agent, for_export)
-#     )
-    print('Final Report:')
-    print(final_report_markdown)
+- Use the whole completed report to create a PDF using the pdf_print_tool.
+- Export as a podcast using a MALE gender in mp3 format, include a salutation **Hello, this is the NextStop for store visit.**
+""")
+    answer, response = asyncio.run(
+        agent.invoke(prompt)
+    )
+    print(response.output)

@@ -108,21 +108,24 @@ class PDFPrintTool(BaseTool):
         content = payload.text.strip()
         if not content:
             raise ValueError("The text content cannot be empty.")
-        # Determine if the content is Markdown
+        # Determine if the content is Markdownd
         is_markdown = self.is_markdown(content)
         if is_markdown:
             # Convert Markdown to HTML
             content = markdown.markdown(content, extensions=['tables'])
         if payload.template_name is None:
-            # wrap in a minimal boilerplate:
-            content = f"""
-            <html><head><meta charset="utf-8"></head>
-            <body>{content}</body></html>
-            """
+            tmpl = self.env.get_template("report.html")
         else:
-            tmpl = self.env.get_template(payload.template_name)
-            context = {"body": content, **(payload.template_vars or {})}
-            content = tmpl.render(**context)
+            tpl = payload.template_name
+            if not tpl.endswith('.html'):
+                tpl += '.html'
+            try:
+                tmpl = self.env.get_template(str(tpl))
+                context = {"body": content, **(payload.template_vars or {})}
+                content = tmpl.render(**context)
+            except Exception as e:
+                # use a generic template if the specified one fails
+                print(f"Error loading template {tpl}: {e}")
         # Attach the CSS objects:
         css_list = []
         for css_file in payload.stylesheets or []:
@@ -130,7 +133,7 @@ class PDFPrintTool(BaseTool):
             css_list.append( CSS(filename=str(css_path)) )
         # add the tables CSS:
         css_list.append(
-            CSS(filename=str(self.templates_dir / "css" / "tables.css"))
+            CSS(filename=str(self.templates_dir / "css" / "base.css"))
         )
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
