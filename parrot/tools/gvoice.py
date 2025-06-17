@@ -105,9 +105,10 @@ class GoogleVoiceTool(BaseTool):
         self.output_format = output_format
         self.language_code = language_code or "en-US"
 
-        # You could optionally store output_dir if you want to let user override that too
-        # self.output_dir = Path(output_dir) if output_dir else (BASE_DIR / "static" / "audio" / "podcasts")
-
+        # Set the output directory
+        self.output_dir = Path(output_dir) if output_dir else BASE_DIR.joinpath("static", "documents", "pdf")
+        if not self.output_dir.exists():
+            self.output_dir.mkdir(parents=True, exist_ok=True)
 
     def is_markdown(self, text: str) -> bool:
         """Determine if the text appears to be Markdown formatted."""
