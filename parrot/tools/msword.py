@@ -71,7 +71,6 @@ class DocxInput(BaseModel):
     )
 
 
-
 class DocxGeneratorTool(BaseTool):
     """Microsoft Word DOCX Generator Tool."""
     name: str = "generate_ms_word_document"
