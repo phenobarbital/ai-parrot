@@ -135,8 +135,14 @@ class BasicAgent(AbstractBot):
         ctools = [
             DuckDuckGoSearchTool(),
             MathTool(),
-            GoogleVoiceTool(name="podcast_generator_tool"),
-            PDFPrintTool(name="pdf_print_tool", output_dir=BASE_DIR.joinpath('static', self.name, 'documents', 'pdf')),
+            GoogleVoiceTool(
+                name="podcast_generator_tool",
+                output_dir=BASE_DIR.joinpath('static', self.name, 'podcasts')
+            ),
+            PDFPrintTool(
+                name="pdf_print_tool",
+                output_dir=BASE_DIR.joinpath('static', self.name, 'documents', 'pdf')
+            ),
         ]
         # TODO: configure PDF tool to use a per-agent directory:
 
