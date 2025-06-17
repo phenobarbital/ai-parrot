@@ -69,7 +69,22 @@ class PowerPointInput(BaseModel):
 
 
 class PowerPointGeneratorTool(BaseTool):
-    """PowerPoint Presentation Generator Tool."""
+    """PowerPoint Presentation Generator Tool.
+
+    * How Slide Splitting Works:
+
+    # Main Title          → Slide 1 (Title slide)
+    Content here...
+
+    ## Section 1          → Slide 2 (Title + Content)
+    Paragraphs and lists...
+
+    ### Subsection       → Slide 3 (Title + Content)
+    More content...
+
+    ## Section 2          → Slide 4 (Title + Content)
+    Tables and text...
+    """
     name: str = "generate_powerpoint_presentation"
     description: str = (
         "Create PowerPoint presentations from markdown text, "
