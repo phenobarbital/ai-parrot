@@ -2,6 +2,7 @@
 import os
 from time import sleep
 from typing import Any, Dict, Type, Union, List
+import json
 import textwrap
 import asyncio
 # Pydantic:
@@ -533,11 +534,23 @@ async def get_agent(llm, backstory=None) -> BasicAgent:
         raise TypeError("Expected a pandas DataFrame from the SQL query.")
     if data.empty:
         raise ValueError("No data found for the specified query.")
+    # flatten the visit_data column to be a string instead a list of dicts:
+    for qid in ["9730","9731","9732","9733"]:
+        data[f"q_{qid}_data"] = (
+            data['visit_data'].apply(
+                lambda arr: next(
+                    item['data'] for item in arr if item['column_name']==qid
+                )
+            ).fillna("").astype(str)
+        )
+    # then, drop visit data:
+    data = data.drop(columns=['visit_data'])
+    # Create the agent with the provided LLM and DataFrame:
     agent = PandasAgent(
         name='NextStop Analytics',
         llm=llm,
         df=data,
-        tools=tools,
+        # tools=tools,
         backstory=backstory,
         agent_type='tool-calling'
     )
@@ -593,23 +606,23 @@ IMPORTANT INSTRUCTIONS:
 
     # Generate Visit context per-question:
     questions = {
-        9730: "Key Wins",
-        9731: "Challenges/Opportunities",
-        9732: "Next Visit Focus",
-        9733: "Competitive Landscape"
+        "9730": "Key Wins",
+        "9731": "Challenges/Opportunities",
+        "9732": "Next Visit Focus",
+        "9733": "Competitive Landscape"
     }
-    visit_content =  ["## 2. Visit Content Analysis (7 Days)"]
-    for question_id, question in questions.items():
+    visit_content =  []
+    for column_name, question_title in questions.items():
+        col = f"q_{column_name}_data"
         q = f"""
-Analyze the visit content for the last 7 days, focusing on key phrases, sentiment. Use the provided DataFrame metrics to extract and analyze the visit content.
-### Question {question_id}: {question}
-- **Top Phrases:** Meaningful Phrase Extraction, use n-gram analysis to extract key phrases from responses that appear frequently.
-  - phrase1, phrase2, phrase3
-- **Themes:** Identify business-relevant terms like product names, competitor names, specific issues, store features, customer behaviors
-  - theme1, theme2, theme3
-- **Theme Clusters:** Group similar concepts together (e.g., "low foot traffic" + "fewer customers" = "Customer Volume Issues")
-  - Cluster1: count
-  - Cluster2: count
+You are given column called `{col}`.  Each cell is a plain string containing the answer text you must analyze.
+You must analyze the content of this column and provide a detailed, structured analysis for each question. Follow the exact format below without exception.
+
+### Question {column_name}: {question_title}
+- **Top Phrases:**
+    - Meaningful Phrase Extraction, extract key phrases from responses that appear frequently.
+- **Themes:**
+    - Identify business-relevant terms like product names, competitor names, specific issues, store features, customer behaviors
 - **Sentiment Counts:**
   - Positive: X, Negative: Y, Neutral: Z
 - **Sentiment Trend Comparison:**
@@ -619,11 +632,11 @@ Analyze the visit content for the last 7 days, focusing on key phrases, sentimen
   - Positive: Select a distinct comment clearly reflecting positive sentiment.
   - Negative: Select a distinct comment clearly reflecting negative sentiment.
   - Neutral: Select a distinct comment clearly reflecting neutral sentiment.
+- **Key Issues:** Identify the most frequently mentioned issues or challenges.
 - **Insights:** Identify actionable insights: data-driven findings that provide a clear understanding of the visit content and can inform business decisions.
   - Actionable Insight 1
   - Actionable Insight 2
 
-(Repeat this structure EXACTLY for questions 9731, 9732, and 9733)
 **Do NOT** aggregate multiple questions together. **Do NOT** summarize across questions. **Do NOT** omit any of the seven bullets above.
 
 IMPORTANT INSTRUCTIONS:
@@ -633,101 +646,108 @@ IMPORTANT INSTRUCTIONS:
 - DO NOT include any introductory summaries, concluding remarks, end notes, or additional text beyond the specified structure.
 - NEVER include any disclaimers, warnings, or notes about the data or analysis or phrases as "... from the provided DataFrame".
             """
+        print('QUESTION > ', q)
         out = asyncio.run(
             answer_question(agent, q, sleep=1)
         )
         visit_content.append(out)
-        sleep(5)
-    sections.append("\n\n".join(visit_content))
-    employee = """
-## 3. Employee Performance Deep Dive
-Provide inline table clearly.
-- **Top Performers:** compare employee_7day_visits_rank vs employee_21day_visits_rank
-- **Reps with Most Visits:** List of reps
-- **Reps with Least Visits:** List of reps
-- **Productivity Analysis:** use employee_avg_daily_7d to compare reps.
-- **Store Coverage Effectiveness:** use the employee_stores_7d to analyze territory management effectiveness.
-- **Trend Identification:** Variance columns identifying performance changes
-- **Significant Changes in Stores Visited:** stores_visited_7_vs_21_day_trend_pct
-
-IMPORTANT INSTRUCTIONS:
-- Always return EVERY section and sub-section EXACTLY as formatted above.
-- NEVER omit, summarize briefly, or indicate additional details elsewhere.
-- Use the provided DataFrame metrics directly in your analysis.
-- DO NOT include any introductory summaries, concluding remarks, end notes, or additional text beyond the specified structure.
-- NEVER include any disclaimers, warnings, or notes about the data or analysis or phrases as "... from the provided DataFrame".
-        """
-    sections.append(employee)
-
-    store_section = """
-## 4. Store Performance Deep Dive
-- **High-Traffic Stores:** Top stores by total visits (store_id) as a bullet list with store_id and visit count.
-- **Low-Traffic Stores:** Bottom stores by total visits (store_id) as a bullet list with store_id and visit count.
-- **Store Visit Frequency by Day**: Analyze visit patterns by day of week and hour of day.
-- **Coverage Gaps:** Stores with declining visit frequency as a bullet list with store_id and percentage of decline.
-- **Performance Optimization:** Stores and reps with declining variance percentages
-    - Variance Interpretation: Positive = improvement, Negative = decline
-- **Time Investment**: Analyze time_spent_minutes by store to identify efficiency patterns
-- **Top 10 Stores by 7-Day Visits**: Group by store_id, use in_7_days filter
-        """
-    sections.append(store_section)
-    other = """
-## 5. Trend Analysis & Patterns
-- **Growth/Decline Patterns:** Percentage changes in variance columns
-- **Efficiency Trends:** Time spent vs. visits completed
-- **Outlier Detection:**
-    - List any unusual ranking and variance patterns clearly
-
-## 6. Actionable Recommendations
-- **Performance Optimization:** Stores and reps requiring attention
-- **Resource Allocation Recommendations:** Based on visit frequency/efficiency
-- **Training Needs:** Reps with declining performance trends
-- **Store Prioritization:** Identified focus areas from patterns and sentiment
-
-## 7. **Summary of Insights:**
-- **Key Findings:** Summarize the most impactful insights from the analysis.
-- **Critical Challenges:** Highlight major issues identified in the visits.
-- **Opportunities for Improvement:** Areas where performance can be enhanced.
-- **Next Steps:** Outline immediate actions based on findings.
-- **Recommended actions:** Provide specific recommendations for improving store visit performance.
-
-IMPORTANT INSTRUCTIONS:
-- Always return EVERY section and sub-section EXACTLY as formatted above.
-- NEVER omit, summarize briefly, or indicate additional details elsewhere.
-- Use the provided DataFrame metrics directly in your analysis.
-- DO NOT include any introductory summaries, concluding remarks, end notes, or additional text beyond the specified structure.
-- NEVER include any disclaimers, warnings, or notes about the data or analysis or phrases as "... from the provided DataFrame".
-- **Do NOT** aggregate multiple questions together. **Do NOT** summarize across questions. **Do NOT** omit any of the seven bullets above.
-
+    # Join the visit content into a single string
+    ct = "\n\n".join(visit_content)
+    content = f"""## 2. Visit Content Analysis (7 Days)
+    {ct}
     """
-    sections.append(other)
-
-    report = []
-    for question in sections:
-        response = asyncio.run(
-            answer_question(agent, question, sleep=1)
-        )
-        report.append(response)
-    final_report_markdown = "\n\n".join(report)
-#     for_export = textwrap.dedent(
-#         f"""
-# Using this report in markdown format:
-# ```markdown
-# {final_report_markdown}
-# ```
-# Generate a **Summary of Insights** section that captures the key findings, trends, and actionable recommendations from the report, in the following format:
-# And Export this COMPLETE markdown report using the pdf_print_tool.
-# Use the podcast_generator_tool to create an audio of this report using a MALE gender voice in mp3 format.
-# * Include explicit salutation: "Hello, this is the NextStop for store visit performance analysis."
+    print('content > ')
+    print(content)
+    sections.append(content)
+#     employee = """
+# ## 3. Employee Performance Deep Dive
+# Provide inline table clearly.
+# - **Top Performers:** compare employee_7day_visits_rank vs employee_21day_visits_rank
+# - **Reps with Most Visits:** List of reps
+# - **Reps with Least Visits:** List of reps
+# - **Productivity Analysis:** use employee_avg_daily_7d to compare reps.
+# - **Store Coverage Effectiveness:** use the employee_stores_7d to analyze territory management effectiveness.
+# - **Trend Identification:** Variance columns identifying performance changes
+# - **Significant Changes in Stores Visited:** stores_visited_7_vs_21_day_trend_pct
 
 # IMPORTANT INSTRUCTIONS:
 # - Always return EVERY section and sub-section EXACTLY as formatted above.
 # - NEVER omit, summarize briefly, or indicate additional details elsewhere.
-# - The PDF must contain the ENTIRE content above exactly as generated here.
-#         """)
+# - Use the provided DataFrame metrics directly in your analysis.
+# - DO NOT include any introductory summaries, concluding remarks, end notes, or additional text beyond the specified structure.
+# - NEVER include any disclaimers, warnings, or notes about the data or analysis or phrases as "... from the provided DataFrame".
+#         """
+#     sections.append(employee)
+
+#     store_section = """
+# ## 4. Store Performance Deep Dive
+# - **High-Traffic Stores:** Top stores by total visits (store_id) as a bullet list with store_id and visit count.
+# - **Low-Traffic Stores:** Bottom stores by total visits (store_id) as a bullet list with store_id and visit count.
+# - **Store Visit Frequency by Day**: Analyze visit patterns by day of week and hour of day.
+# - **Coverage Gaps:** Stores with declining visit frequency as a bullet list with store_id and percentage of decline.
+# - **Performance Optimization:** Stores and reps with declining variance percentages
+#     - Variance Interpretation: Positive = improvement, Negative = decline
+# - **Time Investment**: Analyze time_spent_minutes by store to identify efficiency patterns
+# - **Top 10 Stores by 7-Day Visits**: Group by store_id, use in_7_days filter
+#         """
+#     sections.append(store_section)
+#     other = """
+# ## 5. Trend Analysis & Patterns
+# - **Growth/Decline Patterns:** Percentage changes in variance columns
+# - **Efficiency Trends:** Time spent vs. visits completed
+# - **Outlier Detection:**
+#     - List any unusual ranking and variance patterns clearly
+
+# ## 6. Actionable Recommendations
+# - **Performance Optimization:** Stores and reps requiring attention
+# - **Resource Allocation Recommendations:** Based on visit frequency/efficiency
+# - **Training Needs:** Reps with declining performance trends
+# - **Store Prioritization:** Identified focus areas from patterns and sentiment
+
+# ## 7. **Summary of Insights:**
+# - **Key Findings:** Summarize the most impactful insights from the analysis.
+# - **Critical Challenges:** Highlight major issues identified in the visits.
+# - **Opportunities for Improvement:** Areas where performance can be enhanced.
+# - **Next Steps:** Outline immediate actions based on findings.
+# - **Recommended actions:** Provide specific recommendations for improving store visit performance.
+
+# IMPORTANT INSTRUCTIONS:
+# - Always return EVERY section and sub-section EXACTLY as formatted above.
+# - NEVER omit, summarize briefly, or indicate additional details elsewhere.
+# - Use the provided DataFrame metrics directly in your analysis.
+# - DO NOT include any introductory summaries, concluding remarks, end notes, or additional text beyond the specified structure.
+# - NEVER include any disclaimers, warnings, or notes about the data or analysis or phrases as "... from the provided DataFrame".
+# - **Do NOT** aggregate multiple questions together. **Do NOT** summarize across questions. **Do NOT** omit any of the seven bullets above.
+
+#     """
+#     sections.append(other)
+
+#     report = []
+#     for question in sections:
+#         response = asyncio.run(
+#             answer_question(agent, question, sleep=1)
+#         )
+#         report.append(response)
+#     final_report_markdown = "\n\n".join(report)
+# #     for_export = textwrap.dedent(
+# #         f"""
+# # Using this report in markdown format:
+# # ```markdown
+# # {final_report_markdown}
+# # ```
+# # Generate a **Summary of Insights** section that captures the key findings, trends, and actionable recommendations from the report, in the following format:
+# # And Export this COMPLETE markdown report using the pdf_print_tool.
+# # Use the podcast_generator_tool to create an audio of this report using a MALE gender voice in mp3 format.
+# # * Include explicit salutation: "Hello, this is the NextStop for store visit performance analysis."
+
+# # IMPORTANT INSTRUCTIONS:
+# # - Always return EVERY section and sub-section EXACTLY as formatted above.
+# # - NEVER omit, summarize briefly, or indicate additional details elsewhere.
+# # - The PDF must contain the ENTIRE content above exactly as generated here.
+# #         """)
+# #     print(final_report_markdown)
+# #     response = asyncio.run(
+# #         answer_question(agent, for_export)
+# #     )
+#     print('Final Report:')
 #     print(final_report_markdown)
-#     response = asyncio.run(
-#         answer_question(agent, for_export)
-#     )
-    print('Final Report:')
-    print(final_report_markdown)
