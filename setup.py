@@ -188,7 +188,8 @@ setup(
             "google-api-python-client>=2.151.0",
             "pomegranate==1.1.0",
             "autoviz==0.1.905",
-            "spacy==3.8.6"
+            "spacy==3.8.6",
+            "html2text==2025.4.15"
         ],
         "loaders": [
             # Loaders:

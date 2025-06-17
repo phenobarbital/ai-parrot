@@ -11,7 +11,7 @@ import aiofiles
 # Use v1 for wider feature set including SSML
 from google.cloud import texttospeech_v1 as texttospeech
 from google.oauth2 import service_account
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from langchain.tools import BaseTool
 from navconfig import BASE_DIR
 from parrot.conf import GOOGLE_TTS_SERVICE
@@ -25,6 +25,9 @@ class PodcastInput(BaseModel):
     • language_code: e.g. “en-US” or “es-ES” (default is “en-US”).
     • output_format: one of “OGG_OPUS”, “MP3”, “LINEAR16”, etc. (default is “OGG_OPUS”).
     """
+    # Add a model_config to prevent additional properties
+    model_config = ConfigDict(extra='forbid')
+
     text: str = Field(..., description="The text (plaintext or Markdown) to convert to speech")
     voice_gender: Optional[str] = Field(
         None,
@@ -89,7 +92,7 @@ class GoogleVoiceTool(BaseTool):
 
         # If not found in the config, try a default location
         if self._key_service is None:
-            default_path = BASE_DIR / "env" / "google" / "tts-service.json"
+            default_path = BASE_DIR.joinpath("env", "google", "tts-service.json")
             if default_path.exists():
                 self._key_service = str(default_path)
                 print(f"🔑 Using default credentials path: {self._key_service}")
