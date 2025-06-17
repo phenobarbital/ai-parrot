@@ -7,7 +7,7 @@ from .basic import SearchTool, MathTool
 from .duck import DuckDuckGoSearchTool, DuckDuckGoRelevantSearch
 from .gamma import GammaLink
 from .gvoice import GoogleVoiceTool
-from .docx import WordToMarkdownTool
+from .msword import WordToMarkdownTool, DocxGeneratorTool
 from .pdf import PDFPrintTool
 from .np import PythonREPLTool
 

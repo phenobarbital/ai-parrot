@@ -19,7 +19,7 @@ from navconfig.logging import logging
 from querysource.queries.qs import QS
 from querysource.queries.multi import MultiQS
 from ..tools import AbstractTool
-from ..tools.docx import DocxGeneratorTool
+from ..tools.msword import DocxGeneratorTool
 from .agent import BasicAgent
 from ..models import AgentResponse
 from ..conf import BASE_STATIC_URL, REDIS_HISTORY_URL
