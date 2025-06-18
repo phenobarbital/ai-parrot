@@ -25,8 +25,9 @@ vertex_pro = VertexLLM(
 )
 
 groq = GroqLLM(
-    model="llama-3.1-8b-instant",
-    max_tokens=2048
+    model="meta-llama/llama-4-scout-17b-16e-instruct",
+    preset="analytical",
+    # max_tokens=2048
 )
 
 openai = OpenAILLM(
@@ -66,26 +67,28 @@ async def get_agent(llm):
 async def answer_question(agent, questions: list, sleep: int = None):
     response = ''
     for question in questions:
-        # q = textwrap.dedent(question)
-        q = question.strip()
-        try:
-            _, rst, _ = await agent.invoke(q)
-            if sleep:
-                print(f'Waiting for {sleep} seconds...')
-                await asyncio.sleep(sleep)
-            response += f'\n\n{rst.output}'
-        except Exception as e:
-            raise RuntimeError(
-                f"Error during agent invocation: {e}. "
-                "Ensure the agent is properly configured and the question is valid."
-            ) from e
+      if not question:
+        continue
+      # q = textwrap.dedent(question)
+      q = question.strip()
+      try:
+          _, rst, _ = await agent.invoke(q)
+          if sleep:
+              print(f'Waiting for {sleep} seconds...')
+              await asyncio.sleep(sleep)
+          response += f'\n\n{rst.output}'
+      except Exception as e:
+          raise RuntimeError(
+              f"Error during agent invocation: {e}. "
+              "Ensure the agent is properly configured and the question is valid."
+          ) from e
     return response.strip()
 
 
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
     agent = loop.run_until_complete(
-        get_agent(llm=vertex)
+        get_agent(llm=groq)
     )
     final_report_markdown = """
 ## 1. Executive Summary
@@ -409,6 +412,7 @@ Generate a summary with no more than 10000 words and export as a Podcast using t
 - Ensure the summary is concise and captures all key insights from the report.
 
     """
+    for_podcast = None
     response = asyncio.run(
         answer_question(agent, [for_pdf, for_podcast])
     )
