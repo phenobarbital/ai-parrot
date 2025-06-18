@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{{ title }}</title>
+</head>
+<body>
+    <h1>{{ title }}</h1>
+    <p><strong>Author:</strong> {{ author }}</p>
+    <p><strong>Date:</strong> {{ date }}</p>
+
+    <div class="content">
+        {{ content | safe }}
+    </div>
+
+    <footer>
+        <p>Generated on {{ timestamp }}</p>
+    </footer>
+</body>
+</html>

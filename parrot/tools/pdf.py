@@ -122,15 +122,22 @@ class PDFPrintTool(BaseTool):
         content = payload.text.strip()
         if not content:
             raise ValueError("The text content cannot be empty.")
-        model = payload.template_vars.get("llm_model", "gpt-4.1")
-        token_count = count_tokens(content, model)
-        # 2) If they’re over the limit, warn & split
-        max_tokens = MODEL_CTX.get(model, 32_000)
-        if token_count > max_tokens:
-            self.logger.warning(
-                f"⚠️ Your document is {token_count} tokens long, "
-                f"which exceeds the {max_tokens}-token context window of {model}."
-            )
+        # try:
+        #     model = payload.template_vars.get("llm_model", "gpt-4.1")
+        # except AttributeError:
+        #     model = "gpt-4.1"
+        # # 1) Count the tokens in the content
+        # # This is useful for debugging and ensuring we don’t exceed model limits
+        # if not isinstance(content, str):
+        #     raise ValueError("Content must be a string.")
+        # token_count = count_tokens(content, model)
+        # # 2) If they’re over the limit, warn & split
+        # max_tokens = MODEL_CTX.get(model, 32_000)
+        # if token_count > max_tokens:
+        #     self.logger.warning(
+        #         f"⚠️ Your document is {token_count} tokens long, "
+        #         f"which exceeds the {max_tokens}-token context window of {model}."
+        #     )
         # Determine if the content is Markdownd
         is_markdown = self.is_markdown(content)
         if is_markdown:
@@ -188,7 +195,8 @@ class PDFPrintTool(BaseTool):
     async def _arun(
         self,
         text: str,
-        output_filename: Optional[str] = None
+        output_filename: Optional[str] = None,
+        **kwargs: Any
     ) -> Dict[str, Any]:
         """
         LangChain will call this with keyword args matching PDFPrintInput, e.g.:
@@ -198,7 +206,8 @@ class PDFPrintTool(BaseTool):
             # 1) Build a dict of everything LangChain passed us
             payload_dict = {
                 "text": text,
-                "output_filename": output_filename
+                "output_filename": output_filename,
+                **kwargs
             }
             # 2) Let Pydantic validate & coerce
             payload = PDFPrintInput(**{k: v for k, v in payload_dict.items() if v is not None})
