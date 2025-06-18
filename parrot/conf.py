@@ -177,3 +177,21 @@ GOOGLE_CREDENTIALS_FILE = Path(
 ## LLM default config:
 DEFAULT_LLM_MODEL = config.get('LLM_MODEL', fallback='gemini-1.5-pro')
 DEFAULT_LLM_TEMPERATURE = config.get('LLM_TEMPERATURE', fallback=0.1)
+
+"""
+Amazon AWS Credentials
+"""
+aws_region = config.get("AWS_REGION", fallback="us-east-1")
+aws_bucket = config.get("AWS_BUCKET", fallback="navigator-static-files-2")
+aws_key = config.get("AWS_KEY")
+aws_secret = config.get("AWS_SECRET")
+
+AWS_CREDENTIALS = {
+    "default": {
+        "use_credentials": config.get("aws_credentials", fallback=False),
+        "aws_key": aws_key,
+        "aws_secret": aws_secret,
+        "region_name": aws_region,
+        "bucket_name": aws_bucket,
+    },
+}

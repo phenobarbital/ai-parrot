@@ -1,5 +1,6 @@
 from typing import Any, Dict, List, Optional, Type, Union
 import re
+import logging
 from datetime import datetime
 import asyncio
 from pathlib import Path
@@ -13,6 +14,11 @@ import markdown
 from weasyprint import HTML, CSS
 from navconfig import BASE_DIR
 
+
+logging.getLogger("weasyprint").setLevel(logging.ERROR)  # Suppress WeasyPrint warnings
+# Suppress tiktoken warnings
+logging.getLogger("tiktoken").setLevel(logging.ERROR)
+logging.getLogger("fontTools").setLevel(logging.ERROR)
 
 MODEL_CTX = {
     "gpt-4.1": 32_000,
