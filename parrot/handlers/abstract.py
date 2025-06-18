@@ -18,12 +18,6 @@ from notify.conf import NOTIFY_REDIS, NOTIFY_WORKER_STREAM, NOTIFY_CHANNEL
 from navconfig import config
 # Tasker:
 from navigator.background import BackgroundQueue
-# File Managers
-from navigator.utils.file import (
-    TempFileManager,
-    GCSFileManager,
-    S3FileManager
-)
 from navigator.applications.base import BaseApplication  # pylint: disable=E0611
 from navigator.views import BaseView
 from navigator.types import WebApp  # pylint: disable=E0611
@@ -43,15 +37,21 @@ class RedisWriter:
 
 
 class AbstractAgentHandler(BaseView):
-    """Abstract class for agent handlers.
+    """Abstract class for chatbot/agent handlers.
 
     Provide a complete abstraction for exposing AI Agents as a REST API.
     """
+    app: web.Application = None
+
     agent_name: str = None
     bot_manager: str = 'bot_manager'
-    _startup_: Optional[Callable] = None
-    _shutdown_: Optional[Callable] = None
-    _init_: Optional[Callable] = None
+    on_startup: Optional[Callable] = None
+    on_shutdown: Optional[Callable] = None
+    on_cleanup: Optional[Callable] = None
+
+    # Define base routes - can be overridden in subclasses
+    base_route: str = None  # e.g., "/api/v1/agent/{agent_name}"
+    additional_routes: List[Dict[str, Any]] = []  # Custom routes
 
     def __init__(self, request, *args, **kwargs):
         super().__init__(request, *args, **kwargs)
@@ -59,7 +59,8 @@ class AbstractAgentHandler(BaseView):
         self.gcs = None  # GCS Manager
         self.s3 = None  # S3 Manager
 
-    def setup(self, app: Union[WebApp, web.Application], route: List[Dict[Any, str]]) -> None:
+    @classmethod
+    def setup(cls, app: Union[WebApp, web.Application], route: List[Dict[Any, str]] = None) -> None:
         """Setup the handler with the application and route.
 
         Args:
@@ -67,52 +68,67 @@ class AbstractAgentHandler(BaseView):
             route (List[Dict[Any, str]]): The route configuration.
         """
         if isinstance(app, BaseApplication):
-            self.app = app.get_app()
+            app = app.get_app()
         elif isinstance(app, WebApp):
-            self.app = app  # register the app into the Extension
+            app = app  # register the app into the Extension
         else:
             raise TypeError(
                 "Expected app to be an instance of BaseApplication."
             )
+        cls.app = app
+        # Register the main view class route
+        if route:
+            cls.app.router.add_view(route, cls)
+        elif cls.base_route:
+            cls.app.router.add_view(cls.base_route, cls)
+
+        # And register any additional custom routes
+        cls._register_additional_routes()
+
         # Tasker: Background Task Manager:
         BackgroundQueue(
-            app=self.app,
+            app=app,
             max_workers=5,
             queue_size=5,
-            service_name=f"{self.app.app_name}_tasker"
+            service_name=f"{cls.agent_name}_tasker"
         )
-        ### startup and shutdown:
-        self.app.on_startup.append(
-            self.start_app
-        )
-        self.app.on_shutdown.append(
-            self.stop_app
-        )
-        app.on_cleanup.append(
-            self.cleanup
-        )
-        if self._startup_:
-            self.app.on_startup.append(
-                self._startup_
-            )
-        if self._shutdown_:
-            self.app.on_shutdown.append(
-                self._shutdown_
-            )
+        # Startup and shutdown callbacks
+        if cls.on_startup and callable(cls.on_startup):
+            app.on_startup.append(cls.on_startup)
+        if cls.on_shutdown and callable(cls.on_shutdown):
+            app.on_shutdown.append(cls.on_shutdown)
+        if cls.on_cleanup and callable(cls.on_cleanup):
+            app.on_cleanup.append(cls.on_cleanup)
 
+    @classmethod
+    def _register_additional_routes(cls):
+        """Register additional custom routes defined in the class."""
+        for route_config in cls.additional_routes:
+            method = route_config.get('method', 'GET').upper()
+            path = route_config['path']
+            handler_name = route_config['handler']
 
-    @abstractmethod
-    async def start_app(self, app: Union[WebApp, web.Application]) -> None:
-        """Start the application."""
-        pass
+            # Get the handler method from the class
+            handler_method = getattr(cls, handler_name)
 
-    @abstractmethod
-    async def stop_app(self, app: Union[WebApp, web.Application]) -> None:
-        """Stop the application."""
-        pass
+            # Create a wrapper that instantiates the class and calls the method
+            async def route_wrapper(request, handler_method=handler_method):
+                instance = cls(request)
+                return await handler_method(instance, request)
 
-    async def cleanup(self, app: WebApp):
-        pass
+            # Add the route to the router
+            cls.app.router.add_route(method, path, route_wrapper)
+
+    @classmethod
+    def add_route(cls, method: str, path: str, handler: str):
+        """Class method to add custom routes."""
+        if not hasattr(cls, 'additional_routes'):
+            cls.additional_routes = []
+        cls.additional_routes.append({
+            'method': method,
+            'path': path,
+            'handler': handler
+        })
 
     def get_agent(self, name: Optional[str] = None) -> Any:
         """Return the agent instance."""

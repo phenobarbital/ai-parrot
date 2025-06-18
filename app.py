@@ -12,6 +12,8 @@ from parrot.handlers.bots import (
     ChatbotUsageHandler,
     ChatbotSharingQuestion
 )
+# new resources:
+from resources.nextstop import NextStopAgent
 
 class Main(AppHandler):
     """
@@ -58,6 +60,9 @@ class Main(AppHandler):
             '/api/v1/chatbots/questions/{sid}',
             ChatbotSharingQuestion
         )
+        # NextStop:
+        NextStopAgent.setup(self.app, '/api/v1/agents/nextstop')
+
 
 
     async def on_prepare(self, request, response):
