@@ -22,6 +22,9 @@ from navigator.applications.base import BaseApplication  # pylint: disable=E0611
 from navigator.views import BaseView
 from navigator.types import WebApp  # pylint: disable=E0611
 from navigator.conf import CACHE_URL
+# Parrot:
+from parrot.llms.openai import OpenAILLM
+from parrot.bots.agent import BasicAgent
 
 
 
@@ -44,6 +47,8 @@ class AbstractAgentHandler(BaseView):
     app: web.Application = None
 
     agent_name: str = None
+    _agent: Optional[BasicAgent] = None
+    # Bot Manager:
     bot_manager: str = 'bot_manager'
     on_startup: Optional[Callable] = None
     on_shutdown: Optional[Callable] = None
@@ -53,14 +58,16 @@ class AbstractAgentHandler(BaseView):
     base_route: str = None  # e.g., "/api/v1/agent/{agent_name}"
     additional_routes: List[Dict[str, Any]] = []  # Custom routes
 
-    def __init__(self, request, *args, **kwargs):
-        super().__init__(request, *args, **kwargs)
+    def __init__(self, request=None, *args, **kwargs):
+        if request is not None:
+            super().__init__(request, *args, **kwargs)
+        else:
+            pass
         self.redis = RedisWriter()
         self.gcs = None  # GCS Manager
         self.s3 = None  # S3 Manager
 
-    @classmethod
-    def setup(cls, app: Union[WebApp, web.Application], route: List[Dict[Any, str]] = None) -> None:
+    def setup(self, app: Union[WebApp, web.Application], route: List[Dict[Any, str]] = None) -> None:
         """Setup the handler with the application and route.
 
         Args:
@@ -75,57 +82,54 @@ class AbstractAgentHandler(BaseView):
             raise TypeError(
                 "Expected app to be an instance of BaseApplication."
             )
-        cls.app = app
+        self.app = app
         # Register the main view class route
         if route:
-            cls.app.router.add_view(route, cls)
-        elif cls.base_route:
-            cls.app.router.add_view(cls.base_route, cls)
+            self.app.router.add_view(route, self.__class__)
+        elif self.base_route:
+            self.app.router.add_view(self.base_route, self.__class__)
 
         # And register any additional custom routes
-        cls._register_additional_routes()
+        self._register_additional_routes()
 
         # Tasker: Background Task Manager:
         BackgroundQueue(
             app=app,
             max_workers=5,
             queue_size=5,
-            service_name=f"{cls.agent_name}_tasker"
+            service_name=f"{self.agent_name}_tasker"
         )
         # Startup and shutdown callbacks
-        if cls.on_startup and callable(cls.on_startup):
-            app.on_startup.append(cls.on_startup)
-        if cls.on_shutdown and callable(cls.on_shutdown):
-            app.on_shutdown.append(cls.on_shutdown)
-        if cls.on_cleanup and callable(cls.on_cleanup):
-            app.on_cleanup.append(cls.on_cleanup)
+        if callable(self.on_startup):
+            app.on_startup.append(self.on_startup)
+        if callable(self.on_shutdown):
+            app.on_shutdown.append(self.on_shutdown)
+        if callable(self.on_cleanup):
+            app.on_cleanup.append(self.on_cleanup)
 
-    @classmethod
-    def _register_additional_routes(cls):
+    def _register_additional_routes(self):
         """Register additional custom routes defined in the class."""
-        for route_config in cls.additional_routes:
+        for route_config in self.additional_routes:
             method = route_config.get('method', 'GET').upper()
             path = route_config['path']
             handler_name = route_config['handler']
 
             # Get the handler method from the class
-            handler_method = getattr(cls, handler_name)
+            handler_method = getattr(self.__class__, handler_name)
 
             # Create a wrapper that instantiates the class and calls the method
             async def route_wrapper(request, handler_method=handler_method):
-                instance = cls(request)
+                instance = self.__class__(request)
                 return await handler_method(instance, request)
 
             # Add the route to the router
-            print('ADD ROUTE > ', method, path, route_wrapper, handler_method)
-            cls.app.router.add_route(method, path, route_wrapper)
+            self.app.router.add_route(method, path, route_wrapper)
 
-    @classmethod
-    def add_route(cls, method: str, path: str, handler: str):
-        """Class method to add custom routes."""
-        if not hasattr(cls, 'additional_routes'):
-            cls.additional_routes = []
-        cls.additional_routes.append({
+    def add_route(self, method: str, path: str, handler: str):
+        """Instance method to add custom routes."""
+        if not hasattr(self, 'additional_routes'):
+            self.additional_routes = []
+        self.additional_routes.append({
             'method': method,
             'path': path,
             'handler': handler
@@ -418,3 +422,20 @@ class AbstractAgentHandler(BaseView):
             )
         # Return the list of uploaded files and any other form data
         return uploaded_files_info, form_data
+
+    async def create_agent(self, llm: Any = None, tools: Optional[List[Any]] = None) -> BasicAgent:
+        """Create and configure a BasicAgent instance."""
+        if not llm:
+            llm = OpenAILLM(
+                model="gpt-4.1",
+                temperature=0.1,
+                max_tokens=4096,
+                use_chat=True
+            )
+        agent = BasicAgent(
+            name=self.agent_name,
+            llm=llm,
+            tools=tools,
+            agent_type='tool-calling'
+        )
+        await agent.configure()

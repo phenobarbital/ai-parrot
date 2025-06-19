@@ -2,8 +2,8 @@ from datetime import datetime
 from aiohttp import web
 from datamodel import BaseModel, Field
 from parrot.handlers.abstract import AbstractAgentHandler
-
-
+from parrot.tools.weather import OpenWeather
+from parrot.tools import PythonREPLTool
 
 class NextStopResponse(BaseModel):
     """
@@ -43,19 +43,15 @@ class NextStopAgent(AbstractAgentHandler):
         self.base_route: str = '/api/v1/agents/nextstop'
         super().__init__(*args, **kwargs)
 
-    @staticmethod
-    async def on_startup(app: web.Application) -> None:
+    async def on_startup(self, app: web.Application) -> None:
         """Start the application."""
         print(f"Starting NextStop Agent application: {app}")
 
-    @staticmethod
-    async def on_shutdown(app: web.Application) -> None:
+    async def on_shutdown(self, app: web.Application) -> None:
         """Stop the application."""
         print(f"Stopping NextStop Agent application: {app}")
 
-
-    @staticmethod
-    async def on_cleanup(app: web.Application) -> None:
+    async def on_cleanup(self, app: web.Application) -> None:
         """Cleanup the application."""
         print(f"Cleaning up NextStop Agent application: {app}")
 
