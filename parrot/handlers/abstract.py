@@ -117,6 +117,7 @@ class AbstractAgentHandler(BaseView):
                 return await handler_method(instance, request)
 
             # Add the route to the router
+            print('ADD ROUTE > ', method, path, route_wrapper, handler_method)
             cls.app.router.add_route(method, path, route_wrapper)
 
     @classmethod
