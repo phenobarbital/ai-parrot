@@ -25,13 +25,21 @@ class NextStopAgent(AbstractAgentHandler):
         ]
         super().__init__(*args, **kwargs)
 
-    # async def on_startup(self, app: web.Application) -> None:
-    #     """Start the application."""
-    #     print(f"Starting NextStop Agent application: {app}")
+    @staticmethod
+    async def on_startup(app: web.Application) -> None:
+        """Start the application."""
+        print(f"Starting NextStop Agent application: {app}")
 
-    # async def on_shutdown(self, app: web.Application) -> None:
-    #     """Stop the application."""
-    #     print(f"Stopping NextStop Agent application: {app}")
+    @staticmethod
+    async def on_shutdown(app: web.Application) -> None:
+        """Stop the application."""
+        print(f"Stopping NextStop Agent application: {app}")
+
+
+    @staticmethod
+    async def on_cleanup(app: web.Application) -> None:
+        """Cleanup the application."""
+        print(f"Cleaning up NextStop Agent application: {app}")
 
     async def get_results(self, request: web.Request) -> web.Response:
         """Return the results of the agent."""
