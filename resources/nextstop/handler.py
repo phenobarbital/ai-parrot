@@ -1,5 +1,23 @@
+from datetime import datetime
 from aiohttp import web
+from datamodel import BaseModel, Field
 from parrot.handlers.abstract import AbstractAgentHandler
+
+
+
+class NextStopResponse(BaseModel):
+    """
+    NextStopResponse is a model that defines the structure of the response
+    for the NextStop agent.
+    """
+    session_id: str = Field(..., description="Unique identifier for the session")
+    data: str = Field(..., description="Data returned by the agent")
+    status: str = Field(default="success", description="Status of the response")
+    output: str = Field(required=False)
+    store_id: str = Field(required=False, description="ID of the store associated with the session")
+    created_at: datetime = Field(default=datetime.now())
+    podcast_path: str = Field(required=False, description="Path to the podcast associated with the session")
+    pdf_path: str = Field(required=False, description="Path to the PDF associated with the session")
 
 
 class NextStopAgent(AbstractAgentHandler):
@@ -7,22 +25,22 @@ class NextStopAgent(AbstractAgentHandler):
     NextStopAgent is an abstract agent handler that extends the AbstractAgentHandler.
     It provides a framework for implementing specific agent functionalities.
     """
+    additional_routes: dict = [
+        {
+            "method": "GET",
+            "path": "/api/v1/agents/nextstop/results/{sid}",
+            "handler": "get_results"
+        },
+        {
+            "method": "GET",
+            "path": "/api/v1/agents/nextstop/status",
+            "handler": "get_agent_status"
+        }
+    ]
 
     def __init__(self, *args, **kwargs):
         self.agent_name = "NextStopAgent"
         self.base_route: str = '/api/v1/agents/nextstop'
-        self.additional_routes = [
-            {
-                "method": "GET",
-                "path": "/api/v1/agents/nextstop/results/{sid}",
-                "handler": "get_results"
-            },
-            {
-                "method": "GET",
-                "path": "/api/v1/agents/nextstop/status",
-                "handler": "get_agent_status"
-            }
-        ]
         super().__init__(*args, **kwargs)
 
     @staticmethod
