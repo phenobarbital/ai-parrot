@@ -15,7 +15,7 @@ class ZipcodeDistanceInput(BaseModel):
     unit: Optional[str] = Field(description="The unit of the distance.", default="mile")
 
     model_config = {
-        "arbitrary_types_allowed": True,
+        "arbitrary_types_allowed": False,
         "extra": "forbid",  # Helps with compatibility
         "json_schema_extra": {
             "required": ["zipcode", "sku", "location_id"]
@@ -29,7 +29,7 @@ class ZipcodeRadiusInput(BaseModel):
     unit: Optional[str] = Field(description="The unit of the distance.", default="mile")
 
     model_config = {
-        "arbitrary_types_allowed": True,
+        "arbitrary_types_allowed": False,
         "extra": "forbid",  # Helps with compatibility
         "json_schema_extra": {
             "required": ["zipcode", "sku", "location_id"]
@@ -42,7 +42,7 @@ class ZipcodeLocationInput(BaseModel):
     unit: Optional[str] = Field(description="The unit of the distance.", default="degrees")
 
     model_config = {
-        "arbitrary_types_allowed": True,
+        "arbitrary_types_allowed": False,
         "extra": "forbid",  # Helps with compatibility
         "json_schema_extra": {
             "required": ["zipcode", "sku", "location_id"]
@@ -61,7 +61,7 @@ class ZipcodeDistance(AbstractTool):
     )
 
     model_config = {
-        "arbitrary_types_allowed": True,
+        "arbitrary_types_allowed": False,
         "extra": "forbid",  # Helps with compatibility
         "json_schema_extra": {
             "required": ["zipcode", "sku", "location_id"]
@@ -116,7 +116,7 @@ class ZipcodeRadius(AbstractTool):
     )
 
     model_config = {
-        "arbitrary_types_allowed": True,
+        "arbitrary_types_allowed": False,
         "extra": "forbid",  # Helps with compatibility
         "json_schema_extra": {
             "required": ["zipcode", "sku", "location_id"]
