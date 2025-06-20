@@ -2,6 +2,7 @@ from datetime import datetime
 import textwrap
 from aiohttp import web
 from datamodel import BaseModel, Field
+from parrot.llms.vertex import VertexLLM
 from parrot.handlers.abstract import AbstractAgentHandler
 from parrot.tools.weather import OpenWeather
 from parrot.tools import PythonREPLTool
@@ -61,7 +62,13 @@ The agent can answer questions about store locations, hours of operation, and av
 It can also provide weather updates for the store's location, helping users plan their visits accordingly.
 The agent can execute Python code snippets to perform calculations or data processing tasks.
         """
+        vertex = VertexLLM(
+            model="gemini-2.5-pro",
+            preset="analytical",
+            use_chat=True
+        )
         self.app['nextstop_agent'] = await self.create_agent(
+            llm=vertex,
             tools=tools,
             backstory=backstory,
         )
@@ -131,26 +138,34 @@ Using dataframe returned by get_visit_info, Generate a detailed, comprehensive s
 Analyze store visit performance across three time horizons: 7 days (1 week), 14 days (2 weeks), and 21 days (3 weeks).
 
 ## 1. Executive Summary
-- **Average Visit Length (7 Days):** avg_daily_visits_7_days
-- **Average Visit Length Comparison (14 Days):** avg_daily_visits_14_days
-- **Average Visit Length Comparison (21 Days):** avg_daily_visits_21_days
-- **Variance in Average Visit Length (7 Days vs 14 Days):** compare avg_daily_visits_7_days vs avg_daily_visits_14_days
-- **Total Visits (7 Days):** total_visits_7_days
-- **Total Visits (14 Days):** total_visits_14_days
+- **Average Visit Length (7 Days):** use the avg_daily_visits_7_days
+- **Average Visit Length Comparison (14 Days):** use the avg_daily_visits_14_days
+- **Average Visit Length Comparison (21 Days):** use the avg_daily_visits_21_days
+- **Variance in Average Visit Length (7 Days vs 14 Days):** compare columns avg_daily_visits_7_days vs avg_daily_visits_14_days
+- **Total Visits (7 Days):** use the total_visits_7_days
+- **Total Visits (14 Days):** use the total_visits_14_days
 - **Variance in Average Visit Length (7 Days vs 14 Days):** compare avg_daily_visits_14_days vs avg_daily_visits_21_days
-- **Total Unique Stores Visited (7 Days):** stores_visited_7_days
-- **Average Duration of Visits:** average visit_length
-- **Median Duration of Visits (7 Days):** median_visits_per_store_7_days
-- **Median Duration Comparison (14 Days):** median_visits_per_store_14_days
+- **Total Unique Stores Visited (7 Days):** use the stores_visited_7_days
+- **Average Duration of Visits:** use the average visit_length
+- **Median Duration of Visits (7 Days):** use the median_visits_per_store_7_days
+- **Median Duration Comparison (14 Days):** use the median_visits_per_store_14_days
 
 ## 2. Basic Store Information
 - **Store ID:** store_id
 - **Store Name:** store_name
 - **Store Address:** store_address
 - **Current Weather:** Uses `openweather_tool` to get current weather information for the store's location.
-- **Foot Traffic:** Use `get_foot_traffic` to get foot traffic data for the store.
+- **Foot Traffic:** Use `get_foot_traffic` to get foot traffic data for the store, for every day of the week and average of daily foot traffic.
 
-## 3. **Summary of Insights:**
+## 3. Visit Performance Metrics
+For every column_name ["9730", "9731", "9732", "9733"] on `visit_data` column, provide the following metrics:
+### Question `column_name`
+- **Top Phrases:** Extract key phrases from responses that appear frequently.
+- **Sentiment Counts:**
+    - Positive: X, Negative: Y, Neutral: Z
+- **Key Issues:** Identify the most frequently mentioned issues or challenges.
+
+## 4. **Summary of Insights:**
 - **Key Findings:** Summarize the most impactful insights from the analysis.
 - **Critical Challenges:** Highlight major issues identified in the visits.
 - **Opportunities for Improvement:** Areas where performance can be enhanced.
@@ -166,72 +181,49 @@ IMPORTANT INSTRUCTIONS:
 - DO NOT include any introductory summaries, concluding remarks, end notes, or additional text beyond the specified structure.
 - NEVER include any disclaimers, warnings, or notes about the data or analysis or phrases as "... from the provided DataFrame".
         """
-        _, response, result = await agent.invoke(executive)
-        print('RESPONSE > ', response)
-        print('RESULT > ', result)
+        try:
+            _, response, _ = await agent.invoke(executive)
+        except Exception as e:
+            print(f"Error invoking agent: {e}")
+            raise RuntimeError(
+                f"Failed to generate report due to an error in the agent invocation: {e}"
+            )
         sections.append(response.output.strip())
-#         # Generate Visit context per-question:
-#         questions = {
-#             "9730": "Key Wins",
-#             "9731": "Challenges/Opportunities",
-#             "9732": "Next Visit Focus",
-#             "9733": "Competitive Landscape"
-#         }
-#         visit_content =  []
-#         for column_name, question_title in questions.items():
-#             col = f"q_{column_name}_data"
-#             q = f"""
-# You are given column called `{col}`.  Each cell is a plain string containing the answer text you must analyze.
-# You must analyze the content of this column and provide a detailed, structured analysis for each question. Follow the exact format below without exception.
-
-# ### Question {column_name}: {question_title}
-# - **Top Phrases:**
-#     - Meaningful Phrase Extraction, extract key phrases from responses that appear frequently.
-# - **Themes:**
-#     - Identify business-relevant terms like product names, competitor names, specific issues, store features, customer behaviors
-# - **Sentiment Counts:**
-#   - Positive: X, Negative: Y, Neutral: Z
-# - **Sentiment Trend Comparison:**
-#   - 14 Days: Positive X, Negative Y, Neutral Z
-#   - 21 Days: Positive X, Negative Y, Neutral Z
-# - **Sample Comments:** (add the store_id where the comment was found)
-#   - Positive: Select a distinct comment clearly reflecting positive sentiment.
-#   - Negative: Select a distinct comment clearly reflecting negative sentiment.
-#   - Neutral: Select a distinct comment clearly reflecting neutral sentiment.
-# - **Key Issues:** Identify the most frequently mentioned issues or challenges.
-# - **Insights:** Identify actionable insights: data-driven findings that provide a clear understanding of the visit content and can inform business decisions.
-#   - Actionable Insight 1
-#   - Actionable Insight 2
-
-# **Do NOT** aggregate multiple questions together. **Do NOT** summarize across questions. **Do NOT** omit any of the seven bullets above.
-
-# IMPORTANT INSTRUCTIONS:
-# - Always return EVERY section and sub-section EXACTLY as formatted above.
-# - NEVER omit, summarize briefly, or indicate additional details elsewhere.
-# - Use the provided DataFrame metrics directly in your analysis.
-# - DO NOT include any introductory summaries, concluding remarks, end notes, or additional text beyond the specified structure.
-# - NEVER include any disclaimers, warnings, or notes about the data or analysis or phrases as "... from the provided DataFrame".
-#             """
-#             _, response = await self._agent.invoke(q)
-#             print('RESPONSE > ', response)
-#             visit_content.append(response.output.strip())
-#         # Join the visit content into a single string
-#         ct = "\n\n".join(visit_content)
-#         content = f"""## 2. Visit Content Analysis (7 Days)
-#         {ct}
-#         """
-#         print('content > ')
-#         print(content)
-#         sections.append(content)
-        # Insights:
         # Join all sections into a single report
-        report = "\n\n".join(sections)
+        final_report = "\n\n".join(sections)
+        # Use the joined report to generate a PDF and a Podcast:
+        for_pdf = f"""
+        Using this report in markdown format:
+
+        ```markdown
+        {final_report}
+        ```
+        - Export this COMPLETE markdown report using the pdf_print_tool.
+        - Export as a Podcast using the podcast_generator_tool:
+            - in mp3 format.
+            - Include explicit salutation: "Hello, this is the NextStop for store visit performance analysis."
+            - a MALE gender voice.
+            - Use a natural tone and clear pronunciation with high engagement.
+            - Ensure the summary is concise and captures all key insights from the report.
+        IMPORTANT INSTRUCTIONS:
+        - Always return EVERY section and sub-section EXACTLY as formatted above.
+        - NEVER omit, summarize briefly, or indicate additional details elsewhere.
+        - The PDF must contain the ENTIRE content above exactly as generated here.
+        """
+        try:
+            _, response, result = await agent.invoke(for_pdf)
+        except Exception as e:
+            print(f"Error invoking agent: {e}")
+            raise RuntimeError(
+                f"Failed to generate report due to an error in the agent invocation: {e}"
+            )
+        print(':: RESULT > ', result)
         # Create the response object
         response_data = NextStopResponse(
-            data=report,
+            data=final_report,
             status="success",
             created_at=datetime.now(),
             store_id=store_id,
-            output=report
+            output=result.get('output', ''),
         )
         return response_data

@@ -33,7 +33,7 @@ class BestBuyProductAvailabilityInput(BaseModel):
     )
 
     model_config = {
-        "arbitrary_types_allowed": True,
+        "arbitrary_types_allowed": False,
         "extra": "forbid",  # Helps with compatibility
         "json_schema_extra": {
             "required": ["zipcode", "sku", "location_id"]
@@ -65,7 +65,8 @@ class BestBuyToolkit(BaseToolkit):
 
     # Add this model_config to allow arbitrary types
     model_config = {
-        "arbitrary_types_allowed": True
+        "extra": "forbid",  # Forbid extra fields
+        "arbitrary_types_allowed": False
     }
 
     def get_tools(self) -> List[BaseTool]:

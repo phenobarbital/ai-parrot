@@ -70,7 +70,7 @@ class GoogleVoiceTool(BaseTool):
     language_code: str = "en-US"
     output_format: str = "OGG_OPUS"  # OGG format is more podcast-friendly
     _key_service: Optional[str]
-    output_dir: Optional[Path] = BASE_DIR.joinpath("static", "audio", "podcasts")
+    output_dir: Optional[Path] = None
 
     # Add a proper args_schema for tool-calling compatibility
     args_schema: Type[BaseModel] = PodcastInput

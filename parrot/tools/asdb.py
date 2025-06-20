@@ -23,7 +23,7 @@ class DBInput(BaseModel):
     • query_timeout: (Optional) query timeout in seconds (default: 300)
     • max_rows: (Optional) maximum number of rows to return (default: 10000)
     """
-    model_config = ConfigDict(extra='forbid', arbitrary_types_allowed=True)
+    model_config = ConfigDict(extra='forbid', arbitrary_types_allowed=False)
 
     database_driver: str = Field(
         ...,

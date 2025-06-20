@@ -20,7 +20,7 @@ vertex = VertexLLM(
 
 vertex_pro = VertexLLM(
     model="gemini-2.5-pro-preview-05-06",
-    preset="concise",
+    preset="analytical",
     use_chat=True
 )
 

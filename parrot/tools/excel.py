@@ -29,7 +29,7 @@ class ExcelInput(BaseModel):
     • header_styles: (Optional) dict of styles to apply to headers
     • data_styles: (Optional) dict of styles to apply to data cells
     """
-    model_config = ConfigDict(extra='forbid', arbitrary_types_allowed=True)
+    model_config = ConfigDict(extra='forbid', arbitrary_types_allowed=False)
 
     dataframe: pd.DataFrame = Field(..., description="Pandas DataFrame to export to Excel/ODS")
     output_filename: Optional[str] = Field(

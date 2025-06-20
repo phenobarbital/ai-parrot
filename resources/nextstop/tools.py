@@ -40,7 +40,7 @@ class StoreInfo(BaseToolkit):
     )
     # Allow arbitrary types and forbid extra fields in the model
     model_config = {
-        "arbitrary_types_allowed": True,
+        "arbitrary_types_allowed": False,
         "extra": "forbid",
     }
 
@@ -206,7 +206,7 @@ WITH visit_data AS (
     INNER JOIN troc.stores st ON st.store_id = d.store_id AND st.program_slug = 'hisense'
     WHERE visit_date::date >= CURRENT_DATE - INTERVAL '21 days'
     AND column_name IN ('9733','9731','9732','9730')
-    --- AND d.store_id = '{store_id}'
+    AND d.store_id = '{store_id}'
     GROUP BY
         form_id, formid, visit_date, visit_timestamp, visit_length,
         time_in, time_out, d.store_id, st.alt_name, visitor_name, visitor_username, visitor_role
