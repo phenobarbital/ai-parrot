@@ -13,7 +13,7 @@ from langchain_core.tools import (
 # AsyncDB database connections
 from asyncdb import AsyncDB
 from querysource.conf import default_dsn
-from .models import StoreInfoInput
+from .models import StoreInfoInput, ManagerInput
 
 
 class StoreInfo(BaseToolkit):
@@ -30,6 +30,7 @@ class StoreInfo(BaseToolkit):
     - get_visit_info: Retrieves the last visits for a specific store
     - get_foot_traffic: Fetches foot traffic data for a store
     - get_store_information: Gets complete store details and aggregate visit metrics
+    - get_employee_sales: Fetches Employee Sales data and ranked performance.
     """
     name: str = "StoreInfo"
     description: str = (
@@ -75,6 +76,7 @@ class StoreInfo(BaseToolkit):
             self._get_visit_info_tool(),
             self._get_store_info_tool(),
             self._get_foot_traffic_tool(),
+            self._get_employee_sales_tool()
         ]
 
 
@@ -465,3 +467,168 @@ ORDER BY vd.visit_timestamp ASC;
         # convert dataframe to dictionary:
         store_info = store.head(1).to_dict(orient='records')[0]
         return json_encoder(store_info)
+
+    def _get_employee_sales_tool(self) -> StructuredTool:
+        """Create the traffic information retrieval tool.
+
+        Returns:
+            StructuredTool: Configured tool for getting recent Sales data from all employees.
+        """
+        return StructuredTool.from_function(
+            name="get_employee_sales",
+            func=self.get_employee_sales,
+            coroutine=self.get_employee_sales,
+            description=(
+                "Get Sales and goals for all employees related to a Manager. "
+                "Returns a ranked list of employees based on their sales performance. "
+                "Useful for understanding employee performance and sales distribution."
+            ),
+            args_schema=ManagerInput,
+            handle_tool_error=True
+        )
+
+    async def get_employee_sales(self, manager: str) -> pd.DataFrame:
+        """Get foot traffic data for a specific store.
+        This coroutine retrieves the foot traffic data for the specified store,
+        including the number of visitors and average visits per day.
+
+        Args:
+            manager (str): The unique identifier of the Manager (Associate OID).
+        Returns:
+            pd.DataFrame: DataFrame containing employee sales data and rankings.
+        """
+        sql = f"""
+WITH sales AS (
+WITH stores as(
+    select st.store_id, d.rep_name, market_name, region_name, d.rep_email as visitor_email,
+    count(store_id) filter(where focus = true) as focus_400,
+    count(store_id) filter(where wall_display = true) as wall_display,
+    count(store_id) filter(where triple_stack = true) as triple_stack,
+    count(store_id) filter(where covered = true) as covered,
+    count(store_id) filter(where end_cap = true) as endcap,
+    count(store_id)  as stores
+    FROM hisense.vw_stores st
+    left join hisense.stores_details d using(store_id)
+    where cast_to_integer(st.customer_id) = 401865
+    and manager_name = 'mcarter@trocglobal.com' and rep_name <> '0'
+    group by st.store_id, d.rep_name, d.rep_email, market_name, region_name
+), dates as (
+    select date_trunc('month', case when firstdate < '2025-04-01' then '2025-04-01' else firstdate end)::date as month,
+    case when firstdate < '2025-04-01' then '2025-04-01' else firstdate end as firstdate,
+    case when lastdate > case when '2025-06-19' >= current_date then current_date - 1 else '2025-06-19' end then case when '2025-06-19' >= current_date then current_date - 1 else '2025-06-19' end else lastdate end as lastdate
+    from public.week_range('2025-04-01'::date, (case when '2025-06-19' >= current_date then current_date - 1 else '2025-06-19' end)::date)
+), goals as (
+    select date_trunc('month',firstdate)::date as month, store_id,
+    case when lower(effective_date) < firstdate and upper(effective_date)-1 = lastdate then
+        troc_percent(goal_value,7) * (lastdate - firstdate + 1)::integer else
+    case when lower(effective_date) = firstdate and upper(effective_date)-1 > lastdate then
+        troc_percent(goal_value,7) * (lastdate - lower(effective_date) + 1)::integer else
+    goal_value
+    end end as goal_mes,
+    lower(effective_date) as firstdate_effective, firstdate,  upper(effective_date)-1 as lastdate_effective, lastdate, goal_value, (lastdate - firstdate + 1)::integer as dias_one, (lastdate - lower(effective_date) + 1)::integer as last_one, (firstdate - lower(effective_date) + 1)::integer as dias
+    from hisense.stores_goals g
+    cross join dates d
+    where effective_date @> firstdate::date
+    and goal_name = 'Sales Weekly Premium'
+), total_goals as (
+    select month, store_id, sum(goal_mes) as goal_value
+    from goals
+    group by month, store_id
+), sales as (
+    select date_trunc('month',order_date_week)::date as month, store_id, coalesce(sum(net_sales),0) as sales
+    from hisense.summarized_inventory i
+    INNER JOIN hisense.all_products p using(model)
+    where order_date_week::date between '2025-04-01'::date and (case when '2025-06-19' >= current_date then current_date - 1 else '2025-06-19' end)::date
+    and cast_to_integer(i.customer_id) = 401865
+    and new_model = true
+    and store_id is not null
+    group by date_trunc('month',order_date_week)::date, store_id
+)
+select rep_name, visitor_email,
+coalesce(sum(st.stores),0)/3 as count_store,
+coalesce(sum(sales) filter(where month = '2025-06-01'),0)::integer as sales_current,
+coalesce(sum(sales) filter(where month = '2025-05-01'),0)::integer as sales_previous_month,
+coalesce(sum(sales) filter(where month = '2025-04-01'),0)::integer as sales_2_month,
+coalesce(sum(goal_value) filter(where month = '2025-06-01'),0) as goal_current,
+coalesce(sum(goal_value) filter(where month = '2025-05-01'),0) as goal_previous_month,
+coalesce(sum(goal_value) filter(where month = '2025-04-01'),0) as goal_2_month
+from stores st
+left join total_goals g using(store_id)
+left join sales s using(month, store_id)
+group by rep_name, visitor_email
+)
+SELECT *,
+rank() over (order by sales_current DESC) as sales_ranking,
+rank() over (order by goal_current DESC) as goal_ranking
+FROM sales
+        """
+        visit_data = await self.get_dataset(sql, output='pandas')
+        if visit_data.empty:
+            raise ToolException(
+                f"No Employee Sales data found for manager {manager}."
+            )
+        return visit_data
+
+    def _get_employee_visits_tool(self) -> StructuredTool:
+        """Create the employee visits retrieval tool.
+        This tool retrieves visit data for employees under a specific manager,
+        including the number of visits, average visit duration, and most frequent visit hours.
+
+        Returns:
+            StructuredTool: Configured tool for getting recent Visit data for all employees.
+        """
+        return StructuredTool.from_function(
+            name="get_employee_visits",
+            func=self.get_employee_visits,
+            coroutine=self.get_employee_visits,
+            description=(
+                "Get Employee Visits data for a specific Manager. "
+                "Returns a DataFrame containing employee visit statistics, "
+                "including total visits, average visit duration, and most frequent visit hours. "
+                "Useful for analyzing employee performance and visit patterns."
+            ),
+            args_schema=ManagerInput,
+            handle_tool_error=True
+        )
+
+    async def get_employee_visits(self, manager: str) -> pd.DataFrame:
+        """Get Employee Visits data for a specific Manager.
+        This coroutine retrieves the visit data for employees under a specific manager,
+        including the number of visits, average visit duration, and most frequent visit hours.
+        Args:
+            manager (str): The unique identifier of the Manager (Associate OID).
+        Returns:
+            pd.DataFrame: DataFrame containing employee sales data and rankings.
+        """
+        sql = f"""
+WITH visits AS (
+WITH employees AS (
+    select d.rep_name, d.rep_email as visitor_email, count(store_id)  as assigned_stores
+    FROM hisense.vw_stores st
+    left join hisense.stores_details d using(store_id)
+    where cast_to_integer(st.customer_id) = 401865
+    and manager_name = 'mcarter@trocglobal.com' and rep_name <> '0'
+    group by d.rep_name, d.rep_email, market_name, region_name
+)
+SELECT
+e.*,
+count(distinct f.form_id) as total_visits,
+count(distinct f.store_id) as visited_stores,
+avg(visit_length) as average_visits_duration,
+avg(visit_hour) as most_frequent_hour
+FROM employees e
+LEFT JOIN hisense.form_information f ON e.visitor_email = f.visitor_email
+WHERE f.visit_date::date >= CURRENT_DATE - INTERVAL '21 days'
+GROUP BY e.rep_name, e.visitor_email, e.assigned_stores
+)
+SELECT *,
+rank() over (order by total_visits DESC) as ranked_visits,
+rank() over (order by average_visits_duration DESC) as ranked_duration
+FROM visits
+        """
+        visit_data = await self.get_dataset(sql, output='pandas')
+        if visit_data.empty:
+            raise ToolException(
+                f"No Employee Visit data found for manager {manager}."
+            )
+        return visit_data

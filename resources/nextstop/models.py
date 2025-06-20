@@ -13,9 +13,28 @@ class StoreInfoInput(BaseModel):
     )
     # Add a model_config to prevent additional properties
     model_config = ConfigDict(
-        arbitrary_types_allowed=True,
+        arbitrary_types_allowed=False,
         extra="forbid",
         json_schema_extra={
             "required": ["store_id"]
+        }
+    )
+
+class ManagerInput(BaseModel):
+    """Input schema for manager-related operations requiring a Manager ID."""
+    manager_id: str = Field(
+        ...,
+        description="The unique identifier of the manager you want to know about.",
+        example="MGR456",
+        title="Manager ID",
+        min_length=1,
+        max_length=50
+    )
+    # Add a model_config to prevent additional properties
+    model_config = ConfigDict(
+        arbitrary_types_allowed=False,
+        extra="forbid",
+        json_schema_extra={
+            "required": ["manager_id"]
         }
     )
