@@ -2,6 +2,7 @@ from typing import List
 import json
 import pandas as pd
 from pydantic import BaseModel, Field
+from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611
 from langchain_core.tools import (
     BaseTool,
     BaseToolkit,
@@ -30,9 +31,17 @@ class StoreInfo(BaseToolkit):
     - get_foot_traffic: Fetches foot traffic data for a store
     - get_store_information: Gets complete store details and aggregate visit metrics
     """
-
+    name: str = "StoreInfo"
+    description: str = (
+        "Toolkit for retrieving store information, visit history, "
+        "foot traffic data, and demographic analysis. "
+        "Includes tools for fetching detailed visit records, "
+        "store details, and foot traffic statistics."
+    )
+    # Allow arbitrary types and forbid extra fields in the model
     model_config = {
-        "arbitrary_types_allowed": True
+        "arbitrary_types_allowed": True,
+        "extra": "forbid",
     }
 
     async def get_dataset(self, query: str, output: str = 'pandas') -> pd.DataFrame:
@@ -104,7 +113,7 @@ ORDER BY start_date DESC
 LIMIT 3;
         """
         visit_data = await self.get_dataset(sql, output='pandas')
-        if not visit_data:
+        if visit_data.empty:
             raise ToolException(
                 f"No Foot Traffic data found for store with ID {store_id}."
             )
@@ -388,7 +397,7 @@ CROSS JOIN variance_stats vs
 ORDER BY vd.visit_timestamp ASC;
         """
         visit_data = await self.get_dataset(sql, output='pandas')
-        if not visit_data:
+        if visit_data.empty:
             raise ToolException(
                 f"No visit data found for store with ID {store_id}."
             )
@@ -435,11 +444,13 @@ ORDER BY vd.visit_timestamp ASC;
         FROM hisense.stores st
         INNER JOIN (
             SELECT
+                store_id,
                 avg(visit_length) as avg_visit_length,
                 count(*) as total_visits,
                 avg(visit_hour) as avg_middle_time
                 FROM hisense.form_information where store_id = '{store_id}'
                 AND visit_date::date >= CURRENT_DATE - INTERVAL '21 days'
+                GROUP BY store_id
         ) as vs ON vs.store_id = st.store_id
         WHERE st.store_id = '{store_id}';
         """
@@ -453,4 +464,4 @@ ORDER BY vd.visit_timestamp ASC;
         )
         # convert dataframe to dictionary:
         store_info = store.head(1).to_dict(orient='records')[0]
-        return json.dumps(store_info, indent=2)
+        return json_encoder(store_info)

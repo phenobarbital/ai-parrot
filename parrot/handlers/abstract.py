@@ -423,7 +423,12 @@ class AbstractAgentHandler(BaseView):
         # Return the list of uploaded files and any other form data
         return uploaded_files_info, form_data
 
-    async def create_agent(self, llm: Any = None, tools: Optional[List[Any]] = None) -> BasicAgent:
+    async def create_agent(
+        self,
+        llm: Any = None,
+        tools: Optional[List[Any]] = None,
+        backstory: Optional[str] = None
+    ) -> BasicAgent:
         """Create and configure a BasicAgent instance."""
         if not llm:
             llm = OpenAILLM(
@@ -432,10 +437,17 @@ class AbstractAgentHandler(BaseView):
                 max_tokens=4096,
                 use_chat=True
             )
-        agent = BasicAgent(
-            name=self.agent_name,
-            llm=llm,
-            tools=tools,
-            agent_type='tool-calling'
-        )
-        await agent.configure()
+        try:
+            agent = BasicAgent(
+                name=self.agent_name,
+                llm=llm,
+                tools=tools,
+                agent_type='tool-calling',
+                backstory=backstory,
+            )
+            await agent.configure()
+            return agent
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to create agent {self.agent_name}: {str(e)}"
+            ) from e

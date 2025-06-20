@@ -1,3 +1,5 @@
+from typing import Type, Optional
+from pydantic import BaseModel, Field, ConfigDict
 import requests
 from langchain.tools import BaseTool
 from langchain.tools import Tool
@@ -29,6 +31,41 @@ class OpenWeatherMapTool(BaseTool):
         return self.search.run(query)
 
 
+
+class OpenWeatherInput(BaseModel):
+    """
+    Input schema for OpenWeather tool.
+    This schema expects a dictionary with latitude and longitude.
+    """
+    latitude: float = Field(
+        ...,
+        description="The latitude of the location you want weather information about.",
+        example=37.7749
+    )
+    longitude: float = Field(
+        ...,
+        description="The longitude of the location you want weather information about.",
+        example=-122.4194
+    )
+    country: Optional[str] = Field(
+        'us',
+        description="The country code for the location (default is 'us').",
+        example='us'
+    )
+    request: Optional[str] = Field(
+        'weather',
+        description="The type of weather information to request ('weather' or 'forecast').",
+        example='weather'
+    )
+
+    model_config = ConfigDict(
+        extra='forbid',
+        json_schema_extra={
+            "required": ["latitude", "longitude"]
+        }
+    )
+
+
 class OpenWeather(BaseTool):
     """
     Tool to get weather information about a location.
@@ -47,6 +84,8 @@ class OpenWeather(BaseTool):
     request: str = 'weather'
     country: str = 'us'
 
+    args_schema: Type[BaseModel] = OpenWeatherInput
+
 
     def __init__(self, request: str = 'weather', country: str = 'us', **kwargs):
         super().__init__(**kwargs)
@@ -54,26 +93,40 @@ class OpenWeather(BaseTool):
         self.country = country
         self.appid = config.get('OPENWEATHER_APPID')
 
-    def _run(self, query: dict) -> dict:
-        if isinstance(query, str):
-            q = orjson.loads(query)  # pylint: disable=no-member
-        elif isinstance(query, dict):
-            q = query
+    def _get_weather(self, input: OpenWeatherInput) -> dict:
+        """
+        Get weather information based on latitude and longitude.
+        """
+        if self.request == 'weather':
+            part = "hourly,minutely"
+            url = f"https://api.openweathermap.org/data/2.5/weather?lat={input.latitude}&lon={input.longitude}&units={self.units}&exclude={part}&appid={self.appid}"
+        elif self.request == 'forecast':
+            url = f"{self.base_url}data/2.5/forecast?lat={input.latitude}&lon={input.longitude}&units={self.units}&cnt={self.days}&appid={self.appid}"
         else:
-            return {'error': 'Invalid query format, must be a dictionary or JSON string'}
-        if 'latitude' in q and 'longitude' in q:
-            lat = q['latitude']
-            lon = q['longitude']
-            if self.request == 'weather':
-                # url = f"{self.base_url}data/2.5/weather?lat={lat}&lon={lon}&units={self.units}&appid={self.appid}"
-                part = "hourly,minutely"
-                url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&units={self.units}&exclude={part}&appid={self.appid}"
-            elif self.request == 'forecast':
-                url = f"{self.base_url}data/2.5/forecast?lat={lat}&lon={lon}&units={self.units}&cnt={self.days}&appid={self.appid}"
-        else:
-            return {'error': 'Latitude and longitude are required'}
+            return {'error': "Invalid request type. Use 'weather' or 'forecast'."}
         response = requests.get(url)
-        return response.json()
+        if response.status_code != 200:
+            return {'error': f"Failed to fetch data: {response.status_code} - {response.text}"}
+        response_data = response.json()
+        return response_data
 
-    async def _arun(self, query: dict) -> dict:
-        return self._run(query)
+    def _run(self, latitude: float, longitude: float, **kwargs) -> dict:
+        """
+        Use the OpenWeather tool to get weather information.
+        """
+        input_data = OpenWeatherInput(
+            latitude=latitude,
+            longitude=longitude,
+            country=self.country,
+            request=self.request
+        )
+        return self._get_weather(input_data)
+
+    async def _arun(self, latitude: float, longitude: float, **kwargs) -> dict:
+        input_data = OpenWeatherInput(
+            latitude=latitude,
+            longitude=longitude,
+            country=self.country,
+            request=self.request
+        )
+        return self._get_weather(input_data)
