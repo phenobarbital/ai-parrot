@@ -76,7 +76,8 @@ class StoreInfo(BaseToolkit):
             self._get_visit_info_tool(),
             self._get_store_info_tool(),
             self._get_foot_traffic_tool(),
-            self._get_employee_sales_tool()
+            self._get_employee_sales_tool(),
+            self._get_employee_visits_tool()
         ]
 
 
@@ -487,7 +488,7 @@ ORDER BY vd.visit_timestamp ASC;
             handle_tool_error=True
         )
 
-    async def get_employee_sales(self, manager: str) -> pd.DataFrame:
+    async def get_employee_sales(self, manager_id: str) -> pd.DataFrame:
         """Get foot traffic data for a specific store.
         This coroutine retrieves the foot traffic data for the specified store,
         including the number of visitors and average visits per day.
@@ -510,7 +511,7 @@ WITH stores as(
     FROM hisense.vw_stores st
     left join hisense.stores_details d using(store_id)
     where cast_to_integer(st.customer_id) = 401865
-    and manager_name = 'mcarter@trocglobal.com' and rep_name <> '0'
+    and manager_name = '{manager_id}' and rep_name <> '0'
     group by st.store_id, d.rep_name, d.rep_email, market_name, region_name
 ), dates as (
     select date_trunc('month', case when firstdate < '2025-04-01' then '2025-04-01' else firstdate end)::date as month,
@@ -565,7 +566,7 @@ FROM sales
         visit_data = await self.get_dataset(sql, output='pandas')
         if visit_data.empty:
             raise ToolException(
-                f"No Employee Sales data found for manager {manager}."
+                f"No Employee Sales data found for manager {manager_id}."
             )
         return visit_data
 
@@ -591,7 +592,7 @@ FROM sales
             handle_tool_error=True
         )
 
-    async def get_employee_visits(self, manager: str) -> pd.DataFrame:
+    async def get_employee_visits(self, manager_id: str) -> pd.DataFrame:
         """Get Employee Visits data for a specific Manager.
         This coroutine retrieves the visit data for employees under a specific manager,
         including the number of visits, average visit duration, and most frequent visit hours.
@@ -601,34 +602,94 @@ FROM sales
             pd.DataFrame: DataFrame containing employee sales data and rankings.
         """
         sql = f"""
-WITH visits AS (
-WITH employees AS (
-    select d.rep_name, d.rep_email as visitor_email, count(store_id)  as assigned_stores
+WITH base_data AS (
+    SELECT
+        d.rep_name,
+        d.rep_email AS visitor_email,
+        st.store_id,
+        f.form_id,
+        f.visit_date,
+        f.visit_timestamp,
+        f.visit_length,
+        f.visit_dow,
+        EXTRACT(HOUR FROM f.visit_timestamp) AS visit_hour,
+        DATE_TRUNC('month', f.visit_date) AS visit_month,
+        DATE_TRUNC('month', CURRENT_DATE) AS current_month,
+        DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '1 month' AS previous_month,
+        DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '2 month' AS two_months_ago
     FROM hisense.vw_stores st
-    left join hisense.stores_details d using(store_id)
-    where cast_to_integer(st.customer_id) = 401865
-    and manager_name = 'mcarter@trocglobal.com' and rep_name <> '0'
-    group by d.rep_name, d.rep_email, market_name, region_name
+    LEFT JOIN hisense.stores_details d USING (store_id)
+    LEFT JOIN hisense.form_information f ON d.rep_email = f.visitor_email
+    WHERE
+        cast_to_integer(st.customer_id) = 401865
+        AND d.manager_name = '{manager_id}'
+        AND d.rep_name <> '0'
+        AND f.visit_date >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '2 months'
+),
+employee_info AS (
+    SELECT
+        d.rep_name,
+        d.rep_email AS visitor_email,
+        COUNT(DISTINCT st.store_id) AS assigned_stores
+    FROM hisense.vw_stores st
+    LEFT JOIN hisense.stores_details d USING (store_id)
+    WHERE
+        cast_to_integer(st.customer_id) = 401865
+        AND d.manager_name = 'mcarter@trocglobal.com'
+        AND d.rep_name <> '0'
+    GROUP BY d.rep_name, d.rep_email
+),
+monthly_visits AS (
+    SELECT
+        bd.rep_name,
+        bd.visitor_email,
+        COALESCE(count(DISTINCT bd.form_id) FILTER(where visit_month = bd.current_month), 0)::integer AS current_visits,
+        COALESCE(count(DISTINCT bd.form_id) FILTER(where visit_month = bd.previous_month), 0)::integer AS previous_month_visits,
+        COALESCE(count(DISTINCT bd.form_id) FILTER(where visit_month = bd.two_months_ago), 0)::integer AS two_month_visits,
+        COUNT(DISTINCT bd.store_id) AS visited_stores,
+        AVG(bd.visit_length) AS visit_duration,
+        AVG(bd.visit_hour) AS hour_of_visit,
+        AVG(bd.visit_dow)::integer AS most_frequent_day_of_week
+    FROM base_data bd
+    GROUP BY bd.rep_name, bd.visitor_email
+),
+final AS (
+    SELECT
+        ei.*,
+        mv.current_visits,
+        mv.previous_month_visits,
+        mv.two_month_visits,
+        mv.visited_stores,
+        mv.visit_duration,
+        mv.hour_of_visit,
+        mv.most_frequent_day_of_week,
+        CASE most_frequent_day_of_week
+        WHEN 0 THEN 'Monday'
+        WHEN 1 THEN 'Tuesday'
+        WHEN 2 THEN 'Wednesday'
+        WHEN 3 THEN 'Thursday'
+        WHEN 4 THEN 'Friday'
+        WHEN 5 THEN 'Saturday'
+        WHEN 6 THEN 'Sunday'
+        ELSE 'Unknown' -- Handle any unexpected values
+    END AS day_of_week
+    FROM employee_info ei
+    LEFT JOIN monthly_visits mv
+        ON ei.visitor_email = mv.visitor_email
+    WHERE mv.current_visits is not null
 )
 SELECT
-e.*,
-count(distinct f.form_id) as total_visits,
-count(distinct f.store_id) as visited_stores,
-avg(visit_length) as average_visits_duration,
-avg(visit_hour) as most_frequent_hour
-FROM employees e
-LEFT JOIN hisense.form_information f ON e.visitor_email = f.visitor_email
-WHERE f.visit_date::date >= CURRENT_DATE - INTERVAL '21 days'
-GROUP BY e.rep_name, e.visitor_email, e.assigned_stores
-)
-SELECT *,
-rank() over (order by total_visits DESC) as ranked_visits,
-rank() over (order by average_visits_duration DESC) as ranked_duration
-FROM visits
+    *,
+    RANK() OVER (ORDER BY current_visits DESC) AS ranking_visits,
+    RANK() OVER (ORDER BY previous_month_visits DESC) AS previous_month_ranking,
+    RANK() OVER (ORDER BY two_month_visits DESC) AS two_month_ranking,
+    RANK() OVER (ORDER BY visit_duration DESC) AS ranking_duration
+FROM final
+ORDER BY visitor_email DESC;
         """
         visit_data = await self.get_dataset(sql, output='pandas')
         if visit_data.empty:
             raise ToolException(
-                f"No Employee Visit data found for manager {manager}."
+                f"No Employee Visit data found for manager {manager_id}."
             )
         return visit_data

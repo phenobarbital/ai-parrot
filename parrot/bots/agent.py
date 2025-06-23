@@ -354,7 +354,7 @@ class BasicAgent(AbstractBot):
             tools=tools,
             verbose=verbose,
             return_intermediate_steps=True,
-            max_iterations=5,
+            max_iterations=10,
             max_execution_time=360,
             handle_parsing_errors=True,
             memory=self.memory,
