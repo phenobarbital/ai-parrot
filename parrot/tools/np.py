@@ -3,6 +3,7 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import numexpr as ne
 import seaborn as sns
 from datamodel.parsers.json import json_decoder, json_encoder  # noqa  pylint: disable=E0611
 from navconfig import BASE_DIR
@@ -75,6 +76,7 @@ print(f"Pandas version: {pd.__version__}")
             'np': np,
             'plt': plt,
             'sns': sns,
+            'ne': ne,
             'json_encoder': json_encoder,
             'json_decoder': json_decoder,
             'extended_json': {

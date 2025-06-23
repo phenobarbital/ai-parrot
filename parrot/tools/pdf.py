@@ -18,7 +18,10 @@ from navconfig import BASE_DIR
 logging.getLogger("weasyprint").setLevel(logging.ERROR)  # Suppress WeasyPrint warnings
 # Suppress tiktoken warnings
 logging.getLogger("tiktoken").setLevel(logging.ERROR)
-logging.getLogger("fontTools").setLevel(logging.ERROR)
+logging.getLogger("fontTools.ttLib.ttFont").setLevel(logging.ERROR)
+logging.getLogger("fontTools.subset.timer").setLevel(logging.ERROR)
+logging.getLogger("fontTools.subset").setLevel(logging.ERROR)
+
 
 MODEL_CTX = {
     "gpt-4.1": 32_000,

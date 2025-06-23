@@ -13,6 +13,10 @@ logging.getLogger(name='selenium').setLevel(logging.INFO)
 logging.getLogger(name='matplotlib').setLevel(logging.WARNING)
 logging.getLogger(name='PIL').setLevel(logging.INFO)
 logging.getLogger("grpc").setLevel(logging.CRITICAL)
+logging.getLogger("weasyprint").setLevel(logging.ERROR)  # Suppress WeasyPrint warnings
+# Suppress tiktoken warnings
+logging.getLogger("tiktoken").setLevel(logging.ERROR)
+logging.getLogger("fontTools").setLevel(logging.ERROR)
 
 
 # Static directory

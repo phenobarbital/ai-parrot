@@ -1,5 +1,6 @@
 from pathlib import Path
-from typing import Tuple, Union, List, Dict, Any, Optional, Callable
+from typing import Tuple, Union, List, Dict, Any, Optional, Callable, Sequence, Awaitable
+import functools
 from abc import abstractmethod
 from io import BytesIO
 import tempfile
@@ -16,6 +17,8 @@ from notify.models import Actor, Chat, TeamsCard, TeamsChannel
 from notify.conf import NOTIFY_REDIS, NOTIFY_WORKER_STREAM, NOTIFY_CHANNEL
 # Navigator:
 from navconfig import config
+from navigator_session import get_session
+from navigator_auth.conf import AUTH_SESSION_OBJECT
 # Tasker:
 from navigator.background import BackgroundQueue
 from navigator.applications.base import BaseApplication  # pylint: disable=E0611
@@ -38,6 +41,77 @@ class RedisWriter:
         """Get Redis Connection."""
         return self.conn
 
+def auth_groups(
+    allowed: Sequence[str]
+) -> Callable[[Callable[..., Awaitable]], Callable[..., Awaitable]]:
+    """Ensure the request is authenticated *and* the user belongs
+    to at least one of `allowed` groups.
+    """
+    def decorator(fn: Union[Any, Any]) -> Any:
+        # 1️⃣ first wrap the target function with the base auth check
+        fn = AbstractAgentHandler.service_auth(fn)
+        @functools.wraps(fn)
+        async def wrapper(self, *args, **kwargs):
+            # At this point `service_auth` has already:
+            #   * verified the session
+            #   * populated `self._session` and `self._superuser`
+            if self._superuser:
+                # If the user is a superuser, skip group checks
+                return await fn(self, *args, **kwargs)
+            # Now add the group check
+            user_groups = set(self._session.get("groups", []))
+            if not user_groups.intersection(allowed):
+                self.error(
+                    response={
+                        "error": "Forbidden",
+                        "message": f"User lacks required group(s): {allowed}"
+                    },
+                    status=403
+                )
+            return await fn(self, *args, **kwargs)
+        return wrapper
+    return decorator
+
+def auth_by_attribute(
+    allowed: Sequence[str],
+    attribute: str = 'job_code'
+) -> Callable[[Callable[..., Awaitable]], Callable[..., Awaitable]]:
+    """Ensure the request is authenticated *and* the user belongs
+    to at least one of `allowed` Job Codes.
+    """
+    def decorator(fn: Union[Any, Any]) -> Any:
+        # 1️⃣ first wrap the target function with the base auth check
+        fn = AbstractAgentHandler.service_auth(fn)
+        @functools.wraps(fn)
+        async def wrapper(self, *args, **kwargs):
+            # At this point `service_auth` has already:
+            #   * verified the session
+            #   * populated `self._session` and `self._superuser`
+            if self._superuser:
+                # If the user is a superuser, skip job code checks
+                return await fn(self, *args, **kwargs)
+            # Now add the jobcode check
+            userinfo = self._session.get(AUTH_SESSION_OBJECT, {})
+            attr = userinfo.get(attribute, None)
+            if not attr:
+                self.error(
+                    response={
+                        "error": "Forbidden",
+                        "message": f"User does not have a valid {attribute}."
+                    },
+                    status=403
+                )
+            if not attr in allowed:
+                self.error(
+                    response={
+                        "error": "Forbidden",
+                        "message": f"User lacks required attribute(s) ({attribute})."
+                    },
+                    status=403
+                )
+            return await fn(self, *args, **kwargs)
+        return wrapper
+    return decorator
 
 class AbstractAgentHandler(BaseView):
     """Abstract class for chatbot/agent handlers.
@@ -66,6 +140,9 @@ class AbstractAgentHandler(BaseView):
         self.redis = RedisWriter()
         self.gcs = None  # GCS Manager
         self.s3 = None  # S3 Manager
+        # Session and User ID
+        self._session: Optional[Dict[str, Any]] = None
+        self._userid: Optional[str] = None
 
     def setup(self, app: Union[WebApp, web.Application], route: List[Dict[Any, str]] = None) -> None:
         """Setup the handler with the application and route.
@@ -134,6 +211,77 @@ class AbstractAgentHandler(BaseView):
             'path': path,
             'handler': handler
         })
+
+    async def user_session(self):
+        """Return the user session from the request."""
+        # TODO: Add ABAC Support.
+        if not self.request:
+            raise RuntimeError("Request is not available.")
+        try:
+            session = self.request.session
+        except AttributeError:
+            session = await get_session(self.request)
+        if not session:
+            self.error(
+                response={'message': 'Session not found'},
+                status=401
+            )
+        if not session:
+            self.error(
+                response={
+                    "error": "Unauthorized",
+                    "message": "Hint: maybe need to login and pass Authorization token."
+                },
+                status=403
+            )
+        return session
+
+    def get_userid(
+        self,
+        session: Optional[Dict[str, Any]] = None,
+        idx: str = 'user_id'
+    ) -> Optional[str]:
+        """Return the user ID from the session."""
+        if not session:
+            session = self.request.session
+        if not session:
+            return None
+        if AUTH_SESSION_OBJECT in session:
+            return session[AUTH_SESSION_OBJECT][idx]
+        return session.get(idx, None)
+
+    @staticmethod
+    def service_auth(fn: Union[Any, Any]) -> Any:
+        """Decorator to ensure the service is authenticated."""
+        async def wrapper(self, *args, **kwargs):
+            session = await self.user_session()
+            if not session:
+                self.error(
+                    response={
+                        "error": "Unauthorized",
+                        "message": "Hint: maybe need to login and pass Authorization token."
+                    },
+                    status=403
+                )
+            # define in-request variables for session and userid
+            self._userid = self.get_userid(session)
+            self._session = session
+            # extract other user information as groups, programs and username:
+            userinfo = session.get(AUTH_SESSION_OBJECT, {})
+            self._session['username'] = userinfo.get('username', None)
+            self._session['programs'] = userinfo.get('programs', [])
+            self._session['groups'] = userinfo.get('groups', [])
+            self._superuser = userinfo.get('superuser', False)
+            self._session['is_superuser'] = self._superuser
+            # Set the session in the request for further use
+            ## Calling post-authorization Model:
+            await self._post_auth(self, *args, **kwargs)
+            return await fn(self, *args, **kwargs)
+        return wrapper
+
+    async def _post_auth(self, *args, **kwargs):
+        """Post-authorization Model."""
+        return True
 
     def get_agent(self, name: Optional[str] = None) -> Any:
         """Return the agent instance."""
