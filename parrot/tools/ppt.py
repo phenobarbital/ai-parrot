@@ -169,8 +169,8 @@ class PowerPointGeneratorTool(BaseTool):
 
             return {
                 "status": "success",
-                "file_path": str(output_path),
-                "filename": output_path.name,
+                "file_path": output_path,
+                "filename": output_path,
                 "slides_created": len(slides_data),
                 "message": f"PowerPoint presentation successfully created at {output_path}"
             }

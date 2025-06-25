@@ -44,9 +44,9 @@ class PDFPrintInput(BaseModel):
 
     text: str = Field(..., description="The text (plaintext or Markdown) to convert to PDF File")
     # If you’d like users to control the output filename/location:
-    output_filename: Optional[str] = Field(
-        None,
-        description="(Optional) A custom filename (including extension) for the generated PDF."
+    file_prefix: str | None = Field(
+        default="document",
+        description="Stem for the output file. Timestamp and extension added automatically."
     )
     template_name: Optional[str] = Field(
         None,
@@ -68,7 +68,7 @@ class PDFPrintTool(BaseTool):
     description: str = (
         "Generates a PDF file from the provided text content. "
         "The content can be in plaintext or Markdown format. "
-        "You can also specify a custom filename for the output PDF."
+        "You can also specify an output filename prefix for the output PDF."
     )
     output_dir: Optional[Path] = BASE_DIR.joinpath("static", "documents", "pdf")
     env: Optional[Environment] = None
@@ -176,8 +176,9 @@ class PDFPrintTool(BaseTool):
         )
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        prefix = payload.file_prefix or "document"
         # Generate a unique filename based on the current timestamp
-        output_filename = f"document_{timestamp}.pdf"  # Default output filename
+        output_filename = f"{prefix}_{timestamp}.pdf"
         output_path = self.output_dir.joinpath(output_filename)
         try:
             HTML(
@@ -194,7 +195,7 @@ class PDFPrintTool(BaseTool):
                 "text": payload.text,
                 "file_path": self.output_dir,
                 "timestamp": timestamp,
-                "filename": output_filename
+                "filename": output_path
             }
         except Exception as e:
             print(f"Error in _generate_podcast: {e}")
@@ -204,7 +205,7 @@ class PDFPrintTool(BaseTool):
     async def _arun(
         self,
         text: str,
-        output_filename: Optional[str] = None,
+        file_prefix: Optional[str] = None,
         **kwargs: Any
     ) -> Dict[str, Any]:
         """
@@ -215,7 +216,7 @@ class PDFPrintTool(BaseTool):
             # 1) Build a dict of everything LangChain passed us
             payload_dict = {
                 "text": text,
-                "output_filename": output_filename,
+                "file_prefix": file_prefix,
                 **kwargs
             }
             # 2) Let Pydantic validate & coerce
@@ -231,7 +232,7 @@ class PDFPrintTool(BaseTool):
     def _run(
         self,
         text: Union[str, Dict[str, Any]],
-        output_filename: Optional[str] = None
+        file_prefix: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Synchronous entrypoint. If text_or_json is a JSON string, we load it first.
@@ -246,7 +247,7 @@ class PDFPrintTool(BaseTool):
             else:
                 return {"error": "Invalid payload type. Must be JSON string or dict."}
             # Validate with PodcastInput
-            payload = PDFPrintInput(**data)
+            payload = PDFPrintInput(file_prefix=file_prefix, **data)
         except Exception as e:
             return {"error": f"Invalid input: {e}"}
 

@@ -1,8 +1,9 @@
 from datetime import datetime
 import textwrap
-import asyncio
+from pathlib import Path
 from aiohttp import web
 from datamodel import BaseModel, Field
+from navconfig import BASE_DIR
 from navigator_auth.decorators import (
     is_authenticated,
     user_session
@@ -12,6 +13,8 @@ from parrot.handlers.abstract import AbstractAgentHandler
 from parrot.handlers.agents import AgentHandler
 from parrot.tools.weather import OpenWeather
 from parrot.tools import PythonREPLTool
+from parrot.tools.excel import ExcelTool
+from parrot.tools.ppt import PowerPointGeneratorTool
 from .tools import StoreInfo
 
 
@@ -25,12 +28,14 @@ class NextStopResponse(BaseModel):
     data: str = Field(..., description="Data returned by the agent")
     status: str = Field(default="success", description="Status of the response")
     output: str = Field(required=False)
+    transcript: str = Field(required=False, description="Transcript of the conversation with the agent")
     attributes: dict = Field(default_factory=dict, description="Additional attributes related to the response")
     store_id: str = Field(required=False, description="ID of the store associated with the session")
     manager_id: str = Field(required=False, description="ID of the manager associated with the session")
     created_at: datetime = Field(default=datetime.now())
     podcast_path: str = Field(required=False, description="Path to the podcast associated with the session")
     pdf_path: str = Field(required=False, description="Path to the PDF associated with the session")
+    documents: list[Path] = Field(default_factory=list, description="List of documents associated with the session")
 
 
 @user_session()
@@ -75,9 +80,16 @@ The agent can execute Python code snippets to perform calculations or data proce
         # Initialize the agent with a specific LLM and tools
         self._tools = [
             OpenWeather(request='weather'),
-            PythonREPLTool(),
+            PythonREPLTool(
+                report_dir=BASE_DIR.joinpath('static', self.agent_name, 'documents')
+            ),
+            ExcelTool(
+                output_dir=BASE_DIR.joinpath('static', self.agent_name, 'documents')
+            ),
+            PowerPointGeneratorTool(
+                output_dir=BASE_DIR.joinpath('static', self.agent_name, 'documents')
+            )
         ] + StoreInfo().get_tools()
-
 
     async def get_results(self, request: web.Request) -> web.Response:
         """Return the results of the agent."""
@@ -88,11 +100,6 @@ The agent can execute Python code snippets to perform calculations or data proce
             )
         # Retrieve the task status using uuid of background task:
         return await self.get_task_status(sid, request)
-
-    async def blocking_code(self, *args, **kwargs):
-        print('Starting blocking code')
-        await asyncio.sleep(60)  # Simulate a blocking operation
-        print('Finished blocking code')
 
     async def done_blocking(self, *args, **kwargs):
         print('Done Blocking Code :::')
@@ -108,20 +115,8 @@ The agent can execute Python code snippets to perform calculations or data proce
     @AbstractAgentHandler.service_auth
     async def get(self) -> web.Response:
         """Handle GET requests."""
-        job = await self.register_background_task(
-            task=self.blocking_code,
-            done_callback=self.done_blocking,
-            **{
-                'content': f"Hello, {self.agent_name}",
-                'attributes': {
-                    'agent_name': self.agent_name,
-                    'user_id': self._userid,
-                }
-            }
-        )
-        return JSONResponse(
-            {"message": f"NextStopAgent is running", "job": job}
-        )
+        # Placeholder for GET request handling logic
+        return web.json_response({"message": "NextStopAgent is ready to assist!"})
 
     @AbstractAgentHandler.service_auth
     async def post(self) -> web.Response:
@@ -130,8 +125,9 @@ The agent can execute Python code snippets to perform calculations or data proce
         # Get Store ID if Provided:
         store_id = data.get('store_id', None)
         manager_id = data.get('manager_id', None)
-        employee = data.get('employee', None)
-        if not store_id and not manager_id:
+        employee = data.get('employee_name', None)
+        query = data.get('query', None)
+        if not store_id and not manager_id and not query:
             return web.json_response(
                 {"error": "Store ID or Manager ID is required"}, status=400
             )
@@ -168,10 +164,10 @@ The agent can execute Python code snippets to perform calculations or data proce
                         'agent_name': self.agent_name,
                         'user_id': self._userid,
                         "manager_id": manager_id,
-                        "employee": employee
+                        "employee_name": employee
                     },
                     'manager_id': manager_id,
-                    'employee': employee
+                    'employee_name': employee
                 }
             )
             rsp_args = {
@@ -199,9 +195,25 @@ The agent can execute Python code snippets to perform calculations or data proce
                 "message": f"NextStopAgent is processing the request for manager {manager_id}",
                 'manager_id': manager_id,
             }
-        # Placeholder for actual processing logic
-        if not response:
-            return web.json_response({"error": "No data found"}, status=404)
+        else:
+            query = data.get('query', None)
+            # Execute the NextStop agent for an arbitrary query using the Background task:
+            job = await self.register_background_task(
+                task=self._query,
+                done_callback=self.done_blocking,
+                **{
+                    'content': query,
+                    'attributes': {
+                        'agent_name': self.agent_name,
+                        'user_id': self._userid
+                    },
+                    'project': data.get('project', 'Navigator'),
+                    'query': query
+                }
+            )
+            rsp_args = {
+                "message": f"NextStopAgent is processing the request for query {query}"
+            }
         # Return the response data
         if job:
             response = {
@@ -248,6 +260,7 @@ The agent can execute Python code snippets to perform calculations or data proce
             raise RuntimeError(
                 f"Failed to generate report due to an error in the agent invocation: {e}"
             )
+        response_data.output = final_report
         return response_data
 
 
@@ -317,4 +330,17 @@ The agent can execute Python code snippets to perform calculations or data proce
             raise RuntimeError(
                 f"Failed to generate report due to an error in the agent invocation: {e}"
             )
+        return response_data
+
+
+    async def _query(self, query: str, **kwargs) -> NextStopResponse:
+        """Generate a report for the NextStop agent."""
+        try:
+            response_data, response, _ = await self.ask_agent(query)
+        except Exception as e:
+            print(f"Error invoking agent: {e}")
+            raise RuntimeError(
+                f"Failed to generate report due to an error in the agent invocation: {e}"
+            )
+        response_data.output = response.output.strip()
         return response_data
