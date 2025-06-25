@@ -17,12 +17,18 @@ from notify.models import Actor, Chat, TeamsCard, TeamsChannel
 from notify.conf import NOTIFY_REDIS, NOTIFY_WORKER_STREAM, NOTIFY_CHANNEL
 # Navigator:
 from navconfig import config
+from navconfig.logging import logging
 from navigator_session import get_session
 from navigator_auth.conf import AUTH_SESSION_OBJECT
 # Tasker:
-from navigator.background import BackgroundQueue
+from navigator.background import (
+    BackgroundService,
+    TaskWrapper,
+    JobRecord
+)
 from navigator.applications.base import BaseApplication  # pylint: disable=E0611
 from navigator.views import BaseView
+from navigator.responses import JSONResponse
 from navigator.types import WebApp  # pylint: disable=E0611
 from navigator.conf import CACHE_URL
 # Parrot:
@@ -137,12 +143,15 @@ class AbstractAgentHandler(BaseView):
             super().__init__(request, *args, **kwargs)
         else:
             pass
+        self.logger = logging.getLogger(f"{self.__class__.__module__}.{self.__class__.__name__}")
         self.redis = RedisWriter()
         self.gcs = None  # GCS Manager
         self.s3 = None  # S3 Manager
         # Session and User ID
         self._session: Optional[Dict[str, Any]] = None
         self._userid: Optional[str] = None
+        # Temporal Agent Uploader
+        self.temp_dir = self.create_temp_directory()
 
     def setup(self, app: Union[WebApp, web.Application], route: List[Dict[Any, str]] = None) -> None:
         """Setup the handler with the application and route.
@@ -170,10 +179,11 @@ class AbstractAgentHandler(BaseView):
         self._register_additional_routes()
 
         # Tasker: Background Task Manager:
-        BackgroundQueue(
-            app=app,
-            max_workers=5,
-            queue_size=5,
+        BackgroundService(
+            app=self.app,
+            max_workers=10,
+            queue_size=10,
+            tracker_type='redis',  # Use 'redis' for Redis-based tracking
             service_name=f"{self.agent_name}_tasker"
         )
         # Startup and shutdown callbacks
@@ -183,6 +193,49 @@ class AbstractAgentHandler(BaseView):
             app.on_shutdown.append(self.on_shutdown)
         if callable(self.on_cleanup):
             app.on_cleanup.append(self.on_cleanup)
+
+    async def register_background_task(
+        self,
+        task: Callable[..., Awaitable],
+        request: web.Request = None,
+        done_callback: Optional[Callable[..., Awaitable]] = None,
+        *args,
+        **kwargs
+    ) -> JobRecord:
+        """Register a background task with the BackgroundService.
+        Add an optional task wrapper to handle the task execution.
+        Args:
+            task (Callable[..., Awaitable]): The task to be executed.
+            request (web.Request, optional): The request object. Defaults to None.
+            done_callback (Optional[Callable[..., Awaitable]], optional):
+                A callback to be called when the task is done. Defaults to None.
+            *args: Positional arguments to pass to the task.
+            **kwargs: Keyword arguments to pass to the task.
+        Returns:
+            JobRecord: The job record containing the task ID and other details.
+        Raises:
+            RuntimeError: If the request is not available.
+        """
+        if not request:
+            request = self.request
+        if not request:
+            raise RuntimeError("Request is not available.")
+        # Create a TaskWrapper instance
+        task = TaskWrapper(
+            fn=task,
+            *args,
+            logger=self.logger,
+            **kwargs
+        )
+        task.add_callback(done_callback)
+        # Get the BackgroundService instance
+        service: BackgroundService = request.app['background_service']
+        # Register the task with the service
+        job = await service.submit(task)
+        self.logger.notice(
+            f"Registered background task: {task!r} with ID: {job.task_id}"
+        )
+        return job
 
     def _register_additional_routes(self):
         """Register additional custom routes defined in the class."""
@@ -202,6 +255,42 @@ class AbstractAgentHandler(BaseView):
             # Add the route to the router
             self.app.router.add_route(method, path, route_wrapper)
 
+    async def get_task_status(self, task_id: str, request: web.Request = None) -> JSONResponse:
+        """Get the status of a background task by its ID."""
+        if request:
+            request = self.request
+        if not request:
+            raise RuntimeError("Request is not available.")
+        service: BackgroundService = self.request.app['background_service']
+        try:
+            job = await service.record(task_id)
+            if job:
+                return JSONResponse(
+                    {
+                        "task_id": job.task_id,
+                        "status": job.status,
+                        "result": job.result,
+                        "created_at": job.created_at,
+                        "started_at": job.started_at,
+                        "error": job.error,
+                        "stacktrace": job.stacktrace,
+                        "attributes": job.attributes,
+                        "finished_at": job.finished_at,
+                        "name": job.name,
+                        "job": job
+                    }
+                )
+            else:
+                return JSONResponse(
+                    {"message": "Task not found"},
+                    status=404
+                )
+        except Exception as e:
+            return JSONResponse(
+                {"error": str(e)},
+                status=500
+            )
+
     def add_route(self, method: str, path: str, handler: str):
         """Instance method to add custom routes."""
         if not hasattr(self, 'additional_routes'):
@@ -211,6 +300,14 @@ class AbstractAgentHandler(BaseView):
             'path': path,
             'handler': handler
         })
+
+    def create_temp_directory(self, name: str = 'documents'):
+        """Create the temporary directory for saving Agent Documents."""
+        tmp_dir = tempfile.TemporaryDirectory()
+        # Create the "documents" subdirectory inside the temporary directory
+        p_dir = Path(tmp_dir.name).joinpath(self.agent_name, name)
+        p_dir.mkdir(parents=True, exist_ok=True)
+        return p_dir
 
     async def user_session(self):
         """Return the user session from the request."""
