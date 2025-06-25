@@ -8,7 +8,6 @@ from navigator_auth.decorators import (
     user_session
 )
 from navigator.responses import JSONResponse
-from parrot.llms.vertex import VertexLLM
 from parrot.handlers.abstract import AbstractAgentHandler
 from parrot.handlers.agents import AgentHandler
 from parrot.tools.weather import OpenWeather
@@ -97,6 +96,8 @@ The agent can execute Python code snippets to perform calculations or data proce
 
     async def done_blocking(self, *args, **kwargs):
         print('Done Blocking Code :::')
+        print('ARGS > ', args)
+        print('KWARGS > ', kwargs)
 
     async def get_agent_status(self, request: web.Request) -> web.Response:
         """Return the status of the agent."""
@@ -122,6 +123,7 @@ The agent can execute Python code snippets to perform calculations or data proce
             {"message": f"NextStopAgent is running", "job": job}
         )
 
+    @AbstractAgentHandler.service_auth
     async def post(self) -> web.Response:
         """Handle POST requests."""
         data = await self.request.json()
@@ -134,28 +136,90 @@ The agent can execute Python code snippets to perform calculations or data proce
                 {"error": "Store ID or Manager ID is required"}, status=400
             )
         response = None
+        job = None
+        rsp_args = {}
         if store_id:
-            response = await self._nextstop_report(store_id.strip())
+            # Execute the NextStop agent for a specific store using the Background task:
+            job = await self.register_background_task(
+            task=self._nextstop_report,
+            done_callback=self.done_blocking,
+                **{
+                    'content': f"Store: {store_id}",
+                    'attributes': {
+                        'agent_name': self.agent_name,
+                        'user_id': self._userid,
+                        "store_id": store_id
+                    },
+                    'store_id': store_id,
+                }
+            )
+            rsp_args = {
+                "message": f"NextStopAgent is processing the request for store {store_id}",
+                'store_id': store_id,
+
+            }
         elif manager_id and employee:
-            response = await self._nextstop_manager(
-                manager_id.strip(),
-                employee_name=employee
+            job = await self.register_background_task(
+                task=self._nextstop_manager,
+                done_callback=self.done_blocking,
+                **{
+                    'content': f"Manager: {manager_id}, Employee: {employee}",
+                    'attributes': {
+                        'agent_name': self.agent_name,
+                        'user_id': self._userid,
+                        "manager_id": manager_id,
+                        "employee": employee
+                    },
+                    'manager_id': manager_id,
+                    'employee': employee
+                }
             )
+            rsp_args = {
+                "message": f"NextStopAgent is processing the request for manager {manager_id} and employee {employee}",
+                'manager_id': manager_id,
+                'employee': employee
+            }
         elif manager_id:
-            response = await self._team_performance(
-                manager_id.strip(),
-                project=data.get('project', 'Hisense')
+            # Execute the NextStop agent for a specific manager using the Background task:
+            job = await self.register_background_task(
+                task=self._team_performance,
+                done_callback=self.done_blocking,
+                **{
+                    'content': f"Manager: {manager_id}",
+                    'attributes': {
+                        'agent_name': self.agent_name,
+                        'user_id': self._userid,
+                        "manager_id": manager_id
+                    },
+                    'manager_id': manager_id,
+                    'project': data.get('project', 'Navigator')
+                }
             )
+            rsp_args = {
+                "message": f"NextStopAgent is processing the request for manager {manager_id}",
+                'manager_id': manager_id,
+            }
         # Placeholder for actual processing logic
         if not response:
             return web.json_response({"error": "No data found"}, status=404)
         # Return the response data
-        return self.json_response(
+        if job:
+            response = {
+                'user_id': self._userid,
+                'task_id': job.task_id,
+                "job": job,
+                **rsp_args
+            }
+            return JSONResponse(
+                response,
+                status=202,
+            )
+        return web.json_response(
             response,
-            status=200,
+            status=204,
         )
 
-    async def _nextstop_report(self, store_id: str) -> NextStopResponse:
+    async def _nextstop_report(self, store_id: str, **kwargs) -> NextStopResponse:
         """Generate a report for the NextStop agent."""
         query = await self.open_prompt('for_store.txt')
         question = query.format(store_id=store_id)
@@ -187,7 +251,7 @@ The agent can execute Python code snippets to perform calculations or data proce
         return response_data
 
 
-    async def _nextstop_manager(self, manager_id: str, employee_name: str) -> NextStopResponse:
+    async def _nextstop_manager(self, manager_id: str, employee_name: str, **kwargs) -> NextStopResponse:
         """Generate a report for the NextStop agent."""
         # TODO: migrate to safeDict on open_prompt and using Jinja2 templating
         query = await self.open_prompt('manager.txt')
@@ -223,7 +287,7 @@ The agent can execute Python code snippets to perform calculations or data proce
         return response_data
 
 
-    async def _team_performance(self, manager_id: str, project: str) -> NextStopResponse:
+    async def _team_performance(self, manager_id: str, project: str, **kwargs) -> NextStopResponse:
         """Generate a report for the NextStop agent."""
         query = await self.open_prompt('team_performance.txt')
         question = query.format(
