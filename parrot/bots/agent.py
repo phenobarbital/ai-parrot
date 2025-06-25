@@ -3,12 +3,14 @@ from typing import Dict, List, Mapping, Union, Any, Optional, AsyncGenerator, Ty
 import re
 from string import Template
 import json
+import traceback
 from pathlib import Path
 from datetime import datetime, timezone
 from typing_extensions import Annotated, TypedDict
 from aiohttp import web
 from pydantic import BaseModel
 import pandas as pd
+import langchain
 from langchain_core.tools import BaseTool
 from langchain_core.prompts import (
     ChatPromptTemplate
@@ -16,7 +18,7 @@ from langchain_core.prompts import (
 from langchain_core.tools import BaseTool, BaseToolkit, StructuredTool
 from langchain_core.retrievers import BaseRetriever
 from langchain import hub
-from langchain.callbacks.base import BaseCallbackHandler
+from langchain.callbacks.base import BaseCallbackHandler, AsyncCallbackHandler
 from langchain.agents import (
     create_react_agent,
     create_openai_functions_agent,
@@ -47,6 +49,7 @@ from tenacity import (
     retry,
     stop_after_attempt,
     wait_random_exponential,
+    RetryError
 )  # for exponential backoff
 from datamodel.typedefs import SafeDict
 from datamodel.exceptions import ValidationError # noqa  pylint: disable=E0611
@@ -61,6 +64,10 @@ from ..tools.gvoice import GoogleVoiceTool
 from .prompts import AGENT_PROMPT, AGENT_PROMPT_SUFFIX, FORMAT_INSTRUCTIONS
 
 
+langchain.debug = True
+
+
+# Disable gRPC fork support and TensorFlow logs
 os.environ["GRPC_ENABLE_FORK_SUPPORT"] = "0"
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"  # Hide TensorFlow logs if present
 
@@ -87,6 +94,16 @@ class StructuredDataTool(StructuredTool):
             return result.to_json(orient='records', indent=2)
 
         return str(result)
+
+
+class ToolCapture(AsyncCallbackHandler):
+    """Capture the output of tools called by the agent."""
+    def __init__(self):
+        self.tool_results = []             # filled with the raw tool dicts
+
+    async def on_tool_end(self, output, **_):
+        # output is the exact return value of your tool
+        self.tool_results.append(output)
 
 
 class BasicAgent(AbstractBot):
@@ -145,7 +162,6 @@ class BasicAgent(AbstractBot):
             ),
         ]
         # TODO: configure PDF tool to use a per-agent directory:
-
         # result_store_tool = ResultStoreTool()
         # get_result_tool = GetResultTool()
         # list_results_tool = ListResultsTool()
@@ -278,6 +294,7 @@ class BasicAgent(AbstractBot):
         ✅ Use Case: Best for decision-making and reasoning tasks where the agent must break problems down into multiple steps.
 
         """
+        # capture = ToolCapture()
         return RunnableMultiActionAgent(
             runnable = create_tool_calling_agent(
                 self._llm,
@@ -439,7 +456,11 @@ class BasicAgent(AbstractBot):
             query (str): The query to ask the chatbot.
 
         Returns:
-            str: The response from the chatbot.
+            a tuple with:
+                - str: The response from the Agent, formatted as Markdown.
+                - AgentResponse: The structured response object.
+                - dict: The raw result from the agent invocation, which may include additional metadata or output
+                - Exception: Any exception that occurred during the invocation, if applicable.
 
         """
         input_question = {
@@ -448,6 +469,13 @@ class BasicAgent(AbstractBot):
         result = None
         try:
             result = await self._agent.ainvoke(input_question)
+        except RetryError as err:
+            # 🔑 1.  Tenacity keeps the *last* attempt in .last_attempt
+            last_exc = err.last_attempt.exception()          # this is your TypeError
+            logging.error(
+                "Tenacity retries exhausted:\n%s", "".join(traceback.format_exception(last_exc))
+            )
+            raise
         except Exception as e:
             return 'Empty Answer', result, e
         try:

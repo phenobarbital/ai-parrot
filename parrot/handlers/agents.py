@@ -299,9 +299,9 @@ class AgentManager(BaseView):
             )
 
 
-class AgentResponse(BaseModel):
+class AgentAnswer(BaseModel):
     """
-    AgentResponse is a model that defines the structure of the response
+    AgentAnswer is a model that defines the structure of the response
     for Any Parrot agent.
     """
     # session_id: str = Field(..., description="Unique identifier for the session")
@@ -310,6 +310,7 @@ class AgentResponse(BaseModel):
     data: str = Field(..., description="Data returned by the agent")
     status: str = Field(default="success", description="Status of the response")
     output: str = Field(required=False)
+    transcript: str = Field(default=None, description="Transcript of the conversation with the agent")
     attributes: Dict[str, str] = Field(default_factory=dict, description="Attributes associated with the response")
     created_at: datetime = Field(default=datetime.now())
     podcast_path: str = Field(required=False, description="Path to the podcast associated with the session")
@@ -336,7 +337,7 @@ The agent can execute Python code snippets to perform calculations or data proce
     _agent: AbstractBot = None
     agent_name: str = "NextStopAgent"
     agent_id: str = "nextstop_agent"
-    _model_response: BaseModel = AgentResponse
+    _model_response: BaseModel = AgentAnswer
 
     def __init__(self, request=None, *args, **kwargs):
         super().__init__(request, *args, **kwargs)
@@ -375,7 +376,7 @@ The agent can execute Python code snippets to perform calculations or data proce
         except Exception as e:
             raise RuntimeError(f"Failed to read prompt file {prompt_file}: {e}")
 
-    async def ask_agent(self, query: str = None, prompt_file: str = None, *args, **kwargs) -> AgentResponse:
+    async def ask_agent(self, query: str = None, prompt_file: str = None, *args, **kwargs) -> AgentAnswer:
         """
         Asks the agent a question and returns the response.
         """
@@ -409,15 +410,30 @@ The agent can execute Python code snippets to perform calculations or data proce
                 )
         try:
             _, response, result = await agent.invoke(query)
+            if isinstance(result, Exception):
+                raise result
         except Exception as e:
             print(f"Error invoking agent: {e}")
             raise RuntimeError(
                 f"Failed to generate report due to an error in the agent invocation: {e}"
             )
-        print(':: RESULT > ', result)
-        print(':: RESPONSE > ', response)
         # Create the response object
         final_report = response.output.strip()
+        # parse the intermediate steps if available to extract PDF and podcast paths:
+        pdf_path = None
+        podcast_path = None
+        transcript = None
+        if response.intermediate_steps:
+            for step in response.intermediate_steps:
+                tool = step['tool']
+                result = step['result']
+                tool_input = step.get('tool_input', {})
+                if 'text' in tool_input:
+                    transcript = tool_input['text']
+                if tool == 'pdf_print_tool':
+                    pdf_path = result.get('filename', None)
+                elif tool == 'podcast_generator_tool':
+                    podcast_path = result.get('filename', None)
         response_data = self._model_response(
             user_id=userid,
             agent_name=self.agent_name,
@@ -426,6 +442,10 @@ The agent can execute Python code snippets to perform calculations or data proce
             status="success",
             created_at=datetime.now(),
             output=result.get('output', ''),
+            transcript=transcript,
+            pdf_path=str(pdf_path),
+            podcast_path=str(podcast_path),
+            documents=response.documents if hasattr(response, 'documents') else [],
             **kwargs
         )
         return response_data, response, result
