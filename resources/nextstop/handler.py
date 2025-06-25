@@ -1,13 +1,15 @@
 from datetime import datetime
 import textwrap
+import asyncio
 from aiohttp import web
 from datamodel import BaseModel, Field
 from navigator_auth.decorators import (
     is_authenticated,
     user_session
 )
+from navigator.responses import JSONResponse
 from parrot.llms.vertex import VertexLLM
-from parrot.handlers.abstract import AbstractAgentHandler
+from parrot.handlers.abstract import AbstractAgentHandler, TaskWrapper
 from parrot.tools.weather import OpenWeather
 from parrot.tools import PythonREPLTool
 from .tools import StoreInfo
@@ -94,10 +96,19 @@ The agent can execute Python code snippets to perform calculations or data proce
         """Return the results of the agent."""
         sid = request.match_info.get('sid', None)
         if not sid:
-            return web.json_response({"error": "Session ID is required"}, status=400)
-        # Placeholder for actual results retrieval logic
-        results = {"session_id": sid, "data": "Sample results data"}
-        return web.json_response(results)
+            return web.json_response(
+                {"error": "Session ID is required"}, status=400
+            )
+        # Retrieve the task status using uuid of background task:
+        return await self.get_task_status(sid, request)
+
+    async def blocking_code(self, *args, **kwargs):
+        print('Starting blocking code')
+        await asyncio.sleep(60)  # Simulate a blocking operation
+        print('Finished blocking code')
+
+    async def done_blocking(self, *args, **kwargs):
+        print('Done Blocking Code :::')
 
     async def get_agent_status(self, request: web.Request) -> web.Response:
         """Return the status of the agent."""
@@ -108,8 +119,15 @@ The agent can execute Python code snippets to perform calculations or data proce
     @AbstractAgentHandler.service_auth
     async def get(self) -> web.Response:
         """Handle GET requests."""
-        print('SESSION > ', self._session)
-        return web.json_response({"message": "NextStopAgent is running"})
+        job = await self.register_background_task(
+            task=self.blocking_code,
+            done_callback=self.done_blocking,
+            args=(self.agent_name,),
+            kwargs={'text': f"Hello, {self.agent_name}"}
+        )
+        return JSONResponse(
+            {"message": f"NextStopAgent is running", "job": job}
+        )
 
     async def post(self) -> web.Response:
         """Handle POST requests."""
