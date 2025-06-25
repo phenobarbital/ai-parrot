@@ -7,6 +7,7 @@ import tempfile
 import aiofiles
 # Parrot:
 from aiohttp import web
+from datamodel.parsers.json import json_decoder, json_encoder  # noqa  pylint: disable=E0611
 # AsyncDB:
 from asyncdb import AsyncDB
 # Requirements from Notify API:
@@ -19,6 +20,10 @@ from notify.conf import NOTIFY_REDIS, NOTIFY_WORKER_STREAM, NOTIFY_CHANNEL
 from navconfig import config
 from navconfig.logging import logging
 from navigator_session import get_session
+# Auth
+from navigator_auth.decorators import (
+    is_authenticated,
+)
 from navigator_auth.conf import AUTH_SESSION_OBJECT
 # Tasker:
 from navigator.background import (
@@ -26,6 +31,7 @@ from navigator.background import (
     TaskWrapper,
     JobRecord
 )
+from navigator.services.ws import WebSocketManager
 from navigator.applications.base import BaseApplication  # pylint: disable=E0611
 from navigator.views import BaseView
 from navigator.responses import JSONResponse
@@ -46,6 +52,45 @@ class RedisWriter:
     def redis(self):
         """Get Redis Connection."""
         return self.conn
+
+
+class JobWSManager(WebSocketManager):
+    """
+    Extends the generic WebSocketManager with one helper that sends
+    a direct message to the user owning a finished job.
+    """
+    async def notify_job_done(
+        self,
+        *,
+        user_id: int | str,
+        job_id: str,
+        status: str,
+        result: Optional[Any] = None,
+        error: Optional[str] = None,
+    ) -> None:
+        """
+        Push a JSON message to every open WS belonging to `user_id`.
+        """
+        payload = {
+            "type":   "job_status",
+            "job_id": job_id,
+            "status": status,        # "done" / "failed"
+            "result": result,
+            "error":  error,
+        }
+        message = json_encoder(payload)
+        delivered = 0
+        for ws, info in list(self.clients.items()):
+            if ws.closed:
+                continue
+            if info.get("user_id") == str(user_id):
+                await ws.send_str(message)
+                delivered += 1
+
+        if delivered == 0:
+            self.logger.debug(
+                "No active WS for user_id=%s when job %s finished", user_id, job_id
+            )
 
 def auth_groups(
     allowed: Sequence[str]
@@ -119,6 +164,8 @@ def auth_by_attribute(
         return wrapper
     return decorator
 
+
+@is_authenticated()
 class AbstractAgentHandler(BaseView):
     """Abstract class for chatbot/agent handlers.
 
@@ -178,14 +225,15 @@ class AbstractAgentHandler(BaseView):
         # And register any additional custom routes
         self._register_additional_routes()
 
-        # Tasker: Background Task Manager:
-        BackgroundService(
-            app=self.app,
-            max_workers=10,
-            queue_size=10,
-            tracker_type='redis',  # Use 'redis' for Redis-based tracking
-            service_name=f"{self.agent_name}_tasker"
-        )
+        # Tasker: Background Task Manager (if not already registered):
+        if 'background_service' not in app:
+            BackgroundService(
+                app=self.app,
+                max_workers=10,
+                queue_size=10,
+                tracker_type='redis',  # Use 'redis' for Redis-based tracking
+                service_name=f"{self.agent_name}_tasker"
+            )
         # Startup and shutdown callbacks
         if callable(self.on_startup):
             app.on_startup.append(self.on_startup)
@@ -220,22 +268,51 @@ class AbstractAgentHandler(BaseView):
             request = self.request
         if not request:
             raise RuntimeError("Request is not available.")
+        # Get the BackgroundService instance
+        service: BackgroundService = request.app['background_service']
         # Create a TaskWrapper instance
         task = TaskWrapper(
-            fn=task,
             *args,
+            fn=task,
             logger=self.logger,
             **kwargs
         )
         task.add_callback(done_callback)
-        # Get the BackgroundService instance
-        service: BackgroundService = request.app['background_service']
         # Register the task with the service
         job = await service.submit(task)
         self.logger.notice(
             f"Registered background task: {task!r} with ID: {job.task_id}"
         )
         return job
+
+    async def find_jobs(self, request: web.Request) -> web.Response:
+        """Return Jobs by User."""
+        # Get the BackgroundService instance
+        service: BackgroundService = request.app['background_service']
+        # get service tracker:
+        tracker = service.tracker
+        session = await self.get_user_session()
+        userid = self.get_userid(session=session)
+        if not userid:
+            return JSONResponse(
+                content=None,
+                headers={"x-message": "User ID not found in session."},
+                status=401
+            )
+        search = {
+            'user_id': userid,
+            'agent_name': self.agent_name,
+        }
+        result = await tracker.find_jobs(
+            attrs=search
+        )
+        if not result:
+            return JSONResponse(
+                content=None,
+                headers={"x-message": "No jobs found for this user."},
+                status=204
+            )
+        return JSONResponse(result)
 
     def _register_additional_routes(self):
         """Register additional custom routes defined in the class."""
@@ -309,7 +386,7 @@ class AbstractAgentHandler(BaseView):
         p_dir.mkdir(parents=True, exist_ok=True)
         return p_dir
 
-    async def user_session(self):
+    async def get_user_session(self):
         """Return the user session from the request."""
         # TODO: Add ABAC Support.
         if not self.request:
@@ -340,7 +417,7 @@ class AbstractAgentHandler(BaseView):
     ) -> Optional[str]:
         """Return the user ID from the session."""
         if not session:
-            session = self.request.session
+            session = self._session
         if not session:
             return None
         if AUTH_SESSION_OBJECT in session:
@@ -351,7 +428,7 @@ class AbstractAgentHandler(BaseView):
     def service_auth(fn: Union[Any, Any]) -> Any:
         """Decorator to ensure the service is authenticated."""
         async def wrapper(self, *args, **kwargs):
-            session = await self.user_session()
+            session = await self.get_user_session()
             if not session:
                 self.error(
                     response={
