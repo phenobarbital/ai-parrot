@@ -32,6 +32,7 @@ class AgentResponse(BaseModel):
     chat_history: list = Field(repr=True, default_factory=list)
     source_documents: list = Field(required=False, default_factory=list)
     filename: Dict[Path, str] = Field(required=False)
+    documents: List[Path] = Field(default_factory=list)
 
     def __post_init__(self) -> None:
         super().__post_init__()
@@ -39,6 +40,7 @@ class AgentResponse(BaseModel):
             self.answer = self.output
         if self.intermediate_steps:
             steps = []
+            docs: list[Path] = []
             for item, result in self.intermediate_steps:
                 if isinstance(item, AgentAction):
                     # convert into dictionary:
@@ -47,11 +49,25 @@ class AgentResponse(BaseModel):
                             "tool": item.tool,
                             "tool_input": item.tool_input,
                             "result": result,
-                            "log": str(item.log)
+                            # "log": str(item.log)
                         }
                     )
+                # --------- look for filenames --------- #
+                if isinstance(result, dict) and "filename" in result:
+                    file = result["filename"]
+                    if isinstance(file, str):
+                        # Convert to Path object
+                        file = Path(file).expanduser().resolve()
+                    if isinstance(file, Path) and file.exists():
+                        # Ensure the file exists
+                        docs.append(file)
+                    elif isinstance(file, str) and Path(file).expanduser().exists():
+                        # If it's a string, convert to Path and check existence
+                        docs.append(Path(file).expanduser().resolve())
+
             if steps:
                 self.intermediate_steps = steps
+            self.documents = docs
 
 
 class ChatResponse(BaseModel):

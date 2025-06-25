@@ -1,0 +1,35 @@
+<!-- templates/report.html -->
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>{{ template_vars.title or "Document" }}</title>
+    {# Link in your stylesheets; any listed in payload.stylesheets, plus base.css below #}
+    <link rel="stylesheet" href="{{ base_url }}/css/base.css">
+  </head>
+  <body>
+    <header>
+      {% if template_vars.title %}
+        <h1>{{ template_vars.title }}</h1>
+      {% endif %}
+      {% if template_vars.author or template_vars.date %}
+        <p class="meta">
+          {% if template_vars.author %}By {{ template_vars.author }}{% endif %}
+          {% if template_vars.date %} | {{ template_vars.date }}{% endif %}
+        </p>
+      {% endif %}
+      <hr>
+    </header>
+
+    <main>
+      <div class="table-container">
+        {{ body | safe }}
+      </div>
+    </main>
+
+    <footer>
+      <hr>
+      <p class="footer">Generated on {{ template_vars.date or "" }}</p>
+    </footer>
+  </body>
+</html>

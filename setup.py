@@ -147,7 +147,7 @@ setup(
     install_requires=[
         "Cython==3.0.11",
         "langchain>=0.3.25",
-        "langchain-core==0.3.61",
+        "langchain-core==0.3.65",
         "langchain-community==0.3.24",
         "langchain-experimental==0.3.4",
         "langchain-text-splitters==0.3.8",
@@ -188,7 +188,8 @@ setup(
             "google-api-python-client>=2.151.0",
             "pomegranate==1.1.0",
             "autoviz==0.1.905",
-            "spacy==3.8.6"
+            "spacy==3.8.6",
+            "html2text==2025.4.15"
         ],
         "loaders": [
             # Loaders:
