@@ -1,17 +1,37 @@
 from typing import Any, Dict, List, Optional, Type, Union
 import re
+import logging
 from datetime import datetime
 import asyncio
 from pathlib import Path
 import json
 import traceback
+import tiktoken
 from jinja2 import Environment, FileSystemLoader
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from langchain.tools import BaseTool
 import markdown
 from weasyprint import HTML, CSS
 from navconfig import BASE_DIR
 
+
+logging.getLogger("weasyprint").setLevel(logging.ERROR)  # Suppress WeasyPrint warnings
+# Suppress tiktoken warnings
+logging.getLogger("tiktoken").setLevel(logging.ERROR)
+logging.getLogger("fontTools.ttLib.ttFont").setLevel(logging.ERROR)
+logging.getLogger("fontTools.subset.timer").setLevel(logging.ERROR)
+logging.getLogger("fontTools.subset").setLevel(logging.ERROR)
+
+
+MODEL_CTX = {
+    "gpt-4.1": 32_000,
+    "gpt-4o-32k": 32_000,
+    "gpt-4o-8k": 8_000,
+}
+
+def count_tokens(text: str, model: str = "gpt-4.1") -> int:
+    enc = tiktoken.encoding_for_model(model)
+    return len(enc.encode(text))
 
 class PDFPrintInput(BaseModel):
     """
@@ -19,17 +39,20 @@ class PDFPrintInput(BaseModel):
     • text (required): the transcript or Markdown to saved as PDF File.
     • output_filename: (Optional) a custom filename (including extension) for the generated PDF.
     """
+    # Add a model_config to prevent additional properties
+    model_config = ConfigDict(extra='forbid')
+
     text: str = Field(..., description="The text (plaintext or Markdown) to convert to PDF File")
     # If you’d like users to control the output filename/location:
-    output_filename: Optional[str] = Field(
-        None,
-        description="(Optional) A custom filename (including extension) for the generated PDF."
+    file_prefix: str | None = Field(
+        default="document",
+        description="Stem for the output file. Timestamp and extension added automatically."
     )
     template_name: Optional[str] = Field(
         None,
         description="Name of the HTML template (e.g. 'report.html') to render"
     )
-    template_vars: Optional[Dict[str, Any]] = Field(
+    template_vars: Optional[Dict[str, str]] = Field(
         None,
         description="Dict of variables to pass into the template (e.g. title, author, date)"
     )
@@ -45,7 +68,7 @@ class PDFPrintTool(BaseTool):
     description: str = (
         "Generates a PDF file from the provided text content. "
         "The content can be in plaintext or Markdown format. "
-        "You can also specify a custom filename for the output PDF."
+        "You can also specify an output filename prefix for the output PDF."
     )
     output_dir: Optional[Path] = BASE_DIR.joinpath("static", "documents", "pdf")
     env: Optional[Environment] = None
@@ -108,21 +131,40 @@ class PDFPrintTool(BaseTool):
         content = payload.text.strip()
         if not content:
             raise ValueError("The text content cannot be empty.")
-        # Determine if the content is Markdown
+        # try:
+        #     model = payload.template_vars.get("llm_model", "gpt-4.1")
+        # except AttributeError:
+        #     model = "gpt-4.1"
+        # # 1) Count the tokens in the content
+        # # This is useful for debugging and ensuring we don’t exceed model limits
+        # if not isinstance(content, str):
+        #     raise ValueError("Content must be a string.")
+        # token_count = count_tokens(content, model)
+        # # 2) If they’re over the limit, warn & split
+        # max_tokens = MODEL_CTX.get(model, 32_000)
+        # if token_count > max_tokens:
+        #     self.logger.warning(
+        #         f"⚠️ Your document is {token_count} tokens long, "
+        #         f"which exceeds the {max_tokens}-token context window of {model}."
+        #     )
+        # Determine if the content is Markdownd
         is_markdown = self.is_markdown(content)
         if is_markdown:
             # Convert Markdown to HTML
             content = markdown.markdown(content, extensions=['tables'])
         if payload.template_name is None:
-            # wrap in a minimal boilerplate:
-            content = f"""
-            <html><head><meta charset="utf-8"></head>
-            <body>{content}</body></html>
-            """
+            tmpl = self.env.get_template("report.html")
         else:
-            tmpl = self.env.get_template(payload.template_name)
-            context = {"body": content, **(payload.template_vars or {})}
-            content = tmpl.render(**context)
+            tpl = payload.template_name
+            if not tpl.endswith('.html'):
+                tpl += '.html'
+            try:
+                tmpl = self.env.get_template(str(tpl))
+                context = {"body": content, **(payload.template_vars or {})}
+                content = tmpl.render(**context)
+            except Exception as e:
+                # use a generic template if the specified one fails
+                print(f"Error loading template {tpl}: {e}")
         # Attach the CSS objects:
         css_list = []
         for css_file in payload.stylesheets or []:
@@ -130,12 +172,13 @@ class PDFPrintTool(BaseTool):
             css_list.append( CSS(filename=str(css_path)) )
         # add the tables CSS:
         css_list.append(
-            CSS(filename=str(self.templates_dir / "css" / "tables.css"))
+            CSS(filename=str(self.templates_dir / "css" / "base.css"))
         )
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        prefix = payload.file_prefix or "document"
         # Generate a unique filename based on the current timestamp
-        output_filename = f"document_{timestamp}.pdf"  # Default output filename
+        output_filename = f"{prefix}_{timestamp}.pdf"
         output_path = self.output_dir.joinpath(output_filename)
         try:
             HTML(
@@ -152,7 +195,7 @@ class PDFPrintTool(BaseTool):
                 "text": payload.text,
                 "file_path": self.output_dir,
                 "timestamp": timestamp,
-                "filename": output_filename
+                "filename": output_path
             }
         except Exception as e:
             print(f"Error in _generate_podcast: {e}")
@@ -162,7 +205,8 @@ class PDFPrintTool(BaseTool):
     async def _arun(
         self,
         text: str,
-        output_filename: Optional[str] = None
+        file_prefix: Optional[str] = None,
+        **kwargs: Any
     ) -> Dict[str, Any]:
         """
         LangChain will call this with keyword args matching PDFPrintInput, e.g.:
@@ -172,7 +216,8 @@ class PDFPrintTool(BaseTool):
             # 1) Build a dict of everything LangChain passed us
             payload_dict = {
                 "text": text,
-                "output_filename": output_filename
+                "file_prefix": file_prefix,
+                **kwargs
             }
             # 2) Let Pydantic validate & coerce
             payload = PDFPrintInput(**{k: v for k, v in payload_dict.items() if v is not None})
@@ -187,7 +232,7 @@ class PDFPrintTool(BaseTool):
     def _run(
         self,
         text: Union[str, Dict[str, Any]],
-        output_filename: Optional[str] = None
+        file_prefix: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Synchronous entrypoint. If text_or_json is a JSON string, we load it first.
@@ -202,7 +247,7 @@ class PDFPrintTool(BaseTool):
             else:
                 return {"error": "Invalid payload type. Must be JSON string or dict."}
             # Validate with PodcastInput
-            payload = PDFPrintInput(**data)
+            payload = PDFPrintInput(file_prefix=file_prefix, **data)
         except Exception as e:
             return {"error": f"Invalid input: {e}"}
 
