@@ -6,7 +6,8 @@ Tool for instanciate, managing and interacting with Chatbot through APIs.
 from typing import Any, Dict, Type
 from importlib import import_module
 from aiohttp import web
-from datamodel.exceptions import ValidationError
+from datamodel.exceptions import ValidationError  # pylint: disable=E0611 # noqa
+# Navigator:
 from navconfig.logging import logging
 from asyncdb.exceptions import NoDataFound
 from .bots.abstract import AbstractBot
@@ -14,7 +15,7 @@ from .bots.basic import BasicBot
 from .bots.chatbot import Chatbot
 from .bots.data import PandasAgent
 from .handlers.chat import ChatHandler, BotHandler
-from .handlers.agents import AgentHandler
+from .handlers.agents import AgentManager
 from .handlers import ChatbotHandler
 from .models import ChatbotModel, AgentModel
 
@@ -316,11 +317,11 @@ class BotManager:
         # Agent Handler:
         router.add_view(
             '/api/v1/agent',
-            AgentHandler
+            AgentManager
         )
         router.add_view(
             '/api/v1/agent/{agent_name}',
-            AgentHandler
+            AgentManager
         )
         # ChatBot Manager
         ChatbotHandler.configure(self.app, '/api/v1/bots')
