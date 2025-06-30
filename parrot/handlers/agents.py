@@ -381,7 +381,9 @@ The agent can execute Python code snippets to perform calculations or data proce
         Asks the agent a question and returns the response.
         """
         agent = self._agent or self.request.app[self.agent_id]
-        userid = self.request.user.user_id if self.request.user else self._userid
+        userid =self._userid if self._userid else self.request.session.get('user_id', None)
+        if not userid:
+            raise RuntimeError("User ID is not set in the session.")
         if not agent:
             raise RuntimeError(
                 f"Agent {self.agent_name} is not initialized or not found."
