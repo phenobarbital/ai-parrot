@@ -172,7 +172,9 @@ class PDFPrintTool(BaseTool):
             css_list.append( CSS(filename=str(css_path)) )
         # add the tables CSS:
         css_list.append(
-            CSS(filename=str(self.templates_dir / "css" / "base.css"))
+            CSS(
+                filename=str(self.templates_dir / "css" / "base.css")
+            )
         )
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
