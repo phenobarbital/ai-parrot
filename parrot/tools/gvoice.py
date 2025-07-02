@@ -7,6 +7,8 @@ from xml.sax.saxutils import escape
 from datetime import datetime
 import traceback
 import json
+import markdown
+import bs4
 import aiofiles
 # Use v1 for wider feature set including SSML
 from google.cloud import texttospeech_v1 as texttospeech
@@ -15,6 +17,35 @@ from pydantic import BaseModel, Field, ConfigDict
 from langchain.tools import BaseTool
 from navconfig import BASE_DIR
 from parrot.conf import GOOGLE_TTS_SERVICE
+
+
+MD_REPLACEMENTS = [
+    # inline code: `print("hi")`   →  print("hi")
+    (r"`([^`]*)`", r"\1"),
+    # bold / italic: **text** or *text* or _text_  →  text
+    (r"\*\*([^*]+)\*\*", r"\1"),
+    (r"[_*]([^_*]+)[_*]", r"\1"),
+    # strikethrough: ~~text~~
+    (r"~~([^~]+)~~", r"\1"),
+    # links: [label](url)  →  label
+    (r"\[([^\]]+)\]\([^)]+\)", r"\1"),
+]
+
+INLINE_CODE_RE = re.compile(r"`([^`]*)`")
+
+def strip_markdown(text: str) -> str:
+    """Remove the most common inline Markdown markers."""
+    for pattern, repl in MD_REPLACEMENTS:
+        text = re.sub(pattern, repl, text)
+    return text
+
+def markdown_to_plain(md: str) -> str:
+    html = markdown.markdown(md, extensions=["extra", "smarty"])
+    return ''.join(bs4.BeautifulSoup(html, "html.parser").stripped_strings)
+
+def strip_inline_code(text: str) -> str:
+    return INLINE_CODE_RE.sub(r"\1", text)
+
 
 class PodcastInput(BaseModel):
     """
@@ -183,7 +214,8 @@ class GoogleVoiceTool(BaseTool):
                 continue
 
             if line:
-                ssml += f'<p>{escape(line)}</p>'
+                clean = strip_markdown(line)
+                ssml += f'<p>{escape(clean)}</p>'
 
         ssml += "</speak>"
         return ssml
