@@ -39,3 +39,23 @@ class ManagerInput(BaseModel):
             "required": ["manager_id"]
         }
     )
+
+
+class EmployeeInput(BaseModel):
+    """Input schema for employee-related operations requiring an Employee ID."""
+    employee_id: str = Field(
+        ...,
+        description="The unique identifier of the employee you want to know about.",
+        example="EMP789",
+        title="Employee ID",
+        min_length=1,
+        max_length=50
+    )
+    # Add a model_config to prevent additional properties
+    model_config = ConfigDict(
+        arbitrary_types_allowed=False,
+        extra="forbid",
+        json_schema_extra={
+            "required": ["employee_id"]
+        }
+    )

@@ -31,6 +31,7 @@ class NextStopResponse(BaseModel):
     transcript: str = Field(required=False, description="Transcript of the conversation with the agent")
     attributes: dict = Field(default_factory=dict, description="Additional attributes related to the response")
     store_id: str = Field(required=False, description="ID of the store associated with the session")
+    employee_id: str = Field(required=False, description="ID of the employee associated with the session")
     manager_id: str = Field(required=False, description="ID of the manager associated with the session")
     created_at: datetime = Field(default=datetime.now())
     podcast_path: str = Field(required=False, description="Path to the podcast associated with the session")
@@ -126,8 +127,9 @@ The agent can execute Python code snippets to perform calculations or data proce
         store_id = data.get('store_id', None)
         manager_id = data.get('manager_id', None)
         employee = data.get('employee_name', None)
+        employee_id = data.get('employee_id', None)
         query = data.get('query', None)
-        if not store_id and not manager_id and not query:
+        if not store_id and not manager_id and not employee_id and not query:
             return web.json_response(
                 {"error": "Store ID or Manager ID is required"}, status=400
             )
@@ -153,6 +155,25 @@ The agent can execute Python code snippets to perform calculations or data proce
                 "message": f"NextStopAgent is processing the request for store {store_id}",
                 'store_id': store_id,
 
+            }
+        elif employee_id:
+            # Execute the NextStop agent for a specific employee using the Background task:
+            job = await self.register_background_task(
+                task=self._nextstop_employee,
+                done_callback=self.done_blocking,
+                **{
+                    'content': f"Employee: {employee_id}",
+                    'attributes': {
+                        'agent_name': self.agent_name,
+                        'user_id': self._userid,
+                        "employee_id": employee_id
+                    },
+                    'employee_id': employee_id
+                }
+            )
+            rsp_args = {
+                "message": f"NextStopAgent is processing the request for employee {employee_id}",
+                'employee_id': employee_id
             }
         elif manager_id and employee:
             job = await self.register_background_task(
@@ -263,6 +284,37 @@ The agent can execute Python code snippets to perform calculations or data proce
         response_data.output = final_report
         return response_data
 
+    async def _nextstop_employee(self, employee_id: str, **kwargs) -> NextStopResponse:
+        """Generate a report for the NextStop agent."""
+        query = await self.open_prompt('for_employee.txt')
+        question = query.format(employee_id=employee_id)
+        try:
+            _, response, _ = await self.ask_agent(question)
+        except Exception as e:
+            print(f"Error invoking agent: {e}")
+            raise RuntimeError(
+                f"Failed to generate report due to an error in the agent invocation: {e}"
+            )
+        # sections.append(response.output.strip())
+        # Join all sections into a single report
+        # final_report = "\n\n".join(sections)
+        final_report = response.output.strip()
+        # Use the joined report to generate a PDF and a Podcast:
+        query = await self.open_prompt('for_pdf.txt')
+        query = textwrap.dedent(query)
+        for_pdf = query.format(
+            final_report=final_report
+        )
+        # Invoke the agent with the PDF generation prompt
+        try:
+            response_data, response, _ = await self.ask_agent(for_pdf, employee_id=employee_id)
+        except Exception as e:
+            print(f"Error invoking agent: {e}")
+            raise RuntimeError(
+                f"Failed to generate report due to an error in the agent invocation: {e}"
+            )
+        response_data.output = final_report
+        return response_data
 
     async def _nextstop_manager(self, manager_id: str, employee_name: str, **kwargs) -> NextStopResponse:
         """Generate a report for the NextStop agent."""
