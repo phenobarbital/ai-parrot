@@ -96,12 +96,15 @@ class StoreInfo(BaseToolkit):
             coroutine=self.get_by_employee_visits,
             description=(
                 "Get statistics about visits made by an Employee during the current week. "
+                "Returns detailed visit information for the specified employee. "
+                "Data is returned as a pandas dataframe with visit metrics."
             ),
             args_schema=EmployeeInput,
+            # return_direct=True,
             handle_tool_error=True
         )
 
-    async def get_by_employee_visits(self, employee_id: str) -> pd.DataFrame:
+    async def get_by_employee_visits(self, employee_id: str) -> dict:
         """Get visits information for a specific employee.
 
         This coroutine retrieves the most recent visits made by the specified employee,
@@ -111,7 +114,7 @@ class StoreInfo(BaseToolkit):
             employee_id (str): The unique identifier of the employee.
 
         Returns:
-            pd.DataFrame: DataFrame containing the last visits with detailed information.
+            dict: Data containing the last visits with detailed information.
         """
         sql = f"""
 WITH visit_data AS (
@@ -129,14 +132,13 @@ WITH visit_data AS (
         time_out,
         d.store_id,
         d.visit_dow,
+        d.account_name,
         st.alt_name as alt_store,
         -- Calculate time spent in decimal minutes
         CASE
             WHEN time_in IS NOT NULL AND time_out IS NOT NULL THEN
                 EXTRACT(EPOCH FROM (time_out::time - time_in::time)) / 60.0
-            ELSE NULL
-         END AS time_spent_minutes,
-
+            ELSE NULL END AS time_spent_minutes,
         -- Aggregate visit data
         jsonb_agg(
             jsonb_build_object(
@@ -151,17 +153,32 @@ WITH visit_data AS (
     ---cross join dates da
     INNER JOIN troc.stores st ON st.store_id = d.store_id AND st.program_slug = 'hisense'
     WHERE visit_date::date between (
-       SELECT firstdate  FROM public.week_range((current_date::date - interval '1 week')::date, (current_date::date - interval '1 week')::date))
-       and (SELECT lastdate  FROM public.week_range((current_date::date - interval '1 week')::date, (current_date::date - interval '1 week')::date))
+    SELECT firstdate  FROM public.week_range((current_date::date - interval '1 week')::date, (current_date::date - interval '1 week')::date))
+    and (SELECT lastdate  FROM public.week_range((current_date::date - interval '1 week')::date, (current_date::date - interval '1 week')::date))
     AND column_name IN ('9733','9731','9732','9730')
     AND d.visitor_email = '{employee_id}'
     GROUP BY
-        form_id, formid, visit_date, visit_timestamp, visit_length, d.visit_hour,
+        form_id, formid, visit_date, visit_timestamp, visit_length, d.visit_hour, d.account_name,
         time_in, time_out, d.store_id, st.alt_name, visitor_name, visitor_email, visitor_role, d.visit_dow
+),
+retailer_summary AS (
+  -- compute per-visitor, per-account counts, then turn into a single JSONB
+  SELECT
+    visitor_email,
+    jsonb_object_agg(account_name, cnt) AS visited_retailers
+  FROM (
+    SELECT
+      visitor_email,
+      account_name,
+      COUNT(*) AS cnt
+    FROM visit_data
+    GROUP BY visitor_email, account_name
+  ) t
+  GROUP BY visitor_email
 )
 SELECT
 visitor_name,
-visitor_email,
+vd.visitor_email,
 max(visit_date) as latest_visit_date,
 COUNT(DISTINCT form_id) AS number_of_visits,
 count(distinct store_id) as visited_stores,
@@ -172,16 +189,24 @@ max(time_out) as max_time_out,
 mode() WITHIN GROUP (ORDER BY visit_hour) as most_frequent_hour_of_day,
 mode() WITHIN GROUP (ORDER BY visit_dow) AS most_frequent_day_of_week,
 percentile_disc(0.5) WITHIN GROUP (ORDER BY visit_length) AS median_visit_duration,
-jsonb_agg(elem) AS visit_data
-FROM visit_data, LATERAL jsonb_array_elements(visit_info) AS elem
-group by visitor_name, visitor_email
+jsonb_agg(elem) AS visit_data,
+rs.visited_retailers
+FROM visit_data vd
+CROSS JOIN LATERAL jsonb_array_elements(visit_info) AS elem
+LEFT JOIN retailer_summary rs
+    ON rs.visitor_email = vd.visitor_email
+group by visitor_name, vd.visitor_email, rs.visited_retailers
         """
         visit_data = await self.get_dataset(sql, output='pandas')
         if visit_data.empty:
             raise ToolException(
                 f"No Visit data found for Employee {employee_id}."
             )
-        return visit_data
+        result = visit_data.to_dict(orient='records')
+        if isinstance(result, list) and len(result) == 1:
+            # If only one record, return it directly
+            return result[0]
+        return result
 
     def _get_foot_traffic_tool(self) -> StructuredTool:
         """Create the traffic information retrieval tool.
@@ -236,15 +261,15 @@ LIMIT 3;
             coroutine=self.get_visit_info,
             description=(
                 "Retrieve the last 3 visits made to a specific store. "
-                "Returns detailed information including visit timestamps, duration, "
-                "customer types, and visit purposes. Useful for understanding recent "
-                "customer activity patterns and store performance."
+                "Returns detailed visit information including timestamps, "
+                " duration, customer types, and visit purposes. "
+                " Data is a list of dictionaries with visit details."
             ),
             args_schema=StoreInfoInput,
             handle_tool_error=True
         )
 
-    async def get_visit_info(self, store_id: str) -> pd.DataFrame:
+    async def get_visit_info(self, store_id: str) -> List[dict]:
         """Get visit information for a specific store.
 
         This coroutine retrieves the most recent visits for the specified store,
@@ -254,7 +279,7 @@ LIMIT 3;
             store_id (str): The unique identifier of the store.
 
         Returns:
-            str: Pandas dataframe containing the last visits with detailed information.
+            List[dict]: Data containing the last visits with detailed information.
         """
         sql = f"""
 WITH visits AS (
@@ -343,7 +368,7 @@ JOIN median_visits mv USING(visitor_email)
             raise ToolException(
                 f"No visit data found for store with ID {store_id}."
             )
-        return visit_data
+        return visit_data.to_dict(orient='records')
 
 
     def _get_store_info_tool(self) -> StructuredTool:
@@ -427,7 +452,7 @@ JOIN median_visits mv USING(visitor_email)
             handle_tool_error=True
         )
 
-    async def get_employee_sales(self, manager_id: str) -> pd.DataFrame:
+    async def get_employee_sales(self, manager_id: str) -> str:
         """Get foot traffic data for a specific store.
         This coroutine retrieves the foot traffic data for the specified store,
         including the number of visitors and average visits per day.
@@ -435,7 +460,7 @@ JOIN median_visits mv USING(visitor_email)
         Args:
             manager (str): The unique identifier of the Manager (Associate OID).
         Returns:
-            pd.DataFrame: DataFrame containing employee sales data and rankings.
+            str: Data containing employee sales data and rankings.
         """
         sql = f"""
 WITH sales AS (
@@ -507,7 +532,7 @@ FROM sales
             raise ToolException(
                 f"No Employee Sales data found for manager {manager_id}."
             )
-        return visit_data
+        return json_encoder(visit_data.to_dict(orient='records'))
 
     def _get_employee_visits_tool(self) -> StructuredTool:
         """Create the employee visits retrieval tool.
@@ -531,14 +556,14 @@ FROM sales
             handle_tool_error=True
         )
 
-    async def get_employee_visits(self, manager_id: str) -> pd.DataFrame:
+    async def get_employee_visits(self, manager_id: str) -> str:
         """Get Employee Visits data for a specific Manager.
         This coroutine retrieves the visit data for employees under a specific manager,
         including the number of visits, average visit duration, and most frequent visit hours.
         Args:
             manager (str): The unique identifier of the Manager (Associate OID).
         Returns:
-            pd.DataFrame: DataFrame containing employee sales data and rankings.
+            str: Data containing employee sales data and rankings.
         """
         sql = f"""
 WITH base_data AS (
@@ -631,4 +656,6 @@ ORDER BY visitor_email DESC;
             raise ToolException(
                 f"No Employee Visit data found for manager {manager_id}."
             )
-        return visit_data
+        return json_encoder(
+            visit_data.to_dict(orient='records')
+        )  # type: ignore[return-value]

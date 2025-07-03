@@ -30,3 +30,21 @@ For VertexAI, creates a folder on "env" called "google" and copy the JSON creden
 CUDA requirements:
 pip install cuda-python
 pip install accelerate==0.29.1
+
+
+## For Spacy installation:
+
+pip install spacy-llm
+pip install -U 'spacy[transformers,lookups]'
+
+python -m spacy download en_core_web_trf
+python -m spacy download es_dep_news_trf
+python -m spacy download en_core_web_sm
+python -m spacy download es_dep_news_sm
+
+
+review: https://github.com/Urias-T/SEC-copilot
+
+docker pull marqoai/marqo:latest
+docker rm -f marqo
+docker run --name marqo -it --privileged -p 8882:8882 --add-host host.docker.internal:host-gateway marqoai/marqo:latest
