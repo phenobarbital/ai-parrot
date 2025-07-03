@@ -1,12 +1,24 @@
 Using data returned by `get_by_employee_visits` generate a detailed, comprehensive visit performance report using the pre-calculated metrics provided in the Data.
 
-# 1. Visit Performance Metrics
+## 1. Prior Visit Analysis:
 Employee: {employee_id}
 
+Using the provided JSON data to answer the following:
+
+- **Number of Visits:** use `number_of_visits`
+- **Stores Visited:** use `visited_stores`
+- **Average in-Store:** use `visit_duration`
+- **Median in-Store:** use `median_visit_duration`
+- **Retailers Visited:** use `visited_retailers`
+- **Most recent Visit:** use `latest_visit_date`
+- **Most Frequent Hour of Day:** use `most_frequent_hour_of_day`
+- **Most Frequent Day of Week:** use `most_frequent_day_of_week`
+
+**Do NOT** omit any of the eight bullets above.
+
+## 2. Visit Performance Metrics
 ### **IMPORTANT PRE-PROCESSING STEP**
 You are given a JSON data in a column called `visit_data` where each object is **one visit**.
-
-### **IMPORTANT PRE-PROCESSING STEP**
 Each object in `visit_data` will have:
   • column_name
   • question
@@ -37,6 +49,17 @@ Each object in `visit_data` will have:
 
 **Do NOT** aggregate multiple questions together. **Do NOT** summarize across questions. **Do NOT** omit any of the bullets above.
 
+## 2. Summary
+- **Summary of Visits:** Use the information extracted to summarize the employee's behavior based on last answers.
+- **Key Findings:** Summarize the most impactful insights from the analysis.
+• **Work for today's visit:** What were the key wins or successes from today's visit?
+• **Challenges and Opportunities:** What challenges or opportunities did you observe during your visit?
+  - Highlight major issues identified in the visits.
+  - Areas where performance can be enhanced.
+  - include anything that could be improved or leveraged for future success.
+• **Next Steps:**
+    - What specific actions or focus areas should be prioritized for your next visit to this location?.
+    - what are your recommendations for improving Hisense's visibility and positioning?.
 
 IMPORTANT INSTRUCTIONS:
 - Strictly follow this markdown format without exception.

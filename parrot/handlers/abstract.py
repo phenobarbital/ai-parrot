@@ -36,7 +36,7 @@ from navigator.applications.base import BaseApplication  # pylint: disable=E0611
 from navigator.views import BaseView
 from navigator.responses import JSONResponse
 from navigator.types import WebApp  # pylint: disable=E0611
-from navigator.conf import CACHE_URL
+from navigator.conf import CACHE_URL, default_dsn
 # Parrot:
 from parrot.llms.openai import OpenAILLM
 from parrot.bots.agent import BasicAgent
@@ -185,7 +185,7 @@ class AbstractAgentHandler(BaseView):
     base_route: str = None  # e.g., "/api/v1/agent/{agent_name}"
     additional_routes: List[Dict[str, Any]] = []  # Custom routes
 
-    def __init__(self, request=None, *args, **kwargs):
+    def __init__(self, request=None, *args, app: web.Application = None, **kwargs):
         if request is not None:
             super().__init__(request, *args, **kwargs)
         else:
@@ -199,6 +199,7 @@ class AbstractAgentHandler(BaseView):
         self._userid: Optional[str] = None
         # Temporal Agent Uploader
         self.temp_dir = self.create_temp_directory()
+        self.app = app
 
     def setup(self, app: Union[WebApp, web.Application], route: List[Dict[Any, str]] = None) -> None:
         """Setup the handler with the application and route.
@@ -241,6 +242,23 @@ class AbstractAgentHandler(BaseView):
             app.on_shutdown.append(self.on_shutdown)
         if callable(self.on_cleanup):
             app.on_cleanup.append(self.on_cleanup)
+
+    def db_connection(
+        self,
+        driver: str = 'pg',
+        dsn: str = None,
+        credentials: dict = None
+    ) -> AsyncDB:
+        """Return a database connection."""
+        if not dsn:
+            dsn = config.get(f'{driver.upper()}_DSN', fallback=default_dsn)
+        if not dsn and credentials:
+            dsn = credentials.get('dsn', default_dsn)
+        if not dsn:
+            raise ValueError(
+                f"DSN for {driver} is not provided."
+            )
+        return AsyncDB(driver, dsn=dsn, credentials=credentials)
 
     async def register_background_task(
         self,
@@ -354,7 +372,7 @@ class AbstractAgentHandler(BaseView):
                         "attributes": job.attributes,
                         "finished_at": job.finished_at,
                         "name": job.name,
-                        "job": job
+                        # "job": job
                     }
                 )
             else:
@@ -755,7 +773,7 @@ class AbstractAgentHandler(BaseView):
         if not llm:
             llm = OpenAILLM(
                 model="gpt-4.1",
-                temperature=0,
+                temperature=0.2,
                 max_tokens=4096,
                 use_chat=True
             )
