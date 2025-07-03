@@ -755,7 +755,7 @@ class AbstractAgentHandler(BaseView):
         if not llm:
             llm = OpenAILLM(
                 model="gpt-4.1",
-                temperature=0.1,
+                temperature=0,
                 max_tokens=4096,
                 use_chat=True
             )

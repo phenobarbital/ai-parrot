@@ -295,6 +295,7 @@ The agent can execute Python code snippets to perform calculations or data proce
             raise RuntimeError(
                 f"Failed to generate report due to an error in the agent invocation: {e}"
             )
+        print('LLEGA AQUI?')
         # sections.append(response.output.strip())
         # Join all sections into a single report
         # final_report = "\n\n".join(sections)

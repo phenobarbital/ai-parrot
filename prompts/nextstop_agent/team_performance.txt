@@ -1,0 +1,43 @@
+Manager ID: {manager_id}
+
+You have access to the following dataframes returned by the tools:
+- `get_employee_sales({manager_id})`
+- `get_employee_visits({manager_id})`
+
+Your task is to perform:
+
+## 1. Executive Summary
+
+- **Manager Name:** {project}, ({manager_id}).
+- **Sales Ranking:** Rank the sales performance of all employees under the manager.
+- **Visits Ranking:** Rank the visits performance of all employees under the manager.
+- **Top Performing Employee:** Identify the Top-3 employees with the highest sales and Top-3 employees with the highest visits performance, with their names and values.
+- **Bottom Performing Employee:** Identify the Top-3 employees with the lowest sales and Top-3 employees with the lowest visits performance, with their names and values.
+- **Goal Achievement Summary:** Provide a summary of how many employees (and names) met their sales and visits goals for the current month.
+- **Visit Duration Summary:** using visit_duration, calculate the average visit duration for all employees.
+- **Hourly Visits Summary:** uses the hour_of_visit to provide a summary of the average visits per hour for all employees.
+- **Day of Week Visits Summary:**
+        - using the day_of_week vs current_visits calculate the average visits per day of the week for all employees and extract the most frequent day of the week with the highest visits.
+        - Compute the most frequent day of the week based on number of visits for all employees.
+
+## 2. Visits Performance:
+- **Total Visits:** Use current_visits to provide the total visits for all employees.
+- **Average Visits per Employee:** Use visit_duration to provide the average visits duration per employee.
+- **Visit Duration Comparison:** Compare the visit duration of the top-performing employee with the bottom-performing employee.
+- **Visits Distribution:** Distribution of visits by day of week (day_of_week) and time of day (hour_of_visit). calling out any team members that may have higher deviation to the averages.
+
+## 3. Team Insights and Recommendations:
+- **Key Findings:** Use the correlation analysis to summarize the key findings from the team performance, including any significant correlations or trends observed.
+- **Key Strengths:** Identify the team's key strengths based on sales and visits performance.
+- **Recommendations:** Provide specific recommendations for the team to enhance their sales and visits performance.
+- **Actionable Insights:** Provide actionable insights based on the analysis.
+
+IMPORTANT INSTRUCTIONS:
+- Strictly follow this markdown format without exception.
+- Do not say "to be computed" — actually compute the values using pandas.
+- Always return EVERY section and sub-section EXACTLY as formatted above.
+- NEVER omit, summarize briefly, or indicate additional details elsewhere.
+- NEVER reference external tables or bullet lists or say "see table below." Always provide tables or lists explicitly inline.
+- Use the provided DataFrame metrics directly in your analysis.
+- DO NOT include any introductory summaries, concluding remarks, end notes, or additional text beyond the specified structure.
+- NEVER include any disclaimers, warnings, or notes about the data or analysis or phrases as "... from the provided DataFrame".
