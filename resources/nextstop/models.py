@@ -1,6 +1,9 @@
-from datetime import datetime
+from datetime import datetime, date
+from pathlib import Path
 # Pydantic:
 from pydantic import BaseModel, Field, ConfigDict
+# Model:
+from asyncdb.models import Model, Field as ModelField
 
 class StoreInfoInput(BaseModel):
     """Input schema for store-related operations requiring a Store ID."""
@@ -59,3 +62,71 @@ class EmployeeInput(BaseModel):
             "required": ["employee_id"]
         }
     )
+
+
+def today_date() -> date:
+    """Returns today's date."""
+    return datetime.now().date()
+
+class NextStopStore(Model):
+    """Model representing Table for the NextStop system."""
+    user_id: str = ModelField(
+        primary_key=True,
+        description="Unique identifier for the user.",
+        title="User ID",
+    )
+    data: str = ModelField(
+        default="",
+        description="Data related to the NextStop agent's response.",
+        title="Data"
+    )
+    agent_name: str = ModelField(
+        primary_key=True,
+        description="Name of the agent associated.",
+        title="Agent Name",
+        default="NextStopAgent"
+    )
+    program_slug: str = ModelField(
+        primary_key=True,
+        description="Unique identifier for the program slug.",
+        example="nextstop",
+        title="Program Slug",
+        default="hisense"
+    )
+    request_date: date = ModelField(
+        default_factory=today_date,
+        description="Timestamp when the record was created."
+    )
+    output: str = ModelField(
+        default="",
+        description="Output of the NextStop agent's response.",
+        title="Output"
+    )
+    podcast_path: Path = ModelField(
+        default=None,
+        description="Path to the podcast file related to the NextStop agent's response.",
+        title="Podcast Path"
+    )
+    pdf_path: Path = ModelField(
+        default=None,
+        description="Path to the PDF file related to the NextStop agent's response.",
+        title="PDF Path"
+    )
+    image_path: Path = ModelField(
+        default=None,
+        description="Path to the image file related to the NextStop agent's response.",
+        title="Image Path"
+    )
+    documents: list[Path] = ModelField(
+        default_factory=list,
+        description="List of documents related to the NextStop agent's response.",
+        title="Documents"
+    )
+    created_at: datetime = Field(default=datetime.now)
+
+    class Meta:
+        """Meta class for NextStopStore model."""
+        name = "nextstop_responses"
+        schema = "troc"
+        strict = True
+        frozen = False

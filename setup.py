@@ -146,8 +146,8 @@ setup(
     ],
     install_requires=[
         "Cython==3.0.11",
-        "langchain>=0.3.25",
-        "langchain-core==0.3.65",
+        "langchain>=0.3.26,<0.4.0",
+        "langchain-core==0.3.67",
         "langchain-community==0.3.24",
         "langchain-experimental==0.3.4",
         "langchain-text-splitters==0.3.8",
@@ -257,13 +257,10 @@ setup(
             "tiktoken==0.7.0"
         ],
         "google": [
-            # "langchain-google-genai==2.1.4",
-            # "langchain-google-vertexai==2.0.21",
-            "langchain-google-vertexai>=2.0.24",
-            "langchain-google-genai>=2.1.4",
-            # "langchain-google-vertexai>=2.0.10",
-            "google-cloud-texttospeech==2.26.0",
-            "google-genai>=1.0.0",
+            "langchain-google-vertexai>=2.0.27",
+            "langchain-google-genai>=2.1.6",
+            "google-cloud-texttospeech==2.27.0",
+            "google-genai>=1.24.0",
             # "vertexai==1.71.1",
         ],
         "hunggingfaces": [
