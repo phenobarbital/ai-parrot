@@ -80,6 +80,11 @@ class NextStopStore(Model):
         description="Data related to the NextStop agent's response.",
         title="Data"
     )
+    content: str = ModelField(
+        default="",
+        description="Content related to the NextStop agent's response.",
+        title="Content"
+    )
     agent_name: str = ModelField(
         primary_key=True,
         description="Name of the agent associated.",
@@ -93,6 +98,11 @@ class NextStopStore(Model):
         title="Program Slug",
         default="hisense"
     )
+    kind: str = ModelField(
+        default="nextstop",
+        description="Kind of the agent, default is 'nextstop'.",
+        title="Kind"
+    )
     request_date: date = ModelField(
         default_factory=today_date,
         description="Timestamp when the record was created."
@@ -102,27 +112,32 @@ class NextStopStore(Model):
         description="Output of the NextStop agent's response.",
         title="Output"
     )
-    podcast_path: Path = ModelField(
+    podcast_path: str = ModelField(
         default=None,
         description="Path to the podcast file related to the NextStop agent's response.",
         title="Podcast Path"
     )
-    pdf_path: Path = ModelField(
+    pdf_path: str = ModelField(
         default=None,
         description="Path to the PDF file related to the NextStop agent's response.",
         title="PDF Path"
     )
-    image_path: Path = ModelField(
+    image_path: str = ModelField(
         default=None,
         description="Path to the image file related to the NextStop agent's response.",
         title="Image Path"
     )
-    documents: list[Path] = ModelField(
+    documents: list[str] = ModelField(
         default_factory=list,
         description="List of documents related to the NextStop agent's response.",
         title="Documents"
     )
-    created_at: datetime = Field(default=datetime.now)
+    attributes: dict = ModelField(
+        default_factory=dict,
+        description="Attributes related to the NextStop agent's response.",
+        title="Attributes"
+    )
+    created_at: datetime
 
     class Meta:
         """Meta class for NextStopStore model."""

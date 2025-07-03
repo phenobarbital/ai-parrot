@@ -2,8 +2,10 @@ from typing import Any
 from datetime import datetime
 import textwrap
 from pathlib import Path
+import asyncio
 from aiohttp import web
 from datamodel import BaseModel, Field
+from datamodel.parsers.json import json_encoder  # pylint: disable=E0611
 from navconfig import BASE_DIR
 from navigator_auth.decorators import (
     is_authenticated,
@@ -104,33 +106,45 @@ The agent can execute Python code snippets to perform calculations or data proce
         # Retrieve the task status using uuid of background task:
         return await self.get_task_status(sid, request)
 
-    async def done_question(self, result: NextStopResponse, exc: Exception, **kwargs):
+    async def done_question(
+        self,
+        result: NextStopResponse,
+        exc: Exception,
+        loop: asyncio.AbstractEventLoop = None,
+        job_record: Any = None,
+        task_id: str = None,
+        **kwargs
+    ):
         """Callback function to handle the completion of a question."""
         if exc:
             print(f"Error in done_question: {exc}")
             return
         # Process the result of the question
-        if result.status == "done":
-            # Save the result into the database:
-            pg = self.db_connection()
-            async with await pg.connection() as conn:  # pylint: disable=E1101  # noqa
-                # Save the result to the database
-                NextStopStore.Meta.connection = conn
-                try:
-                    record = NextStopStore(
-                        user_id=result.user_id,
-                        agent_name=result.agent_name,
-                        program_slug='hisense',
-                        data=result.data,
-                        output=result.output,
-                        podcast_path=result.podcast_path,
-                        pdf_path=result.pdf_path,
-                        documents=result.documents,
-                    )
-                    await record.save()
-                except Exception as e:
-                    print(f"Error creating NextStopStore record: {e}")
-                    return
+        # Save the result into the database:
+        pg = self.db_connection()
+        async with await pg.connection() as conn:  # pylint: disable=E1101  # noqa
+            # Save the result to the database
+            NextStopStore.Meta.connection = conn
+            print('OUTPUT > ', type(result.output))
+            print('DATA > ', type(result.data))
+            try:
+                record = NextStopStore(
+                    user_id=result.user_id,
+                    agent_name=result.agent_name,
+                    program_slug='hisense',
+                    kind=job_record.name if job_record else 'nextstop',
+                    content=job_record.content,
+                    data=result.data,
+                    output=result.output,
+                    podcast_path=str(result.podcast_path),
+                    pdf_path=str(result.pdf_path),
+                    documents=json_encoder(result.documents),
+                    attributes=result.attributes,
+                )
+                await record.save()
+            except Exception as e:
+                print(f"Error creating NextStopStore record: {e}")
+                return
 
     async def get_agent_status(self, request: web.Request) -> web.Response:
         """Return the status of the agent."""
@@ -141,8 +155,37 @@ The agent can execute Python code snippets to perform calculations or data proce
     @AbstractAgentHandler.service_auth
     async def get(self) -> web.Response:
         """Handle GET requests."""
-        # Placeholder for GET request handling logic
-        return web.json_response({"message": "NextStopAgent is ready to assist!"})
+        pg = self.db_connection()
+        async with await pg.connection() as conn:  # pylint: disable=E1101  # noqa
+            try:
+                NextStopStore.Meta.connection = conn
+                # Retrieve all records from the NextStopStore table
+                userid = self._userid if self._userid else self.request.session.get('user_id', None)
+                _filter = {
+                    "user_id": str(userid),
+                    "agent_name": self.agent_name,
+                    "program_slug": "hisense"
+                }
+                records = await NextStopStore.filter(**_filter)
+                if not records:
+                    return web.json_response(
+                        headers={"x-message": "No records found for the NextStop agent."},
+                        status=204
+                    )
+                # Convert records to a list of dictionaries
+                results = [record.to_dict() for record in records]
+                return web.json_response(
+                    results,
+                    status=200,
+                    headers={
+                        "x-message": "Records retrieved successfully."
+                    }
+                )
+            except Exception as e:
+                print(f"Error connecting to the database: {e}")
+                return web.json_response(
+                    {"error": "Database connection error"}, status=500
+                )
 
     @AbstractAgentHandler.service_auth
     async def post(self) -> web.Response:
