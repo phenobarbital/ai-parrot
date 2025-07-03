@@ -362,6 +362,9 @@ class BasicAgent(AbstractBot):
         agent: RunnableAgent,
         tools: list,
         verbose: bool = True,
+        max_iterations: int = 30,
+        max_execution_time: int = 360,
+        handle_parsing_errors: bool = True,
         **kwargs
     ):
         """Create a new AgentExecutor.
@@ -371,9 +374,9 @@ class BasicAgent(AbstractBot):
             tools=tools,
             verbose=verbose,
             return_intermediate_steps=True,
-            max_iterations=10,
-            max_execution_time=360,
-            handle_parsing_errors=True,
+            max_iterations=max_iterations,
+            max_execution_time=max_execution_time,
+            handle_parsing_errors=handle_parsing_errors,
             memory=self.memory,
             **kwargs,
         )

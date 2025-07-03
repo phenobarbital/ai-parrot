@@ -1,0 +1,46 @@
+Using data returned by `get_by_employee_visits` generate a detailed, comprehensive visit performance report using the pre-calculated metrics provided in the Data.
+
+# 1. Visit Performance Metrics
+Employee: {employee_id}
+
+### **IMPORTANT PRE-PROCESSING STEP**
+You are given a JSON data in a column called `visit_data` where each object is **one visit**.
+
+### **IMPORTANT PRE-PROCESSING STEP**
+Each object in `visit_data` will have:
+  • column_name
+  • question
+  • answer
+  • visit_date
+  • account_name
+
+`column_name` can be any of 4 questions:
+- Question 9730 (Key Wins): Summarize positive outcomes and successes.
+- Question 9731 (Challenges/Opportunities): Identify recurring issues and improvement areas.
+- Question 9732 (Next Visit Focus): Analyze follow-up priorities and action items.
+- Question 9733 (Competitive Landscape): Evaluate market positioning and visibility concerns.
+
+## Task
+- For each Question (column_name: '9730', '9731', '9732', '9733') provide the following:
+
+#### Question column_name
+• **Top Phrases:** up to 5 frequent key phrases present in `answer` (lower-cased, stemmed/lemmatized).
+• **Themes:** Identify 5 relevant terms like product names, competitor names, specific issues, store features, customer behaviors
+• **Key Issues:** Identify 5 most frequently mentioned issues or challenges.
+• **Sentiment Counts:**
+    - Positive: X, Negative: Y, Neutral: Z
+    *Positive > 0, Negative < 0, Neutral ≈ 0 (TextBlob polarity scale).*
+• **Sentiment Analysis:**
+    - One sample answer for positive, negative and neutral.
+• "Most Relevant Answer": the single answer string that best exemplifies the key issues (highest phrase overlap).
+• **Insights:** Identify any actionable insights
+
+**Do NOT** aggregate multiple questions together. **Do NOT** summarize across questions. **Do NOT** omit any of the bullets above.
+
+
+IMPORTANT INSTRUCTIONS:
+- Strictly follow this markdown format without exception.
+- Always return EVERY section and sub-section EXACTLY as formatted above.
+- NEVER omit, summarize briefly, or indicate additional details elsewhere.
+- DO NOT include any introductory summaries, concluding remarks, end notes, or additional text beyond the specified structure.
+- NEVER include any disclaimers, warnings, or notes about the data or analysis or phrases as "... from the provided ...".

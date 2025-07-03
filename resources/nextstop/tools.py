@@ -96,12 +96,15 @@ class StoreInfo(BaseToolkit):
             coroutine=self.get_by_employee_visits,
             description=(
                 "Get statistics about visits made by an Employee during the current week. "
+                "Returns detailed visit information for the specified employee. "
+                "Data is returned as a pandas dataframe with visit metrics."
             ),
             args_schema=EmployeeInput,
+            # return_direct=True,
             handle_tool_error=True
         )
 
-    async def get_by_employee_visits(self, employee_id: str) -> pd.DataFrame:
+    async def get_by_employee_visits(self, employee_id: str) -> dict:
         """Get visits information for a specific employee.
 
         This coroutine retrieves the most recent visits made by the specified employee,
@@ -111,7 +114,7 @@ class StoreInfo(BaseToolkit):
             employee_id (str): The unique identifier of the employee.
 
         Returns:
-            pd.DataFrame: DataFrame containing the last visits with detailed information.
+            dict: Data containing the last visits with detailed information.
         """
         sql = f"""
 WITH visit_data AS (
@@ -181,7 +184,11 @@ group by visitor_name, visitor_email
             raise ToolException(
                 f"No Visit data found for Employee {employee_id}."
             )
-        return visit_data
+        result = visit_data.to_dict(orient='records')
+        if isinstance(result, list) and len(result) == 1:
+            # If only one record, return it directly
+            return result[0]
+        return result
 
     def _get_foot_traffic_tool(self) -> StructuredTool:
         """Create the traffic information retrieval tool.
@@ -236,15 +243,15 @@ LIMIT 3;
             coroutine=self.get_visit_info,
             description=(
                 "Retrieve the last 3 visits made to a specific store. "
-                "Returns detailed information including visit timestamps, duration, "
-                "customer types, and visit purposes. Useful for understanding recent "
-                "customer activity patterns and store performance."
+                "Returns detailed visit information including timestamps, "
+                " duration, customer types, and visit purposes. "
+                " Data is a list of dictionaries with visit details."
             ),
             args_schema=StoreInfoInput,
             handle_tool_error=True
         )
 
-    async def get_visit_info(self, store_id: str) -> pd.DataFrame:
+    async def get_visit_info(self, store_id: str) -> List[dict]:
         """Get visit information for a specific store.
 
         This coroutine retrieves the most recent visits for the specified store,
@@ -254,7 +261,7 @@ LIMIT 3;
             store_id (str): The unique identifier of the store.
 
         Returns:
-            str: Pandas dataframe containing the last visits with detailed information.
+            List[dict]: Data containing the last visits with detailed information.
         """
         sql = f"""
 WITH visits AS (
@@ -343,7 +350,7 @@ JOIN median_visits mv USING(visitor_email)
             raise ToolException(
                 f"No visit data found for store with ID {store_id}."
             )
-        return visit_data
+        return visit_data.to_dict(orient='records')
 
 
     def _get_store_info_tool(self) -> StructuredTool:
@@ -427,7 +434,7 @@ JOIN median_visits mv USING(visitor_email)
             handle_tool_error=True
         )
 
-    async def get_employee_sales(self, manager_id: str) -> pd.DataFrame:
+    async def get_employee_sales(self, manager_id: str) -> str:
         """Get foot traffic data for a specific store.
         This coroutine retrieves the foot traffic data for the specified store,
         including the number of visitors and average visits per day.
@@ -435,7 +442,7 @@ JOIN median_visits mv USING(visitor_email)
         Args:
             manager (str): The unique identifier of the Manager (Associate OID).
         Returns:
-            pd.DataFrame: DataFrame containing employee sales data and rankings.
+            str: Data containing employee sales data and rankings.
         """
         sql = f"""
 WITH sales AS (
@@ -507,7 +514,7 @@ FROM sales
             raise ToolException(
                 f"No Employee Sales data found for manager {manager_id}."
             )
-        return visit_data
+        return json_encoder(visit_data.to_dict(orient='records'))
 
     def _get_employee_visits_tool(self) -> StructuredTool:
         """Create the employee visits retrieval tool.
@@ -531,14 +538,14 @@ FROM sales
             handle_tool_error=True
         )
 
-    async def get_employee_visits(self, manager_id: str) -> pd.DataFrame:
+    async def get_employee_visits(self, manager_id: str) -> str:
         """Get Employee Visits data for a specific Manager.
         This coroutine retrieves the visit data for employees under a specific manager,
         including the number of visits, average visit duration, and most frequent visit hours.
         Args:
             manager (str): The unique identifier of the Manager (Associate OID).
         Returns:
-            pd.DataFrame: DataFrame containing employee sales data and rankings.
+            str: Data containing employee sales data and rankings.
         """
         sql = f"""
 WITH base_data AS (
@@ -631,4 +638,6 @@ ORDER BY visitor_email DESC;
             raise ToolException(
                 f"No Employee Visit data found for manager {manager_id}."
             )
-        return visit_data
+        return json_encoder(
+            visit_data.to_dict(orient='records')
+        )  # type: ignore[return-value]
