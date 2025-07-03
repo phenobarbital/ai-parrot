@@ -61,7 +61,7 @@ class Main(AppHandler):
             ChatbotSharingQuestion
         )
         # NextStop:
-        nextstop = NextStopAgent()
+        nextstop = NextStopAgent(app=self.app)
         nextstop.setup(self.app, '/api/v1/agents/nextstop')
 
 

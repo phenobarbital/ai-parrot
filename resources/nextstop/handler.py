@@ -1,8 +1,11 @@
+from typing import Any
 from datetime import datetime
 import textwrap
 from pathlib import Path
+import asyncio
 from aiohttp import web
 from datamodel import BaseModel, Field
+from datamodel.parsers.json import json_encoder  # pylint: disable=E0611
 from navconfig import BASE_DIR
 from navigator_auth.decorators import (
     is_authenticated,
@@ -16,6 +19,7 @@ from parrot.tools import PythonREPLTool
 from parrot.tools.excel import ExcelTool
 from parrot.tools.ppt import PowerPointGeneratorTool
 from .tools import StoreInfo
+from .models import NextStopStore
 
 
 class NextStopResponse(BaseModel):
@@ -33,7 +37,7 @@ class NextStopResponse(BaseModel):
     store_id: str = Field(required=False, description="ID of the store associated with the session")
     employee_id: str = Field(required=False, description="ID of the employee associated with the session")
     manager_id: str = Field(required=False, description="ID of the manager associated with the session")
-    created_at: datetime = Field(default=datetime.now())
+    created_at: datetime = Field(default=datetime.now)
     podcast_path: str = Field(required=False, description="Path to the podcast associated with the session")
     pdf_path: str = Field(required=False, description="Path to the PDF associated with the session")
     documents: list[Path] = Field(default_factory=list, description="List of documents associated with the session")
@@ -102,10 +106,45 @@ The agent can execute Python code snippets to perform calculations or data proce
         # Retrieve the task status using uuid of background task:
         return await self.get_task_status(sid, request)
 
-    async def done_blocking(self, *args, **kwargs):
-        print('Done Blocking Code :::')
-        print('ARGS > ', args)
-        print('KWARGS > ', kwargs)
+    async def done_question(
+        self,
+        result: NextStopResponse,
+        exc: Exception,
+        loop: asyncio.AbstractEventLoop = None,
+        job_record: Any = None,
+        task_id: str = None,
+        **kwargs
+    ):
+        """Callback function to handle the completion of a question."""
+        if exc:
+            print(f"Error in done_question: {exc}")
+            return
+        # Process the result of the question
+        # Save the result into the database:
+        pg = self.db_connection()
+        async with await pg.connection() as conn:  # pylint: disable=E1101  # noqa
+            # Save the result to the database
+            NextStopStore.Meta.connection = conn
+            print('OUTPUT > ', type(result.output))
+            print('DATA > ', type(result.data))
+            try:
+                record = NextStopStore(
+                    user_id=result.user_id,
+                    agent_name=result.agent_name,
+                    program_slug='hisense',
+                    kind=job_record.name if job_record else 'nextstop',
+                    content=job_record.content,
+                    data=result.data,
+                    output=result.output,
+                    podcast_path=str(result.podcast_path),
+                    pdf_path=str(result.pdf_path),
+                    documents=json_encoder(result.documents),
+                    attributes=result.attributes,
+                )
+                await record.save()
+            except Exception as e:
+                print(f"Error creating NextStopStore record: {e}")
+                return
 
     async def get_agent_status(self, request: web.Request) -> web.Response:
         """Return the status of the agent."""
@@ -116,8 +155,37 @@ The agent can execute Python code snippets to perform calculations or data proce
     @AbstractAgentHandler.service_auth
     async def get(self) -> web.Response:
         """Handle GET requests."""
-        # Placeholder for GET request handling logic
-        return web.json_response({"message": "NextStopAgent is ready to assist!"})
+        pg = self.db_connection()
+        async with await pg.connection() as conn:  # pylint: disable=E1101  # noqa
+            try:
+                NextStopStore.Meta.connection = conn
+                # Retrieve all records from the NextStopStore table
+                userid = self._userid if self._userid else self.request.session.get('user_id', None)
+                _filter = {
+                    "user_id": str(userid),
+                    "agent_name": self.agent_name,
+                    "program_slug": "hisense"
+                }
+                records = await NextStopStore.filter(**_filter)
+                if not records:
+                    return web.json_response(
+                        headers={"x-message": "No records found for the NextStop agent."},
+                        status=204
+                    )
+                # Convert records to a list of dictionaries
+                results = [record.to_dict() for record in records]
+                return web.json_response(
+                    results,
+                    status=200,
+                    headers={
+                        "x-message": "Records retrieved successfully."
+                    }
+                )
+            except Exception as e:
+                print(f"Error connecting to the database: {e}")
+                return web.json_response(
+                    {"error": "Database connection error"}, status=500
+                )
 
     @AbstractAgentHandler.service_auth
     async def post(self) -> web.Response:
@@ -139,8 +207,8 @@ The agent can execute Python code snippets to perform calculations or data proce
         if store_id:
             # Execute the NextStop agent for a specific store using the Background task:
             job = await self.register_background_task(
-            task=self._nextstop_report,
-            done_callback=self.done_blocking,
+            task=self._nextstop_store,
+            done_callback=self.done_question,
                 **{
                     'content': f"Store: {store_id}",
                     'attributes': {
@@ -160,7 +228,7 @@ The agent can execute Python code snippets to perform calculations or data proce
             # Execute the NextStop agent for a specific employee using the Background task:
             job = await self.register_background_task(
                 task=self._nextstop_employee,
-                done_callback=self.done_blocking,
+                done_callback=self.done_question,
                 **{
                     'content': f"Employee: {employee_id}",
                     'attributes': {
@@ -178,7 +246,7 @@ The agent can execute Python code snippets to perform calculations or data proce
         elif manager_id and employee:
             job = await self.register_background_task(
                 task=self._nextstop_manager,
-                done_callback=self.done_blocking,
+                done_callback=self.done_question,
                 **{
                     'content': f"Manager: {manager_id}, Employee: {employee}",
                     'attributes': {
@@ -200,7 +268,7 @@ The agent can execute Python code snippets to perform calculations or data proce
             # Execute the NextStop agent for a specific manager using the Background task:
             job = await self.register_background_task(
                 task=self._team_performance,
-                done_callback=self.done_blocking,
+                done_callback=self.done_question,
                 **{
                     'content': f"Manager: {manager_id}",
                     'attributes': {
@@ -221,7 +289,7 @@ The agent can execute Python code snippets to perform calculations or data proce
             # Execute the NextStop agent for an arbitrary query using the Background task:
             job = await self.register_background_task(
                 task=self._query,
-                done_callback=self.done_blocking,
+                done_callback=self.done_question,
                 **{
                     'content': query,
                     'attributes': {
@@ -252,7 +320,7 @@ The agent can execute Python code snippets to perform calculations or data proce
             status=204,
         )
 
-    async def _nextstop_report(self, store_id: str, **kwargs) -> NextStopResponse:
+    async def _nextstop_store(self, store_id: str, **kwargs) -> NextStopResponse:
         """Generate a report for the NextStop agent."""
         query = await self.open_prompt('for_store.txt')
         question = query.format(store_id=store_id)
@@ -263,9 +331,6 @@ The agent can execute Python code snippets to perform calculations or data proce
             raise RuntimeError(
                 f"Failed to generate report due to an error in the agent invocation: {e}"
             )
-        # sections.append(response.output.strip())
-        # Join all sections into a single report
-        # final_report = "\n\n".join(sections)
         final_report = response.output.strip()
         # Use the joined report to generate a PDF and a Podcast:
         query = await self.open_prompt('for_pdf.txt')

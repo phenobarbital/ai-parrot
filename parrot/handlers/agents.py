@@ -345,6 +345,15 @@ The agent can execute Python code snippets to perform calculations or data proce
     async def _build_agent(self) -> None:
         """Build the agent."""
         tools = self._tools or []
+        vertex = VertexLLM(
+            model="gemini-2.5-pro",
+            temperature=0.1,
+            max_tokens=4096,
+            top_p=0.95,
+            top_k=40,
+            verbose=True,
+            use_chat=True
+        )
         self.app[self.agent_id] = await self.create_agent(
             # llm=vertex,
             tools=tools,
@@ -381,7 +390,7 @@ The agent can execute Python code snippets to perform calculations or data proce
         Asks the agent a question and returns the response.
         """
         agent = self._agent or self.request.app[self.agent_id]
-        userid =self._userid if self._userid else self.request.session.get('user_id', None)
+        userid = self._userid if self._userid else self.request.session.get('user_id', None)
         if not userid:
             raise RuntimeError("User ID is not set in the session.")
         if not agent:
@@ -411,7 +420,7 @@ The agent can execute Python code snippets to perform calculations or data proce
                     "No query provided or found in the request."
                 )
         try:
-            _, response, result = await agent.invoke(query)
+            data, response, result = await agent.invoke(query)
             if isinstance(result, Exception):
                 raise result
         except Exception as e:
@@ -419,6 +428,7 @@ The agent can execute Python code snippets to perform calculations or data proce
             raise RuntimeError(
                 f"Failed to generate report due to an error in the agent invocation: {e}"
             )
+
         # Create the response object
         final_report = response.output.strip()
         # parse the intermediate steps if available to extract PDF and podcast paths:
@@ -437,7 +447,7 @@ The agent can execute Python code snippets to perform calculations or data proce
                 elif tool == 'podcast_generator_tool':
                     podcast_path = result.get('filename', None)
         response_data = self._model_response(
-            user_id=userid,
+            user_id=str(userid),
             agent_name=self.agent_name,
             attributes=kwargs.pop('attributes', {}),
             data=final_report,

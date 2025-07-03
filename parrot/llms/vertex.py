@@ -32,7 +32,7 @@ class VertexLLM(AbstractLLM):
     Returns:
         _type_: VertexAI LLM.
     """
-    model: str = "gemini-1.5-pro"
+    model: str = "gemini-2.5-pro"
     max_tokens: int = 8192
     top_k: float = 40
     top_p: float = 0.95
