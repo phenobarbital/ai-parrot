@@ -37,12 +37,10 @@ class AbstractTool(BaseTool, ABC):
     args_schema: Type[BaseModel] = AbstractToolArgsSchema
     _json_encoder: Type[Any] = json_encoder
     _json_decoder: Type[Any] = json_decoder
-    static_dir: Path = BASE_DIR.joinpath('static')
-    base_url: str = BASE_STATIC_URL
 
     class Config:
         """Configuration for this pydantic object."""
-        arbitrary_types_allowed = False
+        arbitrary_types_allowed = True
 
     def __init__(
         self,
@@ -180,10 +178,13 @@ class BaseAbstractTool(BaseTool, ABC):
     _json_decoder: Type[Any] = json_decoder
     static_dir: Path = BASE_DIR.joinpath('static')
     base_url: str = BASE_STATIC_URL
+    _base_scheme_netloc: tuple = None
+    output_dir: Optional[Path] = BASE_DIR.joinpath("static", "documents", "pdf")
+    logger: logging.Logger = None
 
     class Config:
         """Configuration for this pydantic object."""
-        arbitrary_types_allowed = False
+        arbitrary_types_allowed = True
 
     def __init__(
         self,
@@ -192,6 +193,11 @@ class BaseAbstractTool(BaseTool, ABC):
         base_url: Optional[str] = None,
         **kwargs
     ):
+        super().__init__(*args, **kwargs)
+        self.name = kwargs.pop('name', self.__class__.__name__)
+        self.logger = logging.getLogger(
+            f'{self.name}.Tool'
+        )
         # Set up output directory
         if output_dir:
             self.output_dir = Path(output_dir)
@@ -201,8 +207,9 @@ class BaseAbstractTool(BaseTool, ABC):
         if not self.output_dir.exists():
             self.output_dir.mkdir(parents=True, exist_ok=True)
         # Configure base URL if provided
-        if base_url:
-            self.base_url = base_url
+        self.base_url = base_url or BASE_STATIC_URL
+        parsed = urlparse(self.base_url)
+        self._base_scheme_netloc = (parsed.scheme, parsed.netloc)
 
     @abstractmethod
     def _default_output_dir(self) -> Path:
@@ -251,22 +258,24 @@ class BaseAbstractTool(BaseTool, ABC):
         Returns:
             Relative URL based on the base URL
         """
-        if not url.startswith(self.base_url):
-            return url
-        base_parts = urlparse(self.base_url)
         parts = urlparse(url)
-        if (parts.scheme, parts.netloc) == (base_parts.scheme, base_parts.netloc):
-            # Remove the base path prefix
-            base_path = base_parts.path
-            path = parts.path
-            if path.startswith(base_path):
-                rel_path = path[len(base_path)-1:]  # keep leading slash
-            else:
-                rel_path = path
-            # Reassemble with query and fragment
-            return urlunparse(('', '', rel_path, parts.params, parts.query, parts.fragment))
-        else:
+        # if url is not absolute, return as is:
+        if not parts.scheme or not parts.netloc:
             return url
+        # only strip when scheme+netloc match
+        print(self._base_scheme_netloc)
+        print(parts.scheme, parts.netloc)
+        if (parts.scheme, parts.netloc) == self._base_scheme_netloc:
+            # urlunparse with empty scheme/netloc → just path;params?query#frag
+            return urlunparse((
+                "",
+                "",
+                parts.path,
+                parts.params,
+                parts.query,
+                parts.fragment,
+            ))
+        return url
 
     def generate_filename(
         self,
@@ -313,9 +322,9 @@ class BaseAbstractTool(BaseTool, ABC):
             result = await self._generate_content(payload)
 
             # Add file info if a file was generated
-            if "filename" in result and result.get("status") == "success":
-                file_info = self.get_file_info(result["filename"])
-                result.update(file_info)
+            # if "filename" in result and result.get("status") == "success":
+                # file_info = self.get_file_info(result["filename"])
+                # result.update(file_info)
 
             self.logger.info(
                 "Content generation completed successfully"
@@ -333,6 +342,15 @@ class BaseAbstractTool(BaseTool, ABC):
                 "timestamp": datetime.now().isoformat()
             }
 
+    @abstractmethod
+    def _generate_payload(self, **kwargs) -> BaseModel:
+        """
+        Generate a payload from the provided arguments.
+        This method should be implemented by subclasses to convert
+        input arguments into a Pydantic model instance.
+        """
+        pass
+
     async def _arun(
         self,
         *args,
@@ -345,7 +363,7 @@ class BaseAbstractTool(BaseTool, ABC):
         try:
             # 1) Build a dict of everything LangChain passed us
             # 2) Let Pydantic validate & coerce
-            payload = self._generate_payload(*args, **kwargs)
+            payload = self._generate_payload(**kwargs)
             # 3) Call the “real” generator
             return await self.safe_generate(payload)
         except Exception as e:
@@ -361,3 +379,28 @@ class BaseAbstractTool(BaseTool, ABC):
             return loop.run_until_complete(self._arun(*args, **kwargs))
         finally:
             loop.close()
+
+    def validate_output_path(self, file_path: Union[str, Path]) -> Path:
+        """
+        Validate and ensure the output path is within allowed directories.
+
+        Args:
+            file_path: Path to validate
+
+        Returns:
+            Validated Path object
+
+        Raises:
+            ValueError: If path is outside allowed directories
+        """
+        file_path = Path(file_path).resolve()
+
+        # Ensure the path is within the static directory for security
+        try:
+            file_path.relative_to(self.static_dir.resolve())
+        except ValueError:
+            raise ValueError(
+                f"Output path {file_path} must be within static directory {self.static_dir}"
+            )
+
+        return file_path
