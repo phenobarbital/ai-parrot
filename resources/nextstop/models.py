@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field, ConfigDict
 # Model:
 from asyncdb.models import Model, Field as ModelField
 
+
 class StoreInfoInput(BaseModel):
     """Input schema for store-related operations requiring a Store ID."""
     store_id: str = Field(
@@ -126,6 +127,11 @@ class NextStopStore(Model):
         default=None,
         description="Path to the image file related to the NextStop agent's response.",
         title="Image Path"
+    )
+    document_path: str = ModelField(
+        default=None,
+        description="Path to the document file related to the NextStop agent's response.",
+        title="Document Path"
     )
     documents: list[str] = ModelField(
         default_factory=list,
