@@ -64,8 +64,6 @@ class Main(AppHandler):
         nextstop = NextStopAgent(app=self.app)
         nextstop.setup(self.app, '/api/v1/agents/nextstop')
 
-
-
     async def on_prepare(self, request, response):
         """
         on_prepare.
