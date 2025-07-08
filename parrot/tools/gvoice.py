@@ -16,7 +16,8 @@ from google.oauth2 import service_account
 from pydantic import BaseModel, Field, ConfigDict
 from langchain.tools import BaseTool
 from navconfig import BASE_DIR
-from parrot.conf import GOOGLE_TTS_SERVICE
+from .abstract import BaseAbstractTool
+from ..conf import GOOGLE_TTS_SERVICE
 
 
 MD_REPLACEMENTS = [
@@ -86,7 +87,7 @@ class PodcastInput(BaseModel):
         description="Stem for the output file. Timestamp and extension added automatically."
     )
 
-class GoogleVoiceTool(BaseTool):
+class GoogleVoiceTool(BaseAbstractTool):
     """Generate a podcast-style audio file from Text using Google Cloud Text-to-Speech."""
     name: str = "podcast_generator_tool"
     description: str = (
@@ -99,22 +100,21 @@ class GoogleVoiceTool(BaseTool):
     language_code: str = "en-US"
     output_format: str = "OGG_OPUS"  # OGG format is more podcast-friendly
     _key_service: Optional[str]
-    output_dir: Optional[Path] = None
 
     # Add a proper args_schema for tool-calling compatibility
     args_schema: Type[BaseModel] = PodcastInput
 
-    def __init__(self,
+    def __init__(
+        self,
+        *args,
         voice_model: str = "en-US-Neural2-F",
         output_format: str = "OGG_OPUS",
         language_code: str = "en-US",
-        output_dir: str = None,
-        name: str = "podcast_generator_tool",
         **kwargs
     ):
         """Initialize the GoogleVoiceTool."""
 
-        super().__init__(**kwargs)
+        super().__init__(*args, **kwargs)
 
         # Using the config from conf.py, but with additional verification
         self._key_service = GOOGLE_TTS_SERVICE
@@ -137,38 +137,41 @@ class GoogleVoiceTool(BaseTool):
         self.output_format = output_format
         self.language_code = language_code or "en-US"
 
-        # Set the output directory
-        self.output_dir = Path(output_dir) if output_dir else BASE_DIR.joinpath("static", "documents", "podcasts")
-        if not self.output_dir.exists():
-            self.output_dir.mkdir(parents=True, exist_ok=True)
+    def _default_output_dir(self) -> Path:
+        """Get default output directory for Podcasts files."""
+        return self.static_dir.joinpath('documents', 'podcasts')
+
+    def _generate_payload(self, **kwargs) -> PodcastInput:
+        """Generate a PodcastInput payload from the provided arguments."""
+        # Filter out None values to let Pydantic use defaults
+        filtered_kwargs = {k: v for k, v in kwargs.items() if v is not None}
+        return PodcastInput(**filtered_kwargs)
 
     def is_markdown(self, text: str) -> bool:
         """Determine if the text appears to be Markdown formatted."""
         if not text or not isinstance(text, str):
             return False
 
-        # Corrección: Separar los caracteres problemáticos y el rango
-        if re.search(r"^[#*_>`\[\d-]", text.strip()[0]):  # Check if first char is a Markdown marker
+        # Check if first char is a Markdown marker
+        if re.search(r"^[#*_>`\[\d-]", text.strip()[0]):
             return True
 
         # Check for common Markdown patterns
-        if re.search(r"#{1,6}\s+", text):  # Headers
-            return True
-        if re.search(r"\*\*.*?\*\*", text):  # Bold
-            return True
-        if re.search(r"_.*?_", text):  # Italic
-            return True
-        if re.search(r"`.*?`", text):  # Code
-            return True
-        if re.search(r"\[.*?\]\(.*?\)", text):  # Links
-            return True
-        if re.search(r"^\s*[\*\-\+]\s+", text, re.MULTILINE):  # Unordered lists
-            return True
-        if re.search(r"^\s*\d+\.\s+", text, re.MULTILINE):  # Ordered lists
-            return True
-        if re.search(r"```.*?```", text, re.DOTALL):  # Code blocks
-            return True
+        patterns = [
+            r"#{1,6}\s+",  # Headers
+            r"\*\*.*?\*\*",  # Bold
+            r"_.*?_",  # Italic
+            r"`.*?`",  # Code
+            r"\[.*?\]\(.*?\)",  # Links
+            r"^\s*[\*\-\+]\s+",  # Unordered lists
+            r"^\s*\d+\.\s+",  # Ordered lists
+            r"```.*?```",  # Code blocks
+        ]
 
+        for pattern in patterns:
+            flags = re.MULTILINE if pattern.startswith('^') else 0
+            if re.search(pattern, text, flags):
+                return True
         return False
 
     def text_to_ssml(self, text: str) -> str:
@@ -220,126 +223,127 @@ class GoogleVoiceTool(BaseTool):
         ssml += "</speak>"
         return ssml
 
-    async def _generate_podcast(self, payload: PodcastInput) -> dict:
-        """Main method to generate a podcast from query."""
-        # define voice gender:
-        if payload.voice_gender:
-            self.voice_gender = payload.voice_gender
-        # Select voice based on language_code:
-        if payload.language_code:
-            self.language_code = payload.language_code
-        if self.language_code == "es-ES":
-            if self.voice_gender == "MALE":
-                self.voice_model = "es-ES-Polyglot-1"
-            else:
-                self.voice_model = "es-ES-Neural2-H"
-        elif self.language_code == "en-US":
-            if self.voice_gender == "MALE":
-                self.voice_model = "en-US-Neural2-D"
-            else:
-                self.voice_model = "en-US-Neural2-F"
-        elif self.language_code == "fr-FR":
-            if self.voice_gender == "MALE":
-                self.voice_model = "fr-FR-Neural2-G"
-            else:
-                self.voice_model = "fr-FR-Neural2-F"
-        elif self.language_code == "de-DE":
-            if self.voice_gender == "MALE":
-                self.voice_model = "de-DE-Neural2-G"
-            else:
-                self.voice_model = "de-DE-Neural2-F"
-        elif self.language_code in ("cmn-CN", "zh-CN"):
-            if self.voice_gender == "MALE":
-                self.voice_model = "cmn-CN-Standard-B"
-            else:
-                self.voice_model = "cmn-CN-Standard-D"
-        try:
-            if self._key_service and Path(self._key_service).exists():
-                try:
-                    credentials = service_account.Credentials.from_service_account_file(
-                        self._key_service
-                    )
-                except Exception as cred_error:
-                    print(f"Error loading credentials: {cred_error}")
+    def _select_voice_model(self, payload: PodcastInput) -> tuple[str, str]:
+        """Select appropriate voice model based on language and gender."""
+        # Use payload values or instance defaults
+        language_code = payload.language_code or self.language_code
+        voice_gender = payload.voice_gender or self.voice_gender
 
-            print("1. Converting Markdown to SSML...")
+        # If specific voice model provided, use it
+        if payload.voice_model:
+            return payload.voice_model, voice_gender
+
+        # Select voice based on language and gender
+        voice_models = {
+            "es-ES": {
+                "MALE": "es-ES-Polyglot-1",
+                "FEMALE": "es-ES-Neural2-H"
+            },
+            "en-US": {
+                "MALE": "en-US-Neural2-D",
+                "FEMALE": "en-US-Neural2-F"
+            },
+            "fr-FR": {
+                "MALE": "fr-FR-Neural2-G",
+                "FEMALE": "fr-FR-Neural2-F"
+            },
+            "de-DE": {
+                "MALE": "de-DE-Neural2-G",
+                "FEMALE": "de-DE-Neural2-F"
+            },
+            "cmn-CN": {
+                "MALE": "cmn-CN-Standard-B",
+                "FEMALE": "cmn-CN-Standard-D"
+            },
+            "zh-CN": {
+                "MALE": "cmn-CN-Standard-B",
+                "FEMALE": "cmn-CN-Standard-D"
+            }
+        }
+
+        return voice_models.get(language_code, {}).get(voice_gender, self.voice_model), voice_gender
+
+    def _get_audio_encoding_and_extension(self, output_format: str) -> tuple:
+        """Get the appropriate audio encoding and file extension for the output format."""
+        # Only include formats actually supported by Google Cloud TTS AudioEncoding enum
+        format_mapping = {
+            "OGG_OPUS": (texttospeech.AudioEncoding.OGG_OPUS, "ogg"),
+            "MP3": (texttospeech.AudioEncoding.MP3, "mp3"),
+            "LINEAR16": (texttospeech.AudioEncoding.LINEAR16, "wav"),
+            "MULAW": (texttospeech.AudioEncoding.MULAW, "wav"),
+            "ALAW": (texttospeech.AudioEncoding.ALAW, "wav"),
+            "PCM": (texttospeech.AudioEncoding.PCM, "pcm")
+        }
+
+        if output_format.upper() not in format_mapping:
+            available_formats = ', '.join(format_mapping.keys())
+            raise ValueError(
+                f"Unsupported output format: {output_format}. "
+                f"Google Cloud TTS only supports: {available_formats}."
+            )
+
+        return format_mapping[output_format.upper()]
+
+    async def _generate_content(self, payload: PodcastInput) -> Dict[str, Any]:
+        """Main method to generate a podcast from query."""
+        # Validate credentials
+        if not self._key_service or not Path(self._key_service).exists():
+            raise FileNotFoundError(
+                f"Service account file not found: {self._key_service}"
+            )
+        # Select voice model and configure language
+        voice_model, voice_gender = self._select_voice_model(payload)
+        language_code = payload.language_code or self.language_code
+        try:
+            self.logger.info("1. Converting Markdown to SSML...")
             if self.is_markdown(payload.text):
                 ssml_text = self.markdown_to_ssml(payload.text)
             else:
                 ssml_text = self.text_to_ssml(payload.text)
-            print(f"Generated SSML:\n{ssml_text}\n") # Uncomment for debugging
-            print(
-                f"2. Initializing Text-to-Speech client (Voice: {self.voice_model})..."
+            self.logger.info(
+                f"2. Initializing Text-to-Speech client (Voice: {voice_model})..."
             )
-            if not os.path.exists(self._key_service):
-                raise FileNotFoundError(
-                    f"Service account file not found: {self._key_service}"
-                )
+            # Initialize the Text-to-Speech client with the service account credentials
             credentials = service_account.Credentials.from_service_account_file(
                 self._key_service
             )
-            # Initialize the Text-to-Speech client with the service account credentials
             # Use the v1 API for wider feature set including SSML
             client = texttospeech.TextToSpeechClient(credentials=credentials)
             synthesis_input = texttospeech.SynthesisInput(ssml=ssml_text)
             # Select the voice parameters
             voice = texttospeech.VoiceSelectionParams(
-                language_code=self.language_code,
-                name=self.voice_model
+                language_code=language_code,
+                name=voice_model
             )
-            # Select the audio format (OGG with OPUS codec)
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            prefix = payload.file_prefix or "podcast"
-            # Generate a unique filename based on the current timestamp
-            output_filename = f"podcast_{timestamp}.ogg"  # Default output filename
-            # default to OGG
-            if payload.output_format:
-                output_format = payload.output_format.upper()
-            else:
-                output_format = self.output_format.upper()
-            encoding = texttospeech.AudioEncoding.OGG_OPUS
-            if output_format == "OGG_OPUS":
-                encoding = texttospeech.AudioEncoding.OGG_OPUS
-                ext = "ogg"
-            elif output_format == "MP3":
-                encoding = texttospeech.AudioEncoding.MP3
-                ext = "mp3"
-            elif output_format == "LINEAR16":
-                encoding = texttospeech.AudioEncoding.LINEAR16
-                ext = "wav"
-            elif output_format in ("WEBM_OPUS", "WEBM", "WEBM_OPUS_V2"):
-                encoding = texttospeech.AudioEncoding.WEBM_OPUS
-                ext = "webm"
-            elif output_format == "FLAC":
-                encoding = texttospeech.AudioEncoding.FLAC
-                ext = "flac"
-            elif output_format == "OGG_VORBIS":
-                encoding = texttospeech.AudioEncoding.OGG_VORBIS
-                ext = "ogg"
-            else:
-                raise ValueError(
-                    f"Unsupported output format: {output_format}. "
-                    "Supported formats are: OGG_OPUS, MP3, LINEAR16, WEBM_OPUS, FLAC, OGG_VORBIS."
-                )
-            output_filename = f"{prefix}_{timestamp}.{ext}"
+            # Configure audio format
+            output_format = payload.output_format or self.output_format
+            encoding, ext = self._get_audio_encoding_and_extension(output_format)
 
+            # Select the audio format (OGG with OPUS codec)
+            # Generate filename using base class method
+            output_filename = self.generate_filename(
+                prefix=payload.file_prefix or "podcast",
+                extension=ext,
+                include_timestamp=True
+            )
+            output_filepath = self.output_dir.joinpath(output_filename)
             audio_config = texttospeech.AudioConfig(
                 audio_encoding=encoding,
                 speaking_rate=1.0,
                 pitch=0.0
             )
-            print("3. Synthesizing speech...")
+            self.logger.info("3. Synthesizing speech...")
             response = client.synthesize_speech(
                 input=synthesis_input,
                 voice=voice,
                 audio_config=audio_config
             )
-            print("4. Speech synthesized successfully.")
-            output_filepath = self.output_dir.joinpath(output_filename)
-            print(f"5. Saving audio content to: {output_filepath}")
+            self.logger.info("4. Speech synthesized successfully.")
+            self.logger.info(f"5. Saving audio content to: {output_filepath}")
             async with aiofiles.open(output_filepath, 'wb') as audio_file:
                 await audio_file.write(response.audio_content)
-            print("6. Audio content saved successfully.")
+            self.logger.info("6. Audio content saved successfully.")
+            url = self.to_static_url(output_filepath)
             return {
                 "status": "success",
                 "message": "Podcast audio generated successfully.",
@@ -349,79 +353,12 @@ class GoogleVoiceTool(BaseTool):
                 "language_code": self.language_code,
                 "voice_model": self.voice_model,
                 "voice_gender": self.voice_gender,
-                "timestamp": timestamp,
                 "file_path": self.output_dir,
-                "filename": output_filepath
+                "filename": output_filepath,
+                "url": url,
+                "static_url": self.relative_url(url),
             }
         except Exception as e:
             print(f"Error in _generate_podcast: {e}")
             print(traceback.format_exc())
             return {"error": str(e)}
-
-    async def _arun(
-        self,
-        text: str,
-        voice_gender: Optional[str] = None,
-        voice_model: Optional[str] = None,
-        language_code: Optional[str] = None,
-        output_format: Optional[str] = None,
-        file_prefix: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """
-        LangChain will call this with keyword args matching PodcastInput, e.g.:
-          _arun(text="Hello", voice_gender="MALE", output_format="MP3", …)
-
-        We rebuild a PodcastInput object internally so that we benefit from Pydantic’s
-        validation and type‐casting, then delegate to _generate_podcast().
-        """
-        try:
-            # 1) Build a dict of everything LangChain passed us
-            payload_dict = {
-                "text": text,
-                "voice_gender": voice_gender,
-                "voice_model": voice_model,
-                "language_code": language_code,
-                "output_format": output_format,
-                "file_prefix": file_prefix
-            }
-            # 2) Let Pydantic validate & coerce
-            payload = PodcastInput(**{k: v for k, v in payload_dict.items() if v is not None})
-            # 3) Call the “real” generator
-            return await self._generate_podcast(payload)
-        except Exception as e:
-            print(f"❌ Error in GoogleVoiceTool._arun: {e}")
-            print(traceback.format_exc())
-            return {"error": str(e)}
-
-    # Mirror the same signature for the synchronous runner:
-    def _run(
-        self,
-        text: Union[str, Dict[str, Any]],
-        voice_gender: Optional[str] = None,
-        voice_model: Optional[str] = None,
-        language_code: Optional[str] = None,
-        output_format: Optional[str] = None,
-        file_prefix: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """
-        Synchronous entrypoint. If text_or_json is a JSON string, we load it first.
-        Otherwise, assume it’s already a dict of the correct shape.
-        """
-        try:
-            if isinstance(text, str):
-                data = json.loads(text)
-                # We expect a JSON‐dict with keys matching PodcastInput
-            elif isinstance(text, dict):
-                data = text
-            else:
-                return {"error": "Invalid payload type. Must be JSON string or dict."}
-            # Validate with PodcastInput
-            payload = PodcastInput(**data)
-        except Exception as e:
-            return {"error": f"Invalid input: {e}"}
-
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            return loop.run_until_complete(self._generate_podcast(payload))
-        else:
-            return loop.run_until_complete(self._generate_podcast(payload))

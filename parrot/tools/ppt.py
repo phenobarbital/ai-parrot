@@ -16,6 +16,7 @@ from pptx.enum.shapes import MSO_SHAPE_TYPE
 import markdown
 from bs4 import BeautifulSoup, NavigableString
 from navconfig import BASE_DIR
+from .abstract import BaseAbstractTool
 
 
 class PowerPointInput(BaseModel):
@@ -68,7 +69,7 @@ class PowerPointInput(BaseModel):
     )
 
 
-class PowerPointGeneratorTool(BaseTool):
+class PowerPointGeneratorTool(BaseAbstractTool):
     """PowerPoint Presentation Generator Tool.
 
     * How Slide Splitting Works:
@@ -90,7 +91,6 @@ class PowerPointGeneratorTool(BaseTool):
         "Create PowerPoint presentations from markdown text, "
         "splitting content into slides based on headings."
     )
-    output_dir: Optional[Path] = None
     env: Optional[Environment] = None
     templates_dir: Optional[Path] = None
 
@@ -98,15 +98,12 @@ class PowerPointGeneratorTool(BaseTool):
 
     def __init__(
         self,
+        *args,
         templates_dir: Optional[Path] = None,
-        output_dir: Optional[str] = None
+        **kwargs
     ):
         """Initialize the PowerPoint generator tool."""
-        super().__init__()
-        self.output_dir = Path(output_dir) if output_dir else BASE_DIR.joinpath("static", "documents", "presentations")
-        if not self.output_dir.exists():
-            self.output_dir.mkdir(parents=True, exist_ok=True)
-
+        super().__init__(*args, **kwargs)
         # Initialize Jinja2 environment for HTML templates
         if templates_dir:
             self.templates_dir = templates_dir
@@ -115,35 +112,21 @@ class PowerPointGeneratorTool(BaseTool):
                 autoescape=True
             )
 
-    async def _arun(self, **kwargs) -> Dict[str, Any]:
-        """Async version of the run method."""
+    def _default_output_dir(self) -> Path:
+        """Get default output directory for PDF files."""
+        return self.static_dir.joinpath('documents', 'presentations')
+
+    def _generate_payload(
+        self,
+        **kwargs
+    ) -> PowerPointInput:
         try:
             # Validate input using Pydantic
-            input_data = PowerPointInput(**kwargs)
-            return await self._generate_powerpoint(input_data)
+            return PowerPointInput(**kwargs)
         except Exception as e:
-            print(f"❌ Error in PowerPointGeneratorTool._arun: {e}")
-            print(traceback.format_exc())
-            return {"error": str(e)}
+            raise ValueError(f"Invalid input for PowerPoint generation: {e}")
 
-    def _run(self, **kwargs) -> Dict[str, Any]:
-        """Synchronous entrypoint."""
-        try:
-            # Validate input using Pydantic
-            input_data = PowerPointInput(**kwargs)
-        except Exception as e:
-            return {"error": f"Invalid input: {e}"}
-
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                return loop.run_until_complete(self._generate_powerpoint(input_data))
-            else:
-                return asyncio.run(self._generate_powerpoint(input_data))
-        except RuntimeError:
-            return asyncio.run(self._generate_powerpoint(input_data))
-
-    async def _generate_powerpoint(self, input_data: PowerPointInput) -> Dict[str, Any]:
+    async def _generate_content(self, input_data: PowerPointInput) -> Dict[str, Any]:
         """Generate PowerPoint presentation from markdown text."""
         try:
             # Process the text through Jinja2 template if provided
@@ -166,12 +149,16 @@ class PowerPointGeneratorTool(BaseTool):
 
             # Save presentation
             output_path = self._save_presentation(prs, input_data)
-
+            url = self.to_static_url(output_path)
             return {
                 "status": "success",
                 "file_path": output_path,
                 "filename": output_path,
                 "slides_created": len(slides_data),
+                "url": url,
+                "static_url": self.relative_url(url),
+                "output_filename": input_data.output_filename or output_path.name,
+                "file_path": self.output_dir,
                 "message": f"PowerPoint presentation successfully created at {output_path}"
             }
 
@@ -421,16 +408,16 @@ class PowerPointGeneratorTool(BaseTool):
         output_dir = Path(input_data.output_dir) if input_data.output_dir else self.output_dir
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        # Generate filename
         if input_data.output_filename:
-            filename = input_data.output_filename
-            if not filename.endswith('.pptx'):
-                filename += '.pptx'
+            output_filename = input_data.output_filename
+            if not output_filename.endswith('.pptx'):
+                output_filename += '.pptx'
         else:
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            filename = f"presentation_{timestamp}_{uuid.uuid4().hex[:8]}.pptx"
-
-        output_path = output_dir / filename
+            output_filename = self.generate_filename(
+                prefix=input_data.file_prefix or "presentation",
+                extension="pptx"
+            )
+        output_path = output_dir / output_filename
 
         # Save the presentation
         prs.save(str(output_path))
