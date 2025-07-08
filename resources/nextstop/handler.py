@@ -4,8 +4,10 @@ import textwrap
 from pathlib import Path
 import asyncio
 from aiohttp import web
+
 from datamodel import BaseModel, Field
 from datamodel.parsers.json import json_encoder  # pylint: disable=E0611
+from asyncdb.exceptions import NoDataFound
 from navconfig import BASE_DIR
 from navigator_auth.decorators import (
     is_authenticated,
@@ -40,6 +42,7 @@ class NextStopResponse(BaseModel):
     created_at: datetime = Field(default=datetime.now)
     podcast_path: str = Field(required=False, description="Path to the podcast associated with the session")
     pdf_path: str = Field(required=False, description="Path to the PDF associated with the session")
+    document_path: str = Field(required=False, description="Path to document generated during session")
     documents: list[Path] = Field(default_factory=list, description="List of documents associated with the session")
 
 
@@ -125,8 +128,6 @@ The agent can execute Python code snippets to perform calculations or data proce
         async with await pg.connection() as conn:  # pylint: disable=E1101  # noqa
             # Save the result to the database
             NextStopStore.Meta.connection = conn
-            print('OUTPUT > ', type(result.output))
-            print('DATA > ', type(result.data))
             try:
                 record = NextStopStore(
                     user_id=result.user_id,
@@ -157,8 +158,8 @@ The agent can execute Python code snippets to perform calculations or data proce
         """Handle GET requests."""
         pg = self.db_connection()
         async with await pg.connection() as conn:  # pylint: disable=E1101  # noqa
+            NextStopStore.Meta.connection = conn
             try:
-                NextStopStore.Meta.connection = conn
                 # Retrieve all records from the NextStopStore table
                 userid = self._userid if self._userid else self.request.session.get('user_id', None)
                 _filter = {
@@ -172,9 +173,16 @@ The agent can execute Python code snippets to perform calculations or data proce
                         headers={"x-message": "No records found for the NextStop agent."},
                         status=204
                     )
+            except NoDataFound as e:
+                return web.json_response(
+                    {"error": "No records found for the NextStop agent."},
+                    status=404
+                )
+            try:
+                # If records are found, process them
                 # Convert records to a list of dictionaries
                 results = [record.to_dict() for record in records]
-                return web.json_response(
+                return self.json_response(
                     results,
                     status=200,
                     headers={
@@ -183,8 +191,11 @@ The agent can execute Python code snippets to perform calculations or data proce
                 )
             except Exception as e:
                 print(f"Error connecting to the database: {e}")
-                return web.json_response(
-                    {"error": "Database connection error"}, status=500
+                return self.json_response(
+                    {
+                        "error": f"Database connection error: {e}"
+                    },
+                    status=400
                 )
 
     @AbstractAgentHandler.service_auth

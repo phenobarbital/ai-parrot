@@ -13,6 +13,7 @@ from langchain.tools import BaseTool
 import markdown
 from weasyprint import HTML, CSS
 from navconfig import BASE_DIR
+from .abstract import BaseAbstractTool
 
 
 logging.getLogger("weasyprint").setLevel(logging.ERROR)  # Suppress WeasyPrint warnings
@@ -62,7 +63,7 @@ class PDFPrintInput(BaseModel):
     )
 
 
-class PDFPrintTool(BaseTool):
+class PDFPrintTool(BaseAbstractTool):
     """Tool that saves a PDF file from content."""
     name: str = "pdf_print_tool"
     description: str = (
@@ -70,7 +71,7 @@ class PDFPrintTool(BaseTool):
         "The content can be in plaintext or Markdown format. "
         "You can also specify an output filename prefix for the output PDF."
     )
-    output_dir: Optional[Path] = BASE_DIR.joinpath("static", "documents", "pdf")
+    # output_dir: Optional[Path] = BASE_DIR.joinpath("static", "documents", "pdf")
     env: Optional[Environment] = None
     templates_dir: Optional[Path] = None
 
@@ -80,22 +81,22 @@ class PDFPrintTool(BaseTool):
 
     def __init__(
         self,
-        name: str = "pdf_print_tool",
+        *args,
         templates_dir: Path = BASE_DIR.joinpath('templates'),
-        output_dir: str = None,
         **kwargs
     ):
         """Initialize the PDF Print Tool."""
-        super().__init__(**kwargs)
-        self.output_dir = Path(output_dir) if output_dir else BASE_DIR.joinpath("static", "documents", "pdf")
-        if not self.output_dir.exists():
-            self.output_dir.mkdir(parents=True, exist_ok=True)
+        super().__init__(*args, **kwargs)
         # Initialize Jinja2 environment for HTML templates
         self.env = Environment(
             loader=FileSystemLoader(str(templates_dir)),
             autoescape=True
         )
         self.templates_dir = templates_dir
+
+    def _default_output_dir(self) -> Path:
+        """Get default output directory for PDF files."""
+        return self.static_dir.joinpath('documents', 'pdf')
 
     def is_markdown(self, text: str) -> bool:
         """Determine if the text appears to be Markdown formatted."""
@@ -126,27 +127,11 @@ class PDFPrintTool(BaseTool):
 
         return False
 
-    async def _generate_pdf(self, payload: PDFPrintInput) -> dict:
+    async def _generate_content(self, payload: PDFPrintInput) -> Dict[str, Any]:
         """Main method to generate a PDF from query."""
         content = payload.text.strip()
         if not content:
             raise ValueError("The text content cannot be empty.")
-        # try:
-        #     model = payload.template_vars.get("llm_model", "gpt-4.1")
-        # except AttributeError:
-        #     model = "gpt-4.1"
-        # # 1) Count the tokens in the content
-        # # This is useful for debugging and ensuring we don’t exceed model limits
-        # if not isinstance(content, str):
-        #     raise ValueError("Content must be a string.")
-        # token_count = count_tokens(content, model)
-        # # 2) If they’re over the limit, warn & split
-        # max_tokens = MODEL_CTX.get(model, 32_000)
-        # if token_count > max_tokens:
-        #     self.logger.warning(
-        #         f"⚠️ Your document is {token_count} tokens long, "
-        #         f"which exceeds the {max_tokens}-token context window of {model}."
-        #     )
         # Determine if the content is Markdownd
         is_markdown = self.is_markdown(content)
         if is_markdown:
@@ -176,12 +161,14 @@ class PDFPrintTool(BaseTool):
                 filename=str(self.templates_dir / "css" / "base.css")
             )
         )
-
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        prefix = payload.file_prefix or "document"
-        # Generate a unique filename based on the current timestamp
-        output_filename = f"{prefix}_{timestamp}.pdf"
+        # Generate filename and output path
+        output_filename = self.generate_filename(
+            prefix=payload.file_prefix or "document",
+            extension="pdf"
+        )
         output_path = self.output_dir.joinpath(output_filename)
+        output_path = self.validate_output_path(output_path)
+        url = self.to_static_url(output_path)
         try:
             HTML(
                 string=content,
@@ -195,66 +182,33 @@ class PDFPrintTool(BaseTool):
                 "status": "success",
                 "message": "PDF generated successfully.",
                 "text": payload.text,
+                "url": url,
+                "static_url": self.relative_url(url),
+                "filename": output_path,
                 "file_path": self.output_dir,
-                "timestamp": timestamp,
-                "filename": output_path
             }
         except Exception as e:
             print(f"Error in _generate_podcast: {e}")
             print(traceback.format_exc())
             return {"error": str(e)}
 
-    async def _arun(
+    def _generate_payload(
         self,
-        text: str,
-        file_prefix: Optional[str] = None,
-        **kwargs: Any
-    ) -> Dict[str, Any]:
-        """
-        LangChain will call this with keyword args matching PDFPrintInput, e.g.:
-        _arun(text="Hello", output_dir="documents/", …)
-        """
-        try:
-            # 1) Build a dict of everything LangChain passed us
-            payload_dict = {
-                "text": text,
-                "file_prefix": file_prefix,
-                **kwargs
-            }
-            # 2) Let Pydantic validate & coerce
-            payload = PDFPrintInput(**{k: v for k, v in payload_dict.items() if v is not None})
-            # 3) Call the “real” generator
-            return await self._generate_pdf(payload)
-        except Exception as e:
-            print(f"❌ Error in PDFPrint._arun: {e}")
-            print(traceback.format_exc())
-            return {"error": str(e)}
+        **kwargs
+    ) -> PDFPrintInput:
+        # Extract "text" and "file_prefix" from args
+        text = kwargs.pop("text", None)
+        file_prefix = kwargs.pop("file_prefix", None)
+        if not text:
+            raise ValueError("The 'text' field is required for PDF generation.")
+        if not isinstance(text, str):
+            raise ValueError("The 'text' field must be a string.")
 
-    # Mirror the same signature for the synchronous runner:
-    def _run(
-        self,
-        text: Union[str, Dict[str, Any]],
-        file_prefix: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """
-        Synchronous entrypoint. If text_or_json is a JSON string, we load it first.
-        Otherwise, assume it’s already a dict of the correct shape.
-        """
-        try:
-            if isinstance(text, str):
-                data = json.loads(text)
-                # We expect a JSON‐dict with keys matching PodcastInput
-            elif isinstance(text, dict):
-                data = text
-            else:
-                return {"error": "Invalid payload type. Must be JSON string or dict."}
-            # Validate with PodcastInput
-            payload = PDFPrintInput(file_prefix=file_prefix, **data)
-        except Exception as e:
-            return {"error": f"Invalid input: {e}"}
-
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            return loop.run_until_complete(self._generate_pdf(payload))
-        else:
-            return loop.run_until_complete(self._generate_pdf(payload))
+        payload_dict = {
+            "text": text,
+            "file_prefix": file_prefix,
+            **kwargs
+        }
+        return PDFPrintInput(
+            **{k: v for k, v in payload_dict.items() if v is not None}
+        )

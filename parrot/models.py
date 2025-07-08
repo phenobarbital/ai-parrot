@@ -53,18 +53,18 @@ class AgentResponse(BaseModel):
                         }
                     )
                 # --------- look for filenames --------- #
-                if isinstance(result, dict) and "filename" in result:
-                    file = result["filename"]
-                    if isinstance(file, str):
-                        # Convert to Path object
-                        file = Path(file).expanduser().resolve()
-                    if isinstance(file, Path) and file.exists():
-                        # Ensure the file exists
-                        docs.append(file)
-                    elif isinstance(file, str) and Path(file).expanduser().exists():
-                        # If it's a string, convert to Path and check existence
-                        docs.append(Path(file).expanduser().resolve())
-
+                if isinstance(result, dict):
+                    if "filename" in result:
+                        file = result["filename"]
+                        if isinstance(file, str):
+                            # Convert to Path object
+                            file = Path(file).expanduser().resolve()
+                        if isinstance(file, Path) and file.exists():
+                            # Ensure the file exists
+                            docs.append(file)
+                        elif isinstance(file, str) and Path(file).expanduser().exists():
+                            # If it's a string, convert to Path and check existence
+                            docs.append(Path(file).expanduser().resolve())
             if steps:
                 self.intermediate_steps = steps
             self.documents = docs

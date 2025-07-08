@@ -315,6 +315,7 @@ class AgentAnswer(BaseModel):
     created_at: datetime = Field(default=datetime.now())
     podcast_path: str = Field(required=False, description="Path to the podcast associated with the session")
     pdf_path: str = Field(required=False, description="Path to the PDF associated with the session")
+    document_path: str = Field(required=False, description="Path to document generated during session")
     documents: List[str] = Field(default_factory=list, description="List of documents associated with the session")
 
 
@@ -435,6 +436,7 @@ The agent can execute Python code snippets to perform calculations or data proce
         pdf_path = None
         podcast_path = None
         transcript = None
+        document_path = None
         if response.intermediate_steps:
             for step in response.intermediate_steps:
                 tool = step['tool']
@@ -442,10 +444,15 @@ The agent can execute Python code snippets to perform calculations or data proce
                 tool_input = step.get('tool_input', {})
                 if 'text' in tool_input:
                     transcript = tool_input['text']
-                if tool == 'pdf_print_tool':
-                    pdf_path = result.get('filename', None)
-                elif tool == 'podcast_generator_tool':
-                    podcast_path = result.get('filename', None)
+                if isinstance(result, dict):
+                    # Extract the URL from the result if available
+                    url = result.get('url', None)
+                    if tool == 'pdf_print_tool':
+                        pdf_path = url
+                    elif tool == 'podcast_generator_tool':
+                        podcast_path = url
+                    else:
+                        document_path = url
         response_data = self._model_response(
             user_id=str(userid),
             agent_name=self.agent_name,
@@ -457,6 +464,7 @@ The agent can execute Python code snippets to perform calculations or data proce
             transcript=transcript,
             pdf_path=str(pdf_path),
             podcast_path=str(podcast_path),
+            document_path=str(document_path),
             documents=response.documents if hasattr(response, 'documents') else [],
             **kwargs
         )
