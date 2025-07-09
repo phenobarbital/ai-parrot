@@ -65,7 +65,7 @@ class PDFPrintInput(BaseModel):
 
 class PDFPrintTool(BaseAbstractTool):
     """Tool that saves a PDF file from content."""
-    name: str = "pdf_print_tool"
+    name: str = "PDFPrintTool"
     description: str = (
         "Generates a PDF file from the provided text content. "
         "The content can be in plaintext or Markdown format. "
