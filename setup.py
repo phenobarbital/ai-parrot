@@ -158,7 +158,6 @@ setup(
         "jq==1.7.0",
         "rank_bm25==0.2.2",
         "tabulate==0.9.0",
-        "transitions==0.9.0",
         "sentencepiece==0.2.0",
         "markdown2==2.4.13",
         "psycopg-binary==3.2.6",
