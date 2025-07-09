@@ -312,7 +312,7 @@ class AgentAnswer(BaseModel):
     output: str = Field(required=False)
     transcript: str = Field(default=None, description="Transcript of the conversation with the agent")
     attributes: Dict[str, str] = Field(default_factory=dict, description="Attributes associated with the response")
-    created_at: datetime = Field(default=datetime.now())
+    created_at: datetime = Field(default=datetime.now)
     podcast_path: str = Field(required=False, description="Path to the podcast associated with the session")
     pdf_path: str = Field(required=False, description="Path to the PDF associated with the session")
     document_path: str = Field(required=False, description="Path to document generated during session")
