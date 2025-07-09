@@ -138,7 +138,7 @@ class BasicAgent(AbstractBot):
         self.agent = None
         self.agent_type = agent_type or 'tool-calling'
         self._use_chat: bool = True  # For Agents, we use chat models
-        self._agent = None # Agent Executor
+        self._agent = None  # Agent Executor
         self.system_prompt_template = prompt_template or AGENT_PROMPT
         self._system_prompt_base = system_prompt or ''
         self.tools = self.default_tools(tools)
@@ -152,16 +152,7 @@ class BasicAgent(AbstractBot):
         ctools = [
             DuckDuckGoSearchTool(),
             MathTool(),
-            GoogleVoiceTool(
-                name="podcast_generator_tool",
-                output_dir=BASE_DIR.joinpath('static', self.name, 'podcasts')
-            ),
-            PDFPrintTool(
-                name="pdf_print_tool",
-                output_dir=BASE_DIR.joinpath('static', self.name, 'documents', 'pdf')
-            ),
         ]
-        # TODO: configure PDF tool to use a per-agent directory:
         # result_store_tool = ResultStoreTool()
         # get_result_tool = GetResultTool()
         # list_results_tool = ListResultsTool()
