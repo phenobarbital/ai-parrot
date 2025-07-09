@@ -447,9 +447,9 @@ The agent can execute Python code snippets to perform calculations or data proce
                 if isinstance(result, dict):
                     # Extract the URL from the result if available
                     url = result.get('url', None)
-                    if tool == 'pdf_print_tool':
+                    if tool == 'PDFPrintTool':
                         pdf_path = url
-                    elif tool == 'podcast_generator_tool':
+                    elif tool == 'GoogleVoiceTool':
                         podcast_path = url
                     else:
                         document_path = url

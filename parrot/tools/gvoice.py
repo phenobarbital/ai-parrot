@@ -89,7 +89,7 @@ class PodcastInput(BaseModel):
 
 class GoogleVoiceTool(BaseAbstractTool):
     """Generate a podcast-style audio file from Text using Google Cloud Text-to-Speech."""
-    name: str = "podcast_generator_tool"
+    name: str = "GoogleVoiceTool"
     description: str = (
         "Generates a podcast-style audio file from a given text (plain or markdown) script using Google Cloud Text-to-Speech."
         " Use this tool if the user requests a podcast, an audio summary, or a narrative of your findings."
