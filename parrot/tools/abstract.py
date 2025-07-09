@@ -12,7 +12,7 @@ from langchain_core.tools import BaseTool, BaseToolkit, StructuredTool
 from navconfig import BASE_DIR
 from navconfig.logging import logging
 from datamodel.parsers.json import json_decoder, json_encoder  # noqa  pylint: disable=E0611
-from ..conf import BASE_STATIC_URL
+from ..conf import BASE_STATIC_URL, STATIC_DIR
 
 
 logging.getLogger(name='cookie_store').setLevel(logging.INFO)
@@ -176,10 +176,10 @@ class BaseAbstractTool(BaseTool, ABC):
     args_schema: Type[BaseModel] = AbstractToolArgsSchema
     _json_encoder: Type[Any] = json_encoder
     _json_decoder: Type[Any] = json_decoder
-    static_dir: Path = BASE_DIR.joinpath('static')
+    static_dir: Path = None
     base_url: str = BASE_STATIC_URL
     _base_scheme_netloc: tuple = None
-    output_dir: Optional[Path] = BASE_DIR.joinpath("static", "documents", "pdf")
+    output_dir: Optional[Path] = None
     logger: logging.Logger = None
 
     class Config:
@@ -200,7 +200,7 @@ class BaseAbstractTool(BaseTool, ABC):
         )
         # Set up output directory
         if output_dir:
-            self.output_dir = Path(output_dir)
+            self.output_dir = Path(output_dir).resolve()
         else:
             self.output_dir = self._default_output_dir()
         # Ensure output directory exists
@@ -210,6 +210,10 @@ class BaseAbstractTool(BaseTool, ABC):
         self.base_url = base_url or BASE_STATIC_URL
         parsed = urlparse(self.base_url)
         self._base_scheme_netloc = (parsed.scheme, parsed.netloc)
+        # set static directory
+        self.static_dir = kwargs.get('static_dir', STATIC_DIR)
+        if isinstance(self.static_dir, str):
+            self.static_dir = Path(self.static_dir).resolve()
 
     @abstractmethod
     def _default_output_dir(self) -> Path:
@@ -263,8 +267,6 @@ class BaseAbstractTool(BaseTool, ABC):
         if not parts.scheme or not parts.netloc:
             return url
         # only strip when scheme+netloc match
-        print(self._base_scheme_netloc)
-        print(parts.scheme, parts.netloc)
         if (parts.scheme, parts.netloc) == self._base_scheme_netloc:
             # urlunparse with empty scheme/netloc → just path;params?query#frag
             return urlunparse((
