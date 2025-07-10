@@ -150,14 +150,8 @@ class BasicAgent(AbstractBot):
 
     def default_tools(self, tools: list = None) -> List[AbstractTool]:
         ctools = [
-            DuckDuckGoSearchTool(),
             MathTool(),
         ]
-        # result_store_tool = ResultStoreTool()
-        # get_result_tool = GetResultTool()
-        # list_results_tool = ListResultsTool()
-        # adding result management:
-        # ctools.extend([result_store_tool, get_result_tool, list_results_tool])
         if tools:
             ctools.extend(tools)
         return ctools
