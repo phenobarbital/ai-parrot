@@ -77,8 +77,7 @@ class OpenWeather(BaseTool):
     description: str = (
         "Get current weather information or forecast for a specific location. "
         "This tool requires latitude and longitude coordinates. "
-        "Input should be a JSON object with 'latitude' and 'longitude' fields. "
-        "Example: {\"latitude\": 37.7749, \"longitude\": -122.4194} for San Francisco. "
+        "You can also specify the type of request ('weather' for current weather or 'forecast' for a weather forecast). "
         "Optional fields: 'country' (default: 'us') and 'request' (default: 'weather', can be 'forecast'). "
         "Temperature is returned in Fahrenheit."
     )
