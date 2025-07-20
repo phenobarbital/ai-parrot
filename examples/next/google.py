@@ -15,7 +15,7 @@ async def main():
         response = await client.ask(question)
         print(response['content'][0]['text'])
 
-    async with GenAIClient() as client:
+    async with VertexAIClient() as client:
         math_tool = MathTool()
 
         # Register the tool's methods
@@ -33,7 +33,47 @@ async def main():
             function=math_tool.multiply,
         )
 
-        response = await client.ask(question)
+        response = await client.ask(
+            "What is the result of multiplying 5 and 10?",
+            structured_output=math_tool.multiply
+        )
+        print(response["content"][0]["text"])
+
+    async with GenAIClient() as client:
+        math_tool = MathTool()
+
+        # Register the tool's methods
+        client.register_tool(
+            name="add",
+            description="Adds two numbers.",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "a": {"type": "number"},
+                    "b": {"type": "number"},
+                },
+                "required": ["a", "b"],
+            },
+            function=math_tool.add,
+        )
+        client.register_tool(
+            name="divide",
+            description="Divides two numbers.",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "a": {"type": "number"},
+                    "b": {"type": "number"},
+                },
+                "required": ["a", "b"],
+            },
+            function=math_tool.divide,
+        )
+        question = "What is 150 plus 79, and also what is 1024 divided by 256?"
+        response = await client.ask(
+            question,
+            structured_output=math_tool.add
+        )
         print(response["content"][0]["text"])
 
 if __name__ == "__main__":
