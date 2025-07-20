@@ -12,6 +12,22 @@ getLogger('httpx').setLevel('WARNING')
 getLogger('httpcore').setLevel('WARNING')
 getLogger('openai').setLevel('INFO')
 
+class OpenAIModel:
+    """Enum-like class for OpenAI models."""
+    GPT4_TURBO = "gpt-4-turbo"
+    GPT4_1 = "gpt-4.1"
+    GPT3_5_TURBO = "gpt-3.5-turbo"
+    GPT_4_1_MINI = "gpt-4.1-mini"
+    GPT_O4 = "gpt-4o-2024-08-06"
+    GPT4 = "gpt-4"
+    GPT_4O_SEARCH = "gpt-4o-search-preview"
+    GPT_4O_MINI_SEARCH = "gpt-4o-mini-search-preview"
+    O4_MINI = "o4-mini"
+    O3 = "o3"
+    O3_DEEP_RESEARCH = "o3-deep-research"
+    GPT_IMAGE_1 = "gpt-image-1"
+
+
 class OpenAIClient(AbstractClient):
     """Client for interacting with OpenAI's API.
     """
@@ -73,13 +89,23 @@ class OpenAIClient(AbstractClient):
 
         tools = self._prepare_tools() if self.tools else None
 
+        args = {}
+        if model == OpenAIModel.GPT_4O_MINI_SEARCH or model == OpenAIModel.GPT_4O_SEARCH:
+            args['web_search_options'] = {
+                "web_search": True,
+                "web_search_model": "gpt-4o-mini"
+            }
+        if tools:
+            args['tools'] = tools
+            args['tool_choice'] = "auto"
+            args['parallel_tool_calls'] = True
         response = await self.client.chat.completions.create(
             model=model,
             messages=messages,
             max_tokens=max_tokens,
             temperature=temperature,
-            tools=tools,
-            stream=False
+            stream=False,
+            **args
         )
 
         result = response.choices[0].message
