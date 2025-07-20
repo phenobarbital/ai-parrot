@@ -9,5 +9,14 @@ from .claude import ClaudeClient
 from .vertex import VertexAIClient
 from .google import GenAIClient
 from .gpt import OpenAIClient
+from .groq import GroqClient, GroqModel
 
-__all__ = ["AbstractClient", "ClaudeClient", "VertexAIClient", "GenAIClient", "OpenAIClient"]
+__all__ = (
+    "AbstractClient",
+    "ClaudeClient",
+    "VertexAIClient",
+    "GenAIClient",
+    "OpenAIClient",
+    "GroqClient",
+    "GroqModel",
+)

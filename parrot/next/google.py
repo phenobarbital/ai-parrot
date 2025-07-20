@@ -2,6 +2,7 @@ import asyncio
 from typing import AsyncIterator, List, Optional, Union, Any
 from pathlib import Path
 import google.generativeai as genai
+from tenacity import retry, stop_after_attempt, wait_exponential
 from navconfig import config
 from .abstract import AbstractClient, MessageResponse
 
