@@ -1,15 +1,22 @@
 
 from typing import AsyncIterator, List, Optional, Union, Any
 from pathlib import Path
+from logging import getLogger
 from datamodel.parsers.json import json_decoder  # pylint: disable=E0611 # noqa
 from navconfig import config
-import openai
+from openai import AsyncOpenAI
 from .abstract import AbstractClient, MessageResponse
 
+
+getLogger('httpx').setLevel('WARNING')
+getLogger('httpcore').setLevel('WARNING')
+getLogger('openai').setLevel('INFO')
 
 class OpenAIClient(AbstractClient):
     """Client for interacting with OpenAI's API.
     """
+    agent_type: str = "openai"
+    model: str = "gpt-4-turbo"
     def __init__(
         self,
         api_key: str = None,
@@ -23,7 +30,18 @@ class OpenAIClient(AbstractClient):
             "Authorization": f"Bearer {self.api_key}"
         }
         super().__init__(**kwargs)
-        openai.api_key = self.api_key
+        self.client = AsyncOpenAI(api_key=self.api_key)
+
+    async def _upload_file(
+        self,
+        file_path: Union[str, Path],
+        purpose: str = 'fine-tune'
+    ) -> None:
+        """Upload a file to OpenAI."""
+        await self.client.files.create(
+            file=file_path,
+            purpose=purpose
+        )
 
     async def ask(
         self,
@@ -39,14 +57,23 @@ class OpenAIClient(AbstractClient):
     ) -> Union[MessageResponse, Any]:
 
         messages, conversation_session, system_prompt = await self._prepare_conversation_context(
-            prompt, files, user_id, session_id, system_prompt)
+            prompt, files, user_id, session_id, system_prompt
+        )
+
+        # Upload files if are pathLike objects
+        if files:
+            for file in files:
+                if isinstance(file, str):
+                    file = Path(file)
+                if isinstance(file, Path):
+                    await self._upload_file(file)
 
         if system_prompt:
             messages.insert(0, {"role": "system", "content": system_prompt})
 
         tools = self._prepare_tools() if self.tools else None
 
-        response = await openai.ChatCompletion.acreate(
+        response = await self.client.chat.completions.create(
             model=model,
             messages=messages,
             max_tokens=max_tokens,
@@ -58,43 +85,42 @@ class OpenAIClient(AbstractClient):
         result = response.choices[0].message
 
         # Handle tool calls in a loop
-        while result.get('tool_calls'):
+        while result.tool_calls:
             tool_results = []
 
-            for tool_call in result['tool_calls']:
-                tool_name = tool_call['function']['name']
-                tool_args = json_decoder(tool_call['function']['arguments'])
+            for tool_call in result.tool_calls:
+                tool_name = tool_call.function.name
+                tool_args = json_decoder(tool_call.function.arguments)
 
                 try:
                     tool_result = await self._execute_tool(tool_name, tool_args)
                     tool_results.append({
                         "role": "tool",
-                        "tool_call_id": tool_call['id'],
+                        "tool_call_id": tool_call.id,
                         "name": tool_name,
                         "content": str(tool_result)
                     })
                 except Exception as e:
                     tool_results.append({
                         "role": "tool",
-                        "tool_call_id": tool_call['id'],
+                        "tool_call_id": tool_call.id,
                         "name": tool_name,
                         "content": str(e)
                     })
 
-            messages.append(result)
+            messages.append(result.model_dump())
             messages.extend(tool_results)
 
-            response = await openai.ChatCompletion.acreate(
+            response = await self.client.chat.completions.create(
                 model=model,
                 messages=messages,
                 max_tokens=max_tokens,
                 temperature=temperature,
                 stream=False
             )
-
             result = response.choices[0].message
 
-        messages.append(result)
+        messages.append(result.model_dump())
 
         # Update conversation memory
         await self._update_conversation_memory(
@@ -106,9 +132,9 @@ class OpenAIClient(AbstractClient):
         )
 
         final_result = {
-            "content": [{"type": "text", "text": result['content']}],
+            "content": [{"type": "text", "text": result.content}],
             "model": model,
-            "usage": response.usage,
+            "usage": response.usage.model_dump(),
             "stop_reason": "completed",
         }
 
@@ -116,6 +142,7 @@ class OpenAIClient(AbstractClient):
             final_result,
             structured_output
         ) if structured_output else MessageResponse(**final_result)
+
 
     async def ask_stream(
         self,
@@ -135,12 +162,12 @@ class OpenAIClient(AbstractClient):
         if system_prompt:
             messages.insert(0, {"role": "system", "content": system_prompt})
 
-        response = await openai.types.chat.ChatCompletion.acreate(
+        response = await self.client.chat.completions.create(
             model=model,
             messages=messages,
             max_tokens=max_tokens,
             temperature=temperature,
-            stream=True
+            stream=False
         )
 
         assistant_content = ""

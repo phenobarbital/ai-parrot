@@ -88,19 +88,19 @@ class VertexAIClient(AbstractClient):
             tools=tools,
         )
 
-        if response.candidates[0].tool_calls:
-            for tool_call in response.candidates[0].tool_calls:
-                tool_result = await self._execute_tool(
-                    tool_call.function_call.name, tool_call.function_call.args
-                )
-                response = await chat.send_message_async(
-                    [
+        if response.candidates and response.candidates[0].content.parts:
+            for part in response.candidates[0].content.parts:
+                if part.function_call:
+                    tool_result = await self._execute_tool(
+                        part.function_call.name, part.function_call.args
+                    )
+                    response = await chat.send_message_async(
                         Part.from_function_response(
-                            name=tool_call.function_call.name,
+                            name=part.function_call.name,
                             response={"content": tool_result},
                         )
-                    ]
-                )
+                    )
+
 
         result = {
             "content": [{"type": "text", "text": response.text}],
