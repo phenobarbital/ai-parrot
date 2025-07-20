@@ -1,0 +1,421 @@
+from typing import AsyncIterator, Dict, List, Optional, Union, TypedDict, Any, Callable
+import mimetypes
+import asyncio
+import base64
+from pathlib import Path
+from dataclasses import dataclass, asdict
+from abc import ABC, abstractmethod
+from datamodel.exceptions import ParserError  # pylint: disable=E0611 # noqa
+from datamodel.parsers.json import json_encoder, json_decoder, JSONContent  # pylint: disable=E0611 # noqa
+from navconfig import config
+from navconfig.logging import logging
+import aiohttp
+from .memory import ConversationSession, ConversationMemory, InMemoryConversationMemory
+from .tools import PythonREPLTool
+
+
+def register_python_tool(
+    client,
+    report_dir: Optional[Path] = None,
+    plt_style: str = 'seaborn-v0_8-whitegrid',
+    palette: str = 'Set2'
+) -> PythonREPLTool:
+    """Register Python REPL tool with a ClaudeAPIClient.
+
+    Args:
+        client: The ClaudeAPIClient instance
+        report_dir: Directory for saving reports
+        plt_style: Matplotlib style
+        palette: Seaborn color palette
+
+    Returns:
+        The PythonREPLTool instance
+    """
+    tool = PythonREPLTool(
+        report_dir=report_dir,
+        plt_style=plt_style,
+        palette=palette
+    )
+
+    client.register_tool(
+        name="python_repl",
+        description=(
+            "A Python shell for executing Python commands. "
+            "Input should be valid Python code. "
+            "Pre-loaded libraries: pandas (pd), numpy (np), matplotlib.pyplot (plt), "
+            "seaborn (sns), numexpr (ne). "
+            "Available tools: quick_eda, generate_eda_report, list_available_dataframes "
+            "from parrot_tools. "
+            "Use execution_results dict for capturing intermediate results. "
+            "Use report_directory Path for saving outputs. "
+            "Use extended_json.dumps(obj)/extended_json.loads(bytes) for JSON operations."
+        ),
+        input_schema=tool.get_tool_schema(),
+        function=tool
+    )
+
+    return tool
+
+class MessageResponse(TypedDict):
+    """Response structure for Claude messages."""
+    id: str
+    type: str
+    role: str
+    content: List[Dict[str, Any]]
+    model: str
+    stop_reason: Optional[str]
+    stop_sequence: Optional[str]
+    usage: Dict[str, int]
+
+
+@dataclass
+class ToolDefinition:
+    """Data structure for tool definition."""
+    """Defines a tool with its name, description, input schema, and function."""
+    __slots__ = ('name', 'description', 'input_schema', 'function')
+    name: str
+    description: str
+    input_schema: Dict[str, Any]
+    function: Callable
+
+@dataclass
+class BatchRequest:
+    """Data structure for batch request."""
+    custom_id: str
+    params: Dict[str, Any]
+
+
+class AbstractClient(ABC):
+    """Abstract base Class for LLM models."""
+    version: str = "0.1.0"
+    base_headers: Dict[str, str] = {
+        "Content-Type": "application/json",
+    }
+
+    def __init__(
+        self,
+        conversation_memory: Optional[ConversationMemory] = None,
+        **kwargs
+    ):
+        self.session: Optional[aiohttp.ClientSession] = None
+        self.tools: Dict[str, ToolDefinition] = {}
+        self.conversation_memory = conversation_memory or InMemoryConversationMemory()
+        self.base_headers.update(kwargs.get('headers', {}))
+        self.api_key = kwargs.get('api_key', None)
+        self.version = kwargs.get('version', self.version)
+        self._config = config
+        self.logger: logging.Logger = logging.getLogger(__name__)
+        self._json: Any = JSONContent()
+
+    async def __aenter__(self):
+        self.session = aiohttp.ClientSession(
+            headers=self.base_headers
+        )
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self.session:
+            await self.session.close()
+
+    async def start_conversation(
+        self, user_id: str, session_id: str,
+        system_prompt: Optional[str] = None
+    ) -> ConversationSession:
+        """Start a new conversation session."""
+        return await self.conversation_memory.create_session(
+            user_id,
+            session_id,
+            system_prompt
+        )
+
+    async def get_conversation(
+        self,
+        user_id: str,
+        session_id: str
+    ) -> Optional[ConversationSession]:
+        """Get an existing conversation session."""
+        return await self.conversation_memory.get_session(user_id, session_id)
+
+    async def clear_conversation(
+        self,
+        user_id: str,
+        session_id: str
+    ) -> None:
+        """Clear a conversation session."""
+        await self.conversation_memory.clear_session(user_id, session_id)
+
+    async def list_conversations(self, user_id: str) -> List[str]:
+        """List all conversation sessions for a user."""
+        return await self.conversation_memory.list_sessions(user_id)
+
+    def register_tool(
+        self,
+        name: str,
+        description: str,
+        input_schema: Dict[str, Any],
+        function: Callable
+    ) -> None:
+        """Register a Python function as a tool for Claude to call."""
+        self.tools[name] = ToolDefinition(name, description, input_schema, function)
+
+    def register_python_tool(
+        self,
+        report_dir: Optional[Path] = None,
+        plt_style: str = 'seaborn-v0_8-whitegrid',
+        palette: str = 'Set2'
+    ) -> PythonREPLTool:
+        """Register Python REPL tool with a ClaudeAPIClient.
+
+        Args:
+            client: The ClaudeAPIClient instance
+            report_dir: Directory for saving reports
+            plt_style: Matplotlib style
+            palette: Seaborn color palette
+
+        Returns:
+            The PythonREPLTool instance
+        """
+        tool = PythonREPLTool(
+            report_dir=report_dir,
+            plt_style=plt_style,
+            palette=palette
+        )
+
+        self.register_tool(
+            name="python_repl",
+            description=(
+                "A Python shell for executing Python commands. "
+                "Input should be valid Python code. "
+                "Pre-loaded libraries: pandas (pd), numpy (np), matplotlib.pyplot (plt), "
+                "seaborn (sns), numexpr (ne). "
+                "Available tools: quick_eda, generate_eda_report, list_available_dataframes "
+                "from parrot_tools. "
+                "Use execution_results dict for capturing intermediate results. "
+                "Use report_directory Path for saving outputs. "
+                "Use extended_json.dumps(obj)/extended_json.loads(bytes) for JSON operations."
+            ),
+            input_schema=tool.get_tool_schema(),
+            function=tool
+        )
+
+        return tool
+
+    def _encode_file(self, file_path: Union[str, Path]) -> Dict[str, Any]:
+        """Encode file for API upload."""
+        path = Path(file_path)
+        mime_type, _ = mimetypes.guess_type(str(path))
+
+        with open(path, "rb") as f:
+            encoded = base64.b64encode(f.read()).decode('utf-8')
+
+        return {
+            "type": "document",
+            "source": {
+                "type": "base64",
+                "media_type": mime_type or "application/octet-stream",
+                "data": encoded
+            }
+        }
+
+    def _prepare_tools(self) -> List[Dict[str, Any]]:
+        """Convert registered tools to API format."""
+        return [
+            {
+                "name": tool.name,
+                "description": tool.description,
+                "input_schema": tool.input_schema
+            }
+            for tool in self.tools.values()
+        ]
+
+    async def _execute_tool(
+        self,
+        tool_name: str,
+        parameters: Dict[str, Any]
+    ) -> Any:
+        """Execute a registered tool function."""
+        if tool_name not in self.tools:
+            raise ValueError(f"Tool '{tool_name}' not registered")
+
+        tool = self.tools[tool_name]
+        if asyncio.iscoroutinefunction(tool.function):
+            return await tool.function(**parameters)
+        else:
+            return tool.function(**parameters)
+
+    async def _execute_tool_call(
+        self,
+        content_block: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Execute a single tool call and return the result."""
+        tool_name = content_block["name"]
+        tool_input = content_block["input"]
+        tool_id = content_block["id"]
+
+        try:
+            tool_result = await self._execute_tool(tool_name, tool_input)
+            return {
+                "type": "tool_result",
+                "tool_use_id": tool_id,
+                "content": str(tool_result)
+            }
+        except Exception as e:
+            return {
+                "type": "tool_result",
+                "tool_use_id": tool_id,
+                "is_error": True,
+                "content": str(e)
+            }
+
+    def _prepare_messages(
+        self,
+        prompt: str,
+        files: Optional[List[Union[str, Path]]] = None
+    ) -> List[Dict[str, Any]]:
+        """Prepare message content with optional file attachments."""
+        content = [{"type": "text", "text": prompt}]
+
+        if files:
+            for file_path in files:
+                content.append(self._encode_file(file_path))
+
+        return [{"role": "user", "content": content}]
+
+    def _validate_response(self, response: Dict[str, Any]) -> bool:
+        """Validate API response structure."""
+        required_fields = ["id", "type", "role", "content", "model"]
+        return all(field in response for field in required_fields)
+
+    @abstractmethod
+    async def ask(
+        self,
+        prompt: str,
+        model: str,
+        max_tokens: int = 4096,
+        temperature: float = 0.7,
+        files: Optional[List[Union[str, Path]]] = None,
+        system_prompt: Optional[str] = None,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None
+    ) -> MessageResponse:
+        """Send a prompt to the model and return the response."""
+        raise NotImplementedError("Subclasses must implement this method.")
+
+    @abstractmethod
+    async def ask_stream(
+        self,
+        prompt: str,
+        model: str = None,
+        max_tokens: int = 4096,
+        temperature: float = 0.7,
+        files: Optional[List[Union[str, Path]]] = None,
+        system_prompt: Optional[str] = None,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None
+    ) -> AsyncIterator[str]:
+        """Stream the model's response."""
+        raise NotImplementedError("Subclasses must implement this method.")
+
+    @abstractmethod
+    async def batch_ask(self, requests: List[Any]) -> List[Any]:
+        """Process multiple requests in batch."""
+        raise NotImplementedError("Subclasses must implement batch processing.")
+
+    async def _handle_structured_output(
+        self,
+        result: Dict[str, Any],
+        structured_output: Optional[type]
+    ) -> Any:
+        """Parse response into structured output format."""
+        if not structured_output:
+            return result
+
+        text_content = ""
+        for content_block in result["content"]:
+            if content_block["type"] == "text":
+                text_content += content_block["text"]
+
+        try:
+            if hasattr(structured_output, '__annotations__'):
+                parsed = json_decoder(text_content)
+                return structured_output(**parsed) if hasattr(
+                    structured_output, '__dataclass_fields__'
+                ) else parsed
+            else:
+                return structured_output(text_content)
+        except:
+            return result
+
+    async def _process_tool_calls(
+        self,
+        initial_result: Dict[str, Any],
+        messages: List[Dict[str, Any]],
+        payload: Dict[str, Any],
+        endpoint: str
+    ) -> Dict[str, Any]:
+        """Handle tool calls in a loop until completion."""
+        result = initial_result
+
+        while result.get("stop_reason") == "tool_use":
+            tool_results = []
+
+            for content_block in result["content"]:
+                if content_block["type"] == "tool_use":
+                    tool_result = await self._execute_tool_call(content_block)
+                    tool_results.append(tool_result)
+
+            messages.append({"role": "assistant", "content": result["content"]})
+            messages.append({"role": "user", "content": tool_results})
+            payload["messages"] = messages
+
+            async with self.session.post(endpoint, json=payload) as response:
+                response.raise_for_status()
+                result = await response.json()
+
+        # Add final assistant response
+        messages.append({"role": "assistant", "content": result["content"]})
+        return result
+
+    async def _prepare_conversation_context(
+        self,
+        prompt: str,
+        files: Optional[List[Union[str, Path]]],
+        user_id: Optional[str],
+        session_id: Optional[str],
+        system_prompt: Optional[str]
+    ) -> tuple[List[Dict[str, Any]], Optional[ConversationSession], Optional[str]]:
+        """Prepare conversation context and return messages, session, and system prompt."""
+        messages = []
+        conversation_session = None
+
+        if user_id and session_id:
+            conversation_session = await self.get_conversation(user_id, session_id)
+            if conversation_session:
+                messages = conversation_session.messages.copy()
+                if not system_prompt and conversation_session.system_prompt:
+                    system_prompt = conversation_session.system_prompt
+
+        new_user_message = self._prepare_messages(prompt, files)[0]
+        messages.append(new_user_message)
+
+        return messages, conversation_session, system_prompt
+
+    async def _update_conversation_memory(
+        self,
+        user_id: Optional[str],
+        session_id: Optional[str],
+        conversation_session: Optional[ConversationSession],
+        messages: List[Dict[str, Any]],
+        system_prompt: Optional[str]
+    ) -> None:
+        """Update conversation memory with new messages."""
+        if user_id and session_id:
+            if not conversation_session:
+                conversation_session = await self.start_conversation(
+                    user_id,
+                    session_id,
+                    system_prompt
+                )
+
+            conversation_session.messages = messages
+            await self.conversation_memory.update_session(conversation_session)
