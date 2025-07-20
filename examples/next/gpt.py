@@ -82,14 +82,6 @@ async def example_usage():
         )
         print(response)
 
-        # Direct usage of the tool
-        result = repl_tool.execute("""
-import pandas as pd
-df = pd.DataFrame({'A': [1, 2, 3], 'B': [4, 5, 6]})
-df.head()
-        """, debug=True)
-        print("Direct execution result:", result)
-
 
 if __name__ == "__main__":
     asyncio.run(example_usage())

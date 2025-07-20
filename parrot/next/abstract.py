@@ -91,6 +91,7 @@ class AbstractClient(ABC):
     base_headers: Dict[str, str] = {
         "Content-Type": "application/json",
     }
+    agent_type: str = "generic"
 
     def __init__(
         self,
@@ -106,6 +107,7 @@ class AbstractClient(ABC):
         self._config = config
         self.logger: logging.Logger = logging.getLogger(__name__)
         self._json: Any = JSONContent()
+        self.agent_type: str = kwargs.get('agent_type', self.agent_type)
 
     async def __aenter__(self):
         self.session = aiohttp.ClientSession(
@@ -153,7 +155,8 @@ class AbstractClient(ABC):
         name: str,
         description: str,
         input_schema: Dict[str, Any],
-        function: Callable
+        function: Callable,
+        type: str = "function",
     ) -> None:
         """Register a Python function as a tool for Claude to call."""
         self.tools[name] = ToolDefinition(name, description, input_schema, function)
@@ -183,6 +186,7 @@ class AbstractClient(ABC):
 
         self.register_tool(
             name="python_repl",
+            type="function",
             description=(
                 "A Python shell for executing Python commands. "
                 "Input should be valid Python code. "
@@ -219,14 +223,27 @@ class AbstractClient(ABC):
 
     def _prepare_tools(self) -> List[Dict[str, Any]]:
         """Convert registered tools to API format."""
-        return [
-            {
-                "name": tool.name,
-                "description": tool.description,
-                "input_schema": tool.input_schema
-            }
-            for tool in self.tools.values()
-        ]
+        if self.agent_type == 'openai':
+            return [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": tool.name,
+                        "description": tool.description,
+                        "parameters": tool.input_schema
+                    }
+                }
+                for tool in self.tools.values()
+            ]
+        else:
+            return [
+                {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "input_schema": tool.input_schema
+                }
+                for tool in self.tools.values()
+            ]
 
     async def _execute_tool(
         self,
