@@ -49,7 +49,9 @@ class GoogleGenAIClient(AbstractClient):
                 self._fix_tool_schema(item)
         return schema
 
-    async def __aenter__(self):
+    async def __aenter__(
+        self
+    ):
         """Initialize the client context."""
         # Google GenAI doesn't need explicit session management
         return self
@@ -104,7 +106,6 @@ class GoogleGenAIClient(AbstractClient):
                 # Handle other roles or raise an error if needed
                 print(f"Unknown role: {role}")
 
-
         generation_config = {
             "max_output_tokens": max_tokens,
             "temperature": temperature,
@@ -120,29 +121,30 @@ class GoogleGenAIClient(AbstractClient):
                     generation_config["response_mime_type"] = "application/json"
                     generation_config["response_schema"] = structured_output.output_type
 
-
         # Track tool calls for the response
         all_tool_calls = []
 
         tools = None
         if self.tools:
-            # Convert to newer API format
+            # Convert to newer API format - create proper Tool objects
             function_declarations = []
+
+            # Add custom function tools
             for tool in self.tools.values():
-                function_declarations.append({
-                    "name": tool.name,
-                    "description": tool.description,
-                    "parameters": self._fix_tool_schema(tool.input_schema.copy())
-                })
-            function_declarations.append(
-                types.Tool(
-                    google_search=types.GoogleSearch()
+                function_declarations.append(
+                    types.FunctionDeclaration(
+                        name=tool.name,
+                        description=tool.description,
+                        parameters=self._fix_tool_schema(tool.input_schema.copy())
+                    )
                 )
-            )
-            function_declarations.append(
-                types.Tool(code_execution=types.ToolCodeExecution)
-            )
-            tools = function_declarations
+
+            # Create a single Tool object with all function declarations plus built-in tools
+            tools = [
+                types.Tool(function_declarations=function_declarations),
+                # types.Tool(google_search=types.GoogleSearch),
+                # types.Tool(code_execution=types.ToolCodeExecution)
+            ]
 
         # Build contents for conversation
         contents = []
@@ -161,10 +163,12 @@ class GoogleGenAIClient(AbstractClient):
             "role": "user",
             "parts": [{"text": prompt}]
         })
+
         chat = self.client.aio.chats.create(
             model=model,
             history=history
         )
+
         # Create the model instance
         response = await self.client.aio.models.generate_content(
             model=model,
@@ -213,24 +217,26 @@ class GoogleGenAIClient(AbstractClient):
 
                 all_tool_calls.extend(tool_call_objects)
 
-                # Prepare the function responses to send back to the model
+                # Prepare the function responses as Part objects
                 function_response_parts = []
                 for fc, result in zip(function_calls, tool_results):
                     if isinstance(result, Exception):
                         response_content = f"Error: {str(result)}"
                     else:
-                        response_content = result
+                        response_content = str(result)  # Ensure it's a string
 
-                    function_response_parts.append({
-                        "function_response": {
-                            "name": fc.name,
-                            "response": {"content": response_content},
-                        }
-                    })
+                    # Create proper Part object for function response
+                    function_response_parts.append(
+                        Part(
+                            function_response=types.FunctionResponse(
+                                name=fc.name,
+                                response={"result": response_content}
+                            )
+                        )
+                    )
 
-                # Send the tool results back to the model
+                # Send the tool results back to the model using proper format
                 response = await chat.send_message(function_response_parts)
-
 
         # Handle structured output
         final_output = None
@@ -319,21 +325,25 @@ class GoogleGenAIClient(AbstractClient):
 
         tools = None
         if self.tools:
-            # Convert to newer API format
+            # Convert to newer API format - create proper Tool objects
             function_declarations = []
+
+            # Add custom function tools
             for tool in self.tools.values():
-                function_declarations.append({
-                    "name": tool.name,
-                    "description": tool.description,
-                    "parameters": self._fix_tool_schema(tool.input_schema.copy())
-                })
-            function_declarations.append(
-                types.Tool(code_execution=types.ToolCodeExecution),
-                types.Tool(
-                    google_search=types.GoogleSearch()
+                function_declarations.append(
+                    types.FunctionDeclaration(
+                        name=tool.name,
+                        description=tool.description,
+                        parameters=self._fix_tool_schema(tool.input_schema.copy())
+                    )
                 )
-            )
-            tools = function_declarations
+
+            # Create a single Tool object with all function declarations plus built-in tools
+            tools = [
+                types.Tool(function_declarations=function_declarations),
+                # types.Tool(google_search=types.GoogleSearch),
+                # types.Tool(code_execution=types.ToolCodeExecution)
+            ]
 
         # Start the chat session
         chat = self.client.aio.chats.create(
