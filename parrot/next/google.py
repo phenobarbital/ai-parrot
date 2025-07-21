@@ -1,7 +1,9 @@
 import asyncio
 from typing import AsyncIterator, List, Optional, Union, Any
+import time
 from enum import Enum
 from pathlib import Path
+import uuid
 import google.generativeai as genai
 from tenacity import retry, stop_after_attempt, wait_exponential
 from navconfig import config
@@ -44,6 +46,10 @@ class GoogleGenAIClient(AbstractClient):
                 self._fix_tool_schema(item)
         return schema
 
+    async def __aenter__(self):
+        """Initialize the client context."""
+        # Google GenAI doesn't need explicit session management
+        return self
 
     async def ask(
         self,
@@ -60,10 +66,10 @@ class GoogleGenAIClient(AbstractClient):
         """
         Ask a question to Google's Generative AI with support for parallel tool calls.
         """
-        if not self.session:
-            raise RuntimeError("Client not initialized. Use async context manager.")
-
         model = model.value if isinstance(model, GoogleModel) else model
+        # Generate unique turn ID for tracking
+        turn_id = str(uuid.uuid4())
+        original_prompt = prompt
 
         messages, conversation_session, system_prompt = await self._prepare_conversation_context(
             prompt, files, user_id, session_id, system_prompt
@@ -78,6 +84,9 @@ class GoogleGenAIClient(AbstractClient):
             "max_output_tokens": max_tokens,
             "temperature": temperature,
         }
+
+        # Track tool calls for the response
+        all_tool_calls = []
 
         # Prepare tools: rename 'input_schema' to 'parameters' and fix type casing.
         prepared_tools = None
@@ -105,39 +114,78 @@ class GoogleGenAIClient(AbstractClient):
 
         # Handle parallel function calls
         if response.candidates and response.candidates[0].content.parts:
-            function_calls = [part.function_call for part in response.candidates[0].content.parts if hasattr(part, 'function_call') and part.function_call]
+            function_calls = [
+                part.function_call
+                for part in response.candidates[0].content.parts
+                if hasattr(part, 'function_call') and part.function_call
+            ]
 
             if function_calls:
+                tool_call_objects = []
                 # Execute all tool calls concurrently
+                for fc in function_calls:
+                    tc = ToolCall(
+                        id=f"call_{uuid.uuid4().hex[:8]}",  # Generate ID for tracking
+                        name=fc.name,
+                        arguments=dict(fc.args)
+                    )
+                    tool_call_objects.append(tc)
+
+                start_time = time.time()
                 tool_execution_tasks = [
                     self._execute_tool(fc.name, dict(fc.args)) for fc in function_calls
                 ]
-                tool_results = await asyncio.gather(*tool_execution_tasks)
+                tool_results = await asyncio.gather(*tool_execution_tasks, return_exceptions=True)
+
+                execution_time = time.time() - start_time
+
+                # Update ToolCall objects with results
+                for tc, result in zip(tool_call_objects, tool_results):
+                    tc.execution_time = execution_time / len(tool_call_objects)
+                    if isinstance(result, Exception):
+                        tc.error = str(result)
+                    else:
+                        tc.result = result
+
+                all_tool_calls.extend(tool_call_objects)
 
                 # Prepare the function responses to send back to the model
-                function_response_parts = [
-                    {
+                function_response_parts = []
+                for fc, result in zip(function_calls, tool_results):
+                    if isinstance(result, Exception):
+                        response_content = f"Error: {str(result)}"
+                    else:
+                        response_content = result
+
+                    function_response_parts.append({
                         "function_response": {
                             "name": fc.name,
-                            "response": {"content": result},
+                            "response": {"content": response_content},
                         }
-                    }
-                    for fc, result in zip(function_calls, tool_results)
-                ]
+                    })
 
                 # Send the tool results back to the model
                 response = await chat.send_message_async(function_response_parts)
 
 
-        result = {
-            "content": [{"type": "text", "text": response.text}],
-            "model": model_instance.model_name,
-            "usage": {}, # Not available in GenAI response
-            "stop_reason": "completed",
-        }
+        # Handle structured output
+        final_output = None
+        if structured_output:
+            try:
+                if hasattr(structured_output, 'model_validate_json'):
+                    final_output = structured_output.model_validate_json(response.text)
+                elif hasattr(structured_output, 'model_validate'):
+                    parsed_json = self._json.loads(response.text)
+                    final_output = structured_output.model_validate(parsed_json)
+                else:
+                    final_output = self._json.loads(response.text)
+            except Exception:
+                final_output = response.text
 
         # Update conversation memory with the final response
-        final_assistant_message = {"role": "assistant", "content": result["content"]}
+        final_assistant_message = {
+            "role": "assistant", "content": [{"type": "text", "text": response.text}]
+        }
         await self._update_conversation_memory(
             user_id,
             session_id,
@@ -146,10 +194,22 @@ class GoogleGenAIClient(AbstractClient):
             system_prompt
         )
 
-        return await self._handle_structured_output(
-            result,
-            structured_output
-        ) if structured_output else MessageResponse(**result)
+        # Create AIMessage using factory
+        ai_message = AIMessageFactory.from_gemini(
+            response=response,
+            input_text=original_prompt,
+            model=model,
+            user_id=user_id,
+            session_id=session_id,
+            turn_id=turn_id,
+            structured_output=final_output if final_output != response.text else None,
+            tool_calls=all_tool_calls
+        )
+
+        # Override provider to distinguish from Vertex AI
+        ai_message.provider = "google_genai"
+
+        return ai_message
 
     async def ask_stream(
         self,
@@ -200,8 +260,9 @@ class GoogleGenAIClient(AbstractClient):
 
         assistant_content = ""
         async for chunk in response:
-            assistant_content += chunk.text
-            yield chunk.text
+            if chunk.text:
+                assistant_content += chunk.text
+                yield chunk.text
 
         # Update conversation memory
         if assistant_content:
@@ -218,5 +279,11 @@ class GoogleGenAIClient(AbstractClient):
                 system_prompt
             )
 
-    async def batch_ask(self, requests):
-        return await super().batch_ask(requests)
+    async def batch_ask(self, requests) -> List[AIMessage]:
+        """Process multiple requests in batch."""
+        # Google GenAI doesn't have a native batch API, so we process sequentially
+        results = []
+        for request in requests:
+            result = await self.ask(**request)
+            results.append(result)
+        return results
