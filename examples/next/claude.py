@@ -1,6 +1,7 @@
 from typing import List, TypedDict
 from dataclasses import dataclass
 import asyncio
+from pydantic import BaseModel
 from navconfig import BASE_DIR
 from parrot.next.claude import ClaudeClient, ClaudeModel, BatchRequest
 
@@ -24,94 +25,156 @@ class SummaryResponse(TypedDict):
 async def example_usage():
     """Example of how to use the Claude API client."""
 
-    # # Initialize client
-    # async with ClaudeClient() as client:
+    # Initialize client
+    async with ClaudeClient() as client:
 
-    #     # Register a tool
-    #     def calculate_area(length: float, width: float) -> float:
-    #         """Calculate area of a rectangle."""
-    #         return length * width
+        # Register a tool
+        def get_weather(location: str) -> str:
+            """Get weather for a location."""
+            weather_data = {
+                "New York": "Sunny, 22°C",
+                "London": "Rainy, 18°C",
+                "Tokyo": "Cloudy, 26°C",
+                "Paris": "Sunny, 20°C"
+            }
+            return weather_data.get(location, "Weather data not available")
 
-    #     client.register_tool(
-    #         name="calculate_area",
-    #         description="Calculate the area of a rectangle",
-    #         input_schema={
-    #             "type": "object",
-    #             "properties": {
-    #                 "length": {"type": "number", "description": "Length of rectangle"},
-    #                 "width": {"type": "number", "description": "Width of rectangle"}
-    #             },
-    #             "required": ["length", "width"]
-    #         },
-    #         function=calculate_area
-    #     )
+        client.register_tool(
+            name="get_weather",
+            description="Get the current weather for a given location",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "location": {
+                        "type": "string",
+                        "description": "The name of the city"
+                    }
+                },
+                "required": ["location"]
+            },
+            function=get_weather
+        )
 
-    #     # Start a conversation with memory
-    #     user_id = "user123"
-    #     session_id = "chat001"
+        # Simple question
+        response = await client.ask(
+            "What's the weather like in New York?",
+            model=ClaudeModel.SONNET_3_5.value
+        )
+        print("Response text:", response.text)
+        print("Model used:", response.model)
+        print("Provider:", response.provider)
+        print("Usage:", response.usage)
+        print("Has tools:", response.has_tools)
+        print("Tool calls:", [tc.name for tc in response.tool_calls])
 
-    #     await client.start_conversation(user_id, session_id, "You are a helpful assistant.")
+        # Register a tool
+        def calculate_area(length: float, width: float) -> float:
+            """Calculate area of a rectangle."""
+            return length * width
 
-    #     # Multi-turn conversation with memory
-    #     response1 = await client.ask(
-    #         "My name is Jesus and I like Python programming",
-    #         user_id=user_id,
-    #         session_id=session_id
-    #     )
-    #     print("Response 1:", response1)
+        client.register_tool(
+            name="calculate_area",
+            description="Calculate the area of a rectangle",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "length": {"type": "number", "description": "Length of rectangle"},
+                    "width": {"type": "number", "description": "Width of rectangle"}
+                },
+                "required": ["length", "width"]
+            },
+            function=calculate_area
+        )
 
-    #     response2 = await client.ask(
-    #         "What's my name and what do I like?",
-    #         user_id=user_id,
-    #         session_id=session_id
-    #     )
-    #     print("Response 2:", response2)
+        # Start a conversation with memory
+        user_id = "user123"
+        session_id = "chat001"
 
-    #     # Simple question
-    #     response = await client.ask("What is the capital of France?")
-    #     print(response)
+        await client.start_conversation(user_id, session_id, "You are a helpful assistant.")
 
-    #     # Question with file upload
-    #     filename = BASE_DIR.joinpath("example.pdf")
-    #     if filename.exists():
-    #         response = await client.ask(
-    #             "What is the main topic of this document?",
-    #             files=[filename]
-    #         )
-    #         print(response)
-    #         response = await client.ask(
-    #             "Summarize this document",
-    #             files=[filename],
-    #             model=ClaudeModel.SONNET_4
-    #         )
-    #         print(response)
+        # Multi-turn conversation with memory
+        response1 = await client.ask(
+            "My name is Jesus and I like Python programming",
+            user_id=user_id,
+            session_id=session_id
+        )
+        print("Response 1 text:", response1.text)
+        print("Turn ID:", response1.turn_id)
 
-    #     # Structured output with memory
-    #     summary = await client.ask(
-    #         "Summarize our conversation as JSON with key topics",
-    #         structured_output=SummaryOutput,
-    #         user_id=user_id,
-    #         session_id=session_id
-    #     )
-    #     print("Structured Summary:", summary)
+        response2 = await client.ask(
+            "What's my name and what do I like?",
+            user_id=user_id,
+            session_id=session_id
+        )
+        print("Response 2 text:", response2.text)
+        print("Session ID:", response2.session_id)
+
+        # Simple question
+        response = await client.ask("What is the capital of France?")
+        print("Response text:", response.text)
+        print("Model used:", response.model)
+        print("Provider:", response.provider)
+        print("Usage:", response.usage)
+        print("Has tools:", response.has_tools)
+        print("Tool calls:", [tc.name for tc in response.tool_calls])
+
+        # Question with file upload
+        filename = BASE_DIR.joinpath("example.pdf")
+        if filename.exists():
+            response = await client.ask(
+                "What is the main topic of this document?",
+                files=[filename]
+            )
+            print(response)
+            response = await client.ask(
+                "Summarize this document",
+                files=[filename],
+                model=ClaudeModel.SONNET_4
+            )
+            print(response)
+
+        # Structured output with memory
+        summary = await client.ask(
+            "Summarize our conversation as JSON with key topics",
+            structured_output=SummaryOutput,
+            user_id=user_id,
+            session_id=session_id
+        )
+        print("Structured Summary:", summary)
 
 
-    #     # List conversations for user
-    #     sessions = await client.list_conversations(user_id)
-    #     print("User sessions:", sessions)
+        # List conversations for user
+        sessions = await client.list_conversations(user_id)
+        print("User sessions:", sessions)
 
-    #     # Streaming response with memory
-    #     async for chunk in client.ask_stream(
-    #         "Continue our conversation about Python",
-    #         user_id=user_id,
-    #         session_id=session_id
-    #     ):
-    #         print(chunk, end="", flush=True)
+        # Streaming response with memory
+        async for chunk in client.ask_stream(
+            "Continue our conversation about Python",
+            user_id=user_id,
+            session_id=session_id
+        ):
+            print(chunk, end="", flush=True)
 
-    #     # Streaming response
-    #     async for chunk in client.ask_stream("Tell me a story about AI"):
-    #         print(chunk, end="", flush=True)
+        # Streaming response
+        async for chunk in client.ask_stream("Tell me a story about AI"):
+            print(chunk, end="", flush=True)
 
+        class WeatherReport(BaseModel):
+            location: str
+            temperature: str
+            condition: str
+            recommendation: str
+
+        weather_response = await client.ask(
+            "Give me a weather report for Tokyo using the available tools",
+            structured_output=WeatherReport,
+            model=ClaudeModel.SONNET_4.value
+        )
+        print("Structured weather response:")
+        print("- Is structured:", weather_response.is_structured)
+        print("- Output type:", type(weather_response.output))
+        print("- Weather data:", weather_response.output)
+        print("- Tools used:", [tc.name for tc in weather_response.tool_calls])
 
         # # Batch requests
         # batch_requests = [

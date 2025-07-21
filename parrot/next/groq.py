@@ -1,11 +1,20 @@
+import traceback
 from typing import AsyncIterator, List, Optional, Union, Any
 from pathlib import Path
 from logging import getLogger
+import uuid
+import time
 import json
 from datamodel.parsers.json import json_decoder  # pylint: disable=E0611 # noqa
 from navconfig import config
 from groq import AsyncGroq
 from .abstract import AbstractClient, MessageResponse
+from .models import (
+    AIMessage,
+    AIMessageFactory,
+    ToolCall,
+    CompletionUsage
+)
 
 
 getLogger('httpx').setLevel('WARNING')
@@ -27,7 +36,14 @@ class GroqModel:
 
 
 class GroqClient(AbstractClient):
-    """Client for interacting with Groq's API."""
+    """Client for interacting with Groq's API.
+
+    Note: Groq has a limitation where structured output (JSON mode) cannot be
+    combined with tool calling in the same request. When both are requested,
+    this client handles tools first, then makes a separate request for
+    structured output formatting.
+
+    """
 
     agent_type: str = "groq"
     model: str = GroqModel.LLAMA_3_3_70B_VERSATILE
@@ -101,8 +117,27 @@ class GroqClient(AbstractClient):
         structured_output: Optional[type] = None,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None
-    ) -> Union[MessageResponse, Any]:
-        """Ask Groq a question with optional conversation memory."""
+    ) -> AIMessage:
+        """Ask Groq a question with optional conversation memory.
+
+        Args:
+            prompt (str): The question or prompt to ask.
+            model (str): The Groq model to use.
+            max_tokens (int): Maximum tokens for the response.
+            temperature (float): Sampling temperature.
+            top_p (float): Top-p sampling.
+            files (Optional[List[Union[str, Path]]]): Optional files to attach.
+            system_prompt (Optional[str]): Optional system prompt for the conversation.
+            structured_output (Optional[type]): Optional Pydantic model for structured output.
+            user_id (Optional[str]): User identifier for conversation memory.
+            session_id (Optional[str]): Session identifier for conversation memory.
+        Returns:
+            AIMessage: The response from Groq.
+        """
+
+        # Generate unique turn ID for tracking
+        turn_id = str(uuid.uuid4())
+        original_prompt = prompt
 
         messages, conversation_session, system_prompt = await self._prepare_conversation_context(
             prompt, files, user_id, session_id, system_prompt
@@ -118,12 +153,17 @@ class GroqClient(AbstractClient):
         # Priority: tools first, then structured output in separate request if needed
         use_tools = bool(tools)
         use_structured_output = bool(structured_output)
+
         if use_tools and use_structured_output:
             # Handle tools first, structured output later
             structured_output_for_later = structured_output
             structured_output = None
         else:
             structured_output_for_later = None
+
+        # Track tool calls for the response
+        all_tool_calls = []
+
         # Prepare request arguments
         request_args = {
             "model": model,
@@ -160,27 +200,43 @@ class GroqClient(AbstractClient):
                 for tool_call in result.tool_calls:
                     tool_name = tool_call.function.name
                     try:
-                        tool_args = json.loads(tool_call.function.arguments)
+                        tool_args = self._json.loads(tool_call.function.arguments)
                     except json.JSONDecodeError:
                         tool_args = json_decoder(tool_call.function.arguments)
 
+                    # Create ToolCall object and execute
+                    tc = ToolCall(
+                        id=tool_call.id,
+                        name=tool_name,
+                        arguments=tool_args
+                    )
+
                     try:
+                        start_time = time.time()
                         tool_result = await self._execute_tool(tool_name, tool_args)
-                        tool_results.append({
+                        execution_time = time.time() - start_time
+                        tc.result = tool_result
+                        tc.execution_time = execution_time
+                        messages.append({
                             "role": "tool",
                             "tool_call_id": tool_call.id,
                             "name": tool_name,
                             "content": str(tool_result)
                         })
                     except Exception as e:
-                        tool_results.append({
+                        tc.error = str(e)
+                        trace = traceback.format_exc()
+                        messages.append({
                             "role": "tool",
                             "tool_call_id": tool_call.id,
                             "name": tool_name,
-                            "content": f"Error: {str(e)}"
+                            "content": f"Error: {str(e)}",
+                            "traceback": trace
                         })
 
-                # Add assistant message and tool results
+                    all_tool_calls.append(tc)
+
+                # Add assistant message with tool calls
                 messages.append({
                     "role": "assistant",
                     "content": result.content,
@@ -188,7 +244,6 @@ class GroqClient(AbstractClient):
                         tc.dict() if hasattr(tc, 'dict') else tc for tc in result.tool_calls
                     ]
                 })
-                messages.extend(tool_results)
 
                 # Continue conversation with tool results
                 continue_args = {
@@ -203,7 +258,8 @@ class GroqClient(AbstractClient):
                 response = await self.client.chat.completions.create(**continue_args)
                 result = response.choices[0].message
 
-        # If we have structured output to handle after tools
+        # Handle structured output after tools if needed
+        final_output = None
         if structured_output_for_later and use_tools:
             # Add the final tool response to messages
             if result.content:
@@ -231,10 +287,40 @@ class GroqClient(AbstractClient):
                 self._prepare_structured_output_format(structured_output_for_later)
             )
 
-            response = await self.client.chat.completions.create(**structured_args)
-            result = response.choices[0].message
+            structured_response = await self.client.chat.completions.create(**structured_args)
+            result = structured_response.message if hasattr(
+                structured_response,
+                'message'
+            ) else structured_response.choices[0].message
 
-        # Add final assistant message
+            # Parse structured output
+            try:
+                if hasattr(structured_output_for_later, 'model_validate_json'):
+                    final_output = structured_output_for_later.model_validate_json(result.content)
+                elif hasattr(structured_output_for_later, 'model_validate'):
+                    parsed_json = json.loads(result.content)
+                    final_output = structured_output_for_later.model_validate(parsed_json)
+                else:
+                    final_output = json.loads(result.content)
+            except:
+                final_output = result.content
+
+        elif structured_output:
+            # Handle structured output for non-tool requests
+            try:
+                if hasattr(structured_output, 'model_validate_json'):
+                    final_output = structured_output.model_validate_json(result.content)
+                elif hasattr(structured_output, 'model_validate'):
+                    parsed_json = json.loads(result.content)
+                    final_output = structured_output.model_validate(parsed_json)
+                else:
+                    final_output = json.loads(result.content)
+            except:
+                final_output = result.content
+        else:
+            final_output = result.content
+
+        # Add final assistant message to conversation
         messages.append({
             "role": "assistant",
             "content": result.content
@@ -249,26 +335,21 @@ class GroqClient(AbstractClient):
             system_prompt
         )
 
-        # Prepare final result
-        final_result = {
-            "content": [{"type": "text", "text": result.content}],
-            "model": model,
-            "usage": response.usage.dict() if hasattr(
-                response.usage,
-                'dict'
-            ) else response.usage.__dict__,
-            "stop_reason": "completed",
-        }
+        # Create AIMessage using factory
+        ai_message = AIMessageFactory.from_groq(
+            response=response,
+            input_text=original_prompt,
+            model=model,
+            user_id=user_id,
+            session_id=session_id,
+            turn_id=turn_id,
+            structured_output=final_output if final_output != result.content else None
+        )
 
-        # Handle structured output
-        final_structured_output = structured_output or structured_output_for_later
-        if final_structured_output:
-            return await self._handle_structured_output(
-                final_result,
-                final_structured_output
-            )
-        else:
-            return MessageResponse(**final_result)
+        # Add tool calls to the response
+        ai_message.tool_calls = all_tool_calls
+
+        return ai_message
 
     async def ask_stream(
         self,
@@ -283,6 +364,9 @@ class GroqClient(AbstractClient):
         session_id: Optional[str] = None
     ) -> AsyncIterator[str]:
         """Stream Groq's response with optional conversation memory."""
+
+        # Generate unique turn ID for tracking
+        turn_id = str(uuid.uuid4())
 
         messages, conversation_session, system_prompt = await self._prepare_conversation_context(
             prompt, files, user_id, session_id, system_prompt
@@ -301,8 +385,8 @@ class GroqClient(AbstractClient):
             "stream": True
         }
 
-        # Note: Streaming with tools is more complex, for now we'll stream without tools
-        # In production, you might want to handle tool calls differently for streaming
+        # Note: For streaming, we don't handle tools in this version
+        # You might want to implement a more sophisticated streaming + tools handler
         tools = self._prepare_groq_tools()
         if tools:
             request_args["tools"] = tools
