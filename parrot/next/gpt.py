@@ -1,17 +1,21 @@
-
+import json
+import uuid
 from typing import AsyncIterator, List, Optional, Union, Any
 from pathlib import Path
+import time
 from logging import getLogger
 from enum import Enum
 from datamodel.parsers.json import json_decoder  # pylint: disable=E0611 # noqa
 from navconfig import config
 from openai import AsyncOpenAI
-from .abstract import AbstractClient, MessageResponse
+from .abstract import AbstractClient
+from .models import AIMessage, AIMessageFactory, ToolCall
 
 
 getLogger('httpx').setLevel('WARNING')
 getLogger('httpcore').setLevel('WARNING')
 getLogger('openai').setLevel('INFO')
+
 
 class OpenAIModel(Enum):
     """Enum class for OpenAI models."""
@@ -30,10 +34,11 @@ class OpenAIModel(Enum):
 
 
 class OpenAIClient(AbstractClient):
-    """Client for interacting with OpenAI's API.
-    """
+    """Client for interacting with OpenAI's API."""
+
     agent_type: str = "openai"
-    model: str = "gpt-4-turbo"
+    model: str = OpenAIModel.GPT4_TURBO.value
+
     def __init__(
         self,
         api_key: str = None,
@@ -47,7 +52,12 @@ class OpenAIClient(AbstractClient):
             "Authorization": f"Bearer {self.api_key}"
         }
         super().__init__(**kwargs)
-        self.client = AsyncOpenAI(api_key=self.api_key)
+        self.client = AsyncOpenAI(api_key=self.api_key, base_url=base_url)
+
+    async def __aenter__(self):
+        """Initialize the client context."""
+        # OpenAI client doesn't need explicit session management like aiohttp
+        return self
 
     async def _upload_file(
         self,
@@ -55,10 +65,11 @@ class OpenAIClient(AbstractClient):
         purpose: str = 'fine-tune'
     ) -> None:
         """Upload a file to OpenAI."""
-        await self.client.files.create(
-            file=file_path,
-            purpose=purpose
-        )
+        with open(file_path, 'rb') as file:
+            await self.client.files.create(
+                file=file,
+                purpose=purpose
+            )
 
     async def ask(
         self,
@@ -71,13 +82,21 @@ class OpenAIClient(AbstractClient):
         structured_output: Optional[type] = None,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None
-    ) -> Union[MessageResponse, Any]:
+    ) -> AIMessage:
+        """Ask OpenAI a question with optional conversation memory."""
+
+        # Generate unique turn ID for tracking
+        turn_id = str(uuid.uuid4())
+        original_prompt = prompt
+
+        # Extract model value if it's an enum
+        model_str = model.value if isinstance(model, Enum) else model
 
         messages, conversation_session, system_prompt = await self._prepare_conversation_context(
             prompt, files, user_id, session_id, system_prompt
         )
 
-        # Upload files if are pathLike objects
+        # Upload files if they are path-like objects
         if files:
             for file in files:
                 if isinstance(file, str):
@@ -88,20 +107,39 @@ class OpenAIClient(AbstractClient):
         if system_prompt:
             messages.insert(0, {"role": "system", "content": system_prompt})
 
-        tools = self._prepare_tools() if self.tools else None
+        # Track tool calls for the response
+        all_tool_calls = []
 
+        # Prepare tools and special arguments
+        tools = self._prepare_tools() if self.tools else None
         args = {}
-        if model == OpenAIModel.GPT_4O_MINI_SEARCH or model == OpenAIModel.GPT_4O_SEARCH:
+
+        # Handle search models
+        if model in [OpenAIModel.GPT_4O_MINI_SEARCH, OpenAIModel.GPT_4O_SEARCH]:
             args['web_search_options'] = {
                 "web_search": True,
                 "web_search_model": "gpt-4o-mini"
             }
+
         if tools:
             args['tools'] = tools
             args['tool_choice'] = "auto"
             args['parallel_tool_calls'] = True
+
+        # Add structured output if specified
+        if structured_output:
+            if hasattr(structured_output, 'model_json_schema'):
+                args['response_format'] = {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": structured_output.__name__.lower(),
+                        "schema": structured_output.model_json_schema()
+                    }
+                }
+
+        # Make initial request
         response = await self.client.chat.completions.create(
-            model=model.value if isinstance(model, Enum) else model,
+            model=model_str,
             messages=messages,
             max_tokens=max_tokens,
             temperature=temperature,
@@ -113,33 +151,56 @@ class OpenAIClient(AbstractClient):
 
         # Handle tool calls in a loop
         while result.tool_calls:
-            tool_results = []
-
+            messages.append({
+                "role": "assistant",
+                "content": result.content,
+                "tool_calls": [
+                    tc.model_dump() for tc in result.tool_calls
+                ]
+            })
+            # Process and add tool results
             for tool_call in result.tool_calls:
                 tool_name = tool_call.function.name
-                tool_args = json_decoder(tool_call.function.arguments)
+                try:
+                    tool_args = self._json.loads(tool_call.function.arguments)
+                except json.JSONDecodeError:
+                    tool_args = json_decoder(tool_call.function.arguments)
+
+                # Create ToolCall object and execute
+                tc = ToolCall(
+                    id=tool_call.id,
+                    name=tool_name,
+                    arguments=tool_args
+                )
 
                 try:
+                    start_time = time.time()
                     tool_result = await self._execute_tool(tool_name, tool_args)
-                    tool_results.append({
+                    execution_time = time.time() - start_time
+
+                    tc.result = tool_result
+                    tc.execution_time = execution_time
+
+                    messages.append({
                         "role": "tool",
                         "tool_call_id": tool_call.id,
                         "name": tool_name,
                         "content": str(tool_result)
                     })
                 except Exception as e:
-                    tool_results.append({
+                    tc.error = str(e)
+                    messages.append({
                         "role": "tool",
                         "tool_call_id": tool_call.id,
                         "name": tool_name,
                         "content": str(e)
                     })
 
-            messages.append(result.model_dump())
-            messages.extend(tool_results)
+                all_tool_calls.append(tc)
 
+            # Continue conversation with tool results
             response = await self.client.chat.completions.create(
-                model=model.value if isinstance(model, Enum) else model,
+                model=model_str,
                 messages=messages,
                 max_tokens=max_tokens,
                 temperature=temperature,
@@ -147,7 +208,11 @@ class OpenAIClient(AbstractClient):
             )
             result = response.choices[0].message
 
-        messages.append(result.model_dump())
+        # Add final assistant message
+        messages.append({
+            "role": "assistant",
+            "content": result.content
+        })
 
         # Update conversation memory
         await self._update_conversation_memory(
@@ -158,18 +223,35 @@ class OpenAIClient(AbstractClient):
             system_prompt
         )
 
-        final_result = {
-            "content": [{"type": "text", "text": result.content}],
-            "model": model,
-            "usage": response.usage.model_dump(),
-            "stop_reason": "completed",
-        }
+        # Handle structured output
+        final_output = None
+        if structured_output:
+            try:
+                if hasattr(structured_output, 'model_validate_json'):
+                    final_output = structured_output.model_validate_json(result.content)
+                elif hasattr(structured_output, 'model_validate'):
+                    parsed_json = self._json.loads(result.content)
+                    final_output = structured_output.model_validate(parsed_json)
+                else:
+                    final_output = self._json.loads(result.content)
+            except Exception:
+                final_output = result.content
 
-        return await self._handle_structured_output(
-            final_result,
-            structured_output
-        ) if structured_output else MessageResponse(**final_result)
+        # Create AIMessage using factory
+        ai_message = AIMessageFactory.from_openai(
+            response=response,
+            input_text=original_prompt,
+            model=model_str,
+            user_id=user_id,
+            session_id=session_id,
+            turn_id=turn_id,
+            structured_output=final_output if final_output != result.content else None
+        )
 
+        # Add tool calls to the response
+        ai_message.tool_calls = all_tool_calls
+
+        return ai_message
 
     async def ask_stream(
         self,
@@ -182,31 +264,60 @@ class OpenAIClient(AbstractClient):
         user_id: Optional[str] = None,
         session_id: Optional[str] = None
     ) -> AsyncIterator[str]:
+        """Stream OpenAI's response with optional conversation memory."""
+
+        # Generate unique turn ID for tracking
+        turn_id = str(uuid.uuid4())
+
+        # Extract model value if it's an enum
+        model_str = model.value if isinstance(model, Enum) else model
 
         messages, conversation_session, system_prompt = await self._prepare_conversation_context(
-            prompt, files, user_id, session_id, system_prompt)
+            prompt, files, user_id, session_id, system_prompt
+        )
+
+        # Upload files if they are path-like objects
+        if files:
+            for file in files:
+                if isinstance(file, str):
+                    file = Path(file)
+                if isinstance(file, Path):
+                    await self._upload_file(file)
 
         if system_prompt:
             messages.insert(0, {"role": "system", "content": system_prompt})
 
-        response = await self.client.chat.completions.create(
-            model=model.value if isinstance(model, Enum) else model,
+        # Prepare tools (Note: streaming with tools is more complex)
+        tools = self._prepare_tools() if self.tools else None
+        args = {}
+
+        if tools:
+            args['tools'] = tools
+            args['tool_choice'] = "auto"
+
+        # Create streaming response
+        response_stream = await self.client.chat.completions.create(
+            model=model_str,
             messages=messages,
             max_tokens=max_tokens,
             temperature=temperature,
-            stream=False
+            stream=True,
+            **args
         )
 
         assistant_content = ""
-        async for chunk in response:
-            text_chunk = chunk.choices[0].delta.get('content', '')
-            assistant_content += text_chunk
-            yield text_chunk
+        async for chunk in response_stream:
+            if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
+                text_chunk = chunk.choices[0].delta.content
+                assistant_content += text_chunk
+                yield text_chunk
 
+        # Update conversation memory if content was generated
         if assistant_content:
-            messages.append(
-                {"role": "assistant", "content": [{"type": "text", "text": assistant_content}]}
-            )
+            messages.append({
+                "role": "assistant",
+                "content": assistant_content
+            })
             await self._update_conversation_memory(
                 user_id,
                 session_id,
@@ -215,5 +326,12 @@ class OpenAIClient(AbstractClient):
                 system_prompt
             )
 
-    async def batch_ask(self, requests):
-        return await super().batch_ask(requests)
+    async def batch_ask(self, requests) -> List[AIMessage]:
+        """Process multiple requests in batch."""
+        # OpenAI doesn't have a native batch API like Claude, so we process sequentially
+        # In a real implementation, you might want to use asyncio.gather for concurrency
+        results = []
+        for request in requests:
+            result = await self.ask(**request)
+            results.append(result)
+        return results

@@ -58,7 +58,7 @@ async def example_usage():
         # Simple question
         response = await client.ask(
             "What's the weather like in New York?",
-            model=OpenAIModel.GPT4_TURBO
+            model=OpenAIModel.GPT_4_1_MINI
         )
         print("Response text:", response.text)
         print("Model used:", response.model)
@@ -120,7 +120,7 @@ async def example_usage():
         weather_response = await client.ask(
             "Give me a weather report for Tokyo using the available tools",
             structured_output=WeatherReport,
-            model=OpenAIModel.GPT4_TURBO.value
+            model=OpenAIModel.GPT_4_1_MINI
         )
         print("Structured weather response:")
         print("- Is structured:", weather_response.is_structured)
@@ -129,6 +129,9 @@ async def example_usage():
         print("- Tools used:", [tc.name for tc in weather_response.tool_calls])
 
 
+        # Streaming response
+        async for chunk in client.ask_stream("Tell me a story about AI"):
+            print(chunk, end="", flush=True)
     # Usage of Python Tool:
     async with OpenAIClient() as client:
         # Register the Python REPL tool

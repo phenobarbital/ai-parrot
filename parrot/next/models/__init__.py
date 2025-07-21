@@ -1,7 +1,6 @@
 from typing import Dict, List, Optional, Union, Any, TypedDict
 from datetime import datetime
 from pydantic import BaseModel, Field
-import pandas as pd
 
 
 class ToolCall(BaseModel):
