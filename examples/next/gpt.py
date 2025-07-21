@@ -1,8 +1,9 @@
 from typing import List, TypedDict
 from dataclasses import dataclass
 import asyncio
+from pydantic import BaseModel
 from navconfig import BASE_DIR
-from parrot.next.gpt import OpenAIClient
+from parrot.next.gpt import OpenAIClient, OpenAIModel
 
 
 # Example usage and helper functions
@@ -26,6 +27,45 @@ async def example_usage():
 
     # Initialize client
     async with OpenAIClient() as client:
+
+        # Register a tool
+        def get_weather(location: str) -> str:
+            """Get weather for a location."""
+            weather_data = {
+                "New York": "Sunny, 22°C",
+                "London": "Rainy, 18°C",
+                "Tokyo": "Cloudy, 26°C",
+                "Paris": "Sunny, 20°C"
+            }
+            return weather_data.get(location, "Weather data not available")
+
+        client.register_tool(
+            name="get_weather",
+            description="Get the current weather for a given location",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "location": {
+                        "type": "string",
+                        "description": "The name of the city"
+                    }
+                },
+                "required": ["location"]
+            },
+            function=get_weather
+        )
+
+        # Simple question
+        response = await client.ask(
+            "What's the weather like in New York?",
+            model=OpenAIModel.GPT4_TURBO
+        )
+        print("Response text:", response.text)
+        print("Model used:", response.model)
+        print("Provider:", response.provider)
+        print("Usage:", response.usage)
+        print("Has tools:", response.has_tools)
+        print("Tool calls:", [tc.name for tc in response.tool_calls])
 
         # Register a tool
         def calculate_area(length: float, width: float) -> float:
@@ -70,6 +110,24 @@ async def example_usage():
         # Simple question
         response = await client.ask("What is the capital of France?")
         print(response)
+
+        class WeatherReport(BaseModel):
+            location: str
+            temperature: str
+            condition: str
+            recommendation: str
+
+        weather_response = await client.ask(
+            "Give me a weather report for Tokyo using the available tools",
+            structured_output=WeatherReport,
+            model=OpenAIModel.GPT4_TURBO.value
+        )
+        print("Structured weather response:")
+        print("- Is structured:", weather_response.is_structured)
+        print("- Output type:", type(weather_response.output))
+        print("- Weather data:", weather_response.output)
+        print("- Tools used:", [tc.name for tc in weather_response.tool_calls])
+
 
     # Usage of Python Tool:
     async with OpenAIClient() as client:

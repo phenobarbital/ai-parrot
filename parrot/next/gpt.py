@@ -2,6 +2,7 @@
 from typing import AsyncIterator, List, Optional, Union, Any
 from pathlib import Path
 from logging import getLogger
+from enum import Enum
 from datamodel.parsers.json import json_decoder  # pylint: disable=E0611 # noqa
 from navconfig import config
 from openai import AsyncOpenAI
@@ -12,8 +13,8 @@ getLogger('httpx').setLevel('WARNING')
 getLogger('httpcore').setLevel('WARNING')
 getLogger('openai').setLevel('INFO')
 
-class OpenAIModel:
-    """Enum-like class for OpenAI models."""
+class OpenAIModel(Enum):
+    """Enum class for OpenAI models."""
     GPT4_TURBO = "gpt-4-turbo"
     GPT4_1 = "gpt-4.1"
     GPT3_5_TURBO = "gpt-3.5-turbo"
@@ -62,7 +63,7 @@ class OpenAIClient(AbstractClient):
     async def ask(
         self,
         prompt: str,
-        model: str = "gpt-4-turbo",
+        model: Union[str, OpenAIModel] = OpenAIModel.GPT4_TURBO,
         max_tokens: int = 4096,
         temperature: float = 0.7,
         files: Optional[List[Union[str, Path]]] = None,
@@ -100,7 +101,7 @@ class OpenAIClient(AbstractClient):
             args['tool_choice'] = "auto"
             args['parallel_tool_calls'] = True
         response = await self.client.chat.completions.create(
-            model=model,
+            model=model.value if isinstance(model, Enum) else model,
             messages=messages,
             max_tokens=max_tokens,
             temperature=temperature,
@@ -138,7 +139,7 @@ class OpenAIClient(AbstractClient):
             messages.extend(tool_results)
 
             response = await self.client.chat.completions.create(
-                model=model,
+                model=model.value if isinstance(model, Enum) else model,
                 messages=messages,
                 max_tokens=max_tokens,
                 temperature=temperature,
@@ -173,7 +174,7 @@ class OpenAIClient(AbstractClient):
     async def ask_stream(
         self,
         prompt: str,
-        model: str = "gpt-4-turbo",
+        model: Union[str, OpenAIModel] = OpenAIModel.GPT4_TURBO,
         max_tokens: int = 4096,
         temperature: float = 0.7,
         files: Optional[List[Union[str, Path]]] = None,
@@ -189,7 +190,7 @@ class OpenAIClient(AbstractClient):
             messages.insert(0, {"role": "system", "content": system_prompt})
 
         response = await self.client.chat.completions.create(
-            model=model,
+            model=model.value if isinstance(model, Enum) else model,
             messages=messages,
             max_tokens=max_tokens,
             temperature=temperature,
