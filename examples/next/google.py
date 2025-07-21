@@ -1,4 +1,5 @@
 import asyncio
+from pydantic import BaseModel
 from parrot.next import VertexAIClient, GoogleGenAIClient, GoogleModel
 from parrot.next.tools.math_tool import MathTool
 
@@ -16,41 +17,40 @@ async def main():
 
     print("\n--- Asking Google GenAI ---")
     async with GoogleGenAIClient() as client:
-        response = await client.ask(question)
         print(response.text)                    # Response text
         print(response.usage.prompt_tokens)     # 39 (from usage_metadata)
         print(response.usage.completion_tokens) # 5 (from usage_metadata)
         print(response.usage.total_tokens)      # 110 (from usage_metadata)
         print(response.provider)                # "vertex_ai"
 
-    async with VertexAIClient() as client:
-        math_tool = MathTool()
+    # async with VertexAIClient() as client:
+    #     math_tool = MathTool()
 
-        # Register the tool's methods
-        client.register_tool(
-            name="multiply",
-            description="Multiplies two numbers.",
-            input_schema={
-                "type": "object",
-                "properties": {
-                    "a": {"type": "number"},
-                    "b": {"type": "number"},
-                },
-                "required": ["a", "b"],
-            },
-            function=math_tool.multiply,
-        )
+    #     # Register the tool's methods
+    #     client.register_tool(
+    #         name="multiply",
+    #         description="Multiplies two numbers.",
+    #         input_schema={
+    #             "type": "object",
+    #             "properties": {
+    #                 "a": {"type": "number"},
+    #                 "b": {"type": "number"},
+    #             },
+    #             "required": ["a", "b"],
+    #         },
+    #         function=math_tool.multiply,
+    #     )
 
-        response = await client.ask(
-            "What is the result of multiplying 5 and 10?",
-            structured_output=math_tool.multiply
-        )
-        print('--- Vertex AI Tool Call Response ---')
-        print(response.text)                    # Response text
-        print(response.usage.prompt_tokens)     # 39 (from usage_metadata)
-        print(response.usage.completion_tokens) # 5 (from usage_metadata)
-        print(response.usage.total_tokens)      # 110 (from usage_metadata)
-        print(response.provider)                # "vertex_ai"
+    #     response = await client.ask(
+    #         "What is the result of multiplying 5 and 10?",
+    #         structured_output=math_tool.multiply
+    #     )
+    #     print('--- Vertex AI Tool Call Response ---')
+    #     print(response.text)                    # Response text
+    #     print(response.usage.prompt_tokens)     # 39 (from usage_metadata)
+    #     print(response.usage.completion_tokens) # 5 (from usage_metadata)
+    #     print(response.usage.total_tokens)      # 110 (from usage_metadata)
+    #     print(response.provider)                # "vertex_ai"
 
     async with GoogleGenAIClient() as client:
         math_tool = MathTool()
@@ -143,6 +143,8 @@ async def main():
         print("Tool calls:", [f"{tc.name}({tc.arguments}) = {tc.result}" for tc in response.tool_calls])
         print("Total execution time:", sum(tc.execution_time for tc in response.tool_calls))
 
+    async with GoogleGenAIClient() as client:
+        math_tool = MathTool()
         # Conversation with memory
         user_id = "user123"
         session_id = "chat001"
@@ -176,9 +178,6 @@ async def main():
         ):
             print(chunk, end="", flush=True)
         print()  # New line after streaming
-
-        # Structured output
-        from pydantic import BaseModel
 
         class MathOperations(BaseModel):
             addition_result: float

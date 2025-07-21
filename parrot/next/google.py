@@ -4,7 +4,9 @@ import time
 from enum import Enum
 from pathlib import Path
 import uuid
-import google.generativeai as genai
+from google import genai
+from google.genai.types import GenerateContentConfig, Content, Part, ModelContent, UserContent
+from google.genai import types
 from tenacity import retry, stop_after_attempt, wait_exponential
 from navconfig import config
 from .abstract import AbstractClient, MessageResponse
@@ -12,7 +14,8 @@ from .models import (
     AIMessage,
     AIMessageFactory,
     ToolCall,
-    CompletionUsage
+    StructuredOutputConfig,
+    OutputFormat
 )
 
 class GoogleModel(Enum):
@@ -30,8 +33,8 @@ class GoogleGenAIClient(AbstractClient):
     """
     def __init__(self, **kwargs):
         api_key = kwargs.pop('api_key', config.get('GOOGLE_API_KEY'))
-        genai.configure(api_key=api_key)
         super().__init__(**kwargs)
+        self.client = genai.Client(api_key=api_key)
 
     def _fix_tool_schema(self, schema: dict):
         """Recursively converts schema type values to uppercase for GenAI compatibility."""
@@ -59,7 +62,7 @@ class GoogleGenAIClient(AbstractClient):
         temperature: float = 0.7,
         files: Optional[List[Union[str, Path]]] = None,
         system_prompt: Optional[str] = None,
-        structured_output: Optional[type] = None,
+        structured_output: Union[type, StructuredOutputConfig] = None,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
     ) -> Union[MessageResponse, Any]:
@@ -75,41 +78,102 @@ class GoogleGenAIClient(AbstractClient):
             prompt, files, user_id, session_id, system_prompt
         )
 
-        history = [
-            {"role": msg["role"], "parts": [part["text"] for part in msg["content"]]}
-            for msg in messages
-        ]
+        # Handle enhanced structured output
+        if isinstance(structured_output, StructuredOutputConfig):
+            config = structured_output
+        else:
+            # Backward compatibility - assume JSON
+            config = StructuredOutputConfig(
+                output_type=structured_output,
+                format=OutputFormat.JSON
+            ) if structured_output else None
+
+        # Prepare conversation history, is a list of Content objects
+        history = []
+        for msg in messages:
+            content = msg['content']
+            if not content:
+                continue
+            part = Part(text=content[0].get("text", ""))
+            role = msg['role'].lower()
+            if role == 'user':
+                history.append(UserContent(parts=[part]))
+            elif role == 'model':
+                history.append(ModelContent(parts=[part]))
+            else:
+                # Handle other roles or raise an error if needed
+                print(f"Unknown role: {role}")
+
 
         generation_config = {
             "max_output_tokens": max_tokens,
             "temperature": temperature,
         }
 
+        if structured_output:
+            if isinstance(structured_output, type):
+                # Pydantic model passed directly
+                generation_config["response_mime_type"] = "application/json"
+                generation_config["response_schema"] = structured_output
+            elif isinstance(structured_output, StructuredOutputConfig):
+                if structured_output.format == OutputFormat.JSON:
+                    generation_config["response_mime_type"] = "application/json"
+                    generation_config["response_schema"] = structured_output.output_type
+
+
         # Track tool calls for the response
         all_tool_calls = []
 
-        # Prepare tools: rename 'input_schema' to 'parameters' and fix type casing.
-        prepared_tools = None
+        tools = None
         if self.tools:
-            tool_definitions = self._prepare_tools()
-            for tool_def in tool_definitions:
-                if 'input_schema' in tool_def:
-                    schema = tool_def.pop('input_schema')
-                    tool_def['parameters'] = self._fix_tool_schema(schema)
-            prepared_tools = tool_definitions
+            # Convert to newer API format
+            function_declarations = []
+            for tool in self.tools.values():
+                function_declarations.append({
+                    "name": tool.name,
+                    "description": tool.description,
+                    "parameters": self._fix_tool_schema(tool.input_schema.copy())
+                })
+            function_declarations.append(
+                types.Tool(
+                    google_search=types.GoogleSearch()
+                )
+            )
+            function_declarations.append(
+                types.Tool(code_execution=types.ToolCodeExecution)
+            )
+            tools = function_declarations
 
+        # Build contents for conversation
+        contents = []
+        for msg in messages:
+            role = "model" if msg["role"] == "assistant" else msg["role"]
+            if role in ["user", "model"]:
+                text_parts = [part["text"] for part in msg["content"] if "text" in part]
+                if text_parts:
+                    contents.append({
+                        "role": role,
+                        "parts": [{"text": " ".join(text_parts)}]
+                    })
 
-        model_instance = genai.GenerativeModel(
-            model_name=model,
-            system_instruction=system_prompt,
-            tools=prepared_tools
+        # Add the current prompt
+        contents.append({
+            "role": "user",
+            "parts": [{"text": prompt}]
+        })
+        chat = self.client.aio.chats.create(
+            model=model,
+            history=history
         )
-
-        chat = model_instance.start_chat(history=history)
-
-        response = await chat.send_message_async(
-            prompt,
-            generation_config=generation_config
+        # Create the model instance
+        response = await self.client.aio.models.generate_content(
+            model=model,
+            contents=contents,
+            config=GenerateContentConfig(
+                system_instruction=system_prompt,
+                tools=tools,
+                **generation_config
+            )
         )
 
         # Handle parallel function calls
@@ -165,7 +229,7 @@ class GoogleGenAIClient(AbstractClient):
                     })
 
                 # Send the tool results back to the model
-                response = await chat.send_message_async(function_response_parts)
+                response = await chat.send_message(function_response_parts)
 
 
         # Handle structured output
@@ -226,40 +290,64 @@ class GoogleGenAIClient(AbstractClient):
         Stream Google Generative AI's response using AsyncIterator.
         Note: Tool calling is not supported in streaming mode with this implementation.
         """
-        if not self.session:
-            raise RuntimeError("Client not initialized. Use async context manager.")
-
         model = model.value if isinstance(model, GoogleModel) else model
 
         messages, conversation_session, system_prompt = await self._prepare_conversation_context(
             prompt, files, user_id, session_id, system_prompt
         )
 
-        history = [
-            {"role": msg["role"], "parts": [part["text"] for part in msg["content"]]}
-            for msg in messages
-        ]
+        # Prepare conversation history, is a list of Content objects
+        history = []
+        for msg in messages:
+            content = msg['content']
+            if not content:
+                continue
+            part = Part(text=content[0].get("text", ""))
+            role = msg['role'].lower()
+            if role == 'user':
+                history.append(UserContent(parts=[part]))
+            elif role == 'model':
+                history.append(ModelContent(parts=[part]))
+            else:
+                # Handle other roles or raise an error if needed
+                print(f"Unknown role: {role}")
 
         generation_config = {
             "max_output_tokens": max_tokens,
             "temperature": temperature,
         }
 
-        model_instance = genai.GenerativeModel(
-            model_name=model,
-            system_instruction=system_prompt
-        )
+        tools = None
+        if self.tools:
+            # Convert to newer API format
+            function_declarations = []
+            for tool in self.tools.values():
+                function_declarations.append({
+                    "name": tool.name,
+                    "description": tool.description,
+                    "parameters": self._fix_tool_schema(tool.input_schema.copy())
+                })
+            function_declarations.append(
+                types.Tool(code_execution=types.ToolCodeExecution),
+                types.Tool(
+                    google_search=types.GoogleSearch()
+                )
+            )
+            tools = function_declarations
 
-        chat = model_instance.start_chat(history=history)
-
-        response = await chat.send_message_async(
-            prompt,
-            generation_config=generation_config,
-            stream=True
+        # Start the chat session
+        chat = self.client.aio.chats.create(
+            model=model,
+            history=history,
+            config=GenerateContentConfig(
+                system_instruction=system_prompt,
+                tools=tools,
+                **generation_config
+            )
         )
 
         assistant_content = ""
-        async for chunk in response:
+        async for chunk in await chat.send_message_stream(prompt):
             if chunk.text:
                 assistant_content += chunk.text
                 yield chunk.text

@@ -1,6 +1,29 @@
-from typing import Dict, List, Optional, Union, Any, TypedDict
+from typing import Dict, List, Optional, Any, TypedDict, Callable
+from enum import Enum
 from datetime import datetime
+from dataclasses import dataclass
+from typing_extensions import Literal
 from pydantic import BaseModel, Field
+
+
+class OutputFormat(Enum):
+    """Supported output formats for structured responses."""
+    JSON = "json"
+    CSV = "csv"
+    YAML = "yaml"
+    XML = "xml"
+    CODE = "code"
+    CUSTOM = "custom"
+    TEXT = "text"
+
+
+@dataclass
+class StructuredOutputConfig:
+    """Configuration for structured output parsing."""
+    output_type: type
+    format: OutputFormat = OutputFormat.JSON
+    custom_parser: Optional[Callable[[str], Any]] = None
+
 
 
 class ToolCall(BaseModel):

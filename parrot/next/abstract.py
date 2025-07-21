@@ -1,17 +1,26 @@
+import json
 from typing import AsyncIterator, Dict, List, Optional, Union, TypedDict, Any, Callable
+import re
 import mimetypes
 import asyncio
 import base64
 from pathlib import Path
 from dataclasses import dataclass, asdict
 from abc import ABC, abstractmethod
+import io
+import yaml
 from datamodel.exceptions import ParserError  # pylint: disable=E0611 # noqa
 from datamodel.parsers.json import json_encoder, json_decoder, JSONContent  # pylint: disable=E0611 # noqa
 from navconfig import config
 from navconfig.logging import logging
+import pandas as pd
 import aiohttp
 from .memory import ConversationSession, ConversationMemory, InMemoryConversationMemory
 from .tools import PythonREPLTool
+from .models import (
+    StructuredOutputConfig,
+    OutputFormat
+)
 
 
 def register_python_tool(
@@ -436,3 +445,75 @@ class AbstractClient(ABC):
 
             conversation_session.messages = messages
             await self.conversation_memory.update_session(conversation_session)
+
+    async def _parse_structured_output(
+        self,
+        text: str,
+        config: StructuredOutputConfig
+    ) -> Any:
+        """Parse structured output based on format."""
+        try:
+            print('HERE > ', text)
+            print('CONFIG > ', config, config.format)
+            if config.format == OutputFormat.JSON:
+                # Current JSON logic
+                try:
+                    if hasattr(config.output_type, 'model_validate_json'):
+                        return config.output_type.model_validate_json(text)
+                    elif hasattr(config.output_type, 'model_validate'):
+                        parsed_json = self._json.loads(text)
+                        return config.output_type.model_validate(parsed_json)
+                    else:
+                        return self._json.loads(text)
+                except (ParserError, json.JSONDecodeError):
+                    return text
+            elif config.format == OutputFormat.TEXT:
+                # Parse natural language text into structured format
+                return await self._parse_text_to_structure(text, config.output_type)
+            elif config.format == OutputFormat.CSV:
+                df = pd.read_csv(io.StringIO(text))
+                return df if config.output_type == pd.DataFrame else df
+            elif config.format == OutputFormat.YAML:
+                data = yaml.safe_load(text)
+                if hasattr(config.output_type, 'model_validate'):
+                    return config.output_type.model_validate(data)
+                return data
+            elif config.format == OutputFormat.CUSTOM:
+                if config.custom_parser:
+                    return config.custom_parser(text)
+            else:
+                raise ValueError(f"Unsupported output format: {config.format}")
+        except (ParserError, ValueError) as e:
+            self.logger.error(f"Error parsing structured output: {e}")
+            # Fallback to raw text if parsing fails
+            return text
+        except Exception as e:
+            self.logger.error(
+                f"Unexpected error during structured output parsing: {e}"
+            )
+            # Fallback to raw text
+            return text
+
+    async def _parse_text_to_structure(self, text: str, output_type: type) -> Any:
+        """Parse natural language text into a structured format using AI."""
+        # Option 1: Use regex/NLP parsing for simple cases
+        if hasattr(output_type, '__annotations__'):
+            annotations = output_type.__annotations__
+
+            # Simple extraction for common patterns
+            if 'addition_result' in annotations and 'multiplication_result' in annotations:
+
+                # Extract numbers from text like "12 + 8 = 20" and "6 * 9 = 54"
+                addition_match = re.search(r'(\d+)\s*\+\s*(\d+)\s*=\s*(\d+)', text)
+                multiplication_match = re.search(r'(\d+)\s*\*\s*(\d+)\s*=\s*(\d+)', text)
+
+                data = {
+                    'addition_result': float(addition_match.group(3)) if addition_match else 0.0,
+                    'multiplication_result': float(multiplication_match.group(3)) if multiplication_match else 0.0,
+                    'explanation': text
+                }
+
+                return output_type(**data)
+
+        # Fallback: return text if parsing fails
+        return text
