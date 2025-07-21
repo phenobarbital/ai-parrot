@@ -57,7 +57,7 @@ def register_python_tool(
     return tool
 
 class MessageResponse(TypedDict):
-    """Response structure for Claude messages."""
+    """Response structure for LLM messages."""
     id: str
     type: str
     role: str
