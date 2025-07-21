@@ -1,5 +1,8 @@
 from typing import AsyncIterator, Dict, List, Optional, Union, Any
+from enum import Enum
+import time
 from pathlib import Path
+import uuid
 from google.oauth2 import service_account
 import vertexai
 from vertexai.generative_models import (
@@ -13,6 +16,20 @@ from vertexai.preview.vision_models import ImageGenerationModel
 from navconfig import config, BASE_DIR
 from navconfig import config
 from .abstract import AbstractClient, MessageResponse
+from .models import (
+    AIMessage,
+    AIMessageFactory,
+    ToolCall,
+    CompletionUsage
+)
+
+class VertexAIModel(Enum):
+    """Enum for Vertex AI models."""
+    GEMINI_2_5_FLASH = "gemini-2.5-flash"
+    GEMINI_2_5_FLASH_LITE_PREVIEW = "gemini-2.5-flash-lite-preview-06-17"
+    GEMINI_2_5_PRO = "gemini-2.5-pro"
+    GEMINI_2_0_FLASH = "gemini-2.0-flash-001"
+    IMAGEN_3_FAST = "Imagen 3 Fast"
 
 
 class VertexAIClient(AbstractClient):
@@ -39,10 +56,25 @@ class VertexAIClient(AbstractClient):
         )
         super().__init__(**kwargs)
 
+    async def __aenter__(self):
+        """Initialize the client context."""
+        # Vertex AI doesn't need explicit session management
+        return self
+
+    def _extract_usage_from_response(self, response) -> Dict[str, Any]:
+        """Extract usage metadata from Vertex AI response."""
+        if hasattr(response, 'usage_metadata') and response.usage_metadata:
+            return {
+                "prompt_token_count": response.usage_metadata.prompt_token_count,
+                "candidates_token_count": response.usage_metadata.candidates_token_count,
+                "total_token_count": response.usage_metadata.total_token_count
+            }
+        return {}
+
     async def ask(
         self,
         prompt: str,
-        model: str = "gemini-2.5-flash",
+        model: Union[VertexAIModel, str] = VertexAIModel.GEMINI_2_5_FLASH,
         max_tokens: int = 8192,
         temperature: float = 0.7,
         files: Optional[List[Union[str, Path]]] = None,
@@ -54,31 +86,54 @@ class VertexAIClient(AbstractClient):
         """
         Ask a question to Vertex AI with optional conversation memory.
         """
-        if not self.session:
-            raise RuntimeError("Client not initialized. Use async context manager.")
+        model = model.value if isinstance(model, VertexAIModel) else model
+
+        # Generate unique turn ID for tracking
+        turn_id = str(uuid.uuid4())
+        original_prompt = prompt
 
         messages, conversation_session, system_prompt = await self._prepare_conversation_context(
             prompt, files, user_id, session_id, system_prompt
         )
 
-        history = [
-            Content(role=msg["role"], parts=[Part.from_text(msg["content"][0]["text"])]) for msg in messages
-        ]
+        # Convert messages to Vertex AI format
+        history = []
+        for msg in messages:
+            if msg["content"] and isinstance(msg["content"], list) and msg["content"]:
+                content_text = msg["content"][0].get("text", "")
+                history.append(
+                    Content(
+                        role=msg["role"],
+                        parts=[Part.from_text(content_text)]
+                    )
+                )
 
         generation_config = {
             "max_output_tokens": max_tokens,
             "temperature": temperature,
         }
 
-        tools = [Tool.from_function_declarations([
-            FunctionDeclaration(
-                name=tool.name,
-                description=tool.description,
-                parameters=tool.input_schema
-            ) for tool in self.tools.values()
-        ])] if self.tools else None
+        # Track tool calls for the response
+        all_tool_calls = []
 
-        multimodal_model = GenerativeModel(model_name=model, system_instruction=system_prompt)
+        # Prepare tools
+        tools = None
+        if self.tools:
+            function_declarations = [
+                FunctionDeclaration(
+                    name=tool.name,
+                    description=tool.description,
+                    parameters=tool.input_schema
+                ) for tool in self.tools.values()
+            ]
+            tools = [
+                Tool.from_function_declarations(function_declarations)
+            ]
+
+        multimodal_model = GenerativeModel(
+            model_name=model,
+            system_instruction=system_prompt
+        )
 
         chat = multimodal_model.start_chat(history=history)
 
@@ -88,45 +143,106 @@ class VertexAIClient(AbstractClient):
             tools=tools,
         )
 
+        # Handle function calls
         if response.candidates and response.candidates[0].content.parts:
             for part in response.candidates[0].content.parts:
                 if part.function_call:
-                    tool_result = await self._execute_tool(
-                        part.function_call.name, part.function_call.args
+                    # Create ToolCall object and execute
+                    tc = ToolCall(
+                        id=f"call_{uuid.uuid4().hex[:8]}",  # Generate ID for tracking
+                        name=part.function_call.name,
+                        arguments=dict(part.function_call.args)
                     )
-                    response = await chat.send_message_async(
-                        Part.from_function_response(
-                            name=part.function_call.name,
-                            response={"content": tool_result},
+
+                    try:
+                        start_time = time.time()
+                        tool_result = await self._execute_tool(
+                            part.function_call.name,
+                            dict(part.function_call.args)
                         )
-                    )
+                        execution_time = time.time() - start_time
 
+                        tc.result = tool_result
+                        tc.execution_time = execution_time
 
-        result = {
-            "content": [{"type": "text", "text": response.text}],
-            "model": model,
-            "usage": {}, # Not available in Vertex AI response
-            "stop_reason": "completed",
-        }
+                        # Send tool result back to model
+                        response = await chat.send_message_async(
+                            Part.from_function_response(
+                                name=part.function_call.name,
+                                response={"content": tool_result},
+                            )
+                        )
+                    except Exception as e:
+                        tc.error = str(e)
+                        # Send error back to model
+                        response = await chat.send_message_async(
+                            Part.from_function_response(
+                                name=part.function_call.name,
+                                response={"content": f"Error: {str(e)}"},
+                            )
+                        )
+
+                    all_tool_calls.append(tc)
+
+        # Handle structured output
+        final_output = None
+        if structured_output:
+            try:
+                if hasattr(structured_output, 'model_validate_json'):
+                    final_output = structured_output.model_validate_json(response.text)
+                elif hasattr(structured_output, 'model_validate'):
+                    parsed_json = self._json.loads(response.text)
+                    final_output = structured_output.model_validate(parsed_json)
+                else:
+                    final_output = self._json.loads(response.text)
+            except Exception:
+                final_output = response.text
 
         # Update conversation memory
+        messages.append(
+            {"role": "assistant", "content": [{"type": "text", "text": response.text}]}
+        )
         await self._update_conversation_memory(
             user_id,
             session_id,
             conversation_session,
-            messages + [{"role": "assistant", "content": result["content"]}],
+            messages,
             system_prompt
         )
 
-        return await self._handle_structured_output(
-            result,
-            structured_output
-        ) if structured_output else MessageResponse(**result)
+        # Extract usage information
+        usage_data = self._extract_usage_from_response(response)
+
+        # Create AIMessage using factory (we'll use the gemini factory since it's similar)
+        ai_message = AIMessageFactory.from_gemini(
+            response=response,
+            input_text=original_prompt,
+            model=model,
+            user_id=user_id,
+            session_id=session_id,
+            turn_id=turn_id,
+            structured_output=final_output if final_output != response.text else None,
+            tool_calls=all_tool_calls
+        )
+
+        # Override usage with proper Vertex AI usage data
+        if usage_data:
+            ai_message.usage = CompletionUsage(
+                prompt_tokens=usage_data.get("prompt_token_count", 0),
+                completion_tokens=usage_data.get("candidates_token_count", 0),
+                total_tokens=usage_data.get("total_token_count", 0),
+                extra_usage=usage_data
+            )
+
+        # Update provider
+        ai_message.provider = "vertex_ai"
+
+        return ai_message
 
     async def ask_stream(
         self,
         prompt: str,
-        model: str = "gemini-2.5-flash",
+        model: Union[VertexAIModel, str] = VertexAIModel.GEMINI_2_5_FLASH,
         max_tokens: int = 8192,
         temperature: float = 0.7,
         files: Optional[List[Union[str, Path]]] = None,
@@ -137,18 +253,22 @@ class VertexAIClient(AbstractClient):
         """
         Stream Vertex AI's response using AsyncIterator.
         """
-        if not self.session:
-            raise RuntimeError("Client not initialized. Use async context manager.")
+        model = model.value if isinstance(model, VertexAIModel) else model
 
         messages, conversation_session, system_prompt = await self._prepare_conversation_context(
             prompt, files, user_id, session_id, system_prompt
         )
-
-        history = [
-            Content(
-                role=msg["role"], parts=[Part.from_text(msg["content"][0]["text"])]
-            ) for msg in messages
-        ]
+        # Convert messages to Vertex AI format
+        history = []
+        for msg in messages:
+            if msg["content"] and isinstance(msg["content"], list) and msg["content"]:
+                content_text = msg["content"][0].get("text", "")
+                history.append(
+                    Content(
+                        role=msg["role"],
+                        parts=[Part.from_text(content_text)]
+                    )
+                )
 
         generation_config = {
             "max_output_tokens": max_tokens,
@@ -167,13 +287,17 @@ class VertexAIClient(AbstractClient):
 
         assistant_content = ""
         async for chunk in response:
-            assistant_content += chunk.text
-            yield chunk.text
+            if chunk.text:
+                assistant_content += chunk.text
+                yield chunk.text
 
         # Update conversation memory
         if assistant_content:
             messages.append(
-                {"role": "assistant", "content": [{"type": "text", "text": assistant_content}]}
+                {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": assistant_content}]
+                }
             )
             await self._update_conversation_memory(
                 user_id,
@@ -183,5 +307,11 @@ class VertexAIClient(AbstractClient):
                 system_prompt
             )
 
-    async def batch_ask(self, requests):
-        return await super().batch_ask(requests)
+    async def batch_ask(self, requests) -> List[AIMessage]:
+        """Process multiple requests in batch."""
+        # Vertex AI doesn't have a native batch API, so we process sequentially
+        results = []
+        for request in requests:
+            result = await self.ask(**request)
+            results.append(result)
+        return results

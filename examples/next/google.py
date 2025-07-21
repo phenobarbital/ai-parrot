@@ -1,5 +1,5 @@
 import asyncio
-from parrot.next import VertexAIClient, GenAIClient
+from parrot.next import VertexAIClient, GoogleGenAIClient
 from parrot.next.tools.math_tool import MathTool
 
 async def main():
@@ -8,12 +8,20 @@ async def main():
     print("--- Asking Vertex AI ---")
     async with VertexAIClient() as client:
         response = await client.ask(question)
-        print(response['content'][0]['text'])
+        print(response.text)                    # Response text
+        print(response.usage.prompt_tokens)     # 39 (from usage_metadata)
+        print(response.usage.completion_tokens) # 5 (from usage_metadata)
+        print(response.usage.total_tokens)      # 110 (from usage_metadata)
+        print(response.provider)                # "vertex_ai"
 
     print("\n--- Asking Google GenAI ---")
-    async with GenAIClient() as client:
+    async with GoogleGenAIClient() as client:
         response = await client.ask(question)
-        print(response['content'][0]['text'])
+        print(response.text)                    # Response text
+        print(response.usage.prompt_tokens)     # 39 (from usage_metadata)
+        print(response.usage.completion_tokens) # 5 (from usage_metadata)
+        print(response.usage.total_tokens)      # 110 (from usage_metadata)
+        print(response.provider)                # "vertex_ai"
 
     async with VertexAIClient() as client:
         math_tool = MathTool()
@@ -37,9 +45,14 @@ async def main():
             "What is the result of multiplying 5 and 10?",
             structured_output=math_tool.multiply
         )
-        print(response["content"][0]["text"])
+        print('--- Vertex AI Tool Call Response ---')
+        print(response.text)                    # Response text
+        print(response.usage.prompt_tokens)     # 39 (from usage_metadata)
+        print(response.usage.completion_tokens) # 5 (from usage_metadata)
+        print(response.usage.total_tokens)      # 110 (from usage_metadata)
+        print(response.provider)                # "vertex_ai"
 
-    async with GenAIClient() as client:
+    async with GoogleGenAIClient() as client:
         math_tool = MathTool()
 
         # Register the tool's methods

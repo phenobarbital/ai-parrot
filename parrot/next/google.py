@@ -1,13 +1,28 @@
 import asyncio
 from typing import AsyncIterator, List, Optional, Union, Any
+from enum import Enum
 from pathlib import Path
 import google.generativeai as genai
 from tenacity import retry, stop_after_attempt, wait_exponential
 from navconfig import config
 from .abstract import AbstractClient, MessageResponse
+from .models import (
+    AIMessage,
+    AIMessageFactory,
+    ToolCall,
+    CompletionUsage
+)
+
+class GoogleModel(Enum):
+    """Enum for Google AI models."""
+    GEMINI_2_5_FLASH = "gemini-2.5-flash"
+    GEMINI_2_5_FLASH_LITE_PREVIEW = "gemini-2.5-flash-lite-preview-06-17"
+    GEMINI_2_5_PRO = "gemini-2.5-pro"
+    GEMINI_2_0_FLASH = "gemini-2.0-flash-001"
+    IMAGEN_3_FAST = "Imagen 3 Fast"
 
 
-class GenAIClient(AbstractClient):
+class GoogleGenAIClient(AbstractClient):
     """
     Client for interacting with Google's Generative AI, with support for parallel function calling.
     """
@@ -33,7 +48,7 @@ class GenAIClient(AbstractClient):
     async def ask(
         self,
         prompt: str,
-        model: str = "gemini-1.5-flash",
+        model: Union[str, GoogleModel] = GoogleModel.GEMINI_2_5_FLASH,
         max_tokens: int = 8192,
         temperature: float = 0.7,
         files: Optional[List[Union[str, Path]]] = None,
@@ -47,6 +62,8 @@ class GenAIClient(AbstractClient):
         """
         if not self.session:
             raise RuntimeError("Client not initialized. Use async context manager.")
+
+        model = model.value if isinstance(model, GoogleModel) else model
 
         messages, conversation_session, system_prompt = await self._prepare_conversation_context(
             prompt, files, user_id, session_id, system_prompt
@@ -137,7 +154,7 @@ class GenAIClient(AbstractClient):
     async def ask_stream(
         self,
         prompt: str,
-        model: str = "gemini-1.5-flash",
+        model: Union[str, GoogleModel] = GoogleModel.GEMINI_2_5_FLASH,
         max_tokens: int = 8192,
         temperature: float = 0.7,
         files: Optional[List[Union[str, Path]]] = None,
@@ -151,6 +168,8 @@ class GenAIClient(AbstractClient):
         """
         if not self.session:
             raise RuntimeError("Client not initialized. Use async context manager.")
+
+        model = model.value if isinstance(model, GoogleModel) else model
 
         messages, conversation_session, system_prompt = await self._prepare_conversation_context(
             prompt, files, user_id, session_id, system_prompt
@@ -186,7 +205,11 @@ class GenAIClient(AbstractClient):
 
         # Update conversation memory
         if assistant_content:
-            final_assistant_message = {"role": "assistant", "content": [{"type": "text", "text": assistant_content}]}
+            final_assistant_message = {
+                "role": "assistant", "content": [
+                    {"type": "text", "text": assistant_content}
+                ]
+            }
             await self._update_conversation_memory(
                 user_id,
                 session_id,

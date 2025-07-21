@@ -7,7 +7,7 @@ Is a intent of migrating from Langchain to a more streamlined and efficient fram
 from .abstract import AbstractClient
 from .claude import ClaudeClient
 from .vertex import VertexAIClient
-from .google import GenAIClient
+from .google import GoogleGenAIClient
 from .gpt import OpenAIClient
 from .groq import GroqClient, GroqModel
 
@@ -15,7 +15,7 @@ __all__ = (
     "AbstractClient",
     "ClaudeClient",
     "VertexAIClient",
-    "GenAIClient",
+    "GoogleGenAIClient",
     "OpenAIClient",
     "GroqClient",
     "GroqModel",
