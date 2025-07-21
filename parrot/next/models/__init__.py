@@ -67,11 +67,18 @@ class CompletionUsage(BaseModel):
 
     @classmethod
     def from_gemini(cls, usage: Dict[str, Any]) -> "CompletionUsage":
-        """Create from Gemini usage dict."""
+        """Create from Gemini/Vertex AI usage dict."""
+        # Handle both Gemini API format and Vertex AI format
+        prompt_tokens = usage.get('prompt_token_count', 0) or usage.get('prompt_tokens', 0)
+        completion_tokens = usage.get(
+            'candidates_token_count', 0
+        ) or usage.get('completion_tokens', 0)
+        total_tokens = usage.get('total_token_count', 0) or usage.get('total_tokens', 0)
+
         return cls(
-            prompt_tokens=usage.get('prompt_token_count', 0),
-            completion_tokens=usage.get('candidates_token_count', 0),
-            total_tokens=usage.get('total_token_count', 0),
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
             extra_usage=usage
         )
 
@@ -139,6 +146,7 @@ class AIMessage(BaseModel):
     )
 
     class Config:
+        """Pydantic configuration for AIMessage."""
         # Allow arbitrary types for output field (pandas DataFrames, etc.)
         arbitrary_types_allowed = True
 
@@ -323,17 +331,32 @@ class AIMessageFactory:
         structured_output: Any = None,
         tool_calls: List[ToolCall] = None
     ) -> AIMessage:
-        """Create AIMessage from Gemini response."""
-        content = getattr(response, 'text', str(response))
+        """Create AIMessage from Gemini/Vertex AI response."""
+        # Handle both direct text responses and response objects
+        if hasattr(response, 'text'):
+            content = response.text
+        else:
+            content = str(response)
+
+        # Extract usage information
+        usage_dict = {}
+        if hasattr(response, 'usage_metadata') and response.usage_metadata:
+            # Vertex AI format
+            usage_dict = {
+                'prompt_token_count': response.usage_metadata.prompt_token_count,
+                'candidates_token_count': response.usage_metadata.candidates_token_count,
+                'total_token_count': response.usage_metadata.total_token_count
+            }
+        elif hasattr(response, 'usage'):
+            # Standard Gemini API format
+            usage_dict = response.usage.__dict__ if hasattr(response.usage, '__dict__') else {}
 
         return AIMessage(
             input=input_text,
             output=structured_output if structured_output else content,
             model=model,
-            provider="gemini",
-            usage=CompletionUsage.from_gemini(
-                getattr(response, 'usage', {}).__dict__ if hasattr(response, 'usage') else {}
-            ),
+            provider="gemini",  # Will be overridden to "vertex_ai" in VertexAIClient
+            usage=CompletionUsage.from_gemini(usage_dict),
             stop_reason="completed",
             finish_reason="completed",
             tool_calls=tool_calls or [],
