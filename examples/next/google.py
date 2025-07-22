@@ -302,48 +302,51 @@ async def main():
 #             print("❌ Failed to generate multi-voice speech.")
 
         # Image Clasification:
-        # class ImageCategory(str, Enum):
-        #     """Enumeration for retail image categories."""
-        #     INK_WALL = "Ink Wall"
-        #     SHELVES_WITH_PRODUCTS = "Shelves with Products"
-        #     PRODUCTS_ON_FLOOR = "Products on Floor"
-        #     MERCHANDISING_ENDCAP = "Merchandising Endcap"
-        #     OTHER = "Other"
+    async with GoogleGenAIClient() as client:
+        class ImageCategory(str, Enum):
+            """Enumeration for retail image categories."""
+            INK_WALL = "Ink Wall"
+            SHELVES_WITH_PRODUCTS = "Shelves with Products"
+            PRODUCTS_ON_FLOOR = "Products on Floor"
+            MERCHANDISING_ENDCAP = "Merchandising Endcap"
+            OTHER = "Other"
 
-        # class ImageClassification(BaseModel):
-        #     """Schema for classifying a retail image."""
-        #     category: ImageCategory = Field(..., description="The best-fitting category for the image based on the provided definitions.")
-        #     confidence_score: float = Field(..., ge=0.0, le=1.0, description="The model's confidence in its classification, from 0.0 to 1.0.")
-        #     reasoning: str = Field(..., description="A brief explanation for why the image was assigned to this category.")
+        class ImageClassification(BaseModel):
+            """Schema for classifying a retail image."""
+            category: ImageCategory = Field(..., description="The best-fitting category for the image based on the provided definitions.")
+            confidence_score: float = Field(..., ge=0.0, le=1.0, description="The model's confidence in its classification, from 0.0 to 1.0.")
+            reasoning: str = Field(..., description="A brief explanation for why the image was assigned to this category.")
 
-        # classification_prompt = """
-        # You are an expert in retail image analysis. Your task is to classify the provided image into one of the following categories.
-        # Please read the definitions carefully and choose the single best fit.
+        classification_prompt = """
+        You are an expert in retail image analysis. Your task is to classify the provided image into one of the following categories.
+        Please read the definitions carefully and choose the single best fit.
 
-        # Category Definitions:
-        # - 'Ink Wall': The primary subject is a large wall or multi-shelf gondola where the **majority of shelf space is dedicated to small consumables like ink cartridges and toner**. The presence of a few larger, related items (like printers) does not disqualify this category if the dominant visual element is the dense array of small boxes.
-        # - 'Shelves with Products': The image shows standard retail shelves displaying **predominantly larger products**, like printers, scanners, or other electronics. While some ink or consumables may be present, they are not the main focus of the display.
-        # - 'Products on Floor': The primary subject is multiple product boxes stacked directly on the floor, not on shelves. This is often called a "pallet display" or "stack-out".
-        # - 'Merchandising Endcap': The image shows a display at the **end of an aisle**, often featuring a specific promotion, brand, or a mix of products with prominent marketing signage. Location is key.
-        # - 'Other': Use this category if the image does not clearly fit any of the above descriptions (e.g., a single product photo, a picture of a person, an outdoor scene).
+        Category Definitions:
+        - 'Ink Wall': The primary subject is a large wall or multi-shelf gondola where the **majority of shelf space is dedicated to small consumables like ink cartridges and toner**. The presence of a few larger, related items (like printers) does not disqualify this category if the dominant visual element is the dense array of small boxes.
+        - 'Shelves with Products': The image shows standard retail shelves displaying **predominantly larger products**, like printers, scanners, or other electronics. While some ink or consumables may be present, they are not the main focus of the display.
+        - 'Products on Floor': The primary subject is multiple product boxes stacked directly on the floor, not on shelves. This is often called a "pallet display" or "stack-out".
+        - 'Merchandising Endcap': The image shows a display at the **end of an aisle**, often featuring a specific promotion, brand, or a mix of products with prominent marketing signage. Location is key.
+        - 'Other': Use this category if the image does not clearly fit any of the above descriptions (e.g., a single product photo, a picture of a person, an outdoor scene).
 
-        # Analyze the image and provide your classification in the requested JSON format.
-        # """
-        # image_path = BASE_DIR.joinpath('static', "be51ca05-802e-4dfd-bc53-fec65616d569-recap.jpeg")
-        # classification_result = await client.ask_to_image(
-        #     image_path=image_path,
-        #     prompt=classification_prompt,
-        #     structured_output=ImageClassification,
-        #     model=GoogleModel.GEMINI_2_5_FLASH
-        # )
-        # print(classification_result)
-        # if classification_result and isinstance(classification_result.output, ImageClassification):
-        #     result = classification_result.output
-        #     print("\n✅ Classification Complete:\n")
-        #     print(f"  - Category: {result.category.value}")
-        #     print(f"  - Confidence: {result.confidence_score:.2f}")
-        #     print(f"  - Reasoning: {result.reasoning}")
-        #     print("\n" + "-"*40)
+        Analyze the image and provide your classification in the requested JSON format.
+        """
+        image_path = BASE_DIR.joinpath('static', "be51ca05-802e-4dfd-bc53-fec65616d569-recap.jpeg")
+        classification_result = await client.ask_to_image(
+            image_path=image_path,
+            prompt=classification_prompt,
+            structured_output=ImageClassification,
+            model=GoogleModel.GEMINI_2_5_FLASH
+        )
+        print(classification_result)
+        if classification_result and isinstance(classification_result.output, ImageClassification):
+            # The code is assigning the output of a classification result to the variable `result` in
+            # Python.
+            result = classification_result.output
+            print("\n✅ Classification Complete:\n")
+            print(f"  - Category: {result.category.value}")
+            print(f"  - Confidence: {result.confidence_score:.2f}")
+            print(f"  - Reasoning: {result.reasoning}")
+            print("\n" + "-"*40)
 
     async with GoogleGenAIClient() as client:
         image_path = BASE_DIR.joinpath('static', "1bc3e9e8-3072-4c3a-8620-07fff9413a69-recap.jpeg")
