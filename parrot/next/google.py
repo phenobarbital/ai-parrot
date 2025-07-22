@@ -219,10 +219,10 @@ class GoogleGenAIClient(AbstractClient):
 
         # Handle enhanced structured output
         if isinstance(structured_output, StructuredOutputConfig):
-            config = structured_output
+            output_config = structured_output
         else:
             # Backward compatibility - assume JSON
-            config = StructuredOutputConfig(
+            output_config = StructuredOutputConfig(
                 output_type=structured_output,
                 format=OutputFormat.JSON
             ) if structured_output else None
@@ -386,13 +386,17 @@ class GoogleGenAIClient(AbstractClient):
         final_output = None
         if structured_output:
             try:
-                if hasattr(structured_output, 'model_validate_json'):
-                    final_output = structured_output.model_validate_json(response.text)
-                elif hasattr(structured_output, 'model_validate'):
-                    parsed_json = self._json.loads(response.text)
-                    final_output = structured_output.model_validate(parsed_json)
-                else:
-                    final_output = self._json.loads(response.text)
+                final_output = await self._parse_structured_output(
+                    response.text,
+                    output_config
+                )
+                # if hasattr(structured_output, 'model_validate_json'):
+                #     final_output = structured_output.model_validate_json(response.text)
+                # elif hasattr(structured_output, 'model_validate'):
+                #     parsed_json = self._json.loads(response.text)
+                #     final_output = structured_output.model_validate(parsed_json)
+                # else:
+                #     final_output = self._json.loads(response.text)
             except Exception:
                 final_output = response.text
 
