@@ -448,51 +448,60 @@ class AbstractClient(ABC):
 
     async def _parse_structured_output(
         self,
-        text: str,
-        config: StructuredOutputConfig
+        response_text: str,
+        structured_output: StructuredOutputConfig
     ) -> Any:
         """Parse structured output based on format."""
         try:
-            print('HERE > ', text)
-            print('CONFIG > ', config, config.format)
-            if config.format == OutputFormat.JSON:
+            output_type = structured_output.output_type
+            if not output_type:
+                raise ValueError(
+                    "Output type is not specified in structured output config."
+                )
+            # default to JSON parsing if no specific schema is provided
+            if structured_output.format == OutputFormat.JSON:
                 # Current JSON logic
                 try:
-                    if hasattr(config.output_type, 'model_validate_json'):
-                        return config.output_type.model_validate_json(text)
-                    elif hasattr(config.output_type, 'model_validate'):
-                        parsed_json = self._json.loads(text)
-                        return config.output_type.model_validate(parsed_json)
+                    if hasattr(output_type, 'model_validate_json'):
+                        return output_type.model_validate_json(response_text)
+                    elif hasattr(output_type, 'model_validate'):
+                        parsed_json = self._json.loads(response_text)
+                        return output_type.model_validate(parsed_json)
                     else:
-                        return self._json.loads(text)
+                        return self._json.loads(response_text)
                 except (ParserError, json.JSONDecodeError):
-                    return text
-            elif config.format == OutputFormat.TEXT:
+                    return response_text
+            elif structured_output.format == OutputFormat.TEXT:
                 # Parse natural language text into structured format
-                return await self._parse_text_to_structure(text, config.output_type)
-            elif config.format == OutputFormat.CSV:
-                df = pd.read_csv(io.StringIO(text))
-                return df if config.output_type == pd.DataFrame else df
-            elif config.format == OutputFormat.YAML:
-                data = yaml.safe_load(text)
-                if hasattr(config.output_type, 'model_validate'):
-                    return config.output_type.model_validate(data)
+                return await self._parse_text_to_structure(
+                    response_text,
+                    output_type
+                )
+            elif structured_output.format == OutputFormat.CSV:
+                df = pd.read_csv(io.StringIO(response_text))
+                return df if output_type == pd.DataFrame else df
+            elif structured_output.format == OutputFormat.YAML:
+                data = yaml.safe_load(response_text)
+                if hasattr(output_type, 'model_validate'):
+                    return output_type.model_validate(data)
                 return data
-            elif config.format == OutputFormat.CUSTOM:
-                if config.custom_parser:
-                    return config.custom_parser(text)
+            elif structured_output.format == OutputFormat.CUSTOM:
+                if structured_output.custom_parser:
+                    return structured_output.custom_parser(response_text)
             else:
-                raise ValueError(f"Unsupported output format: {config.format}")
+                raise ValueError(
+                    f"Unsupported output format: {structured_output.format}"
+                )
         except (ParserError, ValueError) as e:
             self.logger.error(f"Error parsing structured output: {e}")
             # Fallback to raw text if parsing fails
-            return text
+            return response_text
         except Exception as e:
             self.logger.error(
                 f"Unexpected error during structured output parsing: {e}"
             )
             # Fallback to raw text
-            return text
+            return response_text
 
     async def _parse_text_to_structure(self, text: str, output_type: type) -> Any:
         """Parse natural language text into a structured format using AI."""

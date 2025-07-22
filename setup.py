@@ -221,6 +221,7 @@ setup(
             "python-xmp-toolkit==2.0.2",
             "exifread==3.3.1",
             "transformers>=4.51.1,<=4.51.3",
+            "ffmpeg==1.4"
         ],
         "vector": [
             "torch>=2.5.1,<=2.6.0",
