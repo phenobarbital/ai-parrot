@@ -390,13 +390,6 @@ class GoogleGenAIClient(AbstractClient):
                     response.text,
                     output_config
                 )
-                # if hasattr(structured_output, 'model_validate_json'):
-                #     final_output = structured_output.model_validate_json(response.text)
-                # elif hasattr(structured_output, 'model_validate'):
-                #     parsed_json = self._json.loads(response.text)
-                #     final_output = structured_output.model_validate(parsed_json)
-                # else:
-                #     final_output = self._json.loads(response.text)
             except Exception:
                 final_output = response.text
 
@@ -539,8 +532,8 @@ class GoogleGenAIClient(AbstractClient):
     async def ask_to_image(
         self,
         prompt: str,
-        image_path: Path,
-        reference_images: Optional[List[Path]] = None,
+        image: Union[Path, bytes],
+        reference_images: Optional[Union[List[Path], List[bytes]]] = None,
         model: Union[str, GoogleModel] = GoogleModel.GEMINI_2_5_FLASH,
         max_tokens: int = 8192,
         temperature: float = 0.7,
@@ -573,11 +566,21 @@ class GoogleGenAIClient(AbstractClient):
                 history.append(ModelContent(parts=[part]))
 
         # --- Multi-Modal Content Preparation ---
-        self.logger.debug(f"Loading primary image from: {image_path}")
-        if not image_path.exists():
-            raise FileNotFoundError(f"Image file not found: {image_path}")
-        # Load the primary image
-        primary_image = Image.open(image_path)
+        if isinstance(image, Path):
+            if not image.exists():
+                raise FileNotFoundError(
+                    f"Image file not found: {image}"
+                )
+            # Load the primary image
+            primary_image = Image.open(image)
+        elif isinstance(image, bytes):
+            primary_image = Image.open(io.BytesIO(image))
+        elif isinstance(image, Image.Image):
+            primary_image = image
+        else:
+            raise ValueError(
+                "Image must be a Path, bytes, or PIL.Image object."
+            )
 
         # The content for the API call is a list containing images and the final prompt
         contents = [primary_image]
@@ -586,7 +589,21 @@ class GoogleGenAIClient(AbstractClient):
                 self.logger.debug(
                     f"Loading reference image from: {ref_path}"
                 )
-                contents.append(Image.open(ref_path))
+                if isinstance(ref_path, Path):
+                    if not ref_path.exists():
+                        raise FileNotFoundError(
+                            f"Reference image file not found: {ref_path}"
+                        )
+                    contents.append(Image.open(ref_path))
+                elif isinstance(ref_path, bytes):
+                    contents.append(Image.open(io.BytesIO(ref_path)))
+                elif isinstance(ref_path, Image.Image):
+                    # is already a PIL.Image Object
+                    contents.append(ref_path)
+                else:
+                    raise ValueError(
+                        "Reference Image must be a Path, bytes, or PIL.Image object."
+                    )
 
         contents.append(prompt) # The text prompt always comes last
         generation_config = {
@@ -793,11 +810,14 @@ class GoogleGenAIClient(AbstractClient):
             # Save as WAV using the wave module
             output_path = output_path.with_suffix('.wav')
             with wave.open(str(output_path), mode="wb") as wf:
-                wf.setnchannels(1)  # Mono  # noqa
-                wf.setsampwidth(2)   # 16-bit  # noqa
-                wf.setcomptype("NONE", "not compressed")  # noqa
-                wf.setframerate(24000) # 24kHz sample rate  # noqa
-                wf.writeframes(audio_data)  # noqa
+                # Mono
+                wf.setnchannels(1)  # pylint: disable=E1101 # noqa
+                # 16-bit PCM
+                wf.setsampwidth(2)  # pylint: disable=E1101 # noqa
+                wf.setcomptype("NONE", "not compressed")  # pylint: disable=E1101 # noqa
+                # 24kHz sample rate
+                wf.setframerate(24000)  # pylint: disable=E1101 # noqa
+                wf.writeframes(audio_data)  # pylint: disable=E1101 # noqa
         elif mime_format in ("audio/mpeg", "audio/webm"):
             # choose extension and pydub format name
             ext = "mp3" if mime_format == "audio/mpeg" else "webm"
