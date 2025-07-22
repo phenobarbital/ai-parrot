@@ -7,7 +7,7 @@ from .hash import ImageHashPlugin
 from .abstract import ImagePlugin
 from .exif import EXIFPlugin
 from .zerodetect import ZeroShotDetectionPlugin
-
+from .classify import ClassificationPlugin
 
 PLUGINS = {
     "exif": EXIFPlugin,
@@ -15,4 +15,5 @@ PLUGINS = {
     "yolo": YOLOPlugin,
     "vectorization": VisionTransformerPlugin,
     "zeroshot": ZeroShotDetectionPlugin,
+    "classification": ClassificationPlugin,
 }
