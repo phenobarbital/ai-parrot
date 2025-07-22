@@ -165,11 +165,15 @@ setup(
         "python-datamodel>=0.10.17",
         "backoff==2.2.1",
         "asyncdb>=2.11.6",
-        "google-cloud-bigquery==3.30.0",
+        "google-cloud-bigquery>=3.30.0",
         "numexpr==2.10.2",
         "fpdf==1.7.2",
         "python-docx==1.1.2",
-        "typing_extensions>=4.13.2,<=4.14.0"
+        "typing_extensions>=4.13.2,<=4.14.0",
+        "navconfig[default]>=1.7.13",
+        "matplotlib==3.10.3",
+        "seaborn==0.13.2",
+        "pydub==0.25.1",
     ],
     extras_require={
         "agents": [
@@ -199,7 +203,6 @@ setup(
             "pymupdf4llm==0.0.22",
             "pdf4llm==0.0.22",
             "langchain-huggingface==0.1.2",
-            "pydub==0.25.1",
             "pytube==15.0.0",
             "youtube_transcript_api==1.0.3",
             "python-pptx==1.0.2"
@@ -221,6 +224,7 @@ setup(
             "python-xmp-toolkit==2.0.2",
             "exifread==3.3.1",
             "transformers>=4.51.1,<=4.51.3",
+            "ffmpeg==1.4"
         ],
         "vector": [
             "torch>=2.5.1,<=2.6.0",
@@ -246,28 +250,28 @@ setup(
             "langchain-ollama==0.2.3"
         ],
         "anthropic": [
-            "anthropic==0.52.0",
-            "langchain_anthropic==0.3.13"
+            "anthropic==0.58.2",
+            # "langchain_anthropic==0.3.13"
         ],
         "openai": [
-            "langchain_openai==0.3.18",
-            "openai==1.82.0",
+            # "langchain_openai==0.3.18",
+            "openai==1.97.0",
             # "llama-index-llms-openai==0.1.11",
-            "tiktoken==0.7.0"
+            "tiktoken==0.9.0"
         ],
         "google": [
-            "langchain-google-vertexai>=2.0.27",
-            "langchain-google-genai>=2.1.6",
+            # "langchain-google-vertexai>=2.0.27",
+            # "langchain-google-genai>=2.1.6",
             "google-cloud-texttospeech==2.27.0",
-            "google-genai>=1.24.0",
-            # "vertexai==1.71.1",
+            "google-genai>=1.26.0",
+            "vertexai==1.71.1",
         ],
         "hunggingfaces": [
             "llama-index-llms-huggingface==0.2.7",
         ],
         "groq": [
-            "groq==0.25.0",
-            "langchain-groq==0.3.2"
+            "groq==0.30.0",
+            # "langchain-groq==0.3.2"
         ],
         "qdrant": [
             "qdrant-client==1.13.2",
@@ -281,17 +285,6 @@ setup(
         "chroma": [
             "chroma==0.2.0",
             "langchain-chroma==0.2.2"
-        ],
-        "crew": [
-            "colbert-ai==0.2.19",
-            "vanna==0.3.4", # Vanna:
-            "crewai[tools]==0.28.8"
-        ],
-        "analytics": [
-            "annoy==1.17.3",
-            "gradio_tools==0.0.9",
-            "gradio-client==0.2.9",
-            "streamlit==1.37.1",
         ]
     },
     tests_require=[
