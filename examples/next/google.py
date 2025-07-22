@@ -332,7 +332,7 @@ async def main():
         """
         image_path = BASE_DIR.joinpath('static', "be51ca05-802e-4dfd-bc53-fec65616d569-recap.jpeg")
         classification_result = await client.ask_to_image(
-            image_path=image_path,
+            image=image_path,
             prompt=classification_prompt,
             structured_output=ImageClassification,
             model=GoogleModel.GEMINI_2_5_FLASH
@@ -352,7 +352,7 @@ async def main():
         image_path = BASE_DIR.joinpath('static', "1bc3e9e8-3072-4c3a-8620-07fff9413a69-recap.jpeg")
         shaq = BASE_DIR.joinpath('static', "Shaq.jpg")
         response_shaq = await client.ask_to_image(
-            image_path=image_path,
+            image=image_path,
             reference_images=[shaq],
             prompt=(
                 "First, analyze the image to see if Shaquille O'Neal (from the reference image) is present. "
@@ -372,7 +372,7 @@ async def main():
         # Product Detection
         image_path = BASE_DIR.joinpath('static', "e1ad2662-c624-4f9b-a7aa-7518613a893a-recap.jpeg")
         response_image = await client.ask_to_image(
-            image_path=image_path,
+            image=image_path,
             prompt=(
                 "Analyze the image methodically: identify and count the products in the image, even if it's partially visible."
                 " our main goal is to identify Epson products and competitive products in the image, "

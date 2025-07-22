@@ -172,7 +172,8 @@ setup(
         "typing_extensions>=4.13.2,<=4.14.0",
         "navconfig[default]>=1.7.13",
         "matplotlib==3.10.3",
-        "seaborn==0.13.2"
+        "seaborn==0.13.2",
+        "pydub==0.25.1",
     ],
     extras_require={
         "agents": [
@@ -202,7 +203,6 @@ setup(
             "pymupdf4llm==0.0.22",
             "pdf4llm==0.0.22",
             "langchain-huggingface==0.1.2",
-            "pydub==0.25.1",
             "pytube==15.0.0",
             "youtube_transcript_api==1.0.3",
             "python-pptx==1.0.2"
