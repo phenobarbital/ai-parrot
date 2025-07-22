@@ -169,7 +169,10 @@ setup(
         "numexpr==2.10.2",
         "fpdf==1.7.2",
         "python-docx==1.1.2",
-        "typing_extensions>=4.13.2,<=4.14.0"
+        "typing_extensions>=4.13.2,<=4.14.0",
+        "navconfig[default]>=1.7.13",
+        "matplotlib==3.10.3",
+        "seaborn==0.13.2"
     ],
     extras_require={
         "agents": [
