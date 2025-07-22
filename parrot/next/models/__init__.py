@@ -421,15 +421,16 @@ class AIMessageFactory:
 
 
 class BoundingBox(BaseModel):
-    """Represents a single bounding box for a detected object."""
-    label: str = Field(
-        ...,
-        description="The name of the object detected (e.g., 'Epson printer box', 'person')."
-    )
-    box_2d: List[int] = Field(
-        ...,
-        description="A list of 4 integers representing the bounding box coordinates as [ymin, xmin, ymax, xmax], normalized to 0-1000."
-    )
+    """Represents a detected object with its location and details."""
+    object_id: str = Field(..., description="Unique identifier for this detection")
+    brand: str = Field(..., description="Product brand (Epson, HP, Canon, etc.)")
+    model: Optional[str] = Field(None, description="Product model if identifiable")
+    product_type: str = Field(..., description="Type of product (printer, scanner, ink cartridge, etc.)")
+    description: str = Field(..., description="Brief description of the product")
+    confidence: float = Field(..., description="Confidence level (0.0 to 1.0)")
+    # Simple bounding box as [x1, y1, x2, y2] normalized coordinates (0.0 to 1.0)
+    bbox: List[float] = Field(..., description="Bounding box coordinates [x1, y1, x2, y2] as normalized values (0.0-1.0)")
+
 
 class ObjectDetectionResult(BaseModel):
     """A list of all prominent items detected in the image."""
@@ -437,6 +438,7 @@ class ObjectDetectionResult(BaseModel):
         ...,
         description="A detailed text analysis of the image that answers the user's prompt."
     )
+    total_count: int = Field(..., description="Total number of products detected")
     detections: List[BoundingBox] = Field(
         default_factory=list,
         description="A list of bounding boxes for all prominent detected objects."
