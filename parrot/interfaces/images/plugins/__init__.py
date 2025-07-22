@@ -8,6 +8,8 @@ from .abstract import ImagePlugin
 from .exif import EXIFPlugin
 from .zerodetect import ZeroShotDetectionPlugin
 from .classify import ClassificationPlugin
+from .detect import DetectionPlugin
+
 
 PLUGINS = {
     "exif": EXIFPlugin,
@@ -16,4 +18,5 @@ PLUGINS = {
     "vectorization": VisionTransformerPlugin,
     "zeroshot": ZeroShotDetectionPlugin,
     "classification": ClassificationPlugin,
+    'detection': DetectionPlugin,
 }

@@ -405,40 +405,40 @@ async def main():
         # print(response_image)
         # print("Image response text:", response_image.text)
 
-        # # Ink-Wall Analysis:
-        # class CleanlinessLevel(str, Enum):
-        #     """Enumeration for cleanliness condition."""
-        #     CLEAN = "Clean"
-        #     SLIGHTLY_DUSTY = "Slightly Dusty"
-        #     NEEDS_CLEANING = "Needs Cleaning"
+        # Ink-Wall Analysis:
+        class CleanlinessLevel(str, Enum):
+            """Enumeration for cleanliness condition."""
+            CLEAN = "Clean"
+            SLIGHTLY_DUSTY = "Slightly Dusty"
+            NEEDS_CLEANING = "Needs Cleaning"
 
-        # class InkWallAnalysis(BaseModel):
-        #     """Schema for a detailed retail ink-wall analysis."""
-        #     epson_product_count: int = Field(..., description="The total count of all visible Epson branded products (boxed or unboxed).")
-        #     competitor_product_count: int = Field(..., description="The total count of all visible competitor products (HP, Canon, Brother, etc.).")
-        #     competitors_found: List[str] = Field(..., description="A list of competitor brand names found on the shelves.")
-        #     shelf_occupancy_percentage: float = Field(..., description="An estimated percentage of how full the shelves are overall (0-100).")
-        #     overall_condition: str = Field(..., description="A brief description of the overall condition of the ink wall (e.g., 'well-stocked', 'needs restocking'), evaluate product alignment, cleanliness, and any visible damage")
-        #     has_gaps: bool = Field(..., description="True if there are noticeable empty spaces or gaps on the shelves where products should be.")
-        #     gaps_description: Optional[str] = Field(None, description="A brief description of where the most significant gaps are located.")
-        #     restocking_needed: bool = Field(..., description="True if the gaps or low stock levels suggest that restocking is required.")
-        #     is_shelf_empty: bool = Field(..., description="True if any single shelf is completely empty, otherwise False.")
-        #     misplaced_products_found: bool = Field(..., description="True if any product appears to be in the wrong location (e.g., an HP cartridge in an Epson section).")
-        #     cleanliness_condition: CleanlinessLevel = Field(..., description="The overall cleanliness of the shelves and products.")
-        #     trash_present: bool = Field(..., description="True if any visible trash, debris, or stray packaging is present on the shelves or floor.")
+        class InkWallAnalysis(BaseModel):
+            """Schema for a detailed retail ink-wall analysis."""
+            epson_product_count: int = Field(..., description="The total count of all visible Epson branded products (boxed or unboxed).")
+            competitor_product_count: int = Field(..., description="The total count of all visible competitor products (HP, Canon, Brother, etc.).")
+            competitors_found: List[str] = Field(..., description="A list of competitor brand names found on the shelves.")
+            shelf_occupancy_percentage: float = Field(..., description="An estimated percentage of how full the shelves are overall (0-100).")
+            overall_condition: str = Field(..., description="A brief description of the overall condition of the ink wall (e.g., 'well-stocked', 'needs restocking'), evaluate product alignment, cleanliness, and any visible damage")
+            has_gaps: bool = Field(..., description="True if there are noticeable empty spaces or gaps on the shelves where products should be.")
+            gaps_description: Optional[str] = Field(None, description="A brief description of where the most significant gaps are located.")
+            restocking_needed: bool = Field(..., description="True if the gaps or low stock levels suggest that restocking is required.")
+            is_shelf_empty: bool = Field(..., description="True if any single shelf is completely empty, otherwise False.")
+            misplaced_products_found: bool = Field(..., description="True if any product appears to be in the wrong location (e.g., an HP cartridge in an Epson section).")
+            cleanliness_condition: CleanlinessLevel = Field(..., description="The overall cleanliness of the shelves and products.")
+            trash_present: bool = Field(..., description="True if any visible trash, debris, or stray packaging is present on the shelves or floor.")
 
 
-        # image_path = BASE_DIR.joinpath('static', "a95ac304-8636-4772-99e1-4ed6fabaded1-recap.jpeg")
-        # analysis_result = await client.ask_to_image(
-        #     image_path=image_path,
-        #     prompt="""
-        #     Analyze the provided image of a retail ink wall. Perform a detailed planogram and shelf-space analysis.
-        #     Use the following list of known competitors to identify non-Epson products: ['HP', 'Canon', 'Brother', 'Lexmark'].
-        #     Based on your visual analysis, populate all fields of the requested JSON schema.
-        #     """,
-        #     structured_output=InkWallAnalysis,
-        #     model=GoogleModel.GEMINI_2_5_FLASH
-        # )
+        image_path = BASE_DIR.joinpath('static', "a95ac304-8636-4772-99e1-4ed6fabaded1-recap.jpeg")
+        analysis_result = await client.ask_to_image(
+            image_path=image_path,
+            prompt="""
+            Analyze the provided image of a retail ink wall. Perform a detailed planogram and shelf-space analysis.
+            Use the following list of known competitors to identify non-Epson products: ['HP', 'Canon', 'Brother', 'Lexmark'].
+            Based on your visual analysis, populate all fields of the requested JSON schema.
+            """,
+            structured_output=InkWallAnalysis,
+            model=GoogleModel.GEMINI_2_5_FLASH
+        )
         # print(analysis_result)
         # if analysis_result and isinstance(analysis_result.output, InkWallAnalysis):
         #     result = analysis_result.output
