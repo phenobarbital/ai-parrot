@@ -1,0 +1,407 @@
+import traceback
+from typing import AsyncIterator, List, Optional, Union, Any
+from pathlib import Path
+from logging import getLogger
+import uuid
+import time
+import json
+from datamodel.parsers.json import json_decoder  # pylint: disable=E0611 # noqa
+from navconfig import config
+from groq import AsyncGroq
+from .abstract import AbstractClient
+from ..models import (
+    AIMessage,
+    AIMessageFactory,
+    ToolCall,
+)
+from ..models.groq import GroqModel
+
+
+getLogger('httpx').setLevel('WARNING')
+getLogger('httpcore').setLevel('WARNING')
+getLogger('groq').setLevel('INFO')
+
+
+class GroqClient(AbstractClient):
+    """Client for interacting with Groq's API.
+
+    Note: Groq has a limitation where structured output (JSON mode) cannot be
+    combined with tool calling in the same request. When both are requested,
+    this client handles tools first, then makes a separate request for
+    structured output formatting.
+
+    """
+
+    agent_type: str = "groq"
+    model: str = GroqModel.LLAMA_3_3_70B_VERSATILE
+
+    def __init__(
+        self,
+        api_key: str = None,
+        base_url: str = "https://api.groq.com/openai/v1",
+        **kwargs
+    ):
+        self.api_key = api_key or config.get('GROQ_API_KEY')
+        self.base_url = base_url
+        self.base_headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}"
+        }
+        super().__init__(**kwargs)
+        self.client = AsyncGroq(api_key=self.api_key)
+
+    def _prepare_groq_tools(self) -> List[dict]:
+        """Convert registered tools to Groq format."""
+        if not self.tools:
+            return []
+
+        groq_tools = []
+        for tool in self.tools.values():
+            groq_tools.append({
+                "type": "function",
+                "function": {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "parameters": tool.input_schema
+                }
+            })
+        return groq_tools
+
+    def _prepare_structured_output_format(self, structured_output: type) -> dict:
+        """Prepare response format for structured output."""
+        if not structured_output:
+            return {}
+
+        # Handle Pydantic models
+        if hasattr(structured_output, 'model_json_schema'):
+            schema = structured_output.model_json_schema()
+            return {
+                "response_format": {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": structured_output.__name__.lower(),
+                        "schema": schema
+                    }
+                }
+            }
+
+        # Fallback for other types
+        return {
+            "response_format": {
+                "type": "json_object"
+            }
+        }
+
+    async def ask(
+        self,
+        prompt: str,
+        model: str = GroqModel.LLAMA_3_3_70B_VERSATILE,
+        max_tokens: int = 4096,
+        temperature: float = 0.1,
+        top_p: float = 0.9,
+        files: Optional[List[Union[str, Path]]] = None,
+        system_prompt: Optional[str] = None,
+        structured_output: Optional[type] = None,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None
+    ) -> AIMessage:
+        """Ask Groq a question with optional conversation memory.
+
+        Args:
+            prompt (str): The question or prompt to ask.
+            model (str): The Groq model to use.
+            max_tokens (int): Maximum tokens for the response.
+            temperature (float): Sampling temperature.
+            top_p (float): Top-p sampling.
+            files (Optional[List[Union[str, Path]]]): Optional files to attach.
+            system_prompt (Optional[str]): Optional system prompt for the conversation.
+            structured_output (Optional[type]): Optional Pydantic model for structured output.
+            user_id (Optional[str]): User identifier for conversation memory.
+            session_id (Optional[str]): Session identifier for conversation memory.
+        Returns:
+            AIMessage: The response from Groq.
+        """
+
+        # Generate unique turn ID for tracking
+        turn_id = str(uuid.uuid4())
+        original_prompt = prompt
+
+        messages, conversation_session, system_prompt = await self._prepare_conversation_context(
+            prompt, files, user_id, session_id, system_prompt
+        )
+
+        if system_prompt:
+            messages.insert(0, {"role": "system", "content": system_prompt})
+
+        # Prepare tools
+        tools = self._prepare_groq_tools()
+
+        # Groq doesn't support combining structured output with tools
+        # Priority: tools first, then structured output in separate request if needed
+        use_tools = bool(tools)
+        use_structured_output = bool(structured_output)
+
+        if use_tools and use_structured_output:
+            # Handle tools first, structured output later
+            structured_output_for_later = structured_output
+            structured_output = None
+        else:
+            structured_output_for_later = None
+
+        # Track tool calls for the response
+        all_tool_calls = []
+
+        # Prepare request arguments
+        request_args = {
+            "model": model,
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "top_p": top_p,
+            "stream": False
+        }
+
+        # Add tools if available and not conflicting with structured output
+        if use_tools and not use_structured_output:
+            request_args["tools"] = tools
+            request_args["tool_choice"] = "auto"
+            # Enable parallel tool calls for supported models
+            if model != GroqModel.GEMMA2_9B_IT:
+                request_args["parallel_tool_calls"] = True
+
+        # Add structured output format if no tools
+        if structured_output and not use_tools:
+            request_args.update(
+                self._prepare_structured_output_format(structured_output)
+            )
+
+        # Make initial request
+        response = await self.client.chat.completions.create(**request_args)
+        result = response.choices[0].message
+
+        # Handle tool calls in a loop (only if tools were enabled)
+        if use_tools:
+            while result.tool_calls:
+                tool_results = []
+
+                for tool_call in result.tool_calls:
+                    tool_name = tool_call.function.name
+                    try:
+                        tool_args = self._json.loads(tool_call.function.arguments)
+                    except json.JSONDecodeError:
+                        tool_args = json_decoder(tool_call.function.arguments)
+
+                    # Create ToolCall object and execute
+                    tc = ToolCall(
+                        id=tool_call.id,
+                        name=tool_name,
+                        arguments=tool_args
+                    )
+
+                    try:
+                        start_time = time.time()
+                        tool_result = await self._execute_tool(tool_name, tool_args)
+                        execution_time = time.time() - start_time
+                        tc.result = tool_result
+                        tc.execution_time = execution_time
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "name": tool_name,
+                            "content": str(tool_result)
+                        })
+                    except Exception as e:
+                        tc.error = str(e)
+                        trace = traceback.format_exc()
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "name": tool_name,
+                            "content": f"Error: {str(e)}",
+                            "traceback": trace
+                        })
+
+                    all_tool_calls.append(tc)
+
+                # Add assistant message with tool calls
+                messages.append({
+                    "role": "assistant",
+                    "content": result.content,
+                    "tool_calls": [
+                        tc.dict() if hasattr(tc, 'dict') else tc for tc in result.tool_calls
+                    ]
+                })
+
+                # Continue conversation with tool results
+                continue_args = {
+                    "model": model,
+                    "messages": messages,
+                    "max_tokens": max_tokens,
+                    "temperature": temperature,
+                    "top_p": top_p,
+                    "stream": False
+                }
+
+                response = await self.client.chat.completions.create(**continue_args)
+                result = response.choices[0].message
+
+        # Handle structured output after tools if needed
+        final_output = None
+        if structured_output_for_later and use_tools:
+            # Add the final tool response to messages
+            if result.content:
+                messages.append({
+                    "role": "assistant",
+                    "content": result.content
+                })
+
+            # Make a new request for structured output
+            messages.append({
+                "role": "user",
+                "content": "Please format the above response according to the requested structure."
+            })
+
+            structured_args = {
+                "model": model,
+                "messages": messages,
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+                "top_p": top_p,
+                "stream": False
+            }
+
+            structured_args.update(
+                self._prepare_structured_output_format(structured_output_for_later)
+            )
+
+            structured_response = await self.client.chat.completions.create(**structured_args)
+            result = structured_response.message if hasattr(
+                structured_response,
+                'message'
+            ) else structured_response.choices[0].message
+
+            # Parse structured output
+            try:
+                if hasattr(structured_output_for_later, 'model_validate_json'):
+                    final_output = structured_output_for_later.model_validate_json(result.content)
+                elif hasattr(structured_output_for_later, 'model_validate'):
+                    parsed_json = json.loads(result.content)
+                    final_output = structured_output_for_later.model_validate(parsed_json)
+                else:
+                    final_output = json.loads(result.content)
+            except:
+                final_output = result.content
+
+        elif structured_output:
+            # Handle structured output for non-tool requests
+            try:
+                if hasattr(structured_output, 'model_validate_json'):
+                    final_output = structured_output.model_validate_json(result.content)
+                elif hasattr(structured_output, 'model_validate'):
+                    parsed_json = json.loads(result.content)
+                    final_output = structured_output.model_validate(parsed_json)
+                else:
+                    final_output = json.loads(result.content)
+            except:
+                final_output = result.content
+        else:
+            final_output = result.content
+
+        # Add final assistant message to conversation
+        messages.append({
+            "role": "assistant",
+            "content": result.content
+        })
+
+        # Update conversation memory
+        await self._update_conversation_memory(
+            user_id,
+            session_id,
+            conversation_session,
+            messages,
+            system_prompt
+        )
+
+        # Create AIMessage using factory
+        ai_message = AIMessageFactory.from_groq(
+            response=response,
+            input_text=original_prompt,
+            model=model,
+            user_id=user_id,
+            session_id=session_id,
+            turn_id=turn_id,
+            structured_output=final_output if final_output != result.content else None
+        )
+
+        # Add tool calls to the response
+        ai_message.tool_calls = all_tool_calls
+
+        return ai_message
+
+    async def ask_stream(
+        self,
+        prompt: str,
+        model: str = GroqModel.LLAMA_3_3_70B_VERSATILE,
+        max_tokens: int = 4096,
+        temperature: float = 0.1,
+        top_p: float = 0.9,
+        files: Optional[List[Union[str, Path]]] = None,
+        system_prompt: Optional[str] = None,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None
+    ) -> AsyncIterator[str]:
+        """Stream Groq's response with optional conversation memory."""
+
+        # Generate unique turn ID for tracking
+        turn_id = str(uuid.uuid4())
+
+        messages, conversation_session, system_prompt = await self._prepare_conversation_context(
+            prompt, files, user_id, session_id, system_prompt
+        )
+
+        if system_prompt:
+            messages.insert(0, {"role": "system", "content": system_prompt})
+
+        # Prepare request arguments
+        request_args = {
+            "model": model,
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "top_p": top_p,
+            "stream": True
+        }
+
+        # Note: For streaming, we don't handle tools in this version
+        # You might want to implement a more sophisticated streaming + tools handler
+        tools = self._prepare_groq_tools()
+        if tools:
+            request_args["tools"] = tools
+            request_args["tool_choice"] = "auto"
+
+        response_stream = await self.client.chat.completions.create(**request_args)
+
+        assistant_content = ""
+        async for chunk in response_stream:
+            if chunk.choices and chunk.choices[0].delta.content:
+                text_chunk = chunk.choices[0].delta.content
+                assistant_content += text_chunk
+                yield text_chunk
+
+        # Update conversation memory if content was generated
+        if assistant_content:
+            messages.append({
+                "role": "assistant",
+                "content": assistant_content
+            })
+            await self._update_conversation_memory(
+                user_id,
+                session_id,
+                conversation_session,
+                messages,
+                system_prompt
+            )
+
+    async def batch_ask(self, requests):
+        """Process multiple requests in batch."""
+        return await super().batch_ask(requests)
