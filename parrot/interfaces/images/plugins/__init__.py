@@ -9,6 +9,7 @@ from .exif import EXIFPlugin
 from .zerodetect import ZeroShotDetectionPlugin
 from .classify import ClassificationPlugin
 from .detect import DetectionPlugin
+from .analisys import AnalysisPlugin
 
 
 PLUGINS = {
@@ -19,4 +20,5 @@ PLUGINS = {
     "zeroshot": ZeroShotDetectionPlugin,
     "classification": ClassificationPlugin,
     'detection': DetectionPlugin,
+    'analysis': AnalysisPlugin
 }
