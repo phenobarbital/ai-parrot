@@ -20,6 +20,7 @@ from .outputs import (
     SpeechGenerationPrompt,
     VideoGenerationPrompt
 )
+from .google import GoogleModel, TTSVoice
 
 
 __all__ = (
@@ -36,5 +37,7 @@ __all__ = (
     "ImageGenerationPrompt",
     "SpeakerConfig",
     "SpeechGenerationPrompt",
-    "VideoGenerationPrompt"
+    "VideoGenerationPrompt",
+    "GoogleModel",
+    "TTSVoice",
 )
