@@ -8,6 +8,7 @@ from pathlib import Path
 from dataclasses import dataclass, asdict
 from abc import ABC, abstractmethod
 import io
+from pydantic import ValidationError
 import yaml
 from datamodel.exceptions import ParserError  # pylint: disable=E0611 # noqa
 from datamodel.parsers.json import json_encoder, json_decoder, JSONContent  # pylint: disable=E0611 # noqa
@@ -446,6 +447,29 @@ class AbstractClient(ABC):
             conversation_session.messages = messages
             await self.conversation_memory.update_session(conversation_session)
 
+    def _extract_json_from_response(self, text: str) -> str:
+        """Extract JSON from Claude's response, handling markdown code blocks and extra text."""
+        # First, try to find JSON in markdown code blocks
+        json_pattern = r'```(?:json)?\s*(\{.*?\})\s*```'
+        match = re.search(json_pattern, text, re.DOTALL)
+        if match:
+            return match.group(1).strip()
+
+        # Try to find JSON object in the text (looking for { ... })
+        json_object_pattern = r'\{.*\}'
+        match = re.search(json_object_pattern, text, re.DOTALL)
+        if match:
+            return match.group(0).strip()
+
+        # Try to find JSON array in the text (looking for [ ... ])
+        json_array_pattern = r'\[.*\]'
+        match = re.search(json_array_pattern, text, re.DOTALL)
+        if match:
+            return match.group(0).strip()
+
+        # If no JSON found, return the original text
+        return text.strip()
+
     async def _parse_structured_output(
         self,
         response_text: str,
@@ -469,8 +493,14 @@ class AbstractClient(ABC):
                         return output_type.model_validate(parsed_json)
                     else:
                         return self._json.loads(response_text)
-                except (ParserError, json.JSONDecodeError):
-                    return response_text
+                except (ParserError, ValidationError, json.JSONDecodeError):
+                    self.logger.warning(f"Standard parsing failed: {e}")
+                    try:
+                        # Try fallback with field mapping
+                        json_text = self._extract_json_from_response(response_text)
+                        parsed_json = self._json.loads(json_text)
+                    except (ParserError, ValidationError, json.JSONDecodeError):
+                        self.logger.warning(f"Fallback parsing failed: {e}")
             elif structured_output.format == OutputFormat.TEXT:
                 # Parse natural language text into structured format
                 return await self._parse_text_to_structure(
@@ -492,13 +522,13 @@ class AbstractClient(ABC):
                 raise ValueError(
                     f"Unsupported output format: {structured_output.format}"
                 )
-        except (ParserError, ValueError) as e:
-            self.logger.error(f"Error parsing structured output: {e}")
+        except (ParserError, ValueError) as exc:
+            self.logger.error(f"Error parsing structured output: {exc}")
             # Fallback to raw text if parsing fails
             return response_text
-        except Exception as e:
+        except Exception as exc:
             self.logger.error(
-                f"Unexpected error during structured output parsing: {e}"
+                f"Unexpected error during structured output parsing: {exc}"
             )
             # Fallback to raw text
             return response_text

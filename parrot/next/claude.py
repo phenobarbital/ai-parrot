@@ -1,11 +1,16 @@
 import asyncio
 import json
 from typing import AsyncIterator, Dict, List, Optional, Union, Any
-from dataclasses import dataclass
+import base64
+import io
 import time
 from enum import Enum
-from pathlib import Path
 import uuid
+from pathlib import Path
+import mimetypes
+from PIL import Image
+from pydantic import BaseModel, Field
+from typing import List as TypingList
 from navconfig import config
 from datamodel.exceptions import ParserError  # pylint: disable=E0611 # noqa
 from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611 # noqa
@@ -14,7 +19,10 @@ from .models import (
     AIMessage,
     AIMessageFactory,
     ToolCall,
-    CompletionUsage
+    CompletionUsage,
+    OutputFormat,
+    StructuredOutputConfig,
+    ObjectDetectionResult
 )
 
 class ClaudeModel(Enum):
@@ -56,7 +64,7 @@ class ClaudeClient(AbstractClient):
         structured_output: Optional[type] = None,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None
-    ) -> Union[MessageResponse, Any]:
+    ) -> AIMessage:
         """Ask Claude a question with optional conversation memory."""
         if not self.session:
             raise RuntimeError("Client not initialized. Use async context manager.")
@@ -68,6 +76,15 @@ class ClaudeClient(AbstractClient):
 
         messages, conversation_session, system_prompt = await self._prepare_conversation_context(
             prompt, files, user_id, session_id, system_prompt)
+
+        if isinstance(structured_output, StructuredOutputConfig):
+            output_config = structured_output
+        else:
+            # Backward compatibility - assume JSON
+            output_config = StructuredOutputConfig(
+                output_type=structured_output,
+                format=OutputFormat.JSON
+            ) if structured_output else None
 
         payload = {
             "model": model.value if isinstance(model, Enum) else model,
@@ -150,16 +167,14 @@ class ClaudeClient(AbstractClient):
                 if content_block["type"] == "text":
                     text_content += content_block["text"]
 
+
+        if structured_output:
             try:
-                if hasattr(structured_output, 'model_validate_json'):
-                    final_output = structured_output.model_validate_json(text_content)
-                elif hasattr(structured_output, 'model_validate'):
-                    parsed_json = json.loads(text_content)
-                    final_output = structured_output.model_validate(parsed_json)
-                else:
-                    final_output = json.loads(text_content)
-            except Exception as e:
-                # If structured parsing fails, keep the original text
+                final_output = await self._parse_structured_output(
+                    text_content,
+                    output_config
+                )
+            except Exception:
                 final_output = text_content
 
         # Update conversation memory
@@ -332,3 +347,239 @@ class ClaudeClient(AbstractClient):
                 return results
         else:
             raise RuntimeError("No results URL provided in batch status")
+
+    def _encode_image_for_claude(
+        self,
+        image: Union[Path, bytes, Image.Image]
+    ) -> Dict[str, Any]:
+        """Encode image for Claude's vision API."""
+
+        if isinstance(image, Path):
+            if not image.exists():
+                raise FileNotFoundError(f"Image file not found: {image}")
+
+            # Get mime type
+            mime_type, _ = mimetypes.guess_type(str(image))
+            if not mime_type or not mime_type.startswith('image/'):
+                mime_type = "image/jpeg"  # Default fallback
+
+            # Read and encode the file
+            with open(image, "rb") as f:
+                encoded_data = base64.b64encode(f.read()).decode('utf-8')
+
+        elif isinstance(image, bytes):
+            # Handle raw bytes
+            mime_type = "image/jpeg"  # Default, could be improved with image format detection
+            encoded_data = base64.b64encode(image).decode('utf-8')
+
+        elif isinstance(image, Image.Image):
+            # Handle PIL Image object
+            buffer = io.BytesIO()
+            # Save as JPEG by default (could be made configurable)
+            image_format = "JPEG"
+            if image.mode in ("RGBA", "LA", "P"):
+                # Convert to RGB for JPEG compatibility
+                image = image.convert("RGB")
+
+            image.save(buffer, format=image_format)
+            encoded_data = base64.b64encode(buffer.getvalue()).decode('utf-8')
+            mime_type = f"image/{image_format.lower()}"
+
+        else:
+            raise ValueError("Image must be a Path, bytes, or PIL.Image object.")
+
+        return {
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": mime_type,
+                "data": encoded_data
+            }
+        }
+
+    async def ask_to_image(
+        self,
+        prompt: str,
+        image: Union[Path, bytes, Image.Image],
+        reference_images: Optional[List[Union[Path, bytes, Image.Image]]] = None,
+        model: Union[ClaudeModel, str] = ClaudeModel.SONNET_4,
+        max_tokens: int = 4096,
+        temperature: float = 0.1,
+        structured_output: Union[type, StructuredOutputConfig] = None,
+        count_objects: bool = False,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+    ) -> AIMessage:
+        """
+        Ask Claude a question about an image with optional conversation memory.
+
+        Args:
+            prompt (str): The question or prompt about the image.
+            image (Union[Path, bytes, Image.Image]): The primary image to analyze.
+            reference_images (Optional[List[Union[Path, bytes, Image.Image]]]): Optional reference images.
+            model (Union[ClaudeModel, str]): The Claude model to use.
+            max_tokens (int): Maximum tokens for the response.
+            temperature (float): Sampling temperature.
+            structured_output (Union[type, StructuredOutputConfig]): Optional structured output format.
+            count_objects (bool): Whether to count objects in the image (enables default JSON output).
+            user_id (Optional[str]): User identifier for conversation memory.
+            session_id (Optional[str]): Session identifier for conversation memory.
+
+        Returns:
+            AIMessage: The response from Claude about the image.
+        """
+        if not self.session:
+            raise RuntimeError("Client not initialized. Use async context manager.")
+
+        # Generate unique turn ID for tracking
+        turn_id = str(uuid.uuid4())
+        original_prompt = prompt
+
+        # Get conversation context (but don't include files since we handle images separately)
+        messages, conversation_session, system_prompt = await self._prepare_conversation_context(
+            prompt, None, user_id, session_id, None
+        )
+
+        if isinstance(structured_output, StructuredOutputConfig):
+            output_config = structured_output
+        else:
+            # Backward compatibility - assume JSON
+            output_config = StructuredOutputConfig(
+                output_type=structured_output,
+                format=OutputFormat.JSON
+            ) if structured_output else None
+
+        # Prepare the content for the current message
+        content = []
+
+        # Add the primary image first
+        primary_image_content = self._encode_image_for_claude(image)
+        content.append(primary_image_content)
+
+        # Add reference images if provided
+        if reference_images:
+            for ref_image in reference_images:
+                ref_image_content = self._encode_image_for_claude(ref_image)
+                content.append(ref_image_content)
+
+        # Add the text prompt last
+        content.append({
+            "type": "text",
+            "text": prompt
+        })
+
+        # Create the new user message with image content
+        new_message = {
+            "role": "user",
+            "content": content
+        }
+
+        # Replace the last message (which was just text) with our multimodal message
+        if messages and messages[-1]["role"] == "user":
+            messages[-1] = new_message
+        else:
+            messages.append(new_message)
+
+        # Prepare the payload
+        payload = {
+            "model": model.value if isinstance(model, ClaudeModel) else model,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "messages": messages
+        }
+
+        if system_prompt:
+            payload["system"] = system_prompt
+
+
+        # Add system prompt for structured output
+        if structured_output:
+            structured_system_prompt = "You are a precise assistant that responds only with valid JSON when requested. When asked for structured output, respond with ONLY the JSON object, no additional text, explanations, or markdown formatting."
+            if system_prompt:
+                payload["system"] = f"{system_prompt}\n\n{structured_system_prompt}"
+            else:
+                payload["system"] = structured_system_prompt
+        elif system_prompt:
+            payload["system"] = system_prompt
+
+        if count_objects and not structured_output:
+            # Import ObjectDetectionResult from models
+            try:
+                structured_output = ObjectDetectionResult
+            except ImportError:
+                # Fallback - define a simple structure if import fails
+                class SimpleObjectDetection(BaseModel):
+                    """Simple object detection result structure."""
+                    analysis: str = Field(description="Detailed analysis of the image")
+                    total_count: int = Field(description="Total number of objects detected")
+                    objects: TypingList[str] = Field(
+                        default_factory=list,
+                        description="List of detected objects"
+                    )
+
+                structured_output = SimpleObjectDetection
+            output_config = StructuredOutputConfig(
+                output_type=structured_output,
+                format=OutputFormat.JSON
+            )
+
+        # Note: Claude's vision models typically don't support tool calling
+        # So we skip tool preparation for vision requests
+        # Track tool calls (will likely be empty for vision requests)
+        all_tool_calls = []
+
+        # Make the API request
+        async with self.session.post(f"{self.base_url}/v1/messages", json=payload) as response:
+            response.raise_for_status()
+            result = await response.json()
+
+        # Handle structured output
+        final_output = None
+        text_content = ""
+
+            # Extract text content from Claude's response
+        for content_block in result.get("content", []):
+            if content_block.get("type") == "text":
+                text_content += content_block.get("text", "")
+
+        if structured_output:
+            try:
+                final_output = await self._parse_structured_output(
+                    text_content,
+                    output_config
+                )
+            except Exception:
+                final_output = text_content
+        else:
+            final_output = text_content
+
+        # Add assistant response to messages for conversation memory
+        assistant_message = {"role": "assistant", "content": result["content"]}
+        messages.append(assistant_message)
+
+        # Update conversation memory
+        await self._update_conversation_memory(
+            user_id,
+            session_id,
+            conversation_session,
+            messages,
+            system_prompt
+        )
+
+        # Create AIMessage using factory
+        ai_message = AIMessageFactory.from_claude(
+            response=result,
+            input_text=f"[Image Analysis]: {original_prompt}",
+            model=model.value if isinstance(model, ClaudeModel) else model,
+            user_id=user_id,
+            session_id=session_id,
+            turn_id=turn_id,
+            structured_output=final_output,
+            tool_calls=all_tool_calls
+        )
+
+        # Ensure text field is properly set for property access
+        if not structured_output:
+            ai_message.text = final_output
+
+        return ai_message
