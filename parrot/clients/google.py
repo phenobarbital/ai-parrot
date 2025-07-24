@@ -1,15 +1,13 @@
 import sys
 import asyncio
 from datetime import datetime
-from typing import AsyncIterator, List, Optional, Union
+from typing import Any, AsyncIterator, Dict, List, Optional, Union
 import logging
 import time
 from pathlib import Path
-import mimetypes
 import io
 import uuid
 from PIL import Image
-import ffmpeg
 from google import genai
 from google.genai.types import (
     GenerateContentConfig,
@@ -35,12 +33,15 @@ from ..models import (
     GoogleModel,
     TTSVoice
 )
+from ..stores.pg import PgVectorStore
 
 
 logging.getLogger(
     name='PIL.TiffImagePlugin'
 ).setLevel(logging.ERROR)  # Suppress TiffImagePlugin warnings
-
+logging.getLogger(
+    name='google.genai'
+).setLevel(logging.WARNING)  # Suppress GenAI warnings
 
 class GoogleGenAIClient(AbstractClient):
     """
@@ -969,3 +970,101 @@ class GoogleGenAIClient(AbstractClient):
             raw_response=None # Response object isn't easily serializable
         )
         return ai_message
+
+    async def question(
+        self,
+        prompt: str,
+        model: Union[str, GoogleModel] = GoogleModel.GEMINI_2_5_FLASH,
+        max_tokens: Optional[int] = None,
+        temperature: Optional[float] = None,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        # RAG specific parameters
+        table: str = None,
+        schema: str = 'public',
+        top_k_results: int = 3,
+        search_metric: str = 'COSINE',
+        metadata_filters: Optional[Dict[str, Any]] = None,
+    ) -> AIMessage:
+        """
+        Answers a question using a RAG pipeline with a PostgreSQL vector store.
+
+        This method first retrieves relevant context from the vector store and then
+        injects it into the prompt before asking the generative model.
+
+        Args:
+            prompt (str): The user's question.
+            model: The generative model to use.
+            ... (other model parameters)
+            table (str): The database table for vector search.
+            schema (str): The database schema for the table.
+            top_k_results (int): The number of context documents to retrieve.
+            search_metric (str): The distance metric for vector search (e.g., 'COSINE').
+            metadata_filters (dict): Filters to apply to the vector search.
+
+        Returns:
+            An AIMessage object containing the model's response.
+        """
+        self.logger.info(
+            f"Initiating RAG pipeline for prompt: '{prompt[:50]}...'"
+        )
+
+        # 1. Initialize the vector store and retrieve context
+        try:
+            store = PgVectorStore()
+            async with store:
+                search_results = await store.similarity_search(
+                    query=prompt,
+                    table=table,
+                    schema=schema,
+                    limit=top_k_results,
+                    metadata_filters=metadata_filters,
+                    metric=search_metric,
+                )
+        except Exception as e:
+            self.logger.error(
+                f"Failed to retrieve context from vector store: {e}"
+            )
+            # Fallback: Ask the question without context
+            return await self.ask(
+                prompt=prompt,
+                model=model,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                user_id=user_id,
+                session_id=session_id
+            )
+
+        # 2. Format the retrieved context
+        context = "\n\n---\n\n".join(
+            [f"Source {i+1}:\n{res.content}" for i, res in enumerate(search_results)]
+        )
+
+        if not context:
+            self.logger.warning(
+                "No context found from vector search. Asking without context."
+            )
+            context = "No context was found."
+
+        # 3. Create the system prompt with the context
+        system_prompt = f"""
+You are an expert assistant. Your task is to answer the user's question based on the provided context.
+If the context does not contain the answer, state that you cannot answer based on the information you have.
+Do not use any external knowledge.
+
+### Context
+{context}
+"""
+
+        # 4. Ask the model with the augmented prompt
+        self.logger.info("Sending augmented prompt to the generative model.")
+        return await self.ask(
+            prompt=prompt,
+            model=model,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            system_prompt=system_prompt,
+            user_id=user_id,
+            session_id=session_id,
+            stateless=True # RAG is typically stateless for each question
+        )
