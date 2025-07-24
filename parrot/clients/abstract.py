@@ -31,6 +31,7 @@ from ..models import (
     StructuredOutputConfig,
     OutputFormat
 )
+from . import LLM_PRESETS
 
 
 def register_python_tool(
@@ -115,10 +116,24 @@ class AbstractClient(ABC):
     def __init__(
         self,
         conversation_memory: Optional[ConversationMemory] = None,
+        preset: Optional[str] = None,
         **kwargs
     ):
         self.session: Optional[aiohttp.ClientSession] = None
         self.tools: Dict[str, ToolDefinition] = {}
+        if preset:
+            preset_config = LLM_PRESETS.get(preset, LLM_PRESETS['default'])
+            # define temp, top_k, top_p, max_tokens from selected preset:
+            self.temperature = preset_config.get('temperature', 0.4)
+            self.top_k = preset_config.get('top_k', 40)
+            self.top_p = preset_config.get('top_p', 0.9)
+            self.max_tokens = preset_config.get('max_tokens', 1024)
+        else:
+            # define default values from preset default:
+            self.temperature = kwargs.get('temperature', 0.4)
+            self.top_k = kwargs.get('top_k', 40)
+            self.top_p = kwargs.get('top_p', 0.9)
+            self.max_tokens = kwargs.get('max_tokens', 1024)
         self.conversation_memory = conversation_memory or InMemoryConversation()
         self.base_headers.update(kwargs.get('headers', {}))
         self.api_key = kwargs.get('api_key', None)
