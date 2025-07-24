@@ -20,7 +20,9 @@ from ..models import (
     AIMessage,
     AIMessageFactory,
     ToolCall,
-    CompletionUsage
+    CompletionUsage,
+    StructuredOutputConfig,
+    OutputFormat
 )
 from ..models.google import VertexAIModel
 
@@ -68,8 +70,8 @@ class VertexAIClient(AbstractClient):
         self,
         prompt: str,
         model: Union[VertexAIModel, str] = VertexAIModel.GEMINI_2_5_FLASH,
-        max_tokens: int = 8192,
-        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
+        temperature: Optional[float] = None,
         files: Optional[List[Union[str, Path]]] = None,
         system_prompt: Optional[str] = None,
         structured_output: Optional[type] = None,
@@ -102,9 +104,10 @@ class VertexAIClient(AbstractClient):
                 )
 
         generation_config = {
-            "max_output_tokens": max_tokens,
-            "temperature": temperature,
+            "max_output_tokens": max_tokens or self.max_tokens,
+            "temperature": temperature or self.temperature,
         }
+        output_config = self._get_structured_config(structured_output)
 
         # Track tool calls for the response
         all_tool_calls = []
@@ -181,14 +184,19 @@ class VertexAIClient(AbstractClient):
         final_output = None
         if structured_output:
             try:
-                if hasattr(structured_output, 'model_validate_json'):
-                    final_output = structured_output.model_validate_json(response.text)
-                elif hasattr(structured_output, 'model_validate'):
-                    parsed_json = self._json.loads(response.text)
-                    final_output = structured_output.model_validate(parsed_json)
-                else:
-                    final_output = self._json.loads(response.text)
-            except Exception:
+                if not isinstance(structured_output, StructuredOutputConfig):
+                    structured_output = StructuredOutputConfig(
+                        output_type=structured_output,
+                        format=OutputFormat.JSON
+                    )
+                final_output = await self._parse_structured_output(
+                    response.text,
+                    structured_output
+                )
+            except Exception as e:
+                self.logger.error(
+                    f"Failed to parse structured output from vision model: {e}"
+                )
                 final_output = response.text
 
         # Update conversation memory
@@ -236,8 +244,8 @@ class VertexAIClient(AbstractClient):
         self,
         prompt: str,
         model: Union[VertexAIModel, str] = VertexAIModel.GEMINI_2_5_FLASH,
-        max_tokens: int = 8192,
-        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
+        temperature: Optional[float] = None,
         files: Optional[List[Union[str, Path]]] = None,
         system_prompt: Optional[str] = None,
         user_id: Optional[str] = None,
@@ -264,8 +272,8 @@ class VertexAIClient(AbstractClient):
                 )
 
         generation_config = {
-            "max_output_tokens": max_tokens,
-            "temperature": temperature,
+            "max_output_tokens": max_tokens or self.max_tokens,
+            "temperature": temperature or self.temperature,
         }
 
         multimodal_model = GenerativeModel(model_name=model, system_instruction=system_prompt)

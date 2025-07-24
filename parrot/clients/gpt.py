@@ -55,7 +55,8 @@ class OpenAIClient(AbstractClient):
         super().__init__(**kwargs)
         self.client = AsyncOpenAI(
             api_key=self.api_key,
-            base_url=base_url
+            base_url=base_url,
+            timeout=config.get('OPENAI_TIMEOUT', 60),
         )
 
     async def __aenter__(self):
@@ -95,8 +96,8 @@ class OpenAIClient(AbstractClient):
         self,
         prompt: str,
         model: Union[str, OpenAIModel] = OpenAIModel.GPT4_TURBO,
-        max_tokens: int = 4096,
-        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
+        temperature: Optional[float] = None,
         files: Optional[List[Union[str, Path]]] = None,
         system_prompt: Optional[str] = None,
         structured_output: Optional[type] = None,
@@ -161,8 +162,8 @@ class OpenAIClient(AbstractClient):
         response = await self._chat_completion(
             model=model_str,
             messages=messages,
-            max_tokens=max_tokens,
-            temperature=temperature,
+            max_tokens=max_tokens or self.max_tokens,
+            temperature=temperature or self.temperature,
             stream=False,
             **args
         )
@@ -222,8 +223,8 @@ class OpenAIClient(AbstractClient):
             response = await self._chat_completion(
                 model=model_str,
                 messages=messages,
-                max_tokens=max_tokens,
-                temperature=temperature,
+                max_tokens=max_tokens or self.max_tokens,
+                temperature=temperature or self.temperature,
                 stream=False,
                 **args
             )
@@ -278,8 +279,8 @@ class OpenAIClient(AbstractClient):
         self,
         prompt: str,
         model: Union[str, OpenAIModel] = OpenAIModel.GPT4_TURBO,
-        max_tokens: int = 4096,
-        temperature: float = 0.7,
+        max_tokens: int = None,
+        temperature: float = None,
         files: Optional[List[Union[str, Path]]] = None,
         system_prompt: Optional[str] = None,
         user_id: Optional[str] = None,
@@ -320,8 +321,8 @@ class OpenAIClient(AbstractClient):
         response_stream = await self.client.chat.completions.create(
             model=model_str,
             messages=messages,
-            max_tokens=max_tokens,
-            temperature=temperature,
+            max_tokens=max_tokens or self.max_tokens,
+            temperature=temperature or self.temperature,
             stream=True,
             **args
         )
@@ -393,8 +394,8 @@ class OpenAIClient(AbstractClient):
         image: Union[Path, bytes, Image.Image],
         reference_images: Optional[List[Union[Path, bytes, Image.Image]]] = None,
         model: str = "gpt-4-turbo",
-        max_tokens: int = 4096,
-        temperature: float = 0.7,
+        max_tokens: int = None,
+        temperature: float = None,
         structured_output: Optional[type] = None,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
@@ -426,8 +427,8 @@ class OpenAIClient(AbstractClient):
         response = await self.client.chat.completions.create(
             model=model,
             messages=messages,
-            max_tokens=max_tokens,
-            temperature=temperature
+            max_tokens=max_tokens or self.max_tokens,
+            temperature=temperature or self.temperature,
         )
 
         result = response.choices[0].message
