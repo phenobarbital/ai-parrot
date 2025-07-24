@@ -5,89 +5,22 @@ from abc import ABC
 import importlib
 from typing import Any, List, Union, Optional
 from collections.abc import Callable
-import os
 import uuid
 from string import Template
 import asyncio
 from aiohttp import web
-from langgraph.checkpoint.memory import MemorySaver
-from langchain_core.vectorstores import VectorStoreRetriever
-from langchain.memory import (
-    ConversationBufferMemory,
-    ConversationBufferWindowMemory
-)
-from langchain.prompts import (
-    ChatPromptTemplate,
-    SystemMessagePromptTemplate,
-    HumanMessagePromptTemplate,
-    PromptTemplate
-)
-from langchain.retrievers import (
-    EnsembleRetriever,
-)
-from langchain.docstore.document import Document
-from langchain.chains.retrieval_qa.base import RetrievalQA
-from langchain.chains.conversational_retrieval.base import (
-    ConversationalRetrievalChain
-)
-from langchain_community.chat_message_histories import (
-    RedisChatMessageHistory
-)
-from langchain_community.retrievers import BM25Retriever
-from pydantic_core._pydantic_core import ValidationError  # pylint: disable=E0611
 # for exponential backoff
 import backoff # for exponential backoff
 from datamodel.exceptions import ValidationError as DataError  # pylint: disable=E0611
 from navconfig.logging import logging
-from navigator_auth.conf import AUTH_SESSION_OBJECT
+from navigator_auth.conf import AUTH_SESSION_OBJECT  # pylint: disable=E0611
 from ..interfaces import DBInterface
 from ..exceptions import ConfigError  # pylint: disable=E0611
 from ..conf import (
     REDIS_HISTORY_URL,
     EMBEDDING_DEFAULT_MODEL
 )
-
-## LLM configuration
-from ..llms import LLM_PRESETS, AbstractLLM
-
-# Vertex
-try:
-    from ..llms.vertex import VertexLLM
-    VERTEX_ENABLED = True
-except (ModuleNotFoundError, ImportError):
-    VERTEX_ENABLED = False
-
-# Google
-try:
-    from ..llms.google import GoogleGenAI
-    GOOGLE_ENABLED = True
-except (ModuleNotFoundError, ImportError):
-    GOOGLE_ENABLED = False
-
-# Anthropic:
-try:
-    from ..llms.anthropic import AnthropicLLM
-    ANTHROPIC_ENABLED = True
-except (ModuleNotFoundError, ImportError):
-    ANTHROPIC_ENABLED = False
-
-# OpenAI
-try:
-    from ..llms.openai import OpenAILLM
-    OPENAI_ENABLED = True
-except (ModuleNotFoundError, ImportError):
-    OPENAI_ENABLED = False
-
-# Groq
-try:
-    from ..llms.groq import GroqLLM
-    GROQ_ENABLED = True
-except (ModuleNotFoundError, ImportError):
-    GROQ_ENABLED = False
-
 from ..utils import SafeDict
-# Chat Response:
-from ..models import ChatResponse
 from .prompts import (
     BASIC_SYSTEM_PROMPT,
     BASIC_HUMAN_PROMPT,
@@ -96,26 +29,15 @@ from .prompts import (
     DEFAULT_CAPABILITIES,
     DEFAULT_BACKHISTORY
 )
-from .interfaces import EmptyRetriever
-## Vector Stores:
-from ..stores import AbstractStore, supported_stores, EmptyStore
-from .retrievals import MultiVectorStoreRetriever
-
-
-os.environ["GRPC_ENABLE_FORK_SUPPORT"] = "0"
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"  # Hide TensorFlow logs if present
+from ..clients import LLM_PRESETS
+from ..models import (
+    AIMessage,
+    AIMessageFactory
+)
 
 logging.getLogger(name='primp').setLevel(logging.INFO)
 logging.getLogger(name='rquest').setLevel(logging.INFO)
 logging.getLogger("grpc").setLevel(logging.CRITICAL)
-logging.getLogger("tensorflow").setLevel(logging.CRITICAL)
-logging.getLogger("transformers").setLevel(logging.CRITICAL)
-logging.getLogger("pymilvus").setLevel(logging.INFO)
-
-
-def predicate(exception):
-    """Return True if we should retry, False otherwise."""
-    return not isinstance(exception, (ValidationError, RuntimeError, DataError))
 
 
 class AbstractBot(DBInterface, ABC):
@@ -123,7 +45,6 @@ class AbstractBot(DBInterface, ABC):
 
     This class is an abstract representation a base abstraction for all Chatbots.
     """
-    # TODO: make tensor and embeddings optional.
     # Define system prompt template
     system_prompt_template = BASIC_SYSTEM_PROMPT
 
@@ -158,8 +79,6 @@ class AbstractBot(DBInterface, ABC):
         )
         # Optional aiohttp Application:
         self.app: Optional[web.Application] = None
-        # Optional Redis Memory Saver:
-        self.memory_saver: Optional[MemorySaver] = None
         # Start initialization:
         self.kb = None
         self.knowledge_base: List[str] = []
@@ -175,9 +94,9 @@ class AbstractBot(DBInterface, ABC):
         self.backstory = kwargs.get('backstory', DEFAULT_BACKHISTORY)
         self.rationale = kwargs.get('rationale', self.default_rationale())
         self.context = kwargs.get('use_context', True)
-        # Definition of LLM
+        # Definition of LLM Client
         self._llm_class: str = None
-        self._default_llm: str = kwargs.get('use_llm', 'vertexai')
+        self._default_llm: str = kwargs.get('use_llm', 'google')
         self._use_chat: bool = kwargs.get('use_chat', False)
         self._llm_model = kwargs.get('model_name', 'gemini-2.0-flash-001')
         self._llm_preset: str = kwargs.get('preset', None)

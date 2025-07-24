@@ -56,8 +56,8 @@ class ClaudeClient(AbstractClient):
         self,
         prompt: str,
         model: Union[Enum, str] = ClaudeModel.SONNET_4,
-        max_tokens: int = 4096,
-        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
+        temperature: Optional[float] = None,
         files: Optional[List[Union[str, Path]]] = None,
         system_prompt: Optional[str] = None,
         structured_output: Optional[type] = None,
@@ -76,19 +76,14 @@ class ClaudeClient(AbstractClient):
         messages, conversation_session, system_prompt = await self._prepare_conversation_context(
             prompt, files, user_id, session_id, system_prompt)
 
-        if isinstance(structured_output, StructuredOutputConfig):
-            output_config = structured_output
-        else:
-            # Backward compatibility - assume JSON
-            output_config = StructuredOutputConfig(
-                output_type=structured_output,
-                format=OutputFormat.JSON
-            ) if structured_output else None
+        output_config = self._get_structured_config(
+            structured_output
+        )
 
         payload = {
             "model": model.value if isinstance(model, Enum) else model,
-            "max_tokens": max_tokens,
-            "temperature": temperature,
+            "max_tokens": max_tokens or self.max_tokens,
+            "temperature": temperature or self.temperature,
             "messages": messages
         }
 
@@ -203,8 +198,8 @@ class ClaudeClient(AbstractClient):
         self,
         prompt: str,
         model: Union[ClaudeModel, str] = ClaudeModel.SONNET_4,
-        max_tokens: int = 4096,
-        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
+        temperature: Optional[float] = None,
         files: Optional[List[Union[str, Path]]] = None,
         system_prompt: Optional[str] = None,
         user_id: Optional[str] = None,
@@ -223,8 +218,8 @@ class ClaudeClient(AbstractClient):
 
         payload = {
             "model": model.value if isinstance(model, Enum) else model,
-            "max_tokens": max_tokens,
-            "temperature": temperature,
+            "max_tokens": max_tokens or self.max_tokens,
+            "temperature": temperature or self.temperature,
             "messages": messages,
             "stream": True
         }
@@ -402,8 +397,8 @@ class ClaudeClient(AbstractClient):
         image: Union[Path, bytes, Image.Image],
         reference_images: Optional[List[Union[Path, bytes, Image.Image]]] = None,
         model: Union[ClaudeModel, str] = ClaudeModel.SONNET_4,
-        max_tokens: int = 4096,
-        temperature: float = 0.1,
+        max_tokens: Optional[int] = None,
+        temperature: Optional[float] = None,
         structured_output: Union[type, StructuredOutputConfig] = None,
         count_objects: bool = False,
         user_id: Optional[str] = None,
@@ -442,14 +437,9 @@ class ClaudeClient(AbstractClient):
             prompt, None, user_id, session_id, None
         )
 
-        if isinstance(structured_output, StructuredOutputConfig):
-            output_config = structured_output
-        else:
-            # Backward compatibility - assume JSON
-            output_config = StructuredOutputConfig(
-                output_type=structured_output,
-                format=OutputFormat.JSON
-            ) if structured_output else None
+        output_config = self._get_structured_config(
+            structured_output
+        )
 
         # Prepare the content for the current message
         content = []
@@ -485,8 +475,8 @@ class ClaudeClient(AbstractClient):
         # Prepare the payload
         payload = {
             "model": model.value if isinstance(model, ClaudeModel) else model,
-            "max_tokens": max_tokens,
-            "temperature": temperature,
+            "max_tokens": max_tokens or self.max_tokens,
+            "temperature": temperature or self.temperature,
             "messages": messages
         }
 

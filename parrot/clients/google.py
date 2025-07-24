@@ -132,8 +132,8 @@ class GoogleGenAIClient(AbstractClient):
         self,
         prompt: str,
         model: Union[str, GoogleModel] = GoogleModel.GEMINI_2_5_FLASH,
-        max_tokens: int = 8192,
-        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
+        temperature: Optional[float] = None,
         files: Optional[List[Union[str, Path]]] = None,
         system_prompt: Optional[str] = None,
         structured_output: Union[type, StructuredOutputConfig] = None,
@@ -186,8 +186,8 @@ class GoogleGenAIClient(AbstractClient):
                 print(f"Unknown role: {role}")
 
         generation_config = {
-            "max_output_tokens": max_tokens,
-            "temperature": temperature,
+            "max_output_tokens": max_tokens or self.max_tokens,
+            "temperature": temperature or self.temperature,
         }
 
         if structured_output:
@@ -369,8 +369,8 @@ class GoogleGenAIClient(AbstractClient):
         self,
         prompt: str,
         model: Union[str, GoogleModel] = GoogleModel.GEMINI_2_5_FLASH,
-        max_tokens: int = 8192,
-        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
+        temperature: Optional[float] = None,
         files: Optional[List[Union[str, Path]]] = None,
         system_prompt: Optional[str] = None,
         user_id: Optional[str] = None,
@@ -403,8 +403,8 @@ class GoogleGenAIClient(AbstractClient):
                 print(f"Unknown role: {role}")
 
         generation_config = {
-            "max_output_tokens": max_tokens,
-            "temperature": temperature,
+            "max_output_tokens": max_tokens or self.max_tokens,
+            "temperature": temperature or self.temperature,
         }
 
         tools = None
@@ -474,8 +474,8 @@ class GoogleGenAIClient(AbstractClient):
         image: Union[Path, bytes],
         reference_images: Optional[Union[List[Path], List[bytes]]] = None,
         model: Union[str, GoogleModel] = GoogleModel.GEMINI_2_5_FLASH,
-        max_tokens: int = 8192,
-        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
+        temperature: Optional[float] = None,
         structured_output: Union[type, StructuredOutputConfig] = None,
         count_objects: bool = False,
         user_id: Optional[str] = None,
@@ -546,8 +546,8 @@ class GoogleGenAIClient(AbstractClient):
 
         contents.append(prompt) # The text prompt always comes last
         generation_config = {
-            "max_output_tokens": max_tokens,
-            "temperature": temperature,
+            "max_output_tokens": max_tokens or self.max_tokens,
+            "temperature": temperature or self.temperature,
         }
         output_config = self._get_structured_config(structured_output)
         # Vision models generally don't support tools, so we focus on structured output
