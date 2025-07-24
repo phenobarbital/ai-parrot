@@ -15,7 +15,7 @@ from ..conf import (
     default_dsn,
     EMBEDDING_DEFAULT_MODEL,
 )
-from ..models import ChatbotModel
+from ..handlers.models import ChatbotModel
 from .abstract import AbstractBot
 
 class Chatbot(AbstractBot):

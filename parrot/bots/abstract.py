@@ -29,11 +29,13 @@ from .prompts import (
     DEFAULT_CAPABILITIES,
     DEFAULT_BACKHISTORY
 )
-from ..clients import LLM_PRESETS
+from ..clients import LLM_PRESETS, SUPPORTED_CLIENTS, AbstractClient
 from ..models import (
     AIMessage,
     AIMessageFactory
 )
+from ..stores import AbstractStore, supported_stores
+
 
 logging.getLogger(name='primp').setLevel(logging.INFO)
 logging.getLogger(name='rquest').setLevel(logging.INFO)
@@ -47,9 +49,9 @@ class AbstractBot(DBInterface, ABC):
     """
     # Define system prompt template
     system_prompt_template = BASIC_SYSTEM_PROMPT
-
     # Define human prompt template
     human_prompt_template = BASIC_HUMAN_PROMPT
+    _default_llm: str = 'google'
 
     def __init__(
         self,
@@ -95,45 +97,48 @@ class AbstractBot(DBInterface, ABC):
         self.rationale = kwargs.get('rationale', self.default_rationale())
         self.context = kwargs.get('use_context', True)
         # Definition of LLM Client
-        self._llm_class: str = None
-        self._default_llm: str = kwargs.get('use_llm', 'google')
-        self._use_chat: bool = kwargs.get('use_chat', False)
-        self._llm_model = kwargs.get('model_name', 'gemini-2.0-flash-001')
+        self._llm_model = kwargs.get('model', 'gemini-2.0-flash-001')
         self._llm_preset: str = kwargs.get('preset', None)
+        self._llm: Union[str, Any] = kwargs.get('llm', 'google')
+        if isinstance(self._llm, str):
+            self._llm = SUPPORTED_CLIENTS.get(self._llm.lower(), None)
+        if self._llm and not issubclass(self._llm, AbstractClient):
+            raise ValueError(
+                f"Invalid LLM Client: {self._llm}. Must be one of {SUPPORTED_CLIENTS.keys()}"
+            )
         if self._llm_preset:
             try:
                 presetting = LLM_PRESETS[self._llm_preset]
             except KeyError:
                 self.logger.warning(
-                    f"Invalid preset: {self._llm_preset}, default to 'analytical'"
+                    f"Invalid preset: {self._llm_preset}, default to 'default'"
                 )
-                presetting = LLM_PRESETS['analytical']
+                presetting = LLM_PRESETS['default']
             self._llm_temp = presetting.get('temperature', 0.1)
-            self._max_tokens = presetting.get('max_tokens', 4096)
+            self._max_tokens = presetting.get('max_tokens', 1024)
         else:
             # Default LLM Presetting by LLMs
             self._llm_temp = kwargs.get('temperature', 0.1)
-            self._max_tokens = kwargs.get('max_tokens', 4096)
-        self._llm_top_k = kwargs.get('top_k', 41)
-        self._llm_top_p = kwargs.get('top_p', 0.9)
+            self._max_tokens = kwargs.get('max_tokens', 1024)
+        self._top_k = kwargs.get('top_k', 41)
+        self._top_p = kwargs.get('top_p', 0.9)
         self._llm_config = kwargs.get('model_config', {})
         if self._llm_config:
             self._llm_model = self._llm_config.pop('model', self._llm_model)
-            self._llm_class = self._llm_config.pop('name', 'VertexLLM')
+            llm = self._llm_config.pop('name', 'google')
+            self._llm_temp = self._llm_config.pop('temperature', self._llm_temp)
+            self._top_k = self._llm_config.pop('top_k', self._top_k)
+            self._top_p = self._llm_config.pop('top_p', self._top_p)
+            self._llm = SUPPORTED_CLIENTS.get(llm)
         else:
             self._llm_config = {
-                "name":  self._llm_class,
+                "name":  self._llm,
                 "model": self._llm_model,
                 "temperature": self._llm_temp,
-                "top_k": self._llm_top_k,
-                "top_p": self._llm_top_p
+                "top_k": self._top_k,
+                "top_p": self._top_p
             }
-        # Overrriding LLM object
-        self._llm_obj: Callable = kwargs.get('llm', None)
-        # LLM base Object:
-        self._llm: Callable = None
         self.context = kwargs.pop('context', '')
-
         # Pre-Instructions:
         self.pre_instructions: list = kwargs.get(
             'pre_instructions',
@@ -206,7 +211,7 @@ class AbstractBot(DBInterface, ABC):
         return self._permissions
 
     def get_supported_models(self) -> List[str]:
-        return self._llm_obj.get_supported_models()
+        return self._llm.get_supported_models()
 
     def _get_default_attr(self, key, default: Any = None, **kwargs):
         if key in kwargs:
@@ -227,8 +232,6 @@ class AbstractBot(DBInterface, ABC):
             "- When responding to user queries, ensure that you provide accurate and up-to-date information.\n"
             "- Be polite, clear and concise in your explanations.\n"
             "- ensuring that responses are based only on verified information from owned sources.\n"
-            "- If you are unsure, let the user know and avoid making assumptions. Maintain a professional tone in all responses.\n"
-            "- Use simple language for complex topics to ensure user understanding.\n"
             "- Detect user language: respond in English if the user writes in English; respond in Spanish if the user writes in Spanish."
         )
 
@@ -238,129 +241,136 @@ class AbstractBot(DBInterface, ABC):
 
     @llm.setter
     def llm(self, model):
-        self._llm_obj = model
-        self._llm = model.get_llm()
+        self._llm = model
 
-    @backoff.on_exception(
-        backoff.expo,
-        Exception,
-        max_tries=3,
-        max_time=60,
-        giveup=lambda e: not predicate(e)  # Don't retry if predicate returns False
-    )
     def llm_chain(
         self,
         llm: str = "vertexai",
         model: str = None,
         **kwargs
-    ) -> AbstractLLM:
+    ) -> AbstractClient:
         """llm_chain.
 
         Args:
             llm (str): The language model to use.
 
         Returns:
-            AbstractLLM: The language model to use.
+            AbstractClient: The language model to use.
 
         """
         try:
-            if llm == 'openai' and OPENAI_ENABLED:
-                mdl = OpenAILLM(model=model or "gpt-4.1", **kwargs)
-            elif llm in ('vertexai', 'VertexLLM') and VERTEX_ENABLED:
-                mdl = VertexLLM(model=model or "gemini-1.5-pro", **kwargs)
-            elif llm == 'anthropic' and ANTHROPIC_ENABLED:
-                mdl = AnthropicLLM(model=model or 'claude-3-5-sonnet-20240620', **kwargs)
-            elif llm in ('groq', 'Groq') and GROQ_ENABLED:
-                mdl = GroqLLM(model=model or "meta-llama/llama-4-maverick-17b-128e-instruct", **kwargs)
-            elif llm == 'llama3' and GROQ_ENABLED:
-                mdl = GroqLLM(model=model or "llama-3.3-70b-versatile", **kwargs)
-            elif llm == 'gemma' and GROQ_ENABLED:
-                mdl = GroqLLM(model=model or "gemma2-9b-it", **kwargs)
-            elif llm == 'mistral' and GROQ_ENABLED:
-                mdl = GroqLLM(model=model or "mistral-saba-24b", **kwargs)
-            elif llm == 'google' and GOOGLE_ENABLED:
-                mdl = GoogleGenAI(model=model or "models/gemini-2.5-pro-preview-03-25", **kwargs)
-            else:
-                raise ValueError(f"Invalid llm: {llm}")
-            # get the LLM:
-            return mdl
+            cls = SUPPORTED_CLIENTS.get(llm.lower(), None)
+            if not cls:
+                raise ValueError(f"Unsupported LLM: {llm}")
+            return cls(
+                model=model,
+                **kwargs
+            )
         except Exception:
             raise
 
     def configure_llm(
         self,
         llm: Union[str, Callable] = None,
-        config: Optional[dict] = None,
-        use_chat: bool = False,
         **kwargs
     ):
         """
         Configuration of LLM.
         """
-        if isinstance(llm, str):
-            # Get the LLM By Name:
-            self._llm_obj = self.llm_chain(
-                llm,
-                **config
-            )
-            # getting langchain LLM from Obj:
-            self._llm = self._llm_obj.get_llm()
-        elif isinstance(llm, AbstractLLM):
-            self._llm_obj = llm
-            self._llm = llm.get_llm()
-        elif callable(llm):
-            # self._llm_obj = llm
-            self._llm = llm()
-        elif isinstance(self._llm_obj, str):
-            # is the name of the LLM object to be used:
-            self._llm_obj = self.llm_chain(
-                llm=self._llm_obj,
-                **kwargs
-            )
-            self._llm = self._llm_obj.get_llm()
-        elif isinstance(self._llm_obj, AbstractLLM):
-            self._llm = self._llm_obj.get_llm()
+        if llm is not None:
+            # If llm is provided, use it to configure the LLM client
+            if isinstance(llm, str):
+                # Get the LLM By Name:
+                cls = SUPPORTED_CLIENTS.get(llm.lower(), None)
+                self._llm = cls(
+                    **kwargs
+                )
+            elif issubclass(llm, AbstractClient):
+                self._llm = llm(**kwargs)
+            elif isinstance(llm, AbstractClient):
+                self._llm = llm
+            elif callable(llm):
+                self._llm = llm(
+                    **kwargs
+                )
+            else:
+                # TODO: Calling a Default LLM based on name
+                # TODO: passing the default configuration
+                try:
+                    self._llm = self.llm_chain(
+                        llm=self._default_llm,
+                        model=self._llm_model,
+                        temperature=self._llm_temp,
+                        top_k=self._top_k,
+                        top_p=self._top_p,
+                        max_tokens=self._max_tokens,
+                    )
+                except Exception as e:
+                    self.logger.error(
+                        f"Error configuring Default LLM {self._llm_model}: {e}"
+                    )
+                    raise ConfigError(
+                        f"Error configuring Default LLM {self._llm_model}: {e}"
+                    )
         else:
-            # TODO: Calling a Default LLM
-            # TODO: passing the default configuration
-            try:
-                self._llm_obj = self.llm_chain(
-                    llm=self._default_llm,
-                    model=self._llm_model,
-                    temperature=self._llm_temp,
-                    top_k=self._llm_top_k,
-                    top_p=self._llm_top_p,
-                    max_tokens=self._max_tokens,
-                    use_chat=use_chat
-                )
-            except Exception as e:
-                self.logger.error(
-                    f"Error configuring Default LLM {self._llm_model}: {e}"
-                )
-                raise ConfigError(
-                    f"Error configuring Default LLM {self._llm_model}: {e}"
-                )
-            self._llm = self._llm_obj.get_llm()
+            if self._llm is None:
+                # If no llm is provided, use the default LLM configuration
+                try:
+                    self._llm = self.llm_chain(
+                        llm=self._default_llm,
+                        model=self._llm_model,
+                        temperature=self._llm_temp,
+                        top_k=self._top_k,
+                        top_p=self._top_p,
+                        max_tokens=self._max_tokens,
+                    )
+                except Exception as e:
+                    self.logger.error(
+                        f"Error configuring Default LLM {self._llm_model}: {e}"
+                    )
+                    raise ConfigError(
+                        f"Error configuring Default LLM {self._llm_model}: {e}"
+                    )
+            elif isinstance(self._llm, AbstractClient):
+                return self._llm
+            elif issubclass(self._llm, AbstractClient):
+                try:
+                    # If _llm is already an AbstractClient subclass, just use it
+                    self._llm = self._llm(
+                        model=self._llm_model,
+                        temperature=self._llm_temp,
+                        top_k=self._top_k,
+                        top_p=self._top_p,
+                        max_tokens=self._max_tokens,
+                        **kwargs
+                    )
+                except TypeError as e:
+                    self.logger.error(
+                        f"Error initializing LLM Client {self._llm.__name__}: {e}"
+                    )
+                    raise ConfigError(
+                        f"Error initializing LLM Client {self._llm.__name__}: {e}"
+                    )
 
     def create_kb(self, documents: list):
         new_docs = []
-        for doc in documents:
-            content = doc.pop('content')
-            source = doc.pop('source', 'knowledge-base')
-            if doc:
-                meta = {
-                    'source': source,
-                    **doc
-                }
-            else:
-                meta = {'source': source}
-            if content:
-                new_docs.append(
-                    Document(
-                        page_content=content,
-                        metadata=meta
-                    )
-                )
+        # for doc in documents:
+        #     content = doc.pop('content')
+        #     source = doc.pop('source', 'knowledge-base')
+        #     if doc:
+        #         meta = {
+        #             'source': source,
+        #             **doc
+        #         }
+        #     else:
+        #         meta = {'source': source}
+        #     if content:
+        #         new_docs.append(
+        #             Document(
+        #                 page_content=content,
+        #                 metadata=meta
+        #             )
+        #         )
         return new_docs
 
     def safe_format_template(self, template, **kwargs):
@@ -411,7 +421,7 @@ class AbstractBot(DBInterface, ABC):
             context=context,
             **kwargs
         )
-        print('Template Prompt: \n', final_prompt)
+        # print('Template Prompt: \n', final_prompt)
         self.system_prompt_template = final_prompt
 
     async def configure(self, app=None) -> None:
@@ -507,73 +517,6 @@ class AbstractBot(DBInterface, ABC):
         print('END STORES >> ', self.stores, self.store)
         print('=================================')
 
-
-    def get_memory(
-        self,
-        session_id: str = None,
-        key: str = 'chat_history',
-        input_key: str = 'question',
-        output_key: str = 'answer',
-        size: int = 5,
-        ttl: int = 86400
-    ):
-        args = {
-            'memory_key': key,
-            'input_key': input_key,
-            'output_key': output_key,
-            'return_messages': True,
-            'max_len': size,
-            'k': 10
-        }
-        if session_id:
-            message_history = RedisChatMessageHistory(
-                url=REDIS_HISTORY_URL,
-                session_id=session_id,
-                ttl=ttl
-            )
-            args['chat_memory'] = message_history
-        return ConversationBufferWindowMemory(
-            **args
-        )
-
-    def clean_history(
-        self,
-        session_id: str = None
-    ):
-        try:
-            redis_client = RedisChatMessageHistory(
-                url=REDIS_HISTORY_URL,
-                session_id=session_id,
-                ttl=60
-            )
-            redis_client.clear()
-        except Exception as e:
-            self.logger.error(
-                f"Error clearing chat history: {e}"
-            )
-
-    def get_response(self, response: dict, query: str = None):
-        if 'error' in response:
-            return response  # return this error directly
-        try:
-            response = ChatResponse(**response)
-            response.query = query
-            response.response = self.as_markdown(
-                response,
-                return_sources=self.return_sources
-            )
-            return response
-        except (ValueError, TypeError) as exc:
-            self.logger.error(
-                f"Error validating response: {exc}"
-            )
-            return response
-        except ValidationError as exc:
-            self.logger.error(
-                f"Error on response: {exc.payload}"
-            )
-            return response
-
     async def conversation(
             self,
             question: str,
@@ -586,7 +529,7 @@ class AbstractBot(DBInterface, ABC):
             limit: Optional[int] = 5,
             score_threshold: float = None,
             **kwargs
-    ):
+    ) -> AIMessage:
         # re-configure LLM:
         new_llm = kwargs.pop('llm', None)
         llm_config = kwargs.pop(
@@ -605,191 +548,19 @@ class AbstractBot(DBInterface, ABC):
             }
         if new_llm:
             self.configure_llm(llm=new_llm, config=llm_config)
-        # Create prompt templates
-        system_prompt = SystemMessagePromptTemplate.from_template(
-            self.system_prompt_template
-        )
-        human_prompt = HumanMessagePromptTemplate.from_template(
-            self.human_prompt_template,
-            input_variables=['question', 'chat_history']
-        )
-        # Combine into a ChatPromptTemplate
-        chat_prompt = ChatPromptTemplate.from_messages([
-            system_prompt,
-            human_prompt
-        ])
-        if not memory:
-            memory = self.memory
-        if not self.memory:
-            # Initialize memory
-            self.memory = ConversationBufferMemory(
-                memory_key="chat_history",
-                input_key="question",
-                output_key='answer',
-                return_messages=True
-            )
-        try:
-            if self._use_vector:
-                async with self.store as store:  #pylint: disable=E1101
-                    vector = store.get_vector(
-                        metric_type=metric_type,
-                        score_threshold=score_threshold
-                    )
-                    retriever = VectorStoreRetriever(
-                        vectorstore=vector,
-                        search_type=search_type,
-                        chain_type=chain_type,
-                        search_kwargs=search_kwargs
-                    )
-                    # Create the ConversationalRetrievalChain with custom prompt
-                    chain = ConversationalRetrievalChain.from_llm(
-                        llm=self._llm,
-                        retriever=retriever,
-                        memory=self.memory,
-                        chain_type=chain_type,  # e.g., 'stuff', 'map_reduce', etc.
-                        verbose=True,
-                        return_source_documents=return_docs,
-                        return_generated_question=True,
-                        combine_docs_chain_kwargs={
-                            'prompt': chat_prompt
-                        },
-                        **kwargs
-                    )
-                    response = await chain.ainvoke(
-                        {"question": question}
-                    )
-            else:
-                retriever = EmptyRetriever()
-                # Create the ConversationalRetrievalChain with custom prompt
-                chain = ConversationalRetrievalChain.from_llm(
-                    llm=self._llm,
-                    retriever=retriever,
-                    memory=self.memory,
-                    chain_type=chain_type,  # e.g., 'stuff', 'map_reduce', etc.
-                    verbose=True,
-                    return_source_documents=return_docs,
-                    return_generated_question=True,
-                    combine_docs_chain_kwargs={
-                        'prompt': chat_prompt
-                    },
-                    **kwargs
-                )
-                response = await chain.ainvoke(
-                    {"question": question}
-                )
-        except asyncio.CancelledError:
-            # Handle task cancellation
-            print("Conversation task was cancelled.")
-        except Exception as e:
-            self.logger.error(
-                f"Error in conversation: {e}"
-            )
-            raise
-        return self.get_response(response, question)
 
-    async def question(
-            self,
-            question: str,
-            chain_type: str = 'stuff',
-            search_type: str = 'similarity',
-            search_kwargs: dict = {"k": 4, "fetch_k": 10, "lambda_mult": 0.15},
-            return_docs: bool = True,
-            metric_type: str = None,
-            **kwargs
-    ):
-        system_prompt = self.system_prompt_template
-        human_prompt = self.human_prompt_template.replace(
-            '**Chat History:**', ''
-        )
-        human_prompt = human_prompt.format_map(
-            SafeDict(
-                chat_history=''
-            )
-        )
-        # re-configure LLM:
-        new_llm = kwargs.pop('llm', None)
-        if new_llm:
-            llm_config = kwargs.pop(
-                'llm_config',
-                {
-                    "temperature": 0.2,
-                    "top_k": 41,
-                    "Top_p": 0.9
-                }
-            )
-            self.configure_llm(llm=new_llm, config=llm_config)
-        # Combine into a ChatPromptTemplate
-        prompt = PromptTemplate(
-            template=system_prompt + '\n' + human_prompt,
-            input_variables=['context', 'question']
-        )
-        try:
-            if self._use_vector:
-                async with self.store as store:  #pylint: disable=E1101
-                    vector = store.get_vector(metric_type=metric_type)
-                    retriever = VectorStoreRetriever(
-                        vectorstore=vector,
-                        search_type=search_type,
-                        chain_type=chain_type,
-                        search_kwargs=search_kwargs
-                    )
-                    chain = RetrievalQA.from_chain_type(
-                        llm=self._llm,
-                        chain_type=chain_type,  # e.g., 'stuff', 'map_reduce', etc.
-                        retriever=retriever,
-                        chain_type_kwargs={
-                            'prompt': prompt,
-                        },
-                        return_source_documents=return_docs,
-                        **kwargs
-                    )
-                    response = await chain.ainvoke(
-                        question
-                    )
-            else:
-                retriever = EmptyRetriever()
-                # Create the RetrievalQA chain with custom prompt
-                chain = RetrievalQA.from_chain_type(
-                    llm=self._llm,
-                    chain_type=chain_type,  # e.g., 'stuff', 'map_reduce', etc.
-                    retriever=retriever,
-                    chain_type_kwargs={
-                        'prompt': prompt,
-                    },
-                    return_source_documents=return_docs,
-                    **kwargs
-                )
-                response = await chain.ainvoke(
-                    question
-                )
-        except (RuntimeError, asyncio.CancelledError):
-            # check for "Event loop is closed"
-            response = chain.invoke(
-                question
-            )
-        except Exception as e:
-            # Handle exceptions
-            self.logger.error(
-                f"An error occurred: {e}"
-            )
-            response = {
-                "query": question,
-                "error": str(e)
-            }
-        return self.get_response(response, question)
-
-    def as_markdown(self, response: ChatResponse, return_sources: bool = False) -> str:
-        markdown_output = f"**Question**: {response.question}  \n"
-        markdown_output += f"**Answer**: \n {response.answer}  \n"
-        if return_sources is True and response.source_documents:
-            source_documents = response.source_documents
+    def as_markdown(self, response: AIMessage, return_sources: bool = False) -> str:
+        markdown_output = f"**Question**: {response.input}  \n"
+        markdown_output += f"**Answer**: \n {response.output}  \n"
+        if return_sources is True and response.documents:
+            source_documents = response.documents
             current_sources = []
             block_sources = []
             count = 0
             d = {}
             for source in source_documents:
                 if count >= 20:
-                    break  # Exit loop after processing 10 documents
+                    break  # Exit loop after processing 20 documents
                 metadata = source.metadata
                 if 'url' in metadata:
                     src = metadata.get('url')
@@ -822,9 +593,27 @@ class AbstractBot(DBInterface, ABC):
                 response.documents = d
         return markdown_output
 
+    def get_response(self, response: AIMessage):
+        if 'error' in response:
+            return response  # return this error directly
+        try:
+            response.response = self.as_markdown(
+                response,
+                return_sources=self.return_sources
+            )
+            return response
+        except (ValueError, TypeError) as exc:
+            self.logger.error(
+                f"Error validating response: {exc}"
+            )
+            return response
+        except Exception as exc:
+            self.logger.error(
+                f"Error on response: {exc}"
+            )
+            return response
+
     async def __aenter__(self):
-        if not self.store:
-            self.store = EmptyStore()
         return self
 
     async def __aexit__(self, exc_type, exc_value, traceback):
@@ -944,7 +733,7 @@ class AbstractBot(DBInterface, ABC):
         metric_type: str = None,
         memory: Any = None,
         **kwargs
-    ) -> ChatResponse:
+    ) -> AIMessage:
         """Build a Chain to answer Questions using AI Models.
         """
         new_llm = kwargs.pop('llm', None)
@@ -953,6 +742,7 @@ class AbstractBot(DBInterface, ABC):
             llm_config = kwargs.pop(
                 'llm_config',
                 {
+                    "model": self._llm_model,
                     "temperature": 0.1,
                     "top_k": 41,
                     "top_p": 0.9
@@ -961,95 +751,25 @@ class AbstractBot(DBInterface, ABC):
             self.configure_llm(llm=new_llm, config=llm_config)
         # define the Pre-Context
         pre_context = "\n".join(f"- {a}." for a in self.pre_instructions)
-        custom_template = self.system_prompt_template.format_map(
-            SafeDict(
+        tmpl = Template(self.system_prompt_template)
+        final_prompt = tmpl.safe_substitute(
+            summaries=SafeDict(
                 summaries=pre_context
+            ),
+            **kwargs
+        )
+        try:
+            async with self._llm as client:
+                print('LLM > ', client)
+                response = await client.ask(
+                    question
+                )
+                return self.get_response(response)
+        except asyncio.CancelledError:
+            # Handle task cancellation
+            print("Conversation task was cancelled.")
+        except Exception as e:
+            self.logger.error(
+                f"Error in conversation: {e}"
             )
-        )
-        # Create prompt templates
-        self.system_prompt = SystemMessagePromptTemplate.from_template(
-            custom_template
-        )
-        self.human_prompt = HumanMessagePromptTemplate.from_template(
-            self.human_prompt_template,
-            input_variables=['question', 'chat_history']
-        )
-        # Combine into a ChatPromptTemplate
-        chat_prompt = ChatPromptTemplate.from_messages([
-            self.system_prompt,
-            self.human_prompt
-        ])
-        if not memory:
-            memory = self.memory
-        if not self.memory:
-            # Initialize memory
-            self.memory = ConversationBufferMemory(
-                memory_key="chat_history",
-                input_key="question",
-                output_key='answer',
-                return_messages=True
-            )
-        async with self.store as store:  #pylint: disable=E1101
-            # Check if we have multiple stores:
-            if self._use_vector:
-                if len(self.stores) > 1:
-                    store = self.stores[0]
-                #     retriever = MultiVectorStoreRetriever(
-                #         stores=self.stores,
-                #         metric_type=metric_type,
-                #         search_type=search_type,
-                #         chain_type=chain_type,
-                #         search_kwargs=search_kwargs
-                #     )
-                # else:
-                metric = metric_type or self._metric_type
-                if metric == 'COSINE':
-                    score_threshold = score_threshold or 0.16
-                elif metric == 'EUCLIDEAN_DISTANCE':
-                    score_threshold = score_threshold or 1.0
-                vector = store.get_vector(
-                    metric_type=metric,
-                    score_threshold=score_threshold
-                )
-                retriever = VectorStoreRetriever(
-                    vectorstore=vector,
-                    search_type=search_type,
-                    chain_type=chain_type,
-                    search_kwargs=search_kwargs,
-                    verbose=True
-                )
-            else:
-                retriever = EmptyRetriever()
-            if self.kb:
-                b25_retriever = BM25Retriever.from_documents(self.kb)
-                retriever = EnsembleRetriever(
-                    retrievers=[retriever, b25_retriever],
-                    weights=[0.9, 0.1]
-                )
-            try:
-                # Create the ConversationalRetrievalChain with custom prompt
-                chain = ConversationalRetrievalChain.from_llm(
-                    llm=self._llm,
-                    retriever=retriever,
-                    memory=self.memory,
-                    chain_type=chain_type,  # e.g., 'stuff', 'map_reduce', etc.
-                    verbose=True,
-                    return_source_documents=return_docs,
-                    return_generated_question=True,
-                    combine_docs_chain_kwargs={
-                        'prompt': chat_prompt
-                    },
-                    **kwargs
-                )
-                response = await chain.ainvoke(
-                    {"question": question}
-                )
-                return self.get_response(response, question)
-            except asyncio.CancelledError:
-                # Handle task cancellation
-                print("Conversation task was cancelled.")
-            except Exception as e:
-                self.logger.error(
-                    f"Error in conversation: {e}"
-                )
-                raise
+            raise

@@ -572,6 +572,6 @@ class ClaudeClient(AbstractClient):
 
         # Ensure text field is properly set for property access
         if not structured_output:
-            ai_message.text = final_output
+            ai_message.response = final_output
 
         return ai_message
