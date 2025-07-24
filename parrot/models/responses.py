@@ -36,7 +36,7 @@ class AIMessage(BaseModel):
         description="The response output - can be text, structured data, dataframe, etc."
     )
 
-    text: Optional[str] = None
+    response: Optional[str] = None
 
     images: Optional[List[Path]] = Field(
         default_factory=list,
@@ -53,6 +53,10 @@ class AIMessage(BaseModel):
         description="List of file paths associated with the response"
     )
 
+    documents: Optional[List[Any]] = Field(
+        default_factory=list,
+        description="List of document file paths associated with the response"
+    )
     # Metadata
     model: str = Field(
         description="The model used for generation"
@@ -225,7 +229,8 @@ class AIMessageFactory:
             user_id=user_id,
             session_id=session_id,
             turn_id=turn_id,
-            raw_response=response.dict() if hasattr(response, 'dict') else response.__dict__
+            raw_response=response.dict() if hasattr(response, 'dict') else response.__dict__,
+            response=message.content
         )
 
     @staticmethod
@@ -258,7 +263,8 @@ class AIMessageFactory:
             user_id=user_id,
             session_id=session_id,
             turn_id=turn_id,
-            raw_response=response
+            raw_response=response,
+            response=content
         )
 
     @staticmethod
@@ -304,7 +310,8 @@ class AIMessageFactory:
             user_id=user_id,
             session_id=session_id,
             turn_id=turn_id,
-            raw_response=response.__dict__ if hasattr(response, '__dict__') else str(response)
+            raw_response=response.__dict__ if hasattr(response, '__dict__') else str(response),
+            response=content
         )
 
     @staticmethod
