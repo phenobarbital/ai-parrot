@@ -11,7 +11,14 @@ from enum import Enum
 from PIL import Image
 from datamodel.parsers.json import json_decoder  # pylint: disable=E0611 # noqa
 from navconfig import config
+from tenacity import (
+    AsyncRetrying,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type
+)
 from openai import AsyncOpenAI
+from openai import APIConnectionError, RateLimitError, APIError
 from .abstract import AbstractClient
 from ..models import (
     AIMessage,
@@ -67,6 +74,22 @@ class OpenAIClient(AbstractClient):
                 file=file,
                 purpose=purpose
             )
+
+    async def _chat_completion(self, model: str, messages: Any, **kwargs):
+        retry_policy = AsyncRetrying(
+            retry=retry_if_exception_type((APIConnectionError, RateLimitError, APIError)),
+            wait=wait_exponential(multiplier=1, min=2, max=10),
+            stop=stop_after_attempt(5),
+            reraise=True
+        )
+        async for attempt in retry_policy:
+            with attempt:
+                response = await self.client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                    **kwargs
+                )
+                return response
 
     async def ask(
         self,
@@ -135,7 +158,7 @@ class OpenAIClient(AbstractClient):
                 }
 
         # Make initial request
-        response = await self.client.chat.completions.create(
+        response = await self._chat_completion(
             model=model_str,
             messages=messages,
             max_tokens=max_tokens,
@@ -196,12 +219,13 @@ class OpenAIClient(AbstractClient):
                 all_tool_calls.append(tc)
 
             # Continue conversation with tool results
-            response = await self.client.chat.completions.create(
+            response = await self._chat_completion(
                 model=model_str,
                 messages=messages,
                 max_tokens=max_tokens,
                 temperature=temperature,
-                stream=False
+                stream=False,
+                **args
             )
             result = response.choices[0].message
 
