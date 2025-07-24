@@ -7,21 +7,21 @@ import asyncio
 import uuid
 from typing import List
 from sqlalchemy import text
-from langchain_core.documents import Document
-from parrot.stores.postgres import PgvectorStore
+from parrot.stores.models import Document
+from parrot.stores.pg import PgVectorStore
 
 
 
 embed_model = {
     "model": "thenlper/gte-base",
-    "model_type": "transformers"
+    "model_type": "huggingface"
 }
 
 async def create_store():
     table = 'test_table'
     schema = 'troc'
     id_column = 'id'
-    _store = PgvectorStore(
+    _store = PgVectorStore(
         embedding_model=embed_model,
         dsn="postgresql+asyncpg://troc_pgdata:12345678@127.0.0.1:5432/navigator",
         dimension=768,
@@ -44,9 +44,9 @@ async def create_store():
         async with store.engine().begin() as conn:
             await conn.execute(text(create_table_sql))
             # Second: prepare the table for embedding:
-            tablename = f"{schema}.{table}"
             await store.prepare_embedding_table(
-                tablename=tablename,
+                table=table,
+                schema=schema,
                 conn=conn,
                 embedding_column='embedding',
                 id_column=id_column,
@@ -102,7 +102,7 @@ async def save_store():
     table = 'test_table'
     schema = 'troc'
     id_column = 'id'
-    _store = PgvectorStore(
+    _store = PgVectorStore(
         embedding_model=embed_model,
         dsn="postgresql+asyncpg://troc_pgdata:12345678@127.0.0.1:5432/navigator",
         dimension=768,
@@ -118,7 +118,11 @@ async def save_store():
 
         try:
             # Add documents to the vector store
-            added_ids = await store.add_documents(documents)
+            added_ids = await store.add_documents(
+                table=table,
+                schema=schema,
+                documents=documents
+            )
 
             print(f"Successfully added {len(documents)} documents")
             return added_ids
@@ -131,7 +135,7 @@ async def test_store():
     table = 'test_table'
     schema = 'troc'
     id_column = 'id'
-    _store = PgvectorStore(
+    _store = PgVectorStore(
         embedding_model=embed_model,
         dsn="postgresql+asyncpg://troc_pgdata:12345678@127.0.0.1:5432/navigator",
         dimension=768,
@@ -158,23 +162,48 @@ async def test_store():
                 # Perform similarity search
                 results = await store.similarity_search(
                     query,
-                    limit=3,
-                    score_threshold=0.16
+                    limit=3
                 )
+                print('RESULT > ', results)
                 print(f"Found {len(results)} results:")
+                # SearchResult objects
                 for i, doc in enumerate(results, 1):
-                    print(f"{i}. {doc.page_content[:100]}...")
+                    print(f"{i}. {doc.content[:100]}...")
                     print(f"   Metadata: {doc.metadata}")
                     print()
 
             except Exception as e:
-                print(f"Error during search: {e}")
+                print('TYPE > ', type(e))
+                print(
+                    f"Error during search: {e}"
+                )
+            # repeat but using L2:
+            try:
+                results = await store.similarity_search(
+                    query,
+                    limit=5,
+                    metric='L2',
+                    score_threshold=1.5,
+                    additional_columns=['created_at']
+                )
+                print('RESULT > ', results)
+                print(f"Found {len(results)} results:")
+                for i, doc in enumerate(results, 1):
+                    print(f"{i}. {doc.content[:100]}...")
+                    print(f"   Metadata: {doc.metadata}")
+                    print(f"   Created At: {doc.metadata.get('created_at')}")
+
+            except Exception as e:
+                print('TYPE > ', type(e))
+                print(
+                    f"Error during search: {e}"
+                )
 
 async def test_store_with_score():
     table = 'test_table'
     schema = 'troc'
     id_column = 'id'
-    _store = PgvectorStore(
+    _store = PgVectorStore(
         embedding_model=embed_model,
         dsn="postgresql+asyncpg://troc_pgdata:12345678@127.0.0.1:5432/navigator",
         dimension=768,
@@ -201,7 +230,8 @@ async def test_store_with_score():
                 # Perform similarity search with scores
                 results = await store.similarity_search_with_score(
                     query,
-                    limit=3
+                    limit=3,
+                    score_threshold=0.16
                 )
                 print(f"Found {len(results)} results:")
                 for i, (doc, score) in enumerate(results, 1):
@@ -212,8 +242,30 @@ async def test_store_with_score():
             except Exception as e:
                 print(f"Error during search: {e}")
 
+async def drop_store():
+    # clean up the store
+    table = 'test_table'
+    schema = 'troc'
+    id_column = 'id'
+    _store = PgVectorStore(
+        embedding_model=embed_model,
+        dsn="postgresql+asyncpg://troc_pgdata:12345678@127.0.0.1:5432/navigator",
+        dimension=768,
+        table=table,
+        schema=schema,
+        id_column=id_column,
+        embedding_column='embedding'
+    )
+    async with _store as store:
+        await store.drop_collection(table=table, schema=schema)
+
+
+async def main():
+    # await create_store()
+    # await save_store()
+    await test_store()
+    # await test_store_with_score()
+    # await drop_store()
+
 if __name__ == "__main__":
-    # asyncio.run(create_store())
-    # asyncio.run(save_store())
-    # asyncio.run(test_store())
-    asyncio.run(test_store_with_score())
+    asyncio.run(main())

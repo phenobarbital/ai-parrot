@@ -177,6 +177,7 @@ setup(
     ],
     extras_require={
         "agents": [
+            "sentence_transformers==5.0.0",
             "yfinance==0.2.54",
             "youtube_search==2.1.2",
             "wikipedia==1.4.0",
