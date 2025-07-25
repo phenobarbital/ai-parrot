@@ -121,7 +121,7 @@ class GroqClient(AbstractClient):
         Returns:
             AIMessage: The response from Groq.
         """
-
+        model = model.value if isinstance(model, GroqModel) else model
         # Generate unique turn ID for tracking
         turn_id = str(uuid.uuid4())
         original_prompt = prompt
@@ -354,6 +354,7 @@ class GroqClient(AbstractClient):
 
         # Generate unique turn ID for tracking
         turn_id = str(uuid.uuid4())
+        model = model.value if isinstance(model, GroqModel) else model
 
         messages, conversation_session, system_prompt = await self._prepare_conversation_context(
             prompt, files, user_id, session_id, system_prompt
@@ -432,6 +433,7 @@ class GroqClient(AbstractClient):
         # Generate unique turn ID for tracking
         turn_id = str(uuid.uuid4())
         original_prompt = text
+        model = model.value if isinstance(model, GroqModel) else model
 
         system_prompt = system_prompt or "Summarize the following text:"
 
