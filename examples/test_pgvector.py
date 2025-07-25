@@ -198,6 +198,32 @@ async def test_store():
                 print(
                     f"Error during search: {e}"
                 )
+            # Doing MMR relevance search:# Basic MMR search with balanced relevance/diversity
+            results = await store.mmr_search(
+                query=query,
+                k=10,
+                lambda_mult=0.5  # Balanced approach
+            )
+            print(f"Found {len(results)} results:")
+
+            # More diverse results (less redundancy)
+            diverse_results = await store.mmr_search(
+                query=query,
+                k=5,
+                lambda_mult=0.3,  # Favor diversity
+                fetch_k=50,       # Consider more candidates
+                metadata_filters={"category": "research"}
+            )
+            print(f"Found {len(diverse_results)} diverse results:")
+
+            # More relevant results (less diversity consideration)
+            relevant_results = await store.mmr_search(
+                query=query,
+                k=8,
+                lambda_mult=0.8,  # Favor relevance
+                metric="COSINE"
+            )
+            print(f"Found {len(relevant_results)} relevant results:")
 
 async def test_store_with_score():
     table = 'test_table'
