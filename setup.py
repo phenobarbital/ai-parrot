@@ -220,7 +220,7 @@ setup(
         "vector": [
             "torch>=2.5.1,<=2.6.0",
             "fastembed==0.3.4",
-            "tiktoken==0.7.0",
+            "tiktoken==0.9.0",
             "accelerate==0.34.2",
             "llama-index==0.12.39",
             "llama_cpp_python==0.2.56",
