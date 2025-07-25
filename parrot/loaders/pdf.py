@@ -134,7 +134,7 @@ class PDFLoader(AbstractLoader):
         doc.close()
         # --- Summarization step ---
         full_text = "\n\n".join(all_text)
-        summary = self.summary_from_text(full_text)
+        summary = await self.summary_from_text(full_text)
         if summary:
             summary_meta = self.create_metadata(
                 path=path,

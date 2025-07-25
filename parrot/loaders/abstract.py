@@ -45,12 +45,23 @@ class AbstractLoader(ABC):
 
     def __init__(
         self,
-        *args,
+        source: Optional[Union[str, Path, List[Union[str, Path]]]] = None,
+        *,
         tokenizer: Union[str, Callable] = None,
         text_splitter: Union[str, Callable] = None,
         source_type: str = 'file',
         **kwargs
     ):
+        """
+        Initialize the AbstractLoader.
+
+        Args:
+            source: Path, URL, or list of paths/URLs to load from
+            tokenizer: Tokenizer to use (string model name or callable)
+            text_splitter: Text splitter to use
+            source_type: Type of source ('file', 'url', etc.)
+            **kwargs: Additional keyword arguments for configuration
+        """
         self.chunk_size: int = kwargs.get('chunk_size', 5000)
         self.chunk_overlap: int = kwargs.get('chunk_overlap', 20)
         self.token_size: int = kwargs.get('token_size', 20)
@@ -76,11 +87,28 @@ class AbstractLoader(ABC):
         self._use_summary_pipeline: bool = kwargs.get('use_summary_pipeline', False)
         self._use_translation_pipeline: bool = kwargs.get('use_translation_pipeline', False)
         self._translation = kwargs.get('translation', False)
+
+        # Handle source/path initialization
+        self.path = None
+        if source is not None:
+            self.path = source
+        elif 'path' in kwargs:
+            self.path = kwargs['path']
+
+        # Normalize path if it's a string
+        if self.path is not None and isinstance(self.path, str):
+            self.path = Path(self.path).resolve()
+        elif self.path is not None and isinstance(self.path, (Path, PurePath)):
+            self.path = Path(self.path).resolve()
+
         # Tokenizer
         self.tokenizer = tokenizer
         # Text Splitter
+        self.text_splitter = None
+        self.markdown_splitter = kwargs.get('markdown_splitter', None)
         if self._use_markdown_splitter:
             splitter = text_splitter or self._get_markdown_splitter()
+            self.markdown_splitter = self._get_markdown_splitter()
         else:
             if self._use_huggingface_splitter:
                 splitter = self._create_hf_token_splitter(
@@ -112,14 +140,6 @@ class AbstractLoader(ABC):
         self.text_splitter = splitter
         # Summarization Model:
         self.summarization_model = kwargs.get('summarizer', None)
-        # Markdown Splitter:
-        self.markdown_splitter = kwargs.get('markdown_splitter', None)
-        if not self.markdown_splitter:
-            self.markdown_splitter = self._get_markdown_splitter()
-        if 'path' in kwargs:
-            self.path = kwargs['path']
-            if isinstance(self.path, str):
-                self.path = Path(self.path).resolve()
         # LLM (if required)
         self._use_llm = kwargs.get('use_llm', False)
         self._llm_model = kwargs.get('llm_model', None)
@@ -332,7 +352,9 @@ class AbstractLoader(ABC):
                     asyncio.create_task(self._load(path, **kwargs))
                 )
         else:
-            self.logger.warning(f"Path {path} is not valid.")
+            self.logger.warning(
+                f"Path {path} is not valid."
+            )
         return tasks
 
     async def from_url(
@@ -430,9 +452,10 @@ class AbstractLoader(ABC):
         tasks = []
         # If no source is provided, use self.path
         if source is None:
-            if not hasattr(self, 'path') or self.path is None:
+            if self.path is None:
                 raise ValueError(
-                    "No source provided and self.path is not set"
+                    "No source provided and self.path is not set. "
+                    "Please provide a source parameter or set path during initialization."
                 )
             source = self.path
 
@@ -536,7 +559,7 @@ class AbstractLoader(ABC):
             metadata=_meta
         )
 
-    def summary_from_text(
+    async def summary_from_text(
         self,
         text: str,
         max_length: int = 500,
@@ -566,15 +589,15 @@ Your job is to produce a final summary from the following text and identify the 
 - The summary should be no longer than {max_length} characters and no less than {min_length} characters.
 - The summary should be in a single paragraph.
 """
-            summary = summarizer.summarize_text(
-                text,
+            summary = await summarizer.summarize_text(
+                text=text,
                 model=GroqModel.LLAMA_3_3_70B_VERSATILE,
                 system_prompt=system_prompt,
                 temperature=0.1,
                 max_tokens=1000,
-                top_k=30,
                 top_p=0.5
             )
+            print('SUMMARY > ', summary)
             return summary.output
         except Exception as e:
             self.logger.error(
@@ -755,3 +778,46 @@ Your job is to produce a final summary from the following text and identify the 
             f.write(data)
             f.flush()
         print(f':: Saved File on {filename}')
+
+    def chunk_documents(
+        self,
+        documents: List[Document],
+        use_late_chunking: bool = False
+    ) -> List[Document]:
+        """
+        Chunk documents using the configured text splitter.
+
+        Args:
+            documents: List of documents to chunk
+            use_late_chunking: Whether to use late chunking strategy
+
+        Returns:
+            List of chunked documents
+        """
+        chunked_docs = []
+
+        for doc in documents:
+            if use_late_chunking:
+                # Use late chunking strategy
+                pass
+            else:
+                # Use regular text splitter
+                chunks = self.text_splitter.create_chunks(
+                    text=doc.page_content,
+                    metadata=doc.metadata
+                )
+
+                for chunk in chunks:
+                    chunked_doc = Document(
+                        page_content=chunk.text,
+                        metadata={
+                            **chunk.metadata,
+                            'chunk_id': chunk.chunk_id,
+                            'token_count': chunk.token_count,
+                            'start_position': chunk.start_position,
+                            'end_position': chunk.end_position
+                        }
+                    )
+                    chunked_docs.append(chunked_doc)
+
+        return chunked_docs
