@@ -4,6 +4,7 @@ import numpy as np
 import torch
 from sentence_transformers import SentenceTransformer
 from .base import EmbeddingModel
+from ..conf import HUGGINGFACE_EMBEDDING_CACHE_DIR
 
 
 class ModelType(Enum):
@@ -34,14 +35,6 @@ class SentenceTransformerModel(EmbeddingModel):
         )
         self._dimension = self.model.get_sentence_embedding_dimension()
 
-    def _get_device(self) -> str:
-        """Determines the optimal device for torch operations."""
-        if torch.cuda.is_available():
-            return "cuda"
-        if torch.backends.mps.is_available():
-            return "mps"
-        return "cpu"
-
     def _create_embedding(self, model_name: str = None, **kwargs) -> SentenceTransformer:
         """
         Creates and returns a SentenceTransformer model instance.
@@ -57,7 +50,11 @@ class SentenceTransformerModel(EmbeddingModel):
         self.logger.info(
             f"Loading embedding model '{model_name}' on device '{device}'"
         )
-        model = SentenceTransformer(model_name, device=device, cache_folder="./model_cache")
+        model = SentenceTransformer(
+            model_name,
+            device=device,
+            cache_folder=HUGGINGFACE_EMBEDDING_CACHE_DIR
+        )
         # Production optimizations
         model.eval()
         if self.device == "cuda":
