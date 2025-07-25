@@ -10,20 +10,23 @@ from transformers import (
     AutoTokenizer,
     pipeline
 )
-from langchain.schema.runnable import RunnablePassthrough
-from langchain.chains.summarize import load_summarize_chain
-from langchain.docstore.document import Document
-from langchain.text_splitter import (
+from navconfig.logging import logging
+from navigator.libs.json import JSONContent  # pylint: disable=E0611
+from ..stores.models import Document
+## AI Clients:
+from ..clients.google import GoogleGenAIClient
+from ..models.google import GoogleModel
+from ..clients.groq import GroqClient
+from ..models.groq import GroqModel
+from ..clients.gpt import OpenAIClient
+from .splitters import (
     TokenTextSplitter,
     MarkdownTextSplitter
 )
-from langchain_core.prompts import PromptTemplate
-from navconfig.logging import logging
-from navigator.libs.json import JSONContent  # pylint: disable=E0611
-from parrot.llms.vertex import VertexLLM
 from ..conf import (
     DEFAULT_LLM_MODEL,
     DEFAULT_LLM_TEMPERATURE,
+    DEFAULT_GROQ_MODEL,
     CUDA_DEFAULT_DEVICE,
     CUDA_DEFAULT_DEVICE_NUMBER
 )
@@ -34,7 +37,8 @@ T = TypeVar('T')
 
 class AbstractLoader(ABC):
     """
-    Base class for all loaders. Loaders are responsible for loading data from various sources.
+    Base class for all loaders.
+    Loaders are responsible for loading data from various sources.
     """
     extensions: List[str] = ['.*']
     skip_directories: List[str] = []
@@ -52,12 +56,21 @@ class AbstractLoader(ABC):
         self.token_size: int = kwargs.get('token_size', 20)
         self.semaphore = asyncio.Semaphore(kwargs.get('semaphore', 10))
         self.extensions = kwargs.get('extensions', self.extensions)
-        self.skip_directories = kwargs.get('skip_directories', self.skip_directories)
+        self.skip_directories = kwargs.get(
+            'skip_directories',
+            self.skip_directories
+        )
         self.encoding = kwargs.get('encoding', 'utf-8')
         self._source_type = source_type
         self._recursive: bool = kwargs.get('recursive', False)
         self.category: str = kwargs.get('category', 'document')
         self.doctype: str = kwargs.get('doctype', 'text')
+        self._use_markdown_splitter: bool = kwargs.get(
+            'use_markdown_splitter', True
+        )
+        self._use_huggingface_splitter: bool = kwargs.get(
+            'use_huggingface_splitter', False
+        )
         self._summarization = kwargs.get('summarization', False)
         self._summary_model: Optional[Any] = kwargs.get('summary_model', None)
         self._use_summary_pipeline: bool = kwargs.get('use_summary_pipeline', False)
@@ -66,13 +79,37 @@ class AbstractLoader(ABC):
         # Tokenizer
         self.tokenizer = tokenizer
         # Text Splitter
-        self.text_splitter = text_splitter
-        if not self.text_splitter:
-            self.text_splitter = TokenTextSplitter(
-                chunk_size=self.token_size,
-                chunk_overlap=self.chunk_overlap,
-                add_start_index=False
-            )
+        if self._use_markdown_splitter:
+            splitter = text_splitter or self._get_markdown_splitter()
+        else:
+            if self._use_huggingface_splitter:
+                splitter = self._create_hf_token_splitter(
+                    model_name=kwargs.get('model_name', 'gpt-3.5-turbo'),
+                    chunk_size=self.chunk_size,
+                    chunk_overlap=self.chunk_overlap
+                )
+            else:
+                # Default to TokenTextSplitter
+                if isinstance(tokenizer, str):
+                    splitter = self._get_token_splitter(
+                        model_name=tokenizer,
+                        chunk_size=self.chunk_size,
+                        chunk_overlap=self.chunk_overlap
+                    )
+                elif callable(tokenizer):
+                    splitter = TokenTextSplitter(
+                        chunk_size=self.chunk_size,
+                        chunk_overlap=self.chunk_overlap,
+                        tokenizer_function=tokenizer
+                    )
+                else:
+                    # Use default TokenTextSplitter
+                    splitter = TokenTextSplitter(
+                        chunk_size=self.chunk_size,
+                        chunk_overlap=self.chunk_overlap,
+                        model_name=kwargs.get('model_name', 'gpt-3.5-turbo')
+                    )
+        self.text_splitter = splitter
         # Summarization Model:
         self.summarization_model = kwargs.get('summarizer', None)
         # Markdown Splitter:
@@ -99,29 +136,84 @@ class AbstractLoader(ABC):
         # JSON encoder:
         self._encoder = JSONContent()
         # Use CUDA if available:
-        self.device_name = kwargs.get('device', CUDA_DEFAULT_DEVICE)
-        self.cuda_number = kwargs.get('cuda_number', CUDA_DEFAULT_DEVICE_NUMBER)
+        self.device_name = kwargs.get(
+            'device', CUDA_DEFAULT_DEVICE
+        )
+        self.cuda_number = kwargs.get(
+            'cuda_number',
+            CUDA_DEFAULT_DEVICE_NUMBER
+        )
         self._device = None
 
-    def _get_markdown_splitter(self):
-        """Get a MarkdownTextSplitter instance."""
+    def _get_token_splitter(
+        self,
+        model_name: str = "gpt-3.5-turbo",
+        chunk_size: int = 4000,
+        chunk_overlap: int = 200
+    ) -> TokenTextSplitter:
+        """Create a TokenTextSplitter with common settings"""
+        if self.text_splitter:
+            return self.text_splitter
+        return TokenTextSplitter(
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+            model_name=model_name
+        )
+
+    def _get_markdown_splitter(
+        self,
+        chunk_size: int = 4000,
+        chunk_overlap: int = 200,
+        strip_headers: bool = False
+    ) -> MarkdownTextSplitter:
+        """Create a MarkdownTextSplitter with common settings"""
         if self.text_splitter:
             return self.text_splitter
         return MarkdownTextSplitter(
-            chunk_size=self.chunk_size,
-            chunk_overlap=self.chunk_overlap,
-            add_start_index=False
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+            strip_headers=strip_headers
         )
 
-    def get_default_llm(self, model: str = None, model_kwargs: dict = None):
-        """Return a VertexLLM instance."""
+    def _create_hf_token_splitter(
+        self,
+        model_name: str,
+        chunk_size: int = 4000,
+        chunk_overlap: int = 200
+    ) -> TokenTextSplitter:
+        """Create a TokenTextSplitter using a HuggingFace Tokenizer"""
+        tokenizer = AutoTokenizer.from_pretrained(model_name)
+        return TokenTextSplitter(
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+            tokenizer=tokenizer
+        )
+
+    def get_default_llm(
+        self,
+        model: str = None,
+        model_kwargs: dict = None,
+        use_groq: bool = False,
+        use_openai: bool = False
+    ) -> Any:
+        """Return a AI Client instance."""
         if not model_kwargs:
             model_kwargs = {
                 "temperature": DEFAULT_LLM_TEMPERATURE,
                 "top_k": 30,
                 "top_p": 0.5,
             }
-        return VertexLLM(
+        if use_groq:
+            return GroqClient(
+                model=model or DEFAULT_GROQ_MODEL,
+                **model_kwargs
+            )
+        elif use_openai:
+            return OpenAIClient(
+                model=model or 'gpt-4-turbo',
+                **model_kwargs
+            )
+        return GoogleGenAIClient(
             model=model or DEFAULT_LLM_MODEL,
             **model_kwargs
         )
@@ -211,7 +303,12 @@ class AbstractLoader(ABC):
         """
         pass
 
-    async def from_path(self, path: Union[str, Path], recursive: bool = False, **kwargs) -> List[asyncio.Task]:
+    async def from_path(
+        self,
+        path: Union[str, Path],
+        recursive: bool = False,
+        **kwargs
+    ) -> List[asyncio.Task]:
         """
         Load data from a path. This method should be overridden by subclasses.
         """
@@ -347,18 +444,26 @@ class AbstractLoader(ABC):
                 tasks = await self.from_url(source, **kwargs)
             else:
                 # Assume it's a file path or directory
-                tasks = await self.from_path(source, recursive=self._recursive, **kwargs)
+                tasks = await self.from_path(
+                    source,
+                    recursive=self._recursive,
+                    **kwargs
+                )
         elif isinstance(source, list):
             # Check if it's a list of URLs or paths
             if all(
-                isinstance(item, str) and (item.startswith('http://') or item.startswith('https://')) for item in source
+                isinstance(item, str) and (
+                    item.startswith('http://') or item.startswith('https://')
+                ) for item in source
             ):
                 tasks = await self.from_url(source, **kwargs)
             else:
                 # Assume it's a list of file paths
                 path_tasks = []
                 for path in source:
-                    path_tasks.extend(await self.from_path(path, recursive=self._recursive, **kwargs))
+                    path_tasks.extend(
+                        await self.from_path(path, recursive=self._recursive, **kwargs)
+                    )
                 tasks = path_tasks
         else:
             raise ValueError(
@@ -431,7 +536,12 @@ class AbstractLoader(ABC):
             metadata=_meta
         )
 
-    def summary_from_text(self, text: str, max_length: int = 500, min_length: int = 50) -> str:
+    def summary_from_text(
+        self,
+        text: str,
+        max_length: int = 500,
+        min_length: int = 50
+    ) -> str:
         """
         Get a summary of a text.
         """
@@ -449,12 +559,23 @@ class AbstractLoader(ABC):
                     truncation=True
                 )
                 return content[0].get('summary_text', '')
-            # Use Summarize Chain from Langchain
-            doc = Document(page_content=text)
-            summary = summarizer.invoke(
-                {"input_documents": [doc]}, return_only_outputs=True
+            # Use Summarize Method from GroqClient
+            system_prompt = f"""
+Your job is to produce a final summary from the following text and identify the main theme.
+- The summary should be concise and to the point.
+- The summary should be no longer than {max_length} characters and no less than {min_length} characters.
+- The summary should be in a single paragraph.
+"""
+            summary = summarizer.summarize_text(
+                text,
+                model=GroqModel.LLAMA_3_3_70B_VERSATILE,
+                system_prompt=system_prompt,
+                temperature=0.1,
+                max_tokens=1000,
+                top_k=30,
+                top_p=0.5
             )
-            return summary.get('output_text', '')
+            return summary.output
         except Exception as e:
             self.logger.error(
                 f'ERROR on summary_from_text: {e}'
@@ -480,38 +601,16 @@ class AbstractLoader(ABC):
                     tokenizer=summarize_tokenizer
                 )
             else:
-                # Use Summarize Chain from Langchain
-                prompt_template = """Write a summary of the following, please also identify the main theme:
-                {text}
-                SUMMARY:"""
-                prompt = PromptTemplate.from_template(prompt_template)
-                refine_template = (
-                    "Your job is to produce a final summary\n"
-                    "We have provided an existing summary up to a certain point: {existing_answer}\n"
-                    "We have the opportunity to refine the existing summary"
-                    "(only if needed) with some more context below.\n"
-                    "------------\n"
-                    "{text}\n"
-                    "------------\n"
-                    "Given the new context, refine the original summary adding more explanation."
-                    "If the context isn't useful, return the original summary."
-                )
-                refine_prompt = PromptTemplate.from_template(refine_template)
-                llm = self.get_default_llm()
-                llm = llm.get_llm()
-                summarize_chain = load_summarize_chain(
-                    llm=llm,
-                    chain_type="refine",
-                    question_prompt=prompt,
-                    refine_prompt=refine_prompt,
-                    return_intermediate_steps=False,
-                    input_key="input_documents",
-                    output_key="output_text",
-                )
-                self._summary_model = summarize_chain
+                # Use Groq for Summarization:
+                self._summary_model = GroqClient()
         return self._summary_model
 
-    def translate_text(self, text: str, source_lang: str = "en", target_lang: str = "es") -> str:
+    def translate_text(
+        self,
+        text: str,
+        source_lang: str = None,
+        target_lang: str = "es"
+    ) -> str:
         """
         Translate text from source language to target language.
 
@@ -537,12 +636,13 @@ class AbstractLoader(ABC):
                 return content[0].get('translation_text', '')
             else:
                 # Use LLM for translation
-                translation = translator.invoke(
-                    {
-                        "text": text,
-                        "source_lang": source_lang,
-                        "target_lang": target_lang
-                    }
+                translation = translator.translate_text(
+                    text=text,
+                    source_lang=source_lang,
+                    target_lang=target_lang,
+                    model=GoogleModel.GEMINI_2_5_FLASH_LITE_PREVIEW,
+                    temperature=0.1,
+                    max_tokens=1000
                 )
                 return translation.get('text', '')
         except Exception as e:
@@ -595,36 +695,18 @@ class AbstractLoader(ABC):
                         tokenizer=translate_tokenizer
                     )
                 except Exception as e:
-                    self.logger.error(f"Error loading translation model {model_name}: {e}")
+                    self.logger.error(
+                        f"Error loading translation model {model_name}: {e}"
+                    )
                     # Fallback to using LLM for translation
                     self._use_translation_pipeline = False
 
             if not self._use_translation_pipeline:
-                # Use LLM Chain for translation
-                prompt_template = """Translate the following text from {source_lang} to {target_lang}:
-
-                Text: {text}
-
-                Translation:"""
-
-                prompt = PromptTemplate(
-                    template=prompt_template,
-                    input_variables=["text", "source_lang", "target_lang"]
+                # Use LLM for translation
+                translation_model = self.get_default_llm(
+                    model=GoogleModel.GEMINI_2_5_FLASH_LITE_PREVIEW
                 )
-
-                llm = self.get_default_llm().get_llm()
-                # Create a simple translation chain
-                translation_chain = (
-                    {
-                        "text": RunnablePassthrough(),
-                        "source_lang": lambda x: source_lang,
-                        "target_lang": lambda x: target_lang,
-                    }
-                    | prompt
-                    | llm
-                    | (lambda x: {"text": x})
-                )
-                self._translation_models[cache_key] = translation_chain
+                self._translation_models[cache_key] = translation_model
 
         return self._translation_models[cache_key]
 
@@ -657,7 +739,10 @@ class AbstractLoader(ABC):
             "is_translation": True
         })
 
-        return Document(page_content=translated_content, metadata=translation_metadata)
+        return Document(
+            page_content=translated_content,
+            metadata=translation_metadata
+        )
 
     def saving_file(self, filename: PurePath, data: Any):
         """Save data to a file.

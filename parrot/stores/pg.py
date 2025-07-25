@@ -43,6 +43,7 @@ from navconfig.logging import logging
 from .abstract import AbstractStore
 from ..conf import default_sqlalchemy_pg
 from .models import SearchResult, Document, DistanceStrategy
+from .utils.chunking import LateChunkingProcessor
 
 
 Base = declarative_base()
@@ -527,16 +528,20 @@ class PgVectorStore(AbstractStore):
             self.logger.error(f"Error adding documents: {e}")
             raise
 
-    from_documents = add_documents
-
-    def get_distance_strategy(self, embedding_column_obj, query_embedding, metric: str = None) -> Any:
+    def get_distance_strategy(
+        self,
+        embedding_column_obj,
+        query_embedding,
+        metric: str = None
+    ) -> Any:
         """
         Return the appropriate distance expression based on the metric or configured strategy.
 
         Args:
             embedding_column_obj: The SQLAlchemy column object for embeddings
             query_embedding: The query embedding vector
-            metric: Optional metric string ('COSINE', 'L2', 'IP', 'DOT') - if None, uses self.distance_strategy
+            metric: Optional metric string ('COSINE', 'L2', 'IP', 'DOT')
+                - if None, uses self.distance_strategy
         """
         # Use provided metric or fall back to instance distance_strategy
         strategy = metric or self.distance_strategy
@@ -603,14 +608,15 @@ class PgVectorStore(AbstractStore):
             table: Table name (optional, uses default if not provided)
             schema: Schema name (optional, uses default if not provided)
             limit: Maximum number of results to return
-            threshold: Maximum distance threshold (results with distance > threshold will be filtered out)
+            score_threshold: Maximum distance threshold
+                results with distance > threshold will be filtered out)
             metadata_filters: Dictionary of metadata filters to apply
             metric: Distance metric to use ('COSINE', 'L2', 'IP')
             embedding_column: Name of the embedding column
             content_column: Name of the content column
             metadata_column: Name of the metadata column
             id_column: Name of the ID column
-
+            additional_columns: List of additional columns to include in results.
         Returns:
             List of SearchResult objects with content, metadata, score, collection_id, and record_id
         """
@@ -739,7 +745,6 @@ class PgVectorStore(AbstractStore):
         async with self._connection.begin() as conn:
             await conn.execute(text(f"DROP TABLE IF EXISTS {full_table_name}"))
         self.logger.info(f"Table '{full_table_name}' dropped successfully.")
-
 
     async def prepare_embedding_table(
         self,
@@ -2335,3 +2340,316 @@ class PgVectorStore(AbstractStore):
         except Exception as e:
             self.logger.error(f"Error counting documents: {e}")
             raise RuntimeError(f"Failed to count documents: {e}") from e
+
+    async def from_documents(
+        self,
+        documents: List[Document],
+        table: str,
+        schema: str = 'public',
+        embedding_column: str = 'embedding',
+        content_column: str = 'document',
+        metadata_column: str = 'cmetadata',
+        chunk_size: int = 8192,
+        chunk_overlap: int = 200,
+        store_full_document: bool = True,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """
+        Add documents using late chunking strategy.
+
+        Args:
+            documents: List of Document objects to process
+            table: Table name
+            schema: Schema name
+            embedding_column: Name of embedding column
+            content_column: Name of content column
+            metadata_column: Name of metadata column
+            chunk_size: Maximum size of each chunk
+            chunk_overlap: Overlap between chunks
+            store_full_document: Whether to store full document alongside chunks
+
+        Returns:
+            Dictionary with processing statistics
+        """
+        if not self._connected:
+            await self.connection()
+
+        # Initialize late chunking processor
+        chunking_processor = LateChunkingProcessor(
+            vector_store=self,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap
+        )
+
+        # Ensure embedding store is initialized
+        if self.embedding_store is None:
+            self.embedding_store = self._define_collection_store(
+                table=table,
+                schema=schema,
+                dimension=self.dimension,
+                id_column=self._id_column,
+                embedding_column=embedding_column,
+                document_column=content_column,
+                metadata_column=metadata_column,
+                text_column=self._text_column,
+            )
+
+        all_inserts = []
+        stats = {
+            'documents_processed': 0,
+            'chunks_created': 0,
+            'full_documents_stored': 0
+        }
+        for doc_idx, document in enumerate(documents):
+            document_id = f"doc_{doc_idx:06d}_{uuid.uuid4().hex[:8]}"
+
+            # Process document with late chunking
+            full_embedding, chunk_infos = await chunking_processor.process_document_late_chunking(
+                document_text=document.page_content,
+                document_id=document_id,
+                metadata=document.metadata
+            )
+            # Store full document if requested
+            if store_full_document:
+                full_doc_metadata = {
+                    **(document.metadata or {}),
+                    'document_id': document_id,
+                    'is_full_document': True,
+                    'total_chunks': len(chunk_infos),
+                    'document_type': 'parent',
+                    'chunking_strategy': 'late_chunking'
+                }
+
+                all_inserts.append({
+                    self._id_column: document_id,
+                    embedding_column: full_embedding.tolist(),
+                    content_column: document.page_content,
+                    metadata_column: full_doc_metadata
+                })
+                stats['full_documents_stored'] += 1
+
+            # Store all chunks
+            for chunk_info in chunk_infos:
+                all_inserts.append({
+                    self._id_column: chunk_info.chunk_id,
+                    embedding_column: chunk_info.chunk_embedding.tolist(),
+                    content_column: chunk_info.chunk_text,
+                    metadata_column: chunk_info.metadata
+                })
+                stats['chunks_created'] += 1
+
+            stats['documents_processed'] += 1
+
+        # Bulk insert all data
+        if all_inserts:
+            insert_stmt = insert(self.embedding_store)
+
+            try:
+                async with self.session() as session:
+                    await session.execute(insert_stmt, all_inserts)
+
+                self.logger.info(
+                    f"✅ Late chunking complete: {stats['documents_processed']} documents → "
+                    f"{stats['chunks_created']} chunks + {stats['full_documents_stored']} full docs"
+                )
+
+            except Exception as e:
+                self.logger.error(f"Error in late chunking insert: {e}")
+                raise
+
+        return stats
+
+    async def document_search(
+        self,
+        query: str,
+        table: str = None,
+        schema: str = None,
+        limit: int = 10,
+        search_chunks: bool = True,
+        search_full_docs: bool = False,
+        rerank_with_context: bool = True,
+        context_window: int = 2,
+        **kwargs
+    ) -> List[SearchResult]:
+        """
+        Search with late chunking context awareness.
+
+        Args:
+            query: Search query
+            table: Table name
+            schema: Schema name
+            limit: Number of results
+            search_chunks: Whether to search chunk-level embeddings
+            search_full_docs: Whether to search full document embeddings
+            rerank_with_context: Whether to rerank using surrounding chunks
+            context_window: Number of adjacent chunks to include for context
+
+        Returns:
+            List of SearchResult objects with enhanced context
+        """
+        results = []
+
+        # Search chunks if requested
+        if search_chunks:
+            chunk_filters = {'is_chunk': True}
+            chunk_results = await self.similarity_search(
+                query=query,
+                table=table,
+                schema=schema,
+                limit=limit * 2,  # Get more candidates for reranking
+                metadata_filters=chunk_filters,
+                **kwargs
+            )
+            results.extend(chunk_results)
+
+        # Search full documents if requested
+        if search_full_docs:
+            doc_filters = {'is_full_document': True}
+            doc_results = await self.similarity_search(
+                query=query,
+                table=table,
+                schema=schema,
+                limit=limit,
+                metadata_filters=doc_filters,
+                **kwargs
+            )
+            results.extend(doc_results)
+
+        # Rerank with context if requested
+        if rerank_with_context and search_chunks:
+            results = await self._rerank_with_chunk_context(
+                results=results,
+                query=query,
+                table=table,
+                schema=schema,
+                context_window=context_window
+            )
+
+        # Sort by score and limit
+        results.sort(key=lambda x: x.score)
+        return results[:limit]
+
+    async def _rerank_with_chunk_context(
+        self,
+        results: List[SearchResult],
+        query: str,
+        table: str,
+        schema: str,
+        context_window: int = 2
+    ) -> List[SearchResult]:
+        """
+        Rerank results by including surrounding chunk context.
+        """
+        enhanced_results = []
+
+        for result in results:
+            if not result.metadata.get('is_chunk'):
+                enhanced_results.append(result)
+                continue
+
+            # Get surrounding chunks for context
+            parent_id = result.metadata.get('parent_document_id')
+            chunk_index = result.metadata.get('chunk_index', 0)
+
+            if parent_id:
+                # Find adjacent chunks
+                context_chunks = await self._get_adjacent_chunks(
+                    parent_id=parent_id,
+                    center_chunk_index=chunk_index,
+                    window_size=context_window,
+                    table=table,
+                    schema=schema
+                )
+
+                # Combine text with context
+                combined_text = self._combine_chunk_context(result, context_chunks)
+
+                # Re-score with context
+                context_embedding = self._embed_.embed_query(combined_text)
+                query_embedding = self._embed_.embed_query(query)
+
+                # Calculate new similarity score
+                context_score = self._compute_similarity(
+                    query_embedding, context_embedding, self.distance_strategy
+                )
+
+                # Create enhanced result
+                enhanced_metadata = dict(result.metadata)
+                enhanced_metadata['context_score'] = context_score
+                enhanced_metadata['has_context'] = True
+                enhanced_metadata['context_chunks'] = len(context_chunks)
+
+                enhanced_result = SearchResult(
+                    id=result.id,
+                    content=combined_text,
+                    metadata=enhanced_metadata,
+                    score=context_score
+                )
+
+                enhanced_results.append(enhanced_result)
+            else:
+                enhanced_results.append(result)
+
+        return enhanced_results
+
+    async def _get_adjacent_chunks(
+        self,
+        parent_id: str,
+        center_chunk_index: int,
+        window_size: int,
+        table: str,
+        schema: str
+    ) -> List[SearchResult]:
+        """Get adjacent chunks for context."""
+        # Calculate chunk index range
+        start_idx = max(0, center_chunk_index - window_size)
+        end_idx = center_chunk_index + window_size + 1
+
+        # Search for chunks in the range
+        chunk_filters = {
+            'parent_document_id': parent_id,
+            'is_chunk': True
+        }
+
+        # Get all chunks from parent document
+        all_chunks = await self.similarity_search(
+            query="",  # Empty query to get all matches
+            table=table,
+            schema=schema,
+            limit=1000,  # High limit to get all chunks
+            metadata_filters=chunk_filters
+        )
+
+        # Filter to adjacent chunks
+        adjacent_chunks = [
+            chunk for chunk in all_chunks
+            if start_idx <= chunk.metadata.get('chunk_index', 0) < end_idx
+        ]
+
+        # Sort by chunk index
+        adjacent_chunks.sort(key=lambda x: x.metadata.get('chunk_index', 0))
+
+        return adjacent_chunks
+
+    def _combine_chunk_context(
+        self,
+        center_result: SearchResult,
+        context_chunks: List[SearchResult]
+    ) -> str:
+        """Combine center chunk with surrounding context."""
+        # Sort context chunks by index
+        context_chunks.sort(key=lambda x: x.metadata.get('chunk_index', 0))
+
+        # Combine text
+        combined_parts = []
+        center_idx = center_result.metadata.get('chunk_index', 0)
+
+        for chunk in context_chunks:
+            chunk_idx = chunk.metadata.get('chunk_index', 0)
+            if chunk_idx == center_idx:
+                # Mark the main chunk
+                combined_parts.append(f"[MAIN] {chunk.content} [/MAIN]")
+            else:
+                combined_parts.append(chunk.content)
+
+        return " ... ".join(combined_parts)
