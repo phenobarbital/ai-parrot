@@ -1,11 +1,11 @@
 from abc import ABC, abstractmethod
-from typing import List, Optional, Union
+from typing import List, Optional, Union, Any
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import torch
 from navconfig.logging import logging
-from sentence_transformers import SentenceTransformer
+from ..conf import EMBEDDING_DEVICE
 
 
 class EmbeddingModel(ABC):
@@ -16,7 +16,7 @@ class EmbeddingModel(ABC):
     def __init__(self, model_name: str, **kwargs):
         self.model_name = model_name
         self.logger = logging.getLogger(f"parrot.{self.__class__.__name__}")
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.device = self._get_device()
         self.executor = ThreadPoolExecutor(max_workers=4)
         self._model_lock = asyncio.Lock()
         self._dimension = None
@@ -24,6 +24,14 @@ class EmbeddingModel(ABC):
             model_name=self.model_name,
             **kwargs
         )
+
+    def _get_device(self) -> str:
+        """Determines the optimal device for torch operations."""
+        if torch.cuda.is_available():
+            return "cuda"
+        if torch.backends.mps.is_available():
+            return "mps"
+        return EMBEDDING_DEVICE
 
     def get_embedding_dimension(self) -> int:
         return self._dimension
@@ -40,7 +48,7 @@ class EmbeddingModel(ABC):
 
 
     @abstractmethod
-    def _create_embedding(self, model_name: str, **kwargs) -> SentenceTransformer:
+    def _create_embedding(self, model_name: str, **kwargs) -> Any:
         """
         Loads and returns the embedding model instance.
         """

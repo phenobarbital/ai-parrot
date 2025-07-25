@@ -106,6 +106,10 @@ EMBEDDING_DEFAULT_MODEL = config.get(
     'EMBEDDING_DEFAULT_MODEL',
     fallback='sentence-transformers/all-MiniLM-L12-v2'
 )
+HUGGINGFACE_EMBEDDING_CACHE_DIR = config.get(
+    'HUGGINGFACE_EMBEDDING_CACHE_DIR',
+    fallback=BASE_DIR.joinpath('model_cache', 'huggingface')
+)
 MAX_VRAM_AVAILABLE = config.get('MAX_VRAM_AVAILABLE', fallback=20000)
 RAM_AVAILABLE = config.get('RAM_AVAILABLE', fallback=819200)
 CUDA_DEFAULT_DEVICE = config.get('CUDA_DEFAULT_DEVICE', fallback='cpu')
