@@ -146,14 +146,6 @@ setup(
     ],
     install_requires=[
         "Cython==3.0.11",
-        "langchain>=0.3.26,<0.4.0",
-        "langchain-core==0.3.67",
-        "langchain-community==0.3.24",
-        "langchain-experimental==0.3.4",
-        "langchain-text-splitters==0.3.8",
-        "langchainhub==0.1.21",
-        "huggingface-hub==0.30.2",
-        "langgraph==0.3.27",
         "faiss-cpu>=1.9.0",
         "jq==1.7.0",
         "rank_bm25==0.2.2",
@@ -161,7 +153,6 @@ setup(
         "sentencepiece==0.2.0",
         "markdown2==2.4.13",
         "psycopg-binary==3.2.6",
-        "langchain_postgres==0.0.14",
         "python-datamodel>=0.10.17",
         "backoff==2.2.1",
         "asyncdb>=2.11.6",
@@ -203,7 +194,6 @@ setup(
             "pymupdf==1.25.5",
             "pymupdf4llm==0.0.22",
             "pdf4llm==0.0.22",
-            "langchain-huggingface==0.1.2",
             "pytube==15.0.0",
             "youtube_transcript_api==1.0.3",
             "python-pptx==1.0.2"
@@ -229,7 +219,6 @@ setup(
         ],
         "vector": [
             "torch>=2.5.1,<=2.6.0",
-            "langchain_huggingface==0.1.2",
             "fastembed==0.3.4",
             "tiktoken==0.7.0",
             "accelerate==0.34.2",
@@ -239,53 +228,39 @@ setup(
             "datasets>=3.0.2",
             "safetensors>=0.4.3",
             "transformers>=4.51.1,<=4.51.3",
-            "sentence-transformers==4.0.2",
+            "sentence-transformers>=5.0.0",
             "tokenizers>=0.20.0,<=0.21.1",
             "tensorflow==2.18.0",
             "tf-keras==2.18.0",
             "simsimd>=4.3.1",
             "opencv-python==4.10.0.84",
-            "langchain_chroma==0.2.2",
             "chromadb==0.6.3",
-            "langchain_duckdb==0.1.1",
-            "langchain-ollama==0.2.3"
         ],
         "anthropic": [
             "anthropic==0.58.2",
-            # "langchain_anthropic==0.3.13"
         ],
         "openai": [
-            # "langchain_openai==0.3.18",
             "openai==1.97.0",
-            # "llama-index-llms-openai==0.1.11",
             "tiktoken==0.9.0"
         ],
         "google": [
-            # "langchain-google-vertexai>=2.0.27",
-            # "langchain-google-genai>=2.1.6",
             "google-cloud-texttospeech==2.27.0",
             "google-genai>=1.26.0",
             "vertexai==1.71.1",
-        ],
-        "hunggingfaces": [
-            "llama-index-llms-huggingface==0.2.7",
+            "google-cloud-aiplatform==1.71.1",
         ],
         "groq": [
             "groq==0.30.0",
-            # "langchain-groq==0.3.2"
         ],
         "qdrant": [
             "qdrant-client==1.13.2",
-            "langchain-qdrant==0.2.0"
         ],
         "milvus": [
-            "langchain-milvus>=0.1.6",
             "pymilvus==2.4.8",
             "milvus==2.3.5"
         ],
         "chroma": [
             "chroma==0.2.0",
-            "langchain-chroma==0.2.2"
         ]
     },
     tests_require=[
