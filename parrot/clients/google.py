@@ -977,94 +977,316 @@ class GoogleGenAIClient(AbstractClient):
         model: Union[str, GoogleModel] = GoogleModel.GEMINI_2_5_FLASH,
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
+        files: Optional[List[Union[str, Path]]] = None,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
-        # RAG specific parameters
-        table: str = None,
-        schema: str = 'public',
-        top_k_results: int = 3,
-        search_metric: str = 'COSINE',
-        metadata_filters: Optional[Dict[str, Any]] = None,
+        system_prompt: Optional[str] = None,
+        structured_output: Union[type, StructuredOutputConfig] = None,
+        use_internal_tools: bool = False, # New parameter to control internal tools
     ) -> AIMessage:
         """
-        Answers a question using a RAG pipeline with a PostgreSQL vector store.
-
-        This method first retrieves relevant context from the vector store and then
-        injects it into the prompt before asking the generative model.
+        Ask a question to Google's Generative AI in a stateless manner,
+        without conversation history and with optional internal tools.
 
         Args:
-            prompt (str): The user's question.
-            model: The generative model to use.
-            ... (other model parameters)
-            table (str): The database table for vector search.
-            schema (str): The database schema for the table.
-            top_k_results (int): The number of context documents to retrieve.
-            search_metric (str): The distance metric for vector search (e.g., 'COSINE').
-            metadata_filters (dict): Filters to apply to the vector search.
-
-        Returns:
-            An AIMessage object containing the model's response.
+            prompt (str): The input prompt for the model.
+            model (Union[str, GoogleModel]): The model to use, defaults to GEMINI_2_5_FLASH.
+            max_tokens (int): Maximum number of tokens in the response.
+            temperature (float): Sampling temperature for response generation.
+            files (Optional[List[Union[str, Path]]]): Optional files to include in the request.
+            system_prompt (Optional[str]): Optional system prompt to guide the model.
+            structured_output (Union[type, StructuredOutputConfig]): Optional structured output configuration.
+            user_id (Optional[str]): Optional user identifier for tracking.
+            session_id (Optional[str]): Optional session identifier for tracking.
+            use_internal_tools (bool): If True, Gemini's built-in tools (e.g., Google Search)
+                will be made available to the model. Defaults to False.
         """
         self.logger.info(
             f"Initiating RAG pipeline for prompt: '{prompt[:50]}...'"
         )
 
-        # 1. Initialize the vector store and retrieve context
-        try:
-            store = PgVectorStore()
-            async with store:
-                search_results = await store.similarity_search(
-                    query=prompt,
-                    table=table,
-                    schema=schema,
-                    limit=top_k_results,
-                    metadata_filters=metadata_filters,
-                    metric=search_metric,
-                )
-        except Exception as e:
-            self.logger.error(
-                f"Failed to retrieve context from vector store: {e}"
-            )
-            # Fallback: Ask the question without context
-            return await self.ask(
-                prompt=prompt,
-                model=model,
-                max_tokens=max_tokens,
-                temperature=temperature,
-                user_id=user_id,
-                session_id=session_id
+        model = model.value if isinstance(model, GoogleModel) else model
+        turn_id = str(uuid.uuid4())
+        original_prompt = prompt
+
+        output_config = self._get_structured_config(structured_output)
+
+        generation_config = {
+            "max_output_tokens": max_tokens or self.max_tokens,
+            "temperature": temperature or self.temperature,
+        }
+
+        if structured_output:
+            if isinstance(structured_output, type):
+                generation_config["response_mime_type"] = "application/json"
+                generation_config["response_schema"] = structured_output
+            elif isinstance(structured_output, StructuredOutputConfig):
+                if structured_output.format == OutputFormat.JSON:
+                    generation_config["response_mime_type"] = "application/json"
+                    generation_config["response_schema"] = structured_output.output_type
+
+        tools = None
+        if use_internal_tools:
+            tools = self._build_tools("builtin_tools") # Only built-in tools
+            self.logger.debug(
+                f"Enabled internal tool usage."
             )
 
-        # 2. Format the retrieved context
-        context = "\n\n---\n\n".join(
-            [f"Source {i+1}:\n{res.content}" for i, res in enumerate(search_results)]
+        # Build contents for the stateless call
+        contents = []
+        if files:
+            for file_path in files:
+                # In a real scenario, you'd handle file uploads to Gemini properly
+                # This is a placeholder for file content
+                contents.append(
+                    {
+                        "part": {
+                            "inline_data": {
+                                "mime_type": "application/octet-stream",
+                                "data": "BASE64_ENCODED_FILE_CONTENT"
+                            }
+                        }
+                    }
+                )
+
+        # Add the user prompt as the first part
+        contents.append({
+            "role": "user",
+            "parts": [{"text": prompt}]
+        })
+
+        all_tool_calls = [] # To capture any tool calls made by internal tools
+
+        final_config = GenerateContentConfig(
+            system_instruction=system_prompt,
+            tools=tools,
+            **generation_config
         )
 
-        if not context:
-            self.logger.warning(
-                "No context found from vector search. Asking without context."
-            )
-            context = "No context was found."
-
-        # 3. Create the system prompt with the context
-        system_prompt = f"""
-You are an expert assistant. Your task is to answer the user's question based on the provided context.
-If the context does not contain the answer, state that you cannot answer based on the information you have.
-Do not use any external knowledge.
-
-### Context
-{context}
-"""
-
-        # 4. Ask the model with the augmented prompt
-        self.logger.info("Sending augmented prompt to the generative model.")
-        return await self.ask(
-            prompt=prompt,
+        response = await self.client.aio.models.generate_content(
             model=model,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            system_prompt=system_prompt,
+            contents=contents,
+            config=final_config
+        )
+
+        # Handle potential internal tool calls if they are part of the direct generate_content response
+        # Gemini can sometimes decide to use internal tools even without explicit function calling setup
+        # if the tools are broadly enabled (e.g., through a general 'tool' parameter).
+        # This part assumes Gemini's 'generate_content' directly returns tool calls if it uses them.
+        if use_internal_tools and response.candidates and response.candidates[0].content.parts:
+            function_calls = [
+                part.function_call
+                for part in response.candidates[0].content.parts
+                if hasattr(part, 'function_call') and part.function_call
+            ]
+            if function_calls:
+                tool_call_objects = []
+                for fc in function_calls:
+                    tc = ToolCall(
+                        id=f"call_{uuid.uuid4().hex[:8]}",
+                        name=fc.name,
+                        arguments=dict(fc.args)
+                    )
+                    tool_call_objects.append(tc)
+
+                start_time = time.time()
+                tool_execution_tasks = [
+                    self._execute_tool(fc.name, dict(fc.args)) for fc in function_calls
+                ]
+                tool_results = await asyncio.gather(
+                    *tool_execution_tasks,
+                    return_exceptions=True
+                )
+                execution_time = time.time() - start_time
+
+                for tc, result in zip(tool_call_objects, tool_results):
+                    tc.execution_time = execution_time / len(tool_call_objects)
+                    if isinstance(result, Exception):
+                        tc.error = str(result)
+                    else:
+                        tc.result = result
+
+                all_tool_calls.extend(tool_call_objects)
+                pass # We're not doing a multi-turn here for stateless
+
+        final_output = None
+        if structured_output:
+            try:
+                final_output = await self._parse_structured_output(
+                    response.text,
+                    output_config
+                )
+            except Exception:
+                final_output = response.text
+
+        ai_message = AIMessageFactory.from_gemini(
+            response=response,
+            input_text=original_prompt,
+            model=model,
             user_id=user_id,
             session_id=session_id,
-            stateless=True # RAG is typically stateless for each question
+            turn_id=turn_id,
+            structured_output=final_output if final_output != response.text else None,
+            tool_calls=all_tool_calls
         )
+        ai_message.provider = "google_genai"
+
+        return ai_message
+
+    async def summarize_text(
+        self,
+        text: str,
+        max_length: int = 500,
+        min_length: int = 100,
+        model: Union[str, GoogleModel] = GoogleModel.GEMINI_2_5_FLASH,
+        temperature: Optional[float] = None,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+    ) -> AIMessage:
+        """
+        Generates a summary for a given text in a stateless manner.
+
+        Args:
+            text (str): The text content to summarize.
+            max_length (int): The maximum desired character length for the summary.
+            min_length (int): The minimum desired character length for the summary.
+            model (Union[str, GoogleModel]): The model to use.
+            temperature (float): Sampling temperature for response generation.
+            user_id (Optional[str]): Optional user identifier for tracking.
+            session_id (Optional[str]): Optional session identifier for tracking.
+        """
+        self.logger.info(
+            f"Generating summary for text: '{text[:50]}...'"
+        )
+
+        model = model.value if isinstance(model, GoogleModel) else model
+        turn_id = str(uuid.uuid4())
+
+        # Define the specific system prompt for summarization
+        system_prompt = f"""
+Your job is to produce a final summary from the following text and identify the main theme.
+- The summary should be concise and to the point.
+- The summary should be no longer than {max_length} characters and no less than {min_length} characters.
+- The summary should be in a single paragraph.
+"""
+
+        generation_config = {
+            "max_output_tokens": self.max_tokens,
+            "temperature": temperature or self.temperature,
+        }
+
+        # Build contents for the stateless call. The 'prompt' is the text to be summarized.
+        contents = [{
+            "role": "user",
+            "parts": [{"text": text}]
+        }]
+
+        final_config = GenerateContentConfig(
+            system_instruction=system_prompt,
+            tools=None,  # No tools needed for summarization
+            **generation_config
+        )
+
+        # Make a stateless call to the model
+        response = await self.client.aio.models.generate_content(
+            model=model,
+            contents=contents,
+            config=final_config
+        )
+
+        # Create the AIMessage response using the factory
+        ai_message = AIMessageFactory.from_gemini(
+            response=response,
+            input_text=text,
+            model=model,
+            user_id=user_id,
+            session_id=session_id,
+            turn_id=turn_id,
+            structured_output=None,
+            tool_calls=[]
+        )
+        ai_message.provider = "google_genai"
+
+        return ai_message
+
+    async def translate_text(
+        self,
+        text: str,
+        target_lang: str,
+        source_lang: Optional[str] = None,
+        model: Union[str, GoogleModel] = GoogleModel.GEMINI_2_5_FLASH,
+        temperature: Optional[float] = 0.2,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+    ) -> AIMessage:
+        """
+        Translates a given text from a source language to a target language.
+
+        Args:
+            text (str): The text content to translate.
+            target_lang (str): The ISO code for the target language (e.g., 'es', 'fr').
+            source_lang (Optional[str]): The ISO code for the source language.
+                If None, the model will attempt to detect it.
+            model (Union[str, GoogleModel]): The model to use. Defaults to GEMINI_2_5_FLASH,
+                which is recommended for speed.
+            temperature (float): Sampling temperature for response generation.
+            user_id (Optional[str]): Optional user identifier for tracking.
+            session_id (Optional[str]): Optional session identifier for tracking.
+        """
+        self.logger.info(
+            f"Translating text to '{target_lang}': '{text[:50]}...'"
+        )
+
+        model = model.value if isinstance(model, GoogleModel) else model
+        turn_id = str(uuid.uuid4())
+
+        # Construct the system prompt for translation
+        if source_lang:
+            prompt_instruction = (
+                f"Translate the following text from {source_lang} to {target_lang}. "
+                "Only return the translated text, without any additional comments or explanations."
+            )
+        else:
+            prompt_instruction = (
+                f"First, detect the source language of the following text. Then, translate it to {target_lang}. "
+                "Only return the translated text, without any additional comments or explanations."
+            )
+
+        generation_config = {
+            "max_output_tokens": self.max_tokens,
+            "temperature": temperature or self.temperature,
+        }
+
+        # Build contents for the stateless API call
+        contents = [{
+            "role": "user",
+            "parts": [{"text": text}]
+        }]
+
+        final_config = GenerateContentConfig(
+            system_instruction=prompt_instruction,
+            tools=None,  # No tools needed for translation
+            **generation_config
+        )
+
+        # Make a stateless call to the model
+        response = await self.client.aio.models.generate_content(
+            model=model,
+            contents=contents,
+            config=final_config
+        )
+
+        # Create the AIMessage response using the factory
+        ai_message = AIMessageFactory.from_gemini(
+            response=response,
+            input_text=text,
+            model=model,
+            user_id=user_id,
+            session_id=session_id,
+            turn_id=turn_id,
+            structured_output=None,
+            tool_calls=[]
+        )
+        ai_message.provider = "google_genai"
+
+        return ai_message

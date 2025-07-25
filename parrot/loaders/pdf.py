@@ -1,7 +1,7 @@
 from typing import List, Optional
 from pathlib import PurePath
 import fitz
-from langchain.docstore.document import Document
+from ..stores.models import Document
 from .abstract import AbstractLoader
 
 
@@ -108,9 +108,9 @@ class PDFLoader(AbstractLoader):
                 "filename": path.name,
                 "file_path": str(path),
                 "page_number": i + 1,
-                "title": doc.metadata.get("title", ""),
-                "creationDate": doc.metadata.get("creationDate", ""),
-                "author": doc.metadata.get("author", ""),
+                # "title": doc.metadata.get("title", ""),
+                # "creationDate": doc.metadata.get("creationDate", ""),
+                # "author": doc.metadata.get("author", ""),
             }
             meta = self.create_metadata(
                 path=path,
@@ -119,7 +119,9 @@ class PDFLoader(AbstractLoader):
                 doc_metadata=document_meta,
             )
             if len(content) < 10:
-                self.logger.warning(f"Page {i+1} content too short, skipping.")
+                self.logger.warning(
+                    f"Page {i+1} content too short, skipping."
+                )
                 continue
             docs.append(
                 self.create_document(

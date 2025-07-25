@@ -405,3 +405,87 @@ class GroqClient(AbstractClient):
     async def batch_ask(self, requests):
         """Process multiple requests in batch."""
         return await super().batch_ask(requests)
+
+    async def summarize_text(
+        self,
+        text: str,
+        model: str = GroqModel.LLAMA_3_3_70B_VERSATILE,
+        max_tokens: int = 1024,
+        temperature: float = 0.1,
+        system_prompt: Optional[str] = None,
+        top_p: float = 0.9,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None
+    ) -> AIMessage:
+        """Summarize the given text using Groq API.
+
+        Args:
+            text (str): The text to be summarized.
+            model (str): The Groq model to use.
+            max_tokens (int): Maximum tokens for the response.
+            temperature (float): Sampling temperature.
+            top_p (float): Top-p sampling.
+
+        Returns:
+            str: The summarized text.
+        """
+        # Generate unique turn ID for tracking
+        turn_id = str(uuid.uuid4())
+        original_prompt = text
+
+        system_prompt = system_prompt or "Summarize the following text:"
+
+        messages, conversation_session, system_prompt = await self._prepare_conversation_context(
+            original_prompt, None, user_id, session_id, system_prompt
+        )
+
+        if system_prompt:
+            messages.insert(0, {"role": "system", "content": system_prompt})
+
+        # Prepare request arguments
+        request_args = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": text},
+            ],
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "top_p": top_p,
+            "stream": False,
+        }
+
+        # Make request to Groq API
+        response = await self.client.chat.completions.create(**request_args)
+        result = response.choices[0].message
+
+        # Extract summarized text
+        summarized_text = result.content
+
+        # Add final assistant message to conversation
+        messages.append({
+            "role": "assistant",
+            "content": result.content
+        })
+
+        # Update conversation memory
+        await self._update_conversation_memory(
+            user_id,
+            session_id,
+            conversation_session,
+            messages,
+            system_prompt
+        )
+
+        # Create AIMessage using factory
+        ai_message = AIMessageFactory.from_groq(
+            response=response,
+            input_text=original_prompt,
+            model=model,
+            user_id=user_id,
+            session_id=session_id,
+            turn_id=turn_id,
+            structured_output=summarized_text
+        )
+
+        return ai_message

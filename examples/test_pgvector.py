@@ -7,6 +7,7 @@ import asyncio
 import uuid
 from typing import List
 from sqlalchemy import text
+from navconfig import BASE_DIR
 from parrot.stores.models import Document
 from parrot.stores.pg import PgVectorStore
 
@@ -268,6 +269,39 @@ async def test_store_with_score():
             except Exception as e:
                 print(f"Error during search: {e}")
 
+async def test_late_chunking():
+    table = 'test_table'
+    schema = 'troc'
+    id_column = 'id'
+    _store = PgVectorStore(
+        embedding_model=embed_model,
+        dsn="postgresql+asyncpg://troc_pgdata:12345678@127.0.0.1:5432/navigator",
+        dimension=768,
+        table=table,
+        schema=schema,
+        id_column=id_column,
+        embedding_column='embedding'
+    )
+    # read some PDFs and added as documents with late chunking:
+    doc1 = BASE_DIR.joinpath('documents', 'AR_Certification_Skill_Practice_Scorecard_EXAMPLE.pdf')
+    doc2 = BASE_DIR.joinpath('documents', 'Day 1_Essentials_AR_PPT.pdf')
+    docs = [doc1, doc2]
+
+    async with _store as store:
+        await store.from_documents(documents=docs)
+        # then, do a search over the documents:
+        question = "What is REMO (Retail Mobility)?"
+        results = store.document_search(
+            query=question,
+            search_full_docs=True
+        )
+        print(f"Found {len(results)} results:")
+        for i, (doc, score) in enumerate(results, 1):
+            print(f"{i}. {doc.page_content[:100]}... (Score: {score})")
+            print(f"   Metadata: {doc.metadata}")
+            print()
+
+
 async def drop_store():
     # clean up the store
     table = 'test_table'
@@ -289,8 +323,9 @@ async def drop_store():
 async def main():
     # await create_store()
     # await save_store()
-    await test_store()
+    # await test_store()
     # await test_store_with_score()
+    await test_late_chunking()
     # await drop_store()
 
 if __name__ == "__main__":

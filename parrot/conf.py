@@ -149,6 +149,7 @@ SERPAPI_API_KEY = config.get('SERPAPI_API_KEY')
 
 # Groq API Key:
 GROQ_API_KEY = config.get('GROQ_API_KEY')
+DEFAULT_GROQ_MODEL = config.get('DEFAULT_GROQ_MODEL', fallback='qwen/qwen3-32b')
 
 # Ethical Principle:
 ETHICAL_PRINCIPLE = config.get(
