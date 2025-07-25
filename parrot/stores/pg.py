@@ -527,6 +527,8 @@ class PgVectorStore(AbstractStore):
             self.logger.error(f"Error adding documents: {e}")
             raise
 
+    from_documents = add_documents
+
     def get_distance_strategy(self, embedding_column_obj, query_embedding, metric: str = None) -> Any:
         """
         Return the appropriate distance expression based on the metric or configured strategy.
@@ -718,9 +720,6 @@ class PgVectorStore(AbstractStore):
 
     def get_vector(self, metric_type: str = None, **kwargs):
         raise NotImplementedError("This method is part of the old implementation.")
-
-    async def from_documents(self, *args, **kwargs):
-        raise NotImplementedError("Use add_documents instead.")
 
     async def create_collection(self, *args, **kwargs):
         raise NotImplementedError("Collections are managed as schema.table.")
