@@ -719,21 +719,11 @@ class PgVectorStore(AbstractStore):
     def get_vector(self, metric_type: str = None, **kwargs):
         raise NotImplementedError("This method is part of the old implementation.")
 
-    async def similarity_search_with_score(self, *args, **kwargs):
-        raise NotImplementedError("Use similarity_search instead.")
-
     async def from_documents(self, *args, **kwargs):
         raise NotImplementedError("Use add_documents instead.")
 
     async def create_collection(self, *args, **kwargs):
         raise NotImplementedError("Collections are managed as schema.table.")
-
-    async def delete_documents(self, *args, **kwargs):
-        raise NotImplementedError("Not implemented in this refactor.")
-
-    async def delete_documents_by_filter(self, *args, **kwargs):
-        raise NotImplementedError("Not implemented in this refactor.")
-
 
     async def drop_collection(self, table: str, schema: str = 'public') -> None:
         """
@@ -1946,3 +1936,403 @@ class PgVectorStore(AbstractStore):
             # Default to cosine similarity
             similarity = cosine_similarity(emb1, emb2)[0, 0]
             return float(similarity)
+
+    async def delete_documents(
+        self,
+        documents: Optional[List[Document]] = None,
+        pk: str = 'source_type',
+        values: Optional[Union[str, List[str]]] = None,
+        table: Optional[str] = None,
+        schema: Optional[str] = None,
+        metadata_column: Optional[str] = None,
+        **kwargs
+    ) -> int:
+        """
+        Delete documents from the vector store based on metadata field values.
+
+        Args:
+            documents: List of documents whose metadata values will be used for deletion.
+                    If provided, the pk field values will be extracted from these documents.
+            pk: The metadata field name to use for deletion (default: 'source_type')
+            values: Specific values to delete. Can be a single string or list of strings.
+                If provided, this takes precedence over extracting from documents.
+            table: Override table name
+            schema: Override schema name
+            metadata_column: Override metadata column name
+
+        Returns:
+            int: Number of documents deleted
+
+        Examples:
+            # Delete all documents with source_type 'papers'
+            deleted_count = await store.delete_documents(values='papers')
+
+            # Delete documents with multiple source types
+            deleted_count = await store.delete_documents(values=['papers', 'reports'])
+
+            # Delete based on documents' metadata
+            docs_to_delete = [Document(page_content="test", metadata={"source_type": "papers"})]
+            deleted_count = await store.delete_documents(documents=docs_to_delete)
+
+            # Delete by different metadata field
+            deleted_count = await store.delete_documents(pk='category', values='obsolete')
+        """
+        if not self._connected:
+            await self.connection()
+
+        # Use defaults from instance if not provided
+        table = table or self.table_name
+        schema = schema or self.schema
+        metadata_column = metadata_column or self._document_column or 'cmetadata'
+
+        # Extract values to delete
+        delete_values = []
+
+        if values is not None:
+            # Use provided values
+            if isinstance(values, str):
+                delete_values = [values]
+            else:
+                delete_values = list(values)
+        elif documents:
+            # Extract values from documents metadata
+            for doc in documents:
+                if hasattr(doc, 'metadata') and doc.metadata and pk in doc.metadata:
+                    value = doc.metadata[pk]
+                    if value and value not in delete_values:
+                        delete_values.append(value)
+        else:
+            raise ValueError("Either 'documents' or 'values' parameter must be provided")
+
+        if not delete_values:
+            self.logger.warning(f"No values found for field '{pk}' to delete")
+            return 0
+
+        # Construct full table name
+        full_table_name = f"{schema}.{table}" if schema != 'public' else table
+
+        deleted_count = 0
+
+        try:
+            async with self.session() as session:
+                for value in delete_values:
+                    # Use JSONB operator to find matching metadata
+                    delete_query = text(f"""
+                        DELETE FROM {full_table_name}
+                        WHERE {metadata_column}->>:pk = :value
+                    """)
+
+                    result = await session.execute(
+                        delete_query,
+                        {"pk": pk, "value": str(value)}
+                    )
+
+                    rows_deleted = result.rowcount
+                    deleted_count += rows_deleted
+
+                    self.logger.info(
+                        f"Deleted {rows_deleted} documents with {pk}='{value}' from {full_table_name}"
+                    )
+
+            self.logger.info(f"Total deleted: {deleted_count} documents")
+            return deleted_count
+
+        except Exception as e:
+            self.logger.error(f"Error deleting documents: {e}")
+            raise RuntimeError(f"Failed to delete documents: {e}") from e
+
+    async def delete_documents_by_filter(
+        self,
+        filter_dict: Dict[str, Union[str, List[str]]],
+        table: Optional[str] = None,
+        schema: Optional[str] = None,
+        metadata_column: Optional[str] = None,
+        **kwargs
+    ) -> int:
+        """
+        Delete documents based on multiple metadata field conditions.
+
+        Args:
+            filter_dict: Dictionary of field_name: value(s) pairs for deletion criteria
+            table: Override table name
+            schema: Override schema name
+            metadata_column: Override metadata column name
+
+        Returns:
+            int: Number of documents deleted
+
+        Example:
+            # Delete documents with source_type='papers' AND category='research'
+            deleted = await store.delete_documents_by_filter({
+                'source_type': 'papers',
+                'category': 'research'
+            })
+
+            # Delete documents with source_type in ['papers', 'reports']
+            deleted = await store.delete_documents_by_filter({
+                'source_type': ['papers', 'reports']
+            })
+        """
+        if not self._connected:
+            await self.connection()
+
+        if not filter_dict:
+            raise ValueError("filter_dict cannot be empty")
+
+        # Use defaults from instance if not provided
+        table = table or self.table_name
+        schema = schema or self.schema
+        metadata_column = metadata_column or self._document_column or 'cmetadata'
+
+        # Construct full table name
+        full_table_name = f"{schema}.{table}" if schema != 'public' else table
+
+        # Build WHERE conditions
+        where_conditions = []
+        params = {}
+
+        for field, values in filter_dict.items():
+            if isinstance(values, (list, tuple)):
+                # Handle multiple values with IN operator
+                placeholders = []
+                for i, value in enumerate(values):
+                    param_name = f"{field}_{i}"
+                    placeholders.append(f":{param_name}")
+                    params[param_name] = str(value)
+
+                condition = f"{metadata_column}->>'{field}' IN ({', '.join(placeholders)})"
+                where_conditions.append(condition)
+            else:
+                # Handle single value
+                param_name = f"{field}_single"
+                where_conditions.append(f"{metadata_column}->>'{field}' = :{param_name}")
+                params[param_name] = str(values)
+
+        # Combine conditions with AND
+        where_clause = " AND ".join(where_conditions)
+
+        delete_query = text(f"""
+            DELETE FROM {full_table_name}
+            WHERE {where_clause}
+        """)
+
+        try:
+            async with self.session() as session:
+                result = await session.execute(delete_query, params)
+                deleted_count = result.rowcount
+
+                self.logger.info(
+                    f"Deleted {deleted_count} documents from {full_table_name} "
+                    f"with filter: {filter_dict}"
+                )
+
+                return deleted_count
+
+        except Exception as e:
+            self.logger.error(f"Error deleting documents by filter: {e}")
+            raise RuntimeError(f"Failed to delete documents by filter: {e}") from e
+
+    async def delete_all_documents(
+        self,
+        table: Optional[str] = None,
+        schema: Optional[str] = None,
+        confirm: bool = False,
+        **kwargs
+    ) -> int:
+        """
+        Delete ALL documents from the vector store table.
+
+        WARNING: This will delete all data in the table!
+
+        Args:
+            table: Override table name
+            schema: Override schema name
+            confirm: Must be set to True to proceed with deletion
+
+        Returns:
+            int: Number of documents deleted
+        """
+        if not confirm:
+            raise ValueError(
+                "This operation will delete ALL documents. "
+                "Set confirm=True to proceed."
+            )
+
+        if not self._connected:
+            await self.connection()
+
+        # Use defaults from instance if not provided
+        table = table or self.table_name
+        schema = schema or self.schema
+
+        # Construct full table name
+        full_table_name = f"{schema}.{table}" if schema != 'public' else table
+
+        try:
+            async with self.session() as session:
+                # First count existing documents
+                count_query = text(f"SELECT COUNT(*) FROM {full_table_name}")
+                count_result = await session.execute(count_query)
+                total_docs = count_result.scalar()
+
+                if total_docs == 0:
+                    self.logger.info(f"No documents to delete from {full_table_name}")
+                    return 0
+
+                # Delete all documents
+                delete_query = text(f"DELETE FROM {full_table_name}")
+                result = await session.execute(delete_query)
+                deleted_count = result.rowcount
+
+                self.logger.warning(
+                    f"DELETED ALL {deleted_count} documents from {full_table_name}"
+                )
+
+                return deleted_count
+
+        except Exception as e:
+            self.logger.error(f"Error deleting all documents: {e}")
+            raise RuntimeError(f"Failed to delete all documents: {e}") from e
+
+    async def delete_documents_by_ids(
+        self,
+        document_ids: List[str],
+        table: Optional[str] = None,
+        schema: Optional[str] = None,
+        id_column: Optional[str] = None,
+        **kwargs
+    ) -> int:
+        """
+        Delete documents by their IDs.
+
+        Args:
+            document_ids: List of document IDs to delete
+            table: Override table name
+            schema: Override schema name
+            id_column: Override ID column name
+
+        Returns:
+            int: Number of documents deleted
+
+        Example:
+            deleted_count = await store.delete_documents_by_ids([
+                "doc_1", "doc_2", "doc_3"
+            ])
+        """
+        if not self._connected:
+            await self.connection()
+
+        if not document_ids:
+            self.logger.warning("No document IDs provided for deletion")
+            return 0
+
+        # Use defaults from instance if not provided
+        table = table or self.table_name
+        schema = schema or self.schema
+        id_column = id_column or self._id_column
+
+        # Construct full table name
+        full_table_name = f"{schema}.{table}" if schema != 'public' else table
+
+        # Build parameterized query for multiple IDs
+        placeholders = []
+        params = {}
+        for i, doc_id in enumerate(document_ids):
+            param_name = f"id_{i}"
+            placeholders.append(f":{param_name}")
+            params[param_name] = str(doc_id)
+
+        delete_query = text(f"""
+            DELETE FROM {full_table_name}
+            WHERE {id_column} IN ({', '.join(placeholders)})
+        """)
+
+        try:
+            async with self.session() as session:
+                result = await session.execute(delete_query, params)
+                deleted_count = result.rowcount
+
+                self.logger.info(
+                    f"Deleted {deleted_count} documents by IDs from {full_table_name}"
+                )
+
+                return deleted_count
+
+        except Exception as e:
+            self.logger.error(f"Error deleting documents by IDs: {e}")
+            raise RuntimeError(f"Failed to delete documents by IDs: {e}") from e
+
+    # Additional utility method for safer deletions
+    async def count_documents_by_filter(
+        self,
+        filter_dict: Dict[str, Union[str, List[str]]],
+        table: Optional[str] = None,
+        schema: Optional[str] = None,
+        metadata_column: Optional[str] = None,
+        **kwargs
+    ) -> int:
+        """
+        Count documents that would be affected by a filter (useful before deletion).
+
+        Args:
+            filter_dict: Dictionary of field_name: value(s) pairs for criteria
+            table: Override table name
+            schema: Override schema name
+            metadata_column: Override metadata column name
+
+        Returns:
+            int: Number of documents matching the filter
+        """
+        if not self._connected:
+            await self.connection()
+
+        if not filter_dict:
+            return 0
+
+        # Use defaults from instance if not provided
+        table = table or self.table_name
+        schema = schema or self.schema
+        metadata_column = metadata_column or self._document_column or 'cmetadata'
+
+        # Construct full table name
+        full_table_name = f"{schema}.{table}" if schema != 'public' else table
+
+        # Build WHERE conditions (same logic as delete_documents_by_filter)
+        where_conditions = []
+        params = {}
+
+        for field, values in filter_dict.items():
+            if isinstance(values, (list, tuple)):
+                placeholders = []
+                for i, value in enumerate(values):
+                    param_name = f"{field}_{i}"
+                    placeholders.append(f":{param_name}")
+                    params[param_name] = str(value)
+
+                condition = f"{metadata_column}->>'{field}' IN ({', '.join(placeholders)})"
+                where_conditions.append(condition)
+            else:
+                param_name = f"{field}_single"
+                where_conditions.append(f"{metadata_column}->>'{field}' = :{param_name}")
+                params[param_name] = str(values)
+
+        where_clause = " AND ".join(where_conditions)
+        count_query = text(f"""
+            SELECT COUNT(*) FROM {full_table_name}
+            WHERE {where_clause}
+        """)
+
+        try:
+            async with self.session() as session:
+                result = await session.execute(count_query, params)
+                count = result.scalar()
+
+                self.logger.info(
+                    f"Found {count} documents matching filter: {filter_dict}"
+                )
+
+                return count
+
+        except Exception as e:
+            self.logger.error(f"Error counting documents: {e}")
+            raise RuntimeError(f"Failed to count documents: {e}") from e
