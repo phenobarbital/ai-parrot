@@ -15,6 +15,8 @@ async def process_pdf():
         source_type="PDF",
         language="en",
         parse_images=False,
+        chunk_size=800,      # Smaller for individual slides
+        chunk_overlap=100,   # Good overlap for context
         summarization=True,  # Enable summarization
         page_as_images=True
     )
