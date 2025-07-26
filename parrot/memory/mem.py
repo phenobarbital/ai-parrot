@@ -1,52 +1,75 @@
 from typing import Dict, List, Optional, Any
-from .abstract import ConversationMemory, ConversationSession
+import asyncio
+from .abstract import ConversationMemory, ConversationHistory, ConversationTurn
 
 
 class InMemoryConversation(ConversationMemory):
     """In-memory implementation of conversation memory."""
 
     def __init__(self):
-        self._sessions: Dict[str, Dict[str, ConversationSession]] = {}
+        self._histories: Dict[str, Dict[str, ConversationHistory]] = {}
+        self._lock = asyncio.Lock()
 
     def _get_key(self, user_id: str, session_id: str) -> tuple:
         return (user_id, session_id)
 
-    async def create_session(
+    async def create_history(
         self,
         user_id: str,
         session_id: str,
-        system_prompt: Optional[str] = None
-    ) -> ConversationSession:
-        if user_id not in self._sessions:
-            self._sessions[user_id] = {}
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> ConversationHistory:
+        """Create a new conversation history."""
+        async with self._lock:
+            if user_id not in self._histories:
+                self._histories[user_id] = {}
 
-        session = ConversationSession(
-            user_id=user_id,
-            session_id=session_id,
-            messages=[],
-            system_prompt=system_prompt
-        )
+            history = ConversationHistory(
+                session_id=session_id,
+                user_id=user_id,
+                metadata=metadata or {}
+            )
 
-        self._sessions[user_id][session_id] = session
-        return session
+            self._histories[user_id][session_id] = history
+            return history
 
-    async def get_session(self, user_id: str, session_id: str) -> Optional[ConversationSession]:
-        return self._sessions.get(user_id, {}).get(session_id)
+    async def get_history(self, user_id: str, session_id: str) -> Optional[ConversationHistory]:
+        """Get a conversation history."""
+        async with self._lock:
+            return self._histories.get(user_id, {}).get(session_id)
 
-    async def update_session(self, session: ConversationSession) -> None:
-        if session.user_id not in self._sessions:
-            self._sessions[session.user_id] = {}
-        self._sessions[session.user_id][session.session_id] = session
+    async def update_history(self, history: ConversationHistory) -> None:
+        """Update a conversation history."""
+        async with self._lock:
+            if history.user_id not in self._histories:
+                self._histories[history.user_id] = {}
+            self._histories[history.user_id][history.session_id] = history
 
-    async def add_message(self, user_id: str, session_id: str, message: Dict[str, Any]) -> None:
-        session = await self.get_session(user_id, session_id)
-        if session:
-            session.messages.append(message)
-            await self.update_session(session)
+    async def add_turn(self, user_id: str, session_id: str, turn: ConversationTurn) -> None:
+        """Add a turn to the conversation."""
+        async with self._lock:
+            history = await self.get_history(user_id, session_id)
+            if history:
+                history.add_turn(turn)
+                await self.update_history(history)
 
-    async def clear_session(self, user_id: str, session_id: str) -> None:
-        if user_id in self._sessions and session_id in self._sessions[user_id]:
-            del self._sessions[user_id][session_id]
+    async def clear_history(self, user_id: str, session_id: str) -> None:
+        """Clear a conversation history."""
+        async with self._lock:
+            history = await self.get_history(user_id, session_id)
+            if history:
+                history.clear_turns()
+                await self.update_history(history)
 
     async def list_sessions(self, user_id: str) -> List[str]:
-        return list(self._sessions.get(user_id, {}).keys())
+        """List all session IDs for a user."""
+        async with self._lock:
+            return list(self._histories.get(user_id, {}).keys())
+
+    async def delete_history(self, user_id: str, session_id: str) -> bool:
+        """Delete a conversation history entirely."""
+        async with self._lock:
+            if user_id in self._histories and session_id in self._histories[user_id]:
+                del self._histories[user_id][session_id]
+                return True
+            return False

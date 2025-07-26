@@ -21,6 +21,7 @@ from .outputs import (
     VideoGenerationPrompt
 )
 from .google import GoogleModel, TTSVoice
+from .conversation import ConversationTurn, ConversationHistory
 
 
 __all__ = (
@@ -40,4 +41,6 @@ __all__ = (
     "VideoGenerationPrompt",
     "GoogleModel",
     "TTSVoice",
+    "ConversationTurn",
+    "ConversationHistory",
 )

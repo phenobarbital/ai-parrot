@@ -3,19 +3,17 @@ Abstract Bot interface.
 """
 from abc import ABC
 import importlib
-from typing import Any, List, Union, Optional
+from typing import Any, Dict, List, Union, Optional
 from collections.abc import Callable
 import uuid
 from string import Template
 import asyncio
 from aiohttp import web
-from datamodel.exceptions import ValidationError as DataError  # pylint: disable=E0611
 from navconfig.logging import logging
 from navigator_auth.conf import AUTH_SESSION_OBJECT  # pylint: disable=E0611
 from ..interfaces import DBInterface
 from ..exceptions import ConfigError  # pylint: disable=E0611
 from ..conf import (
-    REDIS_HISTORY_URL,
     EMBEDDING_DEFAULT_MODEL
 )
 from ..utils import SafeDict
@@ -30,10 +28,18 @@ from .prompts import (
 from ..clients import LLM_PRESETS, SUPPORTED_CLIENTS, AbstractClient
 from ..models import (
     AIMessage,
-    AIMessageFactory
 )
 from ..stores import AbstractStore, supported_stores
 from ..stores.models import Document
+from ..tools import AbstractTool
+from ..memory import (
+    ConversationMemory,
+    ConversationTurn,
+    ConversationHistory,
+    InMemoryConversation,
+    FileConversationMemory,
+    RedisConversation
+)
 
 
 logging.getLogger(name='primp').setLevel(logging.INFO)
@@ -57,14 +63,18 @@ class AbstractBot(DBInterface, ABC):
         name: str = 'Nav',
         system_prompt: str = None,
         human_prompt: str = None,
+        tools: List[AbstractTool] = None,
         **kwargs
     ):
         """Initialize the Chatbot with the given configuration."""
         self._request: Optional[web.Request] = None
+
+        # System and Human Prompts:
         if system_prompt:
             self.system_prompt_template = system_prompt or self.system_prompt_template
         if human_prompt:
             self.human_prompt_template = human_prompt or self.human_prompt_template
+
         # Chatbot ID:
         self.chatbot_id: uuid.UUID = kwargs.get(
             'chatbot_id',
@@ -72,18 +82,21 @@ class AbstractBot(DBInterface, ABC):
         )
         if self.chatbot_id is None:
             self.chatbot_id = str(uuid.uuid4().hex)
-        # Basic Information:
+
+        # Basic Bot Information:
         self.name: str = name
         ##  Logging:
         self.logger = logging.getLogger(
             f'{self.name}.Bot'
         )
+        # Agentic Tools:
+        self.tools = tools or []
         # Optional aiohttp Application:
         self.app: Optional[web.Application] = None
         # Start initialization:
-        self.kb = None
-        self.knowledge_base: List[str] = []
         self.return_sources: bool = kwargs.pop('return_sources', True)
+
+        # Bot Attributes:
         self.description = self._get_default_attr(
             'description',
             'Navigator Chatbot',
@@ -95,6 +108,7 @@ class AbstractBot(DBInterface, ABC):
         self.backstory = kwargs.get('backstory', DEFAULT_BACKHISTORY)
         self.rationale = kwargs.get('rationale', self.default_rationale())
         self.context = kwargs.get('use_context', True)
+
         # Definition of LLM Client
         self._llm_model = kwargs.get('model', 'gemini-2.0-flash-001')
         self._llm_preset: str = kwargs.get('preset', None)
@@ -119,6 +133,8 @@ class AbstractBot(DBInterface, ABC):
             # Default LLM Presetting by LLMs
             self._llm_temp = kwargs.get('temperature', 0.1)
             self._max_tokens = kwargs.get('max_tokens', 1024)
+
+        # LLM Configuration:
         self._top_k = kwargs.get('top_k', 41)
         self._top_p = kwargs.get('top_p', 0.9)
         self._llm_config = kwargs.get('model_config', {})
@@ -145,7 +161,8 @@ class AbstractBot(DBInterface, ABC):
         )
 
         # Knowledge base:
-        self.knowledge_base: list = []
+        self.kb = None
+        self.knowledge_base: List[str] = []
         self._documents_: list = []
         # Models, Embed and collections
         # Vector information:
@@ -154,10 +171,19 @@ class AbstractBot(DBInterface, ABC):
         self._vector_store: dict = kwargs.get('vector_store', None)
         self.chunk_size: int = int(kwargs.get('chunk_size', 2048))
         self.dimension: int = int(kwargs.get('dimension', 384))
-        # Metric Type:
         self._metric_type: str = kwargs.get('metric_type', 'COSINE')
         self.store: Callable = None
+        # List of Vector Stores:
         self.stores: List[AbstractStore] = []
+
+        # Conversation Management
+        self.conversation_histories: Dict[str, ConversationHistory] = {}
+        self.max_context_turns: int = kwargs.get('max_context_turns', 5)
+        self.enable_tools: bool = kwargs.get('enable_tools', True)
+        self.context_search_limit: int = kwargs.get('context_search_limit', 3)
+        self.context_score_threshold: float = kwargs.get('context_score_threshold', 0.7)
+
+        # Memory settings
         self.memory: Callable = None
         # Embedding Model Name
         self.embedding_model = kwargs.get(
@@ -169,11 +195,6 @@ class AbstractBot(DBInterface, ABC):
         )
         # embedding object:
         self.embeddings = kwargs.get('embeddings', None)
-        self.rag_model = kwargs.get(
-            'rag_model',
-            "rlm/rag-prompt-llama"
-        )
-        # Summarization and Classification Models
         # Bot Security and Permissions:
         _default = self.default_permissions()
         _permissions = kwargs.get('permissions', _default)
@@ -228,7 +249,7 @@ class AbstractBot(DBInterface, ABC):
         # TODO: read rationale from a file
         return (
             "** Your Style: **\n"
-            "- When responding to user queries, ensure that you provide accurate and up-to-date information.\n"
+            "- When responding to user queries, ensure that you provide accurate and up-to-date information.\n"  # noqa: C0301
             "- Be polite, clear and concise in your explanations.\n"
             "- ensuring that responses are based only on verified information from owned sources.\n"
         )
@@ -260,10 +281,7 @@ class AbstractBot(DBInterface, ABC):
             cls = SUPPORTED_CLIENTS.get(llm.lower(), None)
             if not cls:
                 raise ValueError(f"Unsupported LLM: {llm}")
-            return cls(
-                model=model,
-                **kwargs
-            )
+            return cls(model=model, **kwargs)
         except Exception:
             raise
 
@@ -304,9 +322,6 @@ class AbstractBot(DBInterface, ABC):
                         max_tokens=self._max_tokens,
                     )
                 except Exception as e:
-                    self.logger.error(
-                        f"Error configuring Default LLM {self._llm_model}: {e}"
-                    )
                     raise ConfigError(
                         f"Error configuring Default LLM {self._llm_model}: {e}"
                     )
@@ -323,9 +338,6 @@ class AbstractBot(DBInterface, ABC):
                         max_tokens=self._max_tokens,
                     )
                 except Exception as e:
-                    self.logger.error(
-                        f"Error configuring Default LLM {self._llm_model}: {e}"
-                    )
                     raise ConfigError(
                         f"Error configuring Default LLM {self._llm_model}: {e}"
                     )
@@ -343,33 +355,55 @@ class AbstractBot(DBInterface, ABC):
                         **kwargs
                     )
                 except TypeError as e:
-                    self.logger.error(
-                        f"Error initializing LLM Client {self._llm.__name__}: {e}"
-                    )
                     raise ConfigError(
                         f"Error initializing LLM Client {self._llm.__name__}: {e}"
                     )
 
-    def create_kb(self, documents: list):
-        new_docs = []
-        for doc in documents:
-            content = doc.pop('content')
-            source = doc.pop('source', 'knowledge-base')
-            if doc:
-                meta = {
-                    'source': source,
-                    **doc
-                }
-            else:
-                meta = {'source': source}
-            if content:
-                new_docs.append(
-                    Document(
-                        page_content=content,
-                        metadata=meta
-                    )
-                )
-        return new_docs
+    def configure_store(self, **kwargs):
+        """Configure Vector Store."""
+        if isinstance(self._vector_store, list):
+            for st in self._vector_store:
+                try:
+                    store_cls = self._get_database_store(st)
+                    store_cls.use_database = self._use_vector
+                    self.stores.append(store_cls)
+                except ImportError:
+                    continue
+        elif isinstance(self._vector_store, dict):
+            store_cls = self._get_database_store(self._vector_store)
+            store_cls.use_database = self._use_vector
+            self.stores.append(store_cls)
+        else:
+            raise ValueError(f"Invalid Vector Store Config: {self._vector_store}")
+
+        self.logger.info(f"Configured Vector Stores: {self.stores}")
+        if self.stores:
+            self.store = self.stores[0]
+
+    def _get_database_store(self, store: dict) -> AbstractStore:
+        """Get the VectorStore Class from the store configuration."""
+        name = store.get('name', None)
+        if not name:
+            vector_driver = store.get('vector_database', 'PgVectorStore')
+            name = next(
+                (k for k, v in supported_stores.items() if v == vector_driver), None
+            )
+        store_cls = supported_stores.get(name)
+        cls_path = f"parrot.stores.{name}"
+        try:
+            module = importlib.import_module(cls_path, package=name)
+            store_cls = getattr(module, store_cls)
+            self.logger.notice(
+                f"Using VectorStore: {store_cls.__name__} for {name} with Embedding {self.embedding_model}"  # noqa
+            )
+            return store_cls(
+                embedding_model=self.embedding_model,
+                embedding=self.embeddings,
+                **store
+            )
+        except (ModuleNotFoundError, ImportError) as e:
+            self.logger.error(f"Error importing VectorStore: {e}")
+            raise
 
     def _define_prompt(self, config: Optional[dict] = None, **kwargs):
         """
@@ -405,8 +439,28 @@ class AbstractBot(DBInterface, ABC):
             context=context,
             **kwargs
         )
-        # print('Template Prompt: \n', final_prompt)
         self.system_prompt_template = final_prompt
+
+    def create_kb(self, documents: list):
+        new_docs = []
+        for doc in documents:
+            content = doc.pop('content')
+            source = doc.pop('source', 'knowledge-base')
+            if doc:
+                meta = {
+                    'source': source,
+                    **doc
+                }
+            else:
+                meta = {'source': source}
+            if content:
+                new_docs.append(
+                    Document(
+                        page_content=content,
+                        metadata=meta
+                    )
+                )
+        return new_docs
 
     async def configure(self, app=None) -> None:
         """Basic Configuration of Bot.
@@ -446,122 +500,455 @@ class AbstractBot(DBInterface, ABC):
                 )
                 raise
 
-
-    def _get_database_store(self, store: dict) -> AbstractStore:
-        """Get the VectorStore Class from the store configuration."""
-        name = store.get('name', None)
-        if not name:
-            vector_driver = store.get('vector_database', 'PgvectorStore')
-            name = next(
-                (k for k, v in supported_stores.items() if v == vector_driver), None
-            )
-        store_cls = supported_stores.get(name)
-        cls_path = f"parrot.stores.{name}"
-        try:
-            module = importlib.import_module(cls_path, package=name)
-            store_cls = getattr(module, store_cls)
-            self.logger.notice(
-                f"Using VectorStore: {store_cls.__name__} for {name} with Embedding {self.embedding_model}"
-            )
-            return store_cls(
-                embedding_model=self.embedding_model,
-                embedding=self.embeddings,
-                **store
-            )
-        except (ModuleNotFoundError, ImportError) as e:
-            self.logger.error(
-                f"Error importing VectorStore: {e}"
-            )
-            raise
-
-    def configure_store(self, **kwargs):
-        # TODO: Implement VectorStore Configuration
-        if isinstance(self._vector_store, list):
-            # Is a list of vector stores instances:
-            for st in self._vector_store:
-                try:
-                    store_cls = self._get_database_store(st)
-                    store_cls.use_database = self._use_vector
-                    self.stores.append(store_cls)
-                except ImportError:
-                    continue
-        elif isinstance(self._vector_store, dict):
-            # Is a single vector store instance:
-            store_cls = self._get_database_store(self._vector_store)
-            store_cls.use_database = self._use_vector
-            self.stores.append(store_cls)
+    def get_conversation_memory(
+        self,
+        storage_type: str = "memory",
+        **kwargs
+    ) -> ConversationMemory:
+        """Factory function to create conversation memory instances."""
+        if storage_type == "memory":
+            return InMemoryConversation(**kwargs)
+        elif storage_type == "file":
+            return FileConversationMemory(**kwargs)
+        elif storage_type == "redis":
+            return RedisConversation(**kwargs)
         else:
             raise ValueError(
-                f"Invalid Vector Store Config: {self._vector_store}"
+                f"Unknown storage type: {storage_type}"
             )
-        self.logger.info(
-            f"Configured Vector Stores: {self.stores}"
+
+    async def get_conversation_history(
+        self,
+        session_id: str,
+        user_id: Optional[str] = None
+    ) -> ConversationHistory:
+        """Get or create conversation history for a session."""
+        if session_id not in self.conversation_histories:
+            self.conversation_histories[session_id] = ConversationHistory(
+                session_id=session_id,
+                user_id=user_id
+            )
+        return self.conversation_histories[session_id]
+
+    async def save_conversation_history(
+        self,
+        session_id: str,
+        storage_backend: Optional[str] = None
+    ) -> bool:
+        """Save conversation history to persistent storage."""
+        if session_id not in self.conversation_histories:
+            return False
+
+        history = self.conversation_histories[session_id]
+        try:
+            # Example: save to session or Redis
+            if self._request and hasattr(self._request, 'session'):
+                session_key = f"conversation_history_{session_id}"
+                self._request.session[session_key] = history.to_dict()
+
+            self.logger.info(f"Saved conversation history for session {session_id}")
+            return True
+        except Exception as e:
+            self.logger.error(f"Error saving conversation history: {e}")
+            return False
+
+    async def load_conversation_history(
+        self,
+        session_id: str,
+        storage_backend: Optional[str] = None
+    ) -> Optional[ConversationHistory]:
+        """Load conversation history from persistent storage."""
+        try:
+            # Example: load from session or Redis
+            if self._request and hasattr(self._request, 'session'):
+                session_key = f"conversation_history_{session_id}"
+                history_data = self._request.session.get(session_key)
+
+                if history_data:
+                    history = ConversationHistory.from_dict(history_data)
+                    self.conversation_histories[session_id] = history
+                    self.logger.info(f"Loaded conversation history for session {session_id}")
+                    return history
+
+            return None
+        except Exception as e:
+            self.logger.error(f"Error loading conversation history: {e}")
+            return None
+
+    async def get_vector_context(
+        self,
+        question: str,
+        search_type: str = 'similarity',  # 'similarity', 'mmr', 'ensemble'
+        search_kwargs: dict = None,
+        metric_type: str = 'COSINE',
+        limit: int = 5,
+        score_threshold: float = None
+    ) -> str:
+        """Get relevant context from vector store.
+        Args:
+            question (str): The user's question to search context for.
+            search_type (str): Type of search to perform ('similarity', 'mmr', 'ensemble').
+            search_kwargs (dict): Additional parameters for the search.
+            metric_type (str): Metric type for vector search (e.g., 'COSINE', 'EUCLIDEAN').
+            limit (int): Maximum number of context items to retrieve.
+            score_threshold (float): Minimum score for context relevance.
+        Returns:
+            tuple: (context_string, metadata_dict)
+        """
+        if not self.store:
+            return "", {}
+
+        try:
+            limit = limit or self.context_search_limit
+            score_threshold = score_threshold or self.context_score_threshold
+            search_results = None
+            # Use the similarity_search method from PgVectorStore
+            if search_type == 'mmr':
+                if search_kwargs is None:
+                    search_kwargs = {
+                        "k": limit,
+                        "fetch_k": limit * 2,
+                        "lambda_mult": 0.4,
+                    }
+                search_results = await self.store.mmr_search(
+                    query=question,
+                    score_threshold=score_threshold,
+                    **(search_kwargs or {})
+                )
+            else:
+                # doing a similarity search by default
+                search_results = await self.store.similarity_search(
+                    query=question,
+                    limit=limit,
+                    score_threshold=score_threshold,
+                    metric=metric_type,
+                    **(search_kwargs or {})
+                )
+
+            if not search_results:
+                return "", {
+                    'search_results_count': 0,
+                    'search_type': search_type,
+                    'score_threshold': score_threshold
+                }
+
+            # Format the context from search results
+            context_parts = []
+            sources = []
+            for i, result in enumerate(search_results):
+                context_parts.append(f"[Context {i+1}]: {result.content}")
+
+                # Extract source information
+                if hasattr(result, 'metadata') and result.metadata:
+                    source_id = result.metadata.get('source', f"result_{i}")
+                    sources.append(source_id)
+
+            context = "\n\n".join(context_parts)
+
+            metadata = {
+                'search_results_count': len(search_results),
+                'search_type': search_type,
+                'score_threshold': score_threshold,
+                'metric_type': metric_type,
+                'sources': sources
+            }
+
+            self.logger.info(
+                f"Retrieved {len(search_results)} context items using {search_type} search"
+            )
+
+            return context, metadata
+
+        except Exception as e:
+            self.logger.error(
+                f"Error retrieving vector context: {e}"
+            )
+            return "", {
+                'search_results_count': 0,
+                'search_type': search_type,
+                'error': str(e)
+            }
+
+    def build_conversation_context(self, history: ConversationHistory) -> str:
+        """Build conversation context from history."""
+        if not history.turns:
+            return ""
+
+        recent_turns = history.get_recent_turns(self.max_context_turns)
+
+        context_parts = ["Previous conversation:"]
+        for turn in recent_turns:
+            context_parts.append(f"User: {turn.user_message}")
+            context_parts.append(f"Assistant: {turn.assistant_response[:200]}...")
+
+        return "\n".join(context_parts)
+
+    def _use_tools(
+        self,
+        question: str,
+    ) -> bool:
+        """Determine if tools should be enabled for this conversation."""
+        if not self.enable_tools:
+            return False
+
+        # Simple heuristics - you can enhance this
+        tool_indicators = [
+            'search', 'find', 'lookup', 'get data', 'calculate', 'analyze',
+            'what is the current', 'latest', 'recent', 'today', 'now',
+            'weather', 'time', 'date', 'price', 'stock', 'news',
+            'translate', 'convert', 'generate', 'create file'
+        ]
+
+        question_lower = question.lower()
+        return any(indicator in question_lower for indicator in tool_indicators)
+
+    async def create_system_prompt(
+        self,
+        vector_context: str = "",
+        conversation_context: str = "",
+        **kwargs
+    ) -> str:
+        """Create the complete system prompt for the LLM."""
+        # Process conversation and vector contexts
+        context_parts = []
+        if self.pre_instructions:
+            context_parts.append(
+                f"IMPORTANT PRE-INSTRUCTIONS:\n{self.pre_instructions}"
+            )
+        if vector_context:
+            context_parts.append(
+                f"Relevant Information:\n{vector_context}"
+            )
+        # Apply template substitution
+        tmpl = Template(self.system_prompt_template)
+        system_prompt = tmpl.safe_substitute(
+            context="\n\n".join(context_parts) if context_parts else "",
+            chat_history=f"Chat History:\n{conversation_context}",
+            **kwargs
         )
-        if self.stores:
-            self.store = self.stores[0]
-        print('=================================')
-        print('END STORES >> ', self.stores, self.store)
-        print('=================================')
+
+        return system_prompt
 
     async def conversation(
-            self,
-            question: str,
-            chain_type: str = 'stuff',
-            search_type: str = 'similarity',  # 'similarity', 'mmr', 'ensemble'
-            search_kwargs: dict = None,
-            return_docs: bool = True,
-            metric_type: str = 'EUCLIDEAN_DISTANCE',
-            memory: Any = None,
-            limit: Optional[int] = 5,
-            score_threshold: float = None,
-            **kwargs
+        self,
+        question: str,
+        session_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        search_type: str = 'similarity',  # 'similarity', 'mmr', 'ensemble'
+        search_kwargs: dict = None,
+        metric_type: str = 'COSINE',
+        limit: Optional[int] = 5,
+        score_threshold: float = None,
+        use_vector_context: bool = True,
+        use_conversation_history: bool = True,
+        save_to_history: bool = True,
+        return_sources: bool = True,
+        return_context: bool = False,
+        **kwargs
     ) -> AIMessage:
-        # re-configure LLM:
-        new_llm = kwargs.pop('llm', None)
-        llm_config = kwargs.pop(
-            'llm_config',
-            {
-                "temperature": 0.1,
-                "top_k": 41,
-                "Top_p": 0.9
-            }
-        )
-        if search_kwargs is None:
-            search_kwargs = {
-                "k": limit,
-                "fetch_k": limit * 2,  # Fetch 2x for MMR, but still limited
-                "lambda_mult": 0.4,  # Balance relevance vs diversity
-            }
-        if new_llm:
-            self.configure_llm(llm=new_llm, config=llm_config)
+        """
+        Conversation method with vector store and history integration.
 
-    def as_markdown(self, response: AIMessage, return_sources: bool = False) -> str:
+        Args:
+            question: The user's question
+            session_id: Session identifier for conversation history
+            user_id: User identifier
+            search_type: Type of search to perform ('similarity', 'mmr', 'ensemble')
+            search_kwargs: Additional search parameters
+            metric_type: Metric type for vector search (e.g., 'COSINE', 'EUCLIDEAN')
+            limit: Maximum number of context items to retrieve
+            score_threshold: Minimum score for context relevance
+            use_vector_context: Whether to retrieve context from vector store
+            use_conversation_history: Whether to use conversation history
+            save_to_history: Whether to save this turn to history
+            **kwargs: Additional arguments for LLM
+
+        Returns:
+            AIMessage: The response from the LLM
+        """
+        # Generate session ID if not provided
+        if not session_id:
+            session_id = str(uuid.uuid4())
+
+        turn_id = str(uuid.uuid4())
+
+        try:
+            # Load/get conversation history
+            conversation_history = None
+            conversation_context = ""
+
+            if use_conversation_history:
+                # Try to load existing history first
+                conversation_history = await self.load_conversation_history(session_id)
+                if not conversation_history:
+                    conversation_history = await self.get_conversation_history(
+                        session_id,
+                        user_id
+                    )
+
+                conversation_context = self.build_conversation_context(
+                    conversation_history
+                )
+
+            # Get vector context if store exists and enabled
+            vector_context = ""
+            vector_metadata = {}
+            if use_vector_context and self.store:
+                vector_context, vector_metadata = await self.get_vector_context(
+                    question,
+                    search_type=search_type,
+                    search_kwargs=search_kwargs,
+                    metric_type=metric_type,
+                    limit=limit,
+                    score_threshold=score_threshold
+                )
+
+            # Determine if tools should be used
+            use_tools = self._use_tools(question)
+
+            # Create system prompt
+            system_prompt = await self.create_system_prompt(
+                vector_context=vector_context,
+                conversation_context=conversation_context,
+                **kwargs
+            )
+
+            # Configure LLM if needed
+            new_llm = kwargs.pop('llm', None)
+            if new_llm:
+                self.configure_llm(llm=new_llm, **kwargs.pop('llm_config', {}))
+
+            # Make the LLM call using the Claude client
+            async with self._llm as client:
+                # Configure tools if needed
+                if use_tools and hasattr(client, 'tools'):
+                    # Enable tools on the client
+                    pass
+
+                response = await client.ask(
+                    prompt=question,
+                    system_prompt=system_prompt,
+                    model=kwargs.get('model', self._llm_model),
+                    max_tokens=kwargs.get('max_tokens', self._max_tokens),
+                    temperature=kwargs.get('temperature', self._llm_temp),
+                    user_id=user_id,
+                    session_id=session_id
+                )
+
+                # Enhance the response with context metadata using the new methods
+                response.set_vector_context_info(
+                    used=bool(vector_context),
+                    context_length=len(vector_context) if vector_context else 0,
+                    search_results_count=vector_metadata.get('search_results_count', 0),
+                    search_type=search_type if vector_context else None,
+                    score_threshold=score_threshold,
+                    sources=vector_metadata.get('sources', [])
+                )
+
+                response.set_conversation_context_info(
+                    used=bool(conversation_context),
+                    context_length=len(conversation_context) if conversation_context else 0
+                )
+
+                # Set additional metadata
+                response.session_id = session_id
+                response.turn_id = turn_id
+
+                # Create conversation turn
+                if save_to_history and conversation_history:
+                    turn = ConversationTurn(
+                        turn_id=turn_id,
+                        user_message=question,
+                        assistant_response=response.output,
+                        context_used=vector_context if vector_context else None,
+                        tools_used=[tc.name for tc in getattr(response, 'tool_calls', [])],
+                        metadata={
+                            'use_vector_context': use_vector_context,
+                            'use_conversation_history': use_conversation_history,
+                            'vector_context_length': len(vector_context) if vector_context else 0,
+                            'conversation_context_length': len(conversation_context) if conversation_context else 0,
+                            'search_type': search_type,
+                            'search_results_count': vector_metadata.get('search_results_count', 0),
+                            'metric_type': metric_type
+                        }
+                    )
+
+                    conversation_history.add_turn(turn)
+
+                    # Save updated history
+                    await self.save_conversation_history(session_id)
+
+                # return the response Object:
+                return self.get_response(response, return_sources, return_context)
+
+        except asyncio.CancelledError:
+            self.logger.info("Conversation task was cancelled.")
+            raise
+        except Exception as e:
+            self.logger.error(f"Error in conversation: {e}")
+            raise
+
+    def as_markdown(
+        self,
+        response: AIMessage,
+        return_sources: bool = False,
+        return_context: bool = False,
+    ) -> str:
+        """Enhanced markdown formatting with context information."""
         markdown_output = f"**Question**: {response.input}  \n"
         markdown_output += f"**Answer**: \n {response.output}  \n"
-        if return_sources is True and response.documents:
+
+        # Add context information if available
+        if return_context and response.has_context:
+            context_info = []
+            if response.used_vector_context:
+                context_info.append(
+                    f"Vector search ({response.search_type}, {response.search_results_count} results)"
+                )
+            if response.used_conversation_history:
+                context_info.append(
+                    "Conversation history"
+                )
+
+            if context_info:
+                markdown_output += f"\n**Context Used**: {', '.join(context_info)}  \n"
+
+        # Add tool information if tools were used
+        if response.has_tools:
+            tool_names = [tc.name for tc in response.tool_calls]
+            markdown_output += f"\n**Tools Used**: {', '.join(tool_names)}  \n"
+
+        # Handle sources as before
+        if return_sources and response.documents:
             source_documents = response.documents
             current_sources = []
             block_sources = []
             count = 0
             d = {}
+
             for source in source_documents:
                 if count >= 20:
                     break  # Exit loop after processing 20 documents
-                metadata = source.metadata
+
+                metadata = getattr(source, 'metadata', {})
                 if 'url' in metadata:
                     src = metadata.get('url')
                 elif 'filename' in metadata:
                     src = metadata.get('filename')
                 else:
                     src = metadata.get('source', 'unknown')
+
                 if src == 'knowledge-base':
                     continue  # avoid attaching kb documents
+
                 source_title = metadata.get('title', src)
                 if source_title in current_sources:
                     continue
+
                 current_sources.append(source_title)
                 if src:
                     d[src] = metadata.get('document_meta', {})
+
                 source_filename = metadata.get('filename', src)
                 if src:
                     block_sources.append(f"- [{source_title}]({src})")
@@ -572,31 +959,39 @@ class AbstractBot(DBInterface, ABC):
                         )
                     else:
                         block_sources.append(f"- {source_filename}")
+                count += 1
+
             if block_sources:
-                markdown_output += f"**Sources**:  \n"
+                markdown_output += f"\n**Sources**:  \n"
                 markdown_output += "\n".join(block_sources)
+
             if d:
                 response.documents = d
+
         return markdown_output
 
-    def get_response(self, response: AIMessage):
-        if 'error' in response:
+    def get_response(
+        self,
+        response: AIMessage,
+        return_sources: bool = True,
+        return_context: bool = False
+    ) -> AIMessage:
+        """Response processing with error handling."""
+        if hasattr(response, 'error') and response.error:
             return response  # return this error directly
+
         try:
             response.response = self.as_markdown(
                 response,
-                return_sources=self.return_sources
+                return_sources=return_sources,
+                return_context=return_context
             )
             return response
         except (ValueError, TypeError) as exc:
-            self.logger.error(
-                f"Error validating response: {exc}"
-            )
+            self.logger.error(f"Error validating response: {exc}")
             return response
         except Exception as exc:
-            self.logger.error(
-                f"Error on response: {exc}"
-            )
+            self.logger.error(f"Error on response: {exc}")
             return response
 
     async def __aenter__(self):
@@ -759,3 +1154,50 @@ class AbstractBot(DBInterface, ABC):
                 f"Error in conversation: {e}"
             )
             raise
+
+    # Additional utility methods for conversation management
+    async def clear_conversation_history(self, session_id: str) -> bool:
+        """Clear conversation history for a session."""
+        try:
+            if session_id in self.conversation_histories:
+                del self.conversation_histories[session_id]
+
+            # Also clear from persistent storage
+            if self._request and hasattr(self._request, 'session'):
+                session_key = f"conversation_history_{session_id}"
+                if session_key in self._request.session:
+                    del self._request.session[session_key]
+
+            self.logger.info(f"Cleared conversation history for session {session_id}")
+            return True
+        except Exception as e:
+            self.logger.error(f"Error clearing conversation history: {e}")
+            return False
+
+    async def get_conversation_summary(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """Get a summary of the conversation history."""
+        history = await self.get_conversation_history(session_id)
+        if not history.turns:
+            return None
+
+        return {
+            'session_id': session_id,
+            'user_id': history.user_id,
+            'total_turns': len(history.turns),
+            'created_at': history.created_at.isoformat(),
+            'updated_at': history.updated_at.isoformat(),
+            'last_user_message': history.turns[-1].user_message if history.turns else None,
+            'last_assistant_response': history.turns[-1].assistant_response[:100] + "..." if history.turns else None,
+        }
+
+    async def export_conversation_history(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """Export complete conversation history for a session."""
+        if session_id not in self.conversation_histories:
+            # Try to load from storage
+            await self.load_conversation_history(session_id)
+
+        if session_id not in self.conversation_histories:
+            return None
+
+        history = self.conversation_histories[session_id]
+        return history.to_dict()
