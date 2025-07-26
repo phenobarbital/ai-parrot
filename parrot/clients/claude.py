@@ -449,10 +449,22 @@ class ClaudeClient(AbstractClient):
         turn_id = str(uuid.uuid4())
         original_prompt = prompt
 
+        # Get conversation history if available
+        conversation_history = None
+        messages = []
+
         # Get conversation context (but don't include files since we handle images separately)
-        messages, conversation_history, system_prompt = await self._prepare_conversation_context(
-            prompt, None, user_id, session_id, system_prompt
-        )
+        if user_id and session_id and self.conversation_memory:
+            # Get or create conversation history
+            conversation_history = await self.conversation_memory.get_history(user_id, session_id)
+            if not conversation_history:
+                conversation_history = await self.conversation_memory.create_history(
+                    user_id, session_id
+                )
+
+            # Get previous conversation messages for context
+            # Convert turns to API message format
+            messages = conversation_history.get_messages_for_api()
 
         output_config = self._get_structured_config(
             structured_output
@@ -542,7 +554,7 @@ class ClaudeClient(AbstractClient):
         final_output = None
         text_content = ""
 
-            # Extract text content from Claude's response
+        # Extract text content from Claude's response
         for content_block in result.get("content", []):
             if content_block.get("type") == "text":
                 text_content += content_block.get("text", "")
@@ -562,23 +574,17 @@ class ClaudeClient(AbstractClient):
         assistant_message = {"role": "assistant", "content": result["content"]}
         messages.append(assistant_message)
 
-        # Extract assistant response text for conversation memory
-        assistant_response_text = ""
-        for content_block in result.get("content", []):
-            if content_block.get("type") == "text":
-                assistant_response_text += content_block.get("text", "")
-
         # Update conversation memory
         tools_used = [tc.name for tc in all_tool_calls]
         await self._update_conversation_memory(
             user_id,
             session_id,
             conversation_history,
-            messages,
+            messages + [{"role": "assistant", "content": result["content"]}],
             system_prompt,
             turn_id,
-            original_prompt,
-            assistant_response_text,
+            f"[Image Analysis]: {original_prompt}",  # Include image context in the stored prompt
+            text_content,
             tools_used
         )
 

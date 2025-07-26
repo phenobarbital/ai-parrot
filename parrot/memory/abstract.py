@@ -3,6 +3,7 @@ from typing import List, Dict, Any, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
 from abc import ABC, abstractmethod
+from navconfig.logging import logging
 
 
 @dataclass
@@ -129,6 +130,9 @@ class ConversationHistory:
 
 class ConversationMemory(ABC):
     """Abstract base class for conversation memory storage."""
+
+    def __init__(self):
+        self.logger = logging.getLogger(f"parrot.Memory.{self.__class__.__name__}")
 
     @abstractmethod
     async def create_history(

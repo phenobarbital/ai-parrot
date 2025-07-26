@@ -1,5 +1,5 @@
 from typing import Dict, List, Optional, Any
-import asyncio
+from unittest import result
 from .abstract import ConversationMemory, ConversationHistory, ConversationTurn
 
 
@@ -7,8 +7,8 @@ class InMemoryConversation(ConversationMemory):
     """In-memory implementation of conversation memory."""
 
     def __init__(self):
+        super().__init__()
         self._histories: Dict[str, Dict[str, ConversationHistory]] = {}
-        self._lock = asyncio.Lock()
 
     def _get_key(self, user_id: str, session_id: str) -> tuple:
         return (user_id, session_id)
@@ -20,56 +20,56 @@ class InMemoryConversation(ConversationMemory):
         metadata: Optional[Dict[str, Any]] = None
     ) -> ConversationHistory:
         """Create a new conversation history."""
-        async with self._lock:
-            if user_id not in self._histories:
-                self._histories[user_id] = {}
+        if user_id not in self._histories:
+            self._histories[user_id] = {}
 
-            history = ConversationHistory(
-                session_id=session_id,
-                user_id=user_id,
-                metadata=metadata or {}
-            )
+        history = ConversationHistory(
+            session_id=session_id,
+            user_id=user_id,
+            metadata=metadata or {}
+        )
 
-            self._histories[user_id][session_id] = history
-            return history
+        self._histories[user_id][session_id] = history
+        return history
 
     async def get_history(self, user_id: str, session_id: str) -> Optional[ConversationHistory]:
         """Get a conversation history."""
-        async with self._lock:
-            return self._histories.get(user_id, {}).get(session_id)
+        result = self._histories.get(user_id, {}).get(session_id)
+        self.logger.debug(
+            f"DEBUG: Getting history for {user_id}/{session_id}: {'Found' if result else 'Not found'}"
+        )
+        if result:
+            self.logger.debug(f"DEBUG: History has {len(result.turns)} turns")
+        return result
 
     async def update_history(self, history: ConversationHistory) -> None:
         """Update a conversation history."""
-        async with self._lock:
-            if history.user_id not in self._histories:
-                self._histories[history.user_id] = {}
-            self._histories[history.user_id][history.session_id] = history
+        if history.user_id not in self._histories:
+            self._histories[history.user_id] = {}
+        self._histories[history.user_id][history.session_id] = history
 
     async def add_turn(self, user_id: str, session_id: str, turn: ConversationTurn) -> None:
         """Add a turn to the conversation."""
-        async with self._lock:
-            history = await self.get_history(user_id, session_id)
-            if history:
-                history.add_turn(turn)
-                await self.update_history(history)
+        self.logger.debug(
+            f"DEBUG: Adding turn for {user_id}/{session_id}: {turn.user_message[:50]}..."
+        )
+        history = await self.get_history(user_id, session_id)
+        if history:
+            history.add_turn(turn)
 
     async def clear_history(self, user_id: str, session_id: str) -> None:
         """Clear a conversation history."""
-        async with self._lock:
-            history = await self.get_history(user_id, session_id)
-            if history:
-                history.clear_turns()
-                await self.update_history(history)
+        history = await self.get_history(user_id, session_id)
+        if history:
+            history.clear_turns()
 
     async def list_sessions(self, user_id: str) -> List[str]:
         """List all session IDs for a user."""
-        async with self._lock:
-            return list(self._histories.get(user_id, {}).keys())
+        return list(self._histories.get(user_id, {}).keys())
 
     async def delete_history(self, user_id: str, session_id: str) -> bool:
         """Delete a conversation history entirely."""
-        async with self._lock:
-            if user_id in self._histories and session_id in self._histories[user_id]:
-                del self._histories[user_id][session_id]
-                return True
-            return False
+        if user_id in self._histories and session_id in self._histories[user_id]:
+            del self._histories[user_id][session_id]
+            return True
+        return False

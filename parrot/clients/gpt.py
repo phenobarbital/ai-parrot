@@ -236,15 +236,6 @@ class OpenAIClient(AbstractClient):
             "content": result.content
         })
 
-        # Update conversation memory
-        await self._update_conversation_memory(
-            user_id,
-            session_id,
-            conversation_session,
-            messages,
-            system_prompt
-        )
-
         # Handle structured output
         final_output = None
         if structured_output:
@@ -258,6 +249,21 @@ class OpenAIClient(AbstractClient):
                     final_output = self._json.loads(result.content)
             except Exception:
                 final_output = result.content
+
+
+        # Update conversation memory
+        tools_used = [tc.name for tc in all_tool_calls]
+        await self._update_conversation_memory(
+            user_id,
+            session_id,
+            conversation_session,
+            messages,
+            system_prompt,
+            turn_id,
+            original_prompt,
+            str(final_output) if final_output else None,
+            tools_used
+        )
 
         # Create AIMessage using factory
         ai_message = AIMessageFactory.from_openai(
@@ -340,12 +346,17 @@ class OpenAIClient(AbstractClient):
                 "role": "assistant",
                 "content": assistant_content
             })
+            # Update conversation memory
             await self._update_conversation_memory(
                 user_id,
                 session_id,
                 conversation_session,
                 messages,
-                system_prompt
+                system_prompt,
+                turn_id,
+                prompt,
+                assistant_content,
+                []
             )
 
     async def batch_ask(self, requests) -> List[AIMessage]:
@@ -445,12 +456,23 @@ class OpenAIClient(AbstractClient):
         }
         messages.append(assistant_message)
 
+        # Extract assistant response text for conversation memory
+        assistant_response_text = ""
+        for content_block in result.get("content", []):
+            if content_block.get("type") == "text":
+                assistant_response_text += content_block.get("text", "")
+
+        # Update conversation memory
         await self._update_conversation_memory(
             user_id,
             session_id,
             conversation_session,
             messages,
-            system_prompt
+            system_prompt,
+            turn_id,
+            prompt,
+            assistant_response_text,
+            []
         )
 
         usage = response.usage.model_dump() if response.usage else {}
