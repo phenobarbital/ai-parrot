@@ -5,7 +5,11 @@ import asyncio
 from PIL import Image
 from pydantic import BaseModel, Field
 from navconfig import BASE_DIR
-from parrot.next.claude import ClaudeClient, ClaudeModel, BatchRequest
+from parrot.clients.claude import (
+    ClaudeClient,
+    ClaudeModel,
+    BatchRequest
+)
 
 
 # Example usage and helper functions

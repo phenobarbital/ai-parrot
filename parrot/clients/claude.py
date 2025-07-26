@@ -73,8 +73,9 @@ class ClaudeClient(AbstractClient):
         turn_id = str(uuid.uuid4())
         original_prompt = prompt
 
-        messages, conversation_session, system_prompt = await self._prepare_conversation_context(
-            prompt, files, user_id, session_id, system_prompt)
+        messages, conversation_history, system_prompt = await self._prepare_conversation_context(
+            prompt, files, user_id, session_id, system_prompt
+        )
 
         output_config = self._get_structured_config(
             structured_output
@@ -171,13 +172,24 @@ class ClaudeClient(AbstractClient):
             except Exception:
                 final_output = text_content
 
-        # Update conversation memory
+        # Extract assistant response text for conversation memory
+        assistant_response_text = ""
+        for content_block in result.get("content", []):
+            if content_block.get("type") == "text":
+                assistant_response_text += content_block.get("text", "")
+
+        # Update conversation memory with unified system
+        tools_used = [tc.name for tc in all_tool_calls]
         await self._update_conversation_memory(
             user_id,
             session_id,
-            conversation_session,
+            conversation_history,
             messages,
-            system_prompt
+            system_prompt,
+            turn_id,
+            original_prompt,
+            assistant_response_text,
+            tools_used
         )
 
         # Create AIMessage using factory
@@ -211,8 +223,9 @@ class ClaudeClient(AbstractClient):
 
         # Generate unique turn ID for tracking
         turn_id = str(uuid.uuid4())
+        original_prompt = prompt
 
-        messages, conversation_session, system_prompt = await self._prepare_conversation_context(
+        messages, conversation_history, system_prompt = await self._prepare_conversation_context(
             prompt, files, user_id, session_id, system_prompt
         )
 
@@ -253,16 +266,19 @@ class ClaudeClient(AbstractClient):
 
         # Update conversation memory
         if assistant_content:
-            messages.append({
-                "role": "assistant",
-                "content": [{"type": "text", "text": assistant_content}]
-            })
             await self._update_conversation_memory(
                 user_id,
                 session_id,
-                conversation_session,
-                messages,
-                system_prompt
+                conversation_history,
+                messages + [{
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": assistant_content}]
+                }],
+                system_prompt,
+                turn_id,
+                original_prompt,
+                assistant_content,
+                []  # No tools used in streaming
             )
 
     async def batch_ask(self, requests: List[BatchRequest]) -> List[AIMessage]:
@@ -403,6 +419,7 @@ class ClaudeClient(AbstractClient):
         count_objects: bool = False,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
+        system_prompt: Optional[str] = None
     ) -> AIMessage:
         """
         Ask Claude a question about an image with optional conversation memory.
@@ -433,8 +450,8 @@ class ClaudeClient(AbstractClient):
         original_prompt = prompt
 
         # Get conversation context (but don't include files since we handle images separately)
-        messages, conversation_session, system_prompt = await self._prepare_conversation_context(
-            prompt, None, user_id, session_id, None
+        messages, conversation_history, system_prompt = await self._prepare_conversation_context(
+            prompt, None, user_id, session_id, system_prompt
         )
 
         output_config = self._get_structured_config(
@@ -479,10 +496,6 @@ class ClaudeClient(AbstractClient):
             "temperature": temperature or self.temperature,
             "messages": messages
         }
-
-        if system_prompt:
-            payload["system"] = system_prompt
-
 
         # Add system prompt for structured output
         if structured_output:
@@ -549,13 +562,24 @@ class ClaudeClient(AbstractClient):
         assistant_message = {"role": "assistant", "content": result["content"]}
         messages.append(assistant_message)
 
+        # Extract assistant response text for conversation memory
+        assistant_response_text = ""
+        for content_block in result.get("content", []):
+            if content_block.get("type") == "text":
+                assistant_response_text += content_block.get("text", "")
+
         # Update conversation memory
+        tools_used = [tc.name for tc in all_tool_calls]
         await self._update_conversation_memory(
             user_id,
             session_id,
-            conversation_session,
+            conversation_history,
             messages,
-            system_prompt
+            system_prompt,
+            turn_id,
+            original_prompt,
+            assistant_response_text,
+            tools_used
         )
 
         # Create AIMessage using factory

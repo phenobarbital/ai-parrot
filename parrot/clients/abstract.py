@@ -21,7 +21,8 @@ from navconfig.logging import logging
 import pandas as pd
 import aiohttp
 from ..memory import (
-    ConversationSession,
+    ConversationTurn,
+    ConversationHistory,
     ConversationMemory,
     InMemoryConversation,
     RedisConversation
@@ -169,34 +170,45 @@ class AbstractClient(ABC):
             await self.session.close()
 
     async def start_conversation(
-        self, user_id: str, session_id: str,
-        system_prompt: Optional[str] = None
-    ) -> ConversationSession:
+        self,
+        user_id: str,
+        session_id: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> ConversationHistory:
         """Start a new conversation session."""
-        return await self.conversation_memory.create_session(
+        return await self.conversation_memory.create_history(
             user_id,
             session_id,
-            system_prompt
+            metadata=metadata
         )
 
     async def get_conversation(
         self,
         user_id: str,
         session_id: str
-    ) -> Optional[ConversationSession]:
+    ) -> Optional[ConversationHistory]:
         """Get an existing conversation session."""
-        return await self.conversation_memory.get_session(user_id, session_id)
+        if not self.conversation_memory:
+            return None
+        return await self.conversation_memory.get_history(user_id, session_id)
 
-    async def clear_conversation(
-        self,
-        user_id: str,
-        session_id: str
-    ) -> None:
-        """Clear a conversation session."""
-        await self.conversation_memory.clear_session(user_id, session_id)
+    async def clear_conversation(self, user_id: str, session_id: str) -> bool:
+        """Clear conversation history for a session."""
+        if not self.conversation_memory:
+            return False
+        await self.conversation_memory.clear_history(user_id, session_id)
+        return True
 
-    async def list_conversations(self, user_id: str) -> List[str]:
+    async def delete_conversation(self, user_id: str, session_id: str) -> bool:
+        """Delete conversation history entirely."""
+        if not self.conversation_memory:
+            return False
+        return await self.conversation_memory.delete_history(user_id, session_id)
+
+    async def list_user_conversations(self, user_id: str) -> List[str]:
         """List all conversation sessions for a user."""
+        if not self.conversation_memory:
+            return []
         return await self.conversation_memory.list_sessions(user_id)
 
     def register_tool(
@@ -463,42 +475,88 @@ class AbstractClient(ABC):
         user_id: Optional[str],
         session_id: Optional[str],
         system_prompt: Optional[str]
-    ) -> tuple[List[Dict[str, Any]], Optional[ConversationSession], Optional[str]]:
+    ) -> tuple[List[Dict[str, Any]], Optional[ConversationHistory], Optional[str]]:
         """Prepare conversation context and return messages, session, and system prompt."""
         messages = []
-        conversation_session = None
+        conversation_history = None
 
         if user_id and session_id:
-            conversation_session = await self.get_conversation(user_id, session_id)
-            if conversation_session:
-                messages = conversation_session.messages.copy()
-                if not system_prompt and conversation_session.system_prompt:
-                    system_prompt = conversation_session.system_prompt
+            conversation_history = await self.conversation_memory.get_history(
+                user_id, session_id
+            )
+            if not conversation_history:
+                conversation_history = await self.conversation_memory.create_history(
+                    user_id, session_id
+                )
 
+        # Get recent conversation messages for context
+        if conversation_history:
+            messages = conversation_history.get_messages_for_api()
         new_user_message = self._prepare_messages(prompt, files)[0]
         messages.append(new_user_message)
 
-        return messages, conversation_session, system_prompt
+        # Handle file attachments
+        content = []
+        if files:
+            for file in files:
+                # Process file (image or document)
+                if isinstance(file, (str, Path)):
+                    # TODO: migrate to specific file handling per Model.
+                    file_path = Path(file)
+                    # if file_path.suffix.lower() in ['.jpg', '.jpeg', '.png', '.gif', '.webp']:
+                    #     # Handle image file
+                    #     image_content = self._encode_image_for_claude(file_path)
+                    #     content.append(image_content)
+                    # else:
+                    # Handle other file types if needed
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        file_content = f.read()
+                    content.append({
+                        "type": "text",
+                        "text": f"File content from {file_path.name}:\n\n{file_content}"
+                    })
+
+        # Add the current prompt
+        if content:
+            content.append({"type": "text", "text": prompt})
+            messages.append({"role": "user", "content": content})
+        else:
+            messages.append({"role": "user", "content": prompt})
+
+        return messages, conversation_history, system_prompt
 
     async def _update_conversation_memory(
         self,
         user_id: Optional[str],
         session_id: Optional[str],
-        conversation_session: Optional[ConversationSession],
+        conversation_history: Optional[ConversationHistory],
         messages: List[Dict[str, Any]],
-        system_prompt: Optional[str]
+        system_prompt: Optional[str],
+        turn_id: str,
+        original_prompt: str,
+        assistant_response: str,
+        tools_used: List[str] = None
     ) -> None:
-        """Update conversation memory with new messages."""
-        if user_id and session_id:
-            if not conversation_session:
-                conversation_session = await self.start_conversation(
-                    user_id,
-                    session_id,
-                    system_prompt
-                )
+        """Update conversation memory with the latest turn."""
+        if not (user_id and session_id and conversation_history and self.conversation_memory):
+            return
 
-            conversation_session.messages = messages
-            await self.conversation_memory.update_session(conversation_session)
+        # Create a new conversation turn
+        turn = ConversationTurn(
+            turn_id=turn_id,
+            user_id=user_id,
+            user_message=original_prompt,
+            assistant_response=assistant_response,
+            context_used=system_prompt,
+            tools_used=tools_used or [],
+            metadata={
+                "message_count": len(messages),
+                "has_system_prompt": bool(system_prompt)
+            }
+        )
+
+        # Add turn to conversation history
+        await self.conversation_memory.add_turn(user_id, session_id, turn)
 
     def _extract_json_from_response(self, text: str) -> str:
         """Extract JSON from Claude's response, handling markdown code blocks and extra text."""
