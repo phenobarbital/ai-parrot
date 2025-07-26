@@ -131,8 +131,9 @@ class ConversationHistory:
 class ConversationMemory(ABC):
     """Abstract base class for conversation memory storage."""
 
-    def __init__(self):
+    def __init__(self, debug: bool = False):
         self.logger = logging.getLogger(f"parrot.Memory.{self.__class__.__name__}")
+        self.debug = debug
 
     @abstractmethod
     async def create_history(

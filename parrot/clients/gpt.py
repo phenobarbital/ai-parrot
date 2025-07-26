@@ -253,6 +253,7 @@ class OpenAIClient(AbstractClient):
 
         # Update conversation memory
         tools_used = [tc.name for tc in all_tool_calls]
+        assistant_response_text = result.content if isinstance(result.content, str) else self._json.dumps(result.content)
         await self._update_conversation_memory(
             user_id,
             session_id,
@@ -261,7 +262,7 @@ class OpenAIClient(AbstractClient):
             system_prompt,
             turn_id,
             original_prompt,
-            str(final_output) if final_output else None,
+            assistant_response_text,
             tools_used
         )
 
