@@ -597,7 +597,6 @@ Your job is to produce a final summary from the following text and identify the 
                 max_tokens=1000,
                 top_p=0.5
             )
-            print('SUMMARY > ', summary)
             return summary.output
         except Exception as e:
             self.logger.error(

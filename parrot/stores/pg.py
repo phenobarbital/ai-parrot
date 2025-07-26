@@ -545,9 +545,9 @@ class PgVectorStore(AbstractStore):
         """
         # Use provided metric or fall back to instance distance_strategy
         strategy = metric or self.distance_strategy
-        self.logger.debug(
-            f"PgVector: using distance strategy → {strategy}"
-        )
+        # self.logger.debug(
+        #     f"PgVector: using distance strategy → {strategy}"
+        # )
 
         # Convert string metrics to DistanceStrategy enum if needed
         if isinstance(strategy, str):
@@ -562,9 +562,9 @@ class PgVectorStore(AbstractStore):
             }
             strategy = metric_mapping.get(strategy.upper(), DistanceStrategy.COSINE)
 
-        self.logger.debug(
-            f"PgVector: using distance strategy → {strategy}"
-        )
+        # self.logger.debug(
+        #     f"PgVector: using distance strategy → {strategy}"
+        # )
 
         # Convert numpy array to list if needed
         if isinstance(query_embedding, np.ndarray):
@@ -655,7 +655,7 @@ class PgVectorStore(AbstractStore):
             query_embedding,
             metric=metric
         ).label("distance")
-        self.logger.debug(f"Compiled distance expr → {distance_expr}")
+        # self.logger.debug(f"Compiled distance expr → {distance_expr}")
 
 
         # Build the select columns list
@@ -692,9 +692,15 @@ class PgVectorStore(AbstractStore):
         # 6) Apply any JSONB metadata filters
         if metadata_filters:
             for key, val in metadata_filters.items():
-                stmt = stmt.where(
-                    metadata_col[key].astext == str(val)
-                )
+                if isinstance(val, bool):
+                    # Handle boolean values properly in JSONB
+                    stmt = stmt.where(
+                        metadata_col[key].astext.cast(sqlalchemy.Boolean) == val
+                    )
+                else:
+                    stmt = stmt.where(
+                        metadata_col[key].astext == str(val)
+                    )
 
         try:
             # Execute query
@@ -1888,19 +1894,31 @@ class PgVectorStore(AbstractStore):
         self,
         embedding1: np.ndarray,
         embedding2: np.ndarray,
-        metric: str
+        metric: Union[str, Any]
     ) -> float:
         """
         Compute similarity between two embeddings based on the specified metric.
 
         Args:
-            embedding1: First embedding vector
-            embedding2: Second embedding vector
+            embedding1: First embedding vector (numpy array or list)
+            embedding2: Second embedding vector (numpy array or list)
             metric: Distance metric ('COSINE', 'L2', 'IP', etc.)
 
         Returns:
             Similarity score (higher = more similar)
         """
+        # Convert to numpy arrays if needed
+        if isinstance(embedding1, list):
+            embedding1 = np.array(embedding1, dtype=np.float32)
+        if isinstance(embedding2, list):
+            embedding2 = np.array(embedding2, dtype=np.float32)
+
+        # Ensure embeddings are numpy arrays
+        if not isinstance(embedding1, np.ndarray):
+            embedding1 = np.array(embedding1, dtype=np.float32)
+        if not isinstance(embedding2, np.ndarray):
+            embedding2 = np.array(embedding2, dtype=np.float32)
+
         # Ensure embeddings are 2D arrays for sklearn
         emb1 = embedding1.reshape(1, -1)
         emb2 = embedding2.reshape(1, -1)
@@ -1933,7 +1951,7 @@ class PgVectorStore(AbstractStore):
 
         elif strategy in [DistanceStrategy.MAX_INNER_PRODUCT, DistanceStrategy.DOT_PRODUCT]:
             # Dot product (inner product)
-            similarity = np.dot(embedding1, embedding2)
+            similarity = np.dot(embedding1.flatten(), embedding2.flatten())
             return float(similarity)
 
         else:
@@ -2344,8 +2362,8 @@ class PgVectorStore(AbstractStore):
     async def from_documents(
         self,
         documents: List[Document],
-        table: str,
-        schema: str = 'public',
+        table: str = None,
+        schema: str = None,
         embedding_column: str = 'embedding',
         content_column: str = 'document',
         metadata_column: str = 'cmetadata',
@@ -2373,6 +2391,10 @@ class PgVectorStore(AbstractStore):
         """
         if not self._connected:
             await self.connection()
+
+        table = table or self.table_name
+        schema = schema or self.schema
+
 
         # Initialize late chunking processor
         chunking_processor = LateChunkingProcessor(
@@ -2430,9 +2452,10 @@ class PgVectorStore(AbstractStore):
 
             # Store all chunks
             for chunk_info in chunk_infos:
+                embed = chunk_info.chunk_embedding if isinstance(chunk_info.chunk_embedding, list) else chunk_info.chunk_embedding.tolist()
                 all_inserts.append({
                     self._id_column: chunk_info.chunk_id,
-                    embedding_column: chunk_info.chunk_embedding.tolist(),
+                    embedding_column: embed,
                     content_column: chunk_info.chunk_text,
                     metadata_column: chunk_info.metadata
                 })
@@ -2552,41 +2575,53 @@ class PgVectorStore(AbstractStore):
             chunk_index = result.metadata.get('chunk_index', 0)
 
             if parent_id:
-                # Find adjacent chunks
-                context_chunks = await self._get_adjacent_chunks(
-                    parent_id=parent_id,
-                    center_chunk_index=chunk_index,
-                    window_size=context_window,
-                    table=table,
-                    schema=schema
-                )
+                try:
+                    # Find adjacent chunks
+                    context_chunks = await self._get_adjacent_chunks(
+                        parent_id=parent_id,
+                        center_chunk_index=chunk_index,
+                        window_size=context_window,
+                        table=table,
+                        schema=schema
+                    )
 
-                # Combine text with context
-                combined_text = self._combine_chunk_context(result, context_chunks)
+                    # Combine text with context
+                    combined_text = self._combine_chunk_context(result, context_chunks)
 
-                # Re-score with context
-                context_embedding = self._embed_.embed_query(combined_text)
-                query_embedding = self._embed_.embed_query(query)
+                    # Re-score with context - ensure embeddings are consistent
+                    context_embedding = self._embed_.embed_query(combined_text)
+                    query_embedding = self._embed_.embed_query(query)
 
-                # Calculate new similarity score
-                context_score = self._compute_similarity(
-                    query_embedding, context_embedding, self.distance_strategy
-                )
+                    # Ensure both embeddings are numpy arrays
+                    if isinstance(context_embedding, list):
+                        context_embedding = np.array(context_embedding, dtype=np.float32)
+                    if isinstance(query_embedding, list):
+                        query_embedding = np.array(query_embedding, dtype=np.float32)
 
-                # Create enhanced result
-                enhanced_metadata = dict(result.metadata)
-                enhanced_metadata['context_score'] = context_score
-                enhanced_metadata['has_context'] = True
-                enhanced_metadata['context_chunks'] = len(context_chunks)
+                    # Calculate new similarity score
+                    context_score = self._compute_similarity(
+                        query_embedding, context_embedding, self.distance_strategy
+                    )
 
-                enhanced_result = SearchResult(
-                    id=result.id,
-                    content=combined_text,
-                    metadata=enhanced_metadata,
-                    score=context_score
-                )
+                    # Create enhanced result
+                    enhanced_metadata = dict(result.metadata)
+                    enhanced_metadata['context_score'] = context_score
+                    enhanced_metadata['has_context'] = True
+                    enhanced_metadata['context_chunks'] = len(context_chunks)
 
-                enhanced_results.append(enhanced_result)
+                    enhanced_result = SearchResult(
+                        id=result.id,
+                        content=combined_text,
+                        metadata=enhanced_metadata,
+                        score=context_score
+                    )
+
+                    enhanced_results.append(enhanced_result)
+
+                except Exception as e:
+                    self.logger.warning(f"Error reranking chunk {result.id}: {e}")
+                    # Fall back to original result if reranking fails
+                    enhanced_results.append(result)
             else:
                 enhanced_results.append(result)
 
@@ -2613,7 +2648,7 @@ class PgVectorStore(AbstractStore):
 
         # Get all chunks from parent document
         all_chunks = await self.similarity_search(
-            query="",  # Empty query to get all matches
+            query="dummy",
             table=table,
             schema=schema,
             limit=1000,  # High limit to get all chunks
