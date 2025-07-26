@@ -1,5 +1,6 @@
 from typing import Dict, List, Optional, Any
 import asyncio
+import aiofiles
 from pathlib import Path
 from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611 # noqa
 from .abstract import ConversationMemory, ConversationHistory, ConversationTurn
@@ -47,8 +48,8 @@ class FileConversationMemory(ConversationMemory):
                 return None
 
             try:
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    data = json_decoder(f)
+                async with aiofiles.open(file_path, 'r', encoding='utf-8') as f:
+                    data = await json_decoder(f)
                 return ConversationHistory.from_dict(data)
             except (TypeError, KeyError, ValueError):
                 return None
@@ -57,8 +58,8 @@ class FileConversationMemory(ConversationMemory):
         """Update a conversation history."""
         async with self._lock:
             file_path = self._get_file_path(history.user_id, history.session_id)
-            with open(file_path, 'w', encoding='utf-8') as f:
-                json_encoder(history.to_dict(), f, indent=2, ensure_ascii=False)
+            async with aiofiles.open(file_path, 'w', encoding='utf-8') as f:
+                await json_encoder(history.to_dict(), f, indent=2, ensure_ascii=False)
 
     async def add_turn(self, user_id: str, session_id: str, turn: ConversationTurn) -> None:
         """Add a turn to the conversation."""

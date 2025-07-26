@@ -2,8 +2,7 @@ from typing import List, TypedDict
 from dataclasses import dataclass
 import asyncio
 from pydantic import BaseModel
-from navconfig import BASE_DIR
-from parrot.next.gpt import OpenAIClient, OpenAIModel
+from parrot.clients.gpt import OpenAIClient, OpenAIModel
 
 
 # Example usage and helper functions
@@ -60,12 +59,8 @@ async def example_usage():
             "What's the weather like in New York?",
             model=OpenAIModel.GPT_4_1_MINI
         )
-        print("Response text:", response.text)
-        print("Model used:", response.model)
-        print("Provider:", response.provider)
-        print("Usage:", response.usage)
-        print("Has tools:", response.has_tools)
-        print("Tool calls:", [tc.name for tc in response.tool_calls])
+        # response is an AIMessage object
+        print("Weather response:", response.output)
 
         # Register a tool
         def calculate_area(length: float, width: float) -> float:
@@ -101,7 +96,7 @@ async def example_usage():
         print("Response 1:", response1)
 
         response2 = await client.ask(
-            "What's my name and what do I like?",
+            prompt="What's my name and what do I like?",
             user_id=user_id,
             session_id=session_id
         )
