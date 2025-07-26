@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from pathlib import Path, PosixPath, PurePath
 import asyncio
+import uuid
 import torch
 from transformers import (
     AutoModelForSeq2SeqLM,
@@ -23,6 +24,7 @@ from .splitters import (
     TokenTextSplitter,
     MarkdownTextSplitter
 )
+from ..stores.utils.chunking import LateChunkingProcessor
 from ..conf import (
     DEFAULT_LLM_MODEL,
     DEFAULT_LLM_TEMPERATURE,
@@ -62,8 +64,8 @@ class AbstractLoader(ABC):
             source_type: Type of source ('file', 'url', etc.)
             **kwargs: Additional keyword arguments for configuration
         """
-        self.chunk_size: int = kwargs.get('chunk_size', 5000)
-        self.chunk_overlap: int = kwargs.get('chunk_overlap', 20)
+        self.chunk_size: int = kwargs.get('chunk_size', 800)
+        self.chunk_overlap: int = kwargs.get('chunk_overlap', 100)
         self.token_size: int = kwargs.get('token_size', 20)
         self.semaphore = asyncio.Semaphore(kwargs.get('semaphore', 10))
         self.extensions = kwargs.get('extensions', self.extensions)
@@ -76,12 +78,12 @@ class AbstractLoader(ABC):
         self._recursive: bool = kwargs.get('recursive', False)
         self.category: str = kwargs.get('category', 'document')
         self.doctype: str = kwargs.get('doctype', 'text')
-        self._use_markdown_splitter: bool = kwargs.get(
-            'use_markdown_splitter', True
-        )
-        self._use_huggingface_splitter: bool = kwargs.get(
-            'use_huggingface_splitter', False
-        )
+        # Chunking configuration
+        self._use_markdown_splitter: bool = kwargs.get('use_markdown_splitter', True)
+        self._use_huggingface_splitter: bool = kwargs.get('use_huggingface_splitter', False)
+        self._auto_detect_content_type: bool = kwargs.get('auto_detect_content_type', True)
+
+        # Advanced features
         self._summarization = kwargs.get('summarization', False)
         self._summary_model: Optional[Any] = kwargs.get('summary_model', None)
         self._use_summary_pipeline: bool = kwargs.get('use_summary_pipeline', False)
@@ -104,66 +106,24 @@ class AbstractLoader(ABC):
         # Tokenizer
         self.tokenizer = tokenizer
         # Text Splitter
-        self.text_splitter = None
+        self.text_splitter = kwargs.get('text_splitter', None)
         self.markdown_splitter = kwargs.get('markdown_splitter', None)
-        if self._use_markdown_splitter:
-            splitter = text_splitter or self._get_markdown_splitter()
-            self.markdown_splitter = self._get_markdown_splitter()
-        else:
-            if self._use_huggingface_splitter:
-                splitter = self._create_hf_token_splitter(
-                    model_name=kwargs.get('model_name', 'gpt-3.5-turbo'),
-                    chunk_size=self.chunk_size,
-                    chunk_overlap=self.chunk_overlap
-                )
-            else:
-                # Default to TokenTextSplitter
-                if isinstance(tokenizer, str):
-                    splitter = self._get_token_splitter(
-                        model_name=tokenizer,
-                        chunk_size=self.chunk_size,
-                        chunk_overlap=self.chunk_overlap
-                    )
-                elif callable(tokenizer):
-                    splitter = TokenTextSplitter(
-                        chunk_size=self.chunk_size,
-                        chunk_overlap=self.chunk_overlap,
-                        tokenizer_function=tokenizer
-                    )
-                else:
-                    # Use default TokenTextSplitter
-                    splitter = TokenTextSplitter(
-                        chunk_size=self.chunk_size,
-                        chunk_overlap=self.chunk_overlap,
-                        model_name=kwargs.get('model_name', 'gpt-3.5-turbo')
-                    )
-        self.text_splitter = splitter
+
+        # Initialize text splitter based on configuration
+        self._setup_text_splitters(tokenizer, text_splitter, kwargs)
+
         # Summarization Model:
         self.summarization_model = kwargs.get('summarizer', None)
         # LLM (if required)
-        self._use_llm = kwargs.get('use_llm', False)
-        self._llm_model = kwargs.get('llm_model', None)
-        self._llm_model_kwargs = kwargs.get('model_kwargs', {})
-        self._llm = kwargs.get('llm', None)
-        if self._use_llm:
-            self._llm = self.get_default_llm(
-                model=self._llm_model,
-                model_kwargs=self._llm_model_kwargs,
-            )
+        self._setup_llm(kwargs)
+        # Logger
         self.logger = logging.getLogger(
             f"Parrot.Loaders.{self.__class__.__name__}"
         )
         # JSON encoder:
         self._encoder = JSONContent()
         # Use CUDA if available:
-        self.device_name = kwargs.get(
-            'device', CUDA_DEFAULT_DEVICE
-        )
-        self.cuda_number = kwargs.get(
-            'cuda_number',
-            CUDA_DEFAULT_DEVICE_NUMBER
-        )
-        self._device = None
+        self._setup_device(kwargs)
 
     def _get_token_splitter(
         self,
@@ -209,6 +169,58 @@ class AbstractLoader(ABC):
             tokenizer=tokenizer
         )
 
+    def _setup_text_splitters(self, tokenizer, text_splitter, kwargs):
+        """Initialize text splitters based on configuration."""
+        # Always create a markdown splitter
+        self.markdown_splitter = self._get_markdown_splitter(
+            chunk_size=self.chunk_size,
+            chunk_overlap=self.chunk_overlap
+        )
+
+        # Choose primary text splitter based on configuration
+        if self._use_markdown_splitter:
+            self.text_splitter = text_splitter or self.markdown_splitter
+        else:
+            if self._use_huggingface_splitter:
+                self.text_splitter = self._create_hf_token_splitter(
+                    model_name=kwargs.get('model_name', 'gpt-3.5-turbo'),
+                    chunk_size=self.chunk_size,
+                    chunk_overlap=self.chunk_overlap
+                )
+            else:
+                # Default to TokenTextSplitter
+                if isinstance(tokenizer, str):
+                    self.text_splitter = self._get_token_splitter(
+                        model_name=tokenizer,
+                        chunk_size=self.chunk_size,
+                        chunk_overlap=self.chunk_overlap
+                    )
+                elif callable(tokenizer):
+                    self.text_splitter = TokenTextSplitter(
+                        chunk_size=self.chunk_size,
+                        chunk_overlap=self.chunk_overlap,
+                        tokenizer_function=tokenizer
+                    )
+                else:
+                    # Use default TokenTextSplitter
+                    self.text_splitter = TokenTextSplitter(
+                        chunk_size=self.chunk_size,
+                        chunk_overlap=self.chunk_overlap,
+                        model_name=kwargs.get('model_name', 'gpt-3.5-turbo')
+                    )
+
+    def _setup_llm(self, kwargs):
+        """Initialize LLM if required."""
+        self._use_llm = kwargs.get('use_llm', False)
+        self._llm_model = kwargs.get('llm_model', None)
+        self._llm_model_kwargs = kwargs.get('model_kwargs', {})
+        self._llm = kwargs.get('llm', None)
+        if self._use_llm:
+            self._llm = self.get_default_llm(
+                model=self._llm_model,
+                model_kwargs=self._llm_model_kwargs,
+            )
+
     def get_default_llm(
         self,
         model: str = None,
@@ -237,6 +249,12 @@ class AbstractLoader(ABC):
             model=model or DEFAULT_LLM_MODEL,
             **model_kwargs
         )
+
+    def _setup_device(self, kwargs):
+        """Initialize device configuration."""
+        self.device_name = kwargs.get('device', CUDA_DEFAULT_DEVICE)
+        self.cuda_number = kwargs.get('cuda_number', CUDA_DEFAULT_DEVICE_NUMBER)
+        self._device = None
 
     def _get_device(
         self,
@@ -286,6 +304,70 @@ class AbstractLoader(ABC):
     def supported_extensions(self):
         """Get the supported file extensions."""
         return self.extensions
+
+    def _detect_content_type(self, document: Document) -> str:
+        """
+        Auto-detect content type based on document metadata and content.
+
+        Args:
+            document: Document to analyze
+
+        Returns:
+            Content type string ('markdown', 'code', 'text', etc.)
+        """
+        if not self._auto_detect_content_type:
+            return 'text'
+
+        # Check metadata for hints
+        metadata = document.metadata or {}
+        filename = metadata.get('filename', '').lower()
+        source_type = metadata.get('source_type', '').lower()
+
+        # File extension based detection
+        if filename.endswith(('.md', '.markdown')):
+            return 'markdown'
+        elif filename.endswith(('.py', '.js', '.java', '.cpp', '.c', '.go', '.rs')):
+            return 'code'
+        elif filename.endswith(('.html', '.htm', '.xml')):
+            return 'html'
+        elif source_type in ['markdown', 'md']:
+            return 'markdown'
+
+        # Content based detection
+        content = document.page_content[:1000].lower()  # Check first 1000 chars
+
+        # Simple heuristics for markdown
+        markdown_indicators = ['#', '```', '**', '*', '[', '](', '|', '---']
+        markdown_score = sum(1 for indicator in markdown_indicators if indicator in content)
+
+        if markdown_score >= 3:  # If multiple markdown indicators found
+            return 'markdown'
+
+        # Default to text
+        return 'text'
+
+    def _select_splitter_for_content(self, content_type: str):
+        """
+        Select the appropriate text splitter based on content type.
+
+        Args:
+            content_type: Detected or specified content type
+
+        Returns:
+            Appropriate text splitter
+        """
+        if content_type == 'markdown':
+            return self.markdown_splitter
+        elif content_type == 'code':
+            # Use token splitter with smaller chunks for code
+            return TokenTextSplitter(
+                chunk_size=min(self.chunk_size, 2048),
+                chunk_overlap=self.chunk_overlap,
+                model_name='gpt-3.5-turbo'
+            )
+        else:
+            # Default to the configured text splitter
+            return self.text_splitter
 
     def is_valid_path(self, path: Union[str, Path]) -> bool:
         """Check if a path is valid."""
@@ -432,9 +514,15 @@ class AbstractLoader(ABC):
     async def load(
         self,
         source: Optional[Any] = None,
+        split_documents: bool = True,
+        late_chunking: bool = False,
+        vector_store=None,
+        store_full_document: bool = True,
+        auto_detect_content_type: bool = None,
         **kwargs
     ) -> List[Document]:
-        """Load data from a source and return it as a list of Langchain Documents.
+        """
+        Load data from a source and return it as a list of Documents.
 
         The source can be:
         - None: Uses self.path attribute if available
@@ -445,9 +533,15 @@ class AbstractLoader(ABC):
 
         Args:
             source (Optional[Any]): The source of the data.
+            split_documents (bool): Whether to split documents into chunks, defaults to True
+            late_chunking (bool): Whether to use late chunking strategy
+            vector_store: Vector store instance (required for late chunking)
+            store_full_document (bool): Whether to store full documents alongside chunks
+            auto_detect_content_type (bool): Override auto-detection setting
+            **kwargs: Additional keyword arguments
 
         Returns:
-            List[Document]: A list of Langchain Documents.
+            List[Document]: A list of Documents (chunked if requested).
         """
         tasks = []
         # If no source is provided, use self.path
@@ -492,12 +586,36 @@ class AbstractLoader(ABC):
             raise ValueError(
                 f"Unsupported source type: {type(source)}"
             )
-        # Load tasks
+        # Load tasks and get raw documents
+        documents = []
         if tasks:
             results = await self._load_tasks(tasks)
-            return results
+            documents = results
 
-        return []
+        # Apply chunking if requested
+        if split_documents and documents:
+            self.logger.debug(
+                f"Splitting {len(documents)} documents into chunks..."
+            )
+
+            if late_chunking and vector_store is None:
+                raise ValueError(
+                    "Vector store is required when using late_chunking=True"
+                )
+
+            documents = await self.chunk_documents(
+                documents=documents,
+                use_late_chunking=late_chunking,
+                vector_store=vector_store,
+                store_full_document=store_full_document,
+                auto_detect_content_type=auto_detect_content_type
+            )
+
+            self.logger.debug(
+                f"Document chunking complete: {len(documents)} final documents"
+            )
+
+        return documents
 
     def create_metadata(
         self,
@@ -778,34 +896,72 @@ Your job is to produce a final summary from the following text and identify the 
             f.flush()
         print(f':: Saved File on {filename}')
 
-    def chunk_documents(
+    async def chunk_documents(
         self,
         documents: List[Document],
-        use_late_chunking: bool = False
+        use_late_chunking: bool = False,
+        vector_store=None,
+        store_full_document: bool = True,
+        auto_detect_content_type: bool = None
     ) -> List[Document]:
         """
-        Chunk documents using the configured text splitter.
+        Chunk documents using the configured text splitter or late chunking strategy.
 
         Args:
             documents: List of documents to chunk
             use_late_chunking: Whether to use late chunking strategy
+            vector_store: Vector store instance (required for late chunking)
+            store_full_document: Whether to store full documents alongside chunks (late chunking only)
+            auto_detect_content_type: Override auto-detection setting
+
+        Returns:
+            List of chunked documents
+        """
+        if use_late_chunking:
+            return await self._chunk_with_late_chunking(
+                documents, vector_store, store_full_document
+            )
+        else:
+            return self._chunk_with_text_splitter(
+                documents, auto_detect_content_type
+            )
+
+    def _chunk_with_text_splitter(
+        self,
+        documents: List[Document],
+        auto_detect_content_type: bool = None
+    ) -> List[Document]:
+        """
+        Chunk documents using regular text splitters.
+
+        Args:
+            documents: List of documents to chunk
+            auto_detect_content_type: Override auto-detection setting
 
         Returns:
             List of chunked documents
         """
         chunked_docs = []
+        detect_content = auto_detect_content_type if auto_detect_content_type is not None else self._auto_detect_content_type
 
         for doc in documents:
-            if use_late_chunking:
-                # Use late chunking strategy
-                pass
-            else:
-                # Use regular text splitter
-                chunks = self.text_splitter.create_chunks(
+            try:
+                # Detect content type and select appropriate splitter
+                if detect_content:
+                    content_type = self._detect_content_type(doc)
+                    splitter = self._select_splitter_for_content(content_type)
+                    self.logger.debug(f"Detected content type: {content_type} for document")
+                else:
+                    content_type = 'text'
+                    splitter = self.text_splitter
+
+                # Create chunks using the selected splitter
+                chunks = splitter.create_chunks(
                     text=doc.page_content,
                     metadata=doc.metadata
                 )
 
+                # Convert chunks to Document objects
                 for chunk in chunks:
                     chunked_doc = Document(
                         page_content=chunk.text,
@@ -814,9 +970,100 @@ Your job is to produce a final summary from the following text and identify the 
                             'chunk_id': chunk.chunk_id,
                             'token_count': chunk.token_count,
                             'start_position': chunk.start_position,
-                            'end_position': chunk.end_position
+                            'end_position': chunk.end_position,
+                            'content_type': content_type,
+                            'splitter_type': splitter.__class__.__name__,
+                            'is_chunk': True,
+                            'parent_document_id': doc.metadata.get('document_id', f"doc_{uuid.uuid4().hex[:8]}")
                         }
                     )
                     chunked_docs.append(chunked_doc)
 
+            except Exception as e:
+                self.logger.error(f"Error chunking document: {e}")
+                # Fall back to adding the original document
+                chunked_docs.append(doc)
+
+        self.logger.info(f"Chunked {len(documents)} documents into {len(chunked_docs)} chunks")
+        return chunked_docs
+
+    async def _chunk_with_late_chunking(
+        self,
+        documents: List[Document],
+        vector_store=None,
+        store_full_document: bool = True
+    ) -> List[Document]:
+        """
+        Chunk documents using late chunking strategy.
+
+        Args:
+            documents: List of documents to chunk
+            vector_store: Vector store instance (required)
+            store_full_document: Whether to store full documents alongside chunks
+
+        Returns:
+            List of chunked documents (and optionally full documents)
+        """
+        if LateChunkingProcessor is None:
+            self.logger.warning(
+                "LateChunkingProcessor not available, falling back to regular chunking"
+            )
+            return self._chunk_with_text_splitter(documents)
+
+        if vector_store is None:
+            raise ValueError("Vector store is required for late chunking strategy")
+
+        chunked_docs = []
+
+        # Initialize late chunking processor
+        chunking_processor = LateChunkingProcessor(
+            vector_store=vector_store,
+            chunk_size=self.chunk_size,
+            chunk_overlap=self.chunk_overlap
+        )
+
+        for doc_idx, document in enumerate(documents):
+            try:
+                document_id = document.metadata.get('document_id', f"doc_{doc_idx:06d}_{uuid.uuid4().hex[:8]}")
+
+                # Process document with late chunking
+                _, chunk_infos = await chunking_processor.process_document_late_chunking(
+                    document_text=document.page_content,
+                    document_id=document_id,
+                    metadata=document.metadata
+                )
+
+                # Store full document if requested
+                if store_full_document:
+                    full_doc_metadata = {
+                        **(document.metadata or {}),
+                        'document_id': document_id,
+                        'is_full_document': True,
+                        'total_chunks': len(chunk_infos),
+                        'document_type': 'parent',
+                        'chunking_strategy': 'late_chunking'
+                    }
+
+                    full_doc = Document(
+                        page_content=document.page_content,
+                        metadata=full_doc_metadata
+                    )
+                    chunked_docs.append(full_doc)
+
+                # Add all chunks as documents
+                for chunk_info in chunk_infos:
+                    chunk_doc = Document(
+                        page_content=chunk_info.chunk_text,
+                        metadata=chunk_info.metadata
+                    )
+                    chunked_docs.append(chunk_doc)
+
+            except Exception as e:
+                self.logger.error(f"Error in late chunking for document {doc_idx}: {e}")
+                # Fall back to adding the original document
+                chunked_docs.append(document)
+
+        self.logger.info(
+            f"Late chunking processed {len(documents)} documents into {len(chunked_docs)} items"
+        )
         return chunked_docs
