@@ -108,6 +108,47 @@ class AIMessage(BaseModel):
         description="Unique ID for this conversation turn"
     )
 
+    # Vector store and conversation history tracking
+    used_vector_context: bool = Field(
+        default=False,
+        description="Whether vector store context was used in generating this response"
+    )
+
+    used_conversation_history: bool = Field(
+        default=False,
+        description="Whether conversation history was used in generating this response"
+    )
+
+    vector_context_length: int = Field(
+        default=0,
+        description="Length of vector context used (in characters)"
+    )
+
+    conversation_context_length: int = Field(
+        default=0,
+        description="Length of conversation context used (in characters)"
+    )
+
+    search_results_count: int = Field(
+        default=0,
+        description="Number of search results retrieved from vector store"
+    )
+
+    search_type: Optional[str] = Field(
+        default=None,
+        description="Type of search performed (similarity, mmr, ensemble, etc.)"
+    )
+
+    search_score_threshold: Optional[float] = Field(
+        default=None,
+        description="Score threshold used for vector search"
+    )
+
+    context_sources: Optional[List[str]] = Field(
+        default_factory=list,
+        description="List of source identifiers for context used"
+    )
+
     class Config:
         """Pydantic configuration for AIMessage."""
         # Allow arbitrary types for output field (pandas DataFrames, etc.)
@@ -145,6 +186,81 @@ class AIMessage(BaseModel):
         """Add a tool call to the response."""
         self.tool_calls.append(tool_call)  # pylint: disable=E1101 # noqa
 
+    # Context Information:
+    @property
+    def has_context(self) -> bool:
+        """Check if any context (vector or conversation) was used."""
+        return self.used_vector_context or self.used_conversation_history
+
+    @property
+    def context_summary(self) -> Dict[str, Any]:
+        """Get a summary of context usage."""
+        return {
+            'used_vector_context': self.used_vector_context,
+            'used_conversation_history': self.used_conversation_history,
+            'vector_context_length': self.vector_context_length,
+            'conversation_context_length': self.conversation_context_length,
+            'search_results_count': self.search_results_count,
+            'search_type': self.search_type,
+            'context_sources_count': len(self.context_sources) if self.context_sources else 0
+        }
+
+    def set_vector_context_info(
+        self,
+        used: bool,
+        context_length: int = 0,
+        search_results_count: int = 0,
+        search_type: Optional[str] = None,
+        score_threshold: Optional[float] = None,
+        sources: Optional[List[str]] = None
+    ) -> None:
+        """Set vector context information."""
+        self.used_vector_context = used
+        self.vector_context_length = context_length
+        self.search_results_count = search_results_count
+        self.search_type = search_type
+        self.search_score_threshold = score_threshold
+        if sources:
+            self.context_sources.extend(sources)
+
+    def set_conversation_context_info(
+        self,
+        used: bool,
+        context_length: int = 0
+    ) -> None:
+        """Set conversation context information."""
+        self.used_conversation_history = used
+        self.conversation_context_length = context_length
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for serialization."""
+        return self.model_dump()
+
+    def get_context_metadata(self) -> Dict[str, Any]:
+        """Get metadata about context usage for logging/analytics."""
+        return {
+            'context_usage': {
+                'vector_context': {
+                    'used': self.used_vector_context,
+                    'length': self.vector_context_length,
+                    'search_results': self.search_results_count,
+                    'search_type': self.search_type,
+                    'score_threshold': self.search_score_threshold,
+                    'sources_count': len(self.context_sources) if self.context_sources else 0
+                },
+                'conversation_history': {
+                    'used': self.used_conversation_history,
+                    'length': self.conversation_context_length
+                }
+            },
+            'tools': {
+                'used': self.has_tools,
+                'count': len(self.tool_calls)
+            },
+            'timing': {
+                'created_at': self.created_at.isoformat()
+            }
+        }
 
 # Factory functions to create AIMessage from different providers
 class AIMessageFactory:

@@ -1,8 +1,6 @@
-
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
-from abc import ABC, abstractmethod
 
 
 @dataclass
@@ -47,9 +45,9 @@ class ConversationTurn:
 
 @dataclass
 class ConversationHistory:
-    """Manages conversation history for a session - replaces ConversationSession."""
+    """Manages conversation history for a session."""
     session_id: str
-    user_id: str
+    user_id: Optional[str] = None
     turns: List[ConversationTurn] = field(default_factory=list)
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
@@ -64,47 +62,23 @@ class ConversationHistory:
         """Get the most recent turns for context."""
         return self.turns[-count:] if count > 0 else self.turns
 
-    def get_messages_for_api(self, model: str = 'claude') -> List[Dict[str, Any]]:
-        """Convert turns to API message format for LLM Model."""
-        messages = []
-        if model == 'claude':
-            # Claude expects messages in a specific format
-            for turn in self.turns:
-                messages.append({
-                    "role": "user",
-                    "content": turn.user_message
-                })
-                messages.append({
-                    "role": "assistant",
-                    "content": turn.assistant_response
-                })
-        else:
-            # Default format for other models
-            # This can be adjusted based on the specific model requirements
-            for turn in self.turns:
-                # Add user message
-                messages.append({
-                    "role": "user",
-                    "content": turn.user_message
-                })
-                # Add assistant response
-                messages.append({
-                    "role": "assistant",
-                    "content": turn.assistant_response
-                })
-        return messages
-
-    def clear_turns(self) -> None:
-        """Clear all turns from the conversation history."""
-        self.turns.clear()
-        self.updated_at = datetime.now()
-
     def to_dict(self) -> Dict[str, Any]:
         """Serialize conversation history to dictionary."""
         return {
             'session_id': self.session_id,
             'user_id': self.user_id,
-            'turns': [turn.to_dict() for turn in self.turns],
+            'turns': [
+                {
+                    'turn_id': turn.turn_id,
+                    'user_message': turn.user_message,
+                    'assistant_response': turn.assistant_response,
+                    'context_used': turn.context_used,
+                    'tools_used': turn.tools_used,
+                    'timestamp': turn.timestamp.isoformat(),
+                    'metadata': turn.metadata
+                }
+                for turn in self.turns
+            ],
             'created_at': self.created_at.isoformat(),
             'updated_at': self.updated_at.isoformat(),
             'metadata': self.metadata
@@ -115,63 +89,22 @@ class ConversationHistory:
         """Deserialize conversation history from dictionary."""
         history = cls(
             session_id=data['session_id'],
-            user_id=data['user_id'],
+            user_id=data.get('user_id'),
             created_at=datetime.fromisoformat(data['created_at']),
             updated_at=datetime.fromisoformat(data['updated_at']),
             metadata=data.get('metadata', {})
         )
 
         for turn_data in data.get('turns', []):
-            turn = ConversationTurn.from_dict(turn_data)
+            turn = ConversationTurn(
+                turn_id=turn_data['turn_id'],
+                user_message=turn_data['user_message'],
+                assistant_response=turn_data['assistant_response'],
+                context_used=turn_data.get('context_used'),
+                tools_used=turn_data.get('tools_used', []),
+                timestamp=datetime.fromisoformat(turn_data['timestamp']),
+                metadata=turn_data.get('metadata', {})
+            )
             history.turns.append(turn)
 
         return history
-
-class ConversationMemory(ABC):
-    """Abstract base class for conversation memory storage."""
-
-    @abstractmethod
-    async def create_history(
-        self,
-        user_id: str,
-        session_id: str,
-        metadata: Optional[Dict[str, Any]] = None
-    ) -> ConversationHistory:
-        """Create a new conversation history."""
-        pass
-
-    @abstractmethod
-    async def get_history(
-        self, user_id: str, session_id: str
-    ) -> Optional[ConversationHistory]:
-        """Get a conversation history."""
-        pass
-
-    @abstractmethod
-    async def update_history(self, history: ConversationHistory) -> None:
-        """Update a conversation history."""
-        pass
-
-    @abstractmethod
-    async def add_turn(
-        self, user_id: str, session_id: str, turn: ConversationTurn
-    ) -> None:
-        """Add a turn to the conversation."""
-        pass
-
-    @abstractmethod
-    async def clear_history(self, user_id: str, session_id: str) -> None:
-        """Clear a conversation history."""
-        pass
-
-    @abstractmethod
-    async def list_sessions(self, user_id: str) -> List[str]:
-        """List all session IDs for a user."""
-        pass
-
-    @abstractmethod
-    async def delete_history(
-        self, user_id: str, session_id: str
-    ) -> bool:
-        """Delete a conversation history entirely."""
-        pass
