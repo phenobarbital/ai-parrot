@@ -1,111 +1,113 @@
-"""
-Powerful PostgreSQL Vector Database Store with Custom Table Support.
-"""
-from typing import (
-    Any,
-    Dict,
-    Iterable,
-    List,
-    Tuple,
-    Union,
-    Optional,
-    Sequence
-)
-from collections.abc import Callable
-import asyncio
+from typing import Any, Dict, List, Optional, Union, Callable
 import uuid
-import traceback
+from contextlib import asynccontextmanager
 import numpy as np
-# SQL Alchemy
 import sqlalchemy
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy import Column, String, ARRAY, Float, JSON, text, func, inspect
-from sqlalchemy.dialects.postgresql import JSON, JSONB, JSONPATH, UUID, insert
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine
-from sqlalchemy.future import select
-from sqlalchemy.ext.asyncio import AsyncSession
-# PgVector
-from pgvector.sqlalchemy import Vector  # type: ignore
-# Langchain
-from langchain_core.embeddings import Embeddings
-from langchain.docstore.document import Document
-from langchain.memory import VectorStoreRetrieverMemory
-from langchain_community.vectorstores.pgembedding import PGEmbedding
-from langchain_community.vectorstores.utils import DistanceStrategy
-from langchain_postgres.vectorstores import (
-    PGVector,
-    _get_embedding_collection_store,
-    _results_to_docs
+from sqlalchemy import (
+    text,
+    Column,
+    insert,
+    Table,
+    MetaData,
+    select,
+    asc,
+    func,
+    event,
+    JSON,
+    Index
 )
-from langchain_postgres._utils import maximal_marginal_relevance
+from sqlalchemy.sql import literal_column
+from sqlalchemy import bindparam
+from sqlalchemy.orm import aliased
+from sqlalchemy.ext.asyncio import (
+    create_async_engine,
+    AsyncSession,
+    AsyncEngine,
+    async_sessionmaker
+)
+from sqlalchemy.sql.expression import cast
+from sqlalchemy.dialects.postgresql import JSONB, ARRAY
+from sqlalchemy.orm import (
+    declarative_base,
+    DeclarativeBase,
+    Mapped,
+    mapped_column
+)
+# PgVector
+from pgvector.sqlalchemy import Vector
+from pgvector.asyncpg import register_vector
+from sklearn.metrics.pairwise import cosine_similarity, euclidean_distances
+# Datamodel
 from datamodel.parsers.json import json_encoder  # pylint: disable=E0611
 from navconfig.logging import logging
 from .abstract import AbstractStore
 from ..conf import default_sqlalchemy_pg
+from .models import SearchResult, Document, DistanceStrategy
+from .utils.chunking import LateChunkingProcessor
 
 
 Base = declarative_base()
 
+def vector_distance(embedding_column, vector, op):
+    return text(f"{embedding_column} {op} :query_embedding").label("distance")
 
-# Define the async classmethods to be attached to our ORM model.
-async def aget_by_name(cls, session: AsyncSession, name: str) -> Optional["CustomEmbeddingStore"]:
-    return cls(cmetadata={})
 
-class PgVector(PGVector):
+class PgVectorStore(AbstractStore):
     """
-    PgVector extends PGVector so that it uses an existing table from a specified schema.
-    Enhanced PgVector that supports:
-    - Configurable embedding column name
-    - Different distance strategies (COSINE, L2/EUCLIDEAN, MAX_INNER_PRODUCT)
-    - Working with existing tables from specified schemas
-
-    When instantiating, you provide:
-    - connection: an AsyncEngine (or synchronous engine) to your PostgreSQL database.
-    - schema: the database schema where your table lives.
-    - table_name: the name of the table that stores the embeddings.
-    - embedding_length: the dimension of the embedding vectors.
-    - embeddings: your embedding function/model (which must provide embed_query).
-
-    This implementation overrides the _get_embedding_collection_store method to return a tuple of
-    ORM model classes that both refer to your table. It validates (using SQLAlchemy’s inspector)
-    that the table contains the required columns: 'id', 'embedding', 'document', and 'cmetadata'.
-
-    The returned ORM models can then be used by PGVector’s built-in similarity search and retriever.
+    A PostgreSQL vector store implementation using pgvector, completely independent of Langchain.
+    This store interacts directly with a specified schema and table for robust data isolation.
     """
     def __init__(
         self,
-        embeddings: Embeddings,
-        *,
-        table_name: str = None,
+        table: str = None,
         schema: str = 'public',
-        collection_name: Optional[str] = None,
         id_column: str = 'id',
         embedding_column: str = 'embedding',
+        document_column: str = 'document',
+        text_column: str = 'text',
+        embedding_model: Union[dict, str] = "sentence-transformers/all-mpnet-base-v2",
+        embedding: Optional[Callable] = None,
         distance_strategy: DistanceStrategy = DistanceStrategy.COSINE,
-        score_threshold: Optional[float] = None,
         use_uuid: bool = False,
+        pool_size: int = 50,
+        auto_initialize: bool = True,
         **kwargs
-    ) -> None:
-        self.table_name = table_name
+    ):
+        """ Initializes the PgVectorStore with the specified parameters.
+        """
+        self.table_name = table
         self.schema = schema
         self._id_column: str = id_column
         self._embedding_column: str = embedding_column
-        self._distance_strategy = distance_strategy
-        self._score_threshold: float = score_threshold
-        self._schema_based: bool = False
-        if self.table_name:
-            self._schema_based: bool = True
-        elif '.' in collection_name:
-            self.schema, self.table_name = collection_name.split('.')
-            self._schema_based: bool = True
+        self._document_column: str = document_column
+        self._text_column: str = text_column
+        self.distance_strategy = distance_strategy
         self._use_uuid: bool = use_uuid
+        self._embedding_store_cache: Dict[str, Any] = {}
+        self._max_size = pool_size or 50
+        self._auto_initialize_db: bool = auto_initialize
         super().__init__(
-            embeddings=embeddings,
-            collection_name=collection_name,
-            distance_strategy=distance_strategy,
+            embedding_model=embedding_model,
+            embedding=embedding,
             **kwargs
         )
-        self.logger = logging.getLogger(name='PgVector')
+        self.dsn = kwargs.get('dsn', default_sqlalchemy_pg)
+        self._connection: Optional[AsyncEngine] = None
+        self._session_factory: Optional[async_sessionmaker] = None
+        self._session: Optional[AsyncSession] = None
+        self.logger = logging.getLogger("PgVectorStore")
+        self.embedding_store = None
+        if table:
+            # create a table definition:
+            self.embedding_store = self._define_collection_store(
+                table=table,
+                schema=schema,
+                dimension=self.dimension,
+                id_column=id_column,
+                embedding_column=embedding_column,
+                document_column=self._document_column,
+                text_column=text_column,
+            )
 
     def get_id_column(self, use_uuid: bool) -> sqlalchemy.Column:
         """
@@ -134,1090 +136,633 @@ class PgVector(PGVector):
                 default=lambda: str(uuid.uuid4())
             )
 
-    async def _get_embedding_collection_store(
+    def _define_collection_store(
         self,
         table: str,
         schema: str,
         dimension: int = 384,
-        **kwargs
-    ) -> Tuple[type, type]:
-        """
-        Return custom ORM model classes (EmbeddingStore, CollectionStore)
-        that both reference the same table.
-
-        In this custom implementation, both the "collection" and "embedding" stores
-        are represented by a single table.
-        The table is expected to have the following columns:
-        - id: unique identifier (String)
-        - embedding: the vector column (Vector(dimension))
-        - document: text column containing the document
-        - cmetadata: JSONB column for metadata
-
-        Raises an error if the table does not have the required schema.
-        """
-        # Dynamically create the model class.
-        attrs = {
-            '__tablename__': table,
-            '__table_args__': {"schema": schema},
-            self._id_column: self.get_id_column(use_uuid=self._use_uuid),
-            self._embedding_column: sqlalchemy.Column(Vector(dimension)),
-            'collection_id': sqlalchemy.Column(
-                sqlalchemy.dialects.postgresql.UUID(as_uuid=True),
-                default='00000000-0000-0000-0000-000000000000',
-                nullable=False,
-                index=True
-            ),
-            'text': sqlalchemy.Column(sqlalchemy.String, nullable=True),
-            'document': sqlalchemy.Column(sqlalchemy.String, nullable=True),
-            'cmetadata': sqlalchemy.Column(JSONB, nullable=True),
-            # Attach the async classmethods.
-            'aget_by_name': classmethod(aget_by_name),
-            # '__aquery_collection': classmethod(__aquery_collection),
-            # 'aget_or_create': classmethod(aget_or_create)
-        }
-        EmbeddingStore = type("CustomEmbeddingStore", (Base,), attrs)
-        EmbeddingStore.__name__ = "EmbeddingStore"
-        return (EmbeddingStore, EmbeddingStore)
-
-    async def _PgVector__aquery_collection(
-        self,
-        session: AsyncSession,
-        embedding: List[float],
-        k: int = 4,
-        score_threshold: Optional[float] = None,
-        filter: Optional[Dict[str, str]] = None,
-    ) -> Sequence[Any]:
-        """
-        Query directly from the current table (no collection filtering/join).
-        """
-        filter_by = []
-
-        # If you want to support JSONB metadata filtering
-        if filter:
-            if self.use_jsonb:
-                filter_clauses = self._create_filter_clause(filter)
-                if filter_clauses is not None:
-                    filter_by.append(filter_clauses)
-            else:
-                filter_clauses = self._create_filter_clause_json_deprecated(filter)
-                filter_by.extend(filter_clauses)
-
-        # Build distance expression as usual
-        distance_expr = self.distance_strategy(embedding).label("distance")
-        self.logger.debug(f"Compiled distance expr → {distance_expr}")
-        stmt = (
-            select(
-                self.EmbeddingStore,
-                distance_expr
-            )
-            .filter(*filter_by)
-            .order_by(sqlalchemy.asc(distance_expr))
-            .limit(k)
-        )
-
-        if score_threshold is not None:
-            stmt = stmt.filter(distance_expr < score_threshold)
-
-        results: Sequence[Any] = (await session.execute(stmt)).all()
-        return results
-
-    async def amax_marginal_relevance_search_with_score_by_vector(
-        self,
-        embedding: List[float],
-        k: int = 4,
-        fetch_k: int = 20,
-        lambda_mult: float = 0.5,
-        filter: Optional[Dict[str, str]] = None,
-        **kwargs: Any,
-    ) -> List[Tuple[Document, float]]:
-        await self.__apost_init__()
-        async with self._make_async_session() as session:
-            results = await self.__aquery_collection(
-                session=session, embedding=embedding, k=fetch_k, filter=filter
-            )
-            embedding_list = [
-                getattr(result.EmbeddingStore, self._embedding_column)
-                for result in results
-            ]
-            mmr_selected = maximal_marginal_relevance(
-                np.array(embedding, dtype=np.float32),
-                embedding_list,
-                k=k,
-                lambda_mult=lambda_mult,
-            )
-
-            candidates = self._results_to_docs_and_scores(results)
-            return [r for i, r in enumerate(candidates) if i in mmr_selected]
-
-    @property
-    def distance_strategy(self) -> Any:
-        """
-        Return the appropriate distance function based on the configured strategy
-        and embedding column name.
-        """
-        # Get the embedding column from the EmbeddingStore model
-        embedding_column = getattr(self.EmbeddingStore, self._embedding_column)
-        self.logger.debug(
-            f"PgVector: using distance strategy → {self._distance_strategy}"
-        )
-        if self._distance_strategy == DistanceStrategy.EUCLIDEAN_DISTANCE:
-            return embedding_column.l2_distance
-        elif self._distance_strategy == DistanceStrategy.COSINE:
-            return embedding_column.cosine_distance
-        elif self._distance_strategy == DistanceStrategy.MAX_INNER_PRODUCT:
-            return embedding_column.max_inner_product
-        elif self._distance_strategy == DistanceStrategy.DOT_PRODUCT:
-            return embedding_column.dot_product
-        else:
-            raise ValueError(
-                f"Got unexpected value for distance: {self._distance_strategy}. "
-                f"Should be one of {', '.join([ds.value for ds in DistanceStrategy])}."
-            )
-
-    async def __apost_init__(
-        self,
-    ) -> None:
-        """Async initialize the store (use lazy approach)."""
-        if self._async_init:  # Warning: possible race condition
-            return
-        self._async_init = True
-        if self._schema_based:
-            ebstore, cstore = await self._get_embedding_collection_store(
-                table=self.table_name,
-                schema=self.schema,
-                dimension=self._embedding_length
-            )
-        else:
-            ebstore, cstore = _get_embedding_collection_store(
-                self._embedding_length
-            )
-        self.CollectionStore = cstore
-        self.EmbeddingStore = ebstore
-
-        if not self._schema_based:
-            await self.acreate_tables_if_not_exists()
-            await self.acreate_collection()
-
-    async def asimilarity_search(
-        self,
-        query: str,
-        k: int = 4,
-        limit: Optional[int] = None,
-        score_threshold: Optional[float] = None,
-        filter: Optional[dict] = None,
-        **kwargs: Any,
-    ) -> List[Document]:
-        """Run similarity search with PGVector with distance.
-
-        Args:
-            query (str): Query text to search for.
-            k (int): Number of results to return. Defaults to 4.
-            filter (Optional[Dict[str, str]]): Filter by metadata. Defaults to None.
-
-        Returns:
-            List of Documents most similar to the query.
-        """
-        k = limit if limit is not None else k
-        await self.__apost_init__()  # Lazy async init
-        embedding = await self.embeddings.aembed_query(query)
-        docs = await self.asimilarity_search_by_vector(
-            embedding=embedding,
-            k=k,
-            score_threshold=score_threshold or self._score_threshold,
-            filter=filter,
-        )
-        self.logger.debug(
-            f"Found {len(docs)} documents for query '{query}' with k={k}."
-        )
-        return docs
-
-    async def asimilarity_search_by_vector(
-        self,
-        embedding: List[float],
-        k: int = 4,
-        score_threshold: Optional[float] = None,
-        filter: Optional[dict] = None,
-        **kwargs: Any,
-    ) -> List[Document]:
-        """Return docs most similar to embedding vector.
-
-        Args:
-            embedding: Embedding to look up documents similar to.
-            k: Number of Documents to return. Defaults to 4.
-            filter (Optional[Dict[str, str]]): Filter by metadata. Defaults to None.
-
-        Returns:
-            List of Documents most similar to the query vector.
-        """
-        assert self._async_engine, "This method must be called with async_mode"
-        await self.__apost_init__()  # Lazy async init
-        docs_and_scores = await self.asimilarity_search_with_score_by_vector(
-            embedding=embedding, k=k, score_threshold=score_threshold, filter=filter
-        )
-        return _results_to_docs(docs_and_scores)
-
-    async def asimilarity_search_with_score_by_vector(
-        self,
-        embedding: List[float],
-        k: int = 4,
-        score_threshold: Optional[float] = None,
-        filter: Optional[dict] = None,
-    ) -> List[Tuple[Document, float]]:
-        await self.__apost_init__()  # Lazy async init
-        score = score_threshold or self._score_threshold
-        async with self._make_async_session() as session:  # type: ignore[arg-type]
-            results = await self._aquery_collection(
-                session=session, embedding=embedding, k=k, score_threshold=score, filter=filter
-            )
-            return self._results_to_docs_and_scores(results)
-
-    async def _aquery_collection(
-        self,
-        session: AsyncSession,
-        embedding: List[float],
-        k: int = 4,
-        score_threshold: Optional[float] = None,
-        filter: Optional[Dict[str, str]] = None,
-    ) -> List[Tuple[Document, float]]:
-        """
-        Enhanced search method that uses the configurable distance strategy.
-        """
-        async with self._make_async_session() as session:
-            filter_by = []
-            if filter:
-                if self.use_jsonb:
-                    filter_clause = self._create_filter_clause(filter)
-                    if filter_clause is not None:
-                        filter_by.append(filter_clause)
-                else:
-                    filter_clauses = self._create_filter_clause_json_deprecated(filter)
-                    filter_by.extend(filter_clauses)
-
-            # Use the distance_strategy property which now respects the configurable column
-            distance_expr = self.distance_strategy(embedding).label("distance")
-            self.logger.debug(f"Compiled distance expr → {distance_expr}")
-            stmt = (
-                sqlalchemy.select(
-                    self.EmbeddingStore,
-                    distance_expr
-                )
-                .filter(*filter_by)
-            )
-
-            if score_threshold is not None:
-                stmt = stmt.filter(distance_expr < score_threshold)
-            else:
-                stmt = stmt.order_by(distance_expr).limit(k)
-
-            stmt = stmt.order_by(sqlalchemy.asc(distance_expr))
-            results: Sequence[Any] = (await session.execute(stmt)).all()
-            return results
-
-    def _results_to_docs_and_scores(self, results: Any) -> List[Tuple[Document, float]]:
-        """Return docs and scores from results using configurable id column."""
-        docs = [
-            (
-                Document(
-                    id=str(getattr(result.EmbeddingStore, self._id_column)),
-                    page_content=result.EmbeddingStore.document,
-                    metadata=result.EmbeddingStore.cmetadata,
-                ),
-                result.distance if self.embeddings is not None else None,
-            )
-            for result in results
-        ]
-        return docs
-
-    # Helper method to change distance strategy after initialization
-    def set_distance_strategy(self, strategy: DistanceStrategy) -> None:
-        """
-        Change the distance strategy after initialization.
-
-        Args:
-            strategy: New DistanceStrategy to use
-        """
-        if strategy not in [DistanceStrategy.COSINE, DistanceStrategy.DOT_PRODUCT, DistanceStrategy.EUCLIDEAN_DISTANCE, DistanceStrategy.MAX_INNER_PRODUCT]:
-            raise ValueError(f"Invalid distance strategy: {strategy}")
-        self._distance_strategy = strategy
-
-    # Helper method to change embedding column after initialization
-    def set_embedding_column(self, column_name: str) -> None:
-        """
-        Change the embedding column name after initialization.
-        Note: This requires recreating the ORM models.
-
-        Args:
-            column_name: New embedding column name
-        """
-        self._embedding_column = column_name
-        # Force recreation of ORM models on next operation
-        self._async_init = False
-
-    async def aadd_embeddings(
-        self,
-        texts: Sequence[str],
-        embeddings: List[List[float]],
-        metadatas: Optional[List[dict]] = None,
-        ids: Optional[List[str]] = None,
-        **kwargs: Any,
-    ) -> List[str]:
-        """Async add embeddings to the vectorstore.
-
-        Args:
-            texts: Iterable of strings to add to the vectorstore.
-            embeddings: List of list of embedding vectors.
-            metadatas: List of metadatas associated with the texts.
-            ids: Optional list of ids for the texts.
-                If not provided, will generate a new id for each text.
-            kwargs: vectorstore specific parameters
-        """
-        await self.__apost_init__()  # Lazy async init
-
-        if not metadatas:
-            metadatas = [{} for _ in texts]
-
-        async with self._make_async_session() as session:  # type: ignore[arg-type]
-            # Build data dictionary using configurable column names
-            data = []
-            if self._use_uuid:
-                # Auto-generate case - don't include ID column
-                for txt, metadata, embedding in zip(texts, metadatas, embeddings):
-                    row_data = {
-                        self._embedding_column: embedding,
-                        'text': txt,
-                        'document': txt,
-                        'cmetadata': metadata or {},
-                    }
-                    if not self._schema_based:
-                        collection = await self.aget_collection(session)
-                        if not collection:
-                            raise ValueError("Collection not found")
-                        row_data['collection_id'] = collection.uuid
-                    else:
-                        row_data['collection_id'] = uuid.UUID('00000000-0000-0000-0000-000000000000')
-
-                    data.append(row_data)
-            else:
-                # Standard case, generate IDs or use provided
-                if ids is None:
-                    ids_ = [str(uuid.uuid4()) for _ in texts]
-                else:
-                    ids_ = []
-                    for id_val in ids:
-                        if id_val is None:
-                            ids_.append(str(uuid.uuid4()))
-                        else:
-                            ids_.append(str(id_val))
-                for txt, metadata, embedding, id in zip(texts, metadatas, embeddings, ids_):
-                    row_data = {
-                        self._id_column: id,
-                        self._embedding_column: embedding,
-                        'text': txt,
-                        'document': txt,
-                        'cmetadata': metadata or {},
-                    }
-                    data.append(row_data)
-
-                # Only add collection_id if not using schema-based approach
-                if not self._schema_based:
-                    collection = await self.aget_collection(session)
-                    if not collection:
-                        raise ValueError("Collection not found")
-                    row_data['collection_id'] = collection.uuid
-                else:
-                    # For schema-based approach, use default collection_id
-                    row_data['collection_id'] = '00000000-0000-0000-0000-000000000000'
-
-            self.logger.notice(
-                f"Writing {len(data)} rows to pgvector (should be {len(texts)})"
-            )
-            stmt = insert(self.EmbeddingStore).values(data)
-            try:
-                if not self._use_uuid:
-                    # Only do upsert if you control the ID
-                    # Use configurable ID column for conflict detection
-                    on_conflict_stmt = stmt.on_conflict_do_update(
-                        index_elements=[self._id_column],
-                        set_={
-                            self._embedding_column: stmt.excluded.__getattr__(self._embedding_column),
-                            'document': stmt.excluded.document,
-                            'text': stmt.excluded.document,
-                            'cmetadata': stmt.excluded.cmetadata,
-                        },
-                    )
-                    await session.execute(on_conflict_stmt)
-                    await session.commit()
-                else:
-                    # No upsert, just insert (let DB handle id)
-                    await session.execute(stmt)
-                    await session.commit()
-            except sqlalchemy.exc.IntegrityError as e:
-                # Handle integrity errors (e.g., duplicate IDs)
-                self.logger.error(f"Integrity error while adding embeddings: {e}")
-                await session.rollback()
-                raise
-            except Exception as e:
-                # Handle other exceptions
-                self.logger.error(f"Error while adding embeddings: {e}")
-                await session.rollback()
-                raise
-
-        # Convert UUID objects back to strings for return value
-        if not self._use_uuid:
-            return [str(id_val) for id_val in ids_]
-        else:
-            return []
-
-    async def aadd_texts(
-        self,
-        texts: Iterable[str],
-        metadatas: Optional[List[dict]] = None,
-        ids: Optional[List[str]] = None,
-        **kwargs: Any,
-    ) -> List[str]:
-        """Run more texts through the embeddings and add to the vectorstore.
-
-        Args:
-            texts: Iterable of strings to add to the vectorstore.
-            metadatas: Optional list of metadatas associated with the texts.
-            ids: Optional list of ids for the texts.
-                If not provided, will generate a new id for each text.
-            kwargs: vectorstore specific parameters
-
-        Returns:
-            List of ids from adding the texts into the vectorstore.
-        """
-        await self.__apost_init__()  # Lazy async init
-        texts_ = list(texts)
-
-        # Use self.embeddings instead of self.embedding_function
-        try:
-            embeddings = await self.embeddings.aembed_documents(texts_)
-        except Exception as e:
-            self.logger.error(f"Error generating embeddings: {e}")
-
-        return await self.aadd_embeddings(
-            texts=texts_,
-            embeddings=list(embeddings),
-            metadatas=list(metadatas) if metadatas else None,
-            ids=list(ids) if ids else None,
-            **kwargs,
-        )
-
-    async def aadd_documents(
-        self,
-        documents: List[Document],
-        ids: Optional[List[str]] = None,
-        **kwargs: Any,
-    ) -> List[str]:
-        """Add documents to the vectorstore.
-
-        Args:
-            documents: List of Document objects to add to the vectorstore.
-            ids: Optional list of ids for the documents.
-                If not provided, will generate a new id for each document.
-            kwargs: vectorstore specific parameters
-
-        Returns:
-            List of ids from adding the documents into the vectorstore.
-        """
-        await self.__apost_init__()  # Lazy async init
-
-        texts = [doc.page_content for doc in documents]
-        metadatas = [doc.metadata for doc in documents]
-
-        # Use document IDs if available, otherwise use provided ids
-        doc_ids = []
-        for i, doc in enumerate(documents):
-            if hasattr(doc, 'id') and doc.id:
-                doc_ids.append(doc.id)
-            elif ids and i < len(ids) and ids[i]:
-                doc_ids.append(ids[i])
-            else:
-                doc_ids.append(str(uuid.uuid4()))
-
-        return await self.aadd_texts(
-            texts=texts,
-            metadatas=metadatas,
-            ids=doc_ids,
-            **kwargs,
-        )
-
-class PgvectorStore(AbstractStore):
-    """Pgvector Store Class.
-
-    Using PostgreSQL + PgVector to saving vectors in database.
-    """
-    def __init__(
-        self,
-        table: str = None,
-        schema: str = 'public',
+        metadata: Optional[MetaData] = None,
         id_column: str = 'id',
         embedding_column: str = 'embedding',
-        distance_strategy: str = 'COSINE',
-        embedding_model: Union[dict, str] = None,
-        embedding: Union[dict, Callable] = None,
-        **kwargs
-    ):
-        super().__init__(
-            embedding_model=embedding_model,
-            embedding=embedding,
-            **kwargs
-        )
-        self.table: str = table
-        self.schema: str = schema
-        if self.schema is not None:
-            self.collection_name = f"{self.schema}.{self.collection_name}"
-        if self.table and not self.collection_name:
-            self.collection_name = f"{self.schema}.{self.table}"
-        self.database: str = kwargs.get('database', None)
-        self._id_column = id_column
-        self._embedding_column: str = embedding_column
-        self.dimension: int = kwargs.get('dimension', 384)
-        self.dsn = kwargs.get('dsn', default_sqlalchemy_pg)
-        self._drop: bool = kwargs.pop('drop', False)
-        self._connection: AsyncEngine = None
-        # Convert string to DistanceStrategy enum
-        strategy_mapping = {
-            'COSINE': DistanceStrategy.COSINE,
-            'L2': DistanceStrategy.EUCLIDEAN_DISTANCE,
-            'EUCLIDEAN': DistanceStrategy.EUCLIDEAN_DISTANCE,
-            'IP': DistanceStrategy.MAX_INNER_PRODUCT,
-            'MAX_INNER_PRODUCT': DistanceStrategy.MAX_INNER_PRODUCT,
-            'DOT_PRODUCT': DistanceStrategy.DOT_PRODUCT,
-        }
-        # By Default use COSINE distance strategy
-        self.distance_strategy = strategy_mapping.get(
-            distance_strategy.upper(),
-            DistanceStrategy.COSINE
-        )
-        self.vector: PgVector = None  # Store the vector instance
-        self._context_depth = 0  # Track context depth
-
-    def set_distance_strategy(self, strategy: DistanceStrategy) -> None:
-        """
-        Change the distance strategy after initialization.
-
-        Args:
-            strategy: New DistanceStrategy to use
-        """
-        if strategy not in [DistanceStrategy.COSINE, DistanceStrategy.DOT_PRODUCT, DistanceStrategy.EUCLIDEAN_DISTANCE, DistanceStrategy.MAX_INNER_PRODUCT]:
-            raise ValueError(f"Invalid distance strategy: {strategy}")
-        self.distance_strategy = strategy
-        if self.vector is not None:
-            self.vector.set_distance_strategy(strategy)
-
-    async def execute_sql(
-        self,
-        sql: Union[str, sqlalchemy.text],
-        params: Optional[dict] = None,
-        fetch: bool = False
+        document_column: str = 'document',
+        metadata_column: str = 'cmetadata',
+        text_column: str = 'text',
+        store_name: str = 'EmbeddingStore',
+        colbert_dimension: int = 128  # ColBERT token dimension
     ) -> Any:
-        """
-        Execute raw SQL using the existing connection.
+        """Dynamically define a SQLAlchemy Table for pgvector storage.
 
         Args:
-            sql: SQL query string or sqlalchemy.text object
-            params: Optional parameters for the query
-            fetch: Whether to fetch results (for SELECT queries)
-
-        Returns:
-            Query result if fetch=True, otherwise CursorResult
+            table: The name of the table to create.
+            schema: The schema in which to create the table.
+            dimension: The dimensionality of the vector embeddings.
         """
-        if not self._connected or not self._connection:
-            raise RuntimeError(
-                "Store is not connected. Use 'async with store:' context manager."
+        metadata = metadata or Base.metadata
+
+        fq_table_name = f"{schema}.{table}"
+        if fq_table_name in self._embedding_store_cache:
+            return self._embedding_store_cache[fq_table_name]
+
+        attrs = {
+            '__tablename__': table,
+            '__table_args__': {
+                "schema": schema,
+                "extend_existing": True
+            },
+            id_column: self.get_id_column(use_uuid=self._use_uuid),
+            embedding_column: Column(Vector(dimension)),
+            text_column: Column(sqlalchemy.String, nullable=True),
+            document_column: Column(sqlalchemy.String, nullable=True),
+            metadata_column: Column(JSONB, nullable=True),
+            # ColBERT columns
+            'token_embeddings': Column(ARRAY(Vector(colbert_dimension)), nullable=True),
+            'num_tokens': Column(sqlalchemy.Integer, nullable=True),
+            'collection_id': Column(
+                sqlalchemy.dialects.postgresql.UUID(as_uuid=True),
+                index=True,
+                unique=True,
+                default=uuid.uuid4,
+                server_default=sqlalchemy.text('uuid_generate_v4()')
             )
+        }
+        # Create dynamic ORM class
+        EmbeddingStore = type(store_name, (Base,), attrs)
+        EmbeddingStore.__name__ = store_name
 
-        if isinstance(sql, str):
-            sql = sqlalchemy.text(sql)
+        # Cache the store
+        self._embedding_store_cache[fq_table_name] = EmbeddingStore
 
-        async with self._connection.begin() as conn:
-            result = await conn.execute(sql, params or {})
-            if fetch:
-                if hasattr(result, 'fetchall'):
-                    return result.fetchall()
-                elif hasattr(result, 'scalar'):
-                    return result.scalar()
-            return result
+        return EmbeddingStore
 
-    async def collection_exists(self, collection: str = None) -> bool:
-        """Check if a collection exists in the database."""
-        if not collection:
-            collection = self.collection_name
+    def define_collection_table(
+        self,
+        table: str,
+        schema: str,
+        dimension: int = 384,
+        metadata: Optional[MetaData] = None,
+        use_uuid: bool = False,
+        id_column: str = 'id',
+        embedding_column: str = 'embedding'
+    ) -> sqlalchemy.Table:
+        """Dynamically define a SQLAlchemy Table for pgvector storage."""
+        metadata = metadata or Base.metadata
 
-        # Split schema and table if provided as "schema.table"
-        if "." in collection:
-            schema, table = collection.split(".", 1)
+        columns = []
+
+        if use_uuid:
+            columns.append(Column(
+                id_column,
+                sqlalchemy.dialects.postgresql.UUID(as_uuid=True),
+                primary_key=True,
+                server_default=sqlalchemy.text("uuid_generate_v4()")
+            ))
         else:
-            # Default to 'public' schema if not provided
-            schema = "public"
-            table = collection
-        async with self._connection.connect() as conn:
-            # ✅ Check if the collection (table) exists
-            check_query = """
-            SELECT EXISTS (
-                SELECT 1
-                FROM information_schema.tables
-                WHERE table_schema = :schema
-                AND table_name = :table
-            );
-            """
-            result = await conn.execute(
-                sqlalchemy.text(check_query),
-                {"schema": schema, "table": table}
-            )
-            exists = result.scalar_one()
-            return bool(exists)
+            columns.append(Column(
+                id_column,
+                sqlalchemy.String,
+                primary_key=True,
+                default=lambda: str(uuid.uuid4())
+            ))
 
-    async def table_exists(self, table: str, schema: str) -> bool:
-        """Check if a collection exists in the database."""
-        async with self._connection.connect() as conn:
-            # ✅ Check if the collection (table) exists
-            check_query = """
-            SELECT EXISTS (
-                SELECT 1
-                FROM information_schema.tables
-                WHERE table_schema = :schema
-                AND table_name = :table
-            );
-            """
-            result = await conn.execute(
-                sqlalchemy.text(check_query),
-                {"schema": schema, "table": table}
-            )
-            exists = result.scalar()
-            return bool(exists)
+        columns.extend([
+            Column(embedding_column, Vector(dimension)),
+            Column('text', sqlalchemy.String, nullable=True),
+            Column('document', sqlalchemy.String, nullable=True),
+            Column('cmetadata', JSONB, nullable=True)
+        ])
 
-    async def is_connection_alive(self) -> bool:
+        return Table(
+            table,
+            metadata,
+            *columns,
+            schema=schema
+        )
+
+    async def connection(self, dsn: str = None) -> AsyncEngine:
+        """Establishes and returns an async database connection."""
+        if self._connection is not None:
+            return self._connection
+        if not dsn:
+            dsn = self.dsn or default_sqlalchemy_pg
+        try:
+            self._connection = create_async_engine(
+                dsn,
+                future=True,
+                pool_size=self._max_size,           # High concurrency support
+                max_overflow=100,       # Burst capacity
+                pool_pre_ping=True,     # Connection health checks
+                pool_recycle=3600,      # Prevent stale connections (1 hour)
+                pool_timeout=30,        # Wait max 30s for connection
+                connect_args={
+                    "server_settings": {
+                        "jit": "off",                    # Disable JIT for vector queries
+                        "random_page_cost": "1.1",       # SSD optimization
+                        "effective_cache_size": "24GB",  # Memory configuration
+                        "work_mem": "256MB"
+                    }
+                }
+            )
+            # @event.listens_for(self._connection.sync_engine, "first_connect")
+            # def connect(dbapi_connection, connection_record):
+            #     dbapi_connection.run_async(register_vector)
+
+            # Create session factory
+            self._session_factory = async_sessionmaker(
+                bind=self._connection,
+                class_=AsyncSession,
+                expire_on_commit=False,
+                autoflush=False,  # Manual control over flushing
+                autocommit=False
+            )
+            if self._auto_initialize_db:
+                await self.initialize_database()
+            self._connected = True
+            self.logger.info(
+                "Successfully connected to PostgreSQL."
+            )
+        except Exception as e:
+            self.logger.error(
+                f"Failed to connect to PostgreSQL: {e}"
+            )
+            self._connected = False
+            raise
+
+    async def get_session(self) -> AsyncSession:
+        """Get a session from the pool. This is the main method for getting connections."""
+        if not self._connection:
+            await self.connection()
+
+        if not self._session_factory:
+            raise RuntimeError("Session factory not initialized")
+
+        return self._session_factory()
+
+    @asynccontextmanager
+    async def session(self):
         """
-        Check if the PostgreSQL connection is still alive and functional.
+        Context manager for handling database sessions with proper cleanup.
+        This is the recommended way to handle database operations.
 
-        Returns:
-            bool: True if connection is alive, False otherwise
+        Usage:
+            async with store.session() as session:
+                result = await session.execute(stmt)
+                await session.commit()  # if needed
         """
         if not self._connection:
-            return False
-
-        if not self._connected:
-            return False
-
-        try:
-            # Test the connection with a simple query
-            async with self._connection.connect() as conn:
-                result = await conn.execute(sqlalchemy.text("SELECT 1"))
-                result.scalar()
-                return True
-        except Exception as e:
-            self.logger.warning(f"Connection health check failed: {e}")
-            return False
-
-    async def ensure_connection(self, force_reconnect: bool = False) -> bool:
-        """
-        Ensure that the connection is alive and reconnect if necessary.
-
-        Args:
-            force_reconnect: If True, force a reconnection even if connection appears alive
-
-        Returns:
-            bool: True if connection is ready, False if reconnection failed
-        """
-        if force_reconnect:
-            self.logger.info(
-                "Forcing reconnection to PostgreSQL..."
-            )
-            await self.disconnect()
-            self._connected = False
-            self._connection = None
-
-        # Check if we need to establish a connection
-        if self._connected and not await self.is_connection_alive():
-            self.logger.info("Connection is not alive, attempting to reconnect...")
-            self._connected = False
-            self._connection = None
-        try:
             await self.connection()
-            self.logger.info("Successfully reconnected to PostgreSQL")
-            return True
-        except Exception as e:
-            self.logger.error(f"Failed to reconnect to PostgreSQL: {e}")
-            return False
 
-    async def reconnect(self) -> bool:
-        """
-        Force a reconnection to PostgreSQL.
-
-        Returns:
-            bool: True if reconnection successful, False otherwise
-        """
-        return await self.ensure_connection(force_reconnect=True)
-
-    async def get_connection_info(self) -> dict:
-        """
-        Get information about the current connection status.
-
-        Returns:
-            dict: Connection information including status, pool info, etc.
-        """
-        info = {
-            "connected": self._connected,
-            "has_engine": self._connection is not None,
-            "dsn": self.dsn,
-            "schema": self.schema,
-            "table": self.table,
-            "alive": False,
-            "pool_info": None
-        }
-
-        if self._connection:
-            try:
-                # Check if connection is alive
-                info["alive"] = await self.is_connection_alive()
-
-                # Get pool information
-                pool = self._connection.pool
-                if pool:
-                    info["pool_info"] = {
-                        "size": pool.size(),
-                        "checked_in": pool.checkedin(),
-                        "checked_out": pool.checkedout(),
-                        "overflow": pool.overflow(),
-                        "invalid": pool.invalid()
-                    }
-            except Exception as e:
-                info["error"] = str(e)
-
-        return info
-
-    async def connection(self, alias: str = None):
-        """Connection to PgVector Store.
-
-        Args:
-            alias (str): Database alias.
-
-        Returns:
-            Callable: PgVector connection.
-
-        """
-        if not self.dsn:
-            self.dsn = default_sqlalchemy_pg
-        self._connection = create_async_engine(
-            self.dsn,
-            future=True,
-            echo=False,
-            # echo_pool='debug',
-        )
-        async with self._connection.begin() as conn:
-            if getattr(self, "_drop", False):
-                self.vector = PgVector(
-                    embeddings=self._embed_.embedding,
-                    table_name=self.table,
-                    schema=self.schema,
-                    collection_name=self.collection_name,
-                    embedding_length=self.dimension,
-                    connection=self._connection,
-                    id_column=self._id_column,
-                    embedding_column=self._embedding_column,
-                    distance_strategy=self.distance_strategy,
-                    async_mode=True,
-                    use_jsonb=True,
-                    create_extension=False
-                )
-                # await self.vector.adrop_tables()
-            # if not await self.collection_exists(self.collection_name):
-            #     await self.create_collection(self.collection_name)
-        self._connected = True
-        return self._connection
-
-    def engine(self):
-        return self._connection
-
-    async def disconnect(self) -> None:
-        """
-        Closing the Connection on DuckDB
-        """
+        session = await self.get_session()
         try:
-            if self._connection:
-                await self._connection.dispose()
-        except Exception as err:
-            raise RuntimeError(
-                message=f"{__name__!s}: Closing Error: {err!s}"
-            ) from err
+            yield session
+            # Auto-commit if no exception occurred
+            if session.in_transaction():
+                await session.commit()
+        except Exception:
+            # Auto-rollback on exception
+            if session.in_transaction():
+                await session.rollback()
+            raise
         finally:
-            self._connection = None
-            self._connected = False
-        print("✅ Connection closed successfully.")
+            # Always close session (returns connection to pool)
+            await session.close()
 
-    # Enhanced context manager methods
+    async def initialize_database(self):
+        """Initialize with PgVector 0.8.0+ optimizations"""
+        try:
+            async with self.session() as session:
+                await session.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+
+                # Enable iterative scanning (breakthrough feature)
+                await session.execute(text("SET hnsw.iterative_scan = 'relaxed_order'"))
+                await session.execute(text("SET hnsw.max_scan_tuples = 20000"))
+                await session.execute(text("SET hnsw.ef_search = 200"))
+                await session.execute(text("SET ivfflat.iterative_scan = 'on'"))
+                await session.execute(text("SET ivfflat.max_probes = 100"))
+
+                # Performance tuning
+                await session.execute(text("SET maintenance_work_mem = '2GB'"))
+                await session.execute(text("SET max_parallel_maintenance_workers = 8"))
+                await session.execute(text("SET enable_seqscan = off"))
+
+                # Create ColBERT MaxSim function
+                await self._create_maxsim_function(session)
+
+                await session.commit()
+        except Exception as e:
+            self.logger.warning(f"⚠️ Database auto-initialization failed: {e}")
+            # Don't raise - let the engine continue to work
+
+    async def _create_maxsim_function(self, session):
+        """Create the MaxSim function for ColBERT late interaction scoring."""
+        maxsim_function = text("""
+            CREATE OR REPLACE FUNCTION max_sim(document vector[], query vector[])
+            RETURNS double precision AS $$
+            DECLARE
+                query_vec vector;
+                doc_vec vector;
+                max_similarity double precision;
+                total_score double precision := 0;
+                similarity double precision;
+            BEGIN
+                -- For each query token, find the maximum similarity with any document token
+                FOR i IN 1..array_length(query, 1) LOOP
+                    query_vec := query[i];
+                    max_similarity := -1;
+
+                    -- Find max similarity with all document tokens
+                    FOR j IN 1..array_length(document, 1) LOOP
+                        doc_vec := document[j];
+                        similarity := 1 - (query_vec <=> doc_vec);  -- Convert distance to similarity
+
+                        IF similarity > max_similarity THEN
+                            max_similarity := similarity;
+                        END IF;
+                    END LOOP;
+
+                    -- Add the maximum similarity for this query token
+                    total_score := total_score + max_similarity;
+                END LOOP;
+
+                RETURN total_score;
+            END;
+            $$ LANGUAGE plpgsql IMMUTABLE STRICT;
+        """)
+
+        await session.execute(maxsim_function)
+        self.logger.info("✅ Created ColBERT MaxSim function")
+
+
+    # Async Context Manager - improved pattern
     async def __aenter__(self):
-        """Enhanced async context manager entry with connection validation."""
-        # Ensure connection is alive before proceeding
-        if not await self.ensure_connection():
-            raise RuntimeError(
-                "Failed to establish connection to PostgreSQL"
-            )
+        """
+        Context manager entry. Ensures engine is initialized and manages session lifecycle.
+        """
+        if not self._connection:
+            await self.connection()
+
+        # Create a session for this context if we don't have one
+        if self._session is None:
+            self._session = await self.get_session()
 
         self._context_depth += 1
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """Enhanced async context manager exit."""
+        """
+        Context manager exit. Properly handles session cleanup.
+        """
         self._context_depth -= 1
 
-        # Only disconnect if we're exiting the outermost context
-        if self._context_depth <= 0:
-            await self.disconnect()
-            self._context_depth = 0
+        # Only close session when we exit the outermost context
+        if self._context_depth == 0 and self._session:
+            try:
+                if exc_type is not None:
+                    # Exception occurred, rollback
+                    if self._session.in_transaction():
+                        await self._session.rollback()
+                else:
+                    # No exception, commit if in transaction
+                    if self._session.in_transaction():
+                        await self._session.commit()
+            finally:
+                # Always close the session (returns connection to pool)
+                await self._session.close()
+                self._session = None
 
-    async def create_collection(self, collection: str) -> None:
-        """Create a new collection in the database."""
-        async with self._connection.connect() as conn:
-            # ✅ Create the collection in PgVector
-            _embed_ = self._embed_ or self.create_embedding(
-                embedding_model=self.embedding_model
-            )
-            self._client = PgVector(
-                embeddings=_embed_.embedding,
-                embedding_length=self.dimension,
-                collection_name=self.collection_name,
-                connection=self._connection,
-                use_jsonb=True,
-                create_extension=False
-            )
+    async def _free_resources(self):
+        """Clean up resources but keep the engine/pool available."""
+        if self._embed_:
+            self._embed_.free()
+        self._embed_ = None
 
-    def get_vector(
-        self,
-        table: Optional[str] = None,
-        schema: Optional[str] = None,
-        collection: Union[str, None] = None,
-        embedding: Optional[Callable] = None,
-        metric_type: Optional[str] = None,
-        embedding_column: Optional[str] = None,
-        score_threshold: Optional[float] = None,
-        use_uuid: bool = False,
-        **kwargs
-    ) -> PGVector:
+        # Close current session if exists
+        if self._session:
+            await self._session.close()
+            self._session = None
+
+    async def disconnect(self) -> None:
         """
-        This function retrieves a vector from the specified collection using the provided embedding.
-        If no collection is specified, it uses the default collection name.
-        If no embedding is provided, it creates a new embedding using the specified embedding model.
-
-        Parameters:
-        - collection (Union[str, None]): The name of the collection from which to retrieve the vector.
-        - embedding (Optional[Callable]): The embedding function to use for vector retrieval.
-        - kwargs: Additional keyword arguments to pass to the PGVector constructor.
-
-        Returns:
-        - PGVector: The retrieved vector from the specified collection.
+        Completely dispose of the engine and close all connections.
+        Call this when you're completely done with the store.
         """
-        if not table:
-            table = self.table
-        if not schema:
-            schema = self.schema
-        if not collection:
-            collection = self.collection_name
-        if self.vector is not None:
-            return self.vector
-        if embedding is not None:
-            _embed_ = embedding
-        else:
-            _embed_ = self.create_embedding(
-                embedding_model=self.embedding_model
-            )
-        if not metric_type:
-            metric_type = self.distance_strategy
-        if not embedding_column:
-            embedding_column = self._embedding_column
-        self.vector = PgVector(
-            connection=self._connection,
-            table_name=table,
-            schema=schema,
-            id_column=self._id_column,
-            embedding_column=embedding_column,
-            collection_name=collection,
-            embedding_length=self.dimension,
-            distance_strategy=metric_type,
-            score_threshold=score_threshold,
-            embeddings=_embed_.embedding,
-            logger=self.logger,
-            async_mode=True,
-            use_jsonb=True,
-            create_extension=False,
-            use_uuid=use_uuid,
-            **kwargs
-        )
-        return self.vector
+        # Close current session first
+        if self._session:
+            await self._session.close()
+            self._session = None
 
-    def memory_retriever(
-        self,
-        documents: Optional[List[Document]] = None,
-        num_results: int = 5
-    ) -> VectorStoreRetrieverMemory:
-        _embed_ = self._embed_ or self.create_embedding(
-            embedding_model=self.embedding_model
-        )
-        vectordb = PgVector.from_documents(
-            documents or [],
-            embedding=_embed_.embedding,
-            connection=self._connection,
-            collection_name=self.collection_name,
-            embedding_length=self.dimension,
-            use_jsonb=True,
-            async_mode=True,
-            create_extension=False,
-        )
-        retriever = PgVector.as_retriever(
-            vectordb,
-            search_kwargs=dict(k=num_results)
-        )
-        return VectorStoreRetrieverMemory(retriever=retriever)
-
-    async def from_documents(
-        self,
-        documents: List[Document],
-        table: Optional[str] = None,
-        schema: Optional[str] = 'public',
-        embedding_column: Optional[str] = None,
-        collection: Union[str, None] = None,
-        **kwargs
-    ) -> None:
-        """Save Documents as Vectors in VectorStore."""
-        if not self._connected or not self._connection:
-            raise RuntimeError(
-                "Store is not connected. Use 'async with store:' context manager."
+        # Dispose of the engine (closes all pooled connections)
+        if self._connection:
+            await self._connection.dispose()
+            self._connection = None
+            self._connected = False
+            self._session_factory = None
+            self.logger.info(
+                "🔌 PostgreSQL engine disposed and all connections closed"
             )
-        _embed_ = self._embed_ or self.create_embedding(
-            embedding_model=self.embedding_model
-        )
-        if not collection:
-            collection = self.collection_name
-        vectordb = await PgVector.afrom_documents(
-            documents,
-            connection=self._connection,
-            table_name=table,
-            schema=schema,
-            id_column=self._id_column,
-            embedding_column=embedding_column or self._embedding_column,
-            collection_name=collection,
-            embedding=_embed_.embedding,
-            embedding_length=self.dimension,
-            distance_strategy=self.distance_strategy,
-            use_jsonb=True,
-            async_mode=True,
-        )
-        return vectordb
 
     async def add_documents(
         self,
         documents: List[Document],
-        collection: Union[str, None] = None,
-        use_uuid: bool = False,
+        table: str,
+        schema: str = 'public',
+        embedding_column: str = 'embedding',
+        content_column: str = 'document',
+        metadata_column: str = 'cmetadata',
         **kwargs
     ) -> None:
-        """Save Documents as Vectors in VectorStore."""
-        if not collection:
-            collection = self.collection_name
-        if not self._connected or not await self.ensure_connection():
-            raise RuntimeError("Cannot establish connection to PostgreSQL")
-        vectordb = self.get_vector(
-            collection=collection,
-            use_uuid=use_uuid,
-            **kwargs
-        )
-        # Asynchronously add documents to PGVector
-        if use_uuid:
-            # Let database auto-generate UUIDs
-            await vectordb.aadd_documents(documents, ids=None)
+        """
+        Embeds and adds documents to the specified table.
+
+        Args:
+            documents: A list of Document objects to add.
+            table: The name of the table.
+            schema: The database schema where the table resides.
+            embedding_column: The name of the column to store embeddings.
+            content_column: The name of the column to store the main text content.
+            metadata_column: The name of the JSONB column for metadata.
+        """
+        if not self._connected:
+            await self.connection()
+
+        texts = [doc.page_content for doc in documents]
+        embeddings = self._embed_.embed_documents(texts)
+        metadatas = [doc.metadata for doc in documents]
+
+        # Step 1: Ensure the ORM table is initialized
+        if self.embedding_store is None:
+            self.embedding_store = self._define_collection_store(
+                table=table,
+                schema=schema,
+                dimension=self.dimension,
+                id_column=self._id_column,
+                embedding_column=embedding_column,
+                document_column=content_column,
+                metadata_column=metadata_column,
+                text_column=self._text_column,
+            )
+
+        # Step 2: Prepare values for bulk insert
+        values = [
+            {
+                self._id_column: str(uuid.uuid4()),
+                embedding_column: embeddings[i].tolist() if isinstance(
+                    embeddings[i], np.ndarray
+                ) else embeddings[i],
+                content_column: texts[i],
+                metadata_column: metadatas[i] or {}
+            }
+            for i in range(len(documents))
+        ]
+
+        # Step 3: Build insert statement using SQLAlchemy's insert()
+        insert_stmt = insert(self.embedding_store)
+
+        # Step 4: Execute using async executemany
+        try:
+            async with self.session() as session:
+                await session.execute(insert_stmt, values)
+            self.logger.info(
+                f"✅ Successfully added {len(documents)} documents to '{schema}.{table}'"
+            )
+        except Exception as e:
+            self.logger.error(f"Error adding documents: {e}")
+            raise
+
+    def get_distance_strategy(
+        self,
+        embedding_column_obj,
+        query_embedding,
+        metric: str = None
+    ) -> Any:
+        """
+        Return the appropriate distance expression based on the metric or configured strategy.
+
+        Args:
+            embedding_column_obj: The SQLAlchemy column object for embeddings
+            query_embedding: The query embedding vector
+            metric: Optional metric string ('COSINE', 'L2', 'IP', 'DOT')
+                - if None, uses self.distance_strategy
+        """
+        # Use provided metric or fall back to instance distance_strategy
+        strategy = metric or self.distance_strategy
+        # self.logger.debug(
+        #     f"PgVector: using distance strategy → {strategy}"
+        # )
+
+        # Convert string metrics to DistanceStrategy enum if needed
+        if isinstance(strategy, str):
+            metric_mapping = {
+                'COSINE': DistanceStrategy.COSINE,
+                'L2': DistanceStrategy.EUCLIDEAN_DISTANCE,
+                'EUCLIDEAN': DistanceStrategy.EUCLIDEAN_DISTANCE,
+                'IP': DistanceStrategy.MAX_INNER_PRODUCT,
+                'DOT': DistanceStrategy.DOT_PRODUCT,
+                'DOT_PRODUCT': DistanceStrategy.DOT_PRODUCT,
+                'MAX_INNER_PRODUCT': DistanceStrategy.MAX_INNER_PRODUCT
+            }
+            strategy = metric_mapping.get(strategy.upper(), DistanceStrategy.COSINE)
+
+        # self.logger.debug(
+        #     f"PgVector: using distance strategy → {strategy}"
+        # )
+
+        # Convert numpy array to list if needed
+        if isinstance(query_embedding, np.ndarray):
+            query_embedding = query_embedding.tolist()
+
+        if strategy == DistanceStrategy.EUCLIDEAN_DISTANCE:
+            return embedding_column_obj.l2_distance(query_embedding)
+        elif strategy == DistanceStrategy.COSINE:
+            return embedding_column_obj.cosine_distance(query_embedding)
+        elif strategy == DistanceStrategy.MAX_INNER_PRODUCT:
+            return embedding_column_obj.max_inner_product(query_embedding)
+        elif strategy == DistanceStrategy.DOT_PRODUCT:
+            # Note: pgvector doesn't have dot_product, using max_inner_product
+            return embedding_column_obj.max_inner_product(query_embedding)
         else:
-            doc_ids = []
-            for doc in documents:
-                if hasattr(doc, 'id') and doc.id:
-                    doc_ids.append(doc.id)
-                else:
-                    doc_ids.append(None)  # Will be auto-generated
-            await vectordb.aadd_documents(documents, ids=doc_ids)
+            raise ValueError(
+                f"Got unexpected value for distance: {strategy}. "
+                f"Should be one of {', '.join([ds.value for ds in DistanceStrategy])}."
+            )
 
     async def similarity_search(
         self,
         query: str,
-        table: Optional[str] = None,
-        schema: Optional[str] = None,
-        collection: Union[str, None] = None,
-        limit: int = 2,
+        table: str = None,
+        schema: str = None,
+        limit: int = None,
+        metadata_filters: Optional[Dict[str, Any]] = None,
         score_threshold: Optional[float] = None,
-        search_strategy: str = "auto",
-        filter: Optional[dict] = None,
-        **kwargs
-    ) -> List[Document]:
+        metric: str = None,
+        embedding_column: str = 'embedding',
+        content_column: str = 'document',
+        metadata_column: str = 'cmetadata',
+        id_column: str = 'id',
+        additional_columns: Optional[List[str]] = None
+    ) -> List[SearchResult]:
         """
-        Search for similar documents in VectorStore.
+        Perform similarity search with optional threshold filtering.
 
         Args:
-            search_strategy:
-                - "auto": Automatically choose best strategy
-                - "exact": Exact ID/code matching
-                - "semantic": Semantic similarity search
-                - "location": Location-focused search
+            query: The search query text
+            table: Table name (optional, uses default if not provided)
+            schema: Schema name (optional, uses default if not provided)
+            limit: Maximum number of results to return
+            score_threshold: Maximum distance threshold
+                results with distance > threshold will be filtered out)
+            metadata_filters: Dictionary of metadata filters to apply
+            metric: Distance metric to use ('COSINE', 'L2', 'IP')
+            embedding_column: Name of the embedding column
+            content_column: Name of the content column
+            metadata_column: Name of the metadata column
+            id_column: Name of the ID column
+            additional_columns: List of additional columns to include in results.
+        Returns:
+            List of SearchResult objects with content, metadata, score, collection_id, and record_id
         """
-        if not table:
-            table = self.table
-        if not schema:
-            schema = self.schema
-        if collection is None:
-            collection = self.collection_name
+        if not self._connected:
+            await self.connection()
 
-        # print(f"🔍 Starting similarity_search with query: '{query}'")
-        # print(f"📊 Context depth: {self._context_depth}")
-        # print(f"🔌 Connected: {self._connected}")
-        # print(f"🗄️ Connection: {self._connection}")
-        # print(f"🔍 Smart search: '{query}' using strategy: {search_strategy}")
-        # Just ensure connection exists, don't create nested context
-        if not self._connected or not self._connection:
-            raise RuntimeError(
-                "Store is not connected. Use 'async with store:' context manager."
+        table = table or self.table_name
+        schema = schema or self.schema
+
+        # Step 1: Ensure the ORM class exists
+        if not self.embedding_store:
+            self.embedding_store = self._define_collection_store(
+                table=table,
+                schema=schema,
+                dimension=self.dimension,
+                id_column=self._id_column,
+                embedding_column=embedding_column,
+                document_column=content_column,
+                metadata_column=metadata_column,
+                text_column=self._text_column,
             )
 
-        vector_db = self.get_vector(table=table, schema=schema, collection=collection, **kwargs)
-        return await vector_db.asimilarity_search(
-            query,
-            k=limit,
-            score_threshold=score_threshold,
-            filter=filter
+        # Step 2: Embed the query
+        query_embedding = self._embed_.embed_query(query)
+
+        # Get the actual column objects
+        content_col = getattr(self.embedding_store, content_column)
+        metadata_col = getattr(self.embedding_store, metadata_column)
+        embedding_col = getattr(self.embedding_store, embedding_column)
+        id_col = getattr(self.embedding_store, id_column)
+        collection_id_col = getattr(self.embedding_store, 'collection_id')
+
+        # Get the distance expression using the appropriate method
+        distance_expr = self.get_distance_strategy(
+            embedding_col,
+            query_embedding,
+            metric=metric
+        ).label("distance")
+        # self.logger.debug(f"Compiled distance expr → {distance_expr}")
+
+
+        # Build the select columns list
+        select_columns = [
+            id_col,
+            content_col,
+            metadata_col,
+            distance_expr,
+            collection_id_col,
+        ]
+
+        # Add additional columns dynamically using literal_column (no validation)
+        if additional_columns:
+            for col_name in additional_columns:
+                # Use literal_column to reference any column name without ORM validation
+                additional_col = literal_column(f'"{col_name}"').label(col_name)
+                select_columns.append(additional_col)
+                self.logger.debug(f"Added dynamic column: {col_name}")
+
+        # Step 5: Construct statement
+        stmt = (
+            select(*select_columns)
+            .select_from(self.embedding_store)  # Explicitly specify the table
+            .order_by(asc(distance_expr))
         )
 
-    async def similarity_search_with_score(
-        self,
-        query: str,
-        table: Optional[str] = None,
-        schema: Optional[str] = None,
-        collection: Union[str, None] = None,
-        limit: int = 2,
-    ) -> List[Document]:
-        """Search for similar documents in VectorStore with scores."""
-        if not table:
-            table = self.table
-        if not schema:
-            schema = self.schema
-        if collection is None:
-            collection = self.collection_name
+        # Apply threshold filter if provided
+        if score_threshold is not None:
+            stmt = stmt.where(distance_expr <= score_threshold)
 
-        if not self._connected or not self._connection:
-            raise RuntimeError(
-                "Store is not connected. Use 'async with store:' context manager."
-            )
+        if limit:
+            stmt = stmt.limit(limit)
 
-        vector_db = self.get_vector(table=table, schema=schema, collection=collection)
-        return await vector_db.asimilarity_search_with_score(query, k=limit)
+        # 6) Apply any JSONB metadata filters
+        if metadata_filters:
+            for key, val in metadata_filters.items():
+                if isinstance(val, bool):
+                    # Handle boolean values properly in JSONB
+                    stmt = stmt.where(
+                        metadata_col[key].astext.cast(sqlalchemy.Boolean) == val
+                    )
+                else:
+                    stmt = stmt.where(
+                        metadata_col[key].astext == str(val)
+                    )
+
+        try:
+            # Execute query
+            async with self.session() as session:
+                result = await session.execute(stmt)
+                rows = result.fetchall()
+                # Create enhanced SearchResult objects
+                results = []
+                for row in rows:
+                    metadata = row[2]
+                    metadata['collection_id'] = row[4]
+                    # Add additional columns as a dictionary (starting from index 5)
+                    if additional_columns:
+                        for i, col_name in enumerate(additional_columns):
+                            metadata[col_name] = row[5 + i]
+                    # Create an enhanced SearchResult with additional fields
+                    search_result = SearchResult(
+                        id=row[0],
+                        content=row[1],        # content_col
+                        metadata=metadata,       # metadata_col
+                        score=row[3]           # distance
+                    )
+                    results.append(search_result)
+
+                return results
+        except Exception as e:
+            self.logger.error(f"Error during similarity search: {e}")
+            raise
+
+    def get_vector(self, metric_type: str = None, **kwargs):
+        raise NotImplementedError("This method is part of the old implementation.")
+
+    async def create_collection(self, *args, **kwargs):
+        raise NotImplementedError("Collections are managed as schema.table.")
+
+    async def drop_collection(self, table: str, schema: str = 'public') -> None:
+        """
+        Drops the specified table in the given schema.
+
+        Args:
+            table: The name of the table to drop.
+            schema: The database schema where the table resides.
+        """
+        if not self._connected:
+            await self.connection()
+
+        full_table_name = f"{schema}.{table}"
+        async with self._connection.begin() as conn:
+            await conn.execute(text(f"DROP TABLE IF EXISTS {full_table_name}"))
+        self.logger.info(f"Table '{full_table_name}' dropped successfully.")
 
     async def prepare_embedding_table(
         self,
-        tablename: str,
+        table: str,
+        schema: str = 'public',
         conn: AsyncEngine = None,
+        id_column: str = 'id',
         embedding_column: str = 'embedding',
         document_column: str = 'document',
         metadata_column: str = 'cmetadata',
-        dimension: int = None,
-        id_column: str = 'id',
+        dimension: int = 768,
+        colbert_dimension: int = 128,  # ColBERT token dimension
         use_jsonb: bool = True,
         drop_columns: bool = False,
         create_all_indexes: bool = True,
@@ -1245,9 +790,14 @@ class PgvectorStore(AbstractStore):
         - drop_columns (bool): Whether to drop existing columns.
         - create_all_indexes (bool): Whether to create all distance strategies.
     """
+        tablename = f"{schema}.{table}"
         # Drop existing columns if requested
         if drop_columns:
-            for column in (document_column, embedding_column, metadata_column):
+            columns_to_drop = [
+                document_column, embedding_column, metadata_column,
+                        'token_embeddings', 'num_tokens'
+            ]
+            for column in columns_to_drop:
                 await conn.execute(
                     sqlalchemy.text(
                         f'ALTER TABLE {tablename} DROP COLUMN IF EXISTS {column};'
@@ -1260,13 +810,24 @@ class PgvectorStore(AbstractStore):
                     f'ALTER TABLE {tablename} ADD COLUMN IF NOT EXISTS {metadata_column} JSONB;'
                 )
             )
-        # Use pgvector type
+        # Use pgvector type for dense embeddings
         await conn.execute(
             sqlalchemy.text(
                 f'ALTER TABLE {tablename} ADD COLUMN IF NOT EXISTS {embedding_column} vector({dimension});'
             )
         )
-        # Create additional columns
+        # Add ColBERT columns for token-level embeddings
+        await conn.execute(
+            sqlalchemy.text(
+                f'ALTER TABLE {tablename} ADD COLUMN IF NOT EXISTS token_embeddings vector({colbert_dimension})[];'
+            )
+        )
+        await conn.execute(
+            sqlalchemy.text(
+                f'ALTER TABLE {tablename} ADD COLUMN IF NOT EXISTS num_tokens INTEGER;'
+            )
+        )
+        # Create the additional columns
         for col_name, col_type in [
             (document_column, 'TEXT'),
             (id_column, 'varchar'),
@@ -1284,7 +845,13 @@ class PgvectorStore(AbstractStore):
         )
         await conn.execute(
             sqlalchemy.text(
-                f"UPDATE {tablename} SET collection_id = '00000000-0000-0000-0000-000000000000';"
+                f"ALTER TABLE {tablename} ADD COLUMN IF NOT EXISTS collection_id UUID DEFAULT uuid_generate_v4();"
+            )
+        )
+        # Set the value on null values before declaring not null:
+        await conn.execute(
+            sqlalchemy.text(
+                f"UPDATE {tablename} SET collection_id = uuid_generate_v4() WHERE collection_id IS NULL;"
             )
         )
         await conn.execute(
@@ -1292,61 +859,14 @@ class PgvectorStore(AbstractStore):
                 f"ALTER TABLE {tablename} ALTER COLUMN collection_id SET NOT NULL;"
             )
         )
+        await conn.execute(
+            sqlalchemy.text(
+                f"CREATE UNIQUE INDEX IF NOT EXISTS idx_{table}_{schema}_collection_id ON {tablename} (collection_id);"
+            )
+        )
         # ✅ CREATE COMPREHENSIVE INDEXES
         if create_all_indexes:
-            print("🔧 Creating indexes for all distance strategies...")
-
-            # COSINE index (most common for text embeddings)
-            await conn.execute(
-                sqlalchemy.text(
-                    f"CREATE INDEX IF NOT EXISTS idx_{tablename.replace('.', '_')}_cosine "
-                    f"ON {tablename} USING ivfflat ({embedding_column} vector_cosine_ops);"
-                )
-            )
-            print("✅ Created COSINE index")
-            # L2/Euclidean index
-            await conn.execute(
-                sqlalchemy.text(
-                    f"CREATE INDEX IF NOT EXISTS idx_{tablename.replace('.', '_')}_l2 "
-                    f"ON {tablename} USING ivfflat ({embedding_column} vector_l2_ops);"
-                )
-            )
-            print("✅ Created L2 index")
-
-            # Inner Product index
-            try:
-                await conn.execute(
-                    sqlalchemy.text(
-                        f"CREATE INDEX IF NOT EXISTS idx_{tablename.replace('.', '_')}_ip "
-                        f"ON {tablename} USING ivfflat ({embedding_column} vector_ip_ops);"
-                    )
-                )
-                print("✅ Created Inner Product index")
-            except Exception as e:
-                print(f"⚠️ Inner Product index creation failed: {e}")
-
-            # HNSW indexes for better performance (requires more memory)
-            try:
-                await conn.execute(
-                    sqlalchemy.text(
-                        f"CREATE INDEX IF NOT EXISTS idx_{tablename.replace('.', '_')}_hnsw_cosine "
-                        f"ON {tablename} USING hnsw ({embedding_column} vector_cosine_ops);"
-                    )
-                )
-                print("✅ Created HNSW COSINE index")
-                await conn.execute(
-                    sqlalchemy.text(
-                        f"""CREATE INDEX IF NOT EXISTS idx_{tablename.replace('.', '_')}_hnsw_l2
-                            ON {tablename} USING hnsw ({embedding_column} vector_l2_ops) WITH (
-                            m = 16,  -- graph connectivity (higher → better recall, more memory)
-                            ef_construction = 200 -- controls indexing time vs. recall
-                        );"""
-                    )
-                )
-                print("✅ Created HNSW EUCLIDEAN index")
-            except Exception as e:
-                print(f"⚠️ HNSW index creation failed (this is optional): {e}")
-
+            await self._create_all_indexes(conn, tablename, embedding_column)
         else:
             # Create index only for current strategy
             distance_strategy_ops = {
@@ -1367,6 +887,9 @@ class PgvectorStore(AbstractStore):
             )
             print(f"✅ Created {strategy_name.upper()} index")
 
+        # Create ColBERT-specific indexes
+        await self._create_colbert_indexes(conn, tablename)
+
         # Create JSONB indexes for better performance
         await self._create_jsonb_indexes(
             conn,
@@ -1374,7 +897,108 @@ class PgvectorStore(AbstractStore):
             metadata_column,
             id_column
         )
+        # Ensure the table is ready for embedding operations
+        self.embedding_store = self._define_collection_store(
+            table=table,
+            schema=schema,
+            dimension=dimension,
+            id_column=id_column,
+            embedding_column=embedding_column,
+            document_column=self._document_column
+        )
         return True
+
+    async def _create_all_indexes(self, conn, tablename: str, embedding_column: str):
+        """Create all standard vector indexes."""
+        print("🔧 Creating indexes for all distance strategies...")
+
+        # COSINE index (most common for text embeddings)
+        await conn.execute(
+            sqlalchemy.text(
+                f"CREATE INDEX IF NOT EXISTS idx_{tablename.replace('.', '_')}_cosine "
+                f"ON {tablename} USING ivfflat ({embedding_column} vector_cosine_ops);"
+            )
+        )
+        print("✅ Created COSINE index")
+
+        # L2/Euclidean index
+        await conn.execute(
+            sqlalchemy.text(
+                f"CREATE INDEX IF NOT EXISTS idx_{tablename.replace('.', '_')}_l2 "
+                f"ON {tablename} USING ivfflat ({embedding_column} vector_l2_ops);"
+            )
+        )
+        print("✅ Created L2 index")
+
+        # Inner Product index
+        try:
+            await conn.execute(
+                sqlalchemy.text(
+                    f"CREATE INDEX IF NOT EXISTS idx_{tablename.replace('.', '_')}_ip "
+                    f"ON {tablename} USING ivfflat ({embedding_column} vector_ip_ops);"
+                )
+            )
+            print("✅ Created Inner Product index")
+        except Exception as e:
+            print(f"⚠️ Inner Product index creation failed: {e}")
+
+        # HNSW indexes for better performance (requires more memory)
+        try:
+            await conn.execute(
+                sqlalchemy.text(
+                    f"CREATE INDEX IF NOT EXISTS idx_{tablename.replace('.', '_')}_hnsw_cosine "
+                    f"ON {tablename} USING hnsw ({embedding_column} vector_cosine_ops);"
+                )
+            )
+            print("✅ Created HNSW COSINE index")
+
+            await conn.execute(
+                sqlalchemy.text(
+                    f"""CREATE INDEX IF NOT EXISTS idx_{tablename.replace('.', '_')}_hnsw_l2
+                        ON {tablename} USING hnsw ({embedding_column} vector_l2_ops) WITH (
+                        m = 16,  -- graph connectivity (higher → better recall, more memory)
+                        ef_construction = 200 -- controls indexing time vs. recall
+                    );"""
+                )
+            )
+            print("✅ Created HNSW EUCLIDEAN index")
+        except Exception as e:
+            print(f"⚠️ HNSW index creation failed (this is optional): {e}")
+
+    async def _create_colbert_indexes(self, conn, tablename: str):
+        """Create ColBERT-specific indexes for token embeddings."""
+        print("🔧 Creating ColBERT indexes...")
+
+        try:
+            # GIN index for array operations on token embeddings
+            await conn.execute(
+                sqlalchemy.text(
+                    f"CREATE INDEX IF NOT EXISTS idx_{tablename.replace('.', '_')}_token_embeddings_gin "
+                    f"ON {tablename} USING gin(token_embeddings);"
+                )
+            )
+            print("✅ Created GIN index for token embeddings")
+
+            # Index on num_tokens for filtering
+            await conn.execute(
+                sqlalchemy.text(
+                    f"CREATE INDEX IF NOT EXISTS idx_{tablename.replace('.', '_')}_num_tokens "
+                    f"ON {tablename} (num_tokens);"
+                )
+            )
+            print("✅ Created index for num_tokens")
+
+            # Partial index for non-null token embeddings
+            await conn.execute(
+                sqlalchemy.text(
+                    f"CREATE INDEX IF NOT EXISTS idx_{tablename.replace('.', '_')}_has_tokens "
+                    f"ON {tablename} (id) WHERE token_embeddings IS NOT NULL;"
+                )
+            )
+            print("✅ Created partial index for documents with token embeddings")
+
+        except Exception as e:
+            print(f"⚠️ ColBERT index creation failed: {e}")
 
     async def create_embedding_table(
         self,
@@ -1626,8 +1250,714 @@ class PgvectorStore(AbstractStore):
                 ON {tablename} USING GIN ({metadata_col});
             """)
         )
-
         print("✅ Created optimized JSONB indexes")
+
+    async def add_colbert_document(
+        self,
+        document_id: str,
+        content: str,
+        token_embeddings: np.ndarray,
+        table: str,
+        schema: str = 'public',
+        metadata: Optional[Dict[str, Any]] = None,
+        document_column: str = 'document',
+        metadata_column: str = 'cmetadata',
+        id_column: str = 'id',
+        **kwargs
+    ) -> None:
+        """
+        Add a document with ColBERT token embeddings to the specified table.
+
+        Args:
+            document_id: Unique identifier for the document
+            content: The document text content
+            token_embeddings: NumPy array of token embeddings (shape: [num_tokens, embedding_dim])
+            table: The name of the table
+            schema: The database schema where the table resides
+            metadata: Optional metadata dictionary
+            document_column: Name of the document content column
+            metadata_column: Name of the metadata column
+            id_column: Name of the ID column
+        """
+        if not self._connected:
+            await self.connection()
+
+        # Ensure the ORM table is initialized
+        if self.embedding_store is None:
+            self.embedding_store = self._define_collection_store(
+                table=table,
+                schema=schema,
+                dimension=self.dimension,
+                id_column=id_column,
+                document_column=document_column,
+                metadata_column=metadata_column,
+                text_column=self._text_column,
+            )
+
+        # Convert numpy array to list format for PostgreSQL
+        if isinstance(token_embeddings, np.ndarray):
+            token_embeddings_list = token_embeddings.tolist()
+        else:
+            token_embeddings_list = token_embeddings
+
+        num_tokens = len(token_embeddings_list)
+
+        # Prepare the insert/upsert data
+        values = {
+            id_column: document_id,
+            document_column: content,
+            'token_embeddings': token_embeddings_list,
+            'num_tokens': num_tokens,
+            metadata_column: metadata or {}
+        }
+
+        # Build insert statement with upsert capability
+        insert_stmt = insert(self.embedding_store).values(values)
+
+        # Create upsert statement (ON CONFLICT DO UPDATE)
+        upsert_stmt = insert_stmt.on_conflict_do_update(
+            index_elements=[id_column],
+            set_={
+                document_column: insert_stmt.excluded.__getattr__(document_column),
+                'token_embeddings': insert_stmt.excluded.token_embeddings,
+                'num_tokens': insert_stmt.excluded.num_tokens,
+                metadata_column: insert_stmt.excluded.__getattr__(metadata_column),
+            }
+        )
+
+        try:
+            async with self._connection.begin() as conn:
+                await conn.execute(upsert_stmt)
+
+            self.logger.info(
+                f"Successfully added ColBERT document '{document_id}' with {num_tokens} tokens to '{schema}.{table}'"
+            )
+        except Exception as e:
+            self.logger.error(f"Error adding ColBERT document: {e}")
+            raise
+
+    async def colbert_search(
+        self,
+        query_tokens: np.ndarray,
+        table: str,
+        schema: str = 'public',
+        top_k: int = 10,
+        metadata_filters: Optional[Dict[str, Any]] = None,
+        min_tokens: Optional[int] = None,
+        max_tokens: Optional[int] = None,
+        id_column: str = 'id',
+        document_column: str = 'document',
+        metadata_column: str = 'cmetadata',
+        additional_columns: Optional[List[str]] = None
+    ) -> List[SearchResult]:
+        """
+        Perform ColBERT search with late interaction using MaxSim scoring.
+
+        Args:
+            query_tokens: NumPy array of query token embeddings (shape: [num_query_tokens, embedding_dim])
+            table: Table name
+            schema: Schema name
+            top_k: Number of results to return
+            metadata_filters: Optional metadata filters
+            min_tokens: Minimum number of tokens in documents to consider
+            max_tokens: Maximum number of tokens in documents to consider
+            id_column: Name of the ID column
+            document_column: Name of the document content column
+            metadata_column: Name of the metadata column
+            additional_columns: Additional columns to include in results
+
+        Returns:
+            List of SearchResult objects ordered by ColBERT score (descending)
+        """
+        if not self._connected:
+            await self.connection()
+
+        # Ensure the ORM table is initialized
+        if self.embedding_store is None:
+            self.embedding_store = self._define_collection_store(
+                table=table,
+                schema=schema,
+                dimension=self.dimension,
+                id_column=id_column,
+                document_column=document_column,
+                metadata_column=metadata_column,
+                text_column=self._text_column,
+            )
+
+        # Convert query tokens to list format
+        if isinstance(query_tokens, np.ndarray):
+            query_tokens_list = query_tokens.tolist()
+        else:
+            query_tokens_list = query_tokens
+
+        # Get column objects
+        id_col = getattr(self.embedding_store, id_column)
+        content_col = getattr(self.embedding_store, document_column)
+        metadata_col = getattr(self.embedding_store, metadata_column)
+        token_embeddings_col = getattr(self.embedding_store, 'token_embeddings')
+        num_tokens_col = getattr(self.embedding_store, 'num_tokens')
+        collection_id_col = getattr(self.embedding_store, 'collection_id')
+
+        # Build select columns
+        select_columns = [
+            id_col,
+            content_col,
+            metadata_col,
+            collection_id_col,
+            func.max_sim(token_embeddings_col, query_tokens_list).label('colbert_score')
+        ]
+
+        # Add additional columns dynamically
+        if additional_columns:
+            for col_name in additional_columns:
+                additional_col = literal_column(f'"{col_name}"').label(col_name)
+                select_columns.append(additional_col)
+
+        # Build the query
+        stmt = (
+            select(*select_columns)
+            .select_from(self.embedding_store)
+            .where(token_embeddings_col.isnot(None))  # Only documents with token embeddings
+            .order_by(func.max_sim(token_embeddings_col, query_tokens_list).desc())
+            .limit(top_k)
+        )
+
+        # Apply token count filters
+        if min_tokens is not None:
+            stmt = stmt.where(num_tokens_col >= min_tokens)
+        if max_tokens is not None:
+            stmt = stmt.where(num_tokens_col <= max_tokens)
+
+        # Apply metadata filters
+        if metadata_filters:
+            for key, value in metadata_filters.items():
+                stmt = stmt.where(metadata_col[key].astext == str(value))
+
+        try:
+            async with self._connection.connect() as conn:
+                result = await conn.execute(stmt)
+                rows = result.fetchall()
+
+                # Create SearchResult objects
+                results = []
+                for row in rows:
+                    # Enhance metadata with additional info
+                    metadata = dict(row[2]) if row[2] else {}
+                    metadata['collection_id'] = row[3]
+                    metadata['colbert_score'] = float(row[4])
+
+                    # Add additional columns to metadata
+                    if additional_columns:
+                        for i, col_name in enumerate(additional_columns):
+                            metadata[col_name] = row[5 + i]
+
+                    search_result = SearchResult(
+                        id=row[0],
+                        content=row[1],
+                        metadata=metadata,
+                        score=float(row[4])  # ColBERT score
+                    )
+                    results.append(search_result)
+
+                self.logger.info(
+                    f"ColBERT search returned {len(results)} results from {schema}.{table}"
+                )
+                return results
+
+        except Exception as e:
+            self.logger.error(f"Error during ColBERT search: {e}")
+            raise
+
+    async def hybrid_search(
+        self,
+        query: str,
+        query_tokens: Optional[np.ndarray] = None,
+        table: str = None,
+        schema: str = None,
+        top_k: int = 10,
+        dense_weight: float = 0.7,
+        colbert_weight: float = 0.3,
+        metadata_filters: Optional[Dict[str, Any]] = None,
+        **kwargs
+    ) -> List[SearchResult]:
+        """
+        Perform hybrid search combining dense embeddings and ColBERT token matching.
+
+        Args:
+            query: Text query
+            query_tokens: Optional pre-computed query token embeddings
+            table: Table name
+            schema: Schema name
+            top_k: Number of final results
+            dense_weight: Weight for dense similarity scores (0-1)
+            colbert_weight: Weight for ColBERT scores (0-1)
+            metadata_filters: Metadata filters to apply
+
+        Returns:
+            List of SearchResult objects with combined scores
+        """
+        if not self._connected:
+            await self.connection()
+
+        table = table or self.table_name
+        schema = schema or self.schema
+
+        # Fetch more candidates for reranking
+        candidate_count = min(top_k * 3, 100)
+
+        # Get dense similarity results
+        dense_results = await self.similarity_search(
+            query=query,
+            table=table,
+            schema=schema,
+            limit=candidate_count,
+            metadata_filters=metadata_filters,
+            **kwargs
+        )
+
+        # Get ColBERT results if token embeddings provided
+        colbert_results = []
+        if query_tokens is not None:
+            colbert_results = await self.colbert_search(
+                query_tokens=query_tokens,
+                table=table,
+                schema=schema,
+                top_k=candidate_count,
+                metadata_filters=metadata_filters
+            )
+
+        # Combine and rerank results
+        combined_results = self._combine_search_results(
+            dense_results=dense_results,
+            colbert_results=colbert_results,
+            dense_weight=dense_weight,
+            colbert_weight=colbert_weight
+        )
+
+        # Return top-k results
+        return combined_results[:top_k]
+
+    def _combine_search_results(
+        self,
+        dense_results: List[SearchResult],
+        colbert_results: List[SearchResult],
+        dense_weight: float,
+        colbert_weight: float
+    ) -> List[SearchResult]:
+        """
+        Combine and rerank results from dense and ColBERT searches.
+        """
+        # Create lookup dictionaries
+        dense_lookup = {result.id: result for result in dense_results}
+        colbert_lookup = {result.id: result for result in colbert_results}
+
+        # Get all unique document IDs
+        all_ids = set(dense_lookup.keys()) | set(colbert_lookup.keys())
+
+        # Normalize scores to 0-1 range
+        if dense_results:
+            dense_scores = [r.score for r in dense_results]
+            dense_min, dense_max = min(dense_scores), max(dense_scores)
+            dense_range = dense_max - dense_min if dense_max != dense_min else 1
+        else:
+            dense_min, dense_range = 0, 1
+
+        if colbert_results:
+            colbert_scores = [r.score for r in colbert_results]
+            colbert_min, colbert_max = min(colbert_scores), max(colbert_scores)
+            colbert_range = colbert_max - colbert_min if colbert_max != colbert_min else 1
+        else:
+            colbert_min, colbert_range = 0, 1
+
+        # Combine results
+        combined_results = []
+        for doc_id in all_ids:
+            dense_result = dense_lookup.get(doc_id)
+            colbert_result = colbert_lookup.get(doc_id)
+
+            # Normalize scores
+            dense_score_norm = 0
+            if dense_result:
+                dense_score_norm = (dense_result.score - dense_min) / dense_range
+
+            colbert_score_norm = 0
+            if colbert_result:
+                colbert_score_norm = (colbert_result.score - colbert_min) / colbert_range
+
+            # Calculate combined score
+            combined_score = (
+                dense_weight * dense_score_norm +
+                colbert_weight * colbert_score_norm
+            )
+
+            # Use the result with more complete information
+            primary_result = dense_result or colbert_result
+
+            # Create combined result
+            combined_result = SearchResult(
+                id=primary_result.id,
+                content=primary_result.content,
+                metadata={
+                    **primary_result.metadata,
+                    'dense_score': dense_result.score if dense_result else 0,
+                    'colbert_score': colbert_result.score if colbert_result else 0,
+                    'combined_score': combined_score
+                },
+                score=combined_score
+            )
+            combined_results.append(combined_result)
+
+        # Sort by combined score (descending)
+        combined_results.sort(key=lambda x: x.score, reverse=True)
+
+        return combined_results
+
+    async def mmr_search(
+        self,
+        query: str,
+        table: str = None,
+        schema: str = None,
+        k: int = 10,
+        fetch_k: int = None,
+        lambda_mult: float = 0.5,
+        metadata_filters: Optional[Dict[str, Any]] = None,
+        score_threshold: Optional[float] = None,
+        metric: str = None,
+        embedding_column: str = 'embedding',
+        content_column: str = 'document',
+        metadata_column: str = 'cmetadata',
+        id_column: str = 'id',
+        additional_columns: Optional[List[str]] = None
+    ) -> List[SearchResult]:
+        """
+        Perform Maximal Marginal Relevance (MMR) search to balance relevance and diversity.
+
+        MMR helps avoid redundant results by selecting documents that are relevant to the query
+        but diverse from each other.
+
+        Args:
+            query: The search query text
+            table: Table name (optional, uses default if not provided)
+            schema: Schema name (optional, uses default if not provided)
+            k: Number of final results to return
+            fetch_k: Number of candidate documents to fetch (default: k * 3)
+            lambda_mult: MMR diversity parameter (0-1):
+                        - 1.0 = pure relevance (no diversity)
+                        - 0.0 = pure diversity (no relevance)
+                        - 0.5 = balanced (default)
+            metadata_filters: Dictionary of metadata filters to apply
+            score_threshold: Maximum distance threshold for initial candidates
+            metric: Distance metric to use ('COSINE', 'L2', 'IP')
+            embedding_column: Name of the embedding column
+            content_column: Name of the content column
+            metadata_column: Name of the metadata column
+            id_column: Name of the ID column
+            additional_columns: Additional columns to include in results
+
+        Returns:
+            List of SearchResult objects selected via MMR algorithm
+        """
+        if not self._connected:
+            await self.connection()
+
+        # Default to fetching 3x more candidates than final results
+        if fetch_k is None:
+            fetch_k = max(k * 3, 20)
+
+        # Step 1: Get initial candidates using similarity search
+        candidates = await self.similarity_search(
+            query=query,
+            table=table,
+            schema=schema,
+            limit=fetch_k,
+            metadata_filters=metadata_filters,
+            score_threshold=score_threshold,
+            metric=metric,
+            embedding_column=embedding_column,
+            content_column=content_column,
+            metadata_column=metadata_column,
+            id_column=id_column,
+            additional_columns=additional_columns
+        )
+
+        if len(candidates) <= k:
+            # If we have fewer candidates than requested results, return all
+            return candidates
+
+        # Step 2: Get embeddings for MMR computation
+        # We need to fetch the actual embedding vectors for similarity computation
+        candidate_embeddings = await self._fetch_embeddings_for_mmr(
+            candidate_ids=[result.id for result in candidates],
+            table=table,
+            schema=schema,
+            embedding_column=embedding_column,
+            id_column=id_column
+        )
+
+        # Step 3: Get query embedding
+        query_embedding = self._embed_.embed_query(query)
+
+        # Step 4: Run MMR algorithm
+        selected_results = self._mmr_algorithm(
+            query_embedding=query_embedding,
+            candidates=candidates,
+            candidate_embeddings=candidate_embeddings,
+            k=k,
+            lambda_mult=lambda_mult,
+            metric=metric or self.distance_strategy
+        )
+
+        self.logger.info(
+            f"MMR search selected {len(selected_results)} results from {len(candidates)} candidates "
+            f"(λ={lambda_mult})"
+        )
+
+        return selected_results
+
+    async def _fetch_embeddings_for_mmr(
+        self,
+        candidate_ids: List[str],
+        table: str,
+        schema: str,
+        embedding_column: str,
+        id_column: str
+    ) -> Dict[str, np.ndarray]:
+        """
+        Fetch embedding vectors for candidate documents.
+
+        Args:
+            candidate_ids: List of document IDs to fetch embeddings for
+            table: Table name
+            schema: Schema name
+            embedding_column: Name of the embedding column
+            id_column: Name of the ID column
+
+        Returns:
+            Dictionary mapping document ID to embedding vector
+        """
+        if not self.embedding_store:
+            self.embedding_store = self._define_collection_store(
+                table=table,
+                schema=schema,
+                dimension=self.dimension,
+                id_column=self._id_column,
+                embedding_column=embedding_column,
+                document_column=self._document_column,
+                metadata_column='cmetadata',
+                text_column=self._text_column,
+            )
+
+        # Get column objects
+        id_col = getattr(self.embedding_store, id_column)
+        embedding_col = getattr(self.embedding_store, embedding_column)
+
+        # Build query to fetch embeddings
+        stmt = (
+            select(id_col, embedding_col)
+            .select_from(self.embedding_store)
+            .where(id_col.in_(candidate_ids))
+        )
+
+        embeddings_dict = {}
+        async with self.session() as session:
+            result = await session.execute(stmt)
+            rows = result.fetchall()
+
+            for row in rows:
+                doc_id = row[0]
+                embedding = row[1]
+
+                # Convert to numpy array if needed
+                if isinstance(embedding, (list, tuple)):
+                    embeddings_dict[doc_id] = np.array(embedding, dtype=np.float32)
+                elif hasattr(embedding, '__array__'):
+                    embeddings_dict[doc_id] = np.array(embedding, dtype=np.float32)
+                else:
+                    # Handle pgvector Vector type
+                    embeddings_dict[doc_id] = np.array(embedding, dtype=np.float32)
+
+        return embeddings_dict
+
+    def _mmr_algorithm(
+        self,
+        query_embedding: np.ndarray,
+        candidates: List[SearchResult],
+        candidate_embeddings: Dict[str, np.ndarray],
+        k: int,
+        lambda_mult: float,
+        metric: str
+    ) -> List[SearchResult]:
+        """
+        Core MMR algorithm implementation.
+
+        Args:
+            query_embedding: Query embedding vector
+            candidates: List of candidate SearchResult objects
+            candidate_embeddings: Dictionary mapping doc ID to embedding vector
+            k: Number of results to select
+            lambda_mult: MMR diversity parameter (0-1)
+            metric: Distance metric to use
+
+        Returns:
+            List of selected SearchResult objects ordered by MMR score
+        """
+        if len(candidates) <= k:
+            return candidates
+
+        # Convert query embedding to numpy array
+        if not isinstance(query_embedding, np.ndarray):
+            query_embedding = np.array(query_embedding, dtype=np.float32)
+
+        # Prepare data structures
+        selected_indices = []
+        remaining_indices = list(range(len(candidates)))
+
+        # Step 1: Select the most relevant document first
+        query_similarities = []
+        for candidate in candidates:
+            doc_embedding = candidate_embeddings.get(candidate.id)
+            if doc_embedding is not None:
+                similarity = self._compute_similarity(query_embedding, doc_embedding, metric)
+                query_similarities.append(similarity)
+            else:
+                # Fallback to distance score if embedding not available
+                # Convert distance to similarity (lower distance = higher similarity)
+                query_similarities.append(1.0 / (1.0 + candidate.score))
+
+        # Select the most similar document first
+        best_idx = np.argmax(query_similarities)
+        selected_indices.append(best_idx)
+        remaining_indices.remove(best_idx)
+
+        # Step 2: Iteratively select remaining documents using MMR
+        for _ in range(min(k - 1, len(remaining_indices))):
+            mmr_scores = []
+
+            for idx in remaining_indices:
+                candidate = candidates[idx]
+                doc_embedding = candidate_embeddings.get(candidate.id)
+
+                if doc_embedding is None:
+                    # Fallback scoring if embedding not available
+                    mmr_score = lambda_mult * query_similarities[idx]
+                    mmr_scores.append(mmr_score)
+                    continue
+
+                # Relevance: similarity to query
+                relevance = query_similarities[idx]
+
+                # Diversity: maximum similarity to already selected documents
+                max_similarity_to_selected = 0.0
+                for selected_idx in selected_indices:
+                    selected_candidate = candidates[selected_idx]
+                    selected_embedding = candidate_embeddings.get(selected_candidate.id)
+
+                    if selected_embedding is not None:
+                        similarity = self._compute_similarity(doc_embedding, selected_embedding, metric)
+                        max_similarity_to_selected = max(max_similarity_to_selected, similarity)
+
+                # MMR formula: λ * relevance - (1-λ) * max_similarity_to_selected
+                mmr_score = (
+                    lambda_mult * relevance -
+                    (1.0 - lambda_mult) * max_similarity_to_selected
+                )
+                mmr_scores.append(mmr_score)
+
+            # Select document with highest MMR score
+            if mmr_scores:
+                best_remaining_idx = np.argmax(mmr_scores)
+                best_idx = remaining_indices[best_remaining_idx]
+                selected_indices.append(best_idx)
+                remaining_indices.remove(best_idx)
+
+        # Step 3: Return selected results with MMR scores in metadata
+        selected_results = []
+        for i, idx in enumerate(selected_indices):
+            result = candidates[idx]
+            # Add MMR ranking to metadata
+            enhanced_metadata = dict(result.metadata)
+            enhanced_metadata['mmr_rank'] = i + 1
+            enhanced_metadata['mmr_lambda'] = lambda_mult
+            enhanced_metadata['original_rank'] = idx + 1
+
+            enhanced_result = SearchResult(
+                id=result.id,
+                content=result.content,
+                metadata=enhanced_metadata,
+                score=result.score
+            )
+            selected_results.append(enhanced_result)
+
+        return selected_results
+
+    def _compute_similarity(
+        self,
+        embedding1: np.ndarray,
+        embedding2: np.ndarray,
+        metric: Union[str, Any]
+    ) -> float:
+        """
+        Compute similarity between two embeddings based on the specified metric.
+
+        Args:
+            embedding1: First embedding vector (numpy array or list)
+            embedding2: Second embedding vector (numpy array or list)
+            metric: Distance metric ('COSINE', 'L2', 'IP', etc.)
+
+        Returns:
+            Similarity score (higher = more similar)
+        """
+        # Convert to numpy arrays if needed
+        if isinstance(embedding1, list):
+            embedding1 = np.array(embedding1, dtype=np.float32)
+        if isinstance(embedding2, list):
+            embedding2 = np.array(embedding2, dtype=np.float32)
+
+        # Ensure embeddings are numpy arrays
+        if not isinstance(embedding1, np.ndarray):
+            embedding1 = np.array(embedding1, dtype=np.float32)
+        if not isinstance(embedding2, np.ndarray):
+            embedding2 = np.array(embedding2, dtype=np.float32)
+
+        # Ensure embeddings are 2D arrays for sklearn
+        emb1 = embedding1.reshape(1, -1)
+        emb2 = embedding2.reshape(1, -1)
+
+        # Convert string metrics to DistanceStrategy enum if needed
+        if isinstance(metric, str):
+            metric_mapping = {
+                'COSINE': DistanceStrategy.COSINE,
+                'L2': DistanceStrategy.EUCLIDEAN_DISTANCE,
+                'EUCLIDEAN': DistanceStrategy.EUCLIDEAN_DISTANCE,
+                'IP': DistanceStrategy.MAX_INNER_PRODUCT,
+                'DOT': DistanceStrategy.DOT_PRODUCT,
+                'DOT_PRODUCT': DistanceStrategy.DOT_PRODUCT,
+                'MAX_INNER_PRODUCT': DistanceStrategy.MAX_INNER_PRODUCT
+            }
+            strategy = metric_mapping.get(metric.upper(), DistanceStrategy.COSINE)
+        else:
+            strategy = metric
+
+        if strategy == DistanceStrategy.COSINE:
+            # Cosine similarity (returns similarity, not distance)
+            similarity = cosine_similarity(emb1, emb2)[0, 0]
+            return float(similarity)
+
+        elif strategy == DistanceStrategy.EUCLIDEAN_DISTANCE:
+            # Convert Euclidean distance to similarity
+            distance = euclidean_distances(emb1, emb2)[0, 0]
+            similarity = 1.0 / (1.0 + distance)
+            return float(similarity)
+
+        elif strategy in [DistanceStrategy.MAX_INNER_PRODUCT, DistanceStrategy.DOT_PRODUCT]:
+            # Dot product (inner product)
+            similarity = np.dot(embedding1.flatten(), embedding2.flatten())
+            return float(similarity)
+
+        else:
+            # Default to cosine similarity
+            similarity = cosine_similarity(emb1, emb2)[0, 0]
+            return float(similarity)
 
     async def delete_documents(
         self,
@@ -1636,7 +1966,7 @@ class PgvectorStore(AbstractStore):
         values: Optional[Union[str, List[str]]] = None,
         table: Optional[str] = None,
         schema: Optional[str] = None,
-        collection: Optional[str] = None,
+        metadata_column: Optional[str] = None,
         **kwargs
     ) -> int:
         """
@@ -1650,7 +1980,7 @@ class PgvectorStore(AbstractStore):
                 If provided, this takes precedence over extracting from documents.
             table: Override table name
             schema: Override schema name
-            collection: Override collection name
+            metadata_column: Override metadata column name
 
         Returns:
             int: Number of documents deleted
@@ -1669,18 +1999,13 @@ class PgvectorStore(AbstractStore):
             # Delete by different metadata field
             deleted_count = await store.delete_documents(pk='category', values='obsolete')
         """
-        if not self._connected or not self._connection:
-            raise RuntimeError(
-                "Store is not connected. Use 'async with store:' context manager."
-            )
+        if not self._connected:
+            await self.connection()
 
-        # Determine table details
-        if not table:
-            table = self.table
-        if not schema:
-            schema = self.schema
-        if not collection:
-            collection = self.collection_name
+        # Use defaults from instance if not provided
+        table = table or self.table_name
+        schema = schema or self.schema
+        metadata_column = metadata_column or self._document_column or 'cmetadata'
 
         # Extract values to delete
         delete_values = []
@@ -1705,24 +2030,21 @@ class PgvectorStore(AbstractStore):
             self.logger.warning(f"No values found for field '{pk}' to delete")
             return 0
 
-        # Construct table name with schema
-        if schema and schema != 'public':
-            full_table_name = f"{schema}.{table}"
-        else:
-            full_table_name = table
+        # Construct full table name
+        full_table_name = f"{schema}.{table}" if schema != 'public' else table
 
         deleted_count = 0
 
         try:
-            async with self._connection.begin() as conn:
+            async with self.session() as session:
                 for value in delete_values:
                     # Use JSONB operator to find matching metadata
-                    delete_query = sqlalchemy.text(f"""
+                    delete_query = text(f"""
                         DELETE FROM {full_table_name}
-                        WHERE cmetadata->>:pk = :value
+                        WHERE {metadata_column}->>:pk = :value
                     """)
 
-                    result = await conn.execute(
+                    result = await session.execute(
                         delete_query,
                         {"pk": pk, "value": str(value)}
                     )
@@ -1746,7 +2068,7 @@ class PgvectorStore(AbstractStore):
         filter_dict: Dict[str, Union[str, List[str]]],
         table: Optional[str] = None,
         schema: Optional[str] = None,
-        collection: Optional[str] = None,
+        metadata_column: Optional[str] = None,
         **kwargs
     ) -> int:
         """
@@ -1756,7 +2078,7 @@ class PgvectorStore(AbstractStore):
             filter_dict: Dictionary of field_name: value(s) pairs for deletion criteria
             table: Override table name
             schema: Override schema name
-            collection: Override collection name
+            metadata_column: Override metadata column name
 
         Returns:
             int: Number of documents deleted
@@ -1773,27 +2095,19 @@ class PgvectorStore(AbstractStore):
                 'source_type': ['papers', 'reports']
             })
         """
-        if not self._connected or not self._connection:
-            raise RuntimeError(
-                "Store is not connected. Use 'async with store:' context manager."
-            )
+        if not self._connected:
+            await self.connection()
 
         if not filter_dict:
             raise ValueError("filter_dict cannot be empty")
 
-        # Determine table details
-        if not table:
-            table = self.table
-        if not schema:
-            schema = self.schema
-        if not collection:
-            collection = self.collection_name
+        # Use defaults from instance if not provided
+        table = table or self.table_name
+        schema = schema or self.schema
+        metadata_column = metadata_column or self._document_column or 'cmetadata'
 
-        # Construct table name with schema
-        if schema and schema != 'public':
-            full_table_name = f"{schema}.{table}"
-        else:
-            full_table_name = table
+        # Construct full table name
+        full_table_name = f"{schema}.{table}" if schema != 'public' else table
 
         # Build WHERE conditions
         where_conditions = []
@@ -1808,25 +2122,25 @@ class PgvectorStore(AbstractStore):
                     placeholders.append(f":{param_name}")
                     params[param_name] = str(value)
 
-                condition = f"cmetadata->>'{field}' IN ({', '.join(placeholders)})"
+                condition = f"{metadata_column}->>'{field}' IN ({', '.join(placeholders)})"
                 where_conditions.append(condition)
             else:
                 # Handle single value
                 param_name = f"{field}_single"
-                where_conditions.append(f"cmetadata->>'{field}' = :{param_name}")
+                where_conditions.append(f"{metadata_column}->>'{field}' = :{param_name}")
                 params[param_name] = str(values)
 
         # Combine conditions with AND
         where_clause = " AND ".join(where_conditions)
 
-        delete_query = sqlalchemy.text(f"""
+        delete_query = text(f"""
             DELETE FROM {full_table_name}
             WHERE {where_clause}
         """)
 
         try:
-            async with self._connection.begin() as conn:
-                result = await conn.execute(delete_query, params)
+            async with self.session() as session:
+                result = await session.execute(delete_query, params)
                 deleted_count = result.rowcount
 
                 self.logger.info(
@@ -1844,7 +2158,6 @@ class PgvectorStore(AbstractStore):
         self,
         table: Optional[str] = None,
         schema: Optional[str] = None,
-        collection: Optional[str] = None,
         confirm: bool = False,
         **kwargs
     ) -> int:
@@ -1856,7 +2169,6 @@ class PgvectorStore(AbstractStore):
         Args:
             table: Override table name
             schema: Override schema name
-            collection: Override collection name
             confirm: Must be set to True to proceed with deletion
 
         Returns:
@@ -1868,30 +2180,21 @@ class PgvectorStore(AbstractStore):
                 "Set confirm=True to proceed."
             )
 
-        if not self._connected or not self._connection:
-            raise RuntimeError(
-                "Store is not connected. Use 'async with store:' context manager."
-            )
+        if not self._connected:
+            await self.connection()
 
-        # Determine table details
-        if not table:
-            table = self.table
-        if not schema:
-            schema = self.schema
-        if not collection:
-            collection = self.collection_name
+        # Use defaults from instance if not provided
+        table = table or self.table_name
+        schema = schema or self.schema
 
-        # Construct table name with schema
-        if schema and schema != 'public':
-            full_table_name = f"{schema}.{table}"
-        else:
-            full_table_name = table
+        # Construct full table name
+        full_table_name = f"{schema}.{table}" if schema != 'public' else table
 
         try:
-            async with self._connection.begin() as conn:
+            async with self.session() as session:
                 # First count existing documents
-                count_query = sqlalchemy.text(f"SELECT COUNT(*) FROM {full_table_name}")
-                count_result = await conn.execute(count_query)
+                count_query = text(f"SELECT COUNT(*) FROM {full_table_name}")
+                count_result = await session.execute(count_query)
                 total_docs = count_result.scalar()
 
                 if total_docs == 0:
@@ -1899,8 +2202,8 @@ class PgvectorStore(AbstractStore):
                     return 0
 
                 # Delete all documents
-                delete_query = sqlalchemy.text(f"DELETE FROM {full_table_name}")
-                result = await conn.execute(delete_query)
+                delete_query = text(f"DELETE FROM {full_table_name}")
+                result = await session.execute(delete_query)
                 deleted_count = result.rowcount
 
                 self.logger.warning(
@@ -1913,35 +2216,475 @@ class PgvectorStore(AbstractStore):
             self.logger.error(f"Error deleting all documents: {e}")
             raise RuntimeError(f"Failed to delete all documents: {e}") from e
 
-    # Utility method for connection monitoring
-    async def monitor_connection(self, interval: int = 30, max_attempts: int = 3) -> None:
+    async def delete_documents_by_ids(
+        self,
+        document_ids: List[str],
+        table: Optional[str] = None,
+        schema: Optional[str] = None,
+        id_column: Optional[str] = None,
+        **kwargs
+    ) -> int:
         """
-        Monitor connection health and auto-reconnect if needed.
+        Delete documents by their IDs.
 
         Args:
-            interval: Check interval in seconds
-            max_attempts: Maximum reconnection attempts before giving up
+            document_ids: List of document IDs to delete
+            table: Override table name
+            schema: Override schema name
+            id_column: Override ID column name
+
+        Returns:
+            int: Number of documents deleted
+
+        Example:
+            deleted_count = await store.delete_documents_by_ids([
+                "doc_1", "doc_2", "doc_3"
+            ])
         """
-        reconnect_attempts = 0
+        if not self._connected:
+            await self.connection()
 
-        while True:
+        if not document_ids:
+            self.logger.warning("No document IDs provided for deletion")
+            return 0
+
+        # Use defaults from instance if not provided
+        table = table or self.table_name
+        schema = schema or self.schema
+        id_column = id_column or self._id_column
+
+        # Construct full table name
+        full_table_name = f"{schema}.{table}" if schema != 'public' else table
+
+        # Build parameterized query for multiple IDs
+        placeholders = []
+        params = {}
+        for i, doc_id in enumerate(document_ids):
+            param_name = f"id_{i}"
+            placeholders.append(f":{param_name}")
+            params[param_name] = str(doc_id)
+
+        delete_query = text(f"""
+            DELETE FROM {full_table_name}
+            WHERE {id_column} IN ({', '.join(placeholders)})
+        """)
+
+        try:
+            async with self.session() as session:
+                result = await session.execute(delete_query, params)
+                deleted_count = result.rowcount
+
+                self.logger.info(
+                    f"Deleted {deleted_count} documents by IDs from {full_table_name}"
+                )
+
+                return deleted_count
+
+        except Exception as e:
+            self.logger.error(f"Error deleting documents by IDs: {e}")
+            raise RuntimeError(f"Failed to delete documents by IDs: {e}") from e
+
+    # Additional utility method for safer deletions
+    async def count_documents_by_filter(
+        self,
+        filter_dict: Dict[str, Union[str, List[str]]],
+        table: Optional[str] = None,
+        schema: Optional[str] = None,
+        metadata_column: Optional[str] = None,
+        **kwargs
+    ) -> int:
+        """
+        Count documents that would be affected by a filter (useful before deletion).
+
+        Args:
+            filter_dict: Dictionary of field_name: value(s) pairs for criteria
+            table: Override table name
+            schema: Override schema name
+            metadata_column: Override metadata column name
+
+        Returns:
+            int: Number of documents matching the filter
+        """
+        if not self._connected:
+            await self.connection()
+
+        if not filter_dict:
+            return 0
+
+        # Use defaults from instance if not provided
+        table = table or self.table_name
+        schema = schema or self.schema
+        metadata_column = metadata_column or self._document_column or 'cmetadata'
+
+        # Construct full table name
+        full_table_name = f"{schema}.{table}" if schema != 'public' else table
+
+        # Build WHERE conditions (same logic as delete_documents_by_filter)
+        where_conditions = []
+        params = {}
+
+        for field, values in filter_dict.items():
+            if isinstance(values, (list, tuple)):
+                placeholders = []
+                for i, value in enumerate(values):
+                    param_name = f"{field}_{i}"
+                    placeholders.append(f":{param_name}")
+                    params[param_name] = str(value)
+
+                condition = f"{metadata_column}->>'{field}' IN ({', '.join(placeholders)})"
+                where_conditions.append(condition)
+            else:
+                param_name = f"{field}_single"
+                where_conditions.append(f"{metadata_column}->>'{field}' = :{param_name}")
+                params[param_name] = str(values)
+
+        where_clause = " AND ".join(where_conditions)
+        count_query = text(f"""
+            SELECT COUNT(*) FROM {full_table_name}
+            WHERE {where_clause}
+        """)
+
+        try:
+            async with self.session() as session:
+                result = await session.execute(count_query, params)
+                count = result.scalar()
+
+                self.logger.info(
+                    f"Found {count} documents matching filter: {filter_dict}"
+                )
+
+                return count
+
+        except Exception as e:
+            self.logger.error(f"Error counting documents: {e}")
+            raise RuntimeError(f"Failed to count documents: {e}") from e
+
+    async def from_documents(
+        self,
+        documents: List[Document],
+        table: str = None,
+        schema: str = None,
+        embedding_column: str = 'embedding',
+        content_column: str = 'document',
+        metadata_column: str = 'cmetadata',
+        chunk_size: int = 8192,
+        chunk_overlap: int = 200,
+        store_full_document: bool = True,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """
+        Add documents using late chunking strategy.
+
+        Args:
+            documents: List of Document objects to process
+            table: Table name
+            schema: Schema name
+            embedding_column: Name of embedding column
+            content_column: Name of content column
+            metadata_column: Name of metadata column
+            chunk_size: Maximum size of each chunk
+            chunk_overlap: Overlap between chunks
+            store_full_document: Whether to store full document alongside chunks
+
+        Returns:
+            Dictionary with processing statistics
+        """
+        if not self._connected:
+            await self.connection()
+
+        table = table or self.table_name
+        schema = schema or self.schema
+
+
+        # Initialize late chunking processor
+        chunking_processor = LateChunkingProcessor(
+            vector_store=self,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap
+        )
+
+        # Ensure embedding store is initialized
+        if self.embedding_store is None:
+            self.embedding_store = self._define_collection_store(
+                table=table,
+                schema=schema,
+                dimension=self.dimension,
+                id_column=self._id_column,
+                embedding_column=embedding_column,
+                document_column=content_column,
+                metadata_column=metadata_column,
+                text_column=self._text_column,
+            )
+
+        all_inserts = []
+        stats = {
+            'documents_processed': 0,
+            'chunks_created': 0,
+            'full_documents_stored': 0
+        }
+        for doc_idx, document in enumerate(documents):
+            document_id = f"doc_{doc_idx:06d}_{uuid.uuid4().hex[:8]}"
+
+            # Process document with late chunking
+            full_embedding, chunk_infos = await chunking_processor.process_document_late_chunking(
+                document_text=document.page_content,
+                document_id=document_id,
+                metadata=document.metadata
+            )
+            # Store full document if requested
+            if store_full_document:
+                full_doc_metadata = {
+                    **(document.metadata or {}),
+                    'document_id': document_id,
+                    'is_full_document': True,
+                    'total_chunks': len(chunk_infos),
+                    'document_type': 'parent',
+                    'chunking_strategy': 'late_chunking'
+                }
+
+                all_inserts.append({
+                    self._id_column: document_id,
+                    embedding_column: full_embedding.tolist(),
+                    content_column: document.page_content,
+                    metadata_column: full_doc_metadata
+                })
+                stats['full_documents_stored'] += 1
+
+            # Store all chunks
+            for chunk_info in chunk_infos:
+                embed = chunk_info.chunk_embedding if isinstance(chunk_info.chunk_embedding, list) else chunk_info.chunk_embedding.tolist()
+                all_inserts.append({
+                    self._id_column: chunk_info.chunk_id,
+                    embedding_column: embed,
+                    content_column: chunk_info.chunk_text,
+                    metadata_column: chunk_info.metadata
+                })
+                stats['chunks_created'] += 1
+
+            stats['documents_processed'] += 1
+
+        # Bulk insert all data
+        if all_inserts:
+            insert_stmt = insert(self.embedding_store)
+
             try:
-                if not await self.is_connection_alive():
-                    self.logger.warning(
-                        f"Connection lost, attempting reconnect (attempt {reconnect_attempts + 1}/{max_attempts})"
-                    )
+                async with self.session() as session:
+                    await session.execute(insert_stmt, all_inserts)
 
-                    if await self.ensure_connection(force_reconnect=True):
-                        self.logger.info("Connection restored successfully")
-                        reconnect_attempts = 0
-                    else:
-                        reconnect_attempts += 1
-                        if reconnect_attempts >= max_attempts:
-                            self.logger.error(f"Failed to reconnect after {max_attempts} attempts")
-                            break
-
-                await asyncio.sleep(interval)
+                self.logger.info(
+                    f"✅ Late chunking complete: {stats['documents_processed']} documents → "
+                    f"{stats['chunks_created']} chunks + {stats['full_documents_stored']} full docs"
+                )
 
             except Exception as e:
-                self.logger.error(f"Connection monitoring error: {e}")
-                await asyncio.sleep(interval)
+                self.logger.error(f"Error in late chunking insert: {e}")
+                raise
+
+        return stats
+
+    async def document_search(
+        self,
+        query: str,
+        table: str = None,
+        schema: str = None,
+        limit: int = 10,
+        search_chunks: bool = True,
+        search_full_docs: bool = False,
+        rerank_with_context: bool = True,
+        context_window: int = 2,
+        **kwargs
+    ) -> List[SearchResult]:
+        """
+        Search with late chunking context awareness.
+
+        Args:
+            query: Search query
+            table: Table name
+            schema: Schema name
+            limit: Number of results
+            search_chunks: Whether to search chunk-level embeddings
+            search_full_docs: Whether to search full document embeddings
+            rerank_with_context: Whether to rerank using surrounding chunks
+            context_window: Number of adjacent chunks to include for context
+
+        Returns:
+            List of SearchResult objects with enhanced context
+        """
+        results = []
+
+        # Search chunks if requested
+        if search_chunks:
+            chunk_filters = {'is_chunk': True}
+            chunk_results = await self.similarity_search(
+                query=query,
+                table=table,
+                schema=schema,
+                limit=limit * 2,  # Get more candidates for reranking
+                metadata_filters=chunk_filters,
+                **kwargs
+            )
+            results.extend(chunk_results)
+
+        # Search full documents if requested
+        if search_full_docs:
+            doc_filters = {'is_full_document': True}
+            doc_results = await self.similarity_search(
+                query=query,
+                table=table,
+                schema=schema,
+                limit=limit,
+                metadata_filters=doc_filters,
+                **kwargs
+            )
+            results.extend(doc_results)
+
+        # Rerank with context if requested
+        if rerank_with_context and search_chunks:
+            results = await self._rerank_with_chunk_context(
+                results=results,
+                query=query,
+                table=table,
+                schema=schema,
+                context_window=context_window
+            )
+
+        # Sort by score and limit
+        results.sort(key=lambda x: x.score)
+        return results[:limit]
+
+    async def _rerank_with_chunk_context(
+        self,
+        results: List[SearchResult],
+        query: str,
+        table: str,
+        schema: str,
+        context_window: int = 2
+    ) -> List[SearchResult]:
+        """
+        Rerank results by including surrounding chunk context.
+        """
+        enhanced_results = []
+
+        for result in results:
+            if not result.metadata.get('is_chunk'):
+                enhanced_results.append(result)
+                continue
+
+            # Get surrounding chunks for context
+            parent_id = result.metadata.get('parent_document_id')
+            chunk_index = result.metadata.get('chunk_index', 0)
+
+            if parent_id:
+                try:
+                    # Find adjacent chunks
+                    context_chunks = await self._get_adjacent_chunks(
+                        parent_id=parent_id,
+                        center_chunk_index=chunk_index,
+                        window_size=context_window,
+                        table=table,
+                        schema=schema
+                    )
+
+                    # Combine text with context
+                    combined_text = self._combine_chunk_context(result, context_chunks)
+
+                    # Re-score with context - ensure embeddings are consistent
+                    context_embedding = self._embed_.embed_query(combined_text)
+                    query_embedding = self._embed_.embed_query(query)
+
+                    # Ensure both embeddings are numpy arrays
+                    if isinstance(context_embedding, list):
+                        context_embedding = np.array(context_embedding, dtype=np.float32)
+                    if isinstance(query_embedding, list):
+                        query_embedding = np.array(query_embedding, dtype=np.float32)
+
+                    # Calculate new similarity score
+                    context_score = self._compute_similarity(
+                        query_embedding, context_embedding, self.distance_strategy
+                    )
+
+                    # Create enhanced result
+                    enhanced_metadata = dict(result.metadata)
+                    enhanced_metadata['context_score'] = context_score
+                    enhanced_metadata['has_context'] = True
+                    enhanced_metadata['context_chunks'] = len(context_chunks)
+
+                    enhanced_result = SearchResult(
+                        id=result.id,
+                        content=combined_text,
+                        metadata=enhanced_metadata,
+                        score=context_score
+                    )
+
+                    enhanced_results.append(enhanced_result)
+
+                except Exception as e:
+                    self.logger.warning(f"Error reranking chunk {result.id}: {e}")
+                    # Fall back to original result if reranking fails
+                    enhanced_results.append(result)
+            else:
+                enhanced_results.append(result)
+
+        return enhanced_results
+
+    async def _get_adjacent_chunks(
+        self,
+        parent_id: str,
+        center_chunk_index: int,
+        window_size: int,
+        table: str,
+        schema: str
+    ) -> List[SearchResult]:
+        """Get adjacent chunks for context."""
+        # Calculate chunk index range
+        start_idx = max(0, center_chunk_index - window_size)
+        end_idx = center_chunk_index + window_size + 1
+
+        # Search for chunks in the range
+        chunk_filters = {
+            'parent_document_id': parent_id,
+            'is_chunk': True
+        }
+
+        # Get all chunks from parent document
+        all_chunks = await self.similarity_search(
+            query="dummy",
+            table=table,
+            schema=schema,
+            limit=1000,  # High limit to get all chunks
+            metadata_filters=chunk_filters
+        )
+
+        # Filter to adjacent chunks
+        adjacent_chunks = [
+            chunk for chunk in all_chunks
+            if start_idx <= chunk.metadata.get('chunk_index', 0) < end_idx
+        ]
+
+        # Sort by chunk index
+        adjacent_chunks.sort(key=lambda x: x.metadata.get('chunk_index', 0))
+
+        return adjacent_chunks
+
+    def _combine_chunk_context(
+        self,
+        center_result: SearchResult,
+        context_chunks: List[SearchResult]
+    ) -> str:
+        """Combine center chunk with surrounding context."""
+        # Sort context chunks by index
+        context_chunks.sort(key=lambda x: x.metadata.get('chunk_index', 0))
+
+        # Combine text
+        combined_parts = []
+        center_idx = center_result.metadata.get('chunk_index', 0)
+
+        for chunk in context_chunks:
+            chunk_idx = chunk.metadata.get('chunk_index', 0)
+            if chunk_idx == center_idx:
+                # Mark the main chunk
+                combined_parts.append(f"[MAIN] {chunk.content} [/MAIN]")
+            else:
+                combined_parts.append(chunk.content)
+
+        return " ... ".join(combined_parts)

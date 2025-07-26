@@ -9,8 +9,6 @@ import uuid
 from string import Template
 import asyncio
 from aiohttp import web
-# for exponential backoff
-import backoff # for exponential backoff
 from datamodel.exceptions import ValidationError as DataError  # pylint: disable=E0611
 from navconfig.logging import logging
 from navigator_auth.conf import AUTH_SESSION_OBJECT  # pylint: disable=E0611
@@ -35,6 +33,7 @@ from ..models import (
     AIMessageFactory
 )
 from ..stores import AbstractStore, supported_stores
+from ..stores.models import Document
 
 
 logging.getLogger(name='primp').setLevel(logging.INFO)
@@ -232,7 +231,6 @@ class AbstractBot(DBInterface, ABC):
             "- When responding to user queries, ensure that you provide accurate and up-to-date information.\n"
             "- Be polite, clear and concise in your explanations.\n"
             "- ensuring that responses are based only on verified information from owned sources.\n"
-            "- Detect user language: respond in English if the user writes in English; respond in Spanish if the user writes in Spanish."
         )
 
     @property
@@ -354,38 +352,24 @@ class AbstractBot(DBInterface, ABC):
 
     def create_kb(self, documents: list):
         new_docs = []
-        # for doc in documents:
-        #     content = doc.pop('content')
-        #     source = doc.pop('source', 'knowledge-base')
-        #     if doc:
-        #         meta = {
-        #             'source': source,
-        #             **doc
-        #         }
-        #     else:
-        #         meta = {'source': source}
-        #     if content:
-        #         new_docs.append(
-        #             Document(
-        #                 page_content=content,
-        #                 metadata=meta
-        #             )
-        #         )
+        for doc in documents:
+            content = doc.pop('content')
+            source = doc.pop('source', 'knowledge-base')
+            if doc:
+                meta = {
+                    'source': source,
+                    **doc
+                }
+            else:
+                meta = {'source': source}
+            if content:
+                new_docs.append(
+                    Document(
+                        page_content=content,
+                        metadata=meta
+                    )
+                )
         return new_docs
-
-    def safe_format_template(self, template, **kwargs):
-        """
-        Format a template string while preserving content inside triple backticks.
-        """
-        # Split the template by triple backticks
-        parts = template.split("```")
-
-        # Format only the odd-indexed parts (outside triple backticks)
-        for i in range(0, len(parts), 2):
-            parts[i] = parts[i].format_map(SafeDict(**kwargs))
-
-        # Rejoin with triple backticks
-        return "```".join(parts)
 
     def _define_prompt(self, config: Optional[dict] = None, **kwargs):
         """
@@ -398,7 +382,7 @@ class AbstractBot(DBInterface, ABC):
 
         pre_context = ''
         if self.pre_instructions:
-            pre_context = "Pre-Instructions: \n"
+            pre_context = "IMPORTANT PRE-INSTRUCTIONS: \n"
             pre_context += "\n".join(f"- {a}." for a in self.pre_instructions)
         context = "{context}"
         if self.context:
@@ -468,7 +452,9 @@ class AbstractBot(DBInterface, ABC):
         name = store.get('name', None)
         if not name:
             vector_driver = store.get('vector_database', 'PgvectorStore')
-            name = next((k for k, v in supported_stores.items() if v == vector_driver), None)
+            name = next(
+                (k for k, v in supported_stores.items() if v == vector_driver), None
+            )
         store_cls = supported_stores.get(name)
         cls_path = f"parrot.stores.{name}"
         try:
@@ -760,9 +746,9 @@ class AbstractBot(DBInterface, ABC):
         )
         try:
             async with self._llm as client:
-                print('LLM > ', client)
                 response = await client.ask(
-                    question
+                    prompt=question,
+                    system_prompt=final_prompt,
                 )
                 return self.get_response(response)
         except asyncio.CancelledError:
