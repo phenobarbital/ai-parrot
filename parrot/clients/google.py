@@ -33,7 +33,6 @@ from ..models import (
     GoogleModel,
     TTSVoice
 )
-from ..stores.pg import PgVectorStore
 
 
 logging.getLogger(

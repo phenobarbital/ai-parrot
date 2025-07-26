@@ -9,7 +9,7 @@ from typing import List
 from sqlalchemy import text
 from navconfig import BASE_DIR
 from parrot.stores.models import Document
-from parrot.stores.pg import PgVectorStore
+from parrot.stores.postgres import PgVectorStore
 from parrot.loaders import (
     PDFLoader
 )
