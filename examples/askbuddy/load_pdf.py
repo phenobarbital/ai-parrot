@@ -18,6 +18,8 @@ async def get_agent():
         "model_type": "huggingface"
     }
     agent.define_store(
+        table='employee_information',
+        schema='mso',
         vector_store='postgres',
         embedding_model=embed_model,
         dsn="postgresql+asyncpg://troc_pgdata:12345678@127.0.0.1:5432/navigator",
@@ -34,7 +36,7 @@ async def get_agent():
         language="en",
         parse_images=False,
         as_markdown=True,
-        use_chapters=True
+        use_chapters=False
     )
     docs = await loader.load()
     pprint(docs)

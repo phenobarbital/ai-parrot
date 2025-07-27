@@ -46,11 +46,11 @@ from .models import SearchResult, Document, DistanceStrategy
 from .utils.chunking import LateChunkingProcessor
 
 
-Base = declarative_base()
-
 def vector_distance(embedding_column, vector, op):
     return text(f"{embedding_column} {op} :query_embedding").label("distance")
 
+class Base(DeclarativeBase):
+    pass
 
 class PgVectorStore(AbstractStore):
     """
@@ -141,7 +141,6 @@ class PgVectorStore(AbstractStore):
         table: str,
         schema: str,
         dimension: int = 384,
-        metadata: Optional[MetaData] = None,
         id_column: str = 'id',
         embedding_column: str = 'embedding',
         document_column: str = 'document',
@@ -157,27 +156,51 @@ class PgVectorStore(AbstractStore):
             schema: The schema in which to create the table.
             dimension: The dimensionality of the vector embeddings.
         """
-        metadata = metadata or Base.metadata
-
         fq_table_name = f"{schema}.{table}"
         if fq_table_name in self._embedding_store_cache:
             return self._embedding_store_cache[fq_table_name]
 
+        self.logger.notice(
+            f"Defining dynamic ORM class for table {fq_table_name} with dimension {dimension}"
+        )
+        table_args = {
+            "schema": schema,
+            "extend_existing": True
+        }
         attrs = {
             '__tablename__': table,
-            '__table_args__': {
-                "schema": schema,
-                "extend_existing": True
-            },
-            id_column: self.get_id_column(use_uuid=self._use_uuid),
-            embedding_column: Column(Vector(dimension)),
-            text_column: Column(sqlalchemy.String, nullable=True),
-            document_column: Column(sqlalchemy.String, nullable=True),
-            metadata_column: Column(JSONB, nullable=True),
+            '__table_args__': table_args,
+            # id_column: self.get_id_column(use_uuid=self._use_uuid),
+            id_column: mapped_column(
+                sqlalchemy.String if not self._use_uuid else sqlalchemy.dialects.postgresql.UUID(as_uuid=True),
+                primary_key=True,
+                index=True,
+                unique=True,
+                default=lambda: str(uuid.uuid4()) if not self._use_uuid else None,
+                server_default=sqlalchemy.text('uuid_generate_v4()') if self._use_uuid else None
+            ),
+            embedding_column: mapped_column(Vector(dimension)),
+            text_column: mapped_column(sqlalchemy.String, nullable=True),
+            document_column: mapped_column(sqlalchemy.String, nullable=True),
+            metadata_column: mapped_column(JSONB, nullable=True),
+
+            # embedding_column: Column(Vector(dimension)),
+            # text_column: Column(sqlalchemy.String, nullable=True),
+            # document_column: Column(sqlalchemy.String, nullable=True),
+            # metadata_column: Column(JSONB, nullable=True),
             # ColBERT columns
-            'token_embeddings': Column(ARRAY(Vector(colbert_dimension)), nullable=True),
-            'num_tokens': Column(sqlalchemy.Integer, nullable=True),
-            'collection_id': Column(
+            # 'token_embeddings': Column(ARRAY(Vector(colbert_dimension)), nullable=True),
+            # 'num_tokens': Column(sqlalchemy.Integer, nullable=True),
+            # 'collection_id': Column(
+            #     sqlalchemy.dialects.postgresql.UUID(as_uuid=True),
+            #     index=True,
+            #     unique=True,
+            #     default=uuid.uuid4,
+            #     server_default=sqlalchemy.text('uuid_generate_v4()')
+            # )
+            'token_embeddings': mapped_column(ARRAY(Vector(colbert_dimension)), nullable=True),
+            'num_tokens': mapped_column(sqlalchemy.Integer, nullable=True),
+            'collection_id': mapped_column(
                 sqlalchemy.dialects.postgresql.UUID(as_uuid=True),
                 index=True,
                 unique=True,
@@ -185,12 +208,17 @@ class PgVectorStore(AbstractStore):
                 server_default=sqlalchemy.text('uuid_generate_v4()')
             )
         }
+
         # Create dynamic ORM class
         EmbeddingStore = type(store_name, (Base,), attrs)
         EmbeddingStore.__name__ = store_name
+        EmbeddingStore.__qualname__ = store_name
 
         # Cache the store
         self._embedding_store_cache[fq_table_name] = EmbeddingStore
+        self.logger.debug(
+            f"Created dynamic ORM class {store_name} for table {fq_table_name}"
+        )
 
         return EmbeddingStore
 
@@ -205,8 +233,6 @@ class PgVectorStore(AbstractStore):
         embedding_column: str = 'embedding'
     ) -> sqlalchemy.Table:
         """Dynamically define a SQLAlchemy Table for pgvector storage."""
-        metadata = metadata or Base.metadata
-
         columns = []
 
         if use_uuid:
@@ -595,6 +621,7 @@ class PgVectorStore(AbstractStore):
         query: str,
         table: str = None,
         schema: str = None,
+        k: Optional[int] = None,
         limit: int = None,
         metadata_filters: Optional[Dict[str, Any]] = None,
         score_threshold: Optional[float] = None,
@@ -630,6 +657,11 @@ class PgVectorStore(AbstractStore):
 
         table = table or self.table_name
         schema = schema or self.schema
+
+        if k and not limit:
+            limit = k
+        if not limit:
+            limit = 10
 
         # Step 1: Ensure the ORM class exists
         if not self.embedding_store:

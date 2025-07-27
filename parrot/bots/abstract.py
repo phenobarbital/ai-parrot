@@ -8,6 +8,7 @@ from collections.abc import Callable
 import uuid
 from string import Template
 import asyncio
+import copy
 from aiohttp import web
 from navconfig.logging import logging
 from navigator_auth.conf import AUTH_SESSION_OBJECT  # pylint: disable=E0611
@@ -184,7 +185,7 @@ class AbstractBot(DBInterface, ABC):
         # Conversation settings
         self.max_context_turns: int = kwargs.get('max_context_turns', 5)
         self.enable_tools: bool = kwargs.get('enable_tools', True)
-        self.context_search_limit: int = kwargs.get('context_search_limit', 3)
+        self.context_search_limit: int = kwargs.get('context_search_limit', 10)
         self.context_score_threshold: float = kwargs.get('context_score_threshold', 0.7)
 
         # Memory settings
@@ -466,15 +467,6 @@ class AbstractBot(DBInterface, ABC):
         if self.pre_instructions:
             pre_context = "IMPORTANT PRE-INSTRUCTIONS: \n"
             pre_context += "\n".join(f"- {a}." for a in self.pre_instructions)
-        context = "{context}"
-        if self.context:
-            context = """
-            Here is a brief summary of relevant information:
-            Context: {context}
-            End of Context.
-
-            Given this information, please provide answers to the following question adding detailed and useful insights.
-            """
         tmpl = Template(self.system_prompt_template)
         final_prompt = tmpl.safe_substitute(
             name=self.name,
@@ -484,7 +476,6 @@ class AbstractBot(DBInterface, ABC):
             backstory=self.backstory,
             rationale=self.rationale,
             pre_context=pre_context,
-            context=context,
             **kwargs
         )
         self.system_prompt_template = final_prompt
@@ -640,8 +631,9 @@ class AbstractBot(DBInterface, ABC):
         search_type: str = 'similarity',  # 'similarity', 'mmr', 'ensemble'
         search_kwargs: dict = None,
         metric_type: str = 'COSINE',
-        limit: int = 5,
-        score_threshold: float = None
+        limit: int = 10,
+        score_threshold: float = None,
+        ensemble_config: dict = None
     ) -> str:
         """Get relevant context from vector store.
         Args:
@@ -651,6 +643,7 @@ class AbstractBot(DBInterface, ABC):
             metric_type (str): Metric type for vector search (e.g., 'COSINE', 'EUCLIDEAN').
             limit (int): Maximum number of context items to retrieve.
             score_threshold (float): Minimum score for context relevance.
+            ensemble_config (dict): Configuration for ensemble search.
         Returns:
             tuple: (context_string, metadata_dict)
         """
@@ -661,35 +654,70 @@ class AbstractBot(DBInterface, ABC):
             limit = limit or self.context_search_limit
             score_threshold = score_threshold or self.context_score_threshold
             search_results = None
-            # Use the similarity_search method from PgVectorStore
-            if search_type == 'mmr':
-                if search_kwargs is None:
-                    search_kwargs = {
-                        "k": limit,
-                        "fetch_k": limit * 2,
-                        "lambda_mult": 0.4,
-                    }
-                search_results = await self.store.mmr_search(
-                    query=question,
-                    score_threshold=score_threshold,
-                    **(search_kwargs or {})
-                )
-            else:
-                # doing a similarity search by default
-                search_results = await self.store.similarity_search(
-                    query=question,
-                    limit=limit,
-                    score_threshold=score_threshold,
-                    metric=metric_type,
-                    **(search_kwargs or {})
-                )
+            metadata = {
+                'search_type': search_type,
+                'score_threshold': score_threshold,
+                'metric_type': metric_type
+            }
+            self.logger.notice(
+                f"Retrieving vector context for question: {question} "
+                f"using {search_type} search with limit {limit} "
+                f"and score threshold {score_threshold}"
+            )
+            async with self.store as store:
+                # Use the similarity_search method from PgVectorStore
+                if search_type == 'mmr':
+                    if search_kwargs is None:
+                        search_kwargs = {
+                            "k": limit,
+                            "fetch_k": limit * 2,
+                            "lambda_mult": 0.4,
+                        }
+                    search_results = await store.mmr_search(
+                        query=question,
+                        score_threshold=score_threshold,
+                        **(search_kwargs or {})
+                    )
+                elif search_type == 'ensemble':
+                    # Default ensemble configuration
+                    if ensemble_config is None:
+                        ensemble_config = {
+                            'similarity_limit': max(6, int(limit * 1.2)),  # Get more from similarity
+                            'mmr_limit': max(4, int(limit * 0.8)),         # Get fewer but more diverse from MMR
+                            'final_limit': limit,                          # Final number to return
+                            'similarity_weight': 0.6,                      # Weight for similarity scores
+                            'mmr_weight': 0.4,                            # Weight for MMR scores
+                            'dedup_threshold': 0.9,                       # Similarity threshold for deduplication
+                            'rerank_method': 'weighted_score'             # 'weighted_score', 'rrf', 'interleave'
+                        }
+                    search_results = await self._ensemble_search(
+                        store,
+                        question,
+                        ensemble_config,
+                        score_threshold,
+                        metric_type,
+                        search_kwargs
+                    )
+                    metadata.update({
+                        'ensemble_config': ensemble_config,
+                        'similarity_results_count': len(search_results.get('similarity_results', [])),
+                        'mmr_results_count': len(search_results.get('mmr_results', [])),
+                        'final_results_count': len(search_results.get('final_results', []))
+                    })
+                    search_results = search_results['final_results']
+                else:
+                    # doing a similarity search by default
+                    search_results = await store.similarity_search(
+                        query=question,
+                        limit=limit,
+                        score_threshold=score_threshold,
+                        metric=metric_type,
+                        **(search_kwargs or {})
+                    )
 
             if not search_results:
-                return "", {
-                    'search_results_count': 0,
-                    'search_type': search_type,
-                    'score_threshold': score_threshold
-                }
+                metadata['search_results_count'] = 0
+                return "", metadata
 
             # Format the context from search results
             context_parts = []
@@ -704,13 +732,10 @@ class AbstractBot(DBInterface, ABC):
 
             context = "\n\n".join(context_parts)
 
-            metadata = {
+            metadata.update({
                 'search_results_count': len(search_results),
-                'search_type': search_type,
-                'score_threshold': score_threshold,
-                'metric_type': metric_type,
                 'sources': sources
-            }
+            })
 
             self.logger.info(
                 f"Retrieved {len(search_results)} context items using {search_type} search"
@@ -728,19 +753,103 @@ class AbstractBot(DBInterface, ABC):
                 'error': str(e)
             }
 
-    def build_conversation_context(self, history: ConversationHistory) -> str:
+    def build_conversation_context(
+        self,
+        history: ConversationHistory,
+        max_chars_per_message: int = 200,
+        max_total_chars: int = 1500,
+        include_turn_timestamps: bool = False,
+        smart_truncation: bool = True
+    ) -> str:
         """Build conversation context from history."""
         if not history or not history.turns:
             return ""
 
         recent_turns = history.get_recent_turns(self.max_context_turns)
 
-        context_parts = ["Previous conversation:"]
-        for turn in recent_turns:
-            context_parts.append(f"User: {turn.user_message}")
-            context_parts.append(f"Assistant: {turn.assistant_response[:200]}...")
+        if not recent_turns:
+            return ""
 
-        return "\n".join(context_parts)
+        context_parts = []
+        total_chars = 0
+
+        for i, turn in enumerate(recent_turns):
+            turn_number = len(recent_turns) - i
+
+            # Smart truncation: try to keep complete sentences
+            user_msg = self._smart_truncate(
+                turn.user_message, max_chars_per_message
+            ) if smart_truncation else self._simple_truncate(
+                turn.user_message, max_chars_per_message
+            )
+            assistant_msg = self._smart_truncate(
+                turn.assistant_response, max_chars_per_message
+            ) if smart_truncation else self._simple_truncate(
+                turn.assistant_response,
+                max_chars_per_message
+            )
+
+            # Build turn with optional timestamp
+            turn_parts = [f"=== Turn {turn_number} ==="]
+
+            if include_turn_timestamps and hasattr(turn, 'timestamp'):
+                turn_parts.append(f"Time: {turn.timestamp.strftime('%H:%M')}")
+
+            turn_parts.extend([
+                f"👤 User: {user_msg}",
+                f"🤖 Assistant: {assistant_msg}"
+            ])
+
+            turn_text = "\n".join(turn_parts)
+
+            # Check total length
+            if total_chars + len(turn_text) > max_total_chars:
+                if i == 0:  # Always try to include at least the most recent turn
+                    remaining_chars = max_total_chars - 100  # Leave room for formatting
+                    if remaining_chars > 200:
+                        turn_text = turn_text[:remaining_chars].rstrip() + "\n[...truncated]"
+                        context_parts.append(turn_text)
+                break
+
+            context_parts.append(turn_text)
+            total_chars += len(turn_text)
+
+        if not context_parts:
+            return ""
+
+        # Reverse to chronological order
+        context_parts.reverse()
+
+        # Add header
+        header = f"📋 Recent Conversation ({len(context_parts)} turns):"
+        return f"{header}\n\n" + "\n\n".join(context_parts)
+
+    def _smart_truncate(self, text: str, max_length: int) -> str:
+        """Truncate text at sentence boundaries when possible."""
+        if len(text) <= max_length:
+            return text
+
+        # Try to truncate at sentence boundaries
+        sentences = text.split('. ')
+        truncated = ""
+
+        for sentence in sentences:
+            test_text = truncated + sentence + ". " if truncated else sentence + ". "
+            if len(test_text) > max_length - 3:  # Leave room for "..."
+                break
+            truncated = test_text
+
+        # If no complete sentences fit, do character truncation
+        if not truncated or len(truncated) < max_length * 0.5:
+            truncated = text[:max_length - 3]
+
+        return truncated.rstrip() + "..."
+
+    def _simple_truncate(self, text: str, max_length: int) -> str:
+        """Simple character-based truncation."""
+        if len(text) <= max_length:
+            return text
+        return text[:max_length - 3].rstrip() + "..."
 
     def _use_tools(
         self,
@@ -765,27 +874,38 @@ class AbstractBot(DBInterface, ABC):
         self,
         vector_context: str = "",
         conversation_context: str = "",
+        metadata: Optional[Dict[str, Any]] = None,
         **kwargs
     ) -> str:
         """Create the complete system prompt for the LLM."""
         # Process conversation and vector contexts
         context_parts = []
-        if self.pre_instructions:
-            context_parts.append(
-                f"IMPORTANT PRE-INSTRUCTIONS:\n{self.pre_instructions}"
-            )
         if vector_context:
-            context_parts.append(
-                f"Relevant Information:\n{vector_context}"
-            )
+            context_parts.append(vector_context)
+        if metadata:
+            metadata_text = "**Search Metadata:**\n"
+            for key, value in metadata.items():
+                if key == 'sources' and isinstance(value, list):
+                    metadata_text += f"- {key}: {', '.join(value[:3])}{'...' if len(value) > 3 else ''}\n"
+                else:
+                    metadata_text += f"- {key}: {value}\n"
+            context_parts.append(metadata_text)
+
+            # Format conversation context
+        chat_history_section = ""
+        if conversation_context:
+            chat_history_section = f"**Previous Conversation:**\n{conversation_context}"
+
         # Apply template substitution
         tmpl = Template(self.system_prompt_template)
         system_prompt = tmpl.safe_substitute(
-            context="\n\n".join(context_parts) if context_parts else "",
-            chat_history=f"Chat History:\n{conversation_context}",
+            context="\n\n".join(context_parts) if context_parts else "No additional context available.",
+            chat_history=chat_history_section,
             **kwargs
         )
-
+        # print(f"📝 System Prompt Created: {len(system_prompt)} chars")
+        # print(f"System prompt preview:\n{system_prompt}...")
+        # print('=====')
         return system_prompt
 
     async def conversation(
@@ -796,12 +916,12 @@ class AbstractBot(DBInterface, ABC):
         search_type: str = 'similarity',  # 'similarity', 'mmr', 'ensemble'
         search_kwargs: dict = None,
         metric_type: str = 'COSINE',
-        limit: Optional[int] = 5,
-        score_threshold: float = None,
         use_vector_context: bool = True,
         use_conversation_history: bool = True,
         return_sources: bool = True,
         return_context: bool = False,
+        memory: Optional[Callable] = None,
+        ensemble_config: dict = None,
         **kwargs
     ) -> AIMessage:
         """
@@ -826,15 +946,19 @@ class AbstractBot(DBInterface, ABC):
         # Generate session ID if not provided
         if not session_id:
             session_id = str(uuid.uuid4())
-
         turn_id = str(uuid.uuid4())
+
+        limit = kwargs.get('limit', self.context_search_limit)
+        score_threshold = kwargs.get('score_threshold', self.context_score_threshold)
 
         try:
             # Get conversation history using unified memory
             conversation_history = None
             conversation_context = ""
 
-            if use_conversation_history and self.conversation_memory:
+            memory = memory or self.conversation_memory
+
+            if use_conversation_history and memory:
                 conversation_history = await self.get_conversation_history(user_id, session_id)
                 if not conversation_history:
                     conversation_history = await self.create_conversation_history(
@@ -847,13 +971,24 @@ class AbstractBot(DBInterface, ABC):
             vector_context = ""
             vector_metadata = {}
             if use_vector_context and self.store:
+                # Custom ensemble configuration
+                if search_type == 'ensemble' and not ensemble_config:
+                    ensemble_config = {
+                        'similarity_limit': 6,      # Get 6 results from similarity
+                        'mmr_limit': 4,             # Get 4 results from MMR
+                        'final_limit': 5,           # Return top 5 combined
+                        'similarity_weight': 0.6,   # Similarity results weight
+                        'mmr_weight': 0.4,          # MMR results weight
+                        'rerank_method': 'weighted_score'  # or 'rrf' or 'interleave'
+                    }
                 vector_context, vector_metadata = await self.get_vector_context(
                     question,
                     search_type=search_type,
                     search_kwargs=search_kwargs,
                     metric_type=metric_type,
                     limit=limit,
-                    score_threshold=score_threshold
+                    score_threshold=score_threshold,
+                    ensemble_config=ensemble_config,
                 )
 
             # Determine if tools should be used
@@ -863,9 +998,9 @@ class AbstractBot(DBInterface, ABC):
             system_prompt = await self.create_system_prompt(
                 vector_context=vector_context,
                 conversation_context=conversation_context,
+                vector_metadata=vector_metadata,
                 **kwargs
             )
-
             # Configure LLM if needed
             new_llm = kwargs.pop('llm', None)
             if new_llm:
@@ -1200,3 +1335,209 @@ class AbstractBot(DBInterface, ABC):
             'last_user_message': history.turns[-1].user_message if history.turns else None,
             'last_assistant_response': history.turns[-1].assistant_response[:100] + "..." if history.turns else None,
         }
+
+## Ensemble Search Method
+    async def _ensemble_search(
+        self,
+        store,
+        question: str,
+        config: dict,
+        score_threshold: float,
+        metric_type: str,
+        search_kwargs: dict = None
+    ) -> dict:
+        """Perform ensemble search combining similarity and MMR approaches."""
+
+        # Perform similarity search
+        similarity_results = await store.similarity_search(
+            query=question,
+            limit=config['similarity_limit'],
+            score_threshold=score_threshold,
+            metric=metric_type,
+            **(search_kwargs or {})
+        )
+        # Perform MMR search
+        mmr_search_kwargs = {
+            "k": config['mmr_limit'],
+            "fetch_k": config['mmr_limit'] * 2,
+            "lambda_mult": 0.4,
+        }
+        if search_kwargs:
+            mmr_search_kwargs.update(search_kwargs)
+        mmr_results = await store.mmr_search(
+            query=question,
+            score_threshold=score_threshold,
+            **mmr_search_kwargs
+        )
+        # Combine and rerank results
+        final_results = self._combine_search_results(
+            similarity_results,
+            mmr_results,
+            config
+        )
+
+        return {
+            'similarity_results': similarity_results,
+            'mmr_results': mmr_results,
+            'final_results': final_results
+        }
+
+    def _combine_search_results(self, similarity_results: list, mmr_results: list, config: dict) -> list:
+        """Combine and rerank results from different search methods."""
+
+        # Create a mapping of content to results for deduplication
+        content_map = {}
+        all_results = []
+
+        # Add similarity results with their weights and ranks
+        for rank, result in enumerate(similarity_results):
+            content_key = self._get_content_key(result.content)
+            if content_key not in content_map:
+                # Create a copy of the result and add ensemble information
+                result_copy = result.model_copy() if hasattr(result, 'model_copy') else result.copy()
+                result_copy.ensemble_score = result.score * config['similarity_weight']
+                result_copy.search_source = 'similarity'
+                result_copy.similarity_rank = rank
+                result_copy.mmr_rank = None
+
+                content_map[content_key] = result_copy
+                all_results.append(result_copy)
+
+        # Add MMR results, handling duplicates
+        for rank, result in enumerate(mmr_results):
+            content_key = self._get_content_key(result.content)
+            if content_key in content_map:
+                # If duplicate, boost the score and update metadata
+                existing = content_map[content_key]
+                mmr_score = result.score * config['mmr_weight']
+                existing.ensemble_score += mmr_score
+                existing.search_source = 'both'
+                existing.mmr_rank = rank
+            else:
+                # New result from MMR
+                result_copy = result.model_copy() if hasattr(result, 'model_copy') else result.copy()
+                result_copy.ensemble_score = result.score * config['mmr_weight']
+                result_copy.search_source = 'mmr'
+                result_copy.similarity_rank = None
+                result_copy.mmr_rank = rank
+
+                content_map[content_key] = result_copy
+                all_results.append(result_copy)
+
+        # Rerank based on method
+        rerank_method = config.get('rerank_method', 'weighted_score')
+
+        if rerank_method == 'weighted_score':
+            # Sort by ensemble score
+            all_results.sort(key=lambda x: x.ensemble_score, reverse=True)
+
+        elif rerank_method == 'rrf':
+            # Reciprocal Rank Fusion
+            all_results = self._reciprocal_rank_fusion(similarity_results, mmr_results)
+
+        elif rerank_method == 'interleave':
+            # Interleave results from both searches
+            all_results = self._interleave_results(similarity_results, mmr_results)
+
+        # Return top results
+        final_limit = config.get('final_limit', 5)
+        return all_results[:final_limit]
+
+    def _get_content_key(self, content: str) -> str:
+        """Generate a key for content deduplication."""
+        # Simple approach: use first 100 characters, normalized
+        return content[:100].lower().strip()
+
+    def _copy_result(self, result):
+        """Create a copy of a search result."""
+        # This depends on your result object structure
+        # Adjust based on your actual result class
+        return copy.deepcopy(result)
+
+    def _reciprocal_rank_fusion(self, similarity_results: list, mmr_results: list, k: int = 60) -> list:
+        """Implement Reciprocal Rank Fusion for combining ranked lists."""
+
+        # Create score mappings and result mappings
+        content_scores = {}
+        result_map = {}
+
+        # Add similarity scores and track results
+        for rank, result in enumerate(similarity_results):
+            content_key = self._get_content_key(result.content)
+            rrf_score = 1 / (k + rank + 1)
+            content_scores[content_key] = content_scores.get(content_key, 0) + rrf_score
+
+            if content_key not in result_map:
+                result_copy = result.model_copy() if hasattr(result, 'model_copy') else result.copy()
+                result_copy.similarity_rank = rank
+                result_copy.mmr_rank = None
+                result_copy.search_source = 'similarity'
+                result_map[content_key] = result_copy
+
+        # Add MMR scores and update results
+        for rank, result in enumerate(mmr_results):
+            content_key = self._get_content_key(result.content)
+            rrf_score = 1 / (k + rank + 1)
+            content_scores[content_key] = content_scores.get(content_key, 0) + rrf_score
+
+            if content_key in result_map:
+                # Update existing result
+                result_map[content_key].mmr_rank = rank
+                result_map[content_key].search_source = 'both'
+            else:
+                # New result from MMR
+                result_copy = result.model_copy() if hasattr(result, 'model_copy') else result.copy()
+                result_copy.similarity_rank = None
+                result_copy.mmr_rank = rank
+                result_copy.search_source = 'mmr'
+                result_map[content_key] = result_copy
+
+        # Set ensemble scores based on RRF and sort
+        for content_key, rrf_score in content_scores.items():
+            if content_key in result_map:
+                result_map[content_key].ensemble_score = rrf_score
+
+        # Sort by RRF score
+        sorted_items = sorted(content_scores.items(), key=lambda x: x[1], reverse=True)
+
+        # Return sorted results
+        return [result_map[content_key] for content_key, _ in sorted_items if content_key in result_map]
+
+    def _interleave_results(self, similarity_results: list, mmr_results: list) -> list:
+        """Interleave results from both search methods."""
+
+        interleaved = []
+        seen_content = set()
+
+        max_len = max(len(similarity_results), len(mmr_results))
+
+        for i in range(max_len):
+            # Add from similarity first
+            if i < len(similarity_results):
+                result = similarity_results[i]
+                content_key = self._get_content_key(result.content)
+                if content_key not in seen_content:
+                    result_copy = result.model_copy() if hasattr(result, 'model_copy') else result.copy()
+                    result_copy.ensemble_score = 1.0 - (i * 0.1)  # Decreasing score based on position
+                    result_copy.search_source = 'similarity'
+                    result_copy.similarity_rank = i
+                    result_copy.mmr_rank = None
+
+                    interleaved.append(result_copy)
+                    seen_content.add(content_key)
+
+            # Add from MMR
+            if i < len(mmr_results):
+                result = mmr_results[i]
+                content_key = self._get_content_key(result.content)
+                if content_key not in seen_content:
+                    result_copy = result.model_copy() if hasattr(result, 'model_copy') else result.copy()
+                    result_copy.ensemble_score = 0.9 - (i * 0.1)  # Slightly lower base score for MMR
+                    result_copy.search_source = 'mmr'
+                    result_copy.similarity_rank = None
+                    result_copy.mmr_rank = i
+
+                    interleaved.append(result_copy)
+                    seen_content.add(content_key)
+
+        return interleaved
