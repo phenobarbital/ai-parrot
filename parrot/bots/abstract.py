@@ -375,6 +375,18 @@ class AbstractBot(DBInterface, ABC):
                         f"Error initializing LLM Client {self._llm.__name__}: {e}"
                     )
 
+    def define_store(
+        self,
+        vector_store: str = 'postgres',
+        **kwargs
+    ):
+        """Define the Vector Store."""
+        self._use_vector = True
+        self._vector_store = {
+            "name": vector_store,
+            **kwargs
+        }
+
     def configure_store(self, **kwargs):
         """Configure Vector Store."""
         if isinstance(self._vector_store, list):
