@@ -733,9 +733,6 @@ class PgVectorStore(AbstractStore):
     def get_vector(self, metric_type: str = None, **kwargs):
         raise NotImplementedError("This method is part of the old implementation.")
 
-    async def create_collection(self, *args, **kwargs):
-        raise NotImplementedError("Collections are managed as schema.table.")
-
     async def drop_collection(self, table: str, schema: str = 'public') -> None:
         """
         Drops the specified table in the given schema.
@@ -795,7 +792,7 @@ class PgVectorStore(AbstractStore):
         if drop_columns:
             columns_to_drop = [
                 document_column, embedding_column, metadata_column,
-                        'token_embeddings', 'num_tokens'
+                'token_embeddings', 'num_tokens'
             ]
             for column in columns_to_drop:
                 await conn.execute(
@@ -1010,7 +1007,7 @@ class PgVectorStore(AbstractStore):
         metadata_column: str = 'cmetadata',
         dimension: int = None,
         id_column: str = 'id',
-        use_jsonb: bool = True,
+        use_jsonb: bool = False,
         drop_columns: bool = True,
         create_all_indexes: bool = True,
         **kwargs
@@ -1068,7 +1065,8 @@ class PgVectorStore(AbstractStore):
             rows = result.fetchall()
 
             await self.prepare_embedding_table(
-                tablename=tablename,
+                table=table,
+                schema=schema,
                 embedding_column=embedding_column,
                 document_column=document_column,
                 metadata_column=metadata_column,
@@ -1318,10 +1316,11 @@ class PgVectorStore(AbstractStore):
         upsert_stmt = insert_stmt.on_conflict_do_update(
             index_elements=[id_column],
             set_={
-                document_column: insert_stmt.excluded.__getattr__(document_column),
+                # document_column: insert_stmt.excluded.__getattr__(document_column),
+                document_column: getattr(insert_stmt.excluded, document_column),
                 'token_embeddings': insert_stmt.excluded.token_embeddings,
                 'num_tokens': insert_stmt.excluded.num_tokens,
-                metadata_column: insert_stmt.excluded.__getattr__(metadata_column),
+                metadata_column: getattr(insert_stmt.excluded, metadata_column),
             }
         )
 
@@ -2688,3 +2687,130 @@ class PgVectorStore(AbstractStore):
                 combined_parts.append(chunk.content)
 
         return " ... ".join(combined_parts)
+
+    async def collection_exists(self, table: str, schema: str = 'public') -> bool:
+        """
+        Check if a collection (table) exists in the database.
+
+        Args:
+            table: Name of the table to check
+            schema: Schema name (default: 'public')
+
+        Returns:
+            bool: True if the collection exists, False otherwise
+        """
+        if not self._connected:
+            await self.connection()
+
+        async with self.session() as session:
+            query = text(f"""
+                SELECT EXISTS (
+                    SELECT 1 FROM information_schema.tables
+                    WHERE table_schema = :schema AND table_name = :table
+                )
+            """)
+            result = await session.execute(query, {"schema": schema, "table": table})
+            return result.scalar()
+        return False
+
+    async def delete_collection(
+        self,
+        table: str,
+        schema: str = 'public'
+    ) -> None:
+        """
+        Delete a collection (table) from the database.
+
+        Args:
+            table: Name of the table to delete
+            schema: Schema name (default: 'public')
+
+        Raises:
+            RuntimeError: If the collection does not exist or deletion fails
+        """
+        if not self._connected:
+            await self.connection()
+
+        if not await self.collection_exists(table, schema):
+            raise RuntimeError(
+                f"Collection {schema}.{table} does not exist"
+            )
+
+        async with self.session() as session:
+            query = text(
+                f"DROP TABLE IF EXISTS {schema}.{table} CASCADE"
+            )
+            await session.execute(query)
+            self.logger.info(
+                f"Collection {schema}.{table} deleted successfully"
+            )
+
+    async def create_collection(
+        self,
+        table: str,
+        schema: str = 'public',
+        dimension: int = 768,
+        index_type: str = "COSINE",
+        metric_type: str = 'L2',
+        id_column: Optional[str] = None,
+        **kwargs
+    ) -> None:
+        """
+        Create a new collection (table) in the database.
+
+        Args:
+            table: Name of the table to create
+            schema: Schema name (default: 'public')
+            dimension: Embedding dimension (default: 768)
+            index_type: Type of index to create (default: "COSINE")
+            metric_type: Distance metric type (default: 'L2')
+            id_column: Name of the ID column (default: 'id')
+            embedding_column: Name of the embedding column (default: 'embedding')
+            document_column: Name of the document content column (default: 'document')
+            metadata_column: Name of the metadata column (default: 'cmetadata')
+
+        Raises:
+            RuntimeError: If collection creation fails
+        """
+        if not self._connected:
+            await self.connection()
+
+        # Construct full table name
+        full_table_name = f"{schema}.{table}" if schema != 'public' else table
+        self._metric_type: str = metric_type.upper()
+        self._index_type: str = index_type.upper()
+        try:
+            async with self.session() as session:
+                # Check if collection already exists
+                if await self.collection_exists(table, schema):
+                    self.logger.info(
+                        f"Collection {schema}.{table} already exists"
+                    )
+                else:
+                    id_column = id_column or self._id_column or 'id'
+                    # Create the collection:
+                    self.logger.info(f"Creating collection {schema}.{table}...")
+                    create_query = text(f"""
+                        CREATE TABLE {full_table_name} (
+                            {id_column} TEXT PRIMARY KEY
+                        )
+                    """)
+                    await session.execute(create_query)
+                    self.logger.info(
+                        f"Collection {schema}.{table} created successfully"
+                    )
+                # Execute prepare:
+                await self.prepare_embedding_table(
+                    table=table,
+                    schema=schema,
+                    conn=session,
+                    dimension=dimension,
+                    id_column=id_column,
+                    create_all_indexes=True,
+                    **kwargs
+                )
+        except Exception as e:
+            self.logger.error(f"Error creating collection: {e}")
+            raise RuntimeError(
+                f"Failed to create collection: {e}"
+            ) from e
