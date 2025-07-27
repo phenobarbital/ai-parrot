@@ -13,25 +13,36 @@ async def get_agent():
     agent = BasicBot(
         name='AskBuddy'
     )
-    # Add LLM
+    embed_model = {
+        "model": "thenlper/gte-base",
+        "model_type": "huggingface"
+    }
+    agent.define_store(
+        vector_store='postgres',
+        embedding_model=embed_model,
+        dsn="postgresql+asyncpg://troc_pgdata:12345678@127.0.0.1:5432/navigator",
+        dimension=768,
+    )
     await agent.configure()
     directory = Path('/home/jesuslara/proyectos/navigator/navigator-ai').joinpath("docs", "askbuddy")
-    for filename in directory.glob('*.pdf'):
+    # for filename in directory.glob('*.pdf'):
         # Loading File by File to avoid overheat in database
-        print(':: Processing: ', filename)
         # PDF Files
-        loader = PDFLoader(
-            filename,
-            source_type=f"MSO {filename.name}",
-            language="en",
-            parse_images=False,
-            page_as_images=True
-        )
-        docs = await loader.load()
-        pprint(docs)
-        await agent.store.add_documents(
-            docs
-        )
+    loader = PDFLoader(
+        directory,
+        source_type=f"MSO",
+        language="en",
+        parse_images=False,
+        as_markdown=True,
+        use_chapters=True
+    )
+    docs = await loader.load()
+    pprint(docs)
+    await agent.store.add_documents(
+        table='employee_information',
+        schema='mso',
+        documents=docs
+    )
     return agent
 
 
