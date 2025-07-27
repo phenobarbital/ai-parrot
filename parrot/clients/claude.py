@@ -682,3 +682,286 @@ class ClaudeClient(AbstractClient):
             ai_message.response = final_output
 
         return ai_message
+
+    async def summarize_text(
+        self,
+        text: str,
+        max_length: int = 500,
+        min_length: int = 100,
+        model: Union[ClaudeModel, str] = ClaudeModel.SONNET_4,
+        temperature: Optional[float] = None,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+    ) -> AIMessage:
+        """
+        Generates a summary for a given text in a stateless manner.
+
+        Args:
+            text (str): The text content to summarize.
+            max_length (int): The maximum desired character length for the summary.
+            min_length (int): The minimum desired character length for the summary.
+            model (Union[ClaudeModel, str]): The model to use.
+            temperature (float): Sampling temperature for response generation.
+            user_id (Optional[str]): Optional user identifier for tracking.
+            session_id (Optional[str]): Optional session identifier for tracking.
+        """
+        if not self.session:
+            raise RuntimeError("Client not initialized. Use async context manager.")
+
+        self.logger.info(
+            f"Generating summary for text: '{text[:50]}...'"
+        )
+
+        # Generate unique turn ID for tracking
+        turn_id = str(uuid.uuid4())
+
+        # Define the specific system prompt for summarization
+        system_prompt = f"""Your job is to produce a final summary from the following text and identify the main theme.
+- The summary should be concise and to the point.
+- The summary should be no longer than {max_length} characters and no less than {min_length} characters.
+- The summary should be in a single paragraph.
+- Focus on the key information and main points.
+- Write in clear, accessible language."""
+
+        # Prepare the message for Claude
+        messages = [{
+            "role": "user",
+            "content": [{"type": "text", "text": text}]
+        }]
+
+        payload = {
+            "model": model.value if isinstance(model, Enum) else model,
+            "max_tokens": self.max_tokens,
+            "temperature": temperature or self.temperature,
+            "messages": messages,
+            "system": system_prompt
+        }
+
+        # Make a stateless call to Claude
+        async with self.session.post(f"{self.base_url}/v1/messages", json=payload) as response:
+            response.raise_for_status()
+            result = await response.json()
+
+        # Create AIMessage using factory
+        ai_message = AIMessageFactory.from_claude(
+            response=result,
+            input_text=text,
+            model=model,
+            user_id=user_id,
+            session_id=session_id,
+            turn_id=turn_id,
+            structured_output=None,
+            tool_calls=[]
+        )
+
+        return ai_message
+
+
+    async def translate_text(
+        self,
+        text: str,
+        target_lang: str,
+        source_lang: Optional[str] = None,
+        model: Union[ClaudeModel, str] = ClaudeModel.SONNET_4,
+        temperature: Optional[float] = 0.2,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+    ) -> AIMessage:
+        """
+        Translates a given text from a source language to a target language.
+
+        Args:
+            text (str): The text content to translate.
+            target_lang (str): The target language name or ISO code (e.g., 'Spanish', 'es', 'French', 'fr').
+            source_lang (Optional[str]): The source language name or ISO code.
+                If None, Claude will attempt to detect it.
+            model (Union[ClaudeModel, str]): The model to use. Defaults to SONNET_4.
+            temperature (float): Sampling temperature for response generation.
+            user_id (Optional[str]): Optional user identifier for tracking.
+            session_id (Optional[str]): Optional session identifier for tracking.
+        """
+        if not self.session:
+            raise RuntimeError("Client not initialized. Use async context manager.")
+
+        self.logger.info(
+            f"Translating text to '{target_lang}': '{text[:50]}...'"
+        )
+
+        # Generate unique turn ID for tracking
+        turn_id = str(uuid.uuid4())
+
+        # Construct the system prompt for translation
+        if source_lang:
+            system_prompt = f"""You are a professional translator. Translate the following text from {source_lang} to {target_lang}.
+Requirements:
+- Provide only the translated text, without any additional comments or explanations
+- Maintain the original meaning and tone
+- Use natural, fluent language in the target language
+- Preserve formatting if present (like line breaks, bullet points, etc.)
+- If there are proper nouns or technical terms, keep them appropriate for the target language context"""  # noqa
+        else:
+            system_prompt = f"""You are a professional translator. First, detect the source language of the following text, then translate it to {target_lang}.
+Requirements:
+- Provide only the translated text, without any additional comments or explanations
+- Maintain the original meaning and tone
+- Use natural, fluent language in the target language
+- Preserve formatting if present (like line breaks, bullet points, etc.)
+- If there are proper nouns or technical terms, keep them appropriate for the target language context"""  # noqa
+
+        # Prepare the message for Claude
+        messages = [{
+            "role": "user",
+            "content": [{"type": "text", "text": text}]
+        }]
+
+        payload = {
+            "model": model.value if isinstance(model, Enum) else model,
+            "max_tokens": self.max_tokens,
+            "temperature": temperature,
+            "messages": messages,
+            "system": system_prompt
+        }
+
+        # Make a stateless call to Claude
+        async with self.session.post(f"{self.base_url}/v1/messages", json=payload) as response:
+            response.raise_for_status()
+            result = await response.json()
+
+        # Create AIMessage using factory
+        ai_message = AIMessageFactory.from_claude(
+            response=result,
+            input_text=text,
+            model=model,
+            user_id=user_id,
+            session_id=session_id,
+            turn_id=turn_id,
+            structured_output=None,
+            tool_calls=[]
+        )
+
+        return ai_message
+
+
+    # Additional helper methods you might want to add
+
+    async def extract_key_points(
+        self,
+        text: str,
+        num_points: int = 5,
+        model: Union[ClaudeModel, str] = ClaudeModel.SONNET_4,
+        temperature: Optional[float] = 0.3,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+    ) -> AIMessage:
+        """
+        Extract key points from a given text.
+
+        Args:
+            text (str): The text content to analyze.
+            num_points (int): The number of key points to extract.
+            model (Union[ClaudeModel, str]): The model to use.
+            temperature (float): Sampling temperature for response generation.
+            user_id (Optional[str]): Optional user identifier for tracking.
+            session_id (Optional[str]): Optional session identifier for tracking.
+        """
+        if not self.session:
+            raise RuntimeError("Client not initialized. Use async context manager.")
+
+        turn_id = str(uuid.uuid4())
+
+        system_prompt = f"""Extract the {num_points} most important key points from the following text.
+Requirements:
+- Present each point as a clear, concise bullet point
+- Focus on the main ideas and significant information
+- Each point should be self-contained and meaningful
+- Order points by importance (most important first)
+- Use bullet points (•) to format the list"""
+
+        messages = [{
+            "role": "user",
+            "content": [{"type": "text", "text": text}]
+        }]
+
+        payload = {
+            "model": model.value if isinstance(model, Enum) else model,
+            "max_tokens": self.max_tokens,
+            "temperature": temperature,
+            "messages": messages,
+            "system": system_prompt
+        }
+
+        async with self.session.post(f"{self.base_url}/v1/messages", json=payload) as response:
+            response.raise_for_status()
+            result = await response.json()
+
+        return AIMessageFactory.from_claude(
+            response=result,
+            input_text=text,
+            model=model,
+            user_id=user_id,
+            session_id=session_id,
+            turn_id=turn_id,
+            structured_output=None,
+            tool_calls=[]
+        )
+
+
+    async def analyze_sentiment(
+        self,
+        text: str,
+        model: Union[ClaudeModel, str] = ClaudeModel.SONNET_4,
+        temperature: Optional[float] = 0.1,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+    ) -> AIMessage:
+        """
+        Analyze the sentiment of a given text.
+
+        Args:
+            text (str): The text content to analyze.
+            model (Union[ClaudeModel, str]): The model to use.
+            temperature (float): Sampling temperature for response generation.
+            user_id (Optional[str]): Optional user identifier for tracking.
+            session_id (Optional[str]): Optional session identifier for tracking.
+        """
+        if not self.session:
+            raise RuntimeError("Client not initialized. Use async context manager.")
+
+        turn_id = str(uuid.uuid4())
+
+        system_prompt = """Analyze the sentiment of the following text and provide a structured response.
+Your response should include:
+1. Overall sentiment (Positive, Negative, Neutral, or Mixed)
+2. Confidence level (High, Medium, Low)
+3. Key emotional indicators found in the text
+4. Brief explanation of your analysis
+
+Format your response clearly with these sections."""
+
+        messages = [{
+            "role": "user",
+            "content": [{"type": "text", "text": text}]
+        }]
+
+        payload = {
+            "model": model.value if isinstance(model, Enum) else model,
+            "max_tokens": self.max_tokens,
+            "temperature": temperature,
+            "messages": messages,
+            "system": system_prompt
+        }
+
+        async with self.session.post(f"{self.base_url}/v1/messages", json=payload) as response:
+            response.raise_for_status()
+            result = await response.json()
+
+        return AIMessageFactory.from_claude(
+            response=result,
+            input_text=text,
+            model=model,
+            user_id=user_id,
+            session_id=session_id,
+            turn_id=turn_id,
+            structured_output=None,
+            tool_calls=[]
+        )
