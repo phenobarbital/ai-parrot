@@ -1,5 +1,4 @@
 from typing import Dict, List, Optional, Any
-from unittest import result
 from .abstract import ConversationMemory, ConversationHistory, ConversationTurn
 
 
@@ -35,9 +34,6 @@ class InMemoryConversation(ConversationMemory):
     async def get_history(self, user_id: str, session_id: str) -> Optional[ConversationHistory]:
         """Get a conversation history."""
         result = self._histories.get(user_id, {}).get(session_id)
-        # self.logger.debug(
-        #     f"DEBUG: Getting history for {user_id}/{session_id}: {'Found' if result else 'Not found'}"
-        # )
         if result and self.debug:
             self.logger.debug(f"DEBUG: History has {len(result.turns)} turns")
         return result
@@ -50,9 +46,6 @@ class InMemoryConversation(ConversationMemory):
 
     async def add_turn(self, user_id: str, session_id: str, turn: ConversationTurn) -> None:
         """Add a turn to the conversation."""
-        # self.logger.debug(
-        #     f"DEBUG: Adding turn for {user_id}/{session_id}: {turn.user_message[:50]}..."
-        # )
         history = await self.get_history(user_id, session_id)
         if history:
             history.add_turn(turn)

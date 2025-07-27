@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 from navconfig import config
 from datamodel.exceptions import ParserError  # pylint: disable=E0611 # noqa
 from datamodel.parsers.json import json_decoder  # pylint: disable=E0611 # noqa
-from .abstract import AbstractClient, BatchRequest
+from .abstract import AbstractClient, BatchRequest, StreamingRetryConfig
 from ..models import (
     AIMessage,
     AIMessageFactory,
@@ -215,7 +215,9 @@ class ClaudeClient(AbstractClient):
         files: Optional[List[Union[str, Path]]] = None,
         system_prompt: Optional[str] = None,
         user_id: Optional[str] = None,
-        session_id: Optional[str] = None
+        session_id: Optional[str] = None,
+        retry_config: Optional[StreamingRetryConfig] = None,
+        on_max_tokens: Optional[str] = "retry"  # "retry", "notify", "ignore"
     ) -> AsyncIterator[str]:
         """Stream Claude's response using AsyncIterator with optional conversation memory."""
         if not self.session:
@@ -225,44 +227,119 @@ class ClaudeClient(AbstractClient):
         turn_id = str(uuid.uuid4())
         original_prompt = prompt
 
+        # Default retry configuration
+        if retry_config is None:
+            retry_config = StreamingRetryConfig()
+
         messages, conversation_history, system_prompt = await self._prepare_conversation_context(
             prompt, files, user_id, session_id, system_prompt
         )
 
-        payload = {
-            "model": model.value if isinstance(model, Enum) else model,
-            "max_tokens": max_tokens or self.max_tokens,
-            "temperature": temperature or self.temperature,
-            "messages": messages,
-            "stream": True
-        }
+        current_max_tokens = max_tokens or self.max_tokens
+        retry_count = 0
+        while retry_count <= retry_config.max_retries:
+            try:
+                payload = {
+                    "model": model.value if isinstance(model, Enum) else model,
+                    "max_tokens": current_max_tokens,
+                    "temperature": temperature or self.temperature,
+                    "messages": messages,
+                    "stream": True
+                }
 
-        if system_prompt:
-            payload["system"] = system_prompt
+                if system_prompt:
+                    payload["system"] = system_prompt
 
-        if self.tools:
-            payload["tools"] = self._prepare_tools()
+                if self.tools:
+                    payload["tools"] = self._prepare_tools()
 
-        assistant_content = ""
-        async with self.session.post(f"{self.base_url}/v1/messages", json=payload) as response:
-            response.raise_for_status()
+                assistant_content = ""
+                max_tokens_reached = False
+                stop_reason = None
+                async with self.session.post(f"{self.base_url}/v1/messages", json=payload) as response:
+                    # Handle HTTP errors that might warrant retry
+                    if response.status == 429 and retry_config.retry_on_rate_limit:
+                        # Rate limit - retry with backoff
+                        if retry_count < retry_config.max_retries:
+                            yield f"\n\n⚠️ **Rate limited (attempt {retry_count + 1}). Retrying...**\n\n"
+                            retry_count += 1
+                            await self._wait_with_backoff(retry_count, retry_config)
+                            continue
+                        else:
+                            yield f"\n\n❌ **Rate limit exceeded. Max retries reached.**\n"
+                            break
+                    elif response.status >= 500 and retry_config.retry_on_server_error:
+                        # Server error - retry
+                        if retry_count < retry_config.max_retries:
+                            yield f"\n\n⚠️ **Server error {response.status} (attempt {retry_count + 1}). Retrying...**\n\n"
+                            retry_count += 1
+                            await self._wait_with_backoff(retry_count, retry_config)
+                            continue
+                        else:
+                            yield f"\n\n❌ **Server error {response.status}. Max retries reached.**\n"
+                            break
 
-            async for line in response.content:
-                line = line.decode('utf-8').strip()
-                if line.startswith('data: '):
-                    data = line[6:]
-                    if data == '[DONE]':
-                        break
-                    try:
-                        event = json_decoder(data)
-                        if event.get('type') == 'content_block_delta':
-                            delta = event.get('delta', {})
-                            if delta.get('type') == 'text_delta':
-                                text_chunk = delta.get('text', '')
-                                assistant_content += text_chunk
-                                yield text_chunk
-                    except (ParserError, json.JSONDecodeError):
-                        continue
+                    # Raise for other HTTP errors
+                    response.raise_for_status()
+
+                    async for line in response.content:
+                        line = line.decode('utf-8').strip()
+                        if line.startswith('data: '):
+                            data = line[6:]
+                            if data == '[DONE]':
+                                break
+                            try:
+                                event = json_decoder(data)
+                                # Check for max tokens in Claude's streaming response
+                                if event.get('type') == 'message_stop':
+                                    stop_reason = event.get('stop_reason')
+                                    if stop_reason == 'max_tokens':
+                                        max_tokens_reached = True
+                                elif event.get('type') == 'content_block_delta':
+                                    delta = event.get('delta', {})
+                                    if delta.get('type') == 'text_delta':
+                                        text_chunk = delta.get('text', '')
+                                        assistant_content += text_chunk
+                                        yield text_chunk
+                            except (ParserError, json.JSONDecodeError):
+                                continue
+                # Check if we reached max tokens
+                if max_tokens_reached:
+                    if on_max_tokens == "notify":
+                        yield f"\n\n⚠️ **Response truncated due to token limit ({current_max_tokens} tokens). The response may be incomplete.**\n"
+                    elif on_max_tokens == "retry" and retry_config.auto_retry_on_max_tokens:
+                        if retry_count < retry_config.max_retries:
+                            # Increase token limit for retry
+                            new_max_tokens = int(current_max_tokens * retry_config.token_increase_factor)
+
+                            # Notify user about retry
+                            yield f"\n\n🔄 **Response reached token limit ({current_max_tokens}). Retrying with increased limit ({new_max_tokens})...**\n\n"
+
+                            current_max_tokens = new_max_tokens
+                            retry_count += 1
+
+                            # Wait before retry
+                            await self._wait_with_backoff(retry_count, retry_config)
+                            continue
+                        else:
+                            # Max retries reached
+                            yield f"\n\n❌ **Maximum retries reached. Response may be incomplete due to token limits.**\n"
+                    elif on_max_tokens == "ignore":
+                        continue  # Just ignore and yield what we have
+                # If we get here, streaming completed successfully
+                break
+            except Exception as e:
+                if retry_count < retry_config.max_retries:
+                    error_msg = f"\n\n⚠️ **Streaming error (attempt {retry_count + 1}): {str(e)}. Retrying...**\n\n"
+                    yield error_msg
+
+                    retry_count += 1
+                    await self._wait_with_backoff(retry_count, retry_config)
+                    continue
+                else:
+                    # Max retries reached, yield error and break
+                    yield f"\n\n❌ **Streaming failed after {retry_config.max_retries} retries: {str(e)}**\n"
+                    break
 
         # Update conversation memory
         if assistant_content:

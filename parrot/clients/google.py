@@ -17,7 +17,7 @@ from google.genai.types import (
 )
 from google.genai import types
 from navconfig import config, BASE_DIR
-from .abstract import AbstractClient
+from .abstract import AbstractClient, StreamingRetryConfig
 from ..models import (
     AIMessage,
     AIMessageFactory,
@@ -157,33 +157,59 @@ class GoogleGenAIClient(AbstractClient):
             session_id (Optional[str]): Optional session identifier for tracking.
             force_tool_usage (Optional[str]): Force usage of specific tools, if needed.
                 ("custom_functions", "builtin_tools", or None)
+            stateless (bool): If True, don't use conversation memory (stateless mode).
         """
         model = model.value if isinstance(model, GoogleModel) else model
         # Generate unique turn ID for tracking
         turn_id = str(uuid.uuid4())
         original_prompt = prompt
 
-        messages, conversation_session, system_prompt = await self._prepare_conversation_context(
-            prompt, files, user_id, session_id, system_prompt
-        )
+        # Prepare conversation context using unified memory system
+        conversation_history = None
+        messages = []
 
+        # Use the abstract method to prepare conversation context
+        if stateless:
+            # For stateless mode, skip conversation memory
+            messages = [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
+            conversation_history = None
+        else:
+            # Use the unified conversation context preparation from AbstractClient
+            messages, conversation_history, system_prompt = await self._prepare_conversation_context(
+                prompt, files, user_id, session_id, system_prompt
+            )
+
+        # Prepare structured output configuration
         output_config = self._get_structured_config(structured_output)
 
-        # Prepare conversation history, is a list of Content objects
+        # Prepare conversation history for Google GenAI format
         history = []
-        for msg in messages:
-            content = msg['content']
-            if not content:
-                continue
-            part = Part(text=content[0].get("text", ""))
-            role = msg['role'].lower()
-            if role == 'user':
-                history.append(UserContent(parts=[part]))
-            elif role == 'model':
-                history.append(ModelContent(parts=[part]))
-            else:
-                # Handle other roles or raise an error if needed
-                print(f"Unknown role: {role}")
+        # Construct history directly from the 'messages' array, which should be in the correct format
+        # The last message in 'messages' is the current prompt, which should not be part of history.
+        # It's passed separately in `send_message`.
+        if messages:
+            for msg in messages[:-1]: # Exclude the current user message (last in list)
+                role = msg['role'].lower()
+                # Assuming content is already in the format [{"type": "text", "text": "..."}]
+                # or other GenAI Part types if files were involved.
+                # Here, we only expect text content for history, as images/files are for the current turn.
+                if role == 'user':
+                    # Content can be a list of dicts (for text/parts) or a single string.
+                    # Standardize to list of Parts.
+                    parts = []
+                    for part_content in msg.get('content', []):
+                        if isinstance(part_content, dict) and part_content.get('type') == 'text':
+                            parts.append(Part(text=part_content.get('text', '')))
+                        # Add other part types if necessary for history (e.g., function responses)
+                    if parts:
+                        history.append(UserContent(parts=parts))
+                elif role in ['assistant', 'model']:
+                    parts = []
+                    for part_content in msg.get('content', []):
+                        if isinstance(part_content, dict) and part_content.get('type') == 'text':
+                            parts.append(Part(text=part_content.get('text', '')))
+                    if parts:
+                        history.append(ModelContent(parts=parts))
 
         generation_config = {
             "max_output_tokens": max_tokens or self.max_tokens,
@@ -334,20 +360,30 @@ class GoogleGenAIClient(AbstractClient):
             except Exception:
                 final_output = response.text
 
+        # Extract assistant response text for conversation memory
+        assistant_response_text = response.text
+
         # Update conversation memory with the final response
         final_assistant_message = {
             "role": "model", "content": [
                 {"type": "text", "text": response.text}
             ]
         }
-        await self._update_conversation_memory(
-            user_id,
-            session_id,
-            conversation_session,
-            messages + [final_assistant_message],
-            system_prompt
-        )
 
+        # Update conversation memory with unified system
+        if not stateless and conversation_history:
+            tools_used = [tc.name for tc in all_tool_calls]
+            await self._update_conversation_memory(
+                user_id,
+                session_id,
+                conversation_history,
+                messages + [final_assistant_message],
+                system_prompt,
+                turn_id,
+                original_prompt,
+                assistant_response_text,
+                tools_used
+            )
         # Create AIMessage using factory
         ai_message = AIMessageFactory.from_gemini(
             response=response,
@@ -375,37 +411,54 @@ class GoogleGenAIClient(AbstractClient):
         system_prompt: Optional[str] = None,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
+        retry_config: Optional[StreamingRetryConfig] = None,
+        on_max_tokens: Optional[str] = "retry"  # "retry", "notify", "ignore"
     ) -> AsyncIterator[str]:
         """
         Stream Google Generative AI's response using AsyncIterator.
         Note: Tool calling is not supported in streaming mode with this implementation.
+
+        Args:
+            on_max_tokens: How to handle MAX_TOKENS finish reason:
+                - "retry": Automatically retry with increased token limit
+                - "notify": Yield a notification message and continue
+                - "ignore": Silently continue (original behavior)
         """
         model = model.value if isinstance(model, GoogleModel) else model
+        turn_id = str(uuid.uuid4())
+        # Default retry configuration
+        if retry_config is None:
+            retry_config = StreamingRetryConfig()
 
-        messages, conversation_session, system_prompt = await self._prepare_conversation_context(
+        # Use the unified conversation context preparation from AbstractClient
+        messages, conversation_history, system_prompt = await self._prepare_conversation_context(
             prompt, files, user_id, session_id, system_prompt
         )
 
-        # Prepare conversation history, is a list of Content objects
+        # Prepare conversation history for Google GenAI format
         history = []
-        for msg in messages:
-            content = msg['content']
-            if not content:
-                continue
-            part = Part(text=content[0].get("text", ""))
-            role = msg['role'].lower()
-            if role == 'user':
-                history.append(UserContent(parts=[part]))
-            elif role == 'model':
-                history.append(ModelContent(parts=[part]))
-            else:
-                # Handle other roles or raise an error if needed
-                print(f"Unknown role: {role}")
+        if messages:
+            for msg in messages[:-1]: # Exclude the current user message (last in list)
+                role = msg['role'].lower()
+                if role == 'user':
+                    parts = []
+                    for part_content in msg.get('content', []):
+                        if isinstance(part_content, dict) and part_content.get('type') == 'text':
+                            parts.append(Part(text=part_content.get('text', '')))
+                    if parts:
+                        history.append(UserContent(parts=parts))
+                elif role in ['assistant', 'model']:
+                    parts = []
+                    for part_content in msg.get('content', []):
+                        if isinstance(part_content, dict) and part_content.get('type') == 'text':
+                            parts.append(Part(text=part_content.get('text', '')))
+                    if parts:
+                        history.append(ModelContent(parts=parts))
 
-        generation_config = {
-            "max_output_tokens": max_tokens or self.max_tokens,
-            "temperature": temperature or self.temperature,
-        }
+
+        # Retry loop for MAX_TOKENS and other errors
+        current_max_tokens = max_tokens or self.max_tokens
+        retry_count = 0
 
         tools = None
         if self.tools:
@@ -427,22 +480,84 @@ class GoogleGenAIClient(AbstractClient):
                 types.Tool(function_declarations=function_declarations),
             ]
 
-        # Start the chat session
-        chat = self.client.aio.chats.create(
-            model=model,
-            history=history,
-            config=GenerateContentConfig(
-                system_instruction=system_prompt,
-                tools=tools,
-                **generation_config
-            )
-        )
+        while retry_count <= retry_config.max_retries:
+            try:
+                generation_config = {
+                    "max_output_tokens": current_max_tokens,
+                    "temperature": temperature or self.temperature,
+                }
 
-        assistant_content = ""
-        async for chunk in await chat.send_message_stream(prompt):
-            if chunk.text:
-                assistant_content += chunk.text
-                yield chunk.text
+                # Start the chat session
+                chat = self.client.aio.chats.create(
+                    model=model,
+                    history=history,
+                    config=GenerateContentConfig(
+                        system_instruction=system_prompt,
+                        tools=tools,
+                        **generation_config
+                    )
+                )
+
+                assistant_content = ""
+                max_tokens_reached = False
+
+                async for chunk in await chat.send_message_stream(prompt):
+                    # Check for MAX_TOKENS finish reason
+                    if (hasattr(chunk, 'candidates') and
+                        chunk.candidates and
+                        len(chunk.candidates) > 0):
+
+                        candidate = chunk.candidates[0]
+                        if (hasattr(candidate, 'finish_reason') and
+                            str(candidate.finish_reason) == 'FinishReason.MAX_TOKENS'):
+                            max_tokens_reached = True
+
+                            # Handle MAX_TOKENS based on configuration
+                            if on_max_tokens == "notify":
+                                yield f"\n\n⚠️ **Response truncated due to token limit ({current_max_tokens} tokens). The response may be incomplete.**\n"
+                            elif on_max_tokens == "retry" and retry_config.auto_retry_on_max_tokens:
+                                # We'll handle retry after the loop
+                                break
+
+                    # Yield the text content
+                    if chunk.text:
+                        assistant_content += chunk.text
+                        yield chunk.text
+
+                # If MAX_TOKENS reached and we should retry
+                if max_tokens_reached and on_max_tokens == "retry" and retry_config.auto_retry_on_max_tokens:
+                    if retry_count < retry_config.max_retries:
+                        # Increase token limit for retry
+                        new_max_tokens = int(current_max_tokens * retry_config.token_increase_factor)
+
+                        # Notify user about retry
+                        yield f"\n\n🔄 **Response reached token limit ({current_max_tokens}). Retrying with increased limit ({new_max_tokens})...**\n\n"
+
+                        current_max_tokens = new_max_tokens
+                        retry_count += 1
+
+                        # Wait before retry
+                        await self._wait_with_backoff(retry_count, retry_config)
+                        continue
+                    else:
+                        # Max retries reached
+                        yield f"\n\n❌ **Maximum retries reached. Response may be incomplete due to token limits.**\n"
+
+                # If we get here, streaming completed successfully (or we're not retrying)
+                break
+
+            except Exception as e:
+                if retry_count < retry_config.max_retries:
+                    error_msg = f"\n\n⚠️ **Streaming error (attempt {retry_count + 1}): {str(e)}. Retrying...**\n\n"
+                    yield error_msg
+
+                    retry_count += 1
+                    await self._wait_with_backoff(retry_count, retry_config)
+                    continue
+                else:
+                    # Max retries reached, yield error and break
+                    yield f"\n\n❌ **Streaming failed after {retry_config.max_retries} retries: {str(e)}**\n"
+                    break
 
         # Update conversation memory
         if assistant_content:
@@ -451,12 +566,17 @@ class GoogleGenAIClient(AbstractClient):
                     {"type": "text", "text": assistant_content}
                 ]
             }
+            # Extract assistant response text for conversation memory
             await self._update_conversation_memory(
                 user_id,
                 session_id,
-                conversation_session,
+                conversation_history,
                 messages + [final_assistant_message],
-                system_prompt
+                system_prompt,
+                turn_id,
+                prompt,
+                assistant_content,
+                []
             )
 
     async def batch_ask(self, requests) -> List[AIMessage]:
@@ -488,21 +608,29 @@ class GoogleGenAIClient(AbstractClient):
         turn_id = str(uuid.uuid4())
         original_prompt = prompt
 
-        messages, conversation_session, system_prompt = await self._prepare_conversation_context(
+        messages, conversation_session, _ = await self._prepare_conversation_context(
             prompt, None, user_id, session_id, None
         )
 
+        # Prepare conversation history for Google GenAI format
         history = []
-        for msg in messages:
-            content_text = msg['content'][0].get("text") if msg.get('content') else ""
-            if not content_text:
-                continue
-            part = Part(text=content_text)
-            role = msg['role'].lower()
-            if role == 'user':
-                history.append(UserContent(parts=[part]))
-            elif role == 'model' or role == 'assistant':
-                history.append(ModelContent(parts=[part]))
+        if messages:
+            for msg in messages[:-1]: # Exclude the current user message (last in list)
+                role = msg['role'].lower()
+                if role == 'user':
+                    parts = []
+                    for part_content in msg.get('content', []):
+                        if isinstance(part_content, dict) and part_content.get('type') == 'text':
+                            parts.append(Part(text=part_content.get('text', '')))
+                    if parts:
+                        history.append(UserContent(parts=parts))
+                elif role in ['assistant', 'model']:
+                    parts = []
+                    for part_content in msg.get('content', []):
+                        if isinstance(part_content, dict) and part_content.get('type') == 'text':
+                            parts.append(Part(text=part_content.get('text', '')))
+                    if parts:
+                        history.append(ModelContent(parts=parts))
 
         # --- Multi-Modal Content Preparation ---
         if isinstance(image, Path):
@@ -615,7 +743,11 @@ class GoogleGenAIClient(AbstractClient):
                 },
                 final_assistant_message
             ],
-            None
+            None,
+            turn_id,
+            original_prompt,
+            response.text,
+            []
         )
         ai_message = AIMessageFactory.from_gemini(
             response=response,
