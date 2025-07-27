@@ -1421,3 +1421,136 @@ Your job is to produce a final summary from the following text and identify the 
         ai_message.provider = "google_genai"
 
         return ai_message
+
+    async def extract_key_points(
+        self,
+        text: str,
+        num_points: int = 5,
+        model: Union[str, GoogleModel] = GoogleModel.GEMINI_2_5_FLASH, # Changed to GoogleModel
+        temperature: Optional[float] = 0.3,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+    ) -> AIMessage:
+        """
+        Extract *num_points* bullet-point key ideas from *text* (stateless).
+        """
+        self.logger.info(
+            f"Extracting {num_points} key points from text: '{text[:50]}...'"
+        )
+
+        model = model.value if isinstance(model, GoogleModel) else model
+        turn_id = str(uuid.uuid4())
+
+        system_instruction = ( # Changed to system_instruction for Google GenAI
+            f"Extract the {num_points} most important key points from the following text.\n"
+            "- Present each point as a clear, concise bullet point (•).\n"
+            "- Focus on the main ideas and significant information.\n"
+            "- Each point should be self-contained and meaningful.\n"
+            "- Order points by importance (most important first)."
+        )
+
+        # Build contents for the stateless API call
+        contents = [{
+            "role": "user",
+            "parts": [{"text": text}]
+        }]
+
+        generation_config = {
+            "max_output_tokens": self.max_tokens,
+            "temperature": temperature or self.temperature,
+        }
+
+        final_config = GenerateContentConfig(
+            system_instruction=system_instruction,
+            tools=None, # No tools needed for this task
+            **generation_config
+        )
+
+        # Make a stateless call to the model
+        response = await self.client.aio.models.generate_content(
+            model=model,
+            contents=contents,
+            config=final_config
+        )
+
+        # Create the AIMessage response using the factory
+        ai_message = AIMessageFactory.from_gemini(
+            response=response,
+            input_text=text,
+            model=model,
+            user_id=user_id,
+            session_id=session_id,
+            turn_id=turn_id,
+            structured_output=None, # No structured output explicitly requested
+            tool_calls=[] # No tool calls for this method
+        )
+        ai_message.provider = "google_genai" # Set provider
+
+        return ai_message
+
+    async def analyze_sentiment(
+        self,
+        text: str,
+        model: Union[str, GoogleModel] = GoogleModel.GEMINI_2_5_FLASH, # Changed to GoogleModel
+        temperature: Optional[float] = 0.1,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+    ) -> AIMessage:
+        """
+        Perform sentiment analysis on *text* and return a structured explanation (stateless).
+        """
+        self.logger.info(
+            f"Analyzing sentiment for text: '{text[:50]}...'"
+        )
+
+        model = model.value if isinstance(model, GoogleModel) else model
+        turn_id = str(uuid.uuid4())
+
+        system_instruction = ( # Changed to system_instruction for Google GenAI
+            "Analyze the sentiment of the following text and provide a structured response.\n"
+            "Your response must include:\n"
+            "1. Overall sentiment (Positive, Negative, Neutral, or Mixed)\n"
+            "2. Confidence level (High, Medium, Low)\n"
+            "3. Key emotional indicators found in the text\n"
+            "4. Brief explanation of your analysis\n\n"
+            "Format your answer clearly with numbered sections."
+        )
+
+        # Build contents for the stateless API call
+        contents = [{
+            "role": "user",
+            "parts": [{"text": text}]
+        }]
+
+        generation_config = {
+            "max_output_tokens": self.max_tokens,
+            "temperature": temperature or self.temperature,
+        }
+
+        final_config = GenerateContentConfig(
+            system_instruction=system_instruction,
+            tools=None, # No tools needed for this task
+            **generation_config
+        )
+
+        # Make a stateless call to the model
+        response = await self.client.aio.models.generate_content(
+            model=model,
+            contents=contents,
+            config=final_config
+        )
+
+        # Create the AIMessage response using the factory
+        ai_message = AIMessageFactory.from_gemini(
+            response=response,
+            input_text=text,
+            model=model,
+            user_id=user_id,
+            session_id=session_id,
+            turn_id=turn_id,
+            structured_output=None, # No structured output explicitly requested
+            tool_calls=[] # No tool calls for this method
+        )
+        ai_message.provider = "google_genai" # Set provider
+
+        return ai_message
