@@ -20,21 +20,22 @@ async def get_agent():
     )
     await agent.configure()
     # Create the Collection
-    if agent.store.collection_exists(
-        table='employee_information',
-        schema='mso'
-    ):
-        await agent.store.delete_collection(
+    async with agent.store as store:
+        if await store.collection_exists(
             table='employee_information',
             schema='mso'
+        ):
+            await store.delete_collection(
+                table='employee_information',
+                schema='mso'
+            )
+        await store.create_collection(  # pylint: disable=E1120
+            table='employee_information',
+            schema='mso',
+            dimension=768,
+            index_type="COSINE",
+            metric_type='L2'
         )
-    await agent.store.create_collection(  # pylint: disable=E1120
-        table='employee_information',
-        schema='mso',
-        dimension=768,
-        index_type="COSINE",
-        metric_type='L2'
-    )
 
 
 if __name__ == "__main__":

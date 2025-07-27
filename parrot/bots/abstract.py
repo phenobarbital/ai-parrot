@@ -424,9 +424,11 @@ class AbstractBot(DBInterface, ABC):
             self.logger.notice(
                 f"Using VectorStore: {store_cls.__name__} for {name} with Embedding {self.embedding_model}"  # noqa
             )
+            if not 'embedding_model' in store:
+                store['embedding_model'] = self.embedding_model
+            if not 'embedding' in store:
+                store['embedding'] = self.embeddings
             return store_cls(
-                embedding_model=self.embedding_model,
-                embedding=self.embeddings,
                 **store
             )
         except (ModuleNotFoundError, ImportError) as e:
