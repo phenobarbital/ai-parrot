@@ -38,7 +38,7 @@ from ..memory import (
     ConversationHistory,
     InMemoryConversation,
     FileConversationMemory,
-    RedisConversation
+    RedisConversation,
 )
 
 
@@ -176,8 +176,12 @@ class AbstractBot(DBInterface, ABC):
         # List of Vector Stores:
         self.stores: List[AbstractStore] = []
 
-        # Conversation Management
-        self.conversation_histories: Dict[str, ConversationHistory] = {}
+        # NEW: Unified Conversation Memory System
+        self.conversation_memory: Optional[ConversationMemory] = None
+        self.memory_type: str = kwargs.get('memory_type', 'memory')  # 'memory', 'file', 'redis'
+        self.memory_config: dict = kwargs.get('memory_config', {})
+
+        # Conversation settings
         self.max_context_turns: int = kwargs.get('max_context_turns', 5)
         self.enable_tools: bool = kwargs.get('enable_tools', True)
         self.context_search_limit: int = kwargs.get('context_search_limit', 3)
@@ -299,14 +303,22 @@ class AbstractBot(DBInterface, ABC):
                 # Get the LLM By Name:
                 cls = SUPPORTED_CLIENTS.get(llm.lower(), None)
                 self._llm = cls(
+                    conversation_memory=self.conversation_memory,
                     **kwargs
                 )
             elif issubclass(llm, AbstractClient):
-                self._llm = llm(**kwargs)
+                self._llm = llm(
+                    conversation_memory=self.conversation_memory,
+                    **kwargs
+                )
             elif isinstance(llm, AbstractClient):
+                # Set conversation memory on existing client
+                if hasattr(llm, 'conversation_memory'):
+                    llm.conversation_memory = self.conversation_memory
                 self._llm = llm
             elif callable(llm):
                 self._llm = llm(
+                    conversation_memory=self.conversation_memory,
                     **kwargs
                 )
             else:
@@ -336,12 +348,15 @@ class AbstractBot(DBInterface, ABC):
                         top_k=self._top_k,
                         top_p=self._top_p,
                         max_tokens=self._max_tokens,
+                        conversation_memory=self.conversation_memory,
                     )
                 except Exception as e:
                     raise ConfigError(
                         f"Error configuring Default LLM {self._llm_model}: {e}"
                     )
             elif isinstance(self._llm, AbstractClient):
+                if hasattr(self._llm, 'conversation_memory'):
+                    self._llm.conversation_memory = self.conversation_memory
                 return self._llm
             elif issubclass(self._llm, AbstractClient):
                 try:
@@ -352,6 +367,7 @@ class AbstractBot(DBInterface, ABC):
                         top_k=self._top_k,
                         top_p=self._top_p,
                         max_tokens=self._max_tokens,
+                        conversation_memory=self.conversation_memory,
                         **kwargs
                     )
                 except TypeError as e:
@@ -404,6 +420,24 @@ class AbstractBot(DBInterface, ABC):
         except (ModuleNotFoundError, ImportError) as e:
             self.logger.error(f"Error importing VectorStore: {e}")
             raise
+
+    def configure_conversation_memory(self) -> None:
+        """Configure the unified conversation memory system."""
+        try:
+            self.conversation_memory = self.get_conversation_memory(
+                storage_type=self.memory_type,
+                **self.memory_config
+            )
+            self.logger.info(
+                f"Configured conversation memory: {self.memory_type}"
+            )
+        except Exception as e:
+            self.logger.error(f"Error configuring conversation memory: {e}")
+            # Fallback to in-memory
+            self.conversation_memory = self.get_conversation_memory("memory")
+            self.logger.warning(
+                "Fallback to in-memory conversation storage"
+            )
 
     def _define_prompt(self, config: Optional[dict] = None, **kwargs):
         """
@@ -474,6 +508,9 @@ class AbstractBot(DBInterface, ABC):
         # adding this configured chatbot to app:
         if self.app:
             self.app[f"{self.name.lower()}_bot"] = self
+
+        # Configure conversation memory FIRST
+        self.configure_conversation_memory()
         # Configure LLM:
         try:
             self.configure_llm()
@@ -519,61 +556,69 @@ class AbstractBot(DBInterface, ABC):
 
     async def get_conversation_history(
         self,
-        session_id: str,
-        user_id: Optional[str] = None
-    ) -> ConversationHistory:
-        """Get or create conversation history for a session."""
-        if session_id not in self.conversation_histories:
-            self.conversation_histories[session_id] = ConversationHistory(
-                session_id=session_id,
-                user_id=user_id
-            )
-        return self.conversation_histories[session_id]
+        user_id: str,
+        session_id: str
+    ) -> Optional[ConversationHistory]:
+        """Get conversation history using unified memory system."""
+        if not self.conversation_memory:
+            return None
+        return await self.conversation_memory.get_history(user_id, session_id)
 
-    async def save_conversation_history(
+    async def create_conversation_history(
         self,
+        user_id: str,
         session_id: str,
-        storage_backend: Optional[str] = None
-    ) -> bool:
-        """Save conversation history to persistent storage."""
-        if session_id not in self.conversation_histories:
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> ConversationHistory:
+        """Create new conversation history using unified memory system."""
+        if not self.conversation_memory:
+            raise RuntimeError("Conversation memory not configured")
+        return await self.conversation_memory.create_history(user_id, session_id, metadata)
+
+    async def save_conversation_turn(
+        self,
+        user_id: str,
+        session_id: str,
+        turn: ConversationTurn
+    ) -> None:
+        """Save a conversation turn using unified memory system."""
+        if not self.conversation_memory:
+            return
+        await self.conversation_memory.add_turn(user_id, session_id, turn)
+
+    async def clear_conversation_history(self, user_id: str, session_id: str) -> bool:
+        """Clear conversation history using unified memory system."""
+        if not self.conversation_memory:
             return False
-
-        history = self.conversation_histories[session_id]
         try:
-            # Example: save to session or Redis
-            if self._request and hasattr(self._request, 'session'):
-                session_key = f"conversation_history_{session_id}"
-                self._request.session[session_key] = history.to_dict()
-
-            self.logger.info(f"Saved conversation history for session {session_id}")
+            await self.conversation_memory.clear_history(user_id, session_id)
+            self.logger.info(f"Cleared conversation history for {user_id}/{session_id}")
             return True
         except Exception as e:
-            self.logger.error(f"Error saving conversation history: {e}")
+            self.logger.error(f"Error clearing conversation history: {e}")
             return False
 
-    async def load_conversation_history(
-        self,
-        session_id: str,
-        storage_backend: Optional[str] = None
-    ) -> Optional[ConversationHistory]:
-        """Load conversation history from persistent storage."""
+    async def delete_conversation_history(self, user_id: str, session_id: str) -> bool:
+        """Delete conversation history entirely using unified memory system."""
+        if not self.conversation_memory:
+            return False
         try:
-            # Example: load from session or Redis
-            if self._request and hasattr(self._request, 'session'):
-                session_key = f"conversation_history_{session_id}"
-                history_data = self._request.session.get(session_key)
-
-                if history_data:
-                    history = ConversationHistory.from_dict(history_data)
-                    self.conversation_histories[session_id] = history
-                    self.logger.info(f"Loaded conversation history for session {session_id}")
-                    return history
-
-            return None
+            result = await self.conversation_memory.delete_history(user_id, session_id)
+            self.logger.info(f"Deleted conversation history for {user_id}/{session_id}")
+            return result
         except Exception as e:
-            self.logger.error(f"Error loading conversation history: {e}")
-            return None
+            self.logger.error(f"Error deleting conversation history: {e}")
+            return False
+
+    async def list_user_conversations(self, user_id: str) -> List[str]:
+        """List all conversation sessions for a user."""
+        if not self.conversation_memory:
+            return []
+        try:
+            return await self.conversation_memory.list_sessions(user_id)
+        except Exception as e:
+            self.logger.error(f"Error listing conversations for user {user_id}: {e}")
+            return []
 
     async def get_vector_context(
         self,
@@ -671,7 +716,7 @@ class AbstractBot(DBInterface, ABC):
 
     def build_conversation_context(self, history: ConversationHistory) -> str:
         """Build conversation context from history."""
-        if not history.turns:
+        if not history or not history.turns:
             return ""
 
         recent_turns = history.get_recent_turns(self.max_context_turns)
@@ -741,7 +786,6 @@ class AbstractBot(DBInterface, ABC):
         score_threshold: float = None,
         use_vector_context: bool = True,
         use_conversation_history: bool = True,
-        save_to_history: bool = True,
         return_sources: bool = True,
         return_context: bool = False,
         **kwargs
@@ -760,7 +804,6 @@ class AbstractBot(DBInterface, ABC):
             score_threshold: Minimum score for context relevance
             use_vector_context: Whether to retrieve context from vector store
             use_conversation_history: Whether to use conversation history
-            save_to_history: Whether to save this turn to history
             **kwargs: Additional arguments for LLM
 
         Returns:
@@ -773,22 +816,18 @@ class AbstractBot(DBInterface, ABC):
         turn_id = str(uuid.uuid4())
 
         try:
-            # Load/get conversation history
+            # Get conversation history using unified memory
             conversation_history = None
             conversation_context = ""
 
-            if use_conversation_history:
-                # Try to load existing history first
-                conversation_history = await self.load_conversation_history(session_id)
+            if use_conversation_history and self.conversation_memory:
+                conversation_history = await self.get_conversation_history(user_id, session_id)
                 if not conversation_history:
-                    conversation_history = await self.get_conversation_history(
-                        session_id,
-                        user_id
+                    conversation_history = await self.create_conversation_history(
+                        user_id, session_id
                     )
 
-                conversation_context = self.build_conversation_context(
-                    conversation_history
-                )
+                conversation_context = self.build_conversation_context(conversation_history)
 
             # Get vector context if store exists and enabled
             vector_context = ""
@@ -835,7 +874,7 @@ class AbstractBot(DBInterface, ABC):
                     session_id=session_id
                 )
 
-                # Enhance the response with context metadata using the new methods
+                # Enhance the response with context metadata
                 response.set_vector_context_info(
                     used=bool(vector_context),
                     context_length=len(vector_context) if vector_context else 0,
@@ -853,30 +892,6 @@ class AbstractBot(DBInterface, ABC):
                 # Set additional metadata
                 response.session_id = session_id
                 response.turn_id = turn_id
-
-                # Create conversation turn
-                if save_to_history and conversation_history:
-                    turn = ConversationTurn(
-                        turn_id=turn_id,
-                        user_message=question,
-                        assistant_response=response.output,
-                        context_used=vector_context if vector_context else None,
-                        tools_used=[tc.name for tc in getattr(response, 'tool_calls', [])],
-                        metadata={
-                            'use_vector_context': use_vector_context,
-                            'use_conversation_history': use_conversation_history,
-                            'vector_context_length': len(vector_context) if vector_context else 0,
-                            'conversation_context_length': len(conversation_context) if conversation_context else 0,
-                            'search_type': search_type,
-                            'search_results_count': vector_metadata.get('search_results_count', 0),
-                            'metric_type': metric_type
-                        }
-                    )
-
-                    conversation_history.add_turn(turn)
-
-                    # Save updated history
-                    await self.save_conversation_history(session_id)
 
                 # return the response Object:
                 return self.get_response(response, return_sources, return_context)
@@ -1156,27 +1171,9 @@ class AbstractBot(DBInterface, ABC):
             raise
 
     # Additional utility methods for conversation management
-    async def clear_conversation_history(self, session_id: str) -> bool:
-        """Clear conversation history for a session."""
-        try:
-            if session_id in self.conversation_histories:
-                del self.conversation_histories[session_id]
-
-            # Also clear from persistent storage
-            if self._request and hasattr(self._request, 'session'):
-                session_key = f"conversation_history_{session_id}"
-                if session_key in self._request.session:
-                    del self._request.session[session_key]
-
-            self.logger.info(f"Cleared conversation history for session {session_id}")
-            return True
-        except Exception as e:
-            self.logger.error(f"Error clearing conversation history: {e}")
-            return False
-
-    async def get_conversation_summary(self, session_id: str) -> Optional[Dict[str, Any]]:
+    async def get_conversation_summary(self, user_id: str, session_id: str) -> Optional[Dict[str, Any]]:
         """Get a summary of the conversation history."""
-        history = await self.get_conversation_history(session_id)
+        history = await self.get_conversation_history(user_id, session_id)
         if not history.turns:
             return None
 
@@ -1189,15 +1186,3 @@ class AbstractBot(DBInterface, ABC):
             'last_user_message': history.turns[-1].user_message if history.turns else None,
             'last_assistant_response': history.turns[-1].assistant_response[:100] + "..." if history.turns else None,
         }
-
-    async def export_conversation_history(self, session_id: str) -> Optional[Dict[str, Any]]:
-        """Export complete conversation history for a session."""
-        if session_id not in self.conversation_histories:
-            # Try to load from storage
-            await self.load_conversation_history(session_id)
-
-        if session_id not in self.conversation_histories:
-            return None
-
-        history = self.conversation_histories[session_id]
-        return history.to_dict()
