@@ -463,8 +463,8 @@ class PgVectorStore(AbstractStore):
     async def add_documents(
         self,
         documents: List[Document],
-        table: str,
-        schema: str = 'public',
+        table: str = None,
+        schema: str = None,
         embedding_column: str = 'embedding',
         content_column: str = 'document',
         metadata_column: str = 'cmetadata',
@@ -483,6 +483,11 @@ class PgVectorStore(AbstractStore):
         """
         if not self._connected:
             await self.connection()
+
+        if not table:
+            table = self.table_name
+        if not schema:
+            schema = self.schema
 
         texts = [doc.page_content for doc in documents]
         embeddings = self._embed_.embed_documents(texts)
