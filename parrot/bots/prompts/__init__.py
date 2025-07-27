@@ -11,12 +11,16 @@ $capabilities
 I am here to help with $goal.
 $backstory
 
-$pre_context
 
-**Context:**
+
+**Knowledge Base Context:**
+$pre_context
 $context
 
-** Your Style: **
+$chat_history
+
+Given the above context and conversation history, please provide answers to the following question adding detailed and useful insights.
+
 $rationale
 
 """

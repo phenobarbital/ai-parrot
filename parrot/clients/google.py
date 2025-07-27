@@ -39,7 +39,7 @@ logging.getLogger(
     name='PIL.TiffImagePlugin'
 ).setLevel(logging.ERROR)  # Suppress TiffImagePlugin warnings
 logging.getLogger(
-    name='google.genai'
+    name='google_genai'
 ).setLevel(logging.WARNING)  # Suppress GenAI warnings
 
 class GoogleGenAIClient(AbstractClient):
@@ -1491,7 +1491,7 @@ Your job is to produce a final summary from the following text and identify the 
     async def analyze_sentiment(
         self,
         text: str,
-        model: Union[str, GoogleModel] = GoogleModel.GEMINI_2_5_FLASH, # Changed to GoogleModel
+        model: Union[str, GoogleModel] = GoogleModel.GEMINI_2_5_FLASH,
         temperature: Optional[float] = 0.1,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
