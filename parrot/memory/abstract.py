@@ -3,6 +3,7 @@ from typing import List, Dict, Any, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
 from abc import ABC, abstractmethod
+from datamodel.parsers.json import JSONContent  # pylint: disable=E0611 # noqa
 from navconfig.logging import logging
 
 
@@ -86,12 +87,12 @@ class ConversationHistory:
                 # Add user message
                 messages.append({
                     "role": "user",
-                    "content": turn.user_message
+                    "content": [{"type": "text", "text": turn.user_message}]
                 })
                 # Add assistant response
                 messages.append({
                     "role": "assistant",
-                    "content": turn.assistant_response
+                    "content": [{"type": "text", "text": turn.assistant_response}]
                 })
         return messages
 
@@ -133,6 +134,7 @@ class ConversationMemory(ABC):
 
     def __init__(self, debug: bool = False):
         self.logger = logging.getLogger(f"parrot.Memory.{self.__class__.__name__}")
+        self._json = JSONContent()
         self.debug = debug
 
     @abstractmethod

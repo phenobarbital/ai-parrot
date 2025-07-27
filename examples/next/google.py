@@ -4,8 +4,8 @@ import asyncio
 from pathlib import Path
 from pydantic import BaseModel, Field
 from navconfig import BASE_DIR
-from parrot.next import VertexAIClient, GoogleGenAIClient, GoogleModel
-from parrot.next.models import (
+from parrot.clients import VertexAIClient, GoogleGenAIClient, GoogleModel
+from parrot.models import (
     ImageGenerationPrompt,
     SpeechGenerationPrompt,
     VideoGenerationPrompt,
@@ -178,16 +178,21 @@ async def main():
     #     )
     #     print("Response 2 text:", response2.text)
     #     print("Tools used:", [tc.name for tc in response2.tool_calls])
-
-    #     # Streaming response
-    #     print("Streaming response:")
-    #     async for chunk in client.ask_stream(
-    #         "Tell me an interesting fact about mathematics",
-    #         temperature=0.7,
-    #         model=GoogleModel.GEMINI_2_5_FLASH
-    #     ):
-    #         print(chunk, end="", flush=True)
-    #     print()  # New line after streaming
+    memory = GoogleGenAIClient.create_conversation_memory("memory")
+    user_id = "user123"
+    session_id = "google_session_010"
+    async with GoogleGenAIClient(conversation_memory=memory) as client:
+        # Streaming response
+        print("Streaming response:")
+        async for chunk in client.ask_stream(
+            "Tell me an interesting fact about mathematics",
+            temperature=0.7,
+            model=GoogleModel.GEMINI_2_5_FLASH,
+            user_id=user_id,
+            session_id=session_id
+        ):
+            print(chunk, end="", flush=True)
+        print()  # New line after streaming
 
     #     # For questions that definitely need search
     #     response = await client.ask(
@@ -212,31 +217,31 @@ async def main():
     #     print("- Math data:", math_response.output)
     #     print("- Parallel tools used:", len(math_response.tool_calls))
 
-    print(' --- Video Features --- ')
-    async with GoogleGenAIClient() as client:
-        # video generation:
-        prompt_data = VideoGenerationPrompt(
-            # prompt="a Bison running for cover in a dense forest, a close-up shot of the bison's face, with the camera following its movement, is cold and we can see the bison's breath in the air, the camera is moving quickly to keep up with the bison, the bison is running through a dense forest with snow on the ground, the camera is following the bison's movement, the bison is running for cover in a dense forest, a close-up shot of the bison's face, with the camera following its movement, is cold and we can see the bison's breath in the air, the camera is moving quickly to keep up with the bison",
-            #prompt="Un peluche de gato con alas volando en un cielo azul con nubes esponjosas, el peluche tiene un diseño colorido y amigable, las alas son grandes y suaves, el cielo es brillante y soleado, el peluche parece feliz mientras vuela entre las nubes",
-            #styles=["fantasy", "whimsical"],
-            prompt="Una amable señora en un paisaje de la Toscana Italiana tejiendo crochet bajo un árbol de olivo, el sol brilla suavemente, creando un ambiente cálido y acogedor, la señora sonríe mientras trabaja en su proyecto de crochet, rodeada de campos verdes y colinas suaves",
-            styles=["photorealistic", "warm"],
-            number_of_videos=1,
-            model=GoogleModel.VEO_3_0,
-            aspect_ratio="16:9",
-            duration=10,  # Duration in seconds
-        )
-        output_directory = BASE_DIR.joinpath('static', 'generated_videos')
-        output_directory.mkdir(parents=True, exist_ok=True)
+    # print(' --- Video Features --- ')
+    # async with GoogleGenAIClient() as client:
+    #     # video generation:
+    #     prompt_data = VideoGenerationPrompt(
+    #         # prompt="a Bison running for cover in a dense forest, a close-up shot of the bison's face, with the camera following its movement, is cold and we can see the bison's breath in the air, the camera is moving quickly to keep up with the bison, the bison is running through a dense forest with snow on the ground, the camera is following the bison's movement, the bison is running for cover in a dense forest, a close-up shot of the bison's face, with the camera following its movement, is cold and we can see the bison's breath in the air, the camera is moving quickly to keep up with the bison",
+    #         #prompt="Un peluche de gato con alas volando en un cielo azul con nubes esponjosas, el peluche tiene un diseño colorido y amigable, las alas son grandes y suaves, el cielo es brillante y soleado, el peluche parece feliz mientras vuela entre las nubes",
+    #         #styles=["fantasy", "whimsical"],
+    #         prompt="Una amable señora en un paisaje de la Toscana Italiana tejiendo crochet bajo un árbol de olivo, el sol brilla suavemente, creando un ambiente cálido y acogedor, la señora sonríe mientras trabaja en su proyecto de crochet, rodeada de campos verdes y colinas suaves",
+    #         styles=["photorealistic", "warm"],
+    #         number_of_videos=1,
+    #         model=GoogleModel.VEO_3_0,
+    #         aspect_ratio="16:9",
+    #         duration=10,  # Duration in seconds
+    #     )
+    #     output_directory = BASE_DIR.joinpath('static', 'generated_videos')
+    #     output_directory.mkdir(parents=True, exist_ok=True)
 
-        response = await client.generate_videos(
-            prompt=prompt_data,
-            output_directory=output_directory,
-            mime_format="video/mp4",
-        )
-        print("Generated videos:")
-        for video in response.videos:
-            print(f"✅ Video saved to: {video.video}")
+    #     response = await client.generate_videos(
+    #         prompt=prompt_data,
+    #         output_directory=output_directory,
+    #         mime_format="video/mp4",
+    #     )
+    #     print("Generated videos:")
+    #     for video in response.videos:
+    #         print(f"✅ Video saved to: {video.video}")
     # print(' --- Image Features --- ')
     # async with GoogleGenAIClient() as client:
     #     # Image Generation:
@@ -321,19 +326,19 @@ async def main():
     #         confidence_score: float = Field(..., ge=0.0, le=1.0, description="The model's confidence in its classification, from 0.0 to 1.0.")
     #         reasoning: str = Field(..., description="A brief explanation for why the image was assigned to this category.")
 
-        classification_prompt = """
-        You are an expert in retail image analysis. Your task is to classify the provided image into one of the following categories.
-        Please read the definitions carefully and choose the single best fit.
+        # classification_prompt = """
+        # You are an expert in retail image analysis. Your task is to classify the provided image into one of the following categories.
+        # Please read the definitions carefully and choose the single best fit.
 
-        Category Definitions:
-        - 'Ink Wall': The primary subject is a large wall or multi-shelf gondola where the **majority of shelf space is dedicated to small consumables like ink cartridges and toner**. The presence of a few larger, related items (like printers) does not disqualify this category if the dominant visual element is the dense array of small boxes.
-        - 'Shelves with Products': The image shows standard retail shelves displaying **predominantly larger products**, like printers, scanners, or other electronics. While some ink or consumables may be present, they are not the main focus of the display.
-        - 'Products on Floor': The primary subject is multiple product boxes stacked directly on the floor, not on shelves. This is often called a "pallet display" or "stack-out".
-        - 'Merchandising Endcap': The image shows a display at the **end of an aisle**, often featuring a specific promotion, brand, or a mix of products with prominent marketing signage. Location is key.
-        - 'Other': Use this category if the image does not clearly fit any of the above descriptions (e.g., a single product photo, a picture of a person, an outdoor scene).
+        # Category Definitions:
+        # - 'Ink Wall': The primary subject is a large wall or multi-shelf gondola where the **majority of shelf space is dedicated to small consumables like ink cartridges and toner**. The presence of a few larger, related items (like printers) does not disqualify this category if the dominant visual element is the dense array of small boxes.
+        # - 'Shelves with Products': The image shows standard retail shelves displaying **predominantly larger products**, like printers, scanners, or other electronics. While some ink or consumables may be present, they are not the main focus of the display.
+        # - 'Products on Floor': The primary subject is multiple product boxes stacked directly on the floor, not on shelves. This is often called a "pallet display" or "stack-out".
+        # - 'Merchandising Endcap': The image shows a display at the **end of an aisle**, often featuring a specific promotion, brand, or a mix of products with prominent marketing signage. Location is key.
+        # - 'Other': Use this category if the image does not clearly fit any of the above descriptions (e.g., a single product photo, a picture of a person, an outdoor scene).
 
-        Analyze the image and provide your classification in the requested JSON format.
-        """
+        # Analyze the image and provide your classification in the requested JSON format.
+        # """
     #     image_path = BASE_DIR.joinpath('static', "be51ca05-802e-4dfd-bc53-fec65616d569-recap.jpeg")
     #     classification_result = await client.ask_to_image(
     #         image=image_path,
@@ -469,7 +474,48 @@ async def main():
         #     print("\n❌ Failed to get a structured analysis.")
         #     # Access the raw text via the .text property of the AIMessage
         #     print("Raw response:", analysis_result.text if analysis_result else "No response returned.")
+    # memory = GoogleGenAIClient.create_conversation_memory("memory")
+    # user_id = "user123"
+    # session_id = "google_session_010"
+    # async with GoogleGenAIClient(conversation_memory=memory) as client:
+    #     # do an iteration 3 times:
+    #     for _ in range(3):
+    #         # First interaction
+    #         response1 = await client.ask(
+    #             "Hi, my name is Jesus and I love Python programming",
+    #             user_id=user_id,
+    #             session_id=session_id
+    #         )
+    #         print("Response 1:", response1.output)
 
+    #         # Second interaction with memory
+    #         response2 = await client.ask(
+    #             "What's my name and what do I like?",
+    #             user_id=user_id,
+    #             session_id=session_id
+    #         )
+    #         print("Response 2:", response2.output)
+
+    #         # Third interaction with tools
+    #         response3 = await client.ask(
+    #             "Can you search for recent Python news?",
+    #             user_id=user_id,
+    #             session_id=session_id,
+    #             force_tool_usage="custom_functions"
+    #         )
+    #         print("Response 3:", response3.output)
+
+    #         # Check conversation history
+    #         history = await client.get_conversation(user_id, session_id)
+    #         if history:
+    #             print(f"\nConversation summary:")
+    #             print(f"Total turns: {len(history.turns)}")
+    #             for i, turn in enumerate(history.turns):
+    #                 print(f"Turn {i+1}:")
+    #                 print(f"  User: {turn.user_message[:50]}...")
+    #                 print(f"  Assistant: {turn.assistant_response[:50]}...")
+    #                 if turn.tools_used:
+    #                     print(f"  Tools used: {', '.join(turn.tools_used)}")
 
 if __name__ == "__main__":
     asyncio.run(main())

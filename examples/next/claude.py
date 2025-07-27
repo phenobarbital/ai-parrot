@@ -32,7 +32,8 @@ async def example_usage():
     """Example of how to use the Claude API client."""
 
     # Initialize client
-    async with ClaudeClient() as client:
+    memory = ClaudeClient.create_conversation_memory("redis")
+    async with ClaudeClient(conversation_memory=memory) as client:
 
         # Register a tool
         def get_weather(location: str) -> str:
@@ -91,8 +92,7 @@ async def example_usage():
         # Start a conversation with memory
         user_id = "user123"
         session_id = "chat001"
-
-        await client.start_conversation(user_id, session_id)
+        # await client.start_conversation(user_id, session_id)
 
         # Multi-turn conversation with memory
         response1 = await client.ask(
@@ -108,6 +108,18 @@ async def example_usage():
             session_id=session_id
         )
         print("Response 2:", response2)
+
+        # 3. Check conversation history
+        print("\n=== Step 3: Conversation History ===")
+        history = await client.get_conversation(user_id, session_id)
+        if history:
+            print(f"Total turns: {len(history.turns)}")
+            for i, turn in enumerate(history.turns):
+                print(f"Turn {i+1}:")
+                print(f"  User: {turn.user_message[:100]}...")
+                print(f"  Assistant: {turn.assistant_response[:100]}...")
+        else:
+            print("No conversation history found")
 
     #     # Simple question
     #     response = await client.ask("What is the capital of France?")
@@ -269,41 +281,41 @@ async def example_usage():
 #             for detection in detection_result.detections:
 #                 print(f"- {detection.product_type}: {detection.description} (confidence: {detection.confidence:.2f})")
 
-        # Example 4: Using with conversation memory
-        user_id = "user123"
-        session_id = "session456"
-        image_path = BASE_DIR.joinpath('static', "8455b202-28cf-4231-a9d9-7c175def0a93-recap.jpeg")
+        # # Example 4: Using with conversation memory
+        # user_id = "user123"
+        # session_id = "session456"
+        # image_path = BASE_DIR.joinpath('static', "8455b202-28cf-4231-a9d9-7c175def0a93-recap.jpeg")
 
-        await client.start_conversation(user_id, session_id)
-        # First question about an image
-        response1 = await client.ask_to_image(
-            prompt="Describe what you see in this image",
-            image=image_path,
-            user_id=user_id,
-            session_id=session_id
-        )
-        print("Image analysis:", response1.response)
+        # await client.start_conversation(user_id, session_id)
+        # # First question about an image
+        # response1 = await client.ask_to_image(
+        #     prompt="Describe what you see in this image",
+        #     image=image_path,
+        #     user_id=user_id,
+        #     session_id=session_id
+        # )
+        # print("Image analysis:", response1.response)
 
-        # 2. Then ask a follow-up question about the image
-        print("\n=== Step 2: Follow-up about the image ===")
-        followup_response = await client.ask(
-            "What colors are prominent in the image we just discussed?",
-            user_id=user_id,
-            session_id=session_id  # Same session ID
-        )
-        print("Follow-up response:", followup_response.response)
+        # # 2. Then ask a follow-up question about the image
+        # print("\n=== Step 2: Follow-up about the image ===")
+        # followup_response = await client.ask(
+        #     "What colors are prominent in the image we just discussed?",
+        #     user_id=user_id,
+        #     session_id=session_id  # Same session ID
+        # )
+        # print("Follow-up response:", followup_response.response)
 
-        # 3. Check conversation history
-        print("\n=== Step 3: Conversation History ===")
-        history = await client.get_conversation(user_id, session_id)
-        if history:
-            print(f"Total turns: {len(history.turns)}")
-            for i, turn in enumerate(history.turns):
-                print(f"Turn {i+1}:")
-                print(f"  User: {turn.user_message[:100]}...")
-                print(f"  Assistant: {turn.assistant_response[:100]}...")
-        else:
-            print("No conversation history found")
+        # # 3. Check conversation history
+        # print("\n=== Step 3: Conversation History ===")
+        # history = await client.get_conversation(user_id, session_id)
+        # if history:
+        #     print(f"Total turns: {len(history.turns)}")
+        #     for i, turn in enumerate(history.turns):
+        #         print(f"Turn {i+1}:")
+        #         print(f"  User: {turn.user_message[:100]}...")
+        #         print(f"  Assistant: {turn.assistant_response[:100]}...")
+        # else:
+        #     print("No conversation history found")
 
         # # Example 5: Using bytes data
         # with open(str(image_path), "rb") as f:

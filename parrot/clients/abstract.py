@@ -1,5 +1,6 @@
 from datetime import datetime
 import json
+import random
 from typing import AsyncIterator, Dict, List, Optional, Union, TypedDict, Any, Callable
 import re
 import mimetypes
@@ -25,6 +26,7 @@ from ..memory import (
     ConversationHistory,
     ConversationMemory,
     InMemoryConversation,
+    FileConversationMemory,
     RedisConversation
 )
 from ..tools import PythonREPLTool
@@ -120,6 +122,31 @@ class BatchRequest:
     params: Dict[str, Any]
 
 
+class StreamingRetryConfig:
+    """Configuration for streaming retry behavior."""
+    def __init__(
+        self,
+        max_retries: int = 3,
+        base_delay: float = 1.0,
+        max_delay: float = 60.0,
+        backoff_factor: float = 2.0,
+        jitter: bool = True,
+        auto_retry_on_max_tokens: bool = True,
+        token_increase_factor: float = 1.5,
+        retry_on_rate_limit: bool = True,
+        retry_on_server_error: bool = True
+    ):
+        self.max_retries = max_retries
+        self.base_delay = base_delay
+        self.max_delay = max_delay
+        self.backoff_factor = backoff_factor
+        self.jitter = jitter
+        self.auto_retry_on_max_tokens = auto_retry_on_max_tokens
+        self.token_increase_factor = token_increase_factor
+        self.retry_on_rate_limit = retry_on_rate_limit
+        self.retry_on_server_error = retry_on_server_error
+
+
 class AbstractClient(ABC):
     """Abstract base Class for LLM models."""
     version: str = "0.1.0"
@@ -149,7 +176,7 @@ class AbstractClient(ABC):
             self.temperature = kwargs.get('temperature', 0.4)
             self.top_k = kwargs.get('top_k', 40)
             self.top_p = kwargs.get('top_p', 0.9)
-            self.max_tokens = kwargs.get('max_tokens', 1024)
+            self.max_tokens = kwargs.get('max_tokens', 8192)
         self.conversation_memory = conversation_memory or InMemoryConversation()
         self.base_headers.update(kwargs.get('headers', {}))
         self.api_key = kwargs.get('api_key', None)
@@ -551,7 +578,8 @@ class AbstractClient(ABC):
             tools_used=tools_used or [],
             metadata={
                 "message_count": len(messages),
-                "has_system_prompt": bool(system_prompt)
+                "has_system_prompt": bool(system_prompt),
+                "provider": getattr(self, 'agent_type', 'unknown')
             }
         )
 
@@ -800,3 +828,33 @@ class AbstractClient(ABC):
                 f"Error saving {mime_format} to {out_path}: {e}"
             )
             return None
+
+    @staticmethod
+    def create_conversation_memory(
+        memory_type: str = "memory",
+        **kwargs
+    ) -> ConversationMemory:
+        """Factory method to create a conversation memory instance."""
+        if memory_type == "memory":
+            return InMemoryConversation()
+        elif memory_type == "redis":
+            return RedisConversation(**kwargs)
+        elif memory_type == "file":
+            return FileConversationMemory(**kwargs)
+        else:
+            raise ValueError(
+                f"Unsupported memory type: {memory_type}"
+            )
+
+    async def _wait_with_backoff(self, retry_count: int, config: StreamingRetryConfig) -> None:
+        """Wait with exponential backoff before retry."""
+        delay = min(
+            config.base_delay * (config.backoff_factor ** (retry_count - 1)),
+            config.max_delay
+        )
+
+        if config.jitter:
+            # Add random jitter to avoid thundering herd
+            delay *= (0.5 + random.random() * 0.5)
+
+        await asyncio.sleep(delay)
