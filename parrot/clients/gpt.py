@@ -498,3 +498,200 @@ class OpenAIClient(AbstractClient):
         ai_message.provider = "openai"
 
         return ai_message
+
+    async def summarize_text(
+        self,
+        text: str,
+        max_length: int = 500,
+        min_length: int = 100,
+        model: Union[OpenAIModel, str] = OpenAIModel.GPT4_TURBO,
+        temperature: Optional[float] = None,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+    ) -> AIMessage:
+        """
+        Generate a concise summary of *text* (single paragraph, stateless).
+        """
+        turn_id = str(uuid.uuid4())
+
+        system_prompt = (
+            "Your job is to produce a final summary from the following text and "
+            "identify the main theme.\n"
+            f"- The summary should be concise and to the point.\n"
+            f"- The summary should be no longer than {max_length} characters and "
+            f"no less than {min_length} characters.\n"
+            "- The summary should be in a single paragraph.\n"
+            "- Focus on the key information and main points.\n"
+            "- Write in clear, accessible language."
+        )
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": text},
+        ]
+
+        response = await self._chat_completion(
+            model=model.value if isinstance(model, Enum) else model,
+            messages=messages,
+            max_tokens=self.max_tokens,
+            temperature=temperature or self.temperature,
+        )
+
+        result = response.choices[0].message
+
+        return AIMessageFactory.from_openai(
+            response=response,
+            input_text=text,
+            model=model,
+            user_id=user_id,
+            session_id=session_id,
+            turn_id=turn_id,
+            structured_output=None,
+        )
+
+    async def translate_text(
+        self,
+        text: str,
+        target_lang: str,
+        source_lang: Optional[str] = None,
+        model: Union[OpenAIModel, str] = OpenAIModel.GPT4_TURBO,
+        temperature: float = 0.2,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+    ) -> AIMessage:
+        """
+        Translate *text* from *source_lang* (auto‑detected if None) into *target_lang*.
+        """
+        turn_id = str(uuid.uuid4())
+
+        if source_lang:
+            system_prompt = (
+                f"You are a professional translator. Translate the following text "
+                f"from {source_lang} to {target_lang}.\n"
+                "- Provide only the translated text, without any additional comments "
+                "or explanations.\n"
+                "- Maintain the original meaning and tone.\n"
+                "- Use natural, fluent language in the target language.\n"
+                "- Preserve formatting if present (line breaks, bullet points, etc.)."
+            )
+        else:
+            system_prompt = (
+                f"You are a professional translator. First detect the source "
+                f"language of the following text, then translate it to {target_lang}.\n"
+                "- Provide only the translated text, without any additional comments "
+                "or explanations.\n"
+                "- Maintain the original meaning and tone.\n"
+                "- Use natural, fluent language in the target language.\n"
+                "- Preserve formatting if present (line breaks, bullet points, etc.)."
+            )
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": text},
+        ]
+
+        response = await self._chat_completion(
+            model=model.value if isinstance(model, Enum) else model,
+            messages=messages,
+            max_tokens=self.max_tokens,
+            temperature=temperature,
+        )
+
+        return AIMessageFactory.from_openai(
+            response=response,
+            input_text=text,
+            model=model,
+            user_id=user_id,
+            session_id=session_id,
+            turn_id=turn_id,
+            structured_output=None,
+        )
+
+    async def extract_key_points(
+        self,
+        text: str,
+        num_points: int = 5,
+        model: Union[OpenAIModel, str] = OpenAIModel.GPT4_TURBO,
+        temperature: float = 0.3,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+    ) -> AIMessage:
+        """
+        Extract *num_points* bullet‑point key ideas from *text* (stateless).
+        """
+        turn_id = str(uuid.uuid4())
+
+        system_prompt = (
+            f"Extract the {num_points} most important key points from the following text.\n"
+            "- Present each point as a clear, concise bullet point (•).\n"
+            "- Focus on the main ideas and significant information.\n"
+            "- Each point should be self‑contained and meaningful.\n"
+            "- Order points by importance (most important first)."
+        )
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": text},
+        ]
+
+        response = await self._chat_completion(
+            model=model.value if isinstance(model, Enum) else model,
+            messages=messages,
+            max_tokens=self.max_tokens,
+            temperature=temperature,
+        )
+
+        return AIMessageFactory.from_openai(
+            response=response,
+            input_text=text,
+            model=model,
+            user_id=user_id,
+            session_id=session_id,
+            turn_id=turn_id,
+            structured_output=None,
+        )
+
+    async def analyze_sentiment(
+        self,
+        text: str,
+        model: Union[OpenAIModel, str] = OpenAIModel.GPT4_TURBO,
+        temperature: float = 0.1,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+    ) -> AIMessage:
+        """
+        Perform sentiment analysis on *text* and return a structured explanation.
+        """
+        turn_id = str(uuid.uuid4())
+
+        system_prompt = (
+            "Analyze the sentiment of the following text and provide a structured response.\n"
+            "Your response must include:\n"
+            "1. Overall sentiment (Positive, Negative, Neutral, or Mixed)\n"
+            "2. Confidence level (High, Medium, Low)\n"
+            "3. Key emotional indicators found in the text\n"
+            "4. Brief explanation of your analysis\n\n"
+            "Format your answer clearly with numbered sections."
+        )
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": text},
+        ]
+
+        response = await self._chat_completion(
+            model=model.value if isinstance(model, Enum) else model,
+            messages=messages,
+            max_tokens=self.max_tokens,
+            temperature=temperature,
+        )
+
+        return AIMessageFactory.from_openai(
+            response=response,
+            input_text=text,
+            model=model,
+            user_id=user_id,
+            session_id=session_id,
+            turn_id=turn_id,
+            structured_output=None,
+        )
