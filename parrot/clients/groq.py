@@ -103,7 +103,8 @@ class GroqClient(AbstractClient):
         system_prompt: Optional[str] = None,
         structured_output: Optional[type] = None,
         user_id: Optional[str] = None,
-        session_id: Optional[str] = None
+        session_id: Optional[str] = None,
+        tools: Optional[List[dict]] = None
     ) -> AIMessage:
         """Ask Groq a question with optional conversation memory.
 
@@ -134,6 +135,9 @@ class GroqClient(AbstractClient):
             messages.insert(0, {"role": "system", "content": system_prompt})
 
         # Prepare tools
+        if tools and isinstance(tools, list):
+            for tool in tools:
+                self.register_tool(tool)
         tools = self._prepare_groq_tools()
 
         # Groq doesn't support combining structured output with tools
@@ -314,12 +318,19 @@ class GroqClient(AbstractClient):
         })
 
         # Update conversation memory
+        tools_used = [tc.name for tc in all_tool_calls]
+        assistant_response_text = result.content if isinstance(
+            result.content, str) else self._json.dumps(result.content)
         await self._update_conversation_memory(
             user_id,
             session_id,
             conversation_session,
             messages,
-            system_prompt
+            system_prompt,
+            turn_id,
+            original_prompt,
+            assistant_response_text,
+            tools_used
         )
 
         # Create AIMessage using factory
@@ -348,7 +359,8 @@ class GroqClient(AbstractClient):
         files: Optional[List[Union[str, Path]]] = None,
         system_prompt: Optional[str] = None,
         user_id: Optional[str] = None,
-        session_id: Optional[str] = None
+        session_id: Optional[str] = None,
+        tools: Optional[List[dict]] = None
     ) -> AsyncIterator[str]:
         """Stream Groq's response with optional conversation memory."""
 
@@ -375,6 +387,10 @@ class GroqClient(AbstractClient):
 
         # Note: For streaming, we don't handle tools in this version
         # You might want to implement a more sophisticated streaming + tools handler
+        if tools and isinstance(tools, list):
+            for tool in tools:
+                self.register_tool(tool)
+        # Prepare tools for the request
         tools = self._prepare_groq_tools()
         if tools:
             request_args["tools"] = tools
@@ -395,12 +411,18 @@ class GroqClient(AbstractClient):
                 "role": "assistant",
                 "content": assistant_content
             })
+            # Update conversation memory
+            tools_used = []
             await self._update_conversation_memory(
                 user_id,
                 session_id,
                 conversation_session,
                 messages,
-                system_prompt
+                system_prompt,
+                turn_id,
+                prompt,
+                assistant_content,
+                tools_used
             )
 
     async def batch_ask(self, requests):
@@ -471,12 +493,19 @@ class GroqClient(AbstractClient):
         })
 
         # Update conversation memory
+        tools_used = []
+        # return only 100 characters of the summarized text
+        assistant_content = summarized_text[:100] if summarized_text else ""
         await self._update_conversation_memory(
             user_id,
             session_id,
             conversation_session,
             messages,
-            system_prompt
+            system_prompt,
+            turn_id,
+            'summarization',
+            assistant_content,
+            tools_used
         )
 
         # Create AIMessage using factory
