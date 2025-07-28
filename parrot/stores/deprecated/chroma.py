@@ -6,8 +6,8 @@ from langchain.docstore.document import Document
 from langchain.memory import VectorStoreRetrieverMemory
 import chromadb
 from langchain_chroma import Chroma
-from .abstract import AbstractStore
-from ..conf import CHROMADB_HOST, CHROMADB_PORT
+from ..abstract import AbstractStore
+from ...conf import CHROMADB_HOST, CHROMADB_PORT
 
 
 logging.getLogger('chromadb').setLevel(logging.INFO)

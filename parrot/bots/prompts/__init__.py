@@ -54,13 +54,15 @@ $backstory
 
 I am here to help with $goal.
 
+**Knowledge Base Context:**
 $pre_context
+$context
+
+$chat_history
 
 for more information please refer to the company information below:
 $company_information
 
-**Context:**
-$context
 
 ** Your Style: **
 $rationale

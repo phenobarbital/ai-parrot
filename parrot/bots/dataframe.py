@@ -1,7 +1,7 @@
 from typing import Union
 import pandas as pd
-from langchain_experimental.tools.python.tool import PythonAstREPLTool
-from .base import BaseAgent
+from .agent import BasicAgent
+from ..tools.pythonrepl import PythonREPLTool
 
 
 BASEPROMPT = """
@@ -61,7 +61,7 @@ Question: {input}
 """
 
 
-class DataFrameAgent(BaseAgent):
+class DataFrameAgent(BasicAgent):
     """Dataframe Agent.
 
     This is the Pandas Agent Chatbot.
@@ -95,7 +95,7 @@ class DataFrameAgent(BaseAgent):
                         + dataframe.head().to_markdown() + "\n"
                     )
         prompt_template = BASEPROMPT
-        self.tools = [PythonAstREPLTool(locals=df_locals)] + list(tools)
+        self.tools = [PythonREPLTool(locals_dict=df_locals)] + list(tools)
         self.prompt = self.get_prompt(
             prompt_template,
             num_dfs=num_dfs,
