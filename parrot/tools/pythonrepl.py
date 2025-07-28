@@ -16,7 +16,7 @@ import seaborn as sns
 from pydantic import BaseModel, Field
 from datamodel.parsers.json import json_decoder, json_encoder  # noqa  pylint: disable=E0611
 from navconfig import BASE_DIR
-from .base import AbstractTool
+from .abstract import AbstractTool
 
 
 def sanitize_input(query: str) -> str:
