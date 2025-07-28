@@ -413,12 +413,6 @@ class GoogleGenAIClient(AbstractClient):
                 assistant_response_text,
                 tools_used
             )
-        # Before creating the AIMessage, track conversation usage
-        conversation_used = False
-        conversation_context_length = 0
-        if conversation_history and conversation_history.turns:
-            conversation_used = True
-            conversation_context_length = len(conversation_history.turns)
         # Create AIMessage using factory
         ai_message = AIMessageFactory.from_gemini(
             response=response,
@@ -428,11 +422,9 @@ class GoogleGenAIClient(AbstractClient):
             session_id=session_id,
             turn_id=turn_id,
             structured_output=final_output if final_output != response.text else None,
-            tool_calls=all_tool_calls
+            tool_calls=all_tool_calls,
+            conversation_history=conversation_history
         )
-        # Set the conversation flags
-        ai_message.used_conversation_history = conversation_used
-        ai_message.conversation_context_length = conversation_context_length
 
         # Override provider to distinguish from Vertex AI
         ai_message.provider = "google_genai"
