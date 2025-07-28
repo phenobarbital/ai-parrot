@@ -102,7 +102,8 @@ class OpenAIClient(AbstractClient):
         system_prompt: Optional[str] = None,
         structured_output: Optional[type] = None,
         user_id: Optional[str] = None,
-        session_id: Optional[str] = None
+        session_id: Optional[str] = None,
+        tools: Optional[List[Dict[str, Any]]] = None
     ) -> AIMessage:
         """Ask OpenAI a question with optional conversation memory."""
 
@@ -132,6 +133,9 @@ class OpenAIClient(AbstractClient):
         all_tool_calls = []
 
         # Prepare tools and special arguments
+        if tools and isinstance(tools, list):
+            for tool in tools:
+                self.register_tool(tool)
         tools = self._prepare_tools() if self.tools else None
         args = {}
 
@@ -291,7 +295,8 @@ class OpenAIClient(AbstractClient):
         files: Optional[List[Union[str, Path]]] = None,
         system_prompt: Optional[str] = None,
         user_id: Optional[str] = None,
-        session_id: Optional[str] = None
+        session_id: Optional[str] = None,
+        tools: Optional[List[Dict[str, Any]]] = None
     ) -> AsyncIterator[str]:
         """Stream OpenAI's response with optional conversation memory."""
 
@@ -317,6 +322,9 @@ class OpenAIClient(AbstractClient):
             messages.insert(0, {"role": "system", "content": system_prompt})
 
         # Prepare tools (Note: streaming with tools is more complex)
+        if tools and isinstance(tools, list):
+            for tool in tools:
+                self.register_tool(tool)
         tools = self._prepare_tools() if self.tools else None
         args = {}
 

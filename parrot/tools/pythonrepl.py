@@ -80,7 +80,7 @@ class PythonREPLTool(AbstractTool):
     - Error handling and sanitization
     """
 
-    name = "PythonREPLTool"
+    name = "python_repl"
     description = "Execute Python code with pre-loaded data science libraries (pandas, numpy, matplotlib, seaborn)"
     args_schema = PythonREPLArgs
 

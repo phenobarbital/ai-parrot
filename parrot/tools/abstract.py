@@ -160,7 +160,7 @@ class AbstractTool(ABC):
             # If no schema is defined, return a basic model with the kwargs
             return AbstractToolArgsSchema()
 
-    async def execute(self, **kwargs) -> ToolResult:
+    async def execute(self, *args, **kwargs) -> ToolResult:
         """
         Execute the tool with error handling and result standardization.
 
@@ -178,9 +178,9 @@ class AbstractTool(ABC):
 
             # Execute the tool
             if hasattr(validated_args, 'model_dump'):
-                result = await self._execute(**validated_args.model_dump())
+                result = await self._execute(*args, **validated_args.model_dump())
             else:
-                result = await self._execute(**kwargs)
+                result = await self._execute(*args, **kwargs)
 
             self.logger.info(f"Tool {self.name} executed successfully")
 

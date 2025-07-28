@@ -34,6 +34,7 @@ from ..models import (
     StructuredOutputConfig,
     OutputFormat
 )
+from ..tools.abstract import AbstractTool, ToolResult
 
 
 LLM_PRESETS = {
@@ -163,7 +164,7 @@ class AbstractClient(ABC):
     ):
         self.model_name: str = kwargs.get('model_name', None)
         self.session: Optional[aiohttp.ClientSession] = None
-        self.tools: Dict[str, ToolDefinition] = {}
+        self.tools: Dict[str, Union[ToolDefinition, AbstractTool]] = {}
         if preset:
             preset_config = LLM_PRESETS.get(preset, LLM_PRESETS['default'])
             # define temp, top_k, top_p, max_tokens from selected preset:
@@ -176,7 +177,7 @@ class AbstractClient(ABC):
             self.temperature = kwargs.get('temperature', 0.4)
             self.top_k = kwargs.get('top_k', 40)
             self.top_p = kwargs.get('top_p', 0.9)
-            self.max_tokens = kwargs.get('max_tokens', 8192)
+            self.max_tokens = kwargs.get('max_tokens', 4096)
         self.conversation_memory = conversation_memory or InMemoryConversation()
         self.base_headers.update(kwargs.get('headers', {}))
         self.api_key = kwargs.get('api_key', None)
@@ -240,14 +241,56 @@ class AbstractClient(ABC):
 
     def register_tool(
         self,
-        name: str,
-        description: str,
-        input_schema: Dict[str, Any],
-        function: Callable,
-        type: str = "function",
+        tool: Union[ToolDefinition, AbstractTool] = None,
+        name: str = None,
+        description: str = None,
+        input_schema: Dict[str, Any] = None,
+        function: Callable = None,
     ) -> None:
-        """Register a Python function as a tool for Claude to call."""
-        self.tools[name] = ToolDefinition(name, description, input_schema, function)
+        """Register a Python function as a tool for LLM to call."""
+        # check if tool is already on self.tools:
+        tool_name = tool.name if isinstance(tool, (ToolDefinition, AbstractTool)) else name
+        if tool_name in self.tools:
+            self.logger.warning(f"Tool '{tool_name}' is already registered.")
+            return
+
+        if isinstance(tool, ToolDefinition):
+            self.tools[tool_name] = tool
+        elif isinstance(tool, AbstractTool):
+            self.tools[tool_name] = tool
+        elif name and description and input_schema and function:
+            # Create a ToolDefinition from the provided parameters
+            self.tools[tool_name] = ToolDefinition(
+                name=name,
+                description=description,
+                input_schema=input_schema,
+                function=function
+            )
+        else:
+            raise ValueError(
+                "Tool must be a ToolDefinition, AbstractTool, or provide all parameters: "
+                "name, description, input_schema, function."
+            )
+
+    def register_tools(
+        self,
+        tools: List[Union[ToolDefinition, AbstractTool]]
+    ) -> None:
+        """Register multiple tools at once."""
+        for tool in tools:
+            tool_name = tool.name if isinstance(tool, (ToolDefinition, AbstractTool)) else None
+            if tool_name in self.tools:
+                continue
+            if isinstance(tool, ToolDefinition):
+                self.tools[tool.name] = tool
+            elif isinstance(tool, AbstractTool):
+                self.tools[tool.name] = tool
+            else:
+                raise ValueError(f"Unknown tool type: {type(tool)}")
+
+    def set_tools(self, tools: List[AbstractTool]) -> None:
+        """Set complete list of tools, replacing existing."""
+        self.tools = {tool.name: tool for tool in tools}
 
     def register_python_tool(
         self,
@@ -266,31 +309,59 @@ class AbstractClient(ABC):
         Returns:
             The PythonREPLTool instance
         """
+        if "python_repl" in self.tools:
+            return self.tools["python_repl"]
+
         tool = PythonREPLTool(
             report_dir=report_dir,
             plt_style=plt_style,
             palette=palette
         )
-
-        self.register_tool(
-            name="python_repl",
-            type="function",
-            description=(
-                "A Python shell for executing Python commands. "
-                "Input should be valid Python code. "
-                "Pre-loaded libraries: pandas (pd), numpy (np), matplotlib.pyplot (plt), "
-                "seaborn (sns), numexpr (ne). "
-                "Available tools: quick_eda, generate_eda_report, list_available_dataframes "
-                "from parrot_tools. "
-                "Use execution_results dict for capturing intermediate results. "
-                "Use report_directory Path for saving outputs. "
-                "Use extended_json.dumps(obj)/extended_json.loads(bytes) for JSON operations."
-            ),
-            input_schema=tool.get_tool_schema(),
-            function=tool
-        )
-
+        self.register_tool(tool)
         return tool
+
+    def get_tool(self, name: str) -> Optional[AbstractTool]:
+        """
+        Get a tool by name.
+
+        Args:
+            name: Tool name
+
+        Returns:
+            AbstractTool instance or None if not found
+        """
+        return self.tools.get(name)
+
+    def list_tools(self) -> List[str]:
+        """
+        Get a list of all registered tool names.
+
+        Returns:
+            List of tool names
+        """
+        return list(self.tools.keys())
+
+    def remove_tool(self, name: str) -> bool:
+        """
+        Remove a tool by name.
+
+        Args:
+            name: Tool name to remove
+
+        Returns:
+            True if tool was removed, False if not found
+        """
+        if name in self.tools:
+            del self.tools[name]
+            self.logger.info(f"Removed tool: {name}")
+            return True
+        return False
+
+    def clear_tools(self) -> None:
+        """Clear all registered tools."""
+        count = len(self.tools)
+        self.tools.clear()
+        self.logger.info(f"Cleared {count} tools")
 
     def _encode_file(self, file_path: Union[str, Path]) -> Dict[str, Any]:
         """Encode file for API upload."""
@@ -311,27 +382,72 @@ class AbstractClient(ABC):
 
     def _prepare_tools(self) -> List[Dict[str, Any]]:
         """Convert registered tools to API format."""
-        if self.agent_type == 'openai':
-            return [
-                {
-                    "type": "function",
-                    "function": {
+        if not self.tools:
+            return []
+        tool_schemas = []
+        processed_tools = set()  # Track processed tools to avoid duplicates
+        for tool_name, tool in self.tools.items():
+            # Skip duplicates
+            if tool_name in processed_tools:
+                continue
+            processed_tools.add(tool_name)
+            try:
+                if isinstance(tool, ToolDefinition):
+                    # Handle ToolDefinition (legacy)
+                    base_schema = {
                         "name": tool.name,
                         "description": tool.description,
-                        "parameters": tool.input_schema
                     }
-                }
-                for tool in self.tools.values()
-            ]
-        else:
-            return [
-                {
-                    "name": tool.name,
-                    "description": tool.description,
-                    "input_schema": tool.input_schema
-                }
-                for tool in self.tools.values()
-            ]
+                    if self.agent_type == 'openai':
+                        base_schema['parameters'] = tool.input_schema
+                        tool_schemas.append({
+                            "type": "function",
+                            "function": base_schema
+                        })
+                    else:
+                        # Claude/Anthropic format
+                        base_schema['input_schema'] = tool.input_schema
+                        tool_schemas.append(base_schema)
+                elif isinstance(tool, AbstractTool):
+                    # Handle AbstractTool (new)
+                    try:
+                        schema = tool.get_tool_schema()
+                        # Extract the correct components
+                        tool_name = schema.get("name", tool.name)
+                        tool_description = schema.get("description", tool.description)
+                        tool_parameters = schema.get("parameters", {})
+                        base_schema = {
+                            "name": tool_name,
+                            "description": tool_description,
+                        }
+                        if self.agent_type == 'openai':
+                            # OpenAI format
+                            base_schema['parameters'] = tool_parameters
+                            tool_schemas.append({
+                                "type": "function",
+                                "function": base_schema
+                            })
+                        else:
+                            # Claude/Anthropic format
+                            base_schema['input_schema'] = tool_parameters
+                            tool_schemas.append(base_schema)
+                    except Exception as e:
+                        self.logger.error(
+                            f"Error getting schema for AbstractTool {tool.name}: {e}"
+                        )
+                        continue
+                else:
+                    self.logger.error(
+                        f"Unknown tool type: {type(tool)} for tool {tool_name}"
+                    )
+                    continue
+
+            except Exception as e:
+                self.logger.error(f"Error preparing tool {tool_name}: {e}")
+                continue
+
+        self.logger.debug(f"Prepared {len(tool_schemas)} tool schemas")
+        return tool_schemas
 
     async def _execute_tool(
         self,
@@ -339,14 +455,32 @@ class AbstractClient(ABC):
         parameters: Dict[str, Any]
     ) -> Any:
         """Execute a registered tool function."""
+
         if tool_name not in self.tools:
             raise ValueError(f"Tool '{tool_name}' not registered")
+        try:
+            tool = self.tools[tool_name]
+            if isinstance(tool, ToolDefinition):
+                if asyncio.iscoroutinefunction(tool.function):
+                    result = await tool.function(**parameters)
+                else:
+                    result = tool.function(**parameters)
+            elif isinstance(tool, AbstractTool):
+                # Handle AbstractTool (new)
+                result = await tool.execute(**parameters)
 
-        tool = self.tools[tool_name]
-        if asyncio.iscoroutinefunction(tool.function):
-            return await tool.function(**parameters)
-        else:
-            return tool.function(**parameters)
+                # Handle ToolResult objects
+                if isinstance(result, ToolResult):
+                    if result.status == "error":
+                        raise ValueError(result.error)
+                    return result.result
+            else:
+                raise ValueError(f"Unknown tool type: {type(tool)}")
+
+            return result
+        except Exception as e:
+            self.logger.error(f"Error executing tool {tool_name}: {e}")
+            raise
 
     async def _execute_tool_call(
         self,
@@ -415,7 +549,8 @@ class AbstractClient(ABC):
         files: Optional[List[Union[str, Path]]] = None,
         system_prompt: Optional[str] = None,
         user_id: Optional[str] = None,
-        session_id: Optional[str] = None
+        session_id: Optional[str] = None,
+        tools: Optional[List[Dict[str, Any]]] = None
     ) -> MessageResponse:
         """Send a prompt to the model and return the response."""
         raise NotImplementedError("Subclasses must implement this method.")
@@ -430,7 +565,8 @@ class AbstractClient(ABC):
         files: Optional[List[Union[str, Path]]] = None,
         system_prompt: Optional[str] = None,
         user_id: Optional[str] = None,
-        session_id: Optional[str] = None
+        session_id: Optional[str] = None,
+        tools: Optional[List[Dict[str, Any]]] = None
     ) -> AsyncIterator[str]:
         """Stream the model's response."""
         raise NotImplementedError("Subclasses must implement this method.")

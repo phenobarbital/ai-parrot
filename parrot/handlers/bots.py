@@ -8,8 +8,8 @@ from parrot.conf import (
     BIGQUERY_CREDENTIALS,
     BIGQUERY_PROJECT_ID,
 )
-from ..models import (
-    ChatbotModel,
+from .models import (
+    BotModel,
     ChatbotUsage,
     PromptLibrary,
     ChatbotFeedback,
@@ -187,7 +187,7 @@ class ChatbotHandler(ModelView):
     description: ChatbotHandler for Parrot Application.
     """
 
-    model = ChatbotModel
+    model = BotModel
     name: str = "Chatbot Management"
     pk: str = 'chatbot_id'
 

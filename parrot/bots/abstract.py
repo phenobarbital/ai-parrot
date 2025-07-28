@@ -936,6 +936,60 @@ class AbstractBot(DBInterface, ABC):
         # print('=====')
         return system_prompt
 
+    def _prepare_tools(self) -> List[Dict[str, Any]]:
+        """
+        Prepare tools in the format expected by the LLM client.
+
+        Returns:
+            List of tool schemas for the client
+        """
+        if not self.tools:
+            return []
+
+        client_tools = []
+        for tool in self.tools:
+            try:
+                # Get the tool schema
+                if hasattr(tool, 'get_tool_schema'):
+                    schema = tool.get_tool_schema()
+                    # Add the tool instance for execution
+                    schema['_tool_instance'] = tool
+                    client_tools.append(schema)
+                    self.logger.debug(
+                        f"Prepared tool schema for: {tool.name}"
+                    )
+                else:
+                    self.logger.warning(
+                        f"Tool {tool.name} doesn't have get_tool_schema method"
+                    )
+            except Exception as e:
+                self.logger.error(
+                    f"Error preparing tool {tool.name}: {e}"
+                )
+
+        return client_tools
+
+    def _configure_client_tools(self, client, tools: List[Dict[str, Any]]) -> None:
+        """
+        Configure tools on the LLM client.
+
+        Args:
+            client: The LLM client instance
+            tools: List of prepared tool schemas
+        """
+        try:
+            if hasattr(client, 'set_tools'):
+                client.set_tools(tools)
+                self.logger.debug("Tools configured on client using set_tools")
+            elif hasattr(client, 'tools'):
+                client.tools = tools
+                self.logger.debug("Tools configured on client using tools attribute")
+            else:
+                self.logger.warning("Client doesn't support tool configuration")
+        except Exception as e:
+            self.logger.error(f"Error configuring tools on client: {e}")
+
+
     async def conversation(
         self,
         question: str,
@@ -1031,6 +1085,19 @@ class AbstractBot(DBInterface, ABC):
                 use_tools = False
                 effective_mode = "conversational"
 
+            # Log tool usage decision
+            self.logger.info(
+                f"Tool usage decision: use_tools={use_tools}, mode={mode}, "
+                f"effective_mode={effective_mode}, available_tools={len(self.tools)}"
+            )
+            # Prepare tools for LLM client
+            client_tools = []
+            if use_tools and self.tools:
+                client_tools = self._prepare_tools()
+                self.logger.info(
+                    f"Prepared {len(client_tools)} tools for LLM client"
+                )
+
             # Create system prompt
             system_prompt = await self.create_system_prompt(
                 vector_context=vector_context,
@@ -1041,14 +1108,17 @@ class AbstractBot(DBInterface, ABC):
             # Configure LLM if needed
             new_llm = kwargs.pop('llm', None)
             if new_llm:
-                self.configure_llm(llm=new_llm, **kwargs.pop('llm_config', {}))
+                self.configure_llm(
+                    llm=new_llm,
+                    **kwargs.pop('llm_config', {})
+                )
 
             # Make the LLM call using the Claude client
             async with self._llm as client:
                 # Configure tools if needed
                 if use_tools and hasattr(client, 'tools'):
                     # Enable tools on the client
-                    pass
+                    self._configure_client_tools(client, client_tools)
 
                 response = await client.ask(
                     prompt=question,
@@ -1057,7 +1127,8 @@ class AbstractBot(DBInterface, ABC):
                     max_tokens=kwargs.get('max_tokens', self._max_tokens),
                     temperature=kwargs.get('temperature', self._llm_temp),
                     user_id=user_id,
-                    session_id=session_id
+                    session_id=session_id,
+                    tools=client_tools if client_tools else None,
                 )
 
                 # Enhance the response with context metadata

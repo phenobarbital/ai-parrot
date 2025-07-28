@@ -89,6 +89,12 @@ async def example_usage():
             function=calculate_area
         )
 
+        response = await client.ask(
+            "What is the area of a rectangle with length 5 and width 3?",
+            model=ClaudeModel.SONNET_3_5.value
+        )
+        print("Area response:", response.output)
+
         # Start a conversation with memory
         user_id = "user123"
         session_id = "chat001"
@@ -212,25 +218,26 @@ async def example_usage():
         # for result in batch_results:
         #     print(f"Request {result['custom_id']}: {result['response']}")
 
-#     # Usage of Python Tool:
-#     async with ClaudeClient() as client:
-#         # Register the Python REPL tool
-#         repl_tool = client.register_python_tool()
+    # Usage of Python Tool:
+    async with ClaudeClient() as client:
+        # Register the Python REPL tool
+        repl_tool = client.register_python_tool()
 
-#         # Use the tool through Claude
-#         response = await client.ask(
-#             "Create a simple DataFrame with 3 rows and 2 columns, then show its info",
-#             model=ClaudeModel.SONNET_4
-#         )
-#         print(response)
+        # Use the tool through Claude
+        response = await client.ask(
+            "Create a simple DataFrame with 3 rows and 2 columns, then show its info",
+            model=ClaudeModel.SONNET_4,
+            tools=[repl_tool],
+        )
+        print(response)
 
-#         # Direct usage of the tool
-#         result = repl_tool.execute("""
-# import pandas as pd
-# df = pd.DataFrame({'A': [1, 2, 3], 'B': [4, 5, 6]})
-# df.head()
-#         """, debug=True)
-#         print("Direct execution result:", result)
+        # Direct usage of the tool
+        result = repl_tool.execute("""
+import pandas as pd
+df = pd.DataFrame({'A': [1, 2, 3], 'B': [4, 5, 6]})
+df.head()
+        """, debug=True)
+        print("Direct execution result:", result)
 
 #     async with ClaudeClient() as client:
 

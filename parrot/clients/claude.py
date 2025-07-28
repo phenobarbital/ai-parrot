@@ -62,7 +62,8 @@ class ClaudeClient(AbstractClient):
         system_prompt: Optional[str] = None,
         structured_output: Optional[type] = None,
         user_id: Optional[str] = None,
-        session_id: Optional[str] = None
+        session_id: Optional[str] = None,
+        tools: Optional[List[Dict[str, Any]]] = None
     ) -> AIMessage:
         """Ask Claude a question with optional conversation memory."""
         if not self.session:
@@ -91,6 +92,9 @@ class ClaudeClient(AbstractClient):
         if system_prompt:
             payload["system"] = system_prompt
 
+        if tools and isinstance(tools, list):
+            for tool in tools:
+                self.register_tool(tool)
         if self.tools:
             payload["tools"] = self._prepare_tools()
 
@@ -217,7 +221,8 @@ class ClaudeClient(AbstractClient):
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
         retry_config: Optional[StreamingRetryConfig] = None,
-        on_max_tokens: Optional[str] = "retry"  # "retry", "notify", "ignore"
+        on_max_tokens: Optional[str] = "retry",  # "retry", "notify", "ignore"
+        tools: Optional[List[Dict[str, Any]]] = None
     ) -> AsyncIterator[str]:
         """Stream Claude's response using AsyncIterator with optional conversation memory."""
         if not self.session:
@@ -234,6 +239,9 @@ class ClaudeClient(AbstractClient):
         messages, conversation_history, system_prompt = await self._prepare_conversation_context(
             prompt, files, user_id, session_id, system_prompt
         )
+        if tools and isinstance(tools, list):
+            for tool in tools:
+                self.register_tool(tool)
 
         current_max_tokens = max_tokens or self.max_tokens
         retry_count = 0
