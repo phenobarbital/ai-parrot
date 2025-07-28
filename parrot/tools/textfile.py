@@ -2,7 +2,7 @@ from typing import Optional, Dict, Any
 from pathlib import Path
 from datetime import datetime
 from pydantic import BaseModel, Field
-from .base import AbstractTool
+from .abstract import AbstractTool
 
 
 class FileOutputToolArgs(BaseModel):

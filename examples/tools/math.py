@@ -1,5 +1,5 @@
 import asyncio
-from parrot.tools.base import ToolRegistry
+from parrot.tools.abstract import ToolRegistry
 from parrot.tools.math import MathTool
 
 # Test the tool registry:

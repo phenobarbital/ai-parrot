@@ -1,6 +1,6 @@
 from typing import Dict, Any
 from pydantic import BaseModel, Field
-from .base import AbstractTool
+from .abstract import AbstractTool
 
 
 # MathTool Arguments Schema
