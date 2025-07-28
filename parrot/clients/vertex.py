@@ -177,13 +177,26 @@ class VertexAIClient(AbstractClient):
 
         # Handle structured output for Vertex AI
         if structured_output:
+            schema_for_prompt = None
             if isinstance(structured_output, type):
                 generation_config.response_mime_type = "application/json"
                 generation_config.response_schema = structured_output.model_json_schema()
+                schema_for_prompt = structured_output.model_json_schema()
+
             elif isinstance(structured_output, StructuredOutputConfig):
                 if structured_output.format == OutputFormat.JSON:
                     generation_config.response_mime_type = "application/json"
                     generation_config.response_schema = structured_output.output_type.model_json_schema()
+                    schema_for_prompt = structured_output.output_type.model_json_schema()
+
+            # If a structured output is requested, add a strong system prompt to enforce clean JSON output
+            # This is crucial for the Vertex AI client.
+            if schema_for_prompt and not system_prompt:
+                system_prompt = (
+                    "Your response must be a valid JSON object that strictly adheres to the provided schema. "
+                    "Do not include any text, explanations, or markdown formatting (like ```json) outside of the JSON object itself. "
+                    f"JSON Schema:\n{schema_for_prompt}"
+                )
 
         # Build tools
         vertex_tools = self._build_tools()
@@ -261,7 +274,6 @@ class VertexAIClient(AbstractClient):
 
                 # Send tool results back to model
                 response = await chat.send_message_async(function_response_parts)
-
         # Handle structured output
         final_output = None
         if structured_output:
@@ -646,7 +658,6 @@ class VertexAIClient(AbstractClient):
             results.append(result)
         return results
 
-    # Add sentiment analysis method
     async def analyze_sentiment(
         self,
         text: str,
@@ -657,17 +668,29 @@ class VertexAIClient(AbstractClient):
         use_structured: bool = False,
     ) -> AIMessage:
         """
-        Analyze the sentiment of a given text.
+        Analyze the sentiment of a given text (stateless).
         """
+        model = model.value if isinstance(model, VertexAIModel) else model
         turn_id = str(uuid.uuid4())
 
         if use_structured:
-            system_prompt = (
-                "You are a sentiment analysis expert. Analyze the sentiment of the given text "
-                "and respond with structured data including sentiment classification, "
-                "confidence level, emotional indicators, and reasoning."
+            system_prompt = """
+You are a sentiment analysis expert.
+Analyze the sentiment of the given text and respond with valid JSON matching this exact schema:
+{
+  "sentiment": "positive" | "negative" | "neutral" | "mixed",
+  "confidence_level": 0.0-1.0,
+  "emotional_indicators": ["word1", "phrase2", ...],
+  "reason": "explanation of analysis"
+}
+Respond only with valid JSON, no additional text."""
+
+            generation_config = GenerationConfig(
+                max_output_tokens=self.max_tokens,
+                temperature=temperature,
+                response_mime_type="application/json",
+                response_schema=SentimentAnalysis.model_json_schema()
             )
-            structured_output = SentimentAnalysis
         else:
             system_prompt = (
                 "Analyze the sentiment of the following text and provide a structured response.\n"
@@ -678,20 +701,67 @@ class VertexAIClient(AbstractClient):
                 "4. Brief explanation of your analysis\n\n"
                 "Format your answer clearly with numbered sections."
             )
+            generation_config = GenerationConfig(
+                max_output_tokens=self.max_tokens,
+                temperature=temperature,
+            )
             structured_output = None
 
-        return await self.ask(
-            prompt=text,
-            model=model,
-            temperature=temperature,
-            system_prompt=system_prompt,
-            structured_output=structured_output,
-            user_id=user_id,
-            session_id=session_id,
-            stateless=True
+        # Create the model
+        multimodal_model = GenerativeModel(
+            model_name=model,
+            system_instruction=system_prompt
         )
 
-    # Add product review analysis method
+        # Make the stateless call
+        response = await multimodal_model.generate_content_async(
+            text,
+            generation_config=generation_config
+        )
+
+        # Handle structured output parsing
+        final_output = None
+        if use_structured:
+            try:
+                output_config = StructuredOutputConfig(
+                    output_type=SentimentAnalysis,
+                    format=OutputFormat.JSON
+                )
+                final_output = await self._parse_structured_output(
+                    response.text,
+                    output_config
+                )
+            except Exception as e:
+                self.logger.error(f"Failed to parse structured output: {e}")
+                final_output = response.text
+
+        # Extract usage information
+        usage_data = self._extract_usage_from_response(response)
+
+        # Create AIMessage
+        ai_message = AIMessageFactory.from_gemini(
+            response=response,
+            input_text=text,
+            model=model,
+            user_id=user_id,
+            session_id=session_id,
+            turn_id=turn_id,
+            structured_output=final_output if final_output != response.text else None,
+            tool_calls=[]
+        )
+
+        # Override usage with proper Vertex AI usage data
+        if usage_data:
+            ai_message.usage = CompletionUsage(
+                prompt_tokens=usage_data.get("prompt_token_count", 0),
+                completion_tokens=usage_data.get("candidates_token_count", 0),
+                total_tokens=usage_data.get("total_token_count", 0),
+                extra_usage=usage_data
+            )
+
+        ai_message.provider = "vertexai"
+        return ai_message
+
     async def analyze_product_review(
         self,
         review_text: str,
@@ -703,25 +773,85 @@ class VertexAIClient(AbstractClient):
         session_id: Optional[str] = None,
     ) -> AIMessage:
         """
-        Analyze a product review and extract structured information.
+        Analyze a product review and extract structured information (stateless).
         """
+        model = model.value if isinstance(model, VertexAIModel) else model
         turn_id = str(uuid.uuid4())
 
-        system_prompt = (
-            f"You are a product review analysis expert. Analyze the given product review "
-            f"for '{product_name}' (ID: {product_id}) and extract structured information "
-            f"including sentiment, rating, and key features mentioned in the review."
+        system_prompt = f"""
+You are a product review analysis expert.
+Analyze the given product review and respond with valid JSON matching this exact schema:
+{{
+  "product_id": "{product_id}",
+  "product_name": "{product_name}",
+  "review_text": "original review text",
+  "rating": 0.0-5.0,
+  "sentiment": "positive" | "negative" | "neutral",
+  "key_features": ["feature1", "feature2", ...]
+}}
+Extract the rating based on the review content (estimate if not explicitly stated), determine sentiment, and identify key product features mentioned. Respond only with valid JSON, no additional text.
+        """
+
+        generation_config = GenerationConfig(
+            max_output_tokens=self.max_tokens,
+            temperature=temperature,
+            response_mime_type="application/json",
+            response_schema=ProductReview.model_json_schema()
         )
 
-        prompt_with_context = f"Product ID: {product_id}\nProduct Name: {product_name}\nReview: {review_text}"
+        # Create the model
+        multimodal_model = GenerativeModel(
+            model_name=model,
+            system_instruction=system_prompt
+        )
 
-        return await self.ask(
-            prompt=prompt_with_context,
+        # Prepare the input text
+        input_text = f"Product ID: {product_id}\nProduct Name: {product_name}\nReview: {review_text}"
+
+        # Make the stateless call
+        response = await multimodal_model.generate_content_async(
+            input_text,
+            generation_config=generation_config
+        )
+
+        # Handle structured output parsing
+        final_output = None
+        try:
+            output_config = StructuredOutputConfig(
+                output_type=ProductReview,
+                format=OutputFormat.JSON
+            )
+            final_output = await self._parse_structured_output(
+                response.text,
+                output_config
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to parse structured output: {e}")
+            final_output = response.text
+
+        # Extract usage information
+        usage_data = self._extract_usage_from_response(response)
+
+        # Create AIMessage
+        ai_message = AIMessageFactory.from_gemini(
+            response=response,
+            input_text=review_text,
             model=model,
-            temperature=temperature,
-            system_prompt=system_prompt,
-            structured_output=ProductReview,
             user_id=user_id,
             session_id=session_id,
-            stateless=True
+            turn_id=turn_id,
+            structured_output=final_output if final_output != response.text else None,
+            tool_calls=[]
         )
+
+        # Override usage with proper Vertex AI usage data
+        if usage_data:
+            ai_message.usage = CompletionUsage(
+                prompt_tokens=usage_data.get("prompt_token_count", 0),
+                completion_tokens=usage_data.get("candidates_token_count", 0),
+                total_tokens=usage_data.get("total_token_count", 0),
+                extra_usage=usage_data
+            )
+
+        ai_message.provider = "vertexai"
+        return ai_message
