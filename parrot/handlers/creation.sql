@@ -1,5 +1,5 @@
 -- Drop existing table if it exists (uncomment if needed)
--- DROP TABLE IF EXISTS navigator.ai_bots CASCADE;
+DROP TABLE IF EXISTS navigator.ai_bots CASCADE;
 
 -- Create the unified AI bots table
 CREATE TABLE IF NOT EXISTS navigator.ai_bots (
@@ -38,11 +38,11 @@ CREATE TABLE IF NOT EXISTS navigator.ai_bots (
     tools_enabled BOOLEAN DEFAULT TRUE,
     auto_tool_detection BOOLEAN DEFAULT TRUE,
     tool_threshold FLOAT DEFAULT 0.7 CHECK (tool_threshold >= 0 AND tool_threshold <= 1),
-    available_tools JSONB DEFAULT '[]'::JSONB,
+    tools JSONB DEFAULT '[]'::JSONB,
     operation_mode VARCHAR DEFAULT 'adaptive' CHECK (operation_mode IN ('conversational', 'agentic', 'adaptive')),
 
     -- Vector store and retrieval configuration
-    use_vector_context BOOLEAN DEFAULT FALSE,
+    use_vector BOOLEAN DEFAULT FALSE,
     vector_store_config JSONB DEFAULT '{}'::JSONB,
     embedding_model JSONB DEFAULT '{"model_name": "sentence-transformers/all-MiniLM-L12-v2", "model_type": "huggingface"}'::JSONB,
     context_search_limit INTEGER DEFAULT 10 CHECK (context_search_limit > 0),
@@ -70,12 +70,12 @@ CREATE INDEX IF NOT EXISTS idx_ai_bots_name ON navigator.ai_bots(name);
 CREATE INDEX IF NOT EXISTS idx_ai_bots_enabled ON navigator.ai_bots(enabled);
 CREATE INDEX IF NOT EXISTS idx_ai_bots_operation_mode ON navigator.ai_bots(operation_mode);
 CREATE INDEX IF NOT EXISTS idx_ai_bots_tools_enabled ON navigator.ai_bots(tools_enabled);
-CREATE INDEX IF NOT EXISTS idx_ai_bots_use_vector_context ON navigator.ai_bots(use_vector_context);
+CREATE INDEX IF NOT EXISTS idx_ai_bots_use_vector ON navigator.ai_bots(use_vector);
 CREATE INDEX IF NOT EXISTS idx_ai_bots_created_at ON navigator.ai_bots(created_at);
 CREATE INDEX IF NOT EXISTS idx_ai_bots_llm ON navigator.ai_bots(llm);
 
 -- Create a GIN index for JSONB columns for efficient querying
-CREATE INDEX IF NOT EXISTS idx_ai_bots_available_tools_gin ON navigator.ai_bots USING GIN (available_tools);
+CREATE INDEX IF NOT EXISTS idx_ai_bots_tools_gin ON navigator.ai_bots USING GIN (tools);
 CREATE INDEX IF NOT EXISTS idx_ai_bots_permissions_gin ON navigator.ai_bots USING GIN (permissions);
 CREATE INDEX IF NOT EXISTS idx_ai_bots_model_config_gin ON navigator.ai_bots USING GIN (model_config);
 
@@ -91,8 +91,8 @@ COMMENT ON COLUMN navigator.ai_bots.operation_mode IS 'Bot operation mode: conve
 COMMENT ON COLUMN navigator.ai_bots.tools_enabled IS 'Whether the bot can use tools';
 COMMENT ON COLUMN navigator.ai_bots.auto_tool_detection IS 'Whether the bot automatically detects when to use tools';
 COMMENT ON COLUMN navigator.ai_bots.tool_threshold IS 'Confidence threshold for automatic tool usage (0-1)';
-COMMENT ON COLUMN navigator.ai_bots.available_tools IS 'JSON array of available tool names';
-COMMENT ON COLUMN navigator.ai_bots.use_vector_context IS 'Whether the bot uses vector store for context retrieval';
+COMMENT ON COLUMN navigator.ai_bots.tools IS 'JSON array of available tool names';
+COMMENT ON COLUMN navigator.ai_bots.use_vector IS 'Whether the bot uses vector store for context retrieval';
 COMMENT ON COLUMN navigator.ai_bots.vector_store_config IS 'JSON configuration for vector store connection';
 COMMENT ON COLUMN navigator.ai_bots.memory_type IS 'Type of conversation memory: memory, file, or redis';
 COMMENT ON COLUMN navigator.ai_bots.pre_instructions IS 'JSON array of pre-instructions for the bot';
@@ -116,7 +116,7 @@ CREATE TRIGGER trigger_ai_bots_updated_at
 -- Insert some example configurations
 INSERT INTO navigator.ai_bots (
     name, description, role, goal, backstory, capabilities,
-    tools_enabled, auto_tool_detection, available_tools, operation_mode, tool_threshold
+    tools_enabled, auto_tool_detection, tools, operation_mode, tool_threshold
 ) VALUES
 (
     'ResearchBot',
@@ -167,7 +167,7 @@ SELECT
     role,
     operation_mode,
     tools_enabled,
-    use_vector_context,
+    use_vector,
     llm,
     model_name,
     created_at,
@@ -180,7 +180,7 @@ SELECT
     chatbot_id,
     name,
     description,
-    available_tools,
+    tools,
     tool_threshold,
     auto_tool_detection,
     operation_mode
