@@ -978,16 +978,17 @@ class AbstractBot(DBInterface, ABC):
             tools: List of prepared tool schemas
         """
         try:
-            if hasattr(client, 'set_tools'):
-                client.set_tools(tools)
-                self.logger.debug("Tools configured on client using set_tools")
-            elif hasattr(client, 'tools'):
-                client.tools = tools
-                self.logger.debug("Tools configured on client using tools attribute")
+            if hasattr(client, 'register_tools'):
+                client.register_tools(tools)
+                self.logger.debug("Tools configured on client using register_tools")
             else:
-                self.logger.warning("Client doesn't support tool configuration")
+                self.logger.warning(
+                    "Client doesn't support tool configuration"
+                )
         except Exception as e:
-            self.logger.error(f"Error configuring tools on client: {e}")
+            self.logger.error(
+                f"Error configuring tools on client: {e}"
+            )
 
 
     async def conversation(

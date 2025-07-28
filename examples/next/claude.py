@@ -222,7 +222,6 @@ async def example_usage():
     async with ClaudeClient() as client:
         # Register the Python REPL tool
         repl_tool = client.register_python_tool()
-
         # Use the tool through Claude
         response = await client.ask(
             "Create a simple DataFrame with 3 rows and 2 columns, then show its info",
