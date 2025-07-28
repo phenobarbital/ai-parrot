@@ -1,7 +1,15 @@
 from enum import Enum
 
 class GroqModel(Enum):
-    """Description for Enabled Groq models."""
+    """Description for Enabled Groq models.
+
+    Only these models are supporting Structured Output:
+    - moonshotai/kimi-k2-instruct
+    - meta-llama/llama-4-maverick-17b-128e-instruct
+    - meta-llama/llama-4-scout-17b-16e-instruct
+
+    Also, streaming output is not supported with structured outputs.
+    """
     KIMI_K2_INSTRUCT = "moonshotai/kimi-k2-instruct"
     LLAMA_4_SCOUT_17B = "meta-llama/llama-4-scout-17b-16e-instruct"
     LLAMA_4_MAVERICK_17B = "meta-llama/llama-4-maverick-17b-128e-instruct"

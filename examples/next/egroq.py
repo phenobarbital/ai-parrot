@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from parrot.next import GroqClient, GroqModel
+from parrot.clients.groq import GroqClient, GroqModel
 
 # Usage example
 async def example_usage():
@@ -38,12 +38,8 @@ async def example_usage():
             "What's the weather like in New York?",
             model=GroqModel.LLAMA_3_3_70B_VERSATILE
         )
-        print("Response text:", response.text)
-        print("Model used:", response.model)
-        print("Provider:", response.provider)
-        print("Usage:", response.usage)
-        print("Has tools:", response.has_tools)
-        print("Tool calls:", [tc.name for tc in response.tool_calls])
+        # Response is an AIMessage object
+        print("Response text:", response.output)
 
         # Conversation with memory
         user_id = "user123"
@@ -56,16 +52,14 @@ async def example_usage():
             user_id=user_id,
             session_id=session_id
         )
-        print("Response 1 text:", response1.text)
-        print("Turn ID:", response1.turn_id)
+        print("Response 1 text:", response1.output)
 
         response2 = await client.ask(
             "What's my name and what do I like?",
             user_id=user_id,
             session_id=session_id
         )
-        print("Response 2 text:", response2.text)
-        print("Session ID:", response2.session_id)
+        print("Response 2 text:", response2.output)
 
         # Streaming response
         print("Streaming response:")
@@ -101,7 +95,21 @@ async def example_usage():
             "Raw response keys:",
             list(weather_response.raw_response.keys()) if weather_response.raw_response else "None"
         )
+    async with GroqClient() as client:
+        result = await client.analyze_sentiment(
+            "I absolutely love this product! It works perfectly.",
+            use_structured=True
+        )
 
+        # Parse the structured output
+        if result.structured_output:
+            # sentiment_data = SentimentAnalysis.model_validate_json(result.content)
+            sentiment_data = result.structured_output
+            print("Sentiment Analysis Result:")
+            print(f"Sentiment: {sentiment_data.sentiment}")
+            print(f"Confidence: {sentiment_data.confidence_level}")
+            print(f"Indicators: {sentiment_data.emotional_indicators}")
+            print(f"Reason: {sentiment_data.reason}")
 
 
 if __name__ == "__main__":

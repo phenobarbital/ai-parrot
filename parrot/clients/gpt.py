@@ -27,6 +27,10 @@ from ..models import (
     CompletionUsage
 )
 from ..models.openai import OpenAIModel
+from ..models.outputs import (
+    SentimentAnalysis,
+    ProductReview
+)
 
 
 getLogger('httpx').setLevel('WARNING')
@@ -702,4 +706,67 @@ class OpenAIClient(AbstractClient):
             session_id=session_id,
             turn_id=turn_id,
             structured_output=None,
+        )
+
+    async def analyze_product_review(
+        self,
+        review_text: str,
+        product_id: str,
+        product_name: str,
+        model: Union[OpenAIModel, str] = OpenAIModel.GPT4_TURBO,
+        temperature: float = 0.1,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+    ) -> AIMessage:
+        """
+        Analyze a product review and extract structured information.
+
+        Args:
+            review_text (str): The product review text to analyze.
+            product_id (str): Unique identifier for the product.
+            product_name (str): Name of the product being reviewed.
+            model (Union[OpenAIModel, str]): The model to use.
+            temperature (float): Sampling temperature for response generation.
+            user_id (Optional[str]): Optional user identifier for tracking.
+            session_id (Optional[str]): Optional session identifier for tracking.
+        """
+        turn_id = str(uuid.uuid4())
+
+        system_prompt = (
+            f"You are a product review analysis expert. Analyze the given product review "
+            f"for '{product_name}' (ID: {product_id}) and extract structured information. "
+            f"Determine the sentiment (positive, negative, or neutral), estimate a rating "
+            f"based on the review content (0.0-5.0 scale), and identify key product features "
+            f"mentioned in the review."
+        )
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"Product ID: {product_id}\nProduct Name: {product_name}\nReview: {review_text}"},
+        ]
+
+        # Use structured output with response_format
+        response = await self._chat_completion(
+            model=model.value if isinstance(model, Enum) else model,
+            messages=messages,
+            max_tokens=self.max_tokens,
+            temperature=temperature,
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "product_review_analysis",
+                    "schema": ProductReview.model_json_schema(),
+                    "strict": True
+                }
+            }
+        )
+
+        return AIMessageFactory.from_openai(
+            response=response,
+            input_text=review_text,
+            model=model,
+            user_id=user_id,
+            session_id=session_id,
+            turn_id=turn_id,
+            structured_output=ProductReview,
         )
