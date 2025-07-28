@@ -62,47 +62,26 @@ async def main():
     #     print(response.usage.total_tokens)      # 110 (from usage_metadata)
     #     print(response.provider)                # "vertex_ai"
 
-    # async with GoogleGenAIClient() as client:
-    #     math_tool = MathTool()
+    async with GoogleGenAIClient() as client:
+        math_tool = MathTool()
 
-    #     # Register the tool's methods
-    #     client.register_tool(
-    #         name="add",
-    #         description="Adds two numbers.",
-    #         input_schema={
-    #             "type": "object",
-    #             "properties": {
-    #                 "a": {"type": "number"},
-    #                 "b": {"type": "number"},
-    #             },
-    #             "required": ["a", "b"],
-    #         },
-    #         function=math_tool.add,
-    #     )
-    #     client.register_tool(
-    #         name="divide",
-    #         description="Divides two numbers.",
-    #         input_schema={
-    #             "type": "object",
-    #             "properties": {
-    #                 "a": {"type": "number"},
-    #                 "b": {"type": "number"},
-    #             },
-    #             "required": ["a", "b"],
-    #         },
-    #         function=math_tool.divide,
-    #     )
-    #     question = "What is 150 plus 79, and also what is 1024 divided by 256?"
-    #     response = await client.ask(
-    #         question,
-    #         structured_output=math_tool.add
-    #     )
-    #     print('--- Google GenAI Tool Call Response ---')
-    #     print(response.text)                    # Response text
-    #     print(response.usage.prompt_tokens)     # 39 (from usage_metadata)
-    #     print(response.usage.completion_tokens) # 5 (from usage_metadata)
-    #     print(response.usage.total_tokens)      # 110 (from usage_metadata)
-    #     print(response.provider)                # "google_genai"
+        # Register the tool's methods
+        client.register_tool(
+            math_tool
+        )
+        question = "What is 150 plus 79, and also what is 1024 divided by 256?"
+        response = await client.ask(
+            question,
+        )
+        print('--- Google GenAI Tool Call Response ---')
+        print(response.output)                    # Response text
+        print(response.usage.prompt_tokens)     # 39 (from usage_metadata)
+        print(response.usage.completion_tokens) # 5 (from usage_metadata)
+        print(response.usage.total_tokens)      # 110 (from usage_metadata)
+        print(response.provider)                # "google_genai"
+        print("Has tools:", response.has_tools)
+        print("Tool calls:", [f"{tc.name}({tc.arguments}) = {tc.result}" for tc in response.tool_calls])
+        print("Total execution time:", sum(tc.execution_time for tc in response.tool_calls))
 
     #     # Register multiple tools for parallel execution
     #     def add_numbers(a: float, b: float) -> float:
@@ -153,46 +132,50 @@ async def main():
     #     print("Tool calls:", [f"{tc.name}({tc.arguments}) = {tc.result}" for tc in response.tool_calls])
     #     print("Total execution time:", sum(tc.execution_time for tc in response.tool_calls))
 
-    # async with GoogleGenAIClient() as client:
-    #     math_tool = MathTool()
-    #     # Conversation with memory
-    #     user_id = "user123"
-    #     session_id = "chat001"
-
-    #     await client.start_conversation(user_id, session_id, "You are a helpful math assistant.")
-
-    #     response1 = await client.ask(
-    #         "My lucky numbers are 3 and 7",
-    #         user_id=user_id,
-    #         session_id=session_id,
-    #         model=GoogleModel.GEMINI_2_5_FLASH
-    #     )
-    #     print("Response 1 text:", response1.text)
-    #     print("Turn ID:", response1.turn_id)
-
-    #     response2 = await client.ask(
-    #         "Add my two lucky numbers together using the add function",
-    #         user_id=user_id,
-    #         session_id=session_id,
-    #         model=GoogleModel.GEMINI_2_5_FLASH
-    #     )
-    #     print("Response 2 text:", response2.text)
-    #     print("Tools used:", [tc.name for tc in response2.tool_calls])
     memory = GoogleGenAIClient.create_conversation_memory("memory")
-    user_id = "user123"
-    session_id = "google_session_010"
     async with GoogleGenAIClient(conversation_memory=memory) as client:
-        # Streaming response
-        print("Streaming response:")
-        async for chunk in client.ask_stream(
-            "Tell me an interesting fact about mathematics",
-            temperature=0.7,
-            model=GoogleModel.GEMINI_2_5_FLASH,
+        math_tool = MathTool()
+        # Conversation with memory
+        user_id = "user123"
+        session_id = "chat001"
+
+        client.register_tool(math_tool)
+
+        # await client.start_conversation(user_id, session_id, "You are a helpful math assistant.")
+
+        response1 = await client.ask(
+            "My lucky numbers are 3 and 7",
             user_id=user_id,
-            session_id=session_id
-        ):
-            print(chunk, end="", flush=True)
-        print()  # New line after streaming
+            session_id=session_id,
+            model=GoogleModel.GEMINI_2_5_FLASH,
+        )
+        print("Response 1 text:", response1.output)
+
+        response2 = await client.ask(
+            "Add my two lucky numbers together using the add function and multiply by 7",
+            user_id=user_id,
+            session_id=session_id,
+            model=GoogleModel.GEMINI_2_5_FLASH
+        )
+        print("Response 2:", response2)
+        print("Tools used:", [tc.name for tc in response2.tool_calls])
+
+    # print('Using Google GenAI Client with conversation memory:')
+    # memory = GoogleGenAIClient.create_conversation_memory("memory")
+    # user_id = "user123"
+    # session_id = "google_session_010"
+    # async with GoogleGenAIClient(conversation_memory=memory) as client:
+    #     # Streaming response
+    #     print("Streaming response:")
+    #     async for chunk in client.ask_stream(
+    #         "Tell me an interesting fact about mathematics",
+    #         temperature=0.7,
+    #         model=GoogleModel.GEMINI_2_5_FLASH,
+    #         user_id=user_id,
+    #         session_id=session_id
+    #     ):
+    #         print(chunk, end="", flush=True)
+    #     print()  # New line after streaming
 
     #     # For questions that definitely need search
     #     response = await client.ask(

@@ -17,7 +17,7 @@ from google.genai.types import (
 )
 from google.genai import types
 from navconfig import config, BASE_DIR
-from .abstract import AbstractClient, StreamingRetryConfig
+from .abstract import AbstractClient, ToolDefinition, StreamingRetryConfig
 from ..models import (
     AIMessage,
     AIMessageFactory,
@@ -33,6 +33,7 @@ from ..models import (
     GoogleModel,
     TTSVoice
 )
+from ..tools.abstract import AbstractTool
 
 
 logging.getLogger(
@@ -41,6 +42,7 @@ logging.getLogger(
 logging.getLogger(
     name='google_genai'
 ).setLevel(logging.WARNING)  # Suppress GenAI warnings
+
 
 class GoogleGenAIClient(AbstractClient):
     """
@@ -109,18 +111,42 @@ class GoogleGenAIClient(AbstractClient):
     def _build_tools(self, tool_type: str) -> Optional[List[types.Tool]]:
         """Build tools based on the specified type."""
         if tool_type == "custom_functions" and self.tools:
-            function_declarations = [
-                types.FunctionDeclaration(
-                    name=tool.name,
-                    description=tool.description,
-                    parameters=self._fix_tool_schema(tool.input_schema.copy())
+            # migrate to use abstractool + tool definition:
+            function_declarations = []
+            for tool_name, tool in self.tools.items():
+                if isinstance(tool, AbstractTool):
+                    full_schema = tool.get_tool_schema()
+                    tool_description = full_schema.get("description", tool.description)
+                    # Extract ONLY the parameters part
+                    schema = full_schema.get("parameters", {}).copy()
+                    try:
+                        del schema['additionalProperties']
+                    except KeyError:
+                        pass
+                elif isinstance(tool, ToolDefinition):
+                    tool_description = tool.description
+                    schema = tool.input_schema
+                else:
+                    # Fallback for other tool types
+                    tool_description = getattr(tool, 'description', f"Tool: {tool_name}")
+                    schema = getattr(tool, 'input_schema', {})
+                # Ensure we have a valid parameters schema
+                if not schema:
+                    schema = {
+                        "type": "object",
+                        "properties": {},
+                        "required": []
+                    }
+                function_declarations.append(
+                    types.FunctionDeclaration(
+                        name=tool_name,
+                        description=tool_description,
+                        parameters=self._fix_tool_schema(schema.copy())
+                    )
                 )
-                for tool in self.tools.values()
-            ]
             return [
                 types.Tool(function_declarations=function_declarations)
             ]
-
         elif tool_type == "builtin_tools":
             return [
                 types.Tool(google_search=types.GoogleSearch()),
@@ -140,6 +166,7 @@ class GoogleGenAIClient(AbstractClient):
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
         force_tool_usage: Optional[str] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
         stateless: bool = False
     ) -> AIMessage:
         """
@@ -176,7 +203,7 @@ class GoogleGenAIClient(AbstractClient):
         else:
             # Use the unified conversation context preparation from AbstractClient
             messages, conversation_history, system_prompt = await self._prepare_conversation_context(
-                prompt, files, user_id, session_id, system_prompt
+                prompt, files, user_id, session_id, system_prompt, stateless=stateless
             )
 
         # Prepare structured output configuration
@@ -227,7 +254,9 @@ class GoogleGenAIClient(AbstractClient):
                     generation_config["response_schema"] = structured_output.output_type
 
         # Tool selection
-        tools = None
+        if tools and isinstance(tools, list):
+            for tool in tools:
+                self.register_tool(tool)
         tool_type = None
         if not structured_output:
             tool_type = force_tool_usage or self._analyze_prompt_for_tools(
@@ -384,6 +413,12 @@ class GoogleGenAIClient(AbstractClient):
                 assistant_response_text,
                 tools_used
             )
+        # Before creating the AIMessage, track conversation usage
+        conversation_used = False
+        conversation_context_length = 0
+        if conversation_history and conversation_history.turns:
+            conversation_used = True
+            conversation_context_length = len(conversation_history.turns)
         # Create AIMessage using factory
         ai_message = AIMessageFactory.from_gemini(
             response=response,
@@ -395,6 +430,9 @@ class GoogleGenAIClient(AbstractClient):
             structured_output=final_output if final_output != response.text else None,
             tool_calls=all_tool_calls
         )
+        # Set the conversation flags
+        ai_message.used_conversation_history = conversation_used
+        ai_message.conversation_context_length = conversation_context_length
 
         # Override provider to distinguish from Vertex AI
         ai_message.provider = "google_genai"
@@ -412,7 +450,8 @@ class GoogleGenAIClient(AbstractClient):
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
         retry_config: Optional[StreamingRetryConfig] = None,
-        on_max_tokens: Optional[str] = "retry"  # "retry", "notify", "ignore"
+        on_max_tokens: Optional[str] = "retry",  # "retry", "notify", "ignore"
+        tools: Optional[List[Dict[str, Any]]] = None,
     ) -> AsyncIterator[str]:
         """
         Stream Google Generative AI's response using AsyncIterator.
@@ -460,7 +499,9 @@ class GoogleGenAIClient(AbstractClient):
         current_max_tokens = max_tokens or self.max_tokens
         retry_count = 0
 
-        tools = None
+        if tools and isinstance(tools, list):
+            for tool in tools:
+                self.register_tool(tool)
         if self.tools:
             # Convert to newer API format - create proper Tool objects
             function_declarations = []
