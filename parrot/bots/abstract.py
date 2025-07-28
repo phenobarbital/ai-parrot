@@ -32,7 +32,7 @@ from ..models import (
 )
 from ..stores import AbstractStore, supported_stores
 from ..stores.models import Document
-from ..tools import AbstractTool
+from ..tools import AbstractTool, MathTool
 from ..memory import (
     ConversationMemory,
     ConversationTurn,
@@ -64,7 +64,9 @@ class AbstractBot(DBInterface, ABC):
         name: str = 'Nav',
         system_prompt: str = None,
         human_prompt: str = None,
+        use_tools: bool = True,
         tools: List[AbstractTool] = None,
+        tool_threshold: float = 0.7,  # Confidence threshold for tool usage
         **kwargs
     ):
         """Initialize the Chatbot with the given configuration."""
@@ -92,6 +94,19 @@ class AbstractBot(DBInterface, ABC):
         )
         # Agentic Tools:
         self.tools = tools or []
+        self.tool_threshold = tool_threshold
+        if use_tools:
+            if not self.tools:
+                # Default tools if none provided
+                self.tools = self.default_tools()
+            elif isinstance(self.tools, list):
+                # Ensure all tools are AbstractTool instances
+                for tool in self.tools:
+                    if not isinstance(tool, AbstractTool):
+                        raise TypeError(
+                            f"Tool {tool} is not an instance of AbstractTool"
+                        )
+                    self.tools.append(tool)
         # Optional aiohttp Application:
         self.app: Optional[web.Application] = None
         # Start initialization:
@@ -206,6 +221,15 @@ class AbstractBot(DBInterface, ABC):
         if _permissions is None:
             _permissions = {}
         self._permissions = {**_default, **_permissions}
+
+    def default_tools(self, tools: list = None) -> List[AbstractTool]:
+        ctools = [
+            MathTool(),
+        ]
+        if tools:
+            ctools.extend(tools)
+        return ctools
+
 
     def default_permissions(self) -> dict:
         """
@@ -859,6 +883,10 @@ class AbstractBot(DBInterface, ABC):
         if not self.enable_tools:
             return False
 
+        question_lower = question.lower()
+        tool_scores = {}
+        suggested_tools = []
+
         # Simple heuristics - you can enhance this
         tool_indicators = [
             'search', 'find', 'lookup', 'get data', 'calculate', 'analyze',
@@ -867,7 +895,7 @@ class AbstractBot(DBInterface, ABC):
             'translate', 'convert', 'generate', 'create file'
         ]
 
-        question_lower = question.lower()
+
         return any(indicator in question_lower for indicator in tool_indicators)
 
     async def create_system_prompt(
@@ -922,6 +950,7 @@ class AbstractBot(DBInterface, ABC):
         return_context: bool = False,
         memory: Optional[Callable] = None,
         ensemble_config: dict = None,
+        mode: str = "adaptive",
         **kwargs
     ) -> AIMessage:
         """
@@ -993,6 +1022,14 @@ class AbstractBot(DBInterface, ABC):
 
             # Determine if tools should be used
             use_tools = self._use_tools(question)
+            if mode == "adaptive":
+                effective_mode = "agentic" if use_tools else "conversational"
+            elif mode == "agentic":
+                use_tools = True
+                effective_mode = "agentic"
+            else:  # conversational
+                use_tools = False
+                effective_mode = "conversational"
 
             # Create system prompt
             system_prompt = await self.create_system_prompt(
@@ -1541,3 +1578,29 @@ class AbstractBot(DBInterface, ABC):
                     seen_content.add(content_key)
 
         return interleaved
+
+    # Tool Management:
+    def add_tool(self, tool: AbstractTool) -> None:
+        """Add a tool to the bot's toolkit."""
+        if tool not in self.tools:
+            self.tools.append(tool)
+            self.logger.info(f"Added tool: {tool.name}")
+
+    def remove_tool(self, tool_name: str) -> bool:
+        """Remove a tool from the bot's toolkit."""
+        for i, tool in enumerate(self.tools):
+            if tool.name == tool_name:
+                removed_tool = self.tools.pop(i)
+                self.logger.info(f"Removed tool: {removed_tool.name}")
+                return True
+        return False
+
+    def list_tools(self) -> List[Dict[str, str]]:
+        """List all available tools with their descriptions."""
+        return [
+            {
+                'name': tool.name,
+                'description': getattr(tool, 'description', 'No description available')
+            }
+            for tool in self.tools
+        ]

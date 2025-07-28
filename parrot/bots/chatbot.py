@@ -15,14 +15,13 @@ from ..conf import (
     default_dsn,
     EMBEDDING_DEFAULT_MODEL,
 )
-from ..handlers.models import ChatbotModel
+from ..handlers.models import BotModel
 from .abstract import AbstractBot
 
 class Chatbot(AbstractBot):
     """Represents an Bot (Chatbot, Agent) in Navigator.
 
-        Each Chatbot has a name, a role, a goal, a backstory,
-        and an optional language model (llm).
+    This class is the base for all chatbots and agents in the ai-parrot framework.
     """
     company_information: dict = {}
 
@@ -34,8 +33,6 @@ class Chatbot(AbstractBot):
         **kwargs
     ):
         """Initialize the Chatbot with the given configuration."""
-        # Configuration File:
-        self.config_file: PurePath = kwargs.get('config_file', None)
         # Other Configuration
         self.confidence_threshold: float = kwargs.get('threshold', 0.5)
         # Text Documents
@@ -63,55 +60,24 @@ class Chatbot(AbstractBot):
                 parents=True,
                 exist_ok=True
             )
-        # define de Config File:
-        if self.config_file:
-            if isinstance(self.config_file, str):
-                self.config_file = Path(self.config_file)
-            if not self.config_file.exists():
-                raise ConfigError(
-                    f"Configuration file {self.config_file} not found."
-                )
 
     def __repr__(self):
         return f"<ChatBot.{self.__class__.__name__}:{self.name}>"
 
     async def configure(self, app = None) -> None:
         """Load configuration for this Chatbot."""
-        self.app = None
-        if app:
-            if isinstance(app, web.Application):
-                self.app = app  # register the app into the Extension
-            else:
-                self.app = app.get_app()  # Nav Application
-        # Check if a Config File exists for this Bot instance:
-        config_file = BASE_DIR.joinpath(
-            'etc',
-            'config',
-            'chatbots',
-            self.name.lower(),
-            "config.toml"
-        )
-        if not config_file.exists():
-            config_file = self.config_file or config_file
-        if config_file.exists():
-            self.logger.notice(
-                f"Loading Bot {self.name} from config: {config_file.name}"
-            )
-            # Configure from the TOML file
-            await self.from_config_file(config_file)
-        elif (bot := await self.bot_exists(name=self.name, uuid=self.chatbot_id)):
+        if (bot := await self.bot_exists(name=self.name, uuid=self.chatbot_id)):
             self.logger.notice(
                 f"Loading Bot {self.name} from Database: {bot.chatbot_id}"
             )
             # Bot exists on Database, Configure from the Database
-            await self.from_database(bot, config_file)
+            await self.from_database(bot)
         else:
             raise ValueError(
                 f'Bad configuration procedure for bot {self.name}'
             )
         # adding this configured chatbot to app:
-        if self.app:
-            self.app[f"{self.name.lower()}_bot"] = self
+        await super().configure(app)
 
     def _from_bot(self, bot, key, config, default) -> Any:
         value = getattr(bot, key, None)
@@ -126,19 +92,19 @@ class Chatbot(AbstractBot):
         self,
         name: str = None,
         uuid: uuid.UUID = None
-    ) -> Union[ChatbotModel, bool]:
+    ) -> Union[BotModel, bool]:
         """Check if the Chatbot exists in the Database."""
         db = self.get_database('pg', dsn=default_dsn)
         async with await db.connection() as conn:  # pylint: disable=E1101
-            ChatbotModel.Meta.connection = conn
+            BotModel.Meta.connection = conn
             try:
                 if self.chatbot_id:
                     try:
-                        bot = await ChatbotModel.get(chatbot_id=uuid)
+                        bot = await BotModel.get(chatbot_id=uuid)
                     except Exception:
-                        bot = await ChatbotModel.get(name=name)
+                        bot = await BotModel.get(name=name)
                 else:
-                    bot = await ChatbotModel.get(name=self.name)
+                    bot = await BotModel.get(name=self.name)
                 if bot:
                     return bot
                 else:
@@ -148,23 +114,25 @@ class Chatbot(AbstractBot):
 
     async def from_database(
         self,
-        bot: Union[ChatbotModel, None] = None,
-        config_file: PurePath = None
+        bot: Union[BotModel, None] = None
     ) -> None:
-        """Load the Chatbot Configuration from the Database."""
+        """
+        Load the Chatbot/Agent Configuration from the Database.
+        If the bot is not found, it will raise a ConfigError.
+        """
         if not bot:
             db = self.get_database('pg', dsn=default_dsn)
             async with await db.connection() as conn:  # pylint: disable=E1101
                 # import model
-                ChatbotModel.Meta.connection = conn
+                BotModel.Meta.connection = conn
                 try:
                     if self.chatbot_id:
                         try:
-                            bot = await ChatbotModel.get(chatbot_id=self.chatbot_id)
+                            bot = await BotModel.get(chatbot_id=self.chatbot_id)
                         except Exception:
-                            bot = await ChatbotModel.get(name=self.name)
+                            bot = await BotModel.get(name=self.name)
                     else:
-                        bot = await ChatbotModel.get(name=self.name)
+                        bot = await BotModel.get(name=self.name)
                 except ValidationError as ex:
                     # Handle ValidationError
                     self.logger.error(
