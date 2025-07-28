@@ -1,30 +1,9 @@
 import os
-from typing import Dict, List, Mapping, Union, Any, Optional, Type
-import re
-from string import Template
-import json
-import traceback
-from pathlib import Path
-from datetime import datetime, timezone
-from typing_extensions import Annotated, TypedDict
-from aiohttp import web
-from pydantic import BaseModel
-import pandas as pd
-# for exponential backoff
-from tenacity import (
-    retry,
-    stop_after_attempt,
-    wait_random_exponential,
-    RetryError
-)  # for exponential backoff
-from datamodel.typedefs import SafeDict
-from datamodel.exceptions import ValidationError # noqa  pylint: disable=E0611
-from datamodel.parsers.json import json_decoder  # noqa  pylint: disable=E0611
-from navconfig import BASE_DIR
+from typing import List
 from navconfig.logging import logging
 from .chatbot import Chatbot
 from .prompts import AGENT_PROMPT
-from ..tools import AbstractTool, MathTool, PythonREPLTool, AbstractToolkit, ToolkitTool
+from ..tools.abstract import AbstractTool
 
 
 class BasicAgent(Chatbot):
@@ -64,11 +43,3 @@ class BasicAgent(Chatbot):
         self.logger = logging.getLogger(
             f'{self.name}.Agent'
         )
-
-    def default_tools(self, tools: list = None) -> List[AbstractTool]:
-        ctools = [
-            MathTool(),
-        ]
-        if tools:
-            ctools.extend(tools)
-        return ctools
