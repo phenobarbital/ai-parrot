@@ -11,7 +11,7 @@ from parrot.models import (
     VideoGenerationPrompt,
     SpeakerConfig
 )
-from parrot.tools.math_tool import MathTool
+from parrot.tools.math import MathTool
 
 async def main():
     question = "Give me a list of 10 European cities and their capitals. Use a list format."
