@@ -4,7 +4,7 @@ import asyncio
 from pathlib import Path
 from pydantic import BaseModel, Field
 from navconfig import BASE_DIR
-from parrot.clients import VertexAIClient, GoogleGenAIClient, GoogleModel
+from parrot.clients import GoogleGenAIClient, GoogleModel
 from parrot.models import (
     ImageGenerationPrompt,
     SpeechGenerationPrompt,
@@ -16,46 +16,8 @@ from parrot.tools.math import MathTool
 async def main():
     question = "Give me a list of 10 European cities and their capitals. Use a list format."
 
-    # print("--- Asking Vertex AI ---")
-    # async with VertexAIClient() as client:
-    #     response = await client.ask(question)
-    #     print(response.text)                    # Response text
-    #     print(response.usage.prompt_tokens)     # 39 (from usage_metadata)
-    #     print(response.usage.completion_tokens) # 5 (from usage_metadata)
-    #     print(response.usage.total_tokens)      # 110 (from usage_metadata)
-    #     print(response.provider)                # "vertex_ai"
-
     # print("\n--- Asking Google GenAI ---")
     # async with GoogleGenAIClient() as client:
-    #     print(response.text)                    # Response text
-    #     print(response.usage.prompt_tokens)     # 39 (from usage_metadata)
-    #     print(response.usage.completion_tokens) # 5 (from usage_metadata)
-    #     print(response.usage.total_tokens)      # 110 (from usage_metadata)
-    #     print(response.provider)                # "vertex_ai"
-
-    # async with VertexAIClient() as client:
-    #     math_tool = MathTool()
-
-    #     # Register the tool's methods
-    #     client.register_tool(
-    #         name="multiply",
-    #         description="Multiplies two numbers.",
-    #         input_schema={
-    #             "type": "object",
-    #             "properties": {
-    #                 "a": {"type": "number"},
-    #                 "b": {"type": "number"},
-    #             },
-    #             "required": ["a", "b"],
-    #         },
-    #         function=math_tool.multiply,
-    #     )
-
-    #     response = await client.ask(
-    #         "What is the result of multiplying 5 and 10?",
-    #         structured_output=math_tool.multiply
-    #     )
-    #     print('--- Vertex AI Tool Call Response ---')
     #     print(response.text)                    # Response text
     #     print(response.usage.prompt_tokens)     # 39 (from usage_metadata)
     #     print(response.usage.completion_tokens) # 5 (from usage_metadata)
