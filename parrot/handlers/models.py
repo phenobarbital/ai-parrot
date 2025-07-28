@@ -163,11 +163,11 @@ class BotModel(Model):
     tools_enabled: bool = Field(default=True, required=False)
     auto_tool_detection: bool = Field(default=True, required=False)
     tool_threshold: float = Field(default=0.7, required=False)
-    available_tools: List[str] = Field(default_factory=list, required=False)
+    tools: List[str] = Field(default_factory=list, required=False)
     operation_mode: str = Field(default='adaptive', required=False)  # 'conversational', 'agentic', 'adaptive'
 
     # Vector store and retrieval configuration
-    use_vector_context: bool = Field(default=False, required=False)
+    use_vector: bool = Field(default=False, required=False)
     vector_store_config: dict = Field(default_factory=dict, required=False)
     embedding_model: dict = Field(default=default_embed_model, required=False)
     context_search_limit: int = Field(default=10, required=False)
@@ -229,9 +229,9 @@ class BotModel(Model):
             'tools_enabled': self.tools_enabled,
             'auto_tool_detection': self.auto_tool_detection,
             'tool_threshold': self.tool_threshold,
-            'available_tools': self.available_tools,
+            'tools': self.tools,
             'operation_mode': self.operation_mode,
-            'use_vector_context': self.use_vector_context,
+            'use_vector': self.use_vector,
             'vector_store_config': self.vector_store_config,
             'embedding_model': self.embedding_model,
             'context_search_limit': self.context_search_limit,
@@ -247,35 +247,35 @@ class BotModel(Model):
 
     def is_agent_enabled(self) -> bool:
         """Check if this bot has agent capabilities enabled."""
-        return self.tools_enabled and len(self.available_tools) > 0
+        return self.tools_enabled and len(self.tools) > 0
 
     def get_available_tool_names(self) -> List[str]:
         """Get list of available tool names."""
-        return self.available_tools if self.available_tools else []
+        return self.tools if self.tools else []
 
     def add_tool(self, tool_name: str) -> None:
         """Add a tool to the available tools list."""
-        if tool_name not in self.available_tools:
-            self.available_tools.append(tool_name)
+        if tool_name not in self.tools:
+            self.tools.append(tool_name)
             self.updated_at = datetime.now()
 
     def remove_tool(self, tool_name: str) -> bool:
         """Remove a tool from the available tools list."""
-        if tool_name in self.available_tools:
-            self.available_tools.remove(tool_name)
+        if tool_name in self.tools:
+            self.tools.remove(tool_name)
             self.updated_at = datetime.now()
             return True
         return False
 
     def enable_vector_store(self, config: dict) -> None:
         """Enable vector store with given configuration."""
-        self.use_vector_context = True
+        self.use_vector = True
         self.vector_store_config = config
         self.updated_at = datetime.now()
 
     def disable_vector_store(self) -> None:
         """Disable vector store."""
-        self.use_vector_context = False
+        self.use_vector = False
         self.vector_store_config = {}
         self.updated_at = datetime.now()
 

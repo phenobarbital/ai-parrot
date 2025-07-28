@@ -100,11 +100,11 @@ class Chatbot(AbstractBot):
             try:
                 if self.chatbot_id:
                     try:
-                        bot = await BotModel.get(chatbot_id=uuid)
+                        bot = await BotModel.get(chatbot_id=uuid, enabled=True)
                     except Exception:
-                        bot = await BotModel.get(name=name)
+                        bot = await BotModel.get(name=name, enabled=True)
                 else:
-                    bot = await BotModel.get(name=self.name)
+                    bot = await BotModel.get(name=self.name, enabled=True)
                 if bot:
                     return bot
                 else:
@@ -128,11 +128,11 @@ class Chatbot(AbstractBot):
                 try:
                     if self.chatbot_id:
                         try:
-                            bot = await BotModel.get(chatbot_id=self.chatbot_id)
+                            bot = await BotModel.get(chatbot_id=self.chatbot_id, enabled=True)
                         except Exception:
-                            bot = await BotModel.get(name=self.name)
+                            bot = await BotModel.get(name=self.name, enabled=True)
                     else:
-                        bot = await BotModel.get(name=self.name)
+                        bot = await BotModel.get(name=self.name, enabled=True)
                 except ValidationError as ex:
                     # Handle ValidationError
                     self.logger.error(
@@ -147,15 +147,9 @@ class Chatbot(AbstractBot):
                         f"Chatbot {self.name} not found in the database."
                     )
         # Start Bot configuration from Database:
-        if config_file and config_file.exists():
-            file_config = await parse_toml_config(config_file)
-            # Knowledge Base come from file:
-            # Contextual knowledge-base
-            self.kb = file_config.get('knowledge-base', [])
-            if self.kb:
-                self.knowledge_base = self.create_kb(
-                    self.kb.get('data', [])
-                )
+        self.pre_instructions: list = self._from_db(
+            bot, 'pre_instructions', default=[]
+        )
         self.name = self._from_db(bot, 'name', default=self.name)
         self.chatbot_id = str(self._from_db(bot, 'chatbot_id', default=self.chatbot_id))
         self.description = self._from_db(bot, 'description', default=self.description)
@@ -164,120 +158,23 @@ class Chatbot(AbstractBot):
         self.rationale = self._from_db(bot, 'rationale', default=self.rationale)
         self.backstory = self._from_db(bot, 'backstory', default=self.backstory)
         # LLM Configuration:
-        llm = self._from_db(bot, 'llm', default='vertexai')
-        llm_config = self._from_db(bot, 'llm_config', default={})
-        # Configuration of LLM:
-        self.configure_llm(llm, llm_config)
+        self._llm = self._from_db(bot, 'llm', default='google')
+        self._llm_config = self._from_db(bot, 'llm_config', default={})
         # Embedding Model Configuration:
         self.embedding_model : dict = self._from_db(
             bot, 'embedding_model', None
         )
         # Database Configuration:
-        self._use_vector = bot.vector_store
-        self._vector_store = bot.database
-        print('DATABASE ====================================')
-        print(bot.database)
-        self._metric_type = bot.database.get(
+        self._use_vector = bot.use_vector_context
+        self._vector_store = bot.vector_store_config
+        self._metric_type = bot.vector_store_config.get(
             'metric_type',
             self._metric_type
         )
-        print('METRIC > , ', self._metric_type)
-        self.configure_store()
         # after configuration, setup the chatbot
         if bot.system_prompt_template:
             self.system_prompt_template = bot.system_prompt_template
-        self._define_prompt(
-            config={}
-        )
         # Last: permissions:
         _default = self.default_permissions()
         _permissions = bot.permissions
         self._permissions = {**_default, **_permissions}
-
-    async def from_config_file(self, config_file: PurePath) -> None:
-        """Load the Chatbot Configuration from the TOML file."""
-        self.logger.debug(
-            f"Using Config File: {config_file}"
-        )
-        file_config = await parse_toml_config(config_file)
-        # getting the configuration from config
-        self.config_file = config_file
-        # basic config
-        basic = file_config.get('chatbot', {})
-        # Chatbot Name:
-        self.name = basic.get('name', self.name)
-        self.description = basic.get('description', self.description)
-        self.role = basic.get('role', self.role)
-        self.goal = basic.get('goal', self.goal)
-        self.rationale = basic.get('rationale', self.rationale)
-        self.backstory = basic.get('backstory', self.backstory)
-        # Model Information:
-        llminfo = file_config.get('llm')
-        llm = llminfo.get('llm', 'VertexLLM')
-        cfg = llminfo.get('config', {})
-        # Configuration of LLM:
-        self.configure_llm(llm, cfg)
-        # Other models and embedding models:
-        models = file_config.get('models', {})
-        # definition of embedding model for Chatbot
-        self.embedding_model = models.get(
-            'embedding_model',
-            {
-                'model': EMBEDDING_DEFAULT_MODEL,
-                'model_type': 'transformers'
-            }
-        )
-        self.dimension = self.embedding_model.get('dimension', 768)
-        # pre-instructions
-        instructions = file_config.get('pre-instructions')
-        if instructions:
-            self.pre_instructions = instructions.get('instructions', [])
-        # Contextual knowledge-base
-        self.kb = file_config.get('knowledge-base', [])
-        if self.kb:
-            self.knowledge_base = self.create_kb(
-                self.kb.get('data', [])
-            )
-        database = file_config.get('database', {})
-        vector_store = database.get('vector_store', False)
-
-        if database or vector_store is True:
-            self._use_database = True
-        vector_db = database.pop('vector_database', None)
-        # configure vector database:
-        if vector_db:
-            # Initialize the store:
-            self.stores = []
-            self.store = None
-            self._use_vector = vector_store
-            self._vector_store = database
-            self.configure_store()
-            self._metric_type = database.get(
-                'metric_type',
-                self._metric_type
-            )
-        # after configuration, setup the chatbot
-        if 'template_prompt' in basic:
-            self.template_prompt = basic.get('template_prompt')
-        # convert company_information into an string bulleted:
-        if isinstance(self.company_information, str):
-            # Convert string to dict
-            self.company_information = {
-                'information': self.company_information
-            }
-        elif isinstance(self.company_information, dict):
-            # Convert dict to string
-            self.company_information = "\n".join(
-                    f"- {key}: {value}"
-                    for key, value in self.company_information.items()
-            )
-        self._define_prompt(
-            config=basic,
-            **{
-                "company_information": self.company_information,
-            }
-        )
-        # Last: permissions:
-        permissions = file_config.get('permissions', {})
-        _default = self.default_permissions()
-        self._permissions = {**_default, **permissions}
