@@ -16,11 +16,22 @@ from ..conf import (
 )
 from ..handlers.models import BotModel
 from .abstract import AbstractBot
+from ..tools import (
+    AbstractTool,
+    MathTool,
+    PythonREPLTool,
+    AbstractToolkit,
+    ToolkitTool
+)
 
 class Chatbot(AbstractBot):
     """Represents an Bot (Chatbot, Agent) in Navigator.
 
     This class is the base for all chatbots and agents in the ai-parrot framework.
+
+    This class can be used in two ways:
+        1. Manual creation: bot = Chatbot(name="MyBot", tools=[...])
+        2. Database loading: bot = Chatbot(name="MyBot", from_database=True)
     """
     company_information: dict = {}
 
@@ -29,13 +40,26 @@ class Chatbot(AbstractBot):
         name: str = 'Nav',
         system_prompt: str = None,
         human_prompt: str = None,
+        from_database: bool = True,
+        tools: List[AbstractTool] = None,
         **kwargs
     ):
-        """Initialize the Chatbot with the given configuration."""
+        """
+        Initialize the Chatbot with manual creation or database loading support.
+
+        Args:
+            name: Bot name
+            system_prompt: Custom system prompt
+            human_prompt: Custom human prompt
+            from_database: Whether to load configuration from database
+            tools: List of tools for manual creation
+            **kwargs: Additional configuration
+        """
         # Other Configuration
         self.confidence_threshold: float = kwargs.get('threshold', 0.5)
+        self._from_database: bool = from_database
         # Text Documents
-        self.documents_dir = kwargs.get(
+        self.documents_dir: Path = kwargs.get(
             'documents_dir',
             None
         )
@@ -50,6 +74,7 @@ class Chatbot(AbstractBot):
             name=name,
             system_prompt=system_prompt,
             human_prompt=human_prompt,
+            tools= tools or [],
             **kwargs
         )
         if isinstance(self.documents_dir, str):
@@ -67,17 +92,26 @@ class Chatbot(AbstractBot):
 
     async def configure(self, app=None) -> None:
         """Load configuration for this Chatbot."""
-        if (bot := await self.bot_exists(name=self.name, uuid=self.chatbot_id)):
-            self.logger.notice(
-                f"Loading Bot {self.name} from Database: {bot.chatbot_id}"
-            )
-            # Bot exists on Database, Configure from the Database
-            await self.from_database(bot)
+        if self._from_database:
+            if (bot := await self.bot_exists(name=self.name, uuid=self.chatbot_id)):
+                self.logger.notice(
+                    f"Loading Bot {self.name} from Database: {bot.chatbot_id}"
+                )
+                # Bot exists on Database, Configure from the Database
+                await self.from_database(
+                    bot
+                )
+            else:
+                self.logger.warning(
+                    f'Bot {self.name} not found, falling back to manual configuration'
+                )
+                self._from_database = False
+                await self.from_manual_config()
         else:
-            raise ValueError(
-                f'Bad configuration procedure for bot {self.name}'
-            )
-        # adding this configured chatbot to app:
+            # Manual configuration
+            await self.from_manual_config()
+
+        # Call parent configuration
         await super().configure(app)
 
     def _from_bot(self, bot, key, config, default) -> Any:
@@ -88,6 +122,81 @@ class Chatbot(AbstractBot):
     def _from_db(self, botobj, key, default = None) -> Any:
         value = getattr(botobj, key, default)
         return value if value else default
+
+    async def from_manual_config(self) -> None:
+        """
+        Configure the bot manually without database dependency.
+        """
+        self.logger.info(f"Configuring bot {self.name} manually")
+
+        # Set up basic configuration with defaults
+        self.pre_instructions: list = getattr(self, 'pre_instructions', [])
+        self.description = getattr(self, 'description', f"AI Assistant: {self.name}")
+        self.role = getattr(self, 'role', 'AI Assistant')
+        self.goal = getattr(self, 'goal', 'Help users accomplish their tasks effectively')
+        self.rationale = getattr(self, 'rationale', self.default_rationale())
+        self.backstory = getattr(self, 'backstory', 'I am an AI assistant created to help users with various tasks.')
+        self.capabilities = getattr(self, 'capabilities', 'I can engage in conversation, answer questions, and use tools when needed.')
+
+        # LLM Configuration with defaults
+        self._llm = getattr(self, '_llm', 'google')
+        self._llm_model = getattr(self, '_llm_model', 'gemini-2.0-flash-001')
+        self._llm_temp = getattr(self, '_llm_temp', 0.1)
+        self._max_tokens = getattr(self, '_max_tokens', 1024)
+        self._top_k = getattr(self, '_top_k', 41)
+        self._top_p = getattr(self, '_top_p', 0.9)
+        self._llm_config = getattr(self, '_llm_config', {})
+
+        # Tool and agent configuration
+        self.auto_tool_detection = getattr(self, 'auto_tool_detection', True)
+        self.tool_threshold = getattr(self, 'tool_threshold', 0.7)
+        self.operation_mode = getattr(self, 'operation_mode', 'adaptive')
+
+        # Load manual tools
+        if self.tools:
+            self.available_tool_instances = {
+                tool.name: tool for tool in self.tools
+            }
+            self.tools_description = self._build_tools_description()
+            self.logger.info(f"Loaded {len(self.tools)} manual tools")
+
+        # Embedding Model Configuration
+        self.embedding_model: dict = getattr(self, 'embedding_model', {
+            'model_name': EMBEDDING_DEFAULT_MODEL,
+            'model_type': 'huggingface'
+        })
+
+        # Vector store configuration
+        self._use_vector = getattr(self, '_use_vector', False)
+        self._vector_store = getattr(self, '_vector_store', {})
+        self._metric_type = getattr(self, '_metric_type', 'COSINE')
+
+        # Memory and conversation configuration
+        self.memory_type = getattr(self, 'memory_type', 'memory')
+        self.memory_config = getattr(self, 'memory_config', {})
+        self.max_context_turns = getattr(self, 'max_context_turns', 5)
+        self.use_conversation_history = getattr(self, 'use_conversation_history', True)
+
+        # Context and retrieval settings
+        self.context_search_limit = getattr(self, 'context_search_limit', 10)
+        self.context_score_threshold = getattr(self, 'context_score_threshold', 0.7)
+
+        # Security and permissions
+        _default = self.default_permissions()
+        _permissions = getattr(self, '_permissions', {})
+        self._permissions = {**_default, **_permissions}
+
+        # Other settings
+        self.language = getattr(self, 'language', 'en')
+        self.disclaimer = getattr(self, 'disclaimer', None)
+
+        self.logger.info(
+            f"Manual configuration complete: "
+            f"tools_enabled={self.enable_tools}, "
+            f"operation_mode={self.operation_mode}, "
+            f"use_vector={self._use_vector}, "
+            f"tools_count={len(self.tools)}"
+        )
 
     async def bot_exists(
         self,
@@ -311,7 +420,7 @@ class Chatbot(AbstractBot):
         # Build tools context if tools are available
         tools_context = ''
         if hasattr(self, 'tools_description') and self.tools_description:
-            tools_context = f"\n\nTOOLS AVAILABLE:\n{self.tools_description}"
+            tools_context = f"{self.tools_description}"
             tools_context += "\nUse these tools when appropriate to help answer user questions."
 
         # Apply template substitution
@@ -327,12 +436,14 @@ class Chatbot(AbstractBot):
             tools_context=tools_context,
             **kwargs
         )
-
+        # Set the system prompt
         self.system_prompt_template = final_prompt
-
+        print('PROMPT ')
+        print(final_prompt)
         self.logger.debug(
             f"System prompt configured with tools: {len(self.tools)} tools available"
         )
+        print('Tools > ', self.tools)
 
     def get_tool_by_name(self, tool_name: str) -> Any:
         """Get a tool instance by name."""
@@ -391,7 +502,7 @@ class Chatbot(AbstractBot):
         """Get the current operation mode of the bot."""
         if self.operation_mode == 'adaptive':
             # In adaptive mode, determine based on current configuration
-            if self.enable_tools and len(self.tools) > 0:
+            if len(self.tools) > 0:
                 return 'agentic'
             else:
                 return 'conversational'

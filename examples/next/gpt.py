@@ -134,7 +134,8 @@ async def example_usage():
 
         # Use the tool through OpenAI
         response = await client.ask(
-            "Create a simple DataFrame with 3 rows and 2 columns, then show its info"
+            "Create a simple DataFrame with 3 rows and 2 columns, then show its info",
+            tools=[repl_tool],
         )
         print(response)
 
