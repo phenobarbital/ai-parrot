@@ -790,12 +790,18 @@ class AbstractClient(ABC):
             if structured_output.format == OutputFormat.JSON:
                 # Current JSON logic
                 try:
+                    # first, try to remove backsticks (markdown code blocks) if any:
+                    # This is the right way to do it.
+                    response_text = response_text.strip()
+                    if response_text.startswith('```json'):
+                        response_text = response_text[7:-3]
                     if hasattr(output_type, 'model_validate_json'):
                         return output_type.model_validate_json(response_text)
                     elif hasattr(output_type, 'model_validate'):
                         parsed_json = self._json.loads(response_text)
                         return output_type.model_validate(parsed_json)
                     else:
+                        # then, try to parse the JSON directly
                         return self._json.loads(response_text)
                 except (ParserError, ValidationError, json.JSONDecodeError) as e:
                     self.logger.warning(f"Standard parsing failed: {e}")
