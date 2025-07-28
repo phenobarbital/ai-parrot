@@ -15,6 +15,10 @@ from ..models import (
     ToolCall,
 )
 from ..models.groq import GroqModel
+from ..models.outputs import (
+    SentimentAnalysis,
+    ProductReview
+)
 
 
 getLogger('httpx').setLevel('WARNING')
@@ -517,6 +521,231 @@ class GroqClient(AbstractClient):
             session_id=session_id,
             turn_id=turn_id,
             structured_output=summarized_text
+        )
+
+        return ai_message
+
+    async def analyze_sentiment(
+        self,
+        text: str,
+        model: Union[GroqModel, str] = GroqModel.KIMI_K2_INSTRUCT,
+        temperature: Optional[float] = 0.1,
+        max_tokens: int = 1024,
+        top_p: float = 0.9,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        use_structured: bool = False
+    ) -> AIMessage:
+        """
+        Analyze the sentiment of a given text.
+
+        Args:
+            text (str): The text content to analyze.
+            model (Union[GroqModel, str]): The model to use.
+            temperature (float): Sampling temperature for response generation.
+            user_id (Optional[str]): Optional user identifier for tracking.
+            session_id (Optional[str]): Optional session identifier for tracking.
+        """
+        if not self.session:
+            raise RuntimeError("Client not initialized. Use async context manager.")
+
+        model = model.value if isinstance(model, GroqModel) else model
+
+        turn_id = str(uuid.uuid4())
+        original_prompt = text
+
+        if use_structured:
+            system_prompt = (
+                "You are a sentiment analysis expert. Analyze the sentiment of the given text "
+                "and respond with structured data including sentiment classification, "
+                "confidence level, emotional indicators, and reasoning."
+            )
+        else:
+            system_prompt = """
+Analyze the sentiment of the following text and provide a structured response.
+Your response should include:
+1. Overall sentiment (Positive, Negative, Neutral, or Mixed)
+2. Confidence level (High, Medium, Low)
+3. Key emotional indicators found in the text
+4. Brief explanation of your analysis
+Format your response clearly with these sections.
+            """
+
+        messages, conversation_session, system_prompt = await self._prepare_conversation_context(
+            original_prompt, None, user_id, session_id, system_prompt
+        )
+
+        if system_prompt:
+            messages.insert(0, {"role": "system", "content": system_prompt})
+
+        # Prepare request arguments
+        request_args = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": text},
+            ],
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "top_p": top_p,
+            "stream": False,
+        }
+
+        # Add structured output if requested
+        structured_output = None
+        if use_structured:
+            request_args["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "sentiment_analysis",
+                    "schema": SentimentAnalysis.model_json_schema(),
+                    "strict": True
+                }
+            }
+            structured_output = SentimentAnalysis
+
+        # Make request to Groq API
+        response = await self.client.chat.completions.create(**request_args)
+        result = response.choices[0].message
+
+        # Extract sentiment analysis result
+        sentiment_result = result.content
+
+        # Add final assistant message to conversation
+        messages.append({
+            "role": "assistant",
+            "content": result.content
+        })
+
+        # Update conversation memory
+        tools_used = []
+        # return only 100 characters of the sentiment analysis result
+        assistant_content = sentiment_result[:100] if sentiment_result else ""
+        await self._update_conversation_memory(
+            user_id,
+            session_id,
+            conversation_session,
+            messages,
+            system_prompt,
+            turn_id,
+            'sentiment_analysis',
+            assistant_content,
+            tools_used
+        )
+
+        # Create AIMessage using factory
+        ai_message = AIMessageFactory.from_groq(
+            response=response,
+            input_text=original_prompt,
+            model=model,
+            user_id=user_id,
+            session_id=session_id,
+            turn_id=turn_id,
+            structured_output=structured_output,
+        )
+
+        return ai_message
+
+    async def analyze_product_review(
+        self,
+        review_text: str,
+        product_id: str,
+        product_name: str,
+        model: Union[GroqModel, str] = GroqModel.LLAMA_3_3_70B_VERSATILE,
+        temperature: Optional[float] = 0.1,
+        max_tokens: int = 1024,
+        top_p: float = 0.9,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+    ) -> AIMessage:
+        """
+        Analyze a product review and extract structured information.
+
+        Args:
+            review_text (str): The product review text to analyze.
+            product_id (str): Unique identifier for the product.
+            product_name (str): Name of the product being reviewed.
+            model (Union[GroqModel, str]): The model to use.
+            temperature (float): Sampling temperature for response generation.
+            max_tokens (int): Maximum tokens in response.
+            top_p (float): Top-p sampling parameter.
+            user_id (Optional[str]): Optional user identifier for tracking.
+            session_id (Optional[str]): Optional session identifier for tracking.
+        """
+        if not self.session:
+            raise RuntimeError("Client not initialized. Use async context manager.")
+
+        turn_id = str(uuid.uuid4())
+        original_prompt = review_text
+
+        system_prompt = (
+            f"You are a product review analysis expert. Analyze the given product review "
+            f"for '{product_name}' (ID: {product_id}) and extract structured information "
+            f"including sentiment, rating, and key features mentioned in the review."
+        )
+
+        messages, conversation_session, system_prompt = await self._prepare_conversation_context(
+            original_prompt, None, user_id, session_id, system_prompt
+        )
+
+        if system_prompt:
+            messages.insert(0, {"role": "system", "content": system_prompt})
+
+        # Prepare request arguments with structured output
+        request_args = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Product ID: {product_id}\nProduct Name: {product_name}\nReview: {review_text}"},
+            ],
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "top_p": top_p,
+            "stream": False,
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "product_review_analysis",
+                    "schema": ProductReview.model_json_schema(),
+                    "strict": True
+                }
+            }
+        }
+
+        # Make request to Groq API
+        response = await self.client.chat.completions.create(**request_args)
+        result = response.choices[0].message
+
+        # Add final assistant message to conversation
+        messages.append({
+            "role": "assistant",
+            "content": result.content
+        })
+
+        # Update conversation memory
+        tools_used = []
+        assistant_content = result.content[:100] if result.content else ""
+        await self._update_conversation_memory(
+            user_id,
+            session_id,
+            conversation_session,
+            messages,
+            system_prompt,
+            turn_id,
+            'product_review_analysis',
+            assistant_content,
+            tools_used
+        )
+
+        # Create AIMessage using factory
+        ai_message = AIMessageFactory.from_groq(
+            response=response,
+            input_text=original_prompt,
+            model=model,
+            user_id=user_id,
+            session_id=session_id,
+            turn_id=turn_id,
+            structured_output=ProductReview,
         )
 
         return ai_message

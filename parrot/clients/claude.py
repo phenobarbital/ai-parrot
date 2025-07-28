@@ -23,6 +23,10 @@ from ..models import (
     StructuredOutputConfig,
     ObjectDetectionResult
 )
+from ..models.outputs import (
+    SentimentAnalysis,
+    ProductReview
+)
 
 class ClaudeModel(Enum):
     """Enum for Claude models."""
@@ -921,6 +925,7 @@ Requirements:
         temperature: Optional[float] = 0.1,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
+        use_structured: bool = False,
     ) -> AIMessage:
         """
         Analyze the sentiment of a given text.
@@ -936,15 +941,26 @@ Requirements:
             raise RuntimeError("Client not initialized. Use async context manager.")
 
         turn_id = str(uuid.uuid4())
-
-        system_prompt = """Analyze the sentiment of the following text and provide a structured response.
+        if use_structured:
+            system_prompt = """You are a sentiment analysis expert.
+Analyze the sentiment of the given text and respond with valid JSON matching this exact schema:
+{
+  "sentiment": "positive" | "negative" | "neutral" | "mixed",
+  "confidence_level": 0.0-1.0,
+  "emotional_indicators": ["word1", "phrase2", ...],
+  "reason": "explanation of analysis"
+}
+Respond only with valid JSON, no additional text."""
+        else:
+            system_prompt = """
+Analyze the sentiment of the following text and provide a structured response.
 Your response should include:
 1. Overall sentiment (Positive, Negative, Neutral, or Mixed)
 2. Confidence level (High, Medium, Low)
 3. Key emotional indicators found in the text
 4. Brief explanation of your analysis
-
-Format your response clearly with these sections."""
+Format your response clearly with these sections.
+            """
 
         messages = [{
             "role": "user",
@@ -963,6 +979,7 @@ Format your response clearly with these sections."""
             response.raise_for_status()
             result = await response.json()
 
+        structured_output = SentimentAnalysis if use_structured else None
         return AIMessageFactory.from_claude(
             response=result,
             input_text=text,
@@ -970,6 +987,74 @@ Format your response clearly with these sections."""
             user_id=user_id,
             session_id=session_id,
             turn_id=turn_id,
-            structured_output=None,
+            structured_output=structured_output,
+            tool_calls=[]
+        )
+
+    async def analyze_product_review(
+        self,
+        review_text: str,
+        product_id: str,
+        product_name: str,
+        model: Union[ClaudeModel, str] = ClaudeModel.SONNET_4,
+        temperature: Optional[float] = 0.1,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+    ) -> AIMessage:
+        """
+        Analyze a product review and extract structured information.
+
+        Args:
+            review_text (str): The product review text to analyze.
+            product_id (str): Unique identifier for the product.
+            product_name (str): Name of the product being reviewed.
+            model (Union[ClaudeModel, str]): The model to use.
+            temperature (float): Sampling temperature for response generation.
+            user_id (Optional[str]): Optional user identifier for tracking.
+            session_id (Optional[str]): Optional session identifier for tracking.
+        """
+        if not self.session:
+            raise RuntimeError("Client not initialized. Use async context manager.")
+
+        turn_id = str(uuid.uuid4())
+
+        system_prompt = f"""You are a product review analysis expert. Analyze the given product review and respond with valid JSON matching this exact schema:
+
+    {{
+    "product_id": "{product_id}",
+    "product_name": "{product_name}",
+    "review_text": "original review text",
+    "rating": 0.0-5.0,
+    "sentiment": "positive" | "negative" | "neutral",
+    "key_features": ["feature1", "feature2", ...]
+    }}
+
+    Extract the rating based on the review content (estimate if not explicitly stated), determine sentiment, and identify key product features mentioned. Respond only with valid JSON, no additional text."""
+
+        messages = [{
+            "role": "user",
+            "content": [{"type": "text", "text": f"Product ID: {product_id}\nProduct Name: {product_name}\nReview: {review_text}"}]
+        }]
+
+        payload = {
+            "model": model.value if isinstance(model, Enum) else model,
+            "max_tokens": self.max_tokens,
+            "temperature": temperature,
+            "messages": messages,
+            "system": system_prompt
+        }
+
+        async with self.session.post(f"{self.base_url}/v1/messages", json=payload) as response:
+            response.raise_for_status()
+            result = await response.json()
+
+        return AIMessageFactory.from_claude(
+            response=result,
+            input_text=review_text,
+            model=model,
+            user_id=user_id,
+            session_id=session_id,
+            turn_id=turn_id,
+            structured_output=ProductReview,
             tool_calls=[]
         )

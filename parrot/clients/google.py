@@ -34,6 +34,10 @@ from ..models import (
     TTSVoice
 )
 from ..tools.abstract import AbstractTool
+from ..models.outputs import (
+    SentimentAnalysis,
+    ProductReview
+)
 
 
 logging.getLogger(

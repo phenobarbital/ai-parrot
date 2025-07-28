@@ -1,4 +1,4 @@
-from typing import List, Optional, Any, Callable
+from typing import List, Optional, Any, Callable, Literal
 from dataclasses import dataclass
 from pydantic import BaseModel, Field
 from .basic import OutputFormat
@@ -86,3 +86,31 @@ class VideoGenerationPrompt(BaseModel):
         default='',
         description="A description of what to avoid in the video."
     )
+
+class SentimentAnalysis(BaseModel):
+    """Structured sentiment analysis response."""
+    sentiment: Literal["positive", "negative", "neutral", "mixed"] = Field(
+        description="Overall sentiment classification"
+    )
+    confidence_level: float = Field(
+        ge=0.0, le=1.0,
+        description="Confidence level as decimal between 0 and 1"
+    )
+    emotional_indicators: List[str] = Field(
+        description="List of words/phrases that indicate emotional content"
+    )
+    reason: str = Field(
+        description="Explanation of the sentiment analysis"
+    )
+
+
+class ProductReview(BaseModel):
+    """Structured product review response."""
+    product_id: str = Field(..., description="Unique identifier for the product being reviewed")
+    product_name: str = Field(..., description="Name of the product being reviewed")
+    review_text: str = Field(..., description="The text of the product review")
+    rating: float = Field(..., description="Rating given to the product")
+    sentiment: Literal["positive", "negative", "neutral"] = Field(
+        ..., description="Sentiment of the review"
+    )
+    key_features: list[str] = Field(..., description="Key features highlighted in the review")
