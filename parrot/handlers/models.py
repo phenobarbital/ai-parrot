@@ -1,5 +1,5 @@
 """
-Database models for the Parrot application.
+Database model for Managing Chatbots and Agents.
 """
 from typing import List, Union, Optional
 import uuid
@@ -9,6 +9,7 @@ from pathlib import Path, PurePath
 from enum import Enum
 from datamodel import Field
 from asyncdb.models import Model
+from ..bots.basic import BasicBot
 
 
 def default_embed_model():
@@ -23,82 +24,124 @@ def created_at(*args, **kwargs) -> int:
 
 
 # Chatbot Model:
-class ChatbotModel(Model):
-    """Chatbot.
-        --- drop table navigator.chatbots;
-    CREATE TABLE IF NOT EXISTS navigator.chatbots (
+class BotModel(Model):
+    """
+    Unified Bot Model combining chatbot and agent functionality.
+
+    This model represents any AI bot that can operate in conversational mode,
+    agentic mode, or adaptive mode based on the question content.
+
+    SQL Table Creation:
+
+    CREATE TABLE IF NOT EXISTS navigator.ai_bots (
         chatbot_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-        name VARCHAR NOT NULL DEFAULT 'Nav',
+        name VARCHAR NOT NULL,
         description VARCHAR,
-        config_file VARCHAR,
-        company_information JSONB DEFAULT '{}'::JSONB,
         avatar TEXT,
         enabled BOOLEAN NOT NULL DEFAULT TRUE,
         timezone VARCHAR DEFAULT 'UTC',
-        bot_class VARCHAR DEFAULT 'BasicBot',
-        attributes JSONB DEFAULT '{}'::JSONB,
-        role VARCHAR DEFAULT 'a Human Resources Assistant',
-        goal VARCHAR NOT NULL DEFAULT 'Bring useful information to Users.',
-        backstory VARCHAR NOT NULL DEFAULT 'I was created by a team of developers to assist with users tasks.',
-        rationale VARCHAR NOT NULL DEFAULT 'Remember to maintain a professional tone. Please provide accurate and relevant information.',
-        language VARCHAR DEFAULT 'en',
-        system_prompt_template VARCHAR,
+
+        -- Bot personality and behavior
+        role VARCHAR DEFAULT 'AI Assistant',
+        goal VARCHAR NOT NULL DEFAULT 'Help users accomplish their tasks effectively.',
+        backstory VARCHAR NOT NULL DEFAULT 'I am an AI assistant created to help users with various tasks.',
+        rationale VARCHAR NOT NULL DEFAULT 'I maintain a professional tone and provide accurate, helpful information.',
+        capabilities VARCHAR DEFAULT 'I can engage in conversation, answer questions, and use tools when needed.',
+
+        -- Prompt configuration
+        system_prompt_template TEXT,
         human_prompt_template VARCHAR,
         pre_instructions JSONB DEFAULT '[]'::JSONB,
-        llm VARCHAR DEFAULT 'vertexai',
-        model_name VARCHAR DEFAULT 'gemini-1.5-pro',
+
+        -- LLM configuration
+        llm VARCHAR DEFAULT 'google',
+        model_name VARCHAR DEFAULT 'gemini-2.0-flash-001',
+        temperature FLOAT DEFAULT 0.1,
+        max_tokens INTEGER DEFAULT 1024,
+        top_k INTEGER DEFAULT 41,
+        top_p FLOAT DEFAULT 0.9,
         model_config JSONB DEFAULT '{}'::JSONB,
+
+        -- Tool and agent configuration
+        tools_enabled BOOLEAN DEFAULT TRUE,
+        auto_tool_detection BOOLEAN DEFAULT TRUE,
+        tool_threshold FLOAT DEFAULT 0.7,
+        available_tools JSONB DEFAULT '[]'::JSONB,
+        operation_mode VARCHAR DEFAULT 'adaptive' CHECK (operation_mode IN ('conversational', 'agentic', 'adaptive')),
+
+        -- Vector store and retrieval configuration
+        use_vector_context BOOLEAN DEFAULT FALSE,
+        vector_store_config JSONB DEFAULT '{}'::JSONB,
         embedding_model JSONB DEFAULT '{"model_name": "sentence-transformers/all-MiniLM-L12-v2", "model_type": "huggingface"}',
-        summarize_model JSONB DEFAULT '{"model_name": "facebook/bart-large-cnn", "model_type": "huggingface"}',
-        classification_model JSONB DEFAULT '{"model_name": "facebook/bart-large-cnn", "model_type": "huggingface"}',
-        vector_store BOOLEAN not null default FALSE,
-        database JSONB DEFAULT '{"vector_database": "milvus", "database": "TROC", "collection_name": "troc_information"}'::JSONB,
-        bot_type varchar default 'chatbot',
+        context_search_limit INTEGER DEFAULT 10,
+        context_score_threshold FLOAT DEFAULT 0.7,
+
+        -- Memory and conversation configuration
+        memory_type VARCHAR DEFAULT 'memory' CHECK (memory_type IN ('memory', 'file', 'redis')),
+        memory_config JSONB DEFAULT '{}'::JSONB,
+        max_context_turns INTEGER DEFAULT 5,
+        use_conversation_history BOOLEAN DEFAULT TRUE,
+
+        -- Security and permissions
+        permissions JSONB DEFAULT '{}'::JSONB,
+
+        -- Metadata
+        language VARCHAR DEFAULT 'en',
+        disclaimer TEXT,
         created_at TIMESTAMPTZ DEFAULT NOW(),
         created_by INTEGER,
-        updated_at TIMESTAMPTZ DEFAULT NOW(),
-        disclaimer VARCHAR,
-        permissions JSONB
+        updated_at TIMESTAMPTZ DEFAULT NOW()
     );
-    ALTER TABLE navigator.chatbots
-    ADD CONSTRAINT unq_navigator_chatbots_name UNIQUE (name);
+
+    -- Indexes for better performance
+    CREATE INDEX IF NOT EXISTS idx_ai_bots_name ON navigator.ai_bots(name);
+    CREATE INDEX IF NOT EXISTS idx_ai_bots_enabled ON navigator.ai_bots(enabled);
+    CREATE INDEX IF NOT EXISTS idx_ai_bots_operation_mode ON navigator.ai_bots(operation_mode);
+    CREATE INDEX IF NOT EXISTS idx_ai_bots_tools_enabled ON navigator.ai_bots(tools_enabled);
+
+    -- Unique constraint on name
+    ALTER TABLE navigator.ai_bots
+    ADD CONSTRAINT unq_navigator_ai_bots_name UNIQUE (name);
     """
+
+    # Primary key
     chatbot_id: uuid.UUID = Field(primary_key=True, required=False, default_factory=uuid.uuid4)
-    name: str = Field(default='Nav', required=True, primary_key=True)
-    description: str = Field(default='Nav Chatbot', required=False)
-    config_file: str = Field(required=False)
-    bot_class: str = Field(required=False, default=None)
-    company_information: dict = Field(default_factory=dict, required=False)
-    avatar: str
+
+    # Basic bot information
+    name: str = Field(required=True)
+    description: str = Field(required=False)
+    avatar: str = Field(required=False)
     enabled: bool = Field(required=True, default=True)
-    timezone: str = Field(required=False, max=75, default="UTC", repr=False)
-    attributes: Optional[dict] = Field(required=False, default_factory=dict)
-    # Chatbot Configuration
+    timezone: str = Field(required=False, max=75, default="UTC")
+
+    # Bot personality and behavior
     role: str = Field(
-        default="a Human Resources Assistant",
+        default="AI Assistant",
         required=False
     )
     goal: str = Field(
-        default="Bring useful information to Users.",
+        default="Help users accomplish their tasks effectively.",
         required=True
     )
     backstory: str = Field(
-        default="I was created by a team of developers to assist with users tasks.",
+        default="I am an AI assistant created to help users with various tasks.",
         required=True
     )
     rationale: str = Field(
-        default=(
-            "Remember to maintain a professional tone."
-            " Please provide accurate and relevant information."
-        ),
+        default="I maintain a professional tone and provide accurate, helpful information.",
         required=True
     )
-    language: str = Field(default='en', required=False)
-    system_prompt_template: Union[str, PurePath] = Field(
+    capabilities: str = Field(
+        default="I can engage in conversation, answer questions, and use tools when needed.",
+        required=False
+    )
+
+    # Prompt configuration
+    system_prompt_template: Optional[str] = Field(
         default=None,
         required=False
     )
-    human_prompt_template: Union[str, PurePath] = Field(
+    human_prompt_template: Optional[str] = Field(
         default=None,
         required=False
     )
@@ -106,148 +149,140 @@ class ChatbotModel(Model):
         default_factory=list,
         required=False
     )
-    # Model Configuration:
-    llm: str = Field(default='vertexai', required=False)
-    model_name: str = Field(default='gemini-1.5-pro', required=False)
-    model_config: dict = Field(default_factory=dict, required=False)
-    embedding_model: dict = Field(default=default_embed_model, required=False)
-    # Summarization/Classification Models: {"model_name": "facebook/bart-large-cnn", "model_type": "huggingface"}
-    summarize_model: dict = Field(default_factory=dict, required=False)
-    classification_model: dict = Field(default_factory=dict, required=False)
-    # Database Configuration
-    vector_store: bool = Field(default=False, required=False)
-    database: dict = Field(required=False, default_factory=dict)
-    # Bot/Agent type
-    bot_type: str = Field(default='chatbot', required=False)
-    # When created
-    created_at: datetime = Field(required=False, default=datetime.now)
-    created_by: int = Field(required=False)
-    updated_at: datetime = Field(required=False, default=datetime.now)
-    disclaimer: str = Field(required=False)
-    permissions: dict = Field(required=False, default_factory=dict)
 
-
-    def __post_init__(self) -> None:
-        super(ChatbotModel, self).__post_init__()
-        if self.config_file:
-            if isinstance(self.config_file, str):
-                self.config_file = Path(self.config_file).resolve()
-
-    class Meta:
-        """Meta Chatbot."""
-        driver = 'pg'
-        name = "chatbots"
-        schema = "navigator"
-        strict = True
-        frozen = False
-
-### Agent Information:
-# AgentModel Model:
-
-def agent_id() -> str:
-    """Generate a random UUID."""
-    return str(uuid.uuid4())
-
-class AgentModel(Model):
-    """AgentModel.
-    ---- drop table if exists navigator.ai_agents;
-    CREATE TABLE IF NOT EXISTS navigator.ai_agents (
-        chatbot_id varchar PRIMARY KEY DEFAULT uuid_generate_v4(),
-        name VARCHAR NOT NULL DEFAULT 'Nav',
-        description VARCHAR,
-        avatar TEXT,
-        enabled BOOLEAN NOT NULL DEFAULT TRUE,
-        agent_class VARCHAR,
-        attributes JSONB DEFAULT '{}'::JSONB,
-        role VARCHAR DEFAULT 'a Human Resources Assistant',
-        goal VARCHAR NOT NULL DEFAULT 'Bring useful information to Users.',
-        backstory VARCHAR NOT NULL DEFAULT 'I was created by a team of developers to assist with users tasks.',
-        rationale VARCHAR NOT NULL DEFAULT 'Remember to maintain a professional tone. Please provide accurate and relevant information.',
-        capabilities TEXT,
-        query JSONB,
-        tools JSONB,
-        system_prompt_template VARCHAR,
-        human_prompt_template VARCHAR,
-        llm VARCHAR DEFAULT 'vertexai',
-        model_name VARCHAR DEFAULT 'gemini-1.5-pro',
-        temperature float DEFAULT 0.1,
-        model_config JSONB DEFAULT '{}'::JSONB,
-        created_at TIMESTAMPTZ DEFAULT NOW(),
-        created_by INTEGER,
-        updated_at TIMESTAMPTZ DEFAULT NOW(),
-        disclaimer VARCHAR,
-        permissions JSONB
-    );
-    ALTER TABLE navigator.ai_agents
-    ADD CONSTRAINT unq_navigator_agents_name UNIQUE (name);
-    """
-    chatbot_id: str = Field(primary_key=True, required=False, default_factory=agent_id)
-    name: str = Field(default='Nav', required=True, primary_key=True)
-    description: str = Field(required=False)
-    agent_class: str = Field(required=False, default='PandasAgent')
-    avatar: str
-    enabled: bool = Field(required=True, default=True)
-    attributes: Optional[dict] = Field(required=False, default_factory=dict)
-    # Agent Configuration
-    tools: List[str] = Field(
-        default_factory=list,
-        required=False
-    )
-    role: str = Field(
-        default="a Human Resources Assistant",
-        required=False
-    )
-    goal: str = Field(
-        default="Bring useful information to Users.",
-        required=True
-    )
-    backstory: str = Field(
-        default="I was created by a team of developers to assist with users tasks.",
-        required=True
-    )
-    rationale: str = Field(
-        default=(
-            "Remember to maintain a professional tone."
-            " Please provide accurate and relevant information."
-        ),
-        required=True
-    )
-    capabilities: str = Field(
-        default="",
-        required=False
-    )
-    query: Union[list, dict] = Field(
-        required=True
-    )
-    system_prompt_template: Union[str, PurePath] = Field(
-        default=None,
-        required=False
-    )
-    human_prompt_template: Union[str, PurePath] = Field(
-        default=None,
-        required=False
-    )
-    # Model Configuration:
-    llm: str = Field(required=False)
-    use_llm: Optional[str] = Field(default='vertexai', required=False)
-    model_name: str = Field(default='gemini-2.5-pro-preview-03-25', required=False)
+    # LLM configuration
+    llm: str = Field(default='google', required=False)
+    model_name: str = Field(default='gemini-2.0-flash-001', required=False)
     temperature: float = Field(default=0.1, required=False)
+    max_tokens: int = Field(default=1024, required=False)
+    top_k: int = Field(default=41, required=False)
+    top_p: float = Field(default=0.9, required=False)
     model_config: dict = Field(default_factory=dict, required=False)
-    # When created
-    created_at: datetime = Field(required=False, default=datetime.now)
-    created_by: int = Field(required=False)
-    updated_at: datetime = Field(required=False, default=datetime.now)
-    disclaimer: str = Field(required=False)
+
+    # Tool and agent configuration
+    tools_enabled: bool = Field(default=True, required=False)
+    auto_tool_detection: bool = Field(default=True, required=False)
+    tool_threshold: float = Field(default=0.7, required=False)
+    available_tools: List[str] = Field(default_factory=list, required=False)
+    operation_mode: str = Field(default='adaptive', required=False)  # 'conversational', 'agentic', 'adaptive'
+
+    # Vector store and retrieval configuration
+    use_vector_context: bool = Field(default=False, required=False)
+    vector_store_config: dict = Field(default_factory=dict, required=False)
+    embedding_model: dict = Field(default=default_embed_model, required=False)
+    context_search_limit: int = Field(default=10, required=False)
+    context_score_threshold: float = Field(default=0.7, required=False)
+
+    # Memory and conversation configuration
+    memory_type: str = Field(default='memory', required=False)  # 'memory', 'file', 'redis'
+    memory_config: dict = Field(default_factory=dict, required=False)
+    max_context_turns: int = Field(default=5, required=False)
+    use_conversation_history: bool = Field(default=True, required=False)
+
+    # Security and permissions
     permissions: dict = Field(required=False, default_factory=dict)
 
+    # Metadata
+    language: str = Field(default='en', required=False)
+    disclaimer: Optional[str] = Field(required=False)
+    created_at: datetime = Field(required=False, default=datetime.now)
+    created_by: Optional[int] = Field(required=False)
+    updated_at: datetime = Field(required=False, default=datetime.now)
 
     def __post_init__(self) -> None:
-        super(AgentModel, self).__post_init__()
+        super(BotModel, self).__post_init__()
+
+        # Validate operation_mode
+        valid_modes = ['conversational', 'agentic', 'adaptive']
+        if self.operation_mode not in valid_modes:
+            raise ValueError(f"operation_mode must be one of {valid_modes}")
+
+        # Validate memory_type
+        valid_memory_types = ['memory', 'file', 'redis']
+        if self.memory_type not in valid_memory_types:
+            raise ValueError(f"memory_type must be one of {valid_memory_types}")
+
+        # Ensure tool_threshold is between 0 and 1
+        if not 0 <= self.tool_threshold <= 1:
+            raise ValueError("tool_threshold must be between 0 and 1")
+
+    def to_bot_config(self) -> dict:
+        """Convert model instance to bot configuration dictionary."""
+        return {
+            'name': self.name,
+            'description': self.description,
+            'role': self.role,
+            'goal': self.goal,
+            'backstory': self.backstory,
+            'rationale': self.rationale,
+            'capabilities': self.capabilities,
+            'system_prompt': self.system_prompt_template,
+            'human_prompt': self.human_prompt_template,
+            'pre_instructions': self.pre_instructions,
+            'llm': self.llm,
+            'model': self.model_name,
+            'temperature': self.temperature,
+            'max_tokens': self.max_tokens,
+            'top_k': self.top_k,
+            'top_p': self.top_p,
+            'model_config': self.model_config,
+            'tools_enabled': self.tools_enabled,
+            'auto_tool_detection': self.auto_tool_detection,
+            'tool_threshold': self.tool_threshold,
+            'available_tools': self.available_tools,
+            'operation_mode': self.operation_mode,
+            'use_vector_context': self.use_vector_context,
+            'vector_store_config': self.vector_store_config,
+            'embedding_model': self.embedding_model,
+            'context_search_limit': self.context_search_limit,
+            'context_score_threshold': self.context_score_threshold,
+            'memory_type': self.memory_type,
+            'memory_config': self.memory_config,
+            'max_context_turns': self.max_context_turns,
+            'use_conversation_history': self.use_conversation_history,
+            'permissions': self.permissions,
+            'language': self.language,
+            'disclaimer': self.disclaimer,
+        }
+
+    def is_agent_enabled(self) -> bool:
+        """Check if this bot has agent capabilities enabled."""
+        return self.tools_enabled and len(self.available_tools) > 0
+
+    def get_available_tool_names(self) -> List[str]:
+        """Get list of available tool names."""
+        return self.available_tools if self.available_tools else []
+
+    def add_tool(self, tool_name: str) -> None:
+        """Add a tool to the available tools list."""
+        if tool_name not in self.available_tools:
+            self.available_tools.append(tool_name)
+            self.updated_at = datetime.now()
+
+    def remove_tool(self, tool_name: str) -> bool:
+        """Remove a tool from the available tools list."""
+        if tool_name in self.available_tools:
+            self.available_tools.remove(tool_name)
+            self.updated_at = datetime.now()
+            return True
+        return False
+
+    def enable_vector_store(self, config: dict) -> None:
+        """Enable vector store with given configuration."""
+        self.use_vector_context = True
+        self.vector_store_config = config
+        self.updated_at = datetime.now()
+
+    def disable_vector_store(self) -> None:
+        """Disable vector store."""
+        self.use_vector_context = False
+        self.vector_store_config = {}
+        self.updated_at = datetime.now()
 
     class Meta:
-        """Meta Agent."""
+        """Meta Bot Model."""
         driver = 'pg'
-        name = "ai_agents"
+        name = "ai_bots"
         schema = "navigator"
         strict = True
         frozen = False
@@ -440,3 +475,28 @@ class PromptLibrary(Model):
 
     def __post_init__(self) -> None:
         super(PromptLibrary, self).__post_init__()
+
+
+# Factory function to create bot instances from database records
+def create_bot(bot_model: BotModel, bot_class=None):
+    """
+    Create a BasicBot instance from a BotModel database record.
+
+    Args:
+        bot_model: BotModel instance from database
+        bot_class: Optional bot class to use (defaults to UnifiedBot)
+
+    Returns:
+        Configured bot instance
+    """
+    if bot_class is None:
+        bot_class = BasicBot
+
+    # Convert model to configuration
+    config = bot_model.to_bot_config()
+
+    # Create and return bot instance
+    bot = bot_class(**config)
+    bot.model_id = bot_model.chatbot_id
+
+    return bot
