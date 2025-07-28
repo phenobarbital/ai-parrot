@@ -330,7 +330,9 @@ class Chatbot(AbstractBot):
 
         self.system_prompt_template = final_prompt
 
-        self.logger.debug(f"System prompt configured with tools: {len(self.tools)} tools available")
+        self.logger.debug(
+            f"System prompt configured with tools: {len(self.tools)} tools available"
+        )
 
     def get_tool_by_name(self, tool_name: str) -> Any:
         """Get a tool instance by name."""
