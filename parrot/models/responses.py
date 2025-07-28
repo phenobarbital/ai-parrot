@@ -221,7 +221,7 @@ class AIMessage(BaseModel):
         self.search_type = search_type
         self.search_score_threshold = score_threshold
         if sources:
-            self.context_sources.extend(sources)
+            self.context_sources.extend(sources)  # noqa
 
     def set_conversation_context_info(
         self,
@@ -258,7 +258,7 @@ class AIMessage(BaseModel):
                 'count': len(self.tool_calls)
             },
             'timing': {
-                'created_at': self.created_at.isoformat()
+                'created_at': self.created_at.isoformat()  # noqa
             }
         }
 
