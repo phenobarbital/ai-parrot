@@ -1,5 +1,6 @@
 from pydantic import BaseModel
 from parrot.clients.groq import GroqClient, GroqModel
+from parrot.models.outputs import SentimentAnalysis, ProductReview
 
 # Usage example
 async def example_usage():
@@ -102,14 +103,29 @@ async def example_usage():
         )
 
         # Parse the structured output
-        if result.structured_output:
-            # sentiment_data = SentimentAnalysis.model_validate_json(result.content)
-            sentiment_data = result.structured_output
+        if result.is_structured:
+            sentiment_data = result.output
+            print("- Is structured:", result.is_structured)
+            print(type(sentiment_data))
             print("Sentiment Analysis Result:")
             print(f"Sentiment: {sentiment_data.sentiment}")
             print(f"Confidence: {sentiment_data.confidence_level}")
             print(f"Indicators: {sentiment_data.emotional_indicators}")
             print(f"Reason: {sentiment_data.reason}")
+
+            # Any client (Groq/Claude/OpenAI)
+        result = await client.analyze_product_review(
+            review_text="Great laptop! Fast and reliable.",
+            product_id="laptop-123",
+            product_name="UltraBook Pro"
+        )
+
+        # Extract structured data
+        review_data = result.output
+        if review_data:
+            print(f"Rating: {review_data.rating}/5.0")
+            print(f"Sentiment: {review_data.sentiment}")
+            print(f"Features: {review_data.key_features}")
 
 
 if __name__ == "__main__":

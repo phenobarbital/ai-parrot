@@ -54,6 +54,56 @@ class GroqClient(AbstractClient):
         super().__init__(**kwargs)
         self.client = AsyncGroq(api_key=self.api_key)
 
+    def _fix_schema_for_groq(self, schema: dict) -> dict:
+        """
+        Fix JSON schema to comply with Groq's requirements.
+        Groq requires additionalProperties: false at all levels and doesn't support
+        certain validation constraints like minimum, maximum, minLength, maxLength, etc.
+        """
+        if isinstance(schema, dict):
+            # Create a copy to avoid modifying the original
+            fixed_schema = schema.copy()
+
+            # Set additionalProperties to false for all object types
+            if fixed_schema.get("type") == "object":
+                fixed_schema["additionalProperties"] = False
+
+            # Remove validation constraints that Groq doesn't support
+            unsupported_constraints = [
+                "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum",
+                "minLength", "maxLength", "pattern", "format",
+                "minItems", "maxItems", "uniqueItems",
+                "minProperties", "maxProperties"
+            ]
+
+            for constraint in unsupported_constraints:
+                if constraint in fixed_schema:
+                    del fixed_schema[constraint]
+
+            # Recursively fix nested properties
+            if "properties" in fixed_schema:
+                fixed_properties = {}
+                for key, value in fixed_schema["properties"].items():
+                    fixed_properties[key] = self._fix_schema_for_groq(value)
+                fixed_schema["properties"] = fixed_properties
+
+            # Fix array items
+            if "items" in fixed_schema:
+                fixed_schema["items"] = self._fix_schema_for_groq(fixed_schema["items"])
+
+            # Fix anyOf, oneOf, allOf
+            for key in ["anyOf", "oneOf", "allOf"]:
+                if key in fixed_schema:
+                    fixed_schema[key] = [
+                        self._fix_schema_for_groq(item) for item in fixed_schema[key]
+                    ]
+
+            return fixed_schema
+        elif isinstance(schema, list):
+            return [self._fix_schema_for_groq(item) for item in schema]
+        else:
+            return schema
+
     def _prepare_groq_tools(self) -> List[dict]:
         """Convert registered tools to Groq format."""
         if not self.tools:
@@ -61,30 +111,37 @@ class GroqClient(AbstractClient):
 
         groq_tools = []
         for tool in self.tools.values():
+            # Fix the tool schema for Groq
+            fixed_schema = self._fix_schema_for_groq(tool.input_schema)
+
             groq_tools.append({
                 "type": "function",
                 "function": {
                     "name": tool.name,
                     "description": tool.description,
-                    "parameters": tool.input_schema
+                    "parameters": fixed_schema
                 }
             })
         return groq_tools
 
     def _prepare_structured_output_format(self, structured_output: type) -> dict:
-        """Prepare response format for structured output."""
+        """Prepare response format for structured output with Groq-compliant schema."""
         if not structured_output:
             return {}
 
         # Handle Pydantic models
         if hasattr(structured_output, 'model_json_schema'):
             schema = structured_output.model_json_schema()
+            # Fix the schema for Groq compliance
+            fixed_schema = self._fix_schema_for_groq(schema)
+
             return {
                 "response_format": {
                     "type": "json_schema",
                     "json_schema": {
                         "name": structured_output.__name__.lower(),
-                        "schema": schema
+                        "schema": fixed_schema,
+                        "strict": True
                     }
                 }
             }
@@ -594,14 +651,9 @@ Format your response clearly with these sections.
         # Add structured output if requested
         structured_output = None
         if use_structured:
-            request_args["response_format"] = {
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "sentiment_analysis",
-                    "schema": SentimentAnalysis.model_json_schema(),
-                    "strict": True
-                }
-            }
+            request_args.update(
+                self._prepare_structured_output_format(SentimentAnalysis)
+            )
             structured_output = SentimentAnalysis
 
         # Make request to Groq API
@@ -616,6 +668,20 @@ Format your response clearly with these sections.
             "role": "assistant",
             "content": result.content
         })
+
+
+        # Handle structured output
+        final_output = None
+        if structured_output:
+            # Prepare structured output configuration
+            output_config = self._get_structured_config(structured_output)
+            try:
+                final_output = await self._parse_structured_output(
+                    result.content,
+                    output_config
+                )
+            except Exception:
+                final_output = result.content
 
         # Update conversation memory
         tools_used = []
@@ -641,7 +707,7 @@ Format your response clearly with these sections.
             user_id=user_id,
             session_id=session_id,
             turn_id=turn_id,
-            structured_output=structured_output,
+            structured_output=final_output if final_output is not None else sentiment_result,
         )
 
         return ai_message
@@ -651,7 +717,7 @@ Format your response clearly with these sections.
         review_text: str,
         product_id: str,
         product_name: str,
-        model: Union[GroqModel, str] = GroqModel.LLAMA_3_3_70B_VERSATILE,
+        model: Union[GroqModel, str] = GroqModel.KIMI_K2_INSTRUCT,
         temperature: Optional[float] = 0.1,
         max_tokens: int = 1024,
         top_p: float = 0.9,
@@ -677,6 +743,7 @@ Format your response clearly with these sections.
 
         turn_id = str(uuid.uuid4())
         original_prompt = review_text
+        model = model.value if isinstance(model, GroqModel) else model
 
         system_prompt = (
             f"You are a product review analysis expert. Analyze the given product review "
@@ -702,15 +769,10 @@ Format your response clearly with these sections.
             "temperature": temperature,
             "top_p": top_p,
             "stream": False,
-            "response_format": {
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "product_review_analysis",
-                    "schema": ProductReview.model_json_schema(),
-                    "strict": True
-                }
-            }
         }
+
+        # Add structured output format
+        request_args.update(self._prepare_structured_output_format(ProductReview))
 
         # Make request to Groq API
         response = await self.client.chat.completions.create(**request_args)
@@ -736,6 +798,17 @@ Format your response clearly with these sections.
             assistant_content,
             tools_used
         )
+        # Handle structured output
+        final_output = None
+        # Prepare structured output configuration
+        output_config = self._get_structured_config(ProductReview)
+        try:
+            final_output = await self._parse_structured_output(
+                result.content,
+                output_config
+            )
+        except Exception:
+            final_output = result.content
 
         # Create AIMessage using factory
         ai_message = AIMessageFactory.from_groq(
@@ -745,7 +818,7 @@ Format your response clearly with these sections.
             user_id=user_id,
             session_id=session_id,
             turn_id=turn_id,
-            structured_output=ProductReview,
+            structured_output=final_output if final_output is not None else result.content,
         )
 
         return ai_message
