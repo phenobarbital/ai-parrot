@@ -254,8 +254,19 @@ class AbstractClient(ABC):
         if tool_name in self.tools:
             self.logger.warning(f"Tool '{tool_name}' is already registered.")
             return
-
-        if isinstance(tool, ToolDefinition):
+        # If tool is already registered, skip registration
+        if isinstance(tool, dict):
+            tool_name = tool.get('name')
+            if tool_name in self.tools:
+                self.logger.warning(f"Tool '{tool_name}' is already registered.")
+                return
+            self.tools[tool_name] = ToolDefinition(
+                name=tool_name,
+                description=tool.get('description', ''),
+                input_schema=tool.get('parameters', {}),
+                function=tool.get('_tool_instance')
+            )
+        elif isinstance(tool, ToolDefinition):
             self.tools[tool_name] = tool
         elif isinstance(tool, AbstractTool):
             self.tools[tool_name] = tool
