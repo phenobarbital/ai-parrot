@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from abc import ABC, abstractmethod
 import io
 import wave
+from click import prompt
 from pydub import AudioSegment
 import ffmpeg  # pylint: disable=E1101 # noqa
 from pydantic import ValidationError
@@ -637,7 +638,8 @@ class AbstractClient(ABC):
         files: Optional[List[Union[str, Path]]],
         user_id: Optional[str],
         session_id: Optional[str],
-        system_prompt: Optional[str]
+        system_prompt: Optional[str],
+        stateless: bool = False
     ) -> tuple[List[Dict[str, Any]], Optional[ConversationHistory], Optional[str]]:
         """Prepare conversation context and return messages, session, and system prompt."""
         messages = []
@@ -658,33 +660,60 @@ class AbstractClient(ABC):
         new_user_message = self._prepare_messages(prompt, files)[0]
         messages.append(new_user_message)
 
-        # Handle file attachments
-        content = []
-        if files:
-            for file in files:
-                # Process file (image or document)
-                if isinstance(file, (str, Path)):
-                    # TODO: migrate to specific file handling per Model.
-                    file_path = Path(file)
-                    # if file_path.suffix.lower() in ['.jpg', '.jpeg', '.png', '.gif', '.webp']:
-                    #     # Handle image file
-                    #     image_content = self._encode_image_for_claude(file_path)
-                    #     content.append(image_content)
-                    # else:
-                    # Handle other file types if needed
-                    with open(file_path, 'r', encoding='utf-8') as f:
-                        file_content = f.read()
-                    content.append({
-                        "type": "text",
-                        "text": f"File content from {file_path.name}:\n\n{file_content}"
-                    })
+        # Convert stored conversation turns to messages format and create system prompt:
+        if conversation_history and not stateless:
+            self.logger.debug(
+                f"Found {len(conversation_history.turns)} previous turns"
+            )
+            for turn in conversation_history.turns:
+                # Add user message
+                messages.append({
+                    "role": "user",
+                    "content": [{"type": "text", "text": turn.user_message}]
+                })
 
-        # Add the current prompt
-        if content:
-            content.append({"type": "text", "text": prompt})
-            messages.append({"role": "user", "content": content})
-        else:
-            messages.append({"role": "user", "content": prompt})
+                # Add assistant message
+                messages.append({
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": turn.assistant_response}]
+                })
+
+            if not system_prompt and len(conversation_history.turns) > 0:
+                # Create a summary of the conversation context
+                recent_context = []
+                for turn in conversation_history.turns[-3:]:  # Last 3 turns for context
+                    recent_context.append(f"User: {turn.user_message}")
+                    recent_context.append(f"Assistant: {turn.assistant_response}")
+
+                system_prompt = (
+                        "You are a helpful AI assistant. You have access to the following conversation history:\n\n"
+                        + "\n".join(recent_context) +
+                        "\n\nUse this context to provide relevant and consistent responses. "
+                        "When users refer to previously mentioned information, acknowledge and use that context."
+                    )
+                self.logger.debug("Created contextual system prompt from conversation history")
+
+        # Handle file attachments if provided
+        current_message_parts = [{"type": "text", "text": prompt}]
+        if files:
+            for file_path in files:
+                try:
+                    file_path = Path(file_path)
+                    if file_path.exists():
+                        current_message_parts.append({
+                            "type": "file",
+                            "file_path": str(file_path)
+                        })
+                except Exception as e:
+                    self.logger.error(f"Error processing file {file_path}: {e}")
+
+        # Add the current user message
+        messages.append({
+            "role": "user",
+            "content": current_message_parts
+        })
+
+        self.logger.debug(f"Prepared {len(messages)} messages for conversation context")
 
         return messages, conversation_history, system_prompt
 

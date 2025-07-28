@@ -392,7 +392,9 @@ class AIMessageFactory:
         session_id: Optional[str] = None,
         turn_id: Optional[str] = None,
         structured_output: Any = None,
-        tool_calls: List[ToolCall] = None
+        tool_calls: List[ToolCall] = None,
+        # Add these new parameters:
+        conversation_history: Optional[Any] = None,
     ) -> AIMessage:
         """Create AIMessage from Gemini/Vertex AI response."""
         # Handle both direct text responses and response objects
@@ -414,7 +416,7 @@ class AIMessageFactory:
             # Standard Gemini API format
             usage_dict = response.usage.__dict__ if hasattr(response.usage, '__dict__') else {}
 
-        return AIMessage(
+        ai_message = AIMessage(
             input=input_text,
             output=structured_output if structured_output else content,
             model=model,
@@ -429,6 +431,12 @@ class AIMessageFactory:
             raw_response=response.__dict__ if hasattr(response, '__dict__') else str(response),
             response=content
         )
+
+        if conversation_history:
+            ai_message.used_conversation_history = True
+            ai_message.conversation_context_length = len(conversation_history.turns) if hasattr(conversation_history, 'turns') else 0
+
+        return ai_message
 
     @staticmethod
     def from_imagen(**kwargs):
