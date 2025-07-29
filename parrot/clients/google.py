@@ -276,7 +276,8 @@ class GoogleGenAIClient(AbstractClient):
         initial_response,
         all_tool_calls: List[ToolCall],
         model: str = None,
-        max_iterations: int = 10
+        max_iterations: int = 10,
+        config: GenerateContentConfig = None
     ) -> Any:
         """
         Simple multi-turn function calling - just keep going until no more function calls.
@@ -291,10 +292,7 @@ class GoogleGenAIClient(AbstractClient):
             iteration += 1
 
             # Get function calls (including converted from tool_code)
-            print('CURRENT RESPONSE >> ', current_response)
             function_calls = self._get_function_calls_from_response(current_response)
-            print('FUNCTION CALLS > ', function_calls)
-
             if not function_calls:
                 self.logger.info(f"No function calls found - completed after {iteration-1} iterations")
                 break
@@ -335,43 +333,41 @@ class GoogleGenAIClient(AbstractClient):
             # Try different approaches for function response formatting
             function_response_parts = []
             for fc, result in zip(function_calls, tool_results):
-                print('FC > ', fc, result, type(result))
+                tool_id = fc.id or f"call_{uuid.uuid4().hex[:8]}"
                 if isinstance(result, Exception):
                     response_content = f"Error: {str(result)}"
                 else:
-                    # Enhanced result formatting - give more context to the model
-                    if isinstance(result, dict):
-                        if 'result' in result:
-                            if 'flash' in model:
-                                response_content = f"{result['result']}"
-                            else:
-                                response_content = f"Result: {result['result']}"
-                                if 'expression' in result:
-                                    response_content += f" (from {result['expression']})"
+                    if 'flash' in model:
+                        print('HOLA FLASH')
+                        response_content = result
+                    else:
+                        # Enhanced result formatting for non-flash models
+                        if isinstance(result, dict) and 'result' in result:
+                            response_content = result['result']
                         else:
                             response_content = str(result)
-                    else:
-                        response_content = f"Result: {str(result)}"
-                # Try with enhanced function response
+                        response_content = {
+                            "result": response_content
+                        }
                 function_response_parts.append(
                     Part(
                         function_response=types.FunctionResponse(
+                            id=tool_id,
                             name=fc.name,
-                            response={
-                                "result": response_content
-                            },
-                            will_continue=True
+                            response=response_content
                         )
                     )
                 )
 
             # Send responses back
             try:
-                self.logger.info(
+                self.logger.debug(
                     f"Sending {len(function_response_parts)} responses back to model"
                 )
-                print('THIS > ', function_response_parts)
-                current_response = await chat.send_message(function_response_parts)
+                current_response = await chat.send_message(
+                    function_response_parts,
+                    config=config
+                )
 
                 # Check for UNEXPECTED_TOOL_CALL error
                 if (hasattr(current_response, 'candidates') and
@@ -382,8 +378,6 @@ class GoogleGenAIClient(AbstractClient):
 
                     if str(finish_reason) == 'FinishReason.UNEXPECTED_TOOL_CALL':
                         self.logger.warning("Received UNEXPECTED_TOOL_CALL")
-
-                        print('CURRENT > ', current_response)
 
                 # Debug what we got back
                 if hasattr(current_response, 'text'):
@@ -412,7 +406,7 @@ class GoogleGenAIClient(AbstractClient):
         matches = re.findall(pattern, text, re.DOTALL)
 
         for tool_name, args_str in matches:
-            self.logger.info(f"Converting tool_code to function call: {tool_name}")
+            self.logger.debug(f"Converting tool_code to function call: {tool_name}")
             try:
                 # Parse arguments like: a = 9310, b = 3, operation = "divide"
                 args = {}
@@ -430,8 +424,6 @@ class GoogleGenAIClient(AbstractClient):
                                 args[key] = int(value)
                         except ValueError:
                             args[key] = value  # Keep as string
-
-                self.logger.info(f"Parsed arguments for {tool_name}: {args}")
                 # extract tool from self.tools:
                 tool = self.tools.get(tool_name)
                 if tool:
@@ -748,7 +740,7 @@ class GoogleGenAIClient(AbstractClient):
 
             # Multi-turn function calling loop
             final_response = await self._handle_multiturn_function_calls(
-                chat, response, all_tool_calls, model=model, max_iterations=10
+                chat, response, all_tool_calls, model=model, max_iterations=10, config=final_config
             )
             print('FINAL RESPONSE > ', final_response)
 
