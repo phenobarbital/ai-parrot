@@ -1,3 +1,4 @@
+import re
 import sys
 import asyncio
 from datetime import datetime
@@ -51,6 +52,8 @@ logging.getLogger(
 class GoogleGenAIClient(AbstractClient):
     """
     Client for interacting with Google's Generative AI, with support for parallel function calling.
+
+    Only Gemini-2.5-pro works well with multi-turn function calling.
     """
     client_type: str = 'google'
 
@@ -160,6 +163,402 @@ class GoogleGenAIClient(AbstractClient):
 
         return None
 
+    def _extract_function_calls(self, response) -> List:
+        """Extract function calls from response - handles both proper function calls AND code blocks."""
+        function_calls = []
+
+        try:
+            if (response.candidates and
+                len(response.candidates) > 0 and
+                response.candidates[0].content and
+                response.candidates[0].content.parts):
+
+                for part in response.candidates[0].content.parts:
+                    # First, check for proper function calls
+                    if hasattr(part, 'function_call') and part.function_call:
+                        function_calls.append(part.function_call)
+                        self.logger.debug(f"Found proper function call: {part.function_call.name}")
+
+                    # Second, check for text that contains tool code blocks
+                    elif hasattr(part, 'text') and part.text and '```tool_code' in part.text:
+                        self.logger.info("Found tool code block - parsing as function call")
+                        code_block_calls = self._parse_tool_code_blocks(part.text)
+                        function_calls.extend(code_block_calls)
+
+        except (AttributeError, IndexError) as e:
+            self.logger.debug(f"Error extracting function calls: {e}")
+
+        self.logger.debug(f"Total function calls extracted: {len(function_calls)}")
+        return function_calls
+
+    async def _handle_stateless_function_calls(
+        self,
+        response,
+        model: str,
+        contents: List,
+        config,
+        all_tool_calls: List[ToolCall]
+    ) -> Any:
+        """Handle function calls in stateless mode (single request-response)."""
+        function_calls = self._extract_function_calls(response)
+
+        if not function_calls:
+            return response
+
+        # Execute function calls
+        tool_call_objects = []
+        for fc in function_calls:
+            tc = ToolCall(
+                id=f"call_{uuid.uuid4().hex[:8]}",
+                name=fc.name,
+                arguments=dict(fc.args)
+            )
+            tool_call_objects.append(tc)
+
+        start_time = time.time()
+        tool_execution_tasks = [
+            self._execute_tool(fc.name, dict(fc.args)) for fc in function_calls
+        ]
+        tool_results = await asyncio.gather(
+            *tool_execution_tasks,
+            return_exceptions=True
+        )
+        execution_time = time.time() - start_time
+
+        for tc, result in zip(tool_call_objects, tool_results):
+            tc.execution_time = execution_time / len(tool_call_objects)
+            if isinstance(result, Exception):
+                tc.error = str(result)
+            else:
+                tc.result = result
+
+        all_tool_calls.extend(tool_call_objects)
+
+        # Prepare function responses
+        function_response_parts = []
+        for fc, result in zip(function_calls, tool_results):
+            if isinstance(result, Exception):
+                response_content = f"Error: {str(result)}"
+            else:
+                response_content = str(result.get('result', result) if isinstance(result, dict) else result)
+
+            function_response_parts.append(
+                Part(
+                    function_response=types.FunctionResponse(
+                        name=fc.name,
+                        response={"result": response_content}
+                    )
+                )
+            )
+
+        # Add function call and responses to conversation
+        contents.append({
+            "role": "model",
+            "parts": [{"function_call": fc} for fc in function_calls]
+        })
+        contents.append({
+            "role": "user",
+            "parts": function_response_parts
+        })
+
+        # Generate final response
+        final_response = await self.client.aio.models.generate_content(
+            model=model,
+            contents=contents,
+            config=config
+        )
+
+        return final_response
+
+    async def _handle_multiturn_function_calls(
+        self,
+        chat,
+        initial_response,
+        all_tool_calls: List[ToolCall],
+        model: str = None,
+        max_iterations: int = 10
+    ) -> Any:
+        """
+        Simple multi-turn function calling - just keep going until no more function calls.
+        """
+        current_response = initial_response
+        iteration = 0
+
+        model = model or self.model
+        self.logger.info("Starting simple multi-turn function calling loop")
+
+        while iteration < max_iterations:
+            iteration += 1
+
+            # Get function calls (including converted from tool_code)
+            print('CURRENT RESPONSE >> ', current_response)
+            function_calls = self._get_function_calls_from_response(current_response)
+            print('FUNCTION CALLS > ', function_calls)
+
+            if not function_calls:
+                self.logger.info(f"No function calls found - completed after {iteration-1} iterations")
+                break
+
+            self.logger.info(f"Iteration {iteration}: Processing {len(function_calls)} function calls")
+
+            # Execute function calls
+            tool_call_objects = []
+            for fc in function_calls:
+                tc = ToolCall(
+                    id=f"call_{uuid.uuid4().hex[:8]}",
+                    name=fc.name,
+                    arguments=dict(fc.args) if hasattr(fc.args, 'items') else fc.args
+                )
+                tool_call_objects.append(tc)
+
+            # Execute tools
+            start_time = time.time()
+            tool_execution_tasks = [
+                self._execute_tool(fc.name, dict(fc.args) if hasattr(fc.args, 'items') else fc.args)
+                for fc in function_calls
+            ]
+            tool_results = await asyncio.gather(*tool_execution_tasks, return_exceptions=True)
+            execution_time = time.time() - start_time
+
+            # Update tool call objects
+            for tc, result in zip(tool_call_objects, tool_results):
+                tc.execution_time = execution_time / len(tool_call_objects)
+                if isinstance(result, Exception):
+                    tc.error = str(result)
+                    self.logger.error(f"Tool {tc.name} failed: {result}")
+                else:
+                    tc.result = result
+                    self.logger.info(f"Tool {tc.name} result: {result}")
+
+            all_tool_calls.extend(tool_call_objects)
+
+            # Try different approaches for function response formatting
+            function_response_parts = []
+            for fc, result in zip(function_calls, tool_results):
+                print('FC > ', fc, result, type(result))
+                if isinstance(result, Exception):
+                    response_content = f"Error: {str(result)}"
+                else:
+                    # Enhanced result formatting - give more context to the model
+                    if isinstance(result, dict):
+                        if 'result' in result:
+                            if 'flash' in model:
+                                response_content = f"{result['result']}"
+                            else:
+                                response_content = f"Result: {result['result']}"
+                                if 'expression' in result:
+                                    response_content += f" (from {result['expression']})"
+                        else:
+                            response_content = str(result)
+                    else:
+                        response_content = f"Result: {str(result)}"
+                # Try with enhanced function response
+                function_response_parts.append(
+                    Part(
+                        function_response=types.FunctionResponse(
+                            name=fc.name,
+                            response={
+                                "result": response_content
+                            },
+                            will_continue=True
+                        )
+                    )
+                )
+
+            # Send responses back
+            try:
+                self.logger.info(
+                    f"Sending {len(function_response_parts)} responses back to model"
+                )
+                print('THIS > ', function_response_parts)
+                current_response = await chat.send_message(function_response_parts)
+
+                # Check for UNEXPECTED_TOOL_CALL error
+                if (hasattr(current_response, 'candidates') and
+                    current_response.candidates and
+                    hasattr(current_response.candidates[0], 'finish_reason')):
+
+                    finish_reason = current_response.candidates[0].finish_reason
+
+                    if str(finish_reason) == 'FinishReason.UNEXPECTED_TOOL_CALL':
+                        self.logger.warning("Received UNEXPECTED_TOOL_CALL")
+
+                        print('CURRENT > ', current_response)
+
+                # Debug what we got back
+                if hasattr(current_response, 'text'):
+                    try:
+                        preview = current_response.text[:100] if current_response.text else "No text"
+                        self.logger.debug(f"Response preview: {preview}")
+                    except:
+                        self.logger.debug("Could not preview response text")
+
+            except Exception as e:
+                self.logger.error(f"Failed to send responses back: {e}")
+                break
+
+        self.logger.info(f"Completed with {len(all_tool_calls)} total tool calls")
+        return current_response
+
+    def _parse_tool_code_blocks(self, text: str) -> List:
+        """Convert tool_code blocks to function call objects."""
+        function_calls = []
+
+        if '```tool_code' not in text:
+            return function_calls
+
+        # Simple regex to extract tool calls
+        pattern = r'```tool_code\s*\n\s*print\(default_api\.(\w+)\((.*?)\)\)\s*\n\s*```'
+        matches = re.findall(pattern, text, re.DOTALL)
+
+        for tool_name, args_str in matches:
+            self.logger.info(f"Converting tool_code to function call: {tool_name}")
+            try:
+                # Parse arguments like: a = 9310, b = 3, operation = "divide"
+                args = {}
+                for arg_part in args_str.split(','):
+                    if '=' in arg_part:
+                        key, value = arg_part.split('=', 1)
+                        key = key.strip()
+                        value = value.strip().strip('"\'')  # Remove quotes
+
+                        # Try to convert to number
+                        try:
+                            if '.' in value:
+                                args[key] = float(value)
+                            else:
+                                args[key] = int(value)
+                        except ValueError:
+                            args[key] = value  # Keep as string
+
+                self.logger.info(f"Parsed arguments for {tool_name}: {args}")
+                # extract tool from self.tools:
+                tool = self.tools.get(tool_name)
+                if tool:
+                    # Create function call
+                    fc = types.FunctionCall(
+                        id=f"call_{uuid.uuid4().hex[:8]}",
+                        name=tool_name,
+                        args=args
+                    )
+                    function_calls.append(fc)
+                    self.logger.info(f"Created function call: {tool_name}({args})")
+
+            except Exception as e:
+                self.logger.error(f"Failed to parse tool_code: {e}")
+
+        return function_calls
+
+    def _get_function_calls_from_response(self, response) -> List:
+        """Get function calls from response - handles both proper calls and tool_code blocks."""
+        function_calls = []
+
+        try:
+            if (response.candidates and
+                response.candidates[0].content and
+                response.candidates[0].content.parts):
+
+                for part in response.candidates[0].content.parts:
+                    # Check for proper function calls first
+                    if hasattr(part, 'function_call') and part.function_call:
+                        function_calls.append(part.function_call)
+                        self.logger.debug(
+                            f"Found proper function call: {part.function_call.name}"
+                        )
+
+                    # Check for tool_code in text parts
+                    elif hasattr(part, 'text') and part.text and '```tool_code' in part.text:
+                        self.logger.info("Found tool_code block - converting to function call")
+                        code_function_calls = self._parse_tool_code_blocks(part.text)
+                        function_calls.extend(code_function_calls)
+
+        except Exception as e:
+            self.logger.error(f"Error getting function calls: {e}")
+
+        self.logger.info(f"Total function calls found: {len(function_calls)}")
+        return function_calls
+
+    def _safe_extract_text(self, response) -> str:
+        """Enhanced text extraction that handles the mixed content warnings properly."""
+
+        # First try: Use response.text directly (best case)
+        try:
+            if hasattr(response, 'text') and response.text:
+                text = response.text.strip()
+                if text:
+                    self.logger.debug(f"Extracted text via response.text: '{text[:100]}...'")
+                    return text
+        except Exception as e:
+            self.logger.debug(f"response.text failed: {e}")
+
+        # Second try: Manual extraction from parts
+        try:
+            if (hasattr(response, 'candidates') and
+                response.candidates and
+                len(response.candidates) > 0 and
+                hasattr(response.candidates[0], 'content') and
+                response.candidates[0].content and
+                hasattr(response.candidates[0].content, 'parts') and
+                response.candidates[0].content.parts):
+
+                text_parts = []
+
+                # Extract text from each part
+                for part in response.candidates[0].content.parts:
+                    if hasattr(part, 'text') and part.text:
+                        clean_text = part.text.strip()
+                        if clean_text:
+                            text_parts.append(clean_text)
+                            self.logger.debug(f"Found text part: '{clean_text[:50]}...'")
+
+                if text_parts:
+                    combined_text = ' '.join(text_parts)
+                    self.logger.debug(f"Manually extracted text: '{combined_text[:100]}...'")
+                    return combined_text
+                else:
+                    self.logger.debug("No text parts found in response")
+
+        except Exception as e:
+            self.logger.error(f"Manual text extraction failed: {e}")
+
+        # Third try: Check if there's any accessible text content anywhere
+        try:
+            # Sometimes the response structure might be different
+            self.logger.debug(f"Response type: {type(response)}")
+
+            if hasattr(response, 'candidates'):
+                self.logger.debug(f"Candidates count: {len(response.candidates) if response.candidates else 0}")
+
+                if response.candidates and len(response.candidates) > 0:
+                    candidate = response.candidates[0]
+                    self.logger.debug(f"Candidate type: {type(candidate)}")
+
+                    if hasattr(candidate, 'content'):
+                        content = candidate.content
+                        self.logger.debug(f"Content type: {type(content)}")
+
+                        if hasattr(content, 'parts'):
+                            parts = content.parts
+                            self.logger.debug(f"Parts count: {len(parts) if parts else 0}")
+
+                            for i, part in enumerate(parts):
+                                self.logger.debug(f"Part {i} type: {type(part)}")
+
+                                # Try different ways to access text
+                                for attr in ['text', 'content', 'data']:
+                                    if hasattr(part, attr):
+                                        value = getattr(part, attr)
+                                        if value and isinstance(value, str):
+                                            self.logger.debug(f"Found text in part.{attr}: '{value[:50]}...'")
+                                            return value.strip()
+
+        except Exception as e:
+            self.logger.error(f"Deep text extraction failed: {e}")
+
+        # Fallback: Return empty string instead of None
+        self.logger.warning("Could not extract any text from response")
+        return ""
+
     async def ask(
         self,
         prompt: str,
@@ -193,6 +592,8 @@ class GoogleGenAIClient(AbstractClient):
             stateless (bool): If True, don't use conversation memory (stateless mode).
         """
         model = model.value if isinstance(model, GoogleModel) else model
+        if not model:
+            model = self.model
         # Generate unique turn ID for tracking
         turn_id = str(uuid.uuid4())
         original_prompt = prompt
@@ -211,9 +612,6 @@ class GoogleGenAIClient(AbstractClient):
             messages, conversation_history, system_prompt = await self._prepare_conversation_context(
                 prompt, files, user_id, session_id, system_prompt, stateless=stateless
             )
-
-        # Prepare structured output configuration
-        output_config = self._get_structured_config(structured_output)
 
         # Prepare conversation history for Google GenAI format
         history = []
@@ -246,8 +644,11 @@ class GoogleGenAIClient(AbstractClient):
 
         generation_config = {
             "max_output_tokens": max_tokens or self.max_tokens,
-            "temperature": temperature or self.temperature,
+            "temperature": temperature or self.temperature
         }
+
+        # Prepare structured output configuration
+        output_config = self._get_structured_config(structured_output)
 
         if structured_output:
             if isinstance(structured_output, type):
@@ -263,15 +664,16 @@ class GoogleGenAIClient(AbstractClient):
         if tools and isinstance(tools, list):
             for tool in tools:
                 self.register_tool(tool)
-        tool_type = None
-        if not structured_output:
-            tool_type = force_tool_usage or self._analyze_prompt_for_tools(
-                prompt
-            )
-            tools = self._build_tools(tool_type)
-            self.logger.debug(
-                f"Selected tool type: {tool_type}"
-            )
+
+        # Determine tool usage based on prompt analysis or forced usage
+        tool_type = force_tool_usage or self._analyze_prompt_for_tools(prompt)
+        tools = self._build_tools(tool_type) if tool_type else None
+        self.logger.debug(
+            f"Selected tool type: {tool_type}"
+        )
+        if tools:
+            # if Tools, reduce temperature to avoid hallucinations.
+            generation_config["temperature"] = 0
 
         # Track tool calls for the response
         all_tool_calls = []
@@ -299,109 +701,87 @@ class GoogleGenAIClient(AbstractClient):
             tools=tools,
             **generation_config
         )
+
         if stateless:
-            # Create the model instance
+            # For stateless mode, handle in a single call (existing behavior)
+            contents = []
+            for msg in messages:
+                role = "model" if msg["role"] == "assistant" else msg["role"]
+                if role in ["user", "model"]:
+                    text_parts = [part["text"] for part in msg["content"] if "text" in part]
+                    if text_parts:
+                        contents.append({
+                            "role": role,
+                            "parts": [{"text": " ".join(text_parts)}]
+                        })
+
             response = await self.client.aio.models.generate_content(
                 model=model,
                 contents=contents,
                 config=final_config
             )
+
+            # Handle function calls in stateless mode
+            final_response = await self._handle_stateless_function_calls(
+                response, model, contents, final_config, all_tool_calls
+            )
         else:
-            # Start the chat session
+            # MULTI-TURN CONVERSATION MODE
             chat = self.client.aio.chats.create(
                 model=model,
                 history=history
             )
-            # Make the primary call using the stateful chat session
+            # Send initial message
+            self.logger.info(
+                f"Sending initial message: {prompt}"
+            )
+
+            # Send initial message
             response = await chat.send_message(
                 message=prompt,
                 config=final_config
             )
 
-        # Handle parallel function calls
-        if (tool_type == "custom_functions" and
-            response.candidates and
-            response.candidates[0].content.parts):
+            self.logger.info(
+                f"Initial response has {len(all_tool_calls)} function calls"
+            )
 
-            function_calls = [
-                part.function_call
-                for part in response.candidates[0].content.parts
-                if hasattr(part, 'function_call') and part.function_call
-            ]
+            # Multi-turn function calling loop
+            final_response = await self._handle_multiturn_function_calls(
+                chat, response, all_tool_calls, model=model, max_iterations=10
+            )
+            print('FINAL RESPONSE > ', final_response)
 
-            if function_calls:
-                tool_call_objects = []
-                # Execute all tool calls concurrently
-                for fc in function_calls:
-                    tc = ToolCall(
-                        id=f"call_{uuid.uuid4().hex[:8]}",  # Generate ID for tracking
-                        name=fc.name,
-                        arguments=dict(fc.args)
-                    )
-                    tool_call_objects.append(tc)
+        # Extract assistant response text for conversation memory
+        print('==== ')
+        assistant_response_text = self._safe_extract_text(final_response)
+        print('ASSISTANT RESPONSE TEXT > ', assistant_response_text)
 
-                start_time = time.time()
-                tool_execution_tasks = [
-                    self._execute_tool(fc.name, dict(fc.args)) for fc in function_calls
-                ]
-                tool_results = await asyncio.gather(
-                    *tool_execution_tasks,
-                    return_exceptions=True
-                )
-                execution_time = time.time() - start_time
-
-                # Update ToolCall objects with results
-                for tc, result in zip(tool_call_objects, tool_results):
-                    tc.execution_time = execution_time / len(tool_call_objects)
-                    if isinstance(result, Exception):
-                        tc.error = str(result)
-                    else:
-                        tc.result = result
-
-                all_tool_calls.extend(tool_call_objects)
-
-                # Prepare the function responses as Part objects
-                function_response_parts = []
-                for fc, result in zip(function_calls, tool_results):
-                    if isinstance(result, Exception):
-                        response_content = f"Error: {str(result)}"
-                    else:
-                        response_content = str(result)  # Ensure it's a string
-
-                    # Create proper Part object for function response
-                    function_response_parts.append(
-                        Part(
-                            function_response=types.FunctionResponse(
-                                name=fc.name,
-                                response={"result": response_content}
-                            )
-                        )
-                    )
-
-                # Send the tool results back to the model using proper format
-                if chat:
-                    response = await chat.send_message(
-                        function_response_parts
-                    )
+        # If we still don't have text but have tool calls, generate a summary
+        if not assistant_response_text and all_tool_calls:
+            assistant_response_text = self._create_simple_summary(
+                all_tool_calls
+            )
 
         # Handle structured output
         final_output = None
         if structured_output:
             try:
                 final_output = await self._parse_structured_output(
-                    response.text,
+                    assistant_response_text,
                     output_config
                 )
             except Exception:
-                final_output = response.text
+                final_output = assistant_response_text
+        else:
+            final_output = assistant_response_text
 
-        # Extract assistant response text for conversation memory
-        assistant_response_text = response.text
-
+        print('FINAL OUTPUT > ', final_output)
         # Update conversation memory with the final response
         final_assistant_message = {
-            "role": "model", "content": [
-                {"type": "text", "text": response.text}
+            "role": "model",
+            "content": [
+                {"type": "text", "text": final_output}
             ]
         }
 
@@ -419,6 +799,7 @@ class GoogleGenAIClient(AbstractClient):
                 assistant_response_text,
                 tools_used
             )
+        print('BEFORE AI MESSAGE FACTORY > ', final_output, response)
         # Create AIMessage using factory
         ai_message = AIMessageFactory.from_gemini(
             response=response,
@@ -427,15 +808,38 @@ class GoogleGenAIClient(AbstractClient):
             user_id=user_id,
             session_id=session_id,
             turn_id=turn_id,
-            structured_output=final_output if final_output != response.text else None,
+            structured_output=final_output,
             tool_calls=all_tool_calls,
-            conversation_history=conversation_history
+            conversation_history=conversation_history,
+            text_response=assistant_response_text
         )
 
         # Override provider to distinguish from Vertex AI
         ai_message.provider = "google_genai"
 
         return ai_message
+
+    def _create_simple_summary(self, all_tool_calls: List[ToolCall]) -> str:
+        """Create a simple summary from tool calls."""
+        if not all_tool_calls:
+            return "Task completed."
+
+        if len(all_tool_calls) == 1:
+            tc = all_tool_calls[0]
+            if tc.result and isinstance(tc.result, dict) and 'expression' in tc.result:
+                return tc.result['expression']
+            elif tc.result and isinstance(tc.result, dict) and 'result' in tc.result:
+                return f"Result: {tc.result['result']}"
+        else:
+            # Multiple calls - show the final result
+            final_tc = all_tool_calls[-1]
+            if final_tc.result and isinstance(final_tc.result, dict):
+                if 'result' in final_tc.result:
+                    return f"Final result: {final_tc.result['result']}"
+                elif 'expression' in final_tc.result:
+                    return final_tc.result['expression']
+
+        return "Calculation completed."
 
     async def ask_stream(
         self,
