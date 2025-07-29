@@ -39,7 +39,7 @@ class ClaudeModel(Enum):
 class ClaudeClient(AbstractClient):
     """Client for interacting with the Claude API."""
     version: str = "2023-06-01"
-    agent_type: str = "claude"
+    client_type: str = "anthropic"
 
     def __init__(
         self,

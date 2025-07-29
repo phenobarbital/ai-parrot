@@ -52,6 +52,8 @@ class GoogleGenAIClient(AbstractClient):
     """
     Client for interacting with Google's Generative AI, with support for parallel function calling.
     """
+    client_type: str = 'google'
+
     def __init__(self, **kwargs):
         api_key = kwargs.pop('api_key', config.get('GOOGLE_API_KEY'))
         super().__init__(**kwargs)

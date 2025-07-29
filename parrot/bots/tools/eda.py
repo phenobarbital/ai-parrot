@@ -307,6 +307,7 @@ def quick_eda(dataframe=None, report_dir=None):
         "report_url": f"file://{os.path.abspath(output_path)}"
     }
 
+
 def list_available_dataframes():
     # List all available dataframes in the current session.
 
