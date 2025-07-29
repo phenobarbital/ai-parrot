@@ -252,12 +252,12 @@ class GroqClient(AbstractClient):
         # Make initial request
         response = await self.client.chat.completions.create(**request_args)
         result = response.choices[0].message
+        print('RESPONSE > ', response)
+        print('RESULT > ', result)
 
         # Handle tool calls in a loop (only if tools were enabled)
         if use_tools:
             while result.tool_calls:
-                tool_results = []
-
                 for tool_call in result.tool_calls:
                     tool_name = tool_call.function.name
                     try:
@@ -306,6 +306,8 @@ class GroqClient(AbstractClient):
                     ]
                 })
 
+                print('FUNCTION CALL > ', all_tool_calls)
+
                 # Continue conversation with tool results
                 continue_args = {
                     "model": model,
@@ -313,11 +315,17 @@ class GroqClient(AbstractClient):
                     "max_tokens": max_tokens,
                     "temperature": temperature,
                     "top_p": top_p,
-                    "stream": False
+                    "stream": False,
+                    "tool_choice": "auto",
+                    "tools": tools
                 }
+                if model != GroqModel.GEMMA2_9B_IT:
+                    continue_args["parallel_tool_calls"] = True
 
                 response = await self.client.chat.completions.create(**continue_args)
                 result = response.choices[0].message
+
+                print('CONTINUE RESPONSE > ', response)
 
         # Handle structured output after tools if needed
         final_output = None

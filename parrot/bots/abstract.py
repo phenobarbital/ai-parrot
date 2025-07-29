@@ -125,7 +125,7 @@ class AbstractBot(DBInterface, ABC):
         self.context = kwargs.get('use_context', True)
 
         # Definition of LLM Client
-        self._llm_model = kwargs.get('model', 'gemini-2.0-flash-001')
+        self._llm_model = kwargs.get('model', 'gemini-2.5-flash')
         self._llm_preset: str = kwargs.get('preset', None)
         self._llm: Union[str, Any] = kwargs.get('llm', 'google')
         if isinstance(self._llm, str):

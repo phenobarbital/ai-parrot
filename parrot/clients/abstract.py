@@ -163,7 +163,7 @@ class AbstractClient(ABC):
         preset: Optional[str] = None,
         **kwargs
     ):
-        self.model_name: str = kwargs.get('model_name', None)
+        self.model: str = kwargs.get('model', None)
         self.session: Optional[aiohttp.ClientSession] = None
         self.tools: Dict[str, Union[ToolDefinition, AbstractTool]] = {}
         if preset:

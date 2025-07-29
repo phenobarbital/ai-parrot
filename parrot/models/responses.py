@@ -395,10 +395,13 @@ class AIMessageFactory:
         tool_calls: List[ToolCall] = None,
         # Add these new parameters:
         conversation_history: Optional[Any] = None,
+        text_response: Optional[str] = None
     ) -> AIMessage:
         """Create AIMessage from Gemini/Vertex AI response."""
         # Handle both direct text responses and response objects
-        if hasattr(response, 'text'):
+        if text_response:
+            content = text_response
+        elif hasattr(response, 'text'):
             content = response.text
         else:
             content = str(response)
