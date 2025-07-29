@@ -290,6 +290,13 @@ class AbstractClient(ABC):
     ) -> None:
         """Register multiple tools at once."""
         for tool in tools:
+            if isinstance(tool, dict):
+                tool_name = tool.get('name')
+                if tool_name in self.tools:
+                    continue
+                _instance = tool.get('_tool_instance')
+                self.tools[tool_name] = _instance
+                continue
             tool_name = tool.name if isinstance(tool, (ToolDefinition, AbstractTool)) else None
             if tool_name in self.tools:
                 continue

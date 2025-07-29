@@ -260,7 +260,6 @@ class GoogleGenAIClient(AbstractClient):
                     generation_config["response_schema"] = structured_output.output_type
 
         # Tool selection
-        print('TOOLS > ', tools)
         if tools and isinstance(tools, list):
             for tool in tools:
                 self.register_tool(tool)

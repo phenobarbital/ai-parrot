@@ -445,15 +445,27 @@ class ToolManager:
             tools_to_describe = tools_to_describe[:max_tools]
 
         if format_style == "detailed":
-            return self._build_detailed_description(tools_to_describe, include_parameters, include_examples)
+            return self._build_detailed_description(
+                tools_to_describe,
+                include_parameters,
+                include_examples
+            )
         elif format_style == "compact":
             return self._build_compact_description(tools_to_describe, include_parameters)
         elif format_style == "list":
             return self._build_list_description(tools_to_describe)
         elif format_style == "markdown":
-            return self._build_markdown_description(tools_to_describe, include_parameters, include_examples)
+            return self._build_markdown_description(
+                tools_to_describe,
+                include_parameters,
+                include_examples
+            )
         else:
-            return self._build_detailed_description(tools_to_describe, include_parameters, include_examples)
+            return self._build_detailed_description(
+                tools_to_describe,
+                include_parameters,
+                include_examples
+            )
 
     def _build_detailed_description(
         self,
@@ -471,8 +483,7 @@ class ToolManager:
                     continue
 
                 # Tool header
-                descriptions.append(f"{i}. {schema['name'].upper()}")
-                descriptions.append(f"   Description: {schema['description']}")
+                descriptions.append(f"{i}. {schema['name']}: {schema['description']}")
 
                 # Parameters section
                 if include_parameters and 'parameters' in schema:
@@ -498,7 +509,9 @@ class ToolManager:
                 descriptions.append(f"{i}. {tool_name}: Error getting tool information")
                 descriptions.append("")
 
-        descriptions.append("Use these tools when appropriate to help the user effectively.")
+        descriptions.append(
+            "Use these tools when appropriate to answer the question effectively."
+        )
         return "\n".join(descriptions)
 
     def _build_compact_description(self, tools: List[tuple], include_parameters: bool) -> str:

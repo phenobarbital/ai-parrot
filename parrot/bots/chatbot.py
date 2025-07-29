@@ -224,10 +224,10 @@ class Chatbot(AbstractBot):
 
     def build_tools_description(
         self,
-        style="compact",
-        include_parameters: bool = False
+        style="detailed",
+        include_parameters: bool = True
     ) -> str:
-        return self.tools.build_tools_description(
+        return self.tool_manager.build_tools_description(
             format_style=style,
             include_parameters=include_parameters,
             max_tools=self._max_tools
@@ -305,7 +305,7 @@ class Chatbot(AbstractBot):
         # Load tools from database
         tool_names = self._from_db(bot, 'tools', default=[])
         if tool_names and self.enable_tools:
-            self.tools.register_tools(tool_names)
+            self.tool_manager.register_tools(tool_names)
             # Build tools description for system prompt
             self.tools_description = self.build_tools_description()
         else:
@@ -370,7 +370,6 @@ class Chatbot(AbstractBot):
         tools_context = ''
         if hasattr(self, 'tools_description') and self.tools_description:
             tools_context = f"{self.tools_description}"
-            tools_context += "\nUse these tools when appropriate to help answer user questions."
 
         # Apply template substitution
         tmpl = Template(self.system_prompt_template)

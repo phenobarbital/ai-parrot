@@ -11,8 +11,6 @@ $capabilities
 I am here to help with $goal.
 $backstory
 
-$tools_context
-
 **Knowledge Base Context:**
 $pre_context
 $context
