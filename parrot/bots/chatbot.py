@@ -41,7 +41,7 @@ class Chatbot(AbstractBot):
         system_prompt: str = None,
         human_prompt: str = None,
         from_database: bool = True,
-        tools: List[AbstractTool] = None,
+        tools: List[Union[str, AbstractTool]] = None,
         **kwargs
     ):
         """
@@ -58,6 +58,7 @@ class Chatbot(AbstractBot):
         # Other Configuration
         self.confidence_threshold: float = kwargs.get('threshold', 0.5)
         self._from_database: bool = from_database
+        self._max_tools: int = kwargs.get('max_tools', 10)
         # Text Documents
         self.documents_dir: Path = kwargs.get(
             'documents_dir',
@@ -74,7 +75,7 @@ class Chatbot(AbstractBot):
             name=name,
             system_prompt=system_prompt,
             human_prompt=human_prompt,
-            tools= tools or [],
+            tools= tools,
             **kwargs
         )
         if isinstance(self.documents_dir, str):
@@ -154,11 +155,10 @@ class Chatbot(AbstractBot):
 
         # Load manual tools
         if self.tools:
-            self.available_tool_instances = {
-                tool.name: tool for tool in self.tools
-            }
-            self.tools_description = self._build_tools_description()
-            self.logger.info(f"Loaded {len(self.tools)} manual tools")
+            self.tools_description = self.build_tools_description()
+            self.logger.info(
+                f"Loaded {len(self.tools)} manual tools"
+            )
 
         # Embedding Model Configuration
         self.embedding_model: dict = getattr(self, 'embedding_model', {
@@ -222,66 +222,16 @@ class Chatbot(AbstractBot):
             except NoDataFound:
                 return False
 
-    def _load_tool_instances(self, tool_names: List[str]) -> None:
-        """
-        Load actual tool instances from tool names.
-        This method should be implemented to load your actual tool classes.
-        """
-        # use tool names with importlib to get the actual tool classes.
-        self.tools = []
-        tool_registry = {}
-
-        for tool in tool_names:
-            tool_file = tool.lower().replace('tool', '')
-            try:
-                module = __import__(f"parrot.tools.{tool_file}", fromlist=[tool])
-                tool_registry[tool] = getattr(module, tool)
-            except (ImportError, AttributeError) as e:
-                self.logger.error(
-                    f"Error loading tool {tool}: {e}"
-                )
-
-        self.tools = []
-        self.available_tool_instances = {}
-
-        for tool_name in tool_names:
-            if tool_name in tool_registry:
-                try:
-                    tool_class = tool_registry[tool_name]
-                    tool_instance = tool_class()
-                    self.tools.append(tool_instance)
-                    self.available_tool_instances[tool_name] = tool_instance
-                    self.logger.info(
-                        f"Loaded tool: {tool_name}"
-                    )
-                except Exception as e:
-                    self.logger.error(
-                        f"Error loading tool {tool_name}: {e}"
-                    )
-            else:
-                self.logger.warning(
-                    f"Unknown tool: {tool_name}"
-                )
-
-    def _build_tools_description(self) -> str:
-        """Build a formatted description of available tools for the system prompt."""
-        if not self.tools:
-            return ""
-
-        tools_desc = "Available Tools:\n"
-        for tool in self.tools:
-            # Now tools have consistent name and description
-            tools_desc += f"- {tool.name}: {tool.description}\n"
-
-            # Optionally include parameter info
-            schema = tool.get_tool_schema()
-            params = schema.get('parameters', {}).get('properties', {})
-            if params:
-                param_desc = ", ".join([f"{k}: {v.get('description', 'no description')}"
-                                    for k, v in params.items()])
-                tools_desc += f"  Parameters: {param_desc}\n"
-
-        return tools_desc
+    def build_tools_description(
+        self,
+        style="compact",
+        include_parameters: bool = False
+    ) -> str:
+        return self.tools.build_tools_description(
+            format_style=style,
+            include_parameters=include_parameters,
+            max_tools=self._max_tools
+        )
 
     async def from_database(
         self,
@@ -355,11 +305,10 @@ class Chatbot(AbstractBot):
         # Load tools from database
         tool_names = self._from_db(bot, 'tools', default=[])
         if tool_names and self.enable_tools:
-            self._load_tool_instances(tool_names)
+            self.tools.register_tools(tool_names)
             # Build tools description for system prompt
-            self.tools_description = self._build_tools_description()
+            self.tools_description = self.build_tools_description()
         else:
-            self.tools = []
             self.tools_description = ""
 
         # Embedding Model Configuration
@@ -443,44 +392,6 @@ class Chatbot(AbstractBot):
         self.logger.debug(
             f"System prompt configured with tools: {len(self.tools)} tools available"
         )
-        print('Tools > ', self.tools)
-
-    def get_tool_by_name(self, tool_name: str) -> Any:
-        """Get a tool instance by name."""
-        return self.available_tool_instances.get(tool_name)
-
-    def add_tool_instance(self, tool_name: str, tool_instance: Any) -> None:
-        """Add a tool instance to the bot."""
-        if tool_instance not in self.tools:
-            self.tools.append(tool_instance)
-            self.available_tool_instances[tool_name] = tool_instance
-            # Rebuild tools description
-            self.tools_description = self._build_tools_description()
-            self.logger.info(f"Added tool instance: {tool_name}")
-
-    def remove_tool_instance(self, tool_name: str) -> bool:
-        """Remove a tool instance from the bot."""
-        if tool_name in self.available_tool_instances:
-            tool_instance = self.available_tool_instances[tool_name]
-            if tool_instance in self.tools:
-                self.tools.remove(tool_instance)
-            del self.available_tool_instances[tool_name]
-            # Rebuild tools description
-            self.tools_description = self._build_tools_description()
-            self.logger.info(f"Removed tool instance: {tool_name}")
-            return True
-        return False
-
-    def list_available_tools(self) -> List[Dict[str, str]]:
-        """List all available tools with their descriptions."""
-        return [
-            {
-                'name': tool.name,
-                'description': getattr(tool, 'description', 'No description available'),
-                'class': tool.__class__.__name__
-            }
-            for tool in self.tools
-        ]
 
     def is_agent_mode(self) -> bool:
         """Check if the bot is configured to operate in agent mode."""
@@ -573,7 +484,7 @@ class Chatbot(AbstractBot):
                     'tools_enabled': getattr(self, 'enable_tools', True),
                     'auto_tool_detection': getattr(self, 'auto_tool_detection', True),
                     'tool_threshold': getattr(self, 'tool_threshold', 0.7),
-                    'tools': [tool.name for tool in self.tools] if self.tools else [],
+                    'tools': [tool.name for tool in self.tools.list_tools()] if self.tools else [],
                     'operation_mode': getattr(self, 'operation_mode', 'adaptive'),
                     'use_vector': self._use_vector,
                     'vector_store_config': self._vector_store,
@@ -624,7 +535,7 @@ class Chatbot(AbstractBot):
             'current_mode': self.get_operation_mode(),
             'tools_enabled': getattr(self, 'enable_tools', False),
             'tools_count': len(self.tools) if self.tools else 0,
-            'available_tools': [tool.name for tool in self.tools] if self.tools else [],
+            'available_tools': self.tools.list_tools() if self.tools else [],
             'use_vector_store': self._use_vector,
             'vector_store_type': self._vector_store.get('name', 'none') if self._vector_store else 'none',
             'llm': self._llm,

@@ -32,7 +32,8 @@ from ..models import (
 )
 from ..stores import AbstractStore, supported_stores
 from ..stores.models import Document
-from ..tools import AbstractTool, MathTool
+from ..tools import AbstractTool
+from ..tools.manager import ToolManager, ToolFormat
 from ..memory import (
     ConversationMemory,
     ConversationTurn,
@@ -65,7 +66,7 @@ class AbstractBot(DBInterface, ABC):
         system_prompt: str = None,
         human_prompt: str = None,
         use_tools: bool = True,
-        tools: List[AbstractTool] = None,
+        tools: List[Union[str, AbstractTool]] = None,
         tool_threshold: float = 0.7,  # Confidence threshold for tool usage
         **kwargs
     ):
@@ -93,20 +94,15 @@ class AbstractBot(DBInterface, ABC):
             f'{self.name}.Bot'
         )
         # Agentic Tools:
-        self.tools = tools or []
+        # Replace list with ToolManager
+        self.tools = ToolManager(self.logger)
+        if tools:
+            self.tools.register_tools(tools)
         self.tool_threshold = tool_threshold
         if use_tools:
             if not self.tools:
-                # Default tools if none provided
-                self.tools = self.default_tools()
-            elif isinstance(self.tools, list):
-                # Ensure all tools are AbstractTool instances
-                for tool in self.tools:
-                    if not isinstance(tool, AbstractTool):
-                        raise TypeError(
-                            f"Tool {tool} is not an instance of AbstractTool"
-                        )
-                    self.tools.append(tool)
+                # Set default tools in ToolManager
+                self.tools.default_tools()
         # Optional aiohttp Application:
         self.app: Optional[web.Application] = None
         # Start initialization:
@@ -221,15 +217,6 @@ class AbstractBot(DBInterface, ABC):
         if _permissions is None:
             _permissions = {}
         self._permissions = {**_default, **_permissions}
-
-    def default_tools(self, tools: list = None) -> List[AbstractTool]:
-        ctools = [
-            MathTool(),
-        ]
-        if tools:
-            ctools.extend(tools)
-        return ctools
-
 
     def default_permissions(self) -> dict:
         """
@@ -943,31 +930,28 @@ class AbstractBot(DBInterface, ABC):
         Returns:
             List of tool schemas for the client
         """
-        if not self.tools:
+        if not self.tools.list_tools():
             return []
 
-        client_tools = []
-        for tool in self.tools:
-            try:
-                # Get the tool schema
-                if hasattr(tool, 'get_tool_schema'):
-                    schema = tool.get_tool_schema()
-                    # Add the tool instance for execution
-                    schema['_tool_instance'] = tool
-                    client_tools.append(schema)
-                    self.logger.debug(
-                        f"Prepared tool schema for: {tool.name}"
-                    )
-                else:
-                    self.logger.warning(
-                        f"Tool {tool.name} doesn't have get_tool_schema method"
-                    )
-            except Exception as e:
-                self.logger.error(
-                    f"Error preparing tool {tool.name}: {e}"
+        # Auto-detect provider format
+        provider_format = ToolFormat.GENERIC
+        if hasattr(self._llm, 'client_type'):
+            client_name = self._llm.client_type.lower()
+            if client_name == "google":
+                provider_format = ToolFormat.GOOGLE
+            elif client_name in "openai":
+                provider_format = ToolFormat.OPENAI
+            elif client_name == "anthropic":
+                provider_format = ToolFormat.ANTHROPIC
+            elif client_name == "groq":
+                provider_format = ToolFormat.GROQ
+            elif client_name == "vertexai":
+                provider_format = ToolFormat.GOOGLE
+            else:
+                self.logger.warning(
+                    f"Unknown LLM client type: {client_name}, using generic tool format"
                 )
-
-        return client_tools
+        return self.tools.get_tool_schemas(provider_format)
 
     def _configure_client_tools(self, client, tools: List[Dict[str, Any]]) -> None:
         """
@@ -977,17 +961,27 @@ class AbstractBot(DBInterface, ABC):
             client: The LLM client instance
             tools: List of prepared tool schemas
         """
-        try:
-            if hasattr(client, 'register_tools'):
-                client.register_tools(tools)
-                self.logger.debug("Tools configured on client using register_tools")
-            else:
-                self.logger.warning(
-                    "Client doesn't support tool configuration"
-                )
-        except Exception as e:
-            self.logger.error(
-                f"Error configuring tools on client: {e}"
+        if not tools:
+            self.logger.debug("No tools to configure")
+            return
+        tools_dict = {}
+        for tool_schema in tools:
+            tool_name = tool_schema.get('name')
+            tool_instance = tool_schema.pop('_tool_instance', None)
+            if tool_name and tool_instance:
+                tools_dict[tool_name] = tool_instance
+
+        # Register as dictionary (compatible with AbstractClient)
+        if hasattr(client, 'register_tools'):
+            client.register_tools(tools_dict)
+        elif hasattr(client, 'register_tool'):
+            # Register tools individually
+            for tool_name, tool_instance in tools_dict.items():
+                client.register_tool(tool_instance, tool_name)
+            self.logger.debug(f"Configured {len(tools_dict)} tools on client individually")
+        else:
+            self.logger.warning(
+                "Client doesn't support tool configuration"
             )
 
 
@@ -1651,28 +1645,10 @@ class AbstractBot(DBInterface, ABC):
 
         return interleaved
 
-    # Tool Management:
-    def add_tool(self, tool: AbstractTool) -> None:
-        """Add a tool to the bot's toolkit."""
-        if tool not in self.tools:
-            self.tools.append(tool)
-            self.logger.info(f"Added tool: {tool.name}")
+    def register_tool(self, tool: Any, name: Optional[str] = None) -> None:
+        """Register a single tool."""
+        self.tools.register_tool(tool, name)
 
-    def remove_tool(self, tool_name: str) -> bool:
-        """Remove a tool from the bot's toolkit."""
-        for i, tool in enumerate(self.tools):
-            if tool.name == tool_name:
-                removed_tool = self.tools.pop(i)
-                self.logger.info(f"Removed tool: {removed_tool.name}")
-                return True
-        return False
-
-    def list_tools(self) -> List[Dict[str, str]]:
-        """List all available tools with their descriptions."""
-        return [
-            {
-                'name': tool.name,
-                'description': getattr(tool, 'description', 'No description available')
-            }
-            for tool in self.tools
-        ]
+    def register_tools(self, tools: Union[List[Any], Dict[str, Any]]) -> None:
+        """Register multiple tools."""
+        self.tools.register_tools(tools)

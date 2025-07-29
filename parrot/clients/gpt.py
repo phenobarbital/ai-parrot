@@ -41,7 +41,7 @@ getLogger('openai').setLevel('INFO')
 class OpenAIClient(AbstractClient):
     """Client for interacting with OpenAI's API."""
 
-    agent_type: str = "openai"
+    client_type: str = "openai"
     model: str = OpenAIModel.GPT4_TURBO.value
 
     def __init__(

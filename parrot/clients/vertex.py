@@ -38,6 +38,8 @@ class VertexAIClient(AbstractClient):
     """
     Client for interacting with Google's Vertex AI with full feature parity.
     """
+    client_type: str = "vertexai"
+
     def __init__(self, **kwargs):
         project_id = kwargs.pop('project_id', config.get("VERTEX_PROJECT_ID"))
         region = kwargs.pop('region', config.get("VERTEX_REGION"))

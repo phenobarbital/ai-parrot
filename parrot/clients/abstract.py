@@ -155,7 +155,7 @@ class AbstractClient(ABC):
     base_headers: Dict[str, str] = {
         "Content-Type": "application/json",
     }
-    agent_type: str = "generic"
+    client_type: str = "generic"
 
     def __init__(
         self,
@@ -186,7 +186,7 @@ class AbstractClient(ABC):
         self._config = config
         self.logger: logging.Logger = logging.getLogger(__name__)
         self._json: Any = JSONContent()
-        self.agent_type: str = kwargs.get('agent_type', self.agent_type)
+        self.client_type: str = kwargs.get('client_type', self.client_type)
 
     async def __aenter__(self):
         self.session = aiohttp.ClientSession(
@@ -410,7 +410,7 @@ class AbstractClient(ABC):
                         "name": tool.name,
                         "description": tool.description,
                     }
-                    if self.agent_type == 'openai':
+                    if self.client_type == 'openai':
                         base_schema['parameters'] = tool.input_schema
                         tool_schemas.append({
                             "type": "function",
@@ -432,7 +432,7 @@ class AbstractClient(ABC):
                             "name": tool_name,
                             "description": tool_description,
                         }
-                        if self.agent_type == 'openai':
+                        if self.client_type == 'openai':
                             # OpenAI format
                             base_schema['parameters'] = tool_parameters
                             tool_schemas.append({
@@ -755,7 +755,7 @@ class AbstractClient(ABC):
             metadata={
                 "message_count": len(messages),
                 "has_system_prompt": bool(system_prompt),
-                "provider": getattr(self, 'agent_type', 'unknown')
+                "provider": getattr(self, 'client_type', 'unknown')
             }
         )
 
