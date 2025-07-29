@@ -73,7 +73,7 @@ async def main():
             explanation: str
 
         math_response = await client.ask(
-            "Calculate 12 + 8 and 6 * 9, then format the results",
+            "use the tool and calculate 12 + 8 and 6 * 9, then format the results",
             structured_output=MathOperations,
         )
         print("Structured math response:")

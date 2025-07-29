@@ -5,8 +5,6 @@ $capabilities
 **Mission:** $goal
 **Background:** $backstory
 
-$tools_context
-
 **Knowledge Base:**
 $pre_context
 $context

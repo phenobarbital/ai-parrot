@@ -7,7 +7,9 @@ async def get_agent(agent_name: str):
     agent = Chatbot(
         name=agent_name,
         tools=['MathTool'],
-        use_tools=True
+        use_tools=True,
+        # llm='claude',
+        # model='claude-3-5-sonnet-20241022'
     )
     await agent.configure()
     return agent
@@ -23,6 +25,9 @@ if __name__ == "__main__":
     )
     # make a simple conversation request:
     response = loop.run_until_complete(
-        agent.conversation("use the tool for calculate 245*38/3")
+        agent.conversation("use the tool for calculate (245*38)")
     )
     print('Response: ', response.output)
+    print("Has tools:", response.has_tools)
+    print("Tool calls:", [f"{tc.name}({tc.arguments}) = {tc.result}" for tc in response.tool_calls])
+    print("Total execution time:", sum(tc.execution_time for tc in response.tool_calls))

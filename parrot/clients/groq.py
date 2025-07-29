@@ -110,14 +110,23 @@ class GroqClient(AbstractClient):
             return []
 
         groq_tools = []
-        for tool in self.tools.values():
+        for tool_name, tool in self.tools.items():
             # Fix the tool schema for Groq
-            fixed_schema = self._fix_schema_for_groq(tool.input_schema)
+            if hasattr(tool, 'input_schema'):
+                # Convert dict schema to Groq-compliant schema
+                fixed_schema = self._fix_schema_for_groq(tool.input_schema)
+            elif hasattr(tool, 'get_tool_schema'):
+                # Handle Pydantic model schemas
+                fixed_schema = self._fix_schema_for_groq(
+                    tool.get_tool_schema()
+                )
+            else:
+                fixed_schema = {}
 
             groq_tools.append({
                 "type": "function",
                 "function": {
-                    "name": tool.name,
+                    "name": tool_name,
                     "description": tool.description,
                     "parameters": fixed_schema
                 }

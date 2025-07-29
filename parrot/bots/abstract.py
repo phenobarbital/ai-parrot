@@ -11,7 +11,9 @@ import asyncio
 import copy
 from aiohttp import web
 from navconfig.logging import logging
-from navigator_auth.conf import AUTH_SESSION_OBJECT  # pylint: disable=E0611
+from navigator_auth.conf import AUTH_SESSION_OBJECT
+
+from parrot.tools.math import MathTool  # pylint: disable=E0611
 from ..interfaces import DBInterface
 from ..exceptions import ConfigError  # pylint: disable=E0611
 from ..conf import (
@@ -95,14 +97,15 @@ class AbstractBot(DBInterface, ABC):
         )
         # Agentic Tools:
         # Replace list with ToolManager
-        self.tools = ToolManager(self.logger)
-        if tools:
-            self.tools.register_tools(tools)
+        self.tool_manager = ToolManager(self.logger)
+        self.tools = tools or []
         self.tool_threshold = tool_threshold
         if use_tools:
-            if not self.tools:
-                # Set default tools in ToolManager
-                self.tools.default_tools()
+            # Set default tools in ToolManager
+            self.tool_manager.register_tools(
+                tools
+            )
+            self.tool_manager.default_tools()
         # Optional aiohttp Application:
         self.app: Optional[web.Application] = None
         # Start initialization:
@@ -386,6 +389,10 @@ class AbstractBot(DBInterface, ABC):
                     raise ConfigError(
                         f"Error initializing LLM Client {self._llm.__name__}: {e}"
                     )
+        # Register tools directly on client (like your working examples)
+        if self.tools:
+            for tool in self.tool_manager.get_tools():
+                self._llm.register_tool(tool)
 
     def define_store(
         self,
@@ -964,26 +971,17 @@ class AbstractBot(DBInterface, ABC):
         if not tools:
             self.logger.debug("No tools to configure")
             return
-        tools_dict = {}
         for tool_schema in tools:
             tool_name = tool_schema.get('name')
+            description = tool_schema.get('description', '')
             tool_instance = tool_schema.pop('_tool_instance', None)
             if tool_name and tool_instance:
-                tools_dict[tool_name] = tool_instance
-
-        # Register as dictionary (compatible with AbstractClient)
-        if hasattr(client, 'register_tools'):
-            client.register_tools(tools_dict)
-        elif hasattr(client, 'register_tool'):
-            # Register tools individually
-            for tool_name, tool_instance in tools_dict.items():
-                client.register_tool(tool_instance, tool_name)
-            self.logger.debug(f"Configured {len(tools_dict)} tools on client individually")
-        else:
-            self.logger.warning(
-                "Client doesn't support tool configuration"
-            )
-
+                if hasattr(client, 'register_tool'):
+                    client.register_tool(
+                        tool_instance,
+                        name=tool_name,
+                        description=description
+                    )
 
     async def conversation(
         self,
@@ -1085,13 +1083,13 @@ class AbstractBot(DBInterface, ABC):
                 f"Tool usage decision: use_tools={use_tools}, mode={mode}, "
                 f"effective_mode={effective_mode}, available_tools={len(self.tools)}"
             )
-            # Prepare tools for LLM client
-            client_tools = []
-            if use_tools and self.tools:
-                client_tools = self._prepare_tools()
-                self.logger.info(
-                    f"Prepared {len(client_tools)} tools for LLM client"
-                )
+            # # Prepare tools for LLM client
+            # client_tools = []
+            # if use_tools and self.tools:
+            #     client_tools = self._prepare_tools()
+            #     self.logger.info(
+            #         f"Prepared {len(client_tools)} tools for LLM client"
+            #     )
 
             # Create system prompt
             system_prompt = await self.create_system_prompt(
@@ -1110,11 +1108,10 @@ class AbstractBot(DBInterface, ABC):
 
             # Make the LLM call using the Claude client
             async with self._llm as client:
-                # Configure tools if needed
-                if use_tools and hasattr(client, 'tools'):
-                    # Enable tools on the client
-                    self._configure_client_tools(client, client_tools)
-
+                # # Configure tools if needed
+                # if use_tools and hasattr(client, 'tools'):
+                #     # Enable tools on the client
+                #     self._configure_client_tools(client, client_tools)
                 response = await client.ask(
                     prompt=question,
                     system_prompt=system_prompt,
@@ -1123,7 +1120,6 @@ class AbstractBot(DBInterface, ABC):
                     temperature=kwargs.get('temperature', self._llm_temp),
                     user_id=user_id,
                     session_id=session_id,
-                    tools=client_tools if client_tools else None,
                 )
 
                 # Enhance the response with context metadata

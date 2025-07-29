@@ -16,13 +16,16 @@ from parrot.tools.math import MathTool
 async def main():
     question = "Give me a list of 10 European cities and their capitals. Use a list format."
 
-    # print("\n--- Asking Google GenAI ---")
-    # async with GoogleGenAIClient() as client:
-    #     print(response.text)                    # Response text
-    #     print(response.usage.prompt_tokens)     # 39 (from usage_metadata)
-    #     print(response.usage.completion_tokens) # 5 (from usage_metadata)
-    #     print(response.usage.total_tokens)      # 110 (from usage_metadata)
-    #     print(response.provider)                # "vertex_ai"
+    print("\n--- Asking Google GenAI ---")
+    async with GoogleGenAIClient() as client:
+        response = await client.ask(
+            question
+        )
+        print(response.output)                    # Response text
+        print(response.usage.prompt_tokens)     # 39 (from usage_metadata)
+        print(response.usage.completion_tokens) # 5 (from usage_metadata)
+        print(response.usage.total_tokens)      # 110 (from usage_metadata)
+        print(response.provider)                # "vertex_ai"
 
     async with GoogleGenAIClient() as client:
         math_tool = MathTool()
@@ -31,7 +34,8 @@ async def main():
         client.register_tool(
             math_tool
         )
-        question = "What is 150 plus 79, and also what is 1024 divided by 256?"
+        # question = "What is 150 plus 79, and also what is 1024 divided by 256?"
+        question = "use the tool for calculate (245*38)/3"
         response = await client.ask(
             question,
         )
@@ -44,6 +48,28 @@ async def main():
         print("Has tools:", response.has_tools)
         print("Tool calls:", [f"{tc.name}({tc.arguments}) = {tc.result}" for tc in response.tool_calls])
         print("Total execution time:", sum(tc.execution_time for tc in response.tool_calls))
+
+        response = await client.ask(
+            "What is the result of multiplying 5 and 10?"
+        )
+        print('--- Google AI Tool Call Response ---')
+        print(response.output)                    # Response text
+
+        print('Math Tool Results:')
+        class MathOperations(BaseModel):
+            addition_result: float
+            multiplication_result: float
+            explanation: str
+
+        math_response = await client.ask(
+            "use the tool and calculate 12 + 8 and 6 * 9, then format the results",
+            structured_output=MathOperations,
+        )
+        print("Structured math response:")
+        print("- Is structured:", math_response.is_structured)
+        print("- Output type:", type(math_response.output))
+        print("- Math data:", math_response.output)
+        print("- Parallel tools used:", len(math_response.tool_calls))
 
     #     # Register multiple tools for parallel execution
     #     def add_numbers(a: float, b: float) -> float:

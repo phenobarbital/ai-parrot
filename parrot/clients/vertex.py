@@ -204,6 +204,9 @@ class VertexAIClient(AbstractClient):
         vertex_tools = self._build_tools()
         all_tool_calls = []
 
+
+        print('TOOLS > ', vertex_tools)
+        print('SYSTEM PROMPT > ', system_prompt)
         # Create the model
         multimodal_model = GenerativeModel(
             model_name=model,
