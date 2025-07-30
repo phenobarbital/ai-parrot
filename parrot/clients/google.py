@@ -39,6 +39,12 @@ from ..models.outputs import (
     SentimentAnalysis,
     ProductReview
 )
+from ..models.google import (
+    ALL_VOICE_PROFILES,
+    VoiceRegistry,
+    ConversationalScriptConfig,
+    FictionalSpeaker
+)
 
 
 logging.getLogger(
@@ -61,6 +67,8 @@ class GoogleGenAIClient(AbstractClient):
         api_key = kwargs.pop('api_key', config.get('GOOGLE_API_KEY'))
         super().__init__(**kwargs)
         self.client = genai.Client(api_key=api_key)
+        #  Create a single instance of the Voice registry
+        self.voice_db = VoiceRegistry(profiles=ALL_VOICE_PROFILES)
 
     def _fix_tool_schema(self, schema: dict):
         """Recursively converts schema type values to uppercase for GenAI compatibility."""
@@ -1301,6 +1309,211 @@ class GoogleGenAIClient(AbstractClient):
         except Exception as e:
             self.logger.error(f"Image generation failed: {e}")
             raise
+
+    def _find_voice_for_speaker(self, speaker: FictionalSpeaker) -> str:
+        """
+        Find the best voice for a speaker based on their characteristics and gender.
+
+        Args:
+            speaker: The fictional speaker configuration
+
+        Returns:
+            Voice name string
+        """
+        if not self.voice_db:
+            self.logger.warning(
+                "Voice database not available, using default voice"
+            )
+            return "erinome"  # Default fallback
+
+        try:
+            # First, try to find voices by characteristic
+            characteristic_voices = self.voice_db.get_voices_by_characteristic(
+                speaker.characteristic
+            )
+
+            if characteristic_voices:
+                # Filter by gender if possible
+                gender_filtered = [
+                    v for v in characteristic_voices if v.gender == speaker.gender
+                ]
+                if gender_filtered:
+                    return gender_filtered[0].voice_name.lower()
+                else:
+                    # Use first voice with matching characteristic regardless of gender
+                    return characteristic_voices[0].voice_name.lower()
+
+            # Fallback: find by gender only
+            gender_voices = self.voice_db.get_voices_by_gender(speaker.gender)
+            if gender_voices:
+                self.logger.info(
+                    f"Found voice by gender '{speaker.gender}': {gender_voices[0].voice_name}"
+                )
+                return gender_voices[0].voice_name.lower()
+
+            # Ultimate fallback
+            self.logger.warning(
+                f"No voice found for speaker {speaker.name}, using default"
+            )
+            return "erinome"
+
+        except Exception as e:
+            self.logger.error(
+                f"Error finding voice for speaker {speaker.name}: {e}"
+            )
+            return "erinome"
+
+    async def create_conversation_script(
+        self,
+        report_data: ConversationalScriptConfig,
+        model: Union[str, GoogleModel] = GoogleModel.GEMINI_2_5_FLASH,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        temperature: float = 0.7,
+        use_structured_output: bool = False,
+        max_lines: int = 20
+    ) -> AIMessage:
+        """
+        Creates a conversation script using Google's Generative AI.
+        Generates a fictional conversational script from a text report using a generative model.
+        Generates a complete, TTS-ready prompt for a two-person conversation
+        based on a source text report.
+
+        This method is designed to create a script that can be used with Google's TTS system.
+
+        Returns:
+            A string formatted for Google's TTS `generate_content` method.
+            Example:
+            "Make Speaker1 sound tired and bored, and Speaker2 sound excited and happy:
+
+            Speaker1: So... what's on the agenda today?
+            Speaker2: You're never going to guess!"
+        """
+        model = model.value if isinstance(model, GoogleModel) else model
+        self.logger.info(
+            f"Starting Conversation Script with model: {model}"
+        )
+        turn_id = str(uuid.uuid4())
+
+        report_text = report_data.report_text
+        if not report_text:
+            raise ValueError(
+                "Report text is required for generating a conversation script."
+            )
+        # Calculate conversation length
+        conversation_length = min(report_data.length // 50, max_lines)
+        if conversation_length < 4:
+            conversation_length = max_lines
+        system_prompt = report_data.system_prompt or "Create a natural and engaging conversation script based on the provided report."
+        context = report_data.context or "This conversation is based on a report about a specific topic. The characters will discuss the key findings and insights from the report."
+        interviewer = None
+        interviewee = None
+        for speaker in report_data.speakers:
+            if not speaker.name or not speaker.role or not speaker.characteristic:
+                raise ValueError(
+                    "Each speaker must have a name, role, and characteristic."
+                )
+            # role (interviewer or interviewee) and characteristic (e.g., friendly, professional)
+            if speaker.role == "interviewer":
+                interviewer = speaker
+            elif speaker.role == "interviewee":
+                interviewee = speaker
+
+        if not interviewer or not interviewee:
+            raise ValueError("Must have exactly one interviewer and one interviewee.")
+        system_instruction = f"""
+You are a scriptwriter. Your task is {system_prompt} for a conversation between {interviewer.name} and {interviewee.name}. "
+
+**Source Report:**"
+---
+{report_text}
+---
+
+**context:**
+{context}
+
+
+**Characters:**
+1.  **{interviewer.name}**: The {interviewer.role}. Their personality is **{interviewer.characteristic}**.
+2.  **{interviewee.name}**: The {interviewee.role}. Their personality is **{interviewee.characteristic}**.
+
+**Conversation Length:** {conversation_length} lines.
+**Instructions:**
+- The conversation must be based on the key findings, data, and conclusions of the source report.
+- The interviewer should ask insightful questions to guide the conversation.
+- The interviewee should provide answers and explanations derived from the report.
+- The dialogue should reflect the specified personalities of the characters.
+- The conversation should be engaging, natural, and suitable for a TTS system.
+- The script should be formatted for TTS, with clear speaker lines.
+
+- **IMPORTANT**: Generate ONLY the dialogue script. Do not include headers, titles, or any text other than the speaker lines. The format must be exactly:
+{interviewer.name}: [dialogue]
+{interviewee.name}: [dialogue]
+        """
+        generation_config = {
+            "max_output_tokens": self.max_tokens,
+            "temperature": temperature or self.temperature,
+        }
+
+        # Build contents for the stateless API call
+        contents = [{
+            "role": "user",
+            "parts": [{"text": report_text}]
+        }]
+
+        final_config = GenerateContentConfig(
+            system_instruction=system_instruction,
+            tools=None,  # No tools needed for translation
+            **generation_config
+        )
+
+        # Make a stateless call to the model
+        response = await self.client.aio.models.generate_content(
+            model=model,
+            contents=contents,
+            config=final_config
+        )
+
+        # Extract the generated script text
+        script_text = response.text if hasattr(response, 'text') else str(response)
+        structured_output = script_text
+        if use_structured_output:
+            self.logger.info("Creating structured output for TTS system...")
+            try:
+                # Map speakers to voices
+                speaker_configs = []
+                for speaker in report_data.speakers:
+                    voice = self._find_voice_for_speaker(speaker)
+                    speaker_configs.append(
+                        SpeakerConfig(name=speaker.name, voice=voice)
+                    )
+                    self.logger.notice(
+                        f"Assigned voice '{voice}' to speaker '{speaker.name}'"
+                    )
+                structured_output = SpeechGenerationPrompt(
+                    prompt=script_text,
+                    speakers=speaker_configs
+                )
+            except Exception as e:
+                self.logger.error(
+                    f"Failed to create structured output: {e}"
+                )
+                # Continue without structured output rather than failing
+
+        # Create the AIMessage response using the factory
+        ai_message = AIMessageFactory.from_gemini(
+            response=response,
+            input_text=report_text,
+            model=model,
+            user_id=user_id,
+            session_id=session_id,
+            turn_id=turn_id,
+            structured_output=structured_output,
+            tool_calls=[]
+        )
+        ai_message.provider = "google_genai"
+
+        return ai_message
 
     async def generate_speech(
         self,
