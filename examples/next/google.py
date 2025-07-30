@@ -508,10 +508,10 @@ Market expansion into Europe has been slower than projected, with only a 5% mark
             context="A detailed analysis of Innovate Corp's Q2 2025 financial performance, focusing on revenue growth, profit margins, and market expansion.",
             speakers=[
                 FictionalSpeaker(
-                    name="Analyst", role="interviewer", characteristic="Knowledgeable", gender="female"
+                    name="Analyst", role="interviewer", characteristic="Mature", gender="female"
                 ),
                 FictionalSpeaker(
-                    name="CEO", role="interviewee", characteristic="Bright", gender="male"
+                    name="CEO", role="interviewee", characteristic="Smooth", gender="male"
                 )
             ],
             report_text=quarterly_report,
