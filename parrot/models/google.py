@@ -1,7 +1,7 @@
 """
 Google Related Models to be used in GenAI.
 """
-from typing import Literal, List
+from typing import Literal, List, Dict, Optional
 from enum import Enum
 from pydantic import BaseModel, Field
 
@@ -63,6 +63,52 @@ class VertexAIModel(Enum):
     IMAGEN_3_FAST = "Imagen 3 Fast"
 
 
+class FictionalSpeaker(BaseModel):
+    """Configuration for a fictional character in the generated script."""
+    name: str = Field(
+        ...,
+        description="The name of the fictional speaker (e.g., 'Alex', 'Dr. Evans')."
+    )
+    characteristic: str = Field(
+        ...,
+        description="A descriptive personality trait for the voice model, e.g., 'charismatic and engaging', 'skeptical and cautious', 'bored'."
+    )
+    role: Literal['interviewer', 'interviewee'] = Field(
+        ...,
+        description="The role of the speaker in the conversation."
+    )
+    gender: Literal['female', 'male', 'neutral'] = Field(
+        default='neutral',
+        description="The gender of the speaker.",
+    )
+
+
+class ConversationalScriptConfig(BaseModel):
+    """
+    Configuration for generating a conversational script with fictional characters.
+    """
+    report_text: str = Field(
+        ...,
+        description="The main text content of the script."
+    )
+    speakers: List[FictionalSpeaker] = Field(
+        ...,
+        description="A list of fictional speakers to include in the script."
+    )
+    context: str = Field(
+        ...,
+        description="Background context for the conversation, e.g., 'Discussing recent scientific discoveries'."
+    )
+    length: int = Field(
+        1000,
+        description="Desired length of the script in words."
+    )
+    system_prompt: Optional[str] = Field(
+        None,
+        description="An optional system prompt to guide the AI's behavior during script generation."
+    )
+
+
 # Define the gender type for clarity and validation
 Gender = Literal["female", "male", "neutral"]
 
@@ -111,3 +157,56 @@ ALL_VOICE_PROFILES: List[VoiceProfile] = [
     VoiceProfile(voice_name="Sadaltager", characteristic="Knowledgeable", gender="male"),
     VoiceProfile(voice_name="Sulafat", characteristic="Warm", gender="female"),
 ]
+
+class VoiceRegistry:
+    """
+    A comprehensive registry for managing and querying available voice profiles.
+    """
+    def __init__(self, profiles: List[VoiceProfile]):
+        """Initializes the registry with a list of voice profiles."""
+        self._voices: Dict[str, VoiceProfile] = {
+            profile.voice_name.lower(): profile for profile in profiles
+        }
+
+    def find_voice_by_name(self, name: str) -> Optional[VoiceProfile]:
+        """
+        Finds a voice profile by its name (case-insensitive).
+
+        Args:
+            name: The name of the voice to find (e.g., 'Erinome', 'puck').
+        Returns:
+            A VoiceProfile object if found, otherwise None.
+        """
+        return self._voices.get(name.lower())
+
+    def get_all_voices(self) -> List[VoiceProfile]:
+        """Returns a list of all voice profiles in the registry."""
+        return list(self._voices.values())
+
+    def get_voices_by_gender(self, gender: Gender) -> List[VoiceProfile]:
+        """
+        Filters and returns all voices matching the specified gender.
+
+        Args:
+            gender: The gender to filter by ('female', 'male', or 'neutral').
+        Returns:
+            A list of matching VoiceProfile objects.
+        """
+        return [
+            profile for profile in self._voices.values() if profile.gender == gender
+        ]
+
+    def get_voices_by_characteristic(self, characteristic: str) -> List[VoiceProfile]:
+        """
+        Filters and returns all voices with a specific characteristic (case-insensitive).
+
+        Args:
+            characteristic: The characteristic to search for (e.g., 'Clear', 'upbeat').
+        Returns:
+            A list of matching VoiceProfile objects.
+        """
+        search_char = characteristic.lower()
+        return [
+            profile for profile in self._voices.values()
+            if profile.characteristic.lower() == search_char
+        ]

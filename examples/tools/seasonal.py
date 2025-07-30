@@ -54,6 +54,7 @@ async def example_usage():
         remove_trend=True  # Also test after detrending
     )
     # Access results
+    print(result)
     print(f"Status: {result.status}")
     print(f"Overall conclusion: {result.result['overall_conclusion']['conclusion']}")
     print(f"Recommendation: {result.result['overall_conclusion']['recommendation']}")

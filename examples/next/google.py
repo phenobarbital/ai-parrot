@@ -11,6 +11,7 @@ from parrot.models import (
     VideoGenerationPrompt,
     SpeakerConfig
 )
+from parrot.models.google import ConversationalScriptConfig, FictionalSpeaker
 from parrot.tools.math import MathTool
 
 async def main():
@@ -273,7 +274,7 @@ Jesus: I'm feeling fantastic!
 
         speech_result_2 = await client.generate_speech(
             prompt_data=multi_voice_prompt,
-            output_directory=output_directory
+            output_directory=output_directory,
         )
 
         if speech_result_2 and speech_result_2.files:
@@ -488,5 +489,57 @@ Jesus: I'm feeling fantastic!
                     if turn.tools_used:
                         print(f"  Tools used: {', '.join(turn.tools_used)}")
 
+async def test_scripter():
+    output_directory = BASE_DIR.joinpath('static', 'generated_audio')
+    output_directory.mkdir(parents=True, exist_ok=True)
+    quarterly_report = """
+Q2 2025 Financial Report for Innovate Corp.
+Revenue reached $5.2M, a 15% increase quarter-over-quarter, driven primarily by the successful launch of our 'Project Nova' AI platform which accounted for 60% of new sales.
+However, profit margins decreased from 25% to 22% due to increased R&D spending on 'Project Chimera', our next-gen quantum computing initiative.
+User engagement is up 30%, with daily active users hitting a record 500,000.
+Market expansion into Europe has been slower than projected, with only a 5% market penetration against a target of 15%.
+"""
+    memory = GoogleGenAIClient.create_conversation_memory("memory")
+    user_id = "user123"
+    session_id = "google_session_010"
+    async with GoogleGenAIClient(conversation_memory=memory) as client:
+        # 2. Define the script configuration
+        script_config = ConversationalScriptConfig(
+            context="A detailed analysis of Innovate Corp's Q2 2025 financial performance, focusing on revenue growth, profit margins, and market expansion.",
+            speakers=[
+                FictionalSpeaker(
+                    name="Analyst", role="interviewer", characteristic="Knowledgeable", gender="female"
+                ),
+                FictionalSpeaker(
+                    name="CEO", role="interviewee", characteristic="Bright", gender="male"
+                )
+            ],
+            report_text=quarterly_report,
+            system_prompt="You are an expert financial analyst conducting a detailed review of Innovate Corp's quarterly performance."
+        )
+
+        # 3. Generate the conversational script
+        response = await client.create_conversation_script(
+            report_data=script_config,
+            user_id=user_id,
+            session_id=session_id,
+            max_lines=10,  # Limit to 10 lines for brevity,
+            use_structured_output=True  # Use structured output for TTS
+        )
+        print("Conversational Script Generated:")
+        print(response.output)
+        voice_prompt = response.output
+
+        speech_result = await client.generate_speech(
+            prompt_data=voice_prompt,
+            output_directory=output_directory,
+        )
+
+        if speech_result and speech_result.files:
+            print(f"✅ Multi-voice speech saved to: {speech_result.files[0]}")
+        else:
+            print("❌ Failed to generate multi-voice speech.")
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    # asyncio.run(main())
+    asyncio.run(test_scripter())
