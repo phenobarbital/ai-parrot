@@ -25,7 +25,7 @@ from parrot.llms.groq import GroqLLM
 from parrot.llms.anthropic import AnthropicLLM
 from parrot.llms.openai import OpenAILLM
 from parrot.tools import AbstractToolkit
-from parrot.tools.weather import OpenWeather
+from parrot.tools.openweather import OpenWeather
 
 
 # Function: Agent Creation:
