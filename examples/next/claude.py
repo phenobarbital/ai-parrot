@@ -335,43 +335,43 @@ df.head()
         # )
         # print("Technical analysis:", response.to_text)
 
-        # # Example 6: Custom structured output
+        # Example 6: Custom structured output
 
-        # class ProductAnalysis(BaseModel):
-        #     """Example structured output model for product analysis."""
-        #     brand: str = Field(description="The brand name of the product (e.g., 'Samsung', 'Apple', 'HP')")
-        #     model: str = Field(description="The specific model name or number of the product")
-        #     key_features: List[str] = Field(description="List of key features visible in the image")
-        #     condition: str = Field(
-        #         description="The apparent condition of the product (e.g., 'New', 'Used', 'Refurbished')"
-        #     )
-        #     estimated_price_range: str = Field(
-        #         description="Estimated price range (e.g., '$100-200', 'Under $50')"
-        #     )
+        class ProductAnalysis(BaseModel):
+            """Example structured output model for product analysis."""
+            brand: str = Field(description="The brand name of the product (e.g., 'Samsung', 'Apple', 'HP')")
+            model: str = Field(description="The specific model name or number of the product")
+            key_features: List[str] = Field(description="List of key features visible in the image")
+            condition: str = Field(
+                description="The apparent condition of the product (e.g., 'New', 'Used', 'Refurbished')"
+            )
+            estimated_price_range: str = Field(
+                description="Estimated price range (e.g., '$100-200', 'Under $50')"
+            )
 
 
-        # response = await client.ask_to_image(
-        #     prompt="""Analyze this product and respond with ONLY this JSON structure:
-        #     {
-        #         "brand": "exact brand name",
-        #         "model": "exact model name",
-        #         "key_features": ["list", "of", "features"],
-        #         "condition": "condition description",
-        #         "estimated_price_range": "price range"
-        #     }
-        #     Use exactly these field names.""",
-        #     image=image_path,
-        #     structured_output=ProductAnalysis,
-        #     model=ClaudeModel.SONNET_4
-        # )
+        response = await client.ask_to_image(
+            prompt="""Analyze this product and respond with ONLY this JSON structure:
+            {
+                "brand": "exact brand name",
+                "model": "exact model name",
+                "key_features": ["list", "of", "features"],
+                "condition": "condition description",
+                "estimated_price_range": "price range"
+            }
+            Use exactly these field names.""",
+            image=image_path,
+            structured_output=ProductAnalysis,
+            model=ClaudeModel.SONNET_4
+        )
 
-        # if response.is_structured:
-        #     analysis = response.output
-        #     print(f"Brand: {analysis.brand}")
-        #     print(f"Model: {analysis.model}")
-        #     print(f"Features: {', '.join(analysis.key_features)}")
-        #     print(f"Condition: {analysis.condition}")
-        #     print(f"Price Range: {analysis.estimated_price_range}")
+        if response.is_structured:
+            analysis = response.output
+            print(f"Brand: {analysis.brand}")
+            print(f"Model: {analysis.model}")
+            print(f"Features: {', '.join(analysis.key_features)}")
+            print(f"Condition: {analysis.condition}")
+            print(f"Price Range: {analysis.estimated_price_range}")
 
 if __name__ == "__main__":
     asyncio.run(example_usage())

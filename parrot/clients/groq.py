@@ -306,8 +306,6 @@ class GroqClient(AbstractClient):
                     ]
                 })
 
-                print('FUNCTION CALL > ', all_tool_calls)
-
                 # Continue conversation with tool results
                 continue_args = {
                     "model": model,
