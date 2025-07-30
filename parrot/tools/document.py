@@ -15,6 +15,7 @@ from pathlib import Path
 from datetime import datetime
 import aiofiles
 import aiofiles.os
+import pandas as pd
 from pydantic import BaseModel, Field, field_validator
 from .abstract import AbstractTool
 
@@ -451,7 +452,10 @@ class AbstractDocumentTool(AbstractTool):
         """
         try:
             # 1. Validate input
-            if not content or not content.strip():
+            if isinstance(content, pd.DataFrame):
+                if content.empty:
+                    raise ValueError("DataFrame content cannot be empty")
+            elif not content or not content.strip():
                 raise ValueError("Content cannot be empty")
 
             # 2. Ensure output directory exists
