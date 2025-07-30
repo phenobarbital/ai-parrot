@@ -9,10 +9,20 @@ PYTHON_VERSION := 3.11
 HAS_UV := $(shell command -v uv 2> /dev/null)
 HAS_PIP := $(shell command -v pip 2> /dev/null)
 
+# Install uv for faster workflows
+install-uv:
+	curl -LsSf https://astral.sh/uv/install.sh | sh
+	@echo "uv installed! You may need to restart your shell or run 'source ~/.bashrc'"
+	@echo "Then re-run make commands to use faster uv workflows"
+
 # Create virtual environment
 venv:
 	uv venv --python $(PYTHON_VERSION) .venv
 	@echo 'run `source .venv/bin/activate` to start develop with Parrot'
+
+# Install production dependencies using lock file
+install:
+	uv sync --frozen --no-dev --extra google --extra milvus --extra groq --extra agents --extra vector --extra images --extra loaders --extra openai --extra anthropic
 
 # Generate lock files (uv only)
 lock:
@@ -21,16 +31,6 @@ ifdef HAS_UV
 else
 	@echo "Lock files require uv. Install with: pip install uv"
 endif
-
-# Install uv for faster workflows
-install-uv:
-	curl -LsSf https://astral.sh/uv/install.sh | sh
-	@echo "uv installed! You may need to restart your shell or run 'source ~/.bashrc'"
-	@echo "Then re-run make commands to use faster uv workflows"
-
-# Install production dependencies using lock file
-install:
-	uv sync --frozen --no-dev --extra google --extra milvus --extra groq --extra agents --extra vector --extra images --extra loaders --extra openai --extra anthropic
 
 # Install all dependencies including dev dependencies
 develop:
