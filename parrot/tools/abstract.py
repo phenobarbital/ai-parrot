@@ -83,7 +83,8 @@ class AbstractTool(ABC):
 
         # File and URL configuration
         self.base_url = base_url or BASE_STATIC_URL
-        parsed = urlparse(self.base_url)
+        self.static_url = base_url or BASE_STATIC_URL
+        parsed = urlparse(self.static_url)
         self._base_scheme_netloc = (parsed.scheme, parsed.netloc)
 
         # Set up directories
@@ -251,7 +252,7 @@ class AbstractTool(ABC):
 
         try:
             relative_path = file_path.relative_to(self.static_dir)
-            return f"{self.base_url.rstrip('/')}/{relative_path}"
+            return f"{self.static_url.rstrip('/')}/{relative_path}"
         except ValueError:
             self.logger.warning(
                 f"File {file_path} is not within static directory {self.static_dir}"
