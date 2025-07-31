@@ -1,5 +1,5 @@
 import textwrap
-from typing import List, Tuple
+from typing import Dict, List, Tuple
 from datetime import datetime
 import aiofiles
 from navconfig import BASE_DIR
@@ -34,6 +34,20 @@ class BasicAgent(Chatbot):
     speech_context: str = ""
     speech_system_prompt: str = ""
     speech_length: int = 10  # Default length for the speech report
+    speakers: Dict[str, str] = {
+        "interviewer": {
+            "name": "Lydia",
+            "role": "interviewer",
+            "characteristic": "Bright",
+            "gender": "Female"
+        },
+        "interviewee": {
+            "name": "Brian",
+            "role": "interviewee",
+            "characteristic": "Informative",
+            "gender": "Male"
+        }
+    }
 
     def __init__(
         self,
@@ -169,17 +183,14 @@ class BasicAgent(Chatbot):
         output_directory = BASE_DIR.joinpath('static', self.name, 'generated_scripts')
         output_directory.mkdir(parents=True, exist_ok=True)
         script_name = self._create_filename(prefix='script', extension='txt')
+        # creation of speakers:
+        speakers = []
+        for _, speaker in self.speakers.items():
+            speakers.append(FictionalSpeaker(**speaker))
         # 1. Define the script configuration
         script_config = ConversationalScriptConfig(
             context=self.speech_context,
-            speakers=[
-                FictionalSpeaker(
-                    name="Lydia", role="interviewer", characteristic="Bright", gender="female"
-                ),
-                FictionalSpeaker(
-                    name="Brian", role="interviewee", characteristic="Informative", gender="male"
-                )
-            ],
+            speakers=speakers,
             report_text=report,
             system_prompt=self.speech_system_prompt,
             length=self.speech_length,  # Use the speech_length attribute
