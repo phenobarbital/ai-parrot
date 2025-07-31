@@ -105,7 +105,7 @@ class GoogleTTSArgs(BaseModel):
         return v
 
 
-class GoogleTTSTool(AbstractTool):
+class GoogleVoiceTool(AbstractTool):
     """
     Tool for generating speech audio from text using Google Cloud Text-to-Speech.
 
@@ -122,7 +122,7 @@ class GoogleTTSTool(AbstractTool):
     - Comprehensive error handling and logging
     """
 
-    name = "google_tts"
+    name = "google_voice"
     description = (
         "Generate speech audio from text using Google Cloud Text-to-Speech. "
         "Supports multiple languages, voice models, and output formats. "

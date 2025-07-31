@@ -12,7 +12,14 @@ from urllib.parse import urlparse, urlunparse
 from pydantic import BaseModel, Field
 from datamodel.parsers.json import json_decoder, json_encoder  # noqa  pylint: disable=E0611
 from navconfig import BASE_DIR
+from navconfig.logging import logging
 from ..conf import BASE_STATIC_URL, STATIC_DIR
+
+
+logging.getLogger(name='matplotlib').setLevel(logging.INFO)
+logging.getLogger(name='h5py').setLevel(logging.INFO)
+logging.getLogger(name='datasets').setLevel(logging.WARNING)
+logging.getLogger(name='numexpr').setLevel(logging.WARNING)
 
 
 class AbstractToolArgsSchema(BaseModel):

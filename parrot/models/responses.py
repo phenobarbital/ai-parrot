@@ -452,3 +452,31 @@ class AIMessageFactory:
     @staticmethod
     def from_video(**kwargs):
         return AIMessage(**kwargs)
+
+class AgentResponse(BaseModel):
+    """
+    AgentResponse is a model that defines the structure of the response for Any Parrot agent.
+    """
+    session_id: Optional[str] = Field(description="Unique identifier for the session")
+    user_id: Optional[str] = Field(description="Unique identifier for the user")
+    agent_name: str = Field(required=False, description="Name of the agent that processed the request")
+    data: str = Field(..., description="Data returned by the agent")
+    status: str = Field(default="success", description="Status of the response")
+    output: Any = Field(required=False, description="Output of the agent's processing")
+    attributes: Dict[str, str] = Field(default_factory=dict, description="Attributes associated with the response")
+    created_at: datetime = Field(default=datetime.now)
+    transcript: str = Field(default=None, description="Transcript of the conversation with the agent")
+    script_path: str = Field(
+        required=False,
+        description="Path to the conversational script associated with the session"
+    )
+    podcast_path: str = Field(required=False, description="Path to the podcast associated with the session")
+    pdf_path: str = Field(required=False, description="Path to the PDF associated with the session")
+    document_path: str = Field(
+        required=False,
+        description="Path to any document generated during session"
+    )
+    documents: List[str] = Field(
+        default_factory=list,
+        description="List of documents generated during the session"
+    )

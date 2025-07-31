@@ -1,5 +1,5 @@
 import asyncio
-from parrot.tools.weather import OpenWeatherTool
+from parrot.tools.openweather import OpenWeatherTool
 
 
 async def example_usage():
