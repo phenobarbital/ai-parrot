@@ -104,7 +104,8 @@ class GoogleGenAIClient(AbstractClient):
             'web',
             'internet',
             'latest',
-            'news'
+            'news',
+            'weather'
         ]
         function_keywords = [
             'get',
@@ -112,7 +113,6 @@ class GoogleGenAIClient(AbstractClient):
             'tool',
             'execute',
             'call',
-            'current',
         ]
         if self.tools:
             function_keywords = [
@@ -124,7 +124,9 @@ class GoogleGenAIClient(AbstractClient):
 
         has_search_intent = any(keyword in prompt_lower for keyword in search_keywords)
         has_function_intent = any(keyword in prompt_lower for keyword in function_keywords)
-        print('DEBUG > ', has_search_intent, has_function_intent, prompt_lower)
+        print(
+            'DEBUG > ', has_search_intent, has_function_intent, prompt_lower
+        )
         if has_search_intent and not has_function_intent:
             return "builtin_tools"
         else:
