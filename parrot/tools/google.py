@@ -297,41 +297,36 @@ class GoogleRoutesTool(AbstractTool):
 
     def _create_location_object(self, location: str) -> Dict[str, Any]:
         """Create location object for Routes API."""
-        # Check if it's coordinates (lat,lng format)
         try:
             if ',' in location:
-                lat, lng = map(float, location.split(','))
-                return {
-                    "location": {
-                        "latLng": {
-                            "latitude": lat,
-                            "longitude": lng
+                parts = location.strip().split(',')
+                if len(parts) == 2:
+                    lat, lng = map(float, parts)
+                    return {
+                        "location": {
+                            "latLng": {
+                                "latitude": lat,
+                                "longitude": lng
+                            }
                         }
                     }
-                }
         except ValueError:
             pass
 
-        # Treat as address
-        return {
-            "address": location
-        }
+        return {"address": location}
 
     def _calculate_optimal_zoom(self, distance_miles: float, viewport: Dict = None) -> int:
         """Calculate optimal zoom level based on route distance."""
         if viewport:
-            # Use viewport bounds if available for more accurate zoom
             ne_lat = viewport.get('northeast', {}).get('lat', 0)
             ne_lng = viewport.get('northeast', {}).get('lng', 0)
             sw_lat = viewport.get('southwest', {}).get('lat', 0)
             sw_lng = viewport.get('southwest', {}).get('lng', 0)
 
-            # Calculate the span
             lat_span = abs(ne_lat - sw_lat)
             lng_span = abs(ne_lng - sw_lng)
             max_span = max(lat_span, lng_span)
 
-            # Zoom level calculation based on span
             if max_span >= 10: return 6
             elif max_span >= 5: return 7
             elif max_span >= 2: return 8
@@ -342,7 +337,6 @@ class GoogleRoutesTool(AbstractTool):
             elif max_span >= 0.05: return 13
             else: return 14
 
-        # Fallback to distance-based zoom calculation
         if distance_miles >= 500: return 6
         elif distance_miles >= 200: return 7
         elif distance_miles >= 100: return 8
@@ -358,7 +352,6 @@ class GoogleRoutesTool(AbstractTool):
         if num_colors <= 1:
             return [start_color]
 
-        # Convert hex colors to RGB
         start_rgb = tuple(int(start_color[2:][i:i+2], 16) for i in (0, 2, 4))
         end_rgb = tuple(int(end_color[2:][i:i+2], 16) for i in (0, 2, 4))
 
@@ -383,7 +376,6 @@ class GoogleRoutesTool(AbstractTool):
         except ValueError:
             pass
 
-        # Geocode the address to get coordinates
         try:
             geocoder = GoogleLocationTool(api_key=self.google_key)
             result = await geocoder.execute(address=location)
@@ -396,40 +388,23 @@ class GoogleRoutesTool(AbstractTool):
         except Exception as e:
             self.logger.warning(f"Failed to geocode {location}: {e}")
 
-        # Fallback to default coordinates
         return (0.0, 0.0)
 
-    async def _generate_static_map_url(self, route_data: Dict, args: Dict) -> str:
+    async def _generate_static_map_url(self, route_data: Dict, coordinates_cache: Dict, args: Dict) -> str:
         """Generate Google Static Maps URL for the route."""
         base_url = "https://maps.googleapis.com/maps/api/staticmap"
 
-        # Extract route information
         route = route_data['routes'][0]
         encoded_polyline = route.get('polyline', {}).get('encodedPolyline', '')
 
-        # Use cached coordinates if available, otherwise extract them
-        if 'coordinates_cache' in args:
-            coordinates_cache = args['coordinates_cache']
-            origin_coords = coordinates_cache['origin']
-            dest_coords = coordinates_cache['destination']
-            waypoint_coords_list = coordinates_cache['waypoints']
-        else:
-            # Fallback to extracting coordinates (should not happen with new caching)
-            self.logger.warning("No coordinate cache found, extracting coordinates again")
-            origin_coords = await self._extract_coordinates_from_location(args['origin'])
-            dest_coords = await self._extract_coordinates_from_location(args['destination'])
-            waypoint_coords_list = []
-            if args.get('waypoints'):
-                for waypoint in args['waypoints']:
-                    coords = await self._extract_coordinates_from_location(waypoint)
-                    waypoint_coords_list.append(coords)
+        origin_coords = coordinates_cache['origin']
+        dest_coords = coordinates_cache['destination']
+        waypoint_coords_list = coordinates_cache['waypoints']
 
-        # Create markers
         markers = []
         markers.append(f"markers=color:green|label:O|{origin_coords[0]},{origin_coords[1]}")
         markers.append(f"markers=color:red|label:D|{dest_coords[0]},{dest_coords[1]}")
 
-        # Add waypoint markers if any
         if waypoint_coords_list:
             colors = self._get_gradient_colors(len(waypoint_coords_list))
             alpha_labels = string.ascii_uppercase
@@ -440,10 +415,8 @@ class GoogleRoutesTool(AbstractTool):
                     label = alpha_labels[i]
                     markers.append(f"markers=color:0x{color}|size:mid|label:{label}|{coords[0]},{coords[1]}")
 
-        # Build URL parameters
         map_size = args['map_size']
 
-        # Calculate zoom level
         if args.get('auto_zoom', True):
             viewport = route.get('viewport')
             distance_miles = args.get('total_distance_miles', 0)
@@ -469,22 +442,20 @@ class GoogleRoutesTool(AbstractTool):
 
         return f"{base_url}?{query_string}&{markers_string}"
 
-    def _generate_interactive_html_map(self, route_data: Dict, args: Dict, coordinates: Dict) -> str:
+    def _generate_interactive_html_map(self, route_data: Dict, coordinates_cache: Dict, args: Dict) -> str:
         """Generate an interactive HTML map using Google Maps JavaScript API."""
         route = route_data['routes'][0]
         encoded_polyline = route.get('polyline', {}).get('encodedPolyline', '')
 
-        # Debug logging
-        self.logger.info(f"Generating interactive map with polyline: {encoded_polyline[:50]}...")
+        self.logger.info(f"Generating interactive map with polyline length: {len(encoded_polyline)} chars")
+        self.logger.info(f"Polyline sample: {encoded_polyline[:100]}...")
 
-        # Get all coordinates
-        origin_coords = coordinates['origin']
-        dest_coords = coordinates['destination']
-        waypoint_coords = coordinates.get('waypoints', [])
+        origin_coords = coordinates_cache['origin']
+        dest_coords = coordinates_cache['destination']
+        waypoint_coords = coordinates_cache['waypoints']
 
         self.logger.info(f"Origin coords: {origin_coords}, Dest coords: {dest_coords}, Waypoints: {waypoint_coords}")
 
-        # Calculate center point (only if we have valid coordinates)
         valid_coords = [coord for coord in [origin_coords, dest_coords] + waypoint_coords if coord != (0.0, 0.0)]
 
         if valid_coords:
@@ -493,24 +464,18 @@ class GoogleRoutesTool(AbstractTool):
             center_lat = sum(all_lats) / len(all_lats)
             center_lng = sum(all_lngs) / len(all_lngs)
         else:
-            # Fallback to San Francisco if no valid coordinates
             center_lat, center_lng = 37.7749, -122.4194
 
-        # Calculate zoom (use viewport if available)
         viewport = route.get('viewport', {})
         distance_miles = args.get('total_distance_miles', 0)
         zoom_level = self._calculate_optimal_zoom(distance_miles, viewport)
 
-        # Generate waypoint markers JavaScript
         waypoint_markers_js = ""
         if waypoint_coords:
-            colors = self._get_gradient_colors(len(waypoint_coords))
             alpha_labels = string.ascii_uppercase
-
             for i, (lat, lng) in enumerate(waypoint_coords):
                 if i < len(alpha_labels):
                     label = alpha_labels[i]
-                    color = colors[i].replace('0x', '#')
                     waypoint_markers_js += f"""
                     new google.maps.Marker({{
                         position: {{lat: {lat}, lng: {lng}}},
@@ -523,6 +488,67 @@ class GoogleRoutesTool(AbstractTool):
                     }});
                     """
 
+        polyline_js = ""
+        if encoded_polyline and len(encoded_polyline) > 10:
+
+            # FIX: Escape backslashes for the JavaScript string literal.
+            js_safe_polyline = encoded_polyline.replace('\\', '\\\\')
+
+            polyline_js = f"""
+            try {{
+                console.log('Decoding polyline: {js_safe_polyline[:50]}...');
+                const decodedPath = google.maps.geometry.encoding.decodePath('{js_safe_polyline}');
+                console.log('Decoded path points:', decodedPath.length);
+                console.log('First few points:', decodedPath.slice(0, 3));
+
+                const routePath = new google.maps.Polyline({{
+                    path: decodedPath,
+                    geodesic: false,
+                    strokeColor: '#4285F4',
+                    strokeOpacity: 0.8,
+                    strokeWeight: 6
+                }});
+
+                routePath.setMap(map);
+
+                const bounds = new google.maps.LatLngBounds();
+                decodedPath.forEach(function(point) {{
+                    bounds.extend(point);
+                }});
+                map.fitBounds(bounds);
+
+                console.log('Route polyline added successfully');
+            }} catch (error) {{
+                console.error('Error decoding polyline:', error);
+                console.log('Falling back to marker bounds');
+                const bounds = new google.maps.LatLngBounds();
+                bounds.extend({{lat: {origin_coords[0]}, lng: {origin_coords[1]}}});
+                bounds.extend({{lat: {dest_coords[0]}, lng: {dest_coords[1]}}});"""
+
+            for lat, lng in waypoint_coords:
+                polyline_js += f"""
+                bounds.extend({{lat: {lat}, lng: {lng}}});"""
+
+            polyline_js += """
+                map.fitBounds(bounds);
+            }
+            """
+        else:
+            self.logger.warning(f"No valid polyline found, using marker bounds only")
+            polyline_js = f"""
+            console.log('No valid polyline, fitting to markers');
+            const bounds = new google.maps.LatLngBounds();
+            bounds.extend({{lat: {origin_coords[0]}, lng: {origin_coords[1]}}});
+            bounds.extend({{lat: {dest_coords[0]}, lng: {dest_coords[1]}}});"""
+
+            for lat, lng in waypoint_coords:
+                polyline_js += f"""
+            bounds.extend({{lat: {lat}, lng: {lng}}});"""
+
+            polyline_js += """
+            map.fitBounds(bounds);
+            """
+
         html_content = f"""
         <!DOCTYPE html>
         <html>
@@ -530,13 +556,7 @@ class GoogleRoutesTool(AbstractTool):
             <title>Route Map</title>
             <style>
                 #map {{ height: 600px; width: 100%; }}
-                .info-panel {{
-                    padding: 20px;
-                    background: #f5f5f5;
-                    margin: 10px;
-                    border-radius: 8px;
-                    font-family: Arial, sans-serif;
-                }}
+                .info-panel {{ padding: 20px; background: #f5f5f5; margin: 10px; border-radius: 8px; font-family: Arial, sans-serif; }}
                 .route-info {{ display: flex; gap: 20px; flex-wrap: wrap; }}
                 .info-item {{ background: white; padding: 10px; border-radius: 4px; }}
             </style>
@@ -556,9 +576,7 @@ class GoogleRoutesTool(AbstractTool):
                     </div>
                 </div>
             </div>
-
             <div id="map"></div>
-
             <script>
                 function initMap() {{
                     const map = new google.maps.Map(document.getElementById("map"), {{
@@ -566,64 +584,25 @@ class GoogleRoutesTool(AbstractTool):
                         center: {{lat: {center_lat}, lng: {center_lng}}},
                         mapTypeId: '{args.get('map_type', 'roadmap')}'
                     }});
-
-                    // Origin marker
                     new google.maps.Marker({{
                         position: {{lat: {origin_coords[0]}, lng: {origin_coords[1]}}},
                         map: map,
                         title: 'Origin',
                         label: 'O',
-                        icon: {{
-                            url: 'https://maps.google.com/mapfiles/ms/icons/green-dot.png'
-                        }}
+                        icon: {{ url: 'https://maps.google.com/mapfiles/ms/icons/green-dot.png' }}
                     }});
-
-                    // Destination marker
                     new google.maps.Marker({{
                         position: {{lat: {dest_coords[0]}, lng: {dest_coords[1]}}},
                         map: map,
                         title: 'Destination',
                         label: 'D',
-                        icon: {{
-                            url: 'https://maps.google.com/mapfiles/ms/icons/red-dot.png'
-                        }}
+                        icon: {{ url: 'https://maps.google.com/mapfiles/ms/icons/red-dot.png' }}
                     }});
-
-                    // Waypoint markers
                     {waypoint_markers_js}
-
-                    // Route polyline - only add if we have a valid encoded polyline
-                    {f'''
-                    const routePath = new google.maps.Polyline({{
-                        path: google.maps.geometry.encoding.decodePath('{encoded_polyline}'),
-                        geodesic: false,
-                        strokeColor: '#FF0000',
-                        strokeOpacity: 0.8,
-                        strokeWeight: 4
-                    }});
-
-                    routePath.setMap(map);
-
-                    // Fit map to route bounds
-                    const bounds = new google.maps.LatLngBounds();
-                    routePath.getPath().forEach(function(element) {{
-                        bounds.extend(element);
-                    }});
-                    map.fitBounds(bounds);
-                    ''' if encoded_polyline else '''
-                    // No encoded polyline available, fit bounds to markers only
-                    const bounds = new google.maps.LatLngBounds();
-                    bounds.extend({{lat: {origin_coords[0]}, lng: {origin_coords[1]}}});
-                    bounds.extend({{lat: {dest_coords[0]}, lng: {dest_coords[1]}}});''' +
-                    (''.join([f'''
-                    bounds.extend({{lat: {lat}, lng: {lng}}});''' for lat, lng in waypoint_coords]) if waypoint_coords else '') + '''
-                    map.fitBounds(bounds);
-                    '''}
+                    {polyline_js}
                 }}
-
                 window.initMap = initMap;
             </script>
-
             <script async defer
                 src="https://maps.googleapis.com/maps/api/js?key={self.google_key}&libraries=geometry&callback=initMap">
             </script>
@@ -646,7 +625,6 @@ class GoogleRoutesTool(AbstractTool):
         include_interactive_map = kwargs['include_interactive_map']
 
         # Build request data
-        response_data = {}
         data = {
             "origin": self._create_location_object(origin),
             "destination": self._create_location_object(destination),
@@ -663,22 +641,19 @@ class GoogleRoutesTool(AbstractTool):
             "units": "IMPERIAL"
         }
 
-        # Add waypoints if provided
         if waypoints:
             data['intermediates'] = [self._create_location_object(wp) for wp in waypoints]
 
-        # Add departure time if provided
         if departure_time:
             data['departureTime'] = departure_time
 
-        # Set headers
         headers = {
             "Content-Type": "application/json",
             "X-Goog-Api-Key": self.google_key,
             "X-Goog-FieldMask": "routes.legs,routes.duration,routes.staticDuration,routes.distanceMeters,routes.polyline,routes.optimizedIntermediateWaypointIndex,routes.description,routes.warnings,routes.viewport,routes.travelAdvisory,routes.localizedValues"
         }
 
-        # Make request
+        # Make API request
         timeout = aiohttp.ClientTimeout(total=60)
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.post(self.base_url, json=data, headers=headers) as response:
@@ -691,97 +666,95 @@ class GoogleRoutesTool(AbstractTool):
                 if not result or 'routes' not in result or not result['routes']:
                     raise Exception("No routes found in API response")
 
-                # Process route data
-                route = result['routes'][0]
+        # Process route data
+        route = result['routes'][0]
 
-                # Calculate totals
-                total_duration_seconds = 0
-                static_duration_seconds = 0
-                total_distance_meters = 0
-                route_instructions = []
+        total_duration_seconds = 0
+        static_duration_seconds = 0
+        total_distance_meters = 0
+        route_instructions = []
 
-                for i, leg in enumerate(route['legs']):
-                    # Duration
-                    duration_str = leg.get('duration', '0s')
-                    leg_duration = int(duration_str.rstrip('s')) if duration_str else 0
-                    total_duration_seconds += leg_duration
+        for i, leg in enumerate(route['legs']):
+            duration_str = leg.get('duration', '0s')
+            leg_duration = int(duration_str.rstrip('s')) if duration_str else 0
+            total_duration_seconds += leg_duration
 
-                    # Static duration
-                    static_duration_str = leg.get('staticDuration', '0s')
-                    static_duration_seconds += int(static_duration_str.rstrip('s'))
+            static_duration_str = leg.get('staticDuration', '0s')
+            static_duration_seconds += int(static_duration_str.rstrip('s'))
 
-                    # Distance
-                    distance_meters = leg.get('distanceMeters', 0)
-                    total_distance_meters += distance_meters
+            distance_meters = leg.get('distanceMeters', 0)
+            total_distance_meters += distance_meters
 
-                    # Instructions (simplified)
-                    distance_miles = distance_meters / 1609.34
-                    route_instructions.append(f"Leg {i+1}: Continue for {distance_miles:.1f} miles")
+            distance_miles = distance_meters / 1609.34
+            route_instructions.append(f"Leg {i+1}: Continue for {distance_miles:.1f} miles")
 
-                # Convert to user-friendly units
-                total_duration_minutes = total_duration_seconds / 60
-                static_duration_minutes = static_duration_seconds / 60
-                total_distance_miles = total_distance_meters / 1609.34
+        total_duration_minutes = total_duration_seconds / 60
+        static_duration_minutes = static_duration_seconds / 60
+        total_distance_miles = total_distance_meters / 1609.34
 
-                # Get optimized waypoint order
-                waypoint_order = route.get('optimizedIntermediateWaypointIndex', [])
+        waypoint_order = route.get('optimizedIntermediateWaypointIndex', [])
 
-                # Build response
-                response_data = {
-                    'origin': origin,
-                    'destination': destination,
-                    'waypoints': waypoints,
-                    'optimized_waypoint_order': waypoint_order,
-                    'route_instructions': route_instructions,
-                    'total_duration_minutes': total_duration_minutes,
-                    'static_duration_minutes': static_duration_minutes,
-                    'total_distance_miles': total_distance_miles,
-                    'total_duration_formatted': f"{total_duration_minutes:.2f} minutes",
-                    'total_distance_formatted': f"{total_distance_miles:.2f} miles",
-                    'encoded_polyline': route.get('polyline', {}).get('encodedPolyline'),
-                    'raw_response': result
-                }
-                # Store coordinates for map generation
-                coordinates_data = {
-                    'origin': await self._extract_coordinates_from_location(origin),
-                    'destination': await self._extract_coordinates_from_location(destination),
-                    'waypoints': []
-                }
+        # Extract coordinates once for map generation
+        self.logger.info("Extracting coordinates for map generation...")
+        coordinates_cache = {
+            'origin': await self._extract_coordinates_from_location(origin),
+            'destination': await self._extract_coordinates_from_location(destination),
+            'waypoints': []
+        }
 
-                # Add distance to kwargs for zoom calculation (BEFORE calling static map)
-                kwargs['total_distance_miles'] = total_distance_miles
-                kwargs['total_duration_formatted'] = response_data['total_duration_formatted']
-                kwargs['total_distance_formatted'] = response_data['total_distance_formatted']
+        if waypoints:
+            for waypoint in waypoints:
+                wp_coords = await self._extract_coordinates_from_location(waypoint)
+                coordinates_cache['waypoints'].append(wp_coords)
 
-                # Add static map URL if requested
-                if include_static_map:
-                    response_data['static_map_url'] = await self._generate_static_map_url(result, kwargs)
+        self.logger.info(f"Cached coordinates - Origin: {coordinates_cache['origin']}, Dest: {coordinates_cache['destination']}, Waypoints: {coordinates_cache['waypoints']}")
 
-                # Add interactive HTML map if requested
-                if include_interactive_map:
-                    html_map = self._generate_interactive_html_map(result, kwargs, coordinates_data)
+        # Build response
+        response_data = {
+            'origin': origin,
+            'destination': destination,
+            'waypoints': waypoints,
+            'optimized_waypoint_order': waypoint_order,
+            'route_instructions': route_instructions,
+            'total_duration_minutes': total_duration_minutes,
+            'static_duration_minutes': static_duration_minutes,
+            'total_distance_miles': total_distance_miles,
+            'total_duration_formatted': f"{total_duration_minutes:.2f} minutes",
+            'total_distance_formatted': f"{total_distance_miles:.2f} miles",
+            'encoded_polyline': route.get('polyline', {}).get('encodedPolyline'),
+            'raw_response': result
+        }
 
-                    # Save HTML file if output directory is configured
-                    if self.output_dir:
-                        filename = self.generate_filename("route_map", "html", include_timestamp=True)
-                        html_file_path = self.output_dir / filename
+        # Prepare args for map generation
+        map_args = kwargs.copy()
+        map_args['total_distance_miles'] = total_distance_miles
+        map_args['total_duration_formatted'] = response_data['total_duration_formatted']
+        map_args['total_distance_formatted'] = response_data['total_distance_formatted']
 
-                        with open(html_file_path, 'w', encoding='utf-8') as f:
-                            f.write(html_map)
+        # Generate static map if requested
+        if include_static_map:
+            response_data['static_map_url'] = await self._generate_static_map_url(result, coordinates_cache, map_args)
 
-                        response_data['interactive_map_file'] = str(html_file_path)
-                        response_data['interactive_map_url'] = self.to_static_url(html_file_path)
+        # Generate interactive map if requested
+        if include_interactive_map:
+            html_map = self._generate_interactive_html_map(result, coordinates_cache, map_args)
 
-                    response_data['interactive_map_html'] = html_map
+            if self.output_dir:
+                filename = self.generate_filename("route_map", "html", include_timestamp=True)
+                html_file_path = self.output_dir / filename
 
-                    # Also include static map URL when interactive map is requested
-                    if not include_static_map:
-                        response_data['static_map_url'] = await self._generate_static_map_url(result, kwargs)
+                with open(html_file_path, 'w', encoding='utf-8') as f:
+                    f.write(html_map)
 
-                if waypoints:
-                    for waypoint in waypoints:
-                        wp_coords = await self._extract_coordinates_from_location(waypoint)
-                        coordinates_data['waypoints'].append(wp_coords)
+                response_data['interactive_map_file'] = str(html_file_path)
+                response_data['interactive_map_url'] = self.to_static_url(html_file_path)
+
+            response_data['interactive_map_html'] = html_map
+
+            # Also include static map URL when interactive map is requested
+            if not include_static_map:
+                response_data['static_map_url'] = await self._generate_static_map_url(result, coordinates_cache, map_args)
+
         return response_data
 
 
