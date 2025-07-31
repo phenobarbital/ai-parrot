@@ -86,7 +86,7 @@ loaders = [
     "pytube==15.0.0",
     "youtube_transcript_api==1.0.3",
     "python-pptx==1.0.2",
-    "markitdown==0.1.2"
+    "markitdown[all]==0.1.2"
 ]
 
 images = [
