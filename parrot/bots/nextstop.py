@@ -13,7 +13,7 @@ from ..models.responses import AgentResponse
 class NextStop(BasicAgent):
     """NextStop in Navigator.
 
-        Next Stop Agent generate travel itineraries and recommendations
+        Next Stop Agent generate Visit Reports for T-ROC employees.
         based on user preferences and location data.
     """
     _agent_response = AgentResponse

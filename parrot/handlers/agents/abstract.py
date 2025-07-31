@@ -1,3 +1,4 @@
+from datetime import datetime
 from pathlib import Path
 from typing import Tuple, Union, List, Dict, Any, Optional, Callable, Sequence, Awaitable
 from abc import abstractmethod
@@ -17,7 +18,7 @@ from notify.server import NotifyClient  # envio a traves de los workers
 from notify.models import Actor, Chat, TeamsCard, TeamsChannel
 from notify.conf import NOTIFY_REDIS, NOTIFY_WORKER_STREAM, NOTIFY_CHANNEL
 # Navigator:
-from navconfig import config
+from navconfig import config, BASE_DIR
 from navconfig.logging import logging
 from navigator_session import get_session
 # Auth
@@ -39,6 +40,8 @@ from navigator.types import WebApp  # pylint: disable=E0611
 from navigator.conf import CACHE_URL, default_dsn
 # Parrot:
 from ...bots.agent import BasicAgent
+from ...tools.abstract import AbstractTool
+from ...models.responses import AgentResponse, AIMessage
 
 
 
@@ -99,7 +102,7 @@ def auth_groups(
     """
     def decorator(fn: Union[Any, Any]) -> Any:
         # 1️⃣ first wrap the target function with the base auth check
-        fn = AbstractAgentHandler.service_auth(fn)
+        fn = AgentHandler.service_auth(fn)
         @functools.wraps(fn)
         async def wrapper(self, *args, **kwargs):
             # At this point `service_auth` has already:
@@ -131,7 +134,7 @@ def auth_by_attribute(
     """
     def decorator(fn: Union[Any, Any]) -> Any:
         # 1️⃣ first wrap the target function with the base auth check
-        fn = AbstractAgentHandler.service_auth(fn)
+        fn = AgentHandler.service_auth(fn)
         @functools.wraps(fn)
         async def wrapper(self, *args, **kwargs):
             # At this point `service_auth` has already:
@@ -165,15 +168,17 @@ def auth_by_attribute(
 
 
 @is_authenticated()
-class AbstractAgentHandler(BaseView):
+class AgentHandler(BaseView):
     """Abstract class for chatbot/agent handlers.
 
     Provide a complete abstraction for exposing AI Agents as a REST API.
     """
     app: web.Application = None
-
-    agent_name: str = None
-    _agent: Optional[BasicAgent] = None
+    agent_name: str = "NextStop"
+    agent_id: str = "nextstop"
+    _tools: List[AbstractTool] = []
+    _agent: BasicAgent = None
+    # signals
     on_startup: Optional[Callable] = None
     on_shutdown: Optional[Callable] = None
     on_cleanup: Optional[Callable] = None
@@ -182,8 +187,15 @@ class AbstractAgentHandler(BaseView):
     base_route: str = None  # e.g., "/api/v1/agent/{agent_name}"
     additional_routes: List[Dict[str, Any]] = []  # Custom routes
     _agent_class: type = BasicAgent  # Default agent class
+    _agent_response: type = AgentResponse  # Default response type
 
-    def __init__(self, request=None, *args, app: web.Application = None, **kwargs):
+    def __init__(
+        self,
+        request: web.Request = None,
+        *args,
+        app: web.Application = None,
+        **kwargs
+    ):
         if request is not None:
             super().__init__(request, *args, **kwargs)
         else:
@@ -753,10 +765,12 @@ class AbstractAgentHandler(BaseView):
     ) -> BasicAgent:
         """Create and configure a BasicAgent instance."""
         try:
+            tools = self._tools or tools
             agent = self._agent_class(
                 name=self.agent_name,
                 tools=tools
             )
+            agent.set_response(self._agent_response)
             await agent.configure()
             # define the main agent:
             self._agent = agent
@@ -765,3 +779,92 @@ class AbstractAgentHandler(BaseView):
             raise RuntimeError(
                 f"Failed to create agent {self.agent_name}: {str(e)}"
             ) from e
+
+    async def open_prompt(self, prompt_file: str = None) -> str:
+        """
+        Opens a prompt file and returns its content.
+        """
+        if not prompt_file:
+            raise ValueError("No prompt file specified.")
+        file = BASE_DIR.joinpath('prompts', self.agent_id, prompt_file)
+        try:
+            async with aiofiles.open(file, 'r') as f:
+                content = await f.read()
+            return content
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to read prompt file {prompt_file}: {e}"
+            )
+
+    async def ask_agent(
+        self,
+        query: str = None,
+        prompt_file: str = None,
+        *args,
+        **kwargs
+    ) -> Tuple[AgentResponse, AIMessage]:
+        """
+        Asks the agent a question and returns the response.
+        """
+        agent = self._agent or self.request.app[self.agent_id]
+        userid = self._userid if self._userid else self.request.session.get('user_id', None)
+        if not userid:
+            raise RuntimeError(
+                "User ID is not set in the session."
+            )
+        if not agent:
+            raise RuntimeError(
+                f"Agent {self.agent_name} is not initialized or not found."
+            )
+        # query:
+        if not query:
+            # extract the query from the prompt file if provided:
+            if prompt_file:
+                query = await self.open_prompt(prompt_file)
+            elif hasattr(self.request, 'query') and 'query' in self.request.query:
+                query = self.request.query.get('query', None)
+            elif hasattr(self.request, 'json'):
+                data = await self.request.json()
+                query = data.get('query', None)
+            elif hasattr(self.request, 'data'):
+                data = await self.request.data()
+                query = data.get('query', None)
+            elif hasattr(self.request, 'text'):
+                query = self.request.text
+            else:
+                raise ValueError(
+                    "No query provided and no prompt file specified."
+                )
+            if not query:
+                raise ValueError(
+                    "No query provided or found in the request."
+                )
+        try:
+            response = await agent.invoke(query)
+            if isinstance(response, Exception):
+                raise response
+        except Exception as e:
+            print(f"Error invoking agent: {e}")
+            raise RuntimeError(
+                f"Failed to generate report due to an error in the agent invocation: {e}"
+            )
+
+        # Create the response object
+        final_report = response.output.strip()
+        # when final report is made, then generate the transcript, pdf and podcast:
+        response_data = self._agent_response(
+            user_id=str(userid),
+            agent_name=self.agent_name,
+            attributes=kwargs.pop('attributes', {}),
+            data=final_report,
+            status="success",
+            created_at=datetime.now(),
+            output=response.output,
+            # transcript=transcript,
+            # pdf_path=str(pdf_path),
+            # podcast_path=str(podcast_path),
+            # document_path=str(document_path),
+            # documents=response.documents if hasattr(response, 'documents') else [],
+            **kwargs
+        )
+        return response_data, response
