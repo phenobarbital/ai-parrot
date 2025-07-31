@@ -22,6 +22,69 @@ class PythonPandasTool(PythonREPLTool):
     description = "Execute Python code with pre-loaded DataFrames and enhanced pandas capabilities"
     args_schema = PythonREPLArgs
 
+    # Available plotting libraries configuration
+    PLOTTING_LIBRARIES = {
+        'matplotlib': {
+            'import_as': 'plt',
+            'import_statement': 'import matplotlib.pyplot as plt',
+            'description': 'Traditional plotting library with extensive customization',
+            'best_for': ['statistical plots', 'publication-quality figures', 'fine-grained control'],
+            'examples': [
+                'plt.figure(figsize=(10, 6))',
+                'plt.plot(df1["column"], df1["value"])',
+                'plt.hist(df1["numeric_column"], bins=20)',
+                'plt.scatter(df1["x"], df1["y"])',
+                'save_current_plot("my_plot.png")'
+            ]
+        },
+        'plotly': {
+            'import_as': 'px, go',
+            'import_statement': 'import plotly.express as px\nimport plotly.graph_objects as go',
+            'description': 'Interactive web-based plotting library',
+            'best_for': ['interactive plots', 'dashboards', 'web applications'],
+            'examples': [
+                'fig = px.scatter(df1, x="column1", y="column2", color="category")',
+                'fig = px.histogram(df1, x="numeric_column")',
+                'fig = go.Figure(data=go.Bar(x=df1["category"], y=df1["value"]))',
+                'fig.show()  # Note: may not display in REPL, use fig.write_html("plot.html")'
+            ]
+        },
+        'bokeh': {
+            'import_as': 'bokeh',
+            'import_statement': 'from bokeh.plotting import figure, show, output_file\nfrom bokeh.models import ColumnDataSource',
+            'description': 'Interactive visualization library for web browsers',
+            'best_for': ['large datasets', 'real-time streaming', 'web deployment'],
+            'examples': [
+                'p = figure(title="My Plot", x_axis_label="X", y_axis_label="Y")',
+                'p.circle(df1["x"], df1["y"], size=10)',
+                'output_file("plot.html")',
+                'show(p)'
+            ]
+        },
+        'altair': {
+            'import_as': 'alt',
+            'import_statement': 'import altair as alt',
+            'description': 'Declarative statistical visualization (Grammar of Graphics)',
+            'best_for': ['exploratory analysis', 'statistical plots', 'clean syntax'],
+            'examples': [
+                'chart = alt.Chart(df1).mark_circle().encode(x="column1", y="column2")',
+                'chart = alt.Chart(df1).mark_bar().encode(x="category", y="count()")',
+                'chart.show()  # or chart.save("plot.html")'
+            ]
+        },
+        'holoviews': {
+            'import_as': 'hv',
+            'import_statement': 'import holoviews as hv\nhv.extension("bokeh")  # or "matplotlib"',
+            'description': 'High-level data visualization with multiple backends',
+            'best_for': ['multi-dimensional data', 'animated plots', 'complex layouts'],
+            'examples': [
+                'hv.Scatter(df1, "x", "y")',
+                'hv.Histogram(df1["numeric_column"])',
+                'hv.HeatMap(df1, ["category1", "category2"], "value")'
+            ]
+        }
+    }
+
     def __init__(
         self,
         dataframes: Optional[Dict[str, pd.DataFrame]] = None,
@@ -73,6 +136,49 @@ class PythonPandasTool(PythonREPLTool):
         # Generate guide after initialization
         if self.generate_guide:
             self.df_guide = self._generate_dataframe_guide()
+
+    def _generate_plotting_guide(self) -> str:
+        """Generate comprehensive plotting libraries guide for the LLM."""
+        guide_parts = [
+            "# Plotting Libraries Guide",
+        ]
+
+        for lib_name, lib_info in self.PLOTTING_LIBRARIES.items():
+            guide_parts.extend([
+                f"## {lib_name.title()}",
+                f"**Import**: `{lib_info['import_statement']}`",
+                f"**Best for**: {', '.join(lib_info['best_for'])}",
+            ])
+
+        # Add general plotting recommendations
+        guide_parts.extend([
+            "## Plotting Recommendations by Use Case",
+            "",
+            "### Quick Exploratory Analysis",
+            "- **matplotlib**: `plt.hist()`, `plt.scatter()`, `plt.plot()`",
+            "- **altair**: `alt.Chart(df).mark_*().encode()`",
+            "",
+            "### Interactive Exploration",
+            "- **plotly**: `px.scatter()`, `px.histogram()`, `px.box()`",
+            "- **bokeh**: Great for large datasets",
+            "",
+            "### Publication Quality",
+            "- **matplotlib**: Full control over styling",
+            "- **altair**: Clean, professional appearance",
+            "",
+            "### Web Applications",
+            "- **plotly**: Easy integration with web frameworks",
+            "- **bokeh**: Server applications and streaming data",
+            "",
+            "### Complex Multi-dimensional Data",
+            "- **holoviews**: High-level abstractions",
+            "",
+            "## General Tips",
+            "- For static plots in reports: Use `save_current_plot()` with matplotlib",
+            "- For interactive plots: Save as HTML files",
+            "- For large datasets (>100k points): Consider bokeh or plotly with data aggregation",
+            "- For statistical analysis: altair and matplotlib work well together",
+        ])
 
     def _process_dataframes(self) -> None:
         """Process and bind DataFrames to the local environment."""
@@ -377,6 +483,10 @@ class PythonPandasTool(PythonREPLTool):
             """Get the DataFrame guide."""
             return self.get_dataframe_guide()
 
+        def get_plotting_guide():
+            """Get the plotting libraries guide."""
+            return self._generate_plotting_guide()
+
         def quick_eda(df_key: str):
             """Quick exploratory data analysis for a DataFrame."""
             if df_key not in self.df_locals:
@@ -401,6 +511,7 @@ class PythonPandasTool(PythonREPLTool):
             'list_available_dataframes': list_available_dataframes,
             'get_df_guide': get_df_guide,
             'quick_eda': quick_eda,
+            'get_plotting_guide': get_plotting_guide,
         })
 
         # Update globals
