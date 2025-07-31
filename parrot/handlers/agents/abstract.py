@@ -181,6 +181,7 @@ class AbstractAgentHandler(BaseView):
     # Define base routes - can be overridden in subclasses
     base_route: str = None  # e.g., "/api/v1/agent/{agent_name}"
     additional_routes: List[Dict[str, Any]] = []  # Custom routes
+    _agent_class: type = BasicAgent  # Default agent class
 
     def __init__(self, request=None, *args, app: web.Application = None, **kwargs):
         if request is not None:
@@ -752,11 +753,13 @@ class AbstractAgentHandler(BaseView):
     ) -> BasicAgent:
         """Create and configure a BasicAgent instance."""
         try:
-            agent = BasicAgent(
+            agent = self._agent_class(
                 name=self.agent_name,
                 tools=tools
             )
             await agent.configure()
+            # define the main agent:
+            self._agent = agent
             return agent
         except Exception as e:
             raise RuntimeError(

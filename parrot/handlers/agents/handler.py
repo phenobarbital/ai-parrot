@@ -8,6 +8,7 @@ from navigator_auth.decorators import (
 from .abstract import AbstractAgentHandler
 from ...tools.abstract import AbstractTool
 from ...bots.agent import BasicAgent
+from ...models.responses import AgentResponse
 
 
 @user_session()
@@ -57,14 +58,16 @@ class AgentHandler(AbstractAgentHandler):
         except Exception as e:
             raise RuntimeError(f"Failed to read prompt file {prompt_file}: {e}")
 
-    async def ask_agent(self, query: str = None, prompt_file: str = None, *args, **kwargs) -> AgentAnswer:
+    async def ask_agent(self, query: str = None, prompt_file: str = None, *args, **kwargs) -> AgentResponse:
         """
         Asks the agent a question and returns the response.
         """
         agent = self._agent or self.request.app[self.agent_id]
         userid = self._userid if self._userid else self.request.session.get('user_id', None)
         if not userid:
-            raise RuntimeError("User ID is not set in the session.")
+            raise RuntimeError(
+                "User ID is not set in the session."
+            )
         if not agent:
             raise RuntimeError(
                 f"Agent {self.agent_name} is not initialized or not found."
@@ -92,9 +95,9 @@ class AgentHandler(AbstractAgentHandler):
                     "No query provided or found in the request."
                 )
         try:
-            data, response, result = await agent.invoke(query)
-            if isinstance(result, Exception):
-                raise result
+            response = await agent.invoke(query)
+            if isinstance(response, Exception):
+                raise response
         except Exception as e:
             print(f"Error invoking agent: {e}")
             raise RuntimeError(
