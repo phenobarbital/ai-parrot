@@ -1,16 +1,30 @@
 """
-PythonREPLTool migrated to use AbstractTool framework.
+PythonREPLTool migrated to use AbstractTool framework with matplotlib fixes.
 """
 import ast
 import sys
 import asyncio
+import atexit
+import threading
+import contextlib
+import base64
 from typing import Optional, Dict, Any, Union
 from pathlib import Path
 from contextlib import redirect_stdout
-from io import StringIO
+from io import StringIO, BytesIO
+from concurrent.futures import ProcessPoolExecutor
 import pandas as pd
 import numpy as np
+import matplotlib
+# altair:
+import altair
+# Force matplotlib to use non-interactive backend
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+# Import these for proper cleanup handling
+from matplotlib import _pylab_helpers
+import plotly.graph_objects as go
+import plotly.io as pio
 import numexpr as ne
 import seaborn as sns
 from pydantic import BaseModel, Field
@@ -78,6 +92,7 @@ class PythonREPLTool(AbstractTool):
     - Extended JSON encoder/decoder based on orjson (`extended_json`)
     - Async execution support
     - Error handling and sanitization
+    - Non-interactive matplotlib backend to avoid GUI issues
     """
 
     name = "python_repl"
@@ -96,6 +111,8 @@ class PythonREPLTool(AbstractTool):
         palette: str = 'Set2',
         setup_code: Optional[str] = None,
         sanitize_input_enabled: bool = True,
+        auto_save_plots: bool = True,
+        return_plot_as_base64: bool = False,
         **kwargs
     ):
         """
@@ -109,6 +126,8 @@ class PythonREPLTool(AbstractTool):
             palette: Seaborn color palette
             setup_code: Custom setup code to run
             sanitize_input_enabled: Whether to sanitize input
+            auto_save_plots: Whether to automatically save plots to files
+            return_plot_as_base64: Whether to return plots as base64 strings
             **kwargs: Additional arguments for AbstractTool
         """
         # Check Python version
@@ -130,16 +149,92 @@ class PythonREPLTool(AbstractTool):
         self.plt_style = plt_style
         self.palette = palette
         self.setup_code = setup_code or self._get_default_setup_code()
+        self.auto_save_plots = auto_save_plots
+        self.return_plot_as_base64 = return_plot_as_base64
+        # Add a process pool executor
+        self.executor = ProcessPoolExecutor(max_workers=4)
 
         # Initialize execution environment
         self.locals = locals_dict or {}
         self.globals = globals_dict or {}
+
+        # Setup matplotlib to use non-interactive backend
+        self._setup_matplotlib()
 
         # Setup the environment
         self._setup_environment()
 
         # Bootstrap the environment if not already done
         self._bootstrap()
+
+    def _setup_matplotlib(self):
+        """Configure matplotlib for non-interactive use."""
+        # Store the original backend
+        original_backend = matplotlib.get_backend()
+        with contextlib.suppress(Exception):
+            # Force non-interactive backend
+            matplotlib.use('Agg', force=True)
+
+        # Configure matplotlib to not try to show plots
+        plt.ioff()  # Turn off interactive mode
+
+        # Clear any existing figures safely
+        self._safe_close_all_plots()
+
+        # Clear any existing figures
+        plt.close('all')
+
+        self.logger.info(f"Matplotlib backend set to: {matplotlib.get_backend()}")
+
+    def _safe_close_all_plots(self):
+        """Safely close all matplotlib plots without GUI errors."""
+        try:
+            # Get all figure managers
+            fignums = list(plt.get_fignums())
+            for fignum in fignums:
+                try:
+                    plt.close(fignum)
+                except Exception as e:
+                    self.logger.debug(f"Error closing figure {fignum}: {e}")
+
+            # Force garbage collection of any remaining figures
+            plt.close('all')
+
+        except Exception as e:
+            self.logger.debug(f"Error in safe_close_all_plots: {e}")
+
+    def _safe_matplotlib_cleanup(self):
+        """Safe cleanup of matplotlib figures that won't crash."""
+        try:
+            # Only cleanup if we're in the main thread
+            if threading.current_thread() is threading.main_thread():
+                self._safe_close_all_plots()
+
+                # Clear the figure manager registry safely
+                if hasattr(_pylab_helpers, 'Gcf'):
+                    try:
+                        _pylab_helpers.Gcf.figs.clear()
+                    except Exception as e:
+                        self.logger.debug(f"Error clearing Gcf registry: {e}")
+
+        except Exception as e:
+            # Never let cleanup crash the program
+            self.logger.debug(f"Error in safe matplotlib cleanup: {e}")
+
+    def _execute_function(self, func, *args, **kwargs):
+        """Execute a function with proper error isolation to prevent crashes."""
+        try:
+            return func(*args, **kwargs)
+        except SystemExit:
+            # Don't catch SystemExit as it's used for normal program termination
+            raise
+        except KeyboardInterrupt:
+            # Don't catch KeyboardInterrupt as users should be able to interrupt
+            raise
+        except Exception as e:
+            # Log the error but don't let it crash the system
+            self.logger.error(f"Error in {func.__name__}: {e}", exc_info=True)
+            return f"Error: {type(e).__name__}: {str(e)}"
 
     def _default_output_dir(self) -> Path:
         """Get the default output directory for Python REPL outputs."""
@@ -151,6 +246,63 @@ class PythonREPLTool(AbstractTool):
         if not self.output_dir.exists():
             self.output_dir.mkdir(parents=True, exist_ok=True)
 
+        # Helper functions for plot handling
+        def save_current_plot(filename: Optional[str] = None,
+                            format: str = 'png',
+                            dpi: int = 300,
+                            bbox_inches: str = 'tight') -> Dict[str, Any]:
+            """Save the current matplotlib plot to a file."""
+            if not filename:
+                filename = self.generate_filename("plot", f".{format}")
+
+            file_path = self.output_dir / filename
+
+            try:
+                plt.savefig(file_path, format=format, dpi=dpi, bbox_inches=bbox_inches)
+                file_url = self.to_static_url(file_path)
+
+                result = {
+                    "filename": filename,
+                    "file_path": str(file_path),
+                    "file_url": file_url,
+                    "format": format,
+                    "dpi": dpi
+                }
+
+                # Optionally add base64 representation
+                if self.return_plot_as_base64:
+                    with open(file_path, 'rb') as f:
+                        encoded_string = base64.b64encode(f.read()).decode('utf-8')
+                        result["base64"] = f"data:image/{format};base64,{encoded_string}"
+
+                return result
+
+            except Exception as e:
+                self.logger.error(f"Error saving plot: {e}")
+                return {"error": str(e)}
+
+        def get_plot_as_base64(format: str = 'png', dpi: int = 300) -> str:
+            """Get the current matplotlib plot as a base64 string."""
+            try:
+                buffer = BytesIO()
+                plt.savefig(buffer, format=format, dpi=dpi, bbox_inches='tight')
+                buffer.seek(0)
+                encoded_string = base64.b64encode(buffer.read()).decode('utf-8')
+                buffer.close()
+                return f"data:image/{format};base64,{encoded_string}"
+            except Exception as e:
+                self.logger.error(f"Error getting plot as base64: {e}")
+                return f"Error: {str(e)}"
+
+        def clear_plots():
+            """Clear all matplotlib plots."""
+            try:
+                self._safe_close_all_plots()
+                return "All plots cleared"
+            except Exception as e:
+                self.logger.error(f"Error clearing plots: {e}")
+                return f"Error clearing plots: {str(e)}"
+
         # Update locals with essential libraries and tools
         self.locals.update({
             # Core data science libraries
@@ -159,6 +311,9 @@ class PythonREPLTool(AbstractTool):
             'plt': plt,
             'sns': sns,
             'ne': ne,
+            'go': go,
+            'pio': pio,
+            'altair': altair,
 
             # JSON utilities
             'json_encoder': json_encoder,
@@ -172,17 +327,19 @@ class PythonREPLTool(AbstractTool):
             'report_directory': self.output_dir,
             'execution_results': {},
 
-            # Helper functions (uncomment when available)
-            # 'quick_eda': parrot_tools.quick_eda,
-            # 'generate_eda_report': parrot_tools.generate_eda_report,
-            # 'list_available_dataframes': parrot_tools.list_available_dataframes,
-            # 'parrot_tools': parrot_tools,
+            # Plot utilities
+            'save_current_plot': save_current_plot,
+            'get_plot_as_base64': get_plot_as_base64,
+            'clear_plots': clear_plots,
+            'execute_safely': lambda code: self.execute_code_safely(code),
         })
 
         # Mirror locals into globals so user code can see everything
         self.globals.update(self.locals)
 
-        self.logger.info(f"Python REPL environment setup complete. Output dir: {self.output_dir}")
+        self.logger.info(
+            f"Python REPL environment setup complete. Output dir: {self.output_dir}"
+        )
 
     def _get_default_setup_code(self) -> str:
         """Get the default setup code."""
@@ -190,6 +347,11 @@ class PythonREPLTool(AbstractTool):
 # Python REPL Environment Setup
 import warnings
 warnings.filterwarnings('ignore')
+
+# Ensure matplotlib uses non-interactive backend
+import matplotlib
+matplotlib.use('Agg', force=True)
+plt.ioff()  # Turn off interactive mode
 
 # Ensure essential libraries are imported
 try:
@@ -208,9 +370,10 @@ except ImportError as e:
 print(f"🐍 Python REPL Environment Ready!")
 print(f"📊 Pandas version: {{pd.__version__}}")
 print(f"🔢 NumPy version: {{np.__version__}}")
-print(f"📈 Matplotlib version: {{plt.matplotlib.__version__}}")
+print(f"📈 Matplotlib version: {{matplotlib.__version__}} (backend: {{matplotlib.get_backend()}})")
 print(f"🎨 Seaborn version: {{sns.__version__}}")
 print(f"📁 Report directory: {{report_directory}}")
+print("🖼️  Plot utilities: save_current_plot(), get_plot_as_base64(), clear_plots()")
 print("Use 'execution_results' dict to store intermediate results.")
 """
 
@@ -235,6 +398,28 @@ print("Use 'execution_results' dict to store intermediate results.")
             self.logger.error("Error setting plot style", exc_info=e)
 
         PythonREPLTool._bootstrapped = True
+
+    def _auto_save_plots_if_enabled(self) -> Optional[Dict[str, Any]]:
+        """Automatically save plots if auto_save_plots is enabled and there are open figures."""
+        if not self.auto_save_plots:
+            return None
+
+        # Check if there are any open figures
+        if len(plt.get_fignums()) == 0:
+            return None
+
+        try:
+            # Save the current plot
+            save_func = self.locals.get('save_current_plot')
+            if save_func:
+                result = save_func()
+                # Clear the plot after saving to prevent memory issues
+                plt.close('all')
+                return result
+        except Exception as e:
+            self.logger.error(f"Error auto-saving plot: {e}")
+
+        return None
 
     def _serialize_execution_results(self, results: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -358,6 +543,13 @@ print("Use 'execution_results' dict to store intermediate results.")
                     with redirect_stdout(io_buffer):
                         ret = eval(module_end_str, self.globals, self.locals)
                         output = io_buffer.getvalue()
+
+                        # Auto-save plots if enabled
+                        plot_info = self._auto_save_plots_if_enabled()
+                        if plot_info and not plot_info.get('error'):
+                            plot_msg = f"\n[Plot saved: {plot_info.get('filename', 'unknown')}]"
+                            output += plot_msg
+
                         if ret is None:
                             return output
                         else:
@@ -370,6 +562,13 @@ print("Use 'execution_results' dict to store intermediate results.")
                 # Try to evaluate as expression first
                 with redirect_stdout(io_buffer):
                     ret = eval(module_end_str, self.globals, self.locals)
+
+                    # Auto-save plots if enabled
+                    plot_info = self._auto_save_plots_if_enabled()
+                    if plot_info and not plot_info.get('error'):
+                        plot_msg = f"\n[Plot saved: {plot_info.get('filename', 'unknown')}]"
+                        io_buffer.write(plot_msg)
+
                     if ret is None:
                         return io_buffer.getvalue()
                     else:
@@ -380,6 +579,13 @@ print("Use 'execution_results' dict to store intermediate results.")
                 try:
                     with redirect_stdout(io_buffer):
                         exec(module_end_str, self.globals, self.locals)
+
+                        # Auto-save plots if enabled
+                        plot_info = self._auto_save_plots_if_enabled()
+                        if plot_info and not plot_info.get('error'):
+                            plot_msg = f"\n[Plot saved: {plot_info.get('filename', 'unknown')}]"
+                            io_buffer.write(plot_msg)
+
                     return io_buffer.getvalue()
                 except Exception as e:
                     return f"ExecutionError: {type(e).__name__}: {str(e)}"
@@ -419,6 +625,7 @@ print("Use 'execution_results' dict to store intermediate results.")
                 "code_executed": code,
                 "debug_mode": debug,
                 "execution_successful": not result.startswith(("SyntaxError:", "ExecutionError:", "Error:")),
+                "matplotlib_backend": matplotlib.get_backend(),
             }
 
             # Add information about available variables
@@ -426,7 +633,8 @@ print("Use 'execution_results' dict to store intermediate results.")
                 response["available_variables"] = {
                     "locals_count": len(self.locals),
                     "globals_count": len(self.globals),
-                    "execution_results_keys": list(self.locals.get('execution_results', {}).keys())
+                    "execution_results_keys": list(self.locals.get('execution_results', {}).keys()),
+                    "open_figures": len(plt.get_fignums())
                 }
 
             return response
@@ -460,24 +668,34 @@ print("Use 'execution_results' dict to store intermediate results.")
             "python_version": sys.version,
             "pandas_version": pd.__version__,
             "numpy_version": np.__version__,
-            "matplotlib_version": plt.matplotlib.__version__,
+            "matplotlib_version": matplotlib.__version__,
+            "matplotlib_backend": matplotlib.get_backend(),
             "seaborn_version": sns.__version__,
             "output_directory": str(self.output_dir),
             "locals_count": len(self.locals),
             "globals_count": len(self.globals),
             "execution_results_keys": list(self.locals.get('execution_results', {}).keys()),
+            "open_figures": len(plt.get_fignums()),
             "bootstrapped": self._bootstrapped,
             "plot_style": self.plt_style,
-            "color_palette": self.palette
+            "color_palette": self.palette,
+            "auto_save_plots": self.auto_save_plots,
+            "return_plot_as_base64": self.return_plot_as_base64
         }
 
     def reset_environment(self) -> None:
         """Reset the REPL environment to its initial state."""
         self.logger.info("Resetting Python REPL environment...")
 
+        # Clear all plots first
+        plt.close('all')
+
         # Clear execution results
         if 'execution_results' in self.locals:
             self.locals['execution_results'].clear()
+
+        # Re-setup matplotlib
+        self._setup_matplotlib()
 
         # Re-setup the environment
         self._setup_environment()
@@ -624,8 +842,31 @@ print("Use 'execution_results' dict to store intermediate results.")
         """Make the tool callable for backward compatibility."""
         return self.execute_sync(code, debug)
 
+    @contextlib.contextmanager
+    def safe_execution_context(self):
+        """Context manager for safe code execution that prevents crashes."""
+        old_excepthook = sys.excepthook
 
-# Enhanced tool registry registration
-def register_python_repl_tool(registry, **kwargs):
-    """Register the PythonREPLTool in a tool registry."""
-    registry.register(PythonREPLTool, **kwargs)
+        def safe_excepthook(exc_type, exc_value, exc_traceback):
+            """Custom exception hook that prevents crashes from matplotlib issues."""
+            if (exc_type == RuntimeError and
+                'main thread is not in main loop' in str(exc_value)):
+                self.logger.warning("Caught matplotlib threading issue, continuing...")
+                return
+            elif (exc_type == RuntimeError and 'Calling Tcl from different apartment' in str(exc_value)):
+                self.logger.warning("Caught matplotlib Tcl issue, continuing...")
+                return
+            else:
+                # Call the original exception hook for other exceptions
+                old_excepthook(exc_type, exc_value, exc_traceback)
+
+        try:
+            sys.excepthook = safe_excepthook
+            yield
+        finally:
+            sys.excepthook = old_excepthook
+
+    def execute_code_safely(self, code: str, debug: bool = False) -> str:
+        """Execute code with maximum safety against crashes."""
+        with self.safe_execution_context():
+            return self._execute_code(code, debug)

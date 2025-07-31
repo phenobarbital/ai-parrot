@@ -33,8 +33,8 @@ async def example_usage():
     # )
     # print(f"Geocoded location: {result}")
 
-    # # Route planning with static map
-    # routes_tool = GoogleRoutesTool()
+    # Route planning with static map
+    routes_tool = GoogleRoutesTool()
     # result = await routes_tool.execute(
     #     origin="San Francisco, CA",
     #     destination="Los Angeles, CA",
@@ -56,15 +56,16 @@ async def example_usage():
     # # Access via: result.result['interactive_map_url']
     # print(f"Interactive map URL: {result.result['interactive_map_file']}")
 
-    # # Mixed format - some addresses, some coordinates
-    # result = await routes_tool.execute(
-    #     origin="37.7749,-122.4194",  # SF coordinates
-    #     destination="Los Angeles, CA",  # Address (will geocode once)
-    #     waypoints=["37.3382,-121.8863", "Fresno, CA"],  # Mixed
-    #     include_static_map=True,
-    #     include_interactive_map=True
-    # )
-    # print(f"Interactive map URL: {result.result['interactive_map_file']}")
+    # Mixed format - some addresses, some coordinates
+    result = await routes_tool.execute(
+        origin="37.7749,-122.4194",  # SF coordinates
+        destination="Los Angeles, CA",  # Address (will geocode once)
+        waypoints=["37.3382,-121.8863", "Fresno, CA"],  # Mixed
+        include_static_map=True,
+        include_interactive_map=True
+    )
+    print(f"Route details: {result.result.get('static_map_url')}")
+    print(f"Interactive map URL: {result.result['interactive_map_file']}")
 
 
 if __name__ == "__main__":
