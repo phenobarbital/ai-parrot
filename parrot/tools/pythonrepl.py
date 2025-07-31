@@ -33,6 +33,10 @@ from navconfig import BASE_DIR
 from .abstract import AbstractTool
 
 
+def brace_escape(text: str) -> str:
+    """Escape curly braces in text for format strings."""
+    return text.replace('{', '{{').replace('}', '}}')
+
 def sanitize_input(query: str) -> str:
     """
     Sanitize input to the python REPL.
