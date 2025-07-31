@@ -69,7 +69,8 @@ class AbstractBot(DBInterface, ABC):
         human_prompt: str = None,
         use_tools: bool = True,
         tools: List[Union[str, AbstractTool]] = None,
-        tool_threshold: float = 0.7,  # Confidence threshold for tool usage
+        tool_threshold: float = 0.7,  # Confidence threshold for tool usage,
+        debug: bool = False,
         **kwargs
     ):
         """Initialize the Chatbot with the given configuration."""
@@ -80,6 +81,9 @@ class AbstractBot(DBInterface, ABC):
             self.system_prompt_template = system_prompt or self.system_prompt_template
         if human_prompt:
             self.human_prompt_template = human_prompt or self.human_prompt_template
+
+        # Debug mode:
+        self._debug = debug
 
         # Chatbot ID:
         self.chatbot_id: uuid.UUID = kwargs.get(
@@ -1369,53 +1373,101 @@ class AbstractBot(DBInterface, ABC):
     async def invoke(
         self,
         question: str,
-        chain_type: str = 'stuff',
-        search_type: str = 'similarity',
-        search_kwargs: dict = {"k": 4, "fetch_k": 12, "lambda_mult": 0.4},
-        score_threshold: float = None,
-        return_docs: bool = True,
-        metric_type: str = None,
-        memory: Any = None,
+        session_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        use_conversation_history: bool = True,
+        memory: Optional[Callable] = None,
         **kwargs
     ) -> AIMessage:
-        """Build a Chain to answer Questions using AI Models.
         """
-        new_llm = kwargs.pop('llm', None)
-        if new_llm is not None:
-            # re-configure LLM:
-            llm_config = kwargs.pop(
-                'llm_config',
-                {
-                    "model": self._llm_model,
-                    "temperature": 0.1,
-                    "top_k": 41,
-                    "top_p": 0.9
-                }
-            )
-            self.configure_llm(llm=new_llm, config=llm_config)
-        # define the Pre-Context
-        pre_context = "\n".join(f"- {a}." for a in self.pre_instructions)
-        tmpl = Template(self.system_prompt_template)
-        final_prompt = tmpl.safe_substitute(
-            summaries=SafeDict(
-                summaries=pre_context
-            ),
-            **kwargs
-        )
+        Simplified conversation method with adaptive mode and conversation history.
+
+        Args:
+            question: The user's question
+            session_id: Session identifier for conversation history
+            user_id: User identifier
+            use_conversation_history: Whether to use conversation history
+            memory: Optional memory callable override
+            **kwargs: Additional arguments for LLM
+
+        Returns:
+            AIMessage: The response from the LLM
+        """
+        # Generate session ID if not provided
+        if not session_id:
+            session_id = str(uuid.uuid4())
+        turn_id = str(uuid.uuid4())
+
         try:
+            # Get conversation history using unified memory
+            conversation_history = None
+            conversation_context = ""
+
+            memory = memory or self.conversation_memory
+
+            if use_conversation_history and memory:
+                conversation_history = await self.get_conversation_history(user_id, session_id)
+                if not conversation_history:
+                    conversation_history = await self.create_conversation_history(
+                        user_id, session_id
+                    )
+
+                conversation_context = self.build_conversation_context(conversation_history)
+
+            # Determine if tools should be used (adaptive mode)
+            use_tools = self._use_tools(question)
+            effective_mode = "agentic" if use_tools else "conversational"
+
+            # Log tool usage decision
+            self.logger.info(
+                f"Tool usage decision: use_tools={use_tools}, "
+                f"effective_mode={effective_mode}, available_tools={len(self.tools)}"
+            )
+
+            # Create system prompt (no vector context)
+            system_prompt = await self.create_system_prompt(
+                conversation_context=conversation_context,
+                **kwargs
+            )
+
+            # Configure LLM if needed
+            new_llm = kwargs.pop('llm', None)
+            if new_llm:
+                self.configure_llm(
+                    llm=new_llm,
+                    **kwargs.pop('llm_config', {})
+                )
+
+            # Make the LLM call using the Claude client
             async with self._llm as client:
                 response = await client.ask(
                     prompt=question,
-                    system_prompt=final_prompt,
+                    system_prompt=system_prompt,
+                    model=kwargs.get('model', self._llm_model),
+                    max_tokens=kwargs.get('max_tokens', self._max_tokens),
+                    temperature=kwargs.get('temperature', self._llm_temp),
+                    user_id=user_id,
+                    session_id=session_id,
                 )
-                return self.get_response(response)
+
+                # Set conversation context info
+                response.set_conversation_context_info(
+                    used=bool(conversation_context),
+                    context_length=len(conversation_context) if conversation_context else 0
+                )
+
+                # Set additional metadata
+                response.session_id = session_id
+                response.turn_id = turn_id
+
+                # Return the response
+                return self.get_response(response, return_sources=False, return_context=False)
+
         except asyncio.CancelledError:
-            # Handle task cancellation
-            print("Conversation task was cancelled.")
+            self.logger.info("Conversation task was cancelled.")
+            raise
         except Exception as e:
-            self.logger.error(
-                f"Error in conversation: {e}"
-            )
+            self.logger.error(f"Error in conversation: {e}")
             raise
 
     # Additional utility methods for conversation management

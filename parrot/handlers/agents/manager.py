@@ -4,7 +4,6 @@ from datetime import datetime
 import aiofiles
 from aiohttp import web
 import pandas as pd
-from langchain_core.tools import BaseTool
 from datamodel import BaseModel, Field
 from navconfig import BASE_DIR
 from navigator_auth.decorators import (
@@ -14,10 +13,8 @@ from navigator_auth.decorators import (
 from navigator.views import BaseView
 from querysource.queries.qs import QS
 from querysource.queries.multi import MultiQS
-from ..bots.abstract import AbstractBot
-from ..llms.vertex import VertexLLM
-from ..bots.data import PandasAgent
-from ..models import AgentModel
+from ...bots.abstract import AbstractBot
+from ...bots.agent import BasicAgent
 from .abstract import AbstractAgentHandler
 
 
@@ -297,175 +294,3 @@ class AgentManager(BaseView):
                 },
                 status=404
             )
-
-
-class AgentAnswer(BaseModel):
-    """
-    AgentAnswer is a model that defines the structure of the response
-    for Any Parrot agent.
-    """
-    # session_id: str = Field(..., description="Unique identifier for the session")
-    user_id: str = Field(..., description="Unique identifier for the user")
-    agent_name: str = Field(required=False, description="Name of the agent that processed the request")
-    data: str = Field(..., description="Data returned by the agent")
-    status: str = Field(default="success", description="Status of the response")
-    output: str = Field(required=False)
-    transcript: str = Field(default=None, description="Transcript of the conversation with the agent")
-    attributes: Dict[str, str] = Field(default_factory=dict, description="Attributes associated with the response")
-    created_at: datetime = Field(default=datetime.now)
-    podcast_path: str = Field(required=False, description="Path to the podcast associated with the session")
-    pdf_path: str = Field(required=False, description="Path to the PDF associated with the session")
-    document_path: str = Field(required=False, description="Path to document generated during session")
-    documents: List[str] = Field(default_factory=list, description="List of documents associated with the session")
-
-
-@user_session()
-class AgentHandler(AbstractAgentHandler):
-    """
-    AgentHandler.
-    description: Handler for Agents in Parrot Application.
-
-    This handler is used to manage the agents in the Parrot application.
-    It provides methods to create, update, and interact with agents.
-    """
-    _backstory: str = """This agent is designed to assist users in finding store information, such as store hours, locations, and services.
-It can also provide weather updates and perform basic Python code execution.
-The agent can answer questions about store locations, hours of operation, and available services.
-It can also provide weather updates for the store's location, helping users plan their visits accordingly.
-The agent can execute Python code snippets to perform calculations or data processing tasks.
-    """
-    _tools: List[BaseTool] = []
-    _agent: AbstractBot = None
-    agent_name: str = "NextStopAgent"
-    agent_id: str = "nextstop_agent"
-    _model_response: BaseModel = AgentAnswer
-
-    def __init__(self, request=None, *args, **kwargs):
-        super().__init__(request, *args, **kwargs)
-
-    async def _build_agent(self) -> None:
-        """Build the agent."""
-        tools = self._tools or []
-        vertex = VertexLLM(
-            model="gemini-2.5-pro",
-            temperature=0.1,
-            max_tokens=4096,
-            top_p=0.95,
-            top_k=40,
-            verbose=True,
-            use_chat=True
-        )
-        self.app[self.agent_id] = await self.create_agent(
-            # llm=vertex,
-            tools=tools,
-            backstory=self._backstory,
-        )
-        print(
-            f"Agent {self._agent}:{self.agent_name} initialized with tools: {', '.join(tool.name for tool in tools)}"
-        )
-
-    async def on_startup(self, app: web.Application) -> None:
-        """Start the application."""
-        self._agent = await self._build_agent()
-
-    async def on_shutdown(self, app: web.Application) -> None:
-        """Stop the application."""
-        self._agent = None
-
-    async def open_prompt(self, prompt_file: str = None) -> str:
-        """
-        Opens a prompt file and returns its content.
-        """
-        if not prompt_file:
-            raise ValueError("No prompt file specified.")
-        file = BASE_DIR.joinpath('prompts', self.agent_id, prompt_file)
-        try:
-            async with aiofiles.open(file, 'r') as f:
-                content = await f.read()
-            return content
-        except Exception as e:
-            raise RuntimeError(f"Failed to read prompt file {prompt_file}: {e}")
-
-    async def ask_agent(self, query: str = None, prompt_file: str = None, *args, **kwargs) -> AgentAnswer:
-        """
-        Asks the agent a question and returns the response.
-        """
-        agent = self._agent or self.request.app[self.agent_id]
-        userid = self._userid if self._userid else self.request.session.get('user_id', None)
-        if not userid:
-            raise RuntimeError("User ID is not set in the session.")
-        if not agent:
-            raise RuntimeError(
-                f"Agent {self.agent_name} is not initialized or not found."
-            )
-        if not query:
-            # extract the query from the prompt file if provided:
-            if prompt_file:
-                query = await self.open_prompt(prompt_file)
-            elif hasattr(self.request, 'query') and 'query' in self.request.query:
-                query = self.request.query.get('query', None)
-            elif hasattr(self.request, 'json'):
-                data = await self.request.json()
-                query = data.get('query', None)
-            elif hasattr(self.request, 'data'):
-                data = await self.request.data()
-                query = data.get('query', None)
-            elif hasattr(self.request, 'text'):
-                query = self.request.text
-            else:
-                raise ValueError(
-                    "No query provided and no prompt file specified."
-                )
-            if not query:
-                raise ValueError(
-                    "No query provided or found in the request."
-                )
-        try:
-            data, response, result = await agent.invoke(query)
-            if isinstance(result, Exception):
-                raise result
-        except Exception as e:
-            print(f"Error invoking agent: {e}")
-            raise RuntimeError(
-                f"Failed to generate report due to an error in the agent invocation: {e}"
-            )
-
-        # Create the response object
-        final_report = response.output.strip()
-        # parse the intermediate steps if available to extract PDF and podcast paths:
-        pdf_path = None
-        podcast_path = None
-        transcript = None
-        document_path = None
-        if response.intermediate_steps:
-            for step in response.intermediate_steps:
-                tool = step['tool']
-                result = step['result']
-                tool_input = step.get('tool_input', {})
-                if 'text' in tool_input:
-                    transcript = tool_input['text']
-                if isinstance(result, dict):
-                    # Extract the URL from the result if available
-                    url = result.get('url', None)
-                    if tool == 'PDFPrintTool':
-                        pdf_path = url
-                    elif tool == 'GoogleVoiceTool':
-                        podcast_path = url
-                    else:
-                        document_path = url
-        response_data = self._model_response(
-            user_id=str(userid),
-            agent_name=self.agent_name,
-            attributes=kwargs.pop('attributes', {}),
-            data=final_report,
-            status="success",
-            created_at=datetime.now(),
-            output=result.get('output', ''),
-            transcript=transcript,
-            pdf_path=str(pdf_path),
-            podcast_path=str(podcast_path),
-            document_path=str(document_path),
-            documents=response.documents if hasattr(response, 'documents') else [],
-            **kwargs
-        )
-        return response_data, response, result

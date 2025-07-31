@@ -1,14 +1,17 @@
 """
 PythonREPLTool migrated to use AbstractTool framework with matplotlib fixes.
 """
+from typing import Optional, Dict, Any, Union
 import ast
 import sys
 import asyncio
-import atexit
 import threading
 import contextlib
 import base64
-from typing import Optional, Dict, Any, Union
+import logging
+
+logging.getLogger(name='matplotlib').setLevel(logging.INFO)
+
 from pathlib import Path
 from contextlib import redirect_stdout
 from io import StringIO, BytesIO
@@ -16,13 +19,14 @@ from concurrent.futures import ProcessPoolExecutor
 import pandas as pd
 import numpy as np
 import matplotlib
-# altair:
-import altair
 # Force matplotlib to use non-interactive backend
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 # Import these for proper cleanup handling
 from matplotlib import _pylab_helpers
+# altair:
+import altair
+# plotly
 import plotly.graph_objects as go
 import plotly.io as pio
 import numexpr as ne
@@ -34,6 +38,8 @@ from pydantic import BaseModel, Field
 from datamodel.parsers.json import json_decoder, json_encoder  # noqa  pylint: disable=E0611
 from navconfig import BASE_DIR
 from .abstract import AbstractTool
+
+
 
 
 def brace_escape(text: str) -> str:

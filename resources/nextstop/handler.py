@@ -14,12 +14,8 @@ from navigator_auth.decorators import (
     user_session
 )
 from navigator.responses import JSONResponse
-from parrot.handlers.abstract import AbstractAgentHandler
+from parrot.handlers.agents.abstract import AbstractAgentHandler
 from parrot.handlers.agents import AgentHandler
-from parrot.tools.weather import OpenWeather
-from parrot.tools import PythonREPLTool
-from parrot.tools.excel import ExcelTool
-from parrot.tools.ppt import PowerPointGeneratorTool
 from .tools import StoreInfo
 from .models import NextStopStore
 

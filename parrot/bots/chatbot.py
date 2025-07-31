@@ -386,11 +386,12 @@ class Chatbot(AbstractBot):
         )
         # Set the system prompt
         self.system_prompt_template = final_prompt
-        print('PROMPT ')
-        print(final_prompt)
-        self.logger.debug(
-            f"System prompt configured with tools: {len(self.tools)} tools available"
-        )
+        if self._debug:
+            print(' SYSTEM PROMPT ')
+            print(final_prompt)
+            self.logger.debug(
+                f"System prompt configured with tools: {len(self.tools)} tools available"
+            )
 
     def is_agent_mode(self) -> bool:
         """Check if the bot is configured to operate in agent mode."""

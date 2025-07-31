@@ -1,13 +1,14 @@
-import os
+from __future__ import annotations
 from typing import List
-from navconfig.logging import logging
+from navconfig import BASE_DIR
 from .agent import BasicAgent
-from .prompts.nextstop import AGENT_PROMPT, DEFAULT_BACKHISTORY, DEFAULT_CAPABILITIES
+from .prompts.nextstop import (
+    AGENT_PROMPT,
+    DEFAULT_BACKHISTORY,
+    DEFAULT_CAPABILITIES
+)
 from ..tools import AbstractTool
-from ..tools.pythonpandas import PythonPandasTool
-from ..tools.google import GoogleLocationTool, GoogleRoutesTool
-from ..tools.openweather import OpenWeatherTool
-
+from ..models.responses import AgentResponse
 
 class NextStop(BasicAgent):
     """NextStop in Navigator.
@@ -15,9 +16,20 @@ class NextStop(BasicAgent):
         Next Stop Agent generate travel itineraries and recommendations
         based on user preferences and location data.
     """
+    _agent_response = AgentResponse
+    speech_context: str = (
+        "The report evaluates the performance of the employee's previous visits and defines strengths and weaknesses."
+    )
+    speech_system_prompt: str = (
+        "You are an expert brand ambassador for T-ROC, a leading retail solutions provider."
+        " Your task is to create a conversational script about the strengths and weaknesses of previous visits and what"
+        " factors should be addressed to achieve a perfect visit."
+    )
+    speech_length: int = 15  # Default length for the speech report
     def __init__(
         self,
         name: str = 'NextStop',
+        agent_id: str = 'nextstop',
         use_llm: str = 'google',
         llm: str = None,
         tools: List[AbstractTool] = None,
@@ -28,6 +40,7 @@ class NextStop(BasicAgent):
     ):
         super().__init__(
             name=name,
+            agent_id=agent_id,
             llm=llm,
             use_llm=use_llm,
             system_prompt=system_prompt,
@@ -39,20 +52,5 @@ class NextStop(BasicAgent):
         self.capabilities = kwargs.get('capabilities', DEFAULT_CAPABILITIES)
         self.system_prompt_template = prompt_template or AGENT_PROMPT
         self._system_prompt_base = system_prompt or ''
-        self.enable_tools = True  # Enable tools by default
-        self.auto_tool_detection = True  # Enable auto tool detection by default
         # Register all the tools:
-        tools = []
-        tools.extend(
-            [
-                OpenWeatherTool(default_request='weather'),
-                PythonPandasTool(),
-                GoogleLocationTool(),
-                GoogleRoutesTool()
-            ]
-        )
-        self.tools = tools
-        ##  Logging:
-        self.logger = logging.getLogger(
-            f'{self.name}.Agent'
-        )
+        self.tools = self.default_tools(tools or [])

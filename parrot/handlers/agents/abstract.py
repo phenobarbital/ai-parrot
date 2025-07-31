@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Tuple, Union, List, Dict, Any, Optional, Callable, Sequence, Awaitable
-import functools
 from abc import abstractmethod
+import functools
 from io import BytesIO
 import tempfile
 import aiofiles
@@ -38,8 +38,7 @@ from navigator.responses import JSONResponse
 from navigator.types import WebApp  # pylint: disable=E0611
 from navigator.conf import CACHE_URL, default_dsn
 # Parrot:
-from parrot.llms.openai import OpenAILLM
-from parrot.bots.agent import BasicAgent
+from ...bots.agent import BasicAgent
 
 
 
@@ -175,8 +174,6 @@ class AbstractAgentHandler(BaseView):
 
     agent_name: str = None
     _agent: Optional[BasicAgent] = None
-    # Bot Manager:
-    bot_manager: str = 'bot_manager'
     on_startup: Optional[Callable] = None
     on_shutdown: Optional[Callable] = None
     on_cleanup: Optional[Callable] = None
@@ -190,7 +187,9 @@ class AbstractAgentHandler(BaseView):
             super().__init__(request, *args, **kwargs)
         else:
             pass
-        self.logger = logging.getLogger(f"{self.__class__.__module__}.{self.__class__.__name__}")
+        self.logger = logging.getLogger(
+            f"{self.__class__.__module__}.{self.__class__.__name__}"
+        )
         self.redis = RedisWriter()
         self.gcs = None  # GCS Manager
         self.s3 = None  # S3 Manager
@@ -201,7 +200,11 @@ class AbstractAgentHandler(BaseView):
         self.temp_dir = self.create_temp_directory()
         self.app = app
 
-    def setup(self, app: Union[WebApp, web.Application], route: List[Dict[Any, str]] = None) -> None:
+    def setup(
+        self,
+        app: Union[WebApp, web.Application],
+        route: List[Dict[Any, str]] = None
+    ) -> None:
         """Setup the handler with the application and route.
 
         Args:
@@ -242,6 +245,9 @@ class AbstractAgentHandler(BaseView):
             app.on_shutdown.append(self.on_shutdown)
         if callable(self.on_cleanup):
             app.on_cleanup.append(self.on_cleanup)
+
+        # Create an Agent, will be overridden in subclasses
+        self._create_agent()
 
     def db_connection(
         self,
@@ -475,32 +481,9 @@ class AbstractAgentHandler(BaseView):
         """Post-authorization Model."""
         return True
 
-    def get_agent(self, name: Optional[str] = None) -> Any:
+    def get_agent(self) -> Any:
         """Return the agent instance."""
-        try:
-            app = self.request.app
-            manager = app[self.bot_manager]
-        except KeyError:
-            return self.json_response(
-                {
-                "message": "Chatbot Manager is not installed."
-                },
-                status=404
-            )
-        name = self.request.match_info.get('agent_name', None)
-        if not name:
-            return self.json_response(
-                {
-                "message": "Agent name not found."
-                },
-                status=404
-            )
-        if agent := manager.get_agent(name):
-            return agent
-        else:
-            raise RuntimeError(
-                f"Agent {name} not found in Bot manager."
-            )
+        return self._agent
 
     def _create_actors(self, recipients: Union[List[dict], dict] = None) -> List:
         if isinstance(recipients, dict):
@@ -763,27 +746,15 @@ class AbstractAgentHandler(BaseView):
         # Return the list of uploaded files and any other form data
         return uploaded_files_info, form_data
 
-    async def create_agent(
+    async def _create_agent(
         self,
-        llm: Any = None,
-        tools: Optional[List[Any]] = None,
-        backstory: Optional[str] = None
+        tools: Optional[List[Any]] = None
     ) -> BasicAgent:
         """Create and configure a BasicAgent instance."""
-        if not llm:
-            llm = OpenAILLM(
-                model="gpt-4.1",
-                temperature=0.2,
-                max_tokens=4096,
-                use_chat=True
-            )
         try:
             agent = BasicAgent(
                 name=self.agent_name,
-                llm=llm,
-                tools=tools,
-                agent_type='tool-calling',
-                backstory=backstory,
+                tools=tools
             )
             await agent.configure()
             return agent
