@@ -27,6 +27,9 @@ import plotly.graph_objects as go
 import plotly.io as pio
 import numexpr as ne
 import seaborn as sns
+import bokeh
+import holoviews as hv
+from holoviews import opts
 from pydantic import BaseModel, Field
 from datamodel.parsers.json import json_decoder, json_encoder  # noqa  pylint: disable=E0611
 from navconfig import BASE_DIR
@@ -163,7 +166,7 @@ class PythonREPLTool(AbstractTool):
         self.globals = globals_dict or {}
 
         # Setup matplotlib to use non-interactive backend
-        self._setup_matplotlib()
+        self._setup_charts()
 
         # Setup the environment
         self._setup_environment()
@@ -171,8 +174,10 @@ class PythonREPLTool(AbstractTool):
         # Bootstrap the environment if not already done
         self._bootstrap()
 
-    def _setup_matplotlib(self):
-        """Configure matplotlib for non-interactive use."""
+    def _setup_charts(self):
+        """Configure matplotlib, Altair, and Bokeh for non-interactive use."""
+        # Bokeh configuration:
+        hv.extension('bokeh')
         # Store the original backend
         original_backend = matplotlib.get_backend()
         with contextlib.suppress(Exception):
@@ -318,6 +323,9 @@ class PythonREPLTool(AbstractTool):
             'go': go,
             'pio': pio,
             'altair': altair,
+            'bokeh': bokeh,
+            'hv': hv,
+            'opts': opts,
 
             # JSON utilities
             'json_encoder': json_encoder,
@@ -699,7 +707,7 @@ print("Use 'execution_results' dict to store intermediate results.")
             self.locals['execution_results'].clear()
 
         # Re-setup matplotlib
-        self._setup_matplotlib()
+        self._setup_charts()
 
         # Re-setup the environment
         self._setup_environment()

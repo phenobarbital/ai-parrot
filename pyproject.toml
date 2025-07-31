@@ -104,7 +104,10 @@ images = [
     "python-xmp-toolkit==2.0.2",
     "exifread==3.3.1",
     "transformers>=4.51.1,<=4.51.3",
-    "ffmpeg==1.4"
+    "ffmpeg==1.4",
+    "holoviews==1.21.0",
+    "bokeh==3.7.3",
+    "pandas-bokeh==0.5.5"
 ]
 
 vector = [
