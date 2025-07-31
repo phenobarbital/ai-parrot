@@ -100,15 +100,20 @@ class GoogleGenAIClient(AbstractClient):
         search_keywords = [
             'search',
             'find',
-            'lookup',
             'google',
             'web',
             'internet',
             'latest',
-            'current',
             'news'
         ]
-        function_keywords = []
+        function_keywords = [
+            'get',
+            'use',
+            'tool',
+            'execute',
+            'call',
+            'current',
+        ]
         if self.tools:
             function_keywords = [
                 tool.name.lower() for tool in self.tools.values()
@@ -119,6 +124,7 @@ class GoogleGenAIClient(AbstractClient):
 
         has_search_intent = any(keyword in prompt_lower for keyword in search_keywords)
         has_function_intent = any(keyword in prompt_lower for keyword in function_keywords)
+        print('DEBUG > ', has_search_intent, has_function_intent, prompt_lower)
         if has_search_intent and not has_function_intent:
             return "builtin_tools"
         else:
@@ -750,12 +756,9 @@ class GoogleGenAIClient(AbstractClient):
             final_response = await self._handle_multiturn_function_calls(
                 chat, response, all_tool_calls, model=model, max_iterations=10, config=final_config
             )
-            print('FINAL RESPONSE > ', final_response)
 
         # Extract assistant response text for conversation memory
-        print('==== ')
         assistant_response_text = self._safe_extract_text(final_response)
-        print('ASSISTANT RESPONSE TEXT > ', assistant_response_text)
 
         # If we still don't have text but have tool calls, generate a summary
         if not assistant_response_text and all_tool_calls:
@@ -776,7 +779,6 @@ class GoogleGenAIClient(AbstractClient):
         else:
             final_output = assistant_response_text
 
-        print('FINAL OUTPUT > ', final_output)
         # Update conversation memory with the final response
         final_assistant_message = {
             "role": "model",
@@ -799,7 +801,6 @@ class GoogleGenAIClient(AbstractClient):
                 assistant_response_text,
                 tools_used
             )
-        print('BEFORE AI MESSAGE FACTORY > ', final_output, response)
         # Create AIMessage using factory
         ai_message = AIMessageFactory.from_gemini(
             response=response,

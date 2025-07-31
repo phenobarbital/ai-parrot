@@ -32,11 +32,11 @@ class BasicAgent(Chatbot):
             use_llm=use_llm,
             system_prompt=system_prompt,
             human_prompt=human_prompt,
+            tools=tools,
             **kwargs
         )
         self.system_prompt_template = prompt_template or AGENT_PROMPT
         self._system_prompt_base = system_prompt or ''
-        self.tools = self.default_tools(tools)
         self.enable_tools = True  # Enable tools by default
         self.auto_tool_detection = True  # Enable auto tool detection by default
         ##  Logging:
