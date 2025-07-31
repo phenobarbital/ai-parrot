@@ -221,6 +221,8 @@ class ToolManager:
         Args:
             tools: List of tools or dictionary of tools
         """
+        if tools is None:
+            return
         if isinstance(tools, dict):
             for name, tool in tools.items():
                 self.register_tool(tool, name)
