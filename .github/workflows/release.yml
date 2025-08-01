@@ -69,4 +69,4 @@ jobs:
       - name: Publish to PyPI
         run: |
           uv tool install twine
-          uv tool run twine upload dist/* --username __token__ --password ${{ secrets.NAV_AIPARROT_API_SECRET }}
+          uv tool run twine upload dist/*-manylinux*.whl --username __token__ --password ${{ secrets.NAV_AIPARROT_API_SECRET }}
