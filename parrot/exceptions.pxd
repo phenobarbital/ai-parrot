@@ -7,3 +7,7 @@ cdef class ParrotError(Exception):
 
 cdef class ConfigError(ParrotError):
     pass
+
+cdef class SpeechGenerationError(ParrotError):
+    """Capture Errors related to speech generation."""
+    pass
