@@ -68,7 +68,7 @@ class OpenWeatherTool(AbstractTool):
     - Comprehensive weather data including temperature, humidity, pressure, wind, etc.
     """
 
-    name = "openweather"
+    name = "openweather_tool"
     description = (
         "Get current weather information or forecast for specific coordinates. "
         "Supports current weather and forecasts with configurable units and country settings. "

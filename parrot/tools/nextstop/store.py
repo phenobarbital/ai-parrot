@@ -60,7 +60,11 @@ class VisitInfo(BaseModel):
     alt_store: Optional[str] = Field(default=None, description="Alternative store name")
     time_spent_minutes: Optional[float] = Field(default=None, description="Time spent in minutes")
     visit_data: Optional[List[Dict[str, Any]]] = Field(default=None, description="Visit data aggregated")
-
+    # Aggreated questions:
+    questions: Optional[Dict[str, List[Dict[str, Any]]]] = Field(
+        default=None,
+        description="Aggregated visit questions and answers organized by question type"
+    )
     # Visitor statistics
     number_of_visits: Optional[int] = Field(default=None, description="Total number of visits by this visitor")
     latest_visit_date: Optional[datetime] = Field(default=None, description="Latest visit date for this visitor")
@@ -230,14 +234,22 @@ LIMIT 3;
         except Exception as e:
             return f"Error fetching foot traffic data: {e}"
 
-    @tool_schema(VisitInfoInput)
-    async def get_visit_information(
+    async def _get_visits(
         self,
         store_id: str,
         limit: int = 3,
         output_format: str = "structured"
-    ) -> Union[pd.DataFrame, List[VisitInfo]]:
+    ) -> List[VisitInfo]:
+        """Internal method to fetch visit information for a store.
 
+        Args:
+            store_id: The unique identifier of the store
+            limit: Maximum number of visits to retrieve
+            output_format: Output format - 'pandas' for DataFrame, 'structured' for Pydantic models
+
+        Returns:
+            List[VisitInfo]: List of visit information objects
+        """
         sql = f"""
 WITH visits AS (
 WITH last_visits AS (
@@ -327,6 +339,81 @@ JOIN median_visits mv USING(visitor_username)
             return f"No visit information found for the specified store, error: {ve}"
         except Exception as e:
             return f"Error fetching visit information: {e}"
+
+    @tool_schema(VisitInfoInput)
+    async def get_visit_information(
+        self,
+        store_id: str,
+        limit: int = 3,
+        output_format: str = "structured"
+    ) -> Union[pd.DataFrame, List[VisitInfo]]:
+        """Get visit information for a specific store.
+
+        This method retrieves visit information for the specified store,
+        including visitor statistics and aggregated visit data.
+        """
+        try:
+            visits = await self._get_visits(store_id, limit, output_format)
+            if isinstance(visits, str):  # If an error message was returned
+                return visits
+
+            return visits
+        except ValueError as ve:
+            return f"No visit information found for the specified store, error: {ve}"
+        except Exception as e:
+            return f"Error fetching visit information: {e}"
+
+    @tool_schema(VisitInfoInput)
+    async def get_visit_questions(
+        self,
+        store_id: str,
+        limit: int = 3,
+        output_format: str = "structured"
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Get visit information for a specific store, focusing on questions and answers.
+        """
+        visits = await self._get_visits(
+            store_id,
+            limit,
+            output_format
+        )
+        if isinstance(visits, str):  # If an error message was returned
+            return visits
+
+        question_data = {
+            '9730': [],  # Key Wins
+            '9731': [],  # Challenges
+            '9732': [],  # Next Focus
+            '9733': []   # Competitive
+        }
+        for row_index, visit in enumerate(visits):
+            if not visit.visit_data:
+                continue
+
+            for qa_item in visit.visit_data:
+                column_name = qa_item.get('column_name')
+                if column_name in question_data:
+                    # first: truncate answer if is too long
+                    answer = qa_item.get('answer', '')
+                    if len(answer) > 100:
+                        answer = answer[:100] + '...'
+                    question_data[column_name].append({
+                        'answer': answer,
+                        'row_index': row_index,
+                        'visitor': visit.visitor_username,
+                        'visit_date': visit.visit_date.isoformat() if visit.visit_date else None,
+                        'store_id': visit.store_id,
+                        'visit_length': visit.visit_length,
+                        'question_text': qa_item.get('question', ''),
+                        'time_in': visit.time_in.isoformat() if visit.time_in else None,
+                        'time_out': visit.time_out.isoformat() if visit.time_out else None,
+                        'visit_dow': visit.visit_dow,
+                        'visit_hour': visit.visit_hour,
+                        'day_of_week': visit.day_of_week,
+                        'time_spent_minutes': visit.time_spent_minutes
+                    })
+        return question_data
 
     @tool_schema(StoreInfoInput)
     async def get_store_information(self, store_id: str) -> StoreBasicInfo:
