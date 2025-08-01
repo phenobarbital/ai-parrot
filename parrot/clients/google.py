@@ -9,6 +9,14 @@ from pathlib import Path
 import io
 import uuid
 from PIL import Image
+import aiohttp
+from openai import max_retries
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type
+)
 from google import genai
 from google.genai.types import (
     GenerateContentConfig,
@@ -46,6 +54,7 @@ from ..models.google import (
     ConversationalScriptConfig,
     FictionalSpeaker
 )
+from ..exceptions import SpeechGenerationError  # pylint: disable=E0611
 
 
 logging.getLogger(
@@ -1633,6 +1642,8 @@ You are a scriptwriter. Your task is {system_prompt} for a conversation between 
         mime_format: str = "audio/wav", # or "audio/mpeg", "audio/webm"
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
+        max_retries: int = 3,
+        retry_delay: float = 1.0
     ) -> AIMessage:
         """
         Generates speech from text using either a single voice or multiple voices.
@@ -1702,52 +1713,123 @@ You are a scriptwriter. Your task is {system_prompt} for a conversation between 
             system_instruction=system_prompt,
             temperature=temperature
         )
+        # Retry logic for network errors
+        for attempt in range(max_retries + 1):
 
-        try:
-            start_time = time.time()
-            response = await self.client.aio.models.generate_content(
-                model=model,
-                contents=prompt_data.prompt,
-                config=config,
-            )
-            execution_time = time.time() - start_time
+            try:
+                if attempt > 0:
+                    delay = retry_delay * (2 ** (attempt - 1))  # Exponential backoff
+                    self.logger.info(
+                        f"Retrying speech (attempt {attempt + 1}/{max_retries + 1}) after {delay}s delay..."
+                    )
+                    await asyncio.sleep(delay)
+                start_time = time.time()
+                response = await self.client.aio.models.generate_content(
+                    model=model,
+                    contents=prompt_data.prompt,
+                    config=config,
+                )
+                execution_time = time.time() - start_time
 
-            audio_data = response.candidates[0].content.parts[0].inline_data.data
-            saved_file_paths = []
+                audio_data = response.candidates[0].content.parts[0].inline_data.data
+                saved_file_paths = []
 
-            if output_directory:
-                output_directory.mkdir(parents=True, exist_ok=True)
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                file_path = output_directory / f"generated_speech_{timestamp}.wav"
+                if output_directory:
+                    output_directory.mkdir(parents=True, exist_ok=True)
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    file_path = output_directory / f"generated_speech_{timestamp}.wav"
 
-                self._save_audio_file(audio_data, file_path, mime_format)
-                saved_file_paths.append(file_path)
-                self.logger.info(
-                    f"Saved speech to {file_path}"
+                    self._save_audio_file(audio_data, file_path, mime_format)
+                    saved_file_paths.append(file_path)
+                    self.logger.info(
+                        f"Saved speech to {file_path}"
+                    )
+
+                usage = CompletionUsage(
+                    execution_time=execution_time,
+                    # Speech API does not return token counts
+                    input_tokens=len(prompt_data.prompt), # Approximation
                 )
 
-            usage = CompletionUsage(
-                execution_time=execution_time,
-                # Speech API does not return token counts
-                input_tokens=len(prompt_data.prompt), # Approximation
-            )
+                ai_message = AIMessageFactory.from_speech(
+                    output=audio_data, # The raw PCM audio data
+                    files=saved_file_paths,
+                    input=prompt_data.prompt,
+                    model=model,
+                    provider="google_genai",
+                    usage=usage,
+                    user_id=user_id,
+                    session_id=session_id,
+                    raw_response=None # Response object isn't easily serializable
+                )
+                return ai_message
 
-            ai_message = AIMessageFactory.from_speech(
-                output=audio_data, # The raw PCM audio data
-                files=saved_file_paths,
-                input=prompt_data.prompt,
-                model=model,
-                provider="google_genai",
-                usage=usage,
-                user_id=user_id,
-                session_id=session_id,
-                raw_response=None # Response object isn't easily serializable
-            )
-            return ai_message
+            except (
+                aiohttp.ClientPayloadError,
+                aiohttp.ClientConnectionError,
+                aiohttp.ClientResponseError,
+                aiohttp.ServerTimeoutError,
+                ConnectionResetError,
+                TimeoutError,
+                asyncio.TimeoutError
+            ) as network_error:
+                error_msg = str(network_error)
 
-        except Exception as e:
-            self.logger.error(f"Speech generation failed: {e}")
-            raise
+                # Specific handling for different network errors
+                if "TransferEncodingError" in error_msg:
+                    self.logger.warning(
+                        f"Transfer encoding error on attempt {attempt + 1}: {error_msg}")
+                elif "Connection reset by peer" in error_msg:
+                    self.logger.warning(
+                        f"Connection reset on attempt {attempt + 1}: Server closed connection")
+                elif "timeout" in error_msg.lower():
+                    self.logger.warning(
+                        f"Timeout error on attempt {attempt + 1}: {error_msg}")
+                else:
+                    self.logger.warning(
+                        f"Network error on attempt {attempt + 1}: {error_msg}"
+                    )
+
+                if attempt < max_retries:
+                    self.logger.debug(
+                        f"Will retry in {retry_delay * (2 ** attempt)}s..."
+                    )
+                    continue
+                else:
+                    # Max retries exceeded
+                    self.logger.error(
+                        f"Speech generation failed after {max_retries + 1} attempts"
+                    )
+                    raise SpeechGenerationError(
+                        f"Speech generation failed after {max_retries + 1} attempts. "
+                        f"Last error: {error_msg}. This is typically a temporary network issue - please try again."
+                    ) from network_error
+
+            except Exception as e:
+                # Non-network errors - don't retry
+                error_msg = str(e)
+                self.logger.error(
+                    f"Speech generation failed with non-retryable error: {error_msg}"
+                )
+
+                # Provide helpful error messages based on error type
+                if "quota" in error_msg.lower() or "rate limit" in error_msg.lower():
+                    raise SpeechGenerationError(
+                        f"API quota or rate limit exceeded: {error_msg}. Please try again later."
+                    ) from e
+                elif "permission" in error_msg.lower() or "unauthorized" in error_msg.lower():
+                    raise SpeechGenerationError(
+                        f"Authorization error: {error_msg}. Please check your API credentials."
+                    ) from e
+                elif "model" in error_msg.lower():
+                    raise SpeechGenerationError(
+                        f"Model error: {error_msg}. The model '{model}' may not support speech generation."
+                    ) from e
+                else:
+                    raise SpeechGenerationError(
+                        f"Speech generation failed: {error_msg}"
+                    ) from e
+
 
     async def generate_videos(
         self,
@@ -2251,41 +2333,164 @@ Your job is to produce a final summary from the following text and identify the 
         temperature: Optional[float] = 0.1,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
+        use_structured: bool = False,
     ) -> AIMessage:
         """
-        Perform sentiment analysis on *text* and return a structured explanation (stateless).
+        Perform sentiment analysis on text and return a structured or unstructured response.
+
+        Args:
+            text (str): The text to analyze.
+            model (Union[GoogleModel, str]): The model to use for the analysis.
+            temperature (float): Sampling temperature for response generation.
+            user_id (Optional[str]): Optional user identifier for tracking.
+            session_id (Optional[str]): Optional session identifier for tracking.
+            use_structured (bool): If True, forces a structured JSON output matching
+                the SentimentAnalysis model. Defaults to False.
+        """
+        self.logger.info(f"Analyzing sentiment for text: '{text[:50]}...'")
+
+        model_name = model.value if isinstance(model, GoogleModel) else model
+        turn_id = str(uuid.uuid4())
+
+        system_instruction = ""
+        generation_config = {
+            "max_output_tokens": self.max_tokens,
+            "temperature": temperature or self.temperature,
+        }
+        structured_output_model = None
+
+        if use_structured:
+            # ✍️ Generate a prompt to force JSON output matching the Pydantic schema
+            schema = SentimentAnalysis.model_json_schema()
+            system_instruction = (
+                "You are an expert in sentiment analysis. Analyze the following text and provide a structured JSON response. "
+                "Your response MUST be a valid JSON object that conforms to the following JSON Schema. "
+                "Do not include any other text, explanations, or markdown formatting like ```json ... ```.\n\n"
+                f"JSON Schema:\n{self._json.dumps(schema, indent=2)}"
+            )
+            # Enable Gemini's JSON mode for reliable structured output
+            generation_config["response_mime_type"] = "application/json"
+            structured_output_model = SentimentAnalysis
+        else:
+            # The original prompt for a human-readable, unstructured response
+            system_instruction = (
+                "Analyze the sentiment of the following text and provide a structured response.\n"
+                "Your response must include:\n"
+                "1. Overall sentiment (Positive, Negative, Neutral, or Mixed)\n"
+                "2. Confidence level (High, Medium, Low)\n"
+                "3. Key emotional indicators found in the text\n"
+                "4. Brief explanation of your analysis\n\n"
+                "Format your answer clearly with numbered sections."
+            )
+
+        contents = [{"role": "user", "parts": [{"text": text}]}]
+
+        final_config = GenerateContentConfig(
+            system_instruction={"role": "system", "parts": [{"text": system_instruction}]},
+            tools=None,
+            **generation_config,
+        )
+
+        response = await self.client.aio.models.generate_content(
+            model=model_name,
+            contents=contents,
+            config=final_config,
+        )
+
+        ai_message = AIMessageFactory.from_gemini(
+            response=response,
+            input_text=text,
+            model=model_name,
+            user_id=user_id,
+            session_id=session_id,
+            turn_id=turn_id,
+            structured_output=structured_output_model,
+            tool_calls=[],
+        )
+        ai_message.provider = "google_genai"
+
+        return ai_message
+
+    async def analyze_product_review(
+        self,
+        review_text: str,
+        product_id: str,
+        product_name: str,
+        model: Union[str, GoogleModel] = GoogleModel.GEMINI_2_5_FLASH,
+        temperature: Optional[float] = 0.1,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        use_structured: bool = True,
+    ) -> AIMessage:
+        """
+        Analyze a product review and extract structured or unstructured information.
+
+        Args:
+            review_text (str): The product review text to analyze.
+            product_id (str): Unique identifier for the product.
+            product_name (str): Name of the product being reviewed.
+            model (Union[GoogleModel, str]): The model to use for the analysis.
+            temperature (float): Sampling temperature for response generation.
+            user_id (Optional[str]): Optional user identifier for tracking.
+            session_id (Optional[str]): Optional session identifier for tracking.
+            use_structured (bool): If True, forces a structured JSON output matching
+                the ProductReview model. Defaults to True.
         """
         self.logger.info(
-            f"Analyzing sentiment for text: '{text[:50]}...'"
+            f"Analyzing product review for product_id: '{product_id}'"
         )
 
         model = model.value if isinstance(model, GoogleModel) else model
         turn_id = str(uuid.uuid4())
 
-        system_instruction = ( # Changed to system_instruction for Google GenAI
-            "Analyze the sentiment of the following text and provide a structured response.\n"
-            "Your response must include:\n"
-            "1. Overall sentiment (Positive, Negative, Neutral, or Mixed)\n"
-            "2. Confidence level (High, Medium, Low)\n"
-            "3. Key emotional indicators found in the text\n"
-            "4. Brief explanation of your analysis\n\n"
-            "Format your answer clearly with numbered sections."
-        )
-
-        # Build contents for the stateless API call
-        contents = [{
-            "role": "user",
-            "parts": [{"text": text}]
-        }]
-
+        system_instruction = ""
         generation_config = {
             "max_output_tokens": self.max_tokens,
             "temperature": temperature or self.temperature,
         }
+        structured_output_model = None
 
+        if use_structured:
+            # Generate a prompt to force JSON output matching the Pydantic schema
+            schema = ProductReview.model_json_schema()
+            system_instruction = (
+                "You are a product review analysis expert. Analyze the provided product review "
+                "and extract the required information. Your response MUST be a valid JSON object "
+                "that conforms to the following JSON Schema. Do not include any other text, "
+                "explanations, or markdown formatting like ```json ... ``` around the JSON object.\n\n"
+                f"JSON Schema:\n{self._json.dumps(schema)}"
+            )
+            # Enable Gemini's JSON mode for reliable structured output
+            generation_config["response_mime_type"] = "application/json"
+            structured_output_model = ProductReview
+        else:
+            # Generate a prompt for a more general, text-based analysis
+            system_instruction = (
+                "You are a product review analysis expert. Analyze the sentiment and key aspects "
+                "of the following product review.\n"
+                "Your response must include:\n"
+                "1. Overall sentiment (Positive, Negative, or Neutral)\n"
+                "2. Estimated Rating (on a scale of 1-5)\n"
+                "3. Key Positive Points mentioned\n"
+                "4. Key Negative Points mentioned\n"
+                "5. A brief summary of the review's main points."
+            )
+
+        # Build the user content part of the request
+        user_prompt = (
+            f"Product ID: {product_id}\n"
+            f"Product Name: {product_name}\n"
+            f"Review Text: \"{review_text}\""
+        )
+        contents = [{
+            "role": "user",
+            "parts": [{"text": user_prompt}]
+        }]
+
+        # Finalize the generation configuration
         final_config = GenerateContentConfig(
-            system_instruction=system_instruction,
-            tools=None, # No tools needed for this task
+            system_instruction={"role": "system", "parts": [{"text": system_instruction}]},
+            tools=None,
             **generation_config
         )
 
@@ -2299,14 +2504,14 @@ Your job is to produce a final summary from the following text and identify the 
         # Create the AIMessage response using the factory
         ai_message = AIMessageFactory.from_gemini(
             response=response,
-            input_text=text,
+            input_text=user_prompt, # Use the full prompt as input text
             model=model,
             user_id=user_id,
             session_id=session_id,
             turn_id=turn_id,
-            structured_output=None, # No structured output explicitly requested
-            tool_calls=[] # No tool calls for this method
+            structured_output=structured_output_model,
+            tool_calls=[]
         )
-        ai_message.provider = "google_genai" # Set provider
+        ai_message.provider = "google_genai"
 
         return ai_message
