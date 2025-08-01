@@ -16,7 +16,7 @@ from navigator_auth.decorators import (
 from navigator.responses import JSONResponse
 from parrot.handlers.agents.abstract import AbstractAgentHandler
 from parrot.handlers.agents import AgentHandler
-from .tools import StoreInfo
+from ._tools import StoreInfo
 from .models import NextStopStore
 
 
