@@ -53,10 +53,20 @@ if __name__ == "__main__":
     # problematic_tools = debug_and_clean_schemas(bot)
     # print(f"\nProblematic tools: {problematic_tools}")
 
-    response = loop.run_until_complete(
-        bot.conversation(
-            "Get foot traffic for store BBY1220 and export as Excel File"
+    response, response_data = loop.run_until_complete(
+        bot.generate_report(
+            "for_store.txt", store_id="BBY1220",
+            save=True,  # Save the report
         )
     )
-    print(response.output)
+    final_report = response_data.data
+    # Print the final report
+    loop.run_until_complete(
+        bot.pdf_report(final_report)
+    )
+    # Generate the speech Report:
+    loop.run_until_complete(
+        bot.speech_report(final_report, max_lines=20)
+    )
+    print("Final Report Generated Successfully")
     loop.close()

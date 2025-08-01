@@ -19,7 +19,7 @@ from .document import AbstractDocumentTool, DocumentGenerationArgs
 class ExcelArgs(DocumentGenerationArgs):
     """Arguments schema for Excel/ODS Document generation."""
 
-    content: Any = Field(
+    content: Union[pd.DataFrame, List[Dict[str, Any]]] = Field(
         ...,
         description="Pandas DataFrame or Dataset to export to Excel/ODS format"
     )

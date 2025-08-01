@@ -323,74 +323,6 @@ footer {
 
         return False
 
-    def _process_content(
-        self,
-        text: str,
-        auto_detect_markdown: bool,
-        template_name: Optional[str],
-        template_vars: Optional[Dict[str, Any]]
-    ) -> str:
-        """
-        Process the input text content through Markdown conversion and template rendering.
-
-        Args:
-            text: Input text content
-            auto_detect_markdown: Whether to auto-detect Markdown
-            template_name: Optional template name
-            template_vars: Optional template variables
-
-        Returns:
-            Processed HTML content
-        """
-        content = text.strip()
-
-        # Convert Markdown to HTML if needed
-        if auto_detect_markdown and self._is_markdown(content):
-            self.logger.info("Detected Markdown content, converting to HTML")
-            try:
-                content = markdown.markdown(
-                    content,
-                    extensions=['tables', 'fenced_code', 'nl2br', 'extra', 'md_in_html', 'admonition', 'smarty' ],
-                    format='xhtml'
-                )
-                print('CONTENT > ', content)
-            except Exception as e:
-                self.logger.warning(f"Markdown conversion failed: {e}, using plain text")
-
-        # Apply template if specified
-        if template_name:
-            try:
-                template = self.env.get_template(template_name)
-
-                # Prepare template context
-                context = {
-                    "body": content,
-                    "generated_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    **(template_vars or {})
-                }
-
-                content = template.render(**context)
-                self.logger.info(f"Applied template: {template_name}")
-
-            except Exception as e:
-                self.logger.error(f"Error applying template {template_name}: {e}")
-                # Fall back to default template
-                try:
-                    template = self.env.get_template(self.default_template)
-                    context = {
-                        "body": content,
-                        "generated_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        "title": "Document"
-                    }
-                    content = template.render(**context)
-                    self.logger.info(f"Applied fallback template: {self.default_template}")
-                except Exception as fallback_error:
-                    self.logger.error(f"Fallback template also failed: {fallback_error}")
-                    # Use minimal HTML wrapper
-                    content = f"<html><body>{content}</body></html>"
-
-        return content
-
     def _load_stylesheets(self, stylesheets: Optional[List[str]]) -> List[CSS]:
         """
         Load CSS stylesheets for PDF generation.
@@ -440,19 +372,7 @@ footer {
         **kwargs
     ) -> Dict[str, Any]:
         """
-        Execute PDF generation (AbstractTool interface).
-
-        Args:
-            text: Text content to convert to PDF
-            file_prefix: Prefix for output filename
-            template_name: Optional HTML template name
-            template_vars: Optional template variables
-            stylesheets: Optional CSS stylesheets
-            auto_detect_markdown: Whether to auto-detect Markdown
-            **kwargs: Additional arguments
-
-        Returns:
-            Dictionary with PDF generation results
+        Execute PDF generation with enhanced debugging.
         """
         try:
             self.logger.debug(
@@ -464,8 +384,13 @@ footer {
                 text, auto_detect_markdown, template_name, template_vars
             )
 
+            # Debug: Log the processed content length and first 500 chars
+            self.logger.info(f"Processed content length: {len(processed_content)}")
+            self.logger.debug(f"Processed content preview: {processed_content[:500]}...")
+
             # Load stylesheets
             css_objects = self._load_stylesheets(stylesheets)
+            self.logger.info(f"Loaded {len(css_objects)} CSS stylesheets")
 
             # Generate filename and output path
             output_filename = self.generate_filename(
@@ -476,33 +401,111 @@ footer {
 
             # Ensure output directory exists
             self.output_dir.mkdir(parents=True, exist_ok=True)
-
             output_path = self.output_dir / output_filename
             output_path = self.validate_output_path(output_path)
 
-            # Generate PDF
             self.logger.info(f"Generating PDF: {output_path}")
 
+            # Debug: Save HTML content to file for inspection
+            debug_html_path = self.output_dir / f"{file_prefix}_debug.html"
             try:
-                HTML(
+                with open(debug_html_path, 'w', encoding='utf-8') as f:
+                    f.write(processed_content)
+                self.logger.info(f"Debug HTML saved to: {debug_html_path}")
+            except Exception as e:
+                self.logger.warning(f"Could not save debug HTML: {e}")
+
+            # Generate PDF with detailed error handling
+            try:
+                # Create HTML object
+                html_obj = HTML(
                     string=processed_content,
                     base_url=str(self.templates_dir)
-                ).write_pdf(
+                )
+
+                # Generate PDF
+                html_obj.write_pdf(
                     str(output_path),
                     stylesheets=css_objects
                 )
 
-                self.logger.info(f"PDF generated successfully: {output_path}")
+                # Check if file was actually created
+                if not output_path.exists():
+                    raise Exception("PDF file was not created")
+
+                file_size = output_path.stat().st_size
+                if file_size == 0:
+                    raise Exception("PDF file is empty (0 bytes)")
+
+                self.logger.info(f"PDF generated successfully: {output_path} ({file_size} bytes)")
 
             except Exception as pdf_error:
                 self.logger.error(f"PDF generation failed: {pdf_error}")
-                raise Exception(f"Failed to generate PDF: {pdf_error}")
 
-            # Generate URLs
+                # Try alternative approaches
+                try:
+                    self.logger.info("Attempting PDF generation with minimal HTML...")
+
+                    # Create minimal HTML wrapper
+                    minimal_html = f"""<!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <title>Document</title>
+        <style>
+            body {{ font-family: Arial, sans-serif; margin: 2cm; line-height: 1.6; }}
+            h1, h2, h3 {{ color: #333; }}
+            ul, ol {{ margin: 1em 0; }}
+            li {{ margin: 0.5em 0; }}
+        </style>
+    </head>
+    <body>
+        {processed_content}
+    </body>
+    </html>"""
+
+                    # Try with minimal HTML
+                    HTML(string=minimal_html).write_pdf(str(output_path))
+
+                    if output_path.exists() and output_path.stat().st_size > 0:
+                        self.logger.info("PDF generated with minimal HTML approach")
+                    else:
+                        raise Exception("Minimal HTML approach also failed")
+
+                except Exception as minimal_error:
+                    self.logger.error(f"Minimal HTML approach failed: {minimal_error}")
+
+                    # Last resort: plain text
+                    try:
+                        self.logger.info("Attempting PDF generation with plain text...")
+
+                        plain_html = f"""<!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <title>Document</title>
+    </head>
+    <body>
+        <pre style="white-space: pre-wrap; font-family: Arial; margin: 2cm;">
+    {text}
+        </pre>
+    </body>
+    </html>"""
+
+                        HTML(string=plain_html).write_pdf(str(output_path))
+
+                        if not output_path.exists() or output_path.stat().st_size == 0:
+                            raise Exception("Plain text approach also failed")
+
+                        self.logger.warning("PDF generated with plain text fallback")
+
+                    except Exception as plain_error:
+                        self.logger.error(f"All PDF generation approaches failed: {plain_error}")
+                        raise Exception(f"PDF generation completely failed. Last error: {plain_error}")
+
+            # Generate URLs and results
             file_url = self.to_static_url(output_path)
             relative_url = self.relative_url(file_url)
-
-            # Calculate statistics
             token_count = count_tokens(text)
             file_size = output_path.stat().st_size
 
@@ -523,7 +526,8 @@ footer {
                 "generation_info": {
                     "timestamp": datetime.now().isoformat(),
                     "templates_dir": str(self.templates_dir),
-                    "output_dir": str(self.output_dir)
+                    "output_dir": str(self.output_dir),
+                    "debug_html_path": str(debug_html_path) if 'debug_html_path' in locals() else None
                 }
             }
 
@@ -534,6 +538,138 @@ footer {
             self.logger.error(f"Error in PDF generation: {e}")
             self.logger.error(traceback.format_exc())
             raise
+
+
+    def _process_content(
+        self,
+        text: str,
+        auto_detect_markdown: bool,
+        template_name: Optional[str],
+        template_vars: Optional[Dict[str, Any]]
+    ) -> str:
+        """
+        Enhanced content processing with better debugging.
+        """
+        content = text.strip()
+
+        # Convert Markdown to HTML if needed
+        if auto_detect_markdown and self._is_markdown(content):
+            self.logger.info("Detected Markdown content, converting to HTML")
+            try:
+                content = markdown.markdown(
+                    content,
+                    extensions=['tables', 'fenced_code', 'nl2br', 'extra'],
+                    output_format='html5'
+                )
+                self.logger.debug(f"Markdown converted. Length: {len(content)}")
+            except Exception as e:
+                self.logger.warning(f"Markdown conversion failed: {e}, using plain text")
+                # Convert line breaks for plain text
+                content = content.replace('\n', '<br>')
+
+        # Apply template if specified
+        if template_name:
+            try:
+                template = self.env.get_template(template_name)
+
+                # Prepare template context
+                context = {
+                    "body": content,      # Keep for backward compatibility
+                    "content": content,   # Add for your template
+                    "generated_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    **(template_vars or {})
+                }
+
+                content = template.render(**context)
+                self.logger.info(f"Applied template: {template_name}")
+
+            except Exception as e:
+                self.logger.error(f"Error applying template {template_name}: {e}")
+
+                # Create a simple HTML wrapper instead of using template
+                title = template_vars.get('title', 'Document') if template_vars else 'Document'
+                author = template_vars.get('author', '') if template_vars else ''
+
+                content = f"""<!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <title>{title}</title>
+    </head>
+    <body>
+        <header>
+            <h1>{title}</h1>
+            {f'<p><em>By: {author}</em></p>' if author else ''}
+            <p><em>Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</em></p>
+            <hr>
+        </header>
+        <main>
+            {content}
+        </main>
+    </body>
+    </html>"""
+                self.logger.info("Applied simple HTML wrapper as template fallback")
+        else:
+            # No template specified - ensure we have a complete HTML document
+            if not content.strip().startswith('<!DOCTYPE') and not content.strip().startswith('<html'):
+                content = f"""<!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <title>Document</title>
+    </head>
+    <body>
+        {content}
+    </body>
+    </html>"""
+                self.logger.info("Added basic HTML wrapper to content")
+
+        return content
+
+
+    # Debugging helper function
+    def debug_pdf_generation(self, tool_instance, text: str) -> Dict[str, Any]:
+        """
+        Debug helper to diagnose PDF generation issues.
+
+        Args:
+            tool_instance: Instance of PDFPrintTool
+            text: Text content to debug
+
+        Returns:
+            Dictionary with debug information
+        """
+        debug_info = {
+            "original_text_length": len(text),
+            "is_markdown_detected": tool_instance._is_markdown(text),
+            "templates_dir_exists": tool_instance.templates_dir.exists(),
+            "templates_dir_path": str(tool_instance.templates_dir),
+            "output_dir_exists": tool_instance.output_dir.exists(),
+            "output_dir_path": str(tool_instance.output_dir),
+            "available_templates": tool_instance.get_available_templates(),
+            "available_stylesheets": tool_instance.get_available_stylesheets(),
+        }
+
+        # Test content processing
+        try:
+            processed = tool_instance._process_content(
+                text, True, None, {"title": "Debug Test"}
+            )
+            debug_info["processed_content_length"] = len(processed)
+            debug_info["processed_content_preview"] = processed[:500]
+            debug_info["content_processing"] = "SUCCESS"
+        except Exception as e:
+            debug_info["content_processing"] = f"FAILED: {e}"
+
+        # Test CSS loading
+        try:
+            css_objects = tool_instance._load_stylesheets(None)
+            debug_info["css_loading"] = f"SUCCESS: {len(css_objects)} stylesheets"
+        except Exception as e:
+            debug_info["css_loading"] = f"FAILED: {e}"
+
+        return debug_info
 
     def execute_sync(
         self,

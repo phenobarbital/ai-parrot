@@ -102,6 +102,10 @@ class VisitInfoInput(BaseModel):
         description="Output format: 'pandas' for DataFrame, 'structured' for Pydantic models"
     )
 
+class VisitQuestionInput(BaseModel):
+    """Input schema for visit question queries."""
+    store_id: str = Field(description="The unique identifier of the store")
+    limit: int = Field(default=3, description="Maximum number of visits to retrieve")
 
 class StoreSearchInput(BaseModel):
     """Input schema for store search queries."""
@@ -355,12 +359,11 @@ JOIN median_visits mv USING(visitor_username)
         except Exception as e:
             return f"Error fetching visit information: {e}"
 
-    @tool_schema(VisitInfoInput)
+    @tool_schema(VisitQuestionInput)
     async def get_visit_questions(
         self,
         store_id: str,
-        limit: int = 3,
-        output_format: str = "structured"
+        limit: int = 3
     ) -> Dict[str, List[Dict[str, Any]]]:
         """
         Get visit information for a specific store, focusing on questions and answers.
@@ -368,7 +371,7 @@ JOIN median_visits mv USING(visitor_username)
         visits = await self._get_visits(
             store_id,
             limit,
-            output_format
+            "structured"
         )
         if isinstance(visits, str):  # If an error message was returned
             return visits
