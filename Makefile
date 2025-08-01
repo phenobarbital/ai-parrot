@@ -1,4 +1,5 @@
-# Modern Makefile using uv for fast Python package management
+# AI-Parrot Makefile
+# This Makefile provides a set of commands to manage the AI-Parrot project.
 
 .PHONY: venv install develop setup dev release format lint test clean distclean lock sync
 
