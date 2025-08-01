@@ -30,7 +30,7 @@ jobs:
         with:
           python-versions: 'cp310-cp310 cp311-cp311 cp312-cp312'
           build-requirements: 'cython setuptools wheel'
-          system-packages: 'build-essential libmemcached-devel openssl-devel zlib-devel'
+          system-packages: 'libmemcached-devel openssl-devel zlib-devel'
 
       - name: Upload wheel artifacts
         uses: actions/upload-artifact@v4
