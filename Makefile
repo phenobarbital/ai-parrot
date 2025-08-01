@@ -96,6 +96,21 @@ remove:
 	@if [ -z "$(pkg)" ]; then echo "Usage: make remove pkg=package-name"; exit 1; fi
 	uv remove $(pkg)
 
+# Compile Cython extensions using setup.py
+build-cython:
+	@echo "Compiling Cython extensions..."
+	python setup.py build_ext
+
+# Build Cython extensions in place (for development)
+build-inplace:
+	@echo "Building Cython extensions in place..."
+	python setup.py build_ext --inplace
+
+# Full build using uv
+build: clean
+	@echo "Building package with uv..."
+	uv build
+
 # Update all dependencies
 update:
 	uv lock --upgrade
@@ -109,8 +124,13 @@ clean:
 	rm -rf build/
 	rm -rf dist/
 	rm -rf *.egg-info/
+	find . -name "*.pyc" -delete
+	find . -name "*.pyo" -delete
+	find . -name "*.so" -delete
 	find . -type d -name __pycache__ -delete
 	find . -type f -name "*.pyc" -delete
+	find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
+	@echo "Clean complete."
 
 # Remove virtual environment
 distclean:

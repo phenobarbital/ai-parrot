@@ -144,6 +144,7 @@ openai = [
 ]
 
 google = [
+    "google-api-python-client>=2.166.0,<=2.177.0",
     "google-cloud-texttospeech==2.27.0",
     "google-genai>=1.26.0",
     "vertexai==1.71.1",
@@ -152,6 +153,7 @@ google = [
 
 groq = [
     "groq==0.30.0",
+    "typing_extensions>=4.13.2,<=4.14.1",
 ]
 
 milvus = [
