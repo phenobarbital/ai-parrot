@@ -247,6 +247,6 @@ class BasicAgent(Chatbot):
                 print(f"✅ Multi-voice speech saved to: {speech_result.files[0]}")
             # 5 Return the script and audio file paths
             return {
-                'script': script_output_path,
-                'audio': speech_result.files[0] if speech_result.files else None
+                'script_path': script_output_path,
+                'podcast_path': speech_result.files[0] if speech_result.files else None
             }
