@@ -6,7 +6,7 @@ from typing import Dict, Any, List, Optional, Tuple
 import urllib.parse
 import string
 import aiohttp
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from googleapiclient.discovery import build
 from navconfig import config
 from ..conf import GOOGLE_API_KEY
@@ -47,13 +47,52 @@ class GoogleRouteArgs(BaseModel):
     departure_time: Optional[str] = Field(default=None, description="Departure time in ISO format")
     include_static_map: bool = Field(default=False, description="Whether to include a static map URL")
     include_interactive_map: bool = Field(default=False, description="Whether to generate an interactive HTML map")
-    map_size: Tuple[int, int] = Field(default=(640, 640), description="Map size for static map")
+    map_size: str = Field(
+        default="640x640",
+        description="Map size for static map in format 'widthxheight' (e.g., '640x640')"
+    )
     map_scale: int = Field(default=2, description="Map scale factor")
     map_type: str = Field(default="roadmap", description="Map type: roadmap, satellite, terrain, hybrid")
     auto_zoom: bool = Field(default=True, description="Automatically calculate zoom based on route distance")
     zoom: int = Field(default=8, description="Manual zoom level (used when auto_zoom=False)")
 
+    @field_validator('map_size')
+    @classmethod
+    def validate_map_size(cls, v):
+        """Validate map_size format."""
+        if not isinstance(v, str):
+            raise ValueError('map_size must be a string')
 
+        try:
+            parts = v.split('x')
+            if len(parts) != 2:
+                raise ValueError('map_size must be in format "widthxheight"')
+
+            width, height = int(parts[0]), int(parts[1])
+            if width <= 0 or height <= 0:
+                raise ValueError('map_size dimensions must be positive')
+
+            return v
+        except ValueError as e:
+            raise ValueError(f'Invalid map_size format: {e}')
+
+    @property
+    def map_width(self) -> int:
+        """Get map width from map_size string."""
+        return int(self.map_size.split('x')[0])
+
+    @property
+    def map_height(self) -> int:
+        """Get map height from map_size string."""
+        return int(self.map_size.split('x')[1])
+
+    def get_map_size_tuple(self) -> tuple:
+        """Get map_size as tuple."""
+        return (self.map_width, self.map_height)
+
+    def get_map_size_list(self) -> List[int]:
+        """Get map_size as list."""
+        return [self.map_width, self.map_height]
 
 # Google Search Tool
 class GoogleSearchTool(AbstractTool):
@@ -426,7 +465,7 @@ class GoogleRoutesTool(AbstractTool):
             zoom_level = args['zoom']
 
         params = {
-            "size": f"{map_size[0]}x{map_size[1]}",
+            "size": f"{map_size}",
             "scale": args['map_scale'],
             "maptype": args['map_type'],
             "zoom": zoom_level,

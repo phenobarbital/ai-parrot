@@ -42,7 +42,7 @@ from navigator.conf import CACHE_URL, default_dsn
 from ...bots.agent import BasicAgent
 from ...tools.abstract import AbstractTool
 from ...models.responses import AgentResponse, AIMessage
-
+from ...clients.gpt import OpenAIClient
 
 
 class RedisWriter:
@@ -265,7 +265,7 @@ class AgentHandler(BaseView):
     async def create_agent(self, app: web.Application):
         self.logger.info("Starting up agent handler...")
         # Initialize the agent
-        await self._create_agent()
+        await self._create_agent(app)
 
     def db_connection(
         self,
@@ -766,20 +766,28 @@ class AgentHandler(BaseView):
 
     async def _create_agent(
         self,
-        tools: Optional[List[Any]] = None
+        app: web.Application
     ) -> BasicAgent:
         """Create and configure a BasicAgent instance."""
         try:
-            tools = self._tools or tools
+            llm = OpenAIClient(
+                model="gpt-4.1-mini",
+            )
             agent = self._agent_class(
                 name=self.agent_name,
-                tools=tools
+                tools=self._tools,
+                llm=llm,
+                model="gpt-4.1-mini",
             )
-            print('AGENT TOOLS > ', agent.tools)
             agent.set_response(self._agent_response)
             await agent.configure()
             # define the main agent:
             self._agent = agent
+            # Store the agent in the application context
+            app[self.agent_id] = agent
+            self.logger.info(
+                f"Agent {self.agent_name} created and configured successfully."
+            )
             return agent
         except Exception as e:
             raise RuntimeError(
@@ -812,7 +820,14 @@ class AgentHandler(BaseView):
         """
         Asks the agent a question and returns the response.
         """
-        agent = self._agent or self.request.app[self.agent_id]
+        if not self._agent:
+            agent = self.request.app[self.agent_id]
+        else:
+            agent = self._agent
+        if not agent:
+            raise RuntimeError(
+                f"Agent {self.agent_name} is not initialized or not found."
+            )
         userid = self._userid if self._userid else self.request.session.get('user_id', None)
         if not userid:
             raise RuntimeError(
@@ -846,7 +861,8 @@ class AgentHandler(BaseView):
                     "No query provided or found in the request."
                 )
         try:
-            response = await agent.invoke(query)
+            response = await agent.conversation(query)
+            print(':: RESPONSE >> ', response)
             if isinstance(response, Exception):
                 raise response
         except Exception as e:

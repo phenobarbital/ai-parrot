@@ -14,6 +14,7 @@ from ..tools.openweather import OpenWeatherTool
 from ..tools.excel import ExcelTool
 from ..tools.gvoice import GoogleVoiceTool
 from ..tools.pdfprint import PDFPrintTool
+from ..tools.ppt import PowerPointTool
 from ..models.google import (
     ConversationalScriptConfig,
     FictionalSpeaker
@@ -105,6 +106,9 @@ class BasicAgent(Chatbot):
                 ),
                 PDFPrintTool(
                     output_dir=BASE_DIR.joinpath('static', self.name, 'documents')
+                ),
+                PowerPointTool(
+                    output_dir=BASE_DIR.joinpath('static', self.name, 'presentations')
                 )
             ]
         )

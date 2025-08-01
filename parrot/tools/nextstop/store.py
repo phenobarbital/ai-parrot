@@ -142,9 +142,9 @@ class StoreInfo(AbstractToolkit):
         """
         super().__init__(**kwargs)
         self.default_dsn = dsn or default_dsn
-        self.program = program or 'navigator'
+        self.program = program or 'hisense'
 
-    async def ___get_dataset(
+    async def _get_dataset(
         self,
         query: str,
         output_format: str = 'pandas',

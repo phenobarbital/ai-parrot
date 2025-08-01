@@ -2,6 +2,7 @@
 Abstract Bot interface.
 """
 from abc import ABC
+import contextlib
 import importlib
 from typing import Any, Dict, List, Union, Optional
 from collections.abc import Callable
@@ -134,10 +135,12 @@ class AbstractBot(DBInterface, ABC):
         self._llm: Union[str, Any] = kwargs.get('llm', 'google')
         if isinstance(self._llm, str):
             self._llm = SUPPORTED_CLIENTS.get(self._llm.lower(), None)
-        if self._llm and not issubclass(self._llm, AbstractClient):
-            raise ValueError(
-                f"Invalid LLM Client: {self._llm}. Must be one of {SUPPORTED_CLIENTS.keys()}"
-            )
+        if self._llm:
+            with contextlib.suppress(Exception):
+                if not issubclass(self._llm, AbstractClient):
+                    raise ValueError(
+                        f"Invalid LLM Client: {self._llm}. Must be one of {SUPPORTED_CLIENTS.keys()}"
+                    )
         if self._llm_preset:
             try:
                 presetting = LLM_PRESETS[self._llm_preset]
@@ -152,7 +155,6 @@ class AbstractBot(DBInterface, ABC):
             # Default LLM Presetting by LLMs
             self._llm_temp = kwargs.get('temperature', 0.1)
             self._max_tokens = kwargs.get('max_tokens', 1024)
-
         # LLM Configuration:
         self._top_k = kwargs.get('top_k', 41)
         self._top_p = kwargs.get('top_p', 0.9)
@@ -547,6 +549,14 @@ class AbstractBot(DBInterface, ABC):
                 f"Error configuring LLM: {e}"
             )
             raise
+        # set Client tools:
+        # Workaround for tools assignment:
+        tools = {}
+        for tool in self.tools:
+            tool_name = tool.name
+            tools[tool_name] = tool
+        self._llm.tools = tools
+        print(' CLIENT TOOLS > ', self._llm.tools)
         # And define Prompt:
         try:
             self._define_prompt()

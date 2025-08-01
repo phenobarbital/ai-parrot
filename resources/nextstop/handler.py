@@ -50,7 +50,7 @@ class NextStopAgent(AgentHandler):
     It provides a framework for implementing specific agent functionalities.
     """
     agent_name: str = "NextStopAgent"
-    agent_id: str = "nextstop_agent"
+    agent_id: str = "nextstop"
     _agent_class: type = NextStop
     _agent_response = NextStopResponse
     _tools = StoreInfo().get_tools()
@@ -325,7 +325,7 @@ class NextStopAgent(AgentHandler):
         query = await self.open_prompt('for_employee.txt')
         question = query.format(employee_id=employee_id)
         try:
-            _, response, _ = await self.ask_agent(question)
+            _, response = await self.ask_agent(question)
         except Exception as e:
             print(f"Error invoking agent: {e}")
             raise RuntimeError(
@@ -343,7 +343,7 @@ class NextStopAgent(AgentHandler):
         )
         # Invoke the agent with the PDF generation prompt
         try:
-            response_data, response, _ = await self.ask_agent(for_pdf, employee_id=employee_id)
+            response_data, response = await self.ask_agent(for_pdf, employee_id=employee_id)
         except Exception as e:
             print(f"Error invoking agent: {e}")
             raise RuntimeError(
@@ -361,7 +361,7 @@ class NextStopAgent(AgentHandler):
             employee_name=employee_name
         )
         try:
-            _, response, _ = await self.ask_agent(question)
+            _, response = await self.ask_agent(question)
         except Exception as e:
             print(f"Error invoking agent: {e}")
             raise RuntimeError(
@@ -379,7 +379,7 @@ class NextStopAgent(AgentHandler):
         )
         # Invoke the agent with the PDF generation prompt
         try:
-            response_data, response, _ = await self.ask_agent(for_pdf)
+            response_data, response = await self.ask_agent(for_pdf)
         except Exception as e:
             print(f"Error invoking agent: {e}")
             raise RuntimeError(
@@ -396,7 +396,7 @@ class NextStopAgent(AgentHandler):
             project=project
         )
         try:
-            _, response, _ = await self.ask_agent(question)
+            _, response = await self.ask_agent(question)
         except Exception as e:
             print(f"Error invoking agent: {e}")
             raise RuntimeError(
@@ -412,7 +412,7 @@ class NextStopAgent(AgentHandler):
         )
         # Invoke the agent with the PDF generation prompt
         try:
-            response_data, response, _ = await self.ask_agent(for_pdf)
+            response_data, response = await self.ask_agent(for_pdf)
         except Exception as e:
             print(f"Error invoking agent: {e}")
             raise RuntimeError(
@@ -424,11 +424,13 @@ class NextStopAgent(AgentHandler):
     async def _query(self, query: str, **kwargs) -> NextStopResponse:
         """Generate a report for the NextStop agent."""
         try:
-            response_data, response, _ = await self.ask_agent(query)
+            response_data, response = await self.ask_agent(query)
         except Exception as e:
             print(f"Error invoking agent: {e}")
             raise RuntimeError(
                 f"Failed to generate report due to an error in the agent invocation: {e}"
             )
+        print('RESPONSE > ', response, type(response))
+        print('RESPONSE > ', response_data, type(response_data))
         response_data.output = response.output.strip()
         return response_data

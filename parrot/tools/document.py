@@ -455,7 +455,10 @@ class AbstractDocumentTool(AbstractTool):
             if isinstance(content, pd.DataFrame):
                 if content.empty:
                     raise ValueError("DataFrame content cannot be empty")
-            elif not content or not content.strip():
+            elif isinstance(content, str):
+                if not content.strip():
+                    raise ValueError("Content cannot be empty")
+            elif not content:
                 raise ValueError("Content cannot be empty")
 
             # 2. Ensure output directory exists
