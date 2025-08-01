@@ -52,6 +52,9 @@ dependencies = [
     "python-docx==1.1.2",
     "typing_extensions>=4.13.2,<=4.14.0",
     "navconfig[default]>=1.7.13",
+    "navigator-auth>=0.15.8",
+    "navigator-session>=0.6.5",
+    "navigator-api[uvloop,locale]>=2.13.5",
     "matplotlib==3.10.0",
     "seaborn==0.13.2",
     "pydub==0.25.1",
@@ -106,7 +109,10 @@ images = [
     "ffmpeg==1.4",
     "holoviews==1.21.0",
     "bokeh==3.7.3",
-    "pandas-bokeh==0.5.5"
+    "pandas-bokeh==0.5.5",
+    "plotly==5.22.0",
+    "ipywidgets==8.1.0",
+    "altair==5.5.0",
 ]
 
 vector = [
