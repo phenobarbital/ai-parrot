@@ -108,6 +108,7 @@ class BasicAgent(Chatbot):
                 )
             ]
         )
+        print('TOOLS > ', tools)
         return tools
 
     def set_response(self, response: AgentResponse):

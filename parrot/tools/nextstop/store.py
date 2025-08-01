@@ -144,7 +144,7 @@ class StoreInfo(AbstractToolkit):
         self.default_dsn = dsn or default_dsn
         self.program = program or 'navigator'
 
-    async def get_dataset(
+    async def ___get_dataset(
         self,
         query: str,
         output_format: str = 'pandas',
@@ -201,16 +201,8 @@ class StoreInfo(AbstractToolkit):
         output_format: str = "structured"
     ) -> Union[pd.DataFrame, List[FootTrafficData]]:
         """Get foot traffic data for a specific store.
-
         This method retrieves the foot traffic data for the specified store,
         including the number of visitors and average visits per day.
-
-        Args:
-            store_id: The unique identifier of the store
-            output_format: Output format - 'pandas' for DataFrame, 'structured' for Pydantic models
-
-        Returns:
-            Union[pd.DataFrame, List[FootTrafficData]]: Foot traffic data in requested format
         """
         sql = f"""
 SELECT store_id, start_date, avg_visits_per_day, foottraffic,
@@ -224,7 +216,7 @@ ORDER BY start_date DESC
 LIMIT 3;
         """
         try:
-            return await self.get_dataset(
+            return await self._get_dataset(
                 sql,
                 output_format=output_format,
                 structured_obj=FootTrafficData if output_format == "structured" else None
@@ -330,7 +322,7 @@ JOIN visit_stats vs USING(visitor_username)
 JOIN median_visits mv USING(visitor_username)
         """
         try:
-            return await self.get_dataset(
+            return await self._get_dataset(
                 sql,
                 output_format=output_format,
                 structured_obj=VisitInfo if output_format == "structured" else None
@@ -441,7 +433,7 @@ WHERE st.store_id = '{store_id}';
 
         # Fetch the store data
         try:
-            store_data = await self.get_dataset(sql, output_format='pandas')
+            store_data = await self._get_dataset(sql, output_format='pandas')
         except Exception as e:
             return f"Error fetching store information: {e}"
 
@@ -487,7 +479,7 @@ WHERE program_slug = '{self.program}'
 AND {where_clause}
         """
         try:
-            stores_data = await self.get_dataset(sql, output_format='pandas')
+            stores_data = await self._get_dataset(sql, output_format='pandas')
         except Exception as e:
             return f"Error searching for stores: {e}"
 
@@ -509,22 +501,22 @@ AND {where_clause}
 
         return stores
 
-    @tool_schema(DatasetQueryInput)
-    async def get_custom_dataset(
-        self,
-        query: str,
-        output_format: str = "pandas"
-    ) -> Union[pd.DataFrame, Dict[str, Any]]:
-        """Execute a custom SQL query and return the dataset.
+    # @tool_schema(DatasetQueryInput)
+    # async def get_custom_dataset(
+    #     self,
+    #     query: str,
+    #     output_format: str = "pandas"
+    # ) -> Union[pd.DataFrame, Dict[str, Any]]:
+    #     """Execute a custom SQL query and return the dataset.
 
-        Args:
-            query: SQL query to execute
-            output_format: Output format - 'pandas' for DataFrame, 'dict' for dictionary
+    #     Args:
+    #         query: SQL query to execute
+    #         output_format: Output format - 'pandas' for DataFrame, 'dict' for dictionary
 
-        Returns:
-            Union[pd.DataFrame, Dict]: Query results in requested format
-        """
-        try:
-            return await self.get_dataset(query, output_format=output_format)
-        except Exception as e:
-            return f"Error executing custom query: {str(e)}. Please check your SQL syntax and table names."
+    #     Returns:
+    #         Union[pd.DataFrame, Dict]: Query results in requested format
+    #     """
+    #     try:
+    #         return await self._get_dataset(query, output_format=output_format)
+    #     except Exception as e:
+    #         return f"Error executing custom query: {str(e)}. Please check your SQL syntax and table names."

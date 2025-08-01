@@ -252,6 +252,9 @@ class AgentHandler(BaseView):
                 service_name=f"{self.agent_name}_tasker"
             )
         # Startup and shutdown callbacks
+        app.on_startup.append(self.create_agent)
+
+        # Register Signals:
         if callable(self.on_startup):
             app.on_startup.append(self.on_startup)
         if callable(self.on_shutdown):
@@ -259,8 +262,10 @@ class AgentHandler(BaseView):
         if callable(self.on_cleanup):
             app.on_cleanup.append(self.on_cleanup)
 
-        # Create an Agent, will be overridden in subclasses
-        self._create_agent()
+    async def create_agent(self, app: web.Application):
+        self.logger.info("Starting up agent handler...")
+        # Initialize the agent
+        await self._create_agent()
 
     def db_connection(
         self,
@@ -770,6 +775,7 @@ class AgentHandler(BaseView):
                 name=self.agent_name,
                 tools=tools
             )
+            print('AGENT TOOLS > ', agent.tools)
             agent.set_response(self._agent_response)
             await agent.configure()
             # define the main agent:

@@ -1,4 +1,4 @@
-Using data returned by get_visit_info and get_store_info, Generate a detailed, comprehensive store visit performance report using the pre-calculated metrics.
+ Using data returned by get_visit_information and get_store_information, Generate a detailed, comprehensive store visit performance report using the pre-calculated metrics.
 
 ## 1. Basic Store Information
 - **Store ID:** store_id
@@ -32,19 +32,13 @@ Using data returned by get_visit_info and get_store_info, Generate a detailed, c
     - What specific actions or focus areas should be prioritized for your next visit to this location?.
     - what are your recommendations for improving Hisense's visibility and positioning?.
 
+Using data returned from `get_visit_questions` tool executes the following task:
+
 ## 4. Visit Performance Metrics
 Store ID: {store_id}
 
-You are given a JSON data where each object is **one visit**.
-
-### **IMPORTANT PRE-PROCESSING STEP**
-Each object in `visit_data` will have:
-  • column_name
-  • question
-  • answer
-
 ### Task
-For each of the four key questions (column_name: '9730', '9731', '9732', '9733'), extract and analyze the data.
+For each of the four key questions (column_name: '9730', '9731', '9732', '9733'), extract and analyze the data:
 - Question 9730 (Key Wins): Summarize positive outcomes and successes.
 - Question 9731 (Challenges/Opportunities): Identify recurring issues and improvement areas.
 - Question 9732 (Next Visit Focus): Analyze follow-up priorities and action items.
@@ -54,19 +48,19 @@ For each of the four key questions (column_name: '9730', '9731', '9732', '9733')
 1. Work **only** with the literal text inside each `answer`.
 2. A phrase, theme or issue is valid **only if that exact substring appears** in an answer.
 3. If none are found, output an empty list [].
-4. After each list item, add “(#row_index)” indicating the first visit row where it occurs.
+4. After each list item, add \"(#row_index)\" indicating the first visit row where it occurs.
 
 ### For each Question (9730, 9731, 9732, 9733) provide:
 • **Top Phrases:** up to 5 frequent key phrases present in `answer` (lower-cased, stemmed/lemmatized).
 • **Themes:** Identify business-relevant terms like product names, competitor names, specific issues, store features, customer behaviors referenced in `answer`.
 • **Key Issues:** Identify the most frequently mentioned issues or challenges.
-    * up to 5 issues/challenges ranked by frequency.
+  * up to 5 issues/challenges ranked by frequency.
 • **Sentiment Counts:** evaluate all `answer` for every VisitAnswer in `visit_data`
-    - Positive: X, Negative: Y, Neutral: Z
+  - Positive: X, Negative: Y, Neutral: Z
     *Positive > 0, Negative < 0, Neutral ≈ 0 (TextBlob polarity scale).*
-• **Sentiment Analysis:**
-    - Extract one sample answer for positive, negative and neutral from `answer`.
-• **"Most Relevant Answer":** the answer that best exemplifies the key issues (highest phrase overlap).
+• **Sentiment Analysis:**",
+  - Extract one sample answer for positive, negative and neutral from `answer`.
+• **\"Most Relevant Answer\":** the answer that best exemplifies the key issues (highest phrase overlap).
 • **Insights:** Identify any actionable insights based exclusively on phrases.
 
 **Do NOT** aggregate multiple questions together. **Do NOT** summarize across questions. **Do NOT** omit any of the seven bullets above.
@@ -85,7 +79,7 @@ For **each** question `column_name` produce:
 • **Sentiment Trend:** ↑ / ↓ / →  (based on net-positive – net-negative)
 • **New Issues:** issues appearing **only** in Visit_1
 • **Resolved Issues:** issues present earlier but **absent** in Visit_1
-• **Persisting Issues:** issues that appear in all three visits
+• **Persisting Issues:** issues that appear in all visits
 • **Notable Phrase Shifts:** any big change in Top Phrases frequency
 • **Overall Assessment:** “Better / Worse / No Material Change” with one-sentence rationale
 

@@ -14,9 +14,9 @@ from navigator_auth.decorators import (
     user_session
 )
 from navigator.responses import JSONResponse
-from parrot.handlers.agents.abstract import AbstractAgentHandler
+from parrot.bots.nextstop import NextStop
 from parrot.handlers.agents import AgentHandler
-from ._tools import StoreInfo
+from parrot.tools.nextstop import StoreInfo
 from .models import NextStopStore
 
 
@@ -51,6 +51,9 @@ class NextStopAgent(AgentHandler):
     """
     agent_name: str = "NextStopAgent"
     agent_id: str = "nextstop_agent"
+    _agent_class: type = NextStop
+    _agent_response = NextStopResponse
+    _tools = StoreInfo().get_tools()
     base_route: str = '/api/v1/agents/nextstop'
     additional_routes: dict = [
         {
@@ -69,31 +72,6 @@ class NextStopAgent(AgentHandler):
             "handler": "find_jobs"
         }
     ]
-    _backstory = """
-Users can find store information, such as store hours, locations, and services.
-The agent can also provide weather updates and perform basic Python code execution.
-It is designed to assist users in planning their visits to stores by providing relevant information.
-The agent can answer questions about store locations, hours of operation, and available services.
-It can also provide weather updates for the store's location, helping users plan their visits accordingly.
-The agent can execute Python code snippets to perform calculations or data processing tasks.
-        """
-    _model_response = NextStopResponse
-
-    def __init__(self, request=None, *args, **kwargs):
-        super().__init__(request, *args, **kwargs)
-        # Initialize the agent with a specific LLM and tools
-        self._tools = [
-            OpenWeather(request='weather'),
-            PythonREPLTool(
-                report_dir=BASE_DIR.joinpath('static', self.agent_name, 'documents')
-            ),
-            ExcelTool(
-                output_dir=BASE_DIR.joinpath('static', self.agent_name, 'documents')
-            ),
-            PowerPointGeneratorTool(
-                output_dir=BASE_DIR.joinpath('static', self.agent_name, 'documents')
-            )
-        ] + StoreInfo().get_tools()
 
     async def get_results(self, request: web.Request) -> web.Response:
         """Return the results of the agent."""
@@ -149,7 +127,7 @@ The agent can execute Python code snippets to perform calculations or data proce
         status = {"agent_name": self.agent_name, "status": "running"}
         return web.json_response(status)
 
-    @AbstractAgentHandler.service_auth
+    @AgentHandler.service_auth
     async def get(self) -> web.Response:
         """Handle GET requests."""
         pg = self.db_connection()
@@ -194,7 +172,7 @@ The agent can execute Python code snippets to perform calculations or data proce
                     status=400
                 )
 
-    @AbstractAgentHandler.service_auth
+    @AgentHandler.service_auth
     async def post(self) -> web.Response:
         """Handle POST requests."""
         data = await self.request.json()
@@ -332,29 +310,15 @@ The agent can execute Python code snippets to perform calculations or data proce
         query = await self.open_prompt('for_store.txt')
         question = query.format(store_id=store_id)
         try:
-            _, response, _ = await self.ask_agent(question)
+            response, message = await self.ask_agent(question)
         except Exception as e:
             print(f"Error invoking agent: {e}")
             raise RuntimeError(
                 f"Failed to generate report due to an error in the agent invocation: {e}"
             )
         final_report = response.output.strip()
-        # Use the joined report to generate a PDF and a Podcast:
-        query = await self.open_prompt('for_pdf.txt')
-        query = textwrap.dedent(query)
-        for_pdf = query.format(
-            final_report=final_report
-        )
-        # Invoke the agent with the PDF generation prompt
-        try:
-            response_data, response, _ = await self.ask_agent(for_pdf, store_id=store_id)
-        except Exception as e:
-            print(f"Error invoking agent: {e}")
-            raise RuntimeError(
-                f"Failed to generate report due to an error in the agent invocation: {e}"
-            )
-        response_data.output = final_report
-        return response_data
+        print(f"Final report generated: {final_report}")
+        return response
 
     async def _nextstop_employee(self, employee_id: str, **kwargs) -> NextStopResponse:
         """Generate a report for the NextStop agent."""
