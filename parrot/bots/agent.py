@@ -1,5 +1,5 @@
 import textwrap
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Any
 from datetime import datetime
 import aiofiles
 from navconfig import BASE_DIR
@@ -40,13 +40,13 @@ class BasicAgent(Chatbot):
             "name": "Lydia",
             "role": "interviewer",
             "characteristic": "Bright",
-            "gender": "Female"
+            "gender": "female"
         },
         "interviewee": {
             "name": "Brian",
             "role": "interviewee",
             "characteristic": "Informative",
-            "gender": "Male"
+            "gender": "male"
         }
     }
 
@@ -112,7 +112,6 @@ class BasicAgent(Chatbot):
                 )
             ]
         )
-        print('TOOLS > ', tools)
         return tools
 
     def set_response(self, response: AgentResponse):
@@ -140,7 +139,12 @@ class BasicAgent(Chatbot):
                 f"Failed to read prompt file {prompt_file}: {e}"
             )
 
-    async def generate_report(self, prompt_file: str, **kwargs) -> Tuple[AIMessage, AgentResponse]:
+    async def generate_report(
+        self,
+        prompt_file: str,
+        save: bool = False,
+        **kwargs
+    ) -> Tuple[AIMessage, AgentResponse]:
         """Generate a report based on the provided prompt."""
         try:
             query = await self.open_prompt(prompt_file)
@@ -156,15 +160,34 @@ class BasicAgent(Chatbot):
             )
             # Create the response object
             final_report = response.output.strip()
+            if not final_report:
+                raise ValueError("The generated report is empty.")
             response_data = self._agent_response(
                 session_id=response.turn_id,
-                agent_name=self.name,
                 data=final_report,
+                agent_name=self.name,
+                agent_id=self.agent_id,
+                response=response,
                 status="success",
                 created_at=datetime.now(),
                 output=response.output,
                 **kwargs
             )
+            # before returning, we can save the report if needed:
+            if save:
+                try:
+                    report_filename = self._create_filename(
+                        prefix='report', extension='txt'
+                    )
+                    async with aiofiles.open(
+                        BASE_DIR.joinpath('static', self.name, 'documents', report_filename),
+                        'w'
+                    ) as report_file:
+                        await report_file.write(final_report)
+                    response_data.document_path = report_filename
+                    self.logger.info(f"Report saved as {report_filename}")
+                except Exception as e:
+                    self.logger.error(f"Error saving report: {e}")
             return response, response_data
         except Exception as e:
             self.logger.error(f"Error generating report: {e}")
@@ -174,7 +197,8 @@ class BasicAgent(Chatbot):
         """Generate a report based on the provided prompt."""
         # Create a unique filename for the report
         pdf_tool = PDFPrintTool(
-            templates_dir=BASE_DIR / 'templates'
+            templates_dir=BASE_DIR.joinpath('templates'),
+            output_dir=BASE_DIR.joinpath('static', self.name, 'documents')
         )
         result = await pdf_tool.execute(
             text=prompt,
@@ -183,7 +207,7 @@ class BasicAgent(Chatbot):
         )
         return result
 
-    async def speech_report(self, report: str, max_lines: int = 15, **kwargs):
+    async def speech_report(self, report: str, max_lines: int = 15, **kwargs) -> Dict[str, Any]:
         """Generate a PDF Report and a Podcast based on findings."""
         output_directory = BASE_DIR.joinpath('static', self.name, 'generated_scripts')
         output_directory.mkdir(parents=True, exist_ok=True)
@@ -191,6 +215,7 @@ class BasicAgent(Chatbot):
         # creation of speakers:
         speakers = []
         for _, speaker in self.speakers.items():
+            speaker['gender'] = speaker.get('gender', 'neutral').lower()
             speakers.append(FictionalSpeaker(**speaker))
         # 1. Define the script configuration
         script_config = ConversationalScriptConfig(

@@ -457,26 +457,77 @@ class AgentResponse(BaseModel):
     """
     AgentResponse is a model that defines the structure of the response for Any Parrot agent.
     """
-    session_id: Optional[str] = Field(description="Unique identifier for the session")
-    user_id: Optional[str] = Field(description="Unique identifier for the user")
-    agent_name: str = Field(required=False, description="Name of the agent that processed the request")
-    data: str = Field(..., description="Data returned by the agent")
+    session_id: Optional[str] = Field(
+        default=None,
+        description="Unique identifier for the session"
+    )
+    user_id: Optional[str] = Field(
+        default=None,
+        description="Unique identifier for the user"
+    )
+    agent_id: Optional[str] = Field(
+        default=None,
+        description="Unique identifier for the agent that processed the request"
+    )
+    agent_name: Optional[str] = Field(
+        default="Agentic",
+        description="Name of the agent that processed the request"
+    )
     status: str = Field(default="success", description="Status of the response")
-    output: Any = Field(required=False, description="Output of the agent's processing")
-    attributes: Dict[str, str] = Field(default_factory=dict, description="Attributes associated with the response")
-    created_at: datetime = Field(default=datetime.now)
-    transcript: str = Field(default=None, description="Transcript of the conversation with the agent")
-    script_path: str = Field(
-        required=False,
-        description="Path to the conversational script associated with the session"
+    response: Optional[AIMessage] = Field(
+        ...,
+        description="Response returned by the agent"
     )
-    podcast_path: str = Field(required=False, description="Path to the podcast associated with the session")
-    pdf_path: str = Field(required=False, description="Path to the PDF associated with the session")
-    document_path: str = Field(
-        required=False,
-        description="Path to any document generated during session"
+    data: Optional[str] = Field(
+        default=None,
+        description="Data returned by the agent, can be text, JSON, etc."
     )
-    documents: List[str] = Field(
-        default_factory=list,
-        description="List of documents generated during the session"
+    # Optional output field for structured data
+    output: Optional[Any] = Field(
+        default=None,
+        description="Output of the agent's processing"
     )
+    attributes: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Attributes associated with the response"
+    )
+    # Timestamp
+    created_at: datetime = Field(
+        default_factory=datetime.now, description="Timestamp when response was created"
+    )
+    # Optional file paths
+    transcript: Optional[str] = Field(
+        default=None, description="Transcript of the conversation with the agent"
+    )
+    script_path: Optional[str] = Field(
+        default=None, description="Path to the conversational script associated with the session"
+    )
+    podcast_path: Optional[str] = Field(
+        default=None, description="Path to the podcast associated with the session"
+    )
+    pdf_path: Optional[str] = Field(
+        default=None, description="Path to the PDF associated with the session"
+    )
+    document_path: Optional[str] = Field(
+        default=None, description="Path to any document generated during session"
+    )
+    images: List[Path] = Field(
+        default_factory=list, description="List of image file paths generated during the session"
+    )
+    # complete list of generated files:
+    files: List[str] = Field(
+        default_factory=list, description="List of documents generated during the session")
+    turn_id: Optional[str] = Field(
+        default=None, description="Unique identifier for the conversation turn"
+    )
+
+    class Config:
+        """Pydantic configuration for AgentResponse."""
+        # Allow arbitrary types for output field (pandas DataFrames, etc.)
+        arbitrary_types_allowed = True
+        # Allow extra fields if needed
+        extra = "allow"
+        # Use enum values
+        use_enum_values = True
+        # Validate assignment
+        validate_assignment = True

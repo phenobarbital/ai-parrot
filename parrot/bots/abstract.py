@@ -556,7 +556,6 @@ class AbstractBot(DBInterface, ABC):
             tool_name = tool.name
             tools[tool_name] = tool
         self._llm.tools = tools
-        print(' CLIENT TOOLS > ', self._llm.tools)
         # And define Prompt:
         try:
             self._define_prompt()

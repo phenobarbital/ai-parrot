@@ -1,19 +1,20 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>{{ title }}</title>
+    <meta charset="UTF-8">
+    <title>{{ title | default('Document') }}</title>
 </head>
 <body>
-    <h1>{{ title }}</h1>
-    <p><strong>Author:</strong> {{ author }}</p>
-    <p><strong>Date:</strong> {{ date }}</p>
+    <h1>{{ title | default('Document') }}</h1>
+    {% if author %}<p><strong>Author:</strong> {{ author }}</p>{% endif %}
+    {% if date %}<p><strong>Date:</strong> {{ date }}</p>{% endif %}
 
     <div class="content">
         {{ content | safe }}
     </div>
 
     <footer>
-        <p>Generated on {{ timestamp }}</p>
+        <p>Generated on {{ generated_date | default(timestamp) }}</p>
     </footer>
 </body>
 </html>
