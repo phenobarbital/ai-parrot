@@ -396,6 +396,7 @@ class AbstractBot(DBInterface, ABC):
         # Register tools directly on client (like your working examples)
         if self.tools:
             for tool in self.tool_manager.get_tools():
+                print('TOOL > ', tool, type(tool))
                 self._llm.register_tool(tool)
 
     def define_store(
