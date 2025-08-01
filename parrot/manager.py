@@ -13,11 +13,10 @@ from asyncdb.exceptions import NoDataFound
 from .bots.abstract import AbstractBot
 from .bots.basic import BasicBot
 from .bots.chatbot import Chatbot
-from .bots.data import PandasAgent
+from .bots.agent import BasicAgent
 from .handlers.chat import ChatHandler, BotHandler
-from .handlers.agents import AgentManager
 from .handlers import ChatbotHandler
-from .models import ChatbotModel, AgentModel
+from .handlers.models import BotModel
 
 
 class BotManager:
@@ -32,7 +31,6 @@ class BotManager:
     def __init__(self) -> None:
         self.app = None
         self._bots: Dict[str, AbstractBot] = {}
-        self._agents: Dict[str, AbstractBot] = {}
         self.logger = logging.getLogger(
             name='Parrot.Manager'
         )
@@ -55,139 +53,172 @@ class BotManager:
             )
 
     async def load_bots(self, app: web.Application) -> None:
-        """Load all chatbots from DB."""
-        self.logger.info("Loading chatbots from DB...")
+        """Load all bots from DB using the new unified BotModel."""
+        self.logger.info("Loading bots from DB...")
         db = app['database']
         async with await db.acquire() as conn:
-            ChatbotModel.Meta.connection = conn
+            BotModel.Meta.connection = conn
             try:
-                bots = await ChatbotModel.filter(enabled=True)
+                bots = await BotModel.filter(enabled=True)
             except Exception as e:
                 self.logger.error(
-                    f"Failed to load chatbots from DB: {e}"
+                    f"Failed to load bots from DB: {e}"
                 )
                 return
-            for bot in bots:
-                if bot.bot_type == 'chatbot':
-                    self.logger.notice(
-                        f"Loading chatbot '{bot.name}'..."
-                    )
-                    cls_name = bot.bot_class
-                    if cls_name is None:
-                        class_name = Chatbot
+
+            for bot_model in bots:
+                self.logger.notice(
+                    f"Loading bot '{bot_model.name}' (mode: {bot_model.operation_mode})..."
+                )
+
+                try:
+                    # Use the factory function from models.py or create bot directly
+                    if hasattr(self, 'get_bot_class') and hasattr(bot_model, 'bot_class'):
+                        # If you have a bot_class field and get_bot_class method
+                        class_name = self.get_bot_class(getattr(bot_model, 'bot_class', None))
                     else:
-                        class_name = self.get_bot_class(cls_name)
+                        # Default to BasicBot or your default bot class
+                        class_name = BasicBot
+
+                    # Create bot using the model's configuration
+                    # bot_config = bot_model.to_bot_config()
+
+                    # Initialize the bot with the configuration
                     chatbot = class_name(
-                        chatbot_id=bot.chatbot_id,
-                        name=bot.name,
-                        description=bot.description,
-                        use_llm=bot.llm,
-                        model_name=bot.model_name,
-                        model_config=bot.model_config,
-                        embedding_model=bot.embedding_model,
-                        use_vectorstore=bot.vector_store,
-                        vector_store=bot.database,
-                        config_file=bot.config_file,
-                        role=bot.role,
-                        goal=bot.goal,
-                        backstory=bot.backstory,
-                        rationale=bot.rationale,
-                        pre_instructions=bot.pre_instructions,
-                        company_information=bot.company_information,
-                        vector_info=bot.database,
-                        metric_type=bot.database.get('metric_type', 'COSINE'),
-                        permissions=bot.permissions,
-                        attributes=bot.attributes,
+                        chatbot_id=bot_model.chatbot_id,
+                        name=bot_model.name,
+                        description=bot_model.description,
+                        # LLM configuration
+                        use_llm=bot_model.llm,
+                        model_name=bot_model.model_name,
+                        model_config=bot_model.model_config,
+                        temperature=bot_model.temperature,
+                        max_tokens=bot_model.max_tokens,
+                        top_k=bot_model.top_k,
+                        top_p=bot_model.top_p,
+                        # Bot personality
+                        role=bot_model.role,
+                        goal=bot_model.goal,
+                        backstory=bot_model.backstory,
+                        rationale=bot_model.rationale,
+                        capabilities=bot_model.capabilities,
+                        # Prompt configuration
+                        system_prompt=bot_model.system_prompt_template,
+                        human_prompt=bot_model.human_prompt_template,
+                        pre_instructions=bot_model.pre_instructions,
+                        # Vector store configuration
+                        embedding_model=bot_model.embedding_model,
+                        use_vectorstore=bot_model.use_vector,
+                        vector_store_config=bot_model.vector_store_config,
+                        context_search_limit=bot_model.context_search_limit,
+                        context_score_threshold=bot_model.context_score_threshold,
+                        # Tool and agent configuration
+                        tools_enabled=bot_model.tools_enabled,
+                        auto_tool_detection=bot_model.auto_tool_detection,
+                        tool_threshold=bot_model.tool_threshold,
+                        available_tools=bot_model.tools,
+                        operation_mode=bot_model.operation_mode,
+                        # Memory configuration
+                        memory_type=bot_model.memory_type,
+                        memory_config=bot_model.memory_config,
+                        max_context_turns=bot_model.max_context_turns,
+                        use_conversation_history=bot_model.use_conversation_history,
+                        # Security and permissions
+                        permissions=bot_model.permissions,
+                        # Metadata
+                        language=bot_model.language,
+                        disclaimer=bot_model.disclaimer,
                     )
+
+                    # Set the model ID reference
+                    chatbot.model_id = bot_model.chatbot_id
+
+                    # Configure the bot
                     try:
-                        await chatbot.configure(
-                            app=app
+                        await chatbot.configure(app=app)
+                        self.add_bot(chatbot)
+                        self.logger.info(
+                            f"Successfully loaded bot '{bot_model.name}' "
+                            f"with {len(bot_model.tools) if bot_model.tools else 0} tools"
                         )
                     except ValidationError as e:
                         self.logger.error(
-                            f"Invalid configuration for chatbot '{chatbot.name}': {e}"
+                            f"Invalid configuration for bot '{bot_model.name}': {e}"
                         )
                     except Exception as e:
                         self.logger.error(
-                            f"Failed to configure Bot '{chatbot.name}': {e}"
+                            f"Failed to configure bot '{bot_model.name}': {e}"
                         )
-                elif bot.bot_type == 'agent':
-                    self.logger.notice(
-                        f"Unsupported kind of Agent '{bot.name}'..."
-                    )
-                    chatbot = None
-                if chatbot:
-                    self.add_bot(chatbot)
-        self.logger.info(
-            ":: Chatbots loaded successfully."
-        )
 
-    async def load_agents(self, app: web.Application) -> None:
-        """Load all Agents from DB."""
-        self.logger.info("Loading Agents from DB...")
-        db = app['database']
-        async with await db.acquire() as conn:
-            AgentModel.Meta.connection = conn
-            try:
-                agents = await AgentModel.filter(enabled=True)
-            except Exception as e:
-                self.logger.error(
-                    f"Failed to load Agents from DB: {e}"
-                )
-                return
-            for agent in agents:
-                cls_name = agent.agent_class
-                if cls_name is None:
-                    class_name = PandasAgent
-                else:
-                    class_name = self.get_bot_class(cls_name)
-                # Get the queries before agent creation.
-                try:
-                    queries = await class_name.gen_data(
-                        query=agent.query,
-                        agent_name=agent.chatbot_id,
-                        refresh=False
-                    )
-                except ValueError as e:
-                    self.logger.error(
-                        f"Failed to load queries for Agent '{agent.name}': {e}"
-                    )
-                    continue
-                # then, create the Agent:
-                try:
-                    chatbot = class_name(
-                        chatbot_id=agent.chatbot_id,
-                        name=agent.name,
-                        df=queries,
-                        query=agent.query,
-                        description=agent.description,
-                        use_llm=agent.use_llm,
-                        model_name=agent.model_name,
-                        model_config=agent.model_config,
-                        temperature=agent.temperature,
-                        tools=agent.tools,
-                        role=agent.role,
-                        goal=agent.goal,
-                        backstory=agent.backstory,
-                        rationale=agent.rationale,
-                        permissions=agent.permissions,
-                        attributes=agent.attributes,
-                        capabilities=agent.capabilities,
-                    )
                 except Exception as e:
                     self.logger.error(
-                        f"Failed to configure Agent '{agent.name}': {e}"
+                        f"Failed to create bot instance for '{bot_model.name}': {e}"
                     )
-                if chatbot:
-                    await chatbot.configure(
-                        app=app
-                    )
-                    self.add_agent(chatbot)
-                    self.logger.notice(
-                        f"Loaded Agent '{agent.name}'..."
-                    )
+                    continue
+
         self.logger.info(
-            ":: IA Agents were loaded successfully."
+            f":: Bots loaded successfully. Total active bots: {len(self._bots)}"
+        )
+
+
+    # Alternative approach using the factory function from models.py
+    async def load_bots_with_factory(self, app: web.Application) -> None:
+        """Load all bots from DB using the factory function."""
+        self.logger.info("Loading bots from DB...")
+        db = app['database']
+        async with await db.acquire() as conn:
+            BotModel.Meta.connection = conn
+            try:
+                bot_models = await BotModel.filter(enabled=True)
+            except Exception as e:
+                self.logger.error(
+                    f"Failed to load bots from DB: {e}"
+                )
+                return
+
+            for bot_model in bot_models:
+                self.logger.notice(
+                    f"Loading bot '{bot_model.name}' (mode: {bot_model.operation_mode})..."
+                )
+
+                try:
+                    # Use the factory function from models.py
+                    # Determine bot class if you have custom classes
+                    bot_class = None
+                    if hasattr(self, 'get_bot_class') and hasattr(bot_model, 'bot_class'):
+                        bot_class = self.get_bot_class(getattr(bot_model, 'bot_class', None))
+                    else:
+                        # Default to BasicBot or your default bot class
+                        bot_class = BasicBot
+
+                    # Create bot using factory function
+                    chatbot = bot_class(bot_model, bot_class)
+
+                    # Configure the bot
+                    try:
+                        await chatbot.configure(app=app)
+                        self.add_bot(chatbot)
+                        self.logger.info(
+                            f"Successfully loaded bot '{bot_model.name}' "
+                            f"with {len(bot_model.tools) if bot_model.tools else 0} tools"
+                        )
+                    except ValidationError as e:
+                        self.logger.error(
+                            f"Invalid configuration for bot '{bot_model.name}': {e}"
+                        )
+                    except Exception as e:
+                        self.logger.error(
+                            f"Failed to configure bot '{bot_model.name}': {e}"
+                        )
+
+                except Exception as e:
+                    self.logger.error(
+                        f"Failed to create bot instance for '{bot_model.name}': {e}"
+                    )
+                    continue
+
+        self.logger.info(
+            f":: Bots loaded successfully. Total active bots: {len(self._bots)}"
         )
 
     def create_bot(self, class_name: Any = None, name: str = None, **kwargs) -> AbstractBot:
@@ -229,7 +260,7 @@ class BotManager:
 
     async def create_agent(self, class_name: Any = None, name: str = None, **kwargs) -> AbstractBot:
         if class_name is None:
-            class_name = PandasAgent
+            class_name = BasicAgent
         agent = class_name(name=name, **kwargs)
         self.add_agent(agent)
         if 'llm' in kwargs:
@@ -244,46 +275,46 @@ class BotManager:
 
     def add_agent(self, agent: AbstractBot) -> None:
         """Add a Agent to the manager."""
-        self._agents[str(agent.chatbot_id)] = agent
+        self._bots[str(agent.chatbot_id)] = agent
 
     def get_agent(self, name: str) -> AbstractBot:
         """Get a Agent by ID."""
-        return self._agents.get(name)
+        return self._bots.get(name)
 
     def remove_agent(self, agent: AbstractBot) -> None:
         """Remove a Bot by name."""
-        del self._agents[str(agent.chatbot_id)]
+        del self._bots[str(agent.chatbot_id)]
 
     async def save_agent(self, name: str, **kwargs) -> None:
         """Save a Agent to the DB."""
         self.logger.info(f"Saving Agent {name} into DB ...")
         db = self.app['database']
         async with await db.acquire() as conn:
-            AgentModel.Meta.connection = conn
+            BotModel.Meta.connection = conn
             try:
                 try:
-                    agent = await AgentModel.get(name=name)
+                    bot = await BotModel.get(name=name)
                 except NoDataFound:
-                    agent = None
-                if agent:
-                    self.logger.info(f"Agent {name} already exists.")
+                    bot = None
+                if bot:
+                    self.logger.info(f"Bot {name} already exists.")
                     for key, val in kwargs.items():
-                        agent.set(key, val)
-                    await agent.update()
-                    self.logger.info(f"Agent {name} updated.")
+                        bot.set(key, val)
+                    await bot.update()
+                    self.logger.info(f"Bot {name} updated.")
                 else:
-                    self.logger.info(f"Agent {name} not found. Creating new one.")
-                    # Create a new Agent
-                    new_agent = AgentModel(
+                    self.logger.info(f"Bot {name} not found. Creating new one.")
+                    # Create a new Bot
+                    new_bot = BotModel(
                         name=name,
                         **kwargs
                     )
-                    await new_agent.insert()
-                self.logger.info(f"Agent {name} saved into DB.")
+                    await new_bot.insert()
+                self.logger.info(f"Bot {name} saved into DB.")
                 return True
             except Exception as e:
                 self.logger.error(
-                    f"Failed to Create new Agent {name} from DB: {e}"
+                    f"Failed to Create new Bot {name} from DB: {e}"
                 )
                 return None
 
@@ -314,15 +345,6 @@ class BotManager:
             '/api/v1/chat/{chatbot_name}',
             ChatHandler
         )
-        # Agent Handler:
-        router.add_view(
-            '/api/v1/agent',
-            AgentManager
-        )
-        router.add_view(
-            '/api/v1/agent/{agent_name}',
-            AgentManager
-        )
         # ChatBot Manager
         ChatbotHandler.configure(self.app, '/api/v1/bots')
         # Bot Handler
@@ -340,8 +362,6 @@ class BotManager:
         """On startup."""
         # configure all pre-configured chatbots:
         await self.load_bots(app)
-        # configure all pre-configured agents:
-        await self.load_agents(app)
 
     async def on_shutdown(self, app: web.Application) -> None:
         """On shutdown."""

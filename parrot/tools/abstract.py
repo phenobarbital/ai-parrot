@@ -1,230 +1,247 @@
-from typing import Optional, Dict, List, Any, Type, Union
+"""
+Abstract Tool base class and MathTool implementation.
+"""
+from typing import Dict, Any, Union, Optional, Type
 from abc import ABC, abstractmethod
+from pathlib import Path
 from datetime import datetime
-from urllib.parse import urlparse, urlunparse
 import traceback
 import asyncio
-import inspect
-from pathlib import Path
+import logging
+from urllib.parse import urlparse, urlunparse
 from pydantic import BaseModel, Field
-from langchain_core.callbacks import CallbackManagerForToolRun
-from langchain_core.tools import BaseTool, BaseToolkit, StructuredTool
+from datamodel.parsers.json import json_decoder, json_encoder  # noqa  pylint: disable=E0611
 from navconfig import BASE_DIR
 from navconfig.logging import logging
-from datamodel.parsers.json import json_decoder, json_encoder  # noqa  pylint: disable=E0611
 from ..conf import BASE_STATIC_URL, STATIC_DIR
 
 
-logging.getLogger(name='cookie_store').setLevel(logging.INFO)
-logging.getLogger(name='httpx').setLevel(logging.INFO)
-logging.getLogger(name='httpcore').setLevel(logging.WARNING)
-logging.getLogger(name='primp').setLevel(logging.WARNING)
+logging.getLogger(name='matplotlib').setLevel(logging.INFO)
+logging.getLogger(name='h5py').setLevel(logging.INFO)
+logging.getLogger(name='datasets').setLevel(logging.WARNING)
+logging.getLogger(name='numexpr').setLevel(logging.WARNING)
 
 
 class AbstractToolArgsSchema(BaseModel):
-    """Schema for the arguments to the AbstractTool."""
-
-    # This Field allows any number of arguments to be passed in.
-    args: list = Field(description="A list of arguments to the tool")
+    """Base schema for tool arguments."""
+    pass
 
 
-class AbstractTool(BaseTool, ABC):
+class ToolResult(BaseModel):
+    """Standardized tool result format."""
+    status: str = Field(default="success", description="Status of the operation")
+    result: Any = Field(description="The actual result of the tool operation")
+    error: Optional[str] = Field(default=None, description="Error message if any")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
+    timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
+
+
+class AbstractTool(ABC):
     """
-    Abstract base class for all generator tools (PDF, PPT, Podcast, etc.).
-    Provides common functionality like file path management and URL generation.
+    Abstract base class for all tools in the ai-parrot framework.
+
+    This class provides a unified interface for tools that can be used by both
+    conversational bots and agents. It includes common functionality like:
+    - Name and description management
+    - JSON schema generation
+    - File path management
+    - Logging and error handling
+    - Async/sync execution support
     """
 
+    # Class attributes that should be set by subclasses
+    name: str = None
+    description: str = None
     args_schema: Type[BaseModel] = AbstractToolArgsSchema
-    _json_encoder: Type[Any] = json_encoder
-    _json_decoder: Type[Any] = json_decoder
-
-    class Config:
-        """Configuration for this pydantic object."""
-        arbitrary_types_allowed = True
+    return_direct: bool = False
 
     def __init__(
         self,
-        *args,
-        **kwargs
-    ):
-        super().__init__(*args, **kwargs)
-        self.name = kwargs.pop('name', self.__class__.__name__)
-        self.logger = logging.getLogger(
-            f'{self.name}.Tool'
-        )
-
-    @abstractmethod
-    def _search(self, query: str) -> str:
-        """Run the tool."""
-
-    async def _asearch(self, *args, **kwargs):
-        """Run the tool asynchronously."""
-        return self._search(*args, **kwargs)
-
-    def _run(
-        self,
-        query: str,
-        run_manager: Optional[CallbackManagerForToolRun] = None
-    ) -> Dict[str, Any]:
-        args = [a.strip() for a in query.split(',')]
-        try:
-            return self._search(*args)
-        except Exception as e:
-            raise ValueError(f"Error running tool: {e}") from e
-
-    async def _arun(
-        self,
-        query: str,
-        run_manager: Optional[CallbackManagerForToolRun] = None
-    ) -> Dict[str, Any]:
-        """Use the tool asynchronously."""
-        args = [a.strip() for a in query.split(',')]
-        try:
-            return await self._asearch(*args)
-        except Exception as e:
-            raise ValueError(f"Error running tool: {e}") from e
-
-
-class AbstractToolkit(BaseToolkit):
-    """
-    A “drop-in” base class for all toolkits.  Any concrete subclass:
-        1. must define a class variable `input_class = <SomePydanticModel>`
-            (used as `args_schema` for every tool).
-        2. may add any number of `async def <public_method>(…)` methods.
-        3. will automatically have `get_tools()` implemented for you.
-    """
-    input_class: Type[BaseModel] = None
-    tool_list: Dict[str, BaseTool] = {}
-    model_config = {
-        "arbitrary_types_allowed": True
-    }
-    json_encoder: Type[Any] = json_encoder  # Type for JSON encoder, if needed
-    json_decoder: Type[Any] = json_decoder  # Type for JSON decoder, if needed
-    base_url: str = BASE_STATIC_URL  # Base URL for static files
-    return_direct: bool = True  # Whether to return raw output directly
-
-    def get_tools(self) -> list[BaseTool]:
-        """
-        Inspect every public `async def` on the subclass, and convert it into
-        a StructuredTool.  Returns a list of StructuredTool instances.
-        """
-        tools: List[BaseTool] = []
-        # 1) Walk through all coroutine functions defined on this subclass
-        for name, func in inspect.getmembers(self, predicate=inspect.iscoroutinefunction):
-            # 2) Skip any “private” or dunder methods:
-            if name.startswith("_"):
-                continue
-
-            # 3) Skip the get_tools method itself
-            if name in ("get_tools", "get_tool"):
-                continue
-
-            # 4) Build a StructuredTool for this method
-            #    We will bind the method to an instance when the agent actually runs,
-            #    but for now we just register its definition.
-            tool = self._return_structured_tool(func_name=name, method=func)
-            tools.append(
-                tool
-            )
-            self.tool_list[name] = tool
-
-        return tools
-
-    def get_tool(self, name: str) -> Optional[BaseTool]:
-        """Get a tool by name."""
-        if name in self.tool_list:  # Check the cached tool list first
-            return self.tool_list[name]
-        for tool in self.get_tools():
-            if tool.name == name:
-                return tool
-        return None
-
-    def _return_structured_tool(self, func_name: str, method) -> StructuredTool:
-        """
-        Given the name of the coroutine (func_name) and its function object,
-        produce a StructuredTool that wraps it.
-
-        Assumptions:
-        - The subclass defines `input_class` as a valid Pydantic `BaseModel`.
-        - We take the docstring from `method.__doc__` as the tool’s description.
-        """
-        if not hasattr(self, "input_class"):
-            raise AttributeError(f"{self.__name__} must define `input_class = <SomePydanticModel>`")
-
-        args_schema = getattr(method, "_arg_schema", getattr(self, "input_class"))
-        # Extract docstring (or use empty string if none)
-        description = method.__doc__ or ""
-
-        # name the tool exactly the same as the method’s name:
-        return StructuredTool.from_function(
-            name=func_name,
-            func=method,         # the coroutine function itself
-            coroutine=method,     # same as func, because it’s async
-            description=description.strip(),
-            args_schema=args_schema,
-            return_direct=self.return_direct,   # instruct LangChain to hand the raw return back to the agent
-            handle_tool_error=True,
-        )
-
-
-class BaseAbstractTool(BaseTool, ABC):
-    """
-    Abstract base class for all generator tools (PDF, PPT, Podcast, etc.).
-    Provides common functionality like file path management and URL generation.
-    """
-
-    args_schema: Type[BaseModel] = AbstractToolArgsSchema
-    _json_encoder: Type[Any] = json_encoder
-    _json_decoder: Type[Any] = json_decoder
-    static_dir: Path = None
-    base_url: str = BASE_STATIC_URL
-    _base_scheme_netloc: tuple = None
-    output_dir: Optional[Path] = None
-    logger: logging.Logger = None
-
-    class Config:
-        """Configuration for this pydantic object."""
-        arbitrary_types_allowed = True
-
-    def __init__(
-        self,
-        *args,
+        name: Optional[str] = None,
+        description: Optional[str] = None,
         output_dir: Optional[Union[str, Path]] = None,
         base_url: Optional[str] = None,
+        static_dir: Optional[Union[str, Path]] = None,
         **kwargs
     ):
-        super().__init__(*args, **kwargs)
-        self.name = kwargs.pop('name', self.__class__.__name__)
+        """
+        Initialize the tool.
+
+        Args:
+            name: Tool name (defaults to class name)
+            description: Tool description
+            output_dir: Directory for output files (if tool generates files)
+            base_url: Base URL for serving static files
+            static_dir: Static directory path
+            **kwargs: Additional configuration
+        """
+        # Set name and description
+        self.name = name or self.__class__.__name__
+        self.description = description or self.__class__.__doc__ or f"Tool: {self.name}"
+
+        # Set up logging
         self.logger = logging.getLogger(
             f'{self.name}.Tool'
         )
-        # Set up output directory
-        if output_dir:
-            self.output_dir = Path(output_dir).resolve()
-        else:
-            self.output_dir = self._default_output_dir()
-        # Ensure output directory exists
-        if not self.output_dir.exists():
-            self.output_dir.mkdir(parents=True, exist_ok=True)
-        # Configure base URL if provided
+
+        # JSON encoders/decoders
+        self._json_encoder = json_encoder
+        self._json_decoder = json_decoder
+
+        # File and URL configuration
         self.base_url = base_url or BASE_STATIC_URL
-        parsed = urlparse(self.base_url)
+        self.static_url = base_url or BASE_STATIC_URL
+        parsed = urlparse(self.static_url)
         self._base_scheme_netloc = (parsed.scheme, parsed.netloc)
-        # set static directory
-        self.static_dir = kwargs.get('static_dir', STATIC_DIR)
-        if isinstance(self.static_dir, str):
-            self.static_dir = Path(self.static_dir).resolve()
 
-    @abstractmethod
-    def _default_output_dir(self) -> Path:
+        # Set up directories
+        self.static_dir = Path(static_dir or STATIC_DIR).resolve()
+
+        self.output_dir = Path(output_dir).resolve() if output_dir else self._default_output_dir()
+
+        # Ensure output directory exists if specified
+        if self.output_dir and not self.output_dir.exists():
+            self.output_dir.mkdir(parents=True, exist_ok=True)
+
+    def _default_output_dir(self) -> Optional[Path]:
         """Get the default output directory for this tool type."""
-        pass
+        # Default implementation - tools that don't need output can return None
+        return None
 
     @abstractmethod
-    async def _generate_content(self, payload: BaseModel) -> Dict[str, Any]:
-        """Main content generation method - must be implemented by subclasses."""
+    async def _execute(self, **kwargs) -> Any:
+        """
+        Execute the tool with the given arguments.
+        This is the main method that subclasses must implement.
+
+        Args:
+            **kwargs: Tool arguments
+
+        Returns:
+            Tool execution result
+        """
         pass
 
+    def get_tool_schema(self) -> Dict[str, Any]:
+        """
+        Get the JSON schema for this tool.
+
+        Returns:
+            JSON schema dictionary compatible with LLM tool registration
+        """
+        schema = {
+            "name": self.name,
+            "description": self.description,
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": False
+            }
+        }
+
+        # If args_schema is defined, use it to build the parameters
+        if self.args_schema and self.args_schema != AbstractToolArgsSchema:
+            pydantic_schema = self.args_schema.model_json_schema()
+            schema["parameters"] = {
+                "type": "object",
+                "properties": pydantic_schema.get("properties", {}),
+                "required": pydantic_schema.get("required", []),
+                "additionalProperties": False
+            }
+
+        return schema
+
+    def validate_args(self, **kwargs) -> BaseModel:
+        """
+        Validate arguments using the tool's schema.
+
+        Args:
+            **kwargs: Arguments to validate
+
+        Returns:
+            Validated arguments as Pydantic model instance
+        """
+        if self.args_schema and self.args_schema != AbstractToolArgsSchema:
+            return self.args_schema(**kwargs)
+        else:
+            # If no schema is defined, return a basic model with the kwargs
+            return AbstractToolArgsSchema()
+
+    async def execute(self, *args, **kwargs) -> ToolResult:
+        """
+        Execute the tool with error handling and result standardization.
+
+        Args:
+            **kwargs: Tool arguments
+
+        Returns:
+            Standardized ToolResult
+        """
+        try:
+            self.logger.info(f"Executing tool: {self.name}")
+
+            # Validate arguments
+            validated_args = self.validate_args(**kwargs)
+
+            # Execute the tool
+            if hasattr(validated_args, 'model_dump'):
+                result = await self._execute(*args, **validated_args.model_dump())
+            else:
+                result = await self._execute(*args, **kwargs)
+
+            self.logger.info(f"Tool {self.name} executed successfully")
+
+            return ToolResult(
+                status="success",
+                result=result,
+                metadata={
+                    "tool_name": self.name,
+                    "execution_time": datetime.now().isoformat()
+                }
+            )
+
+        except Exception as e:
+            error_msg = f"Error in {self.name}: {str(e)}"
+            self.logger.error(error_msg)
+            self.logger.error(traceback.format_exc())
+
+            return ToolResult(
+                status="error",
+                result=None,
+                error=error_msg,
+                metadata={
+                    "tool_name": self.name,
+                    "error_type": type(e).__name__
+                }
+            )
+
+    def execute_sync(self, **kwargs) -> ToolResult:
+        """
+        Synchronous wrapper for execute method.
+
+        Args:
+            **kwargs: Tool arguments
+
+        Returns:
+            ToolResult
+        """
+        try:
+            loop = asyncio.get_running_loop()
+            # If we're in an async context, we can't use run_until_complete
+            # So we'll need to schedule it
+            task = loop.create_task(self.execute(**kwargs))
+            return task
+        except RuntimeError:
+            # No running loop, safe to create one
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                return loop.run_until_complete(self.execute(**kwargs))
+            finally:
+                loop.close()
+
+    # Utility methods for file handling (inherited from BaseAbstractTool)
     def to_static_url(self, file_path: Union[str, Path]) -> str:
         """
         Convert an absolute file path to a static URL.
@@ -234,19 +251,16 @@ class BaseAbstractTool(BaseTool, ABC):
 
         Returns:
             URL-based path for serving the static file
-
-        Example:
-            Input:  "/home/user/project/static/documents/pdf/report.pdf"
-            Output: "/static/documents/pdf/report.pdf"
         """
+        if not self.static_dir:
+            return str(file_path)
+
         file_path = Path(file_path)
 
-        # Check if the file is within the static directory
         try:
             relative_path = file_path.relative_to(self.static_dir)
-            return f"{self.base_url.rstrip('/')}/{relative_path}"
+            return f"{self.static_url.rstrip('/')}/{relative_path}"
         except ValueError:
-            # File is not within static directory
             self.logger.warning(
                 f"File {file_path} is not within static directory {self.static_dir}"
             )
@@ -263,25 +277,18 @@ class BaseAbstractTool(BaseTool, ABC):
             Relative URL based on the base URL
         """
         parts = urlparse(url)
-        # if url is not absolute, return as is:
         if not parts.scheme or not parts.netloc:
             return url
-        # only strip when scheme+netloc match
+
         if (parts.scheme, parts.netloc) == self._base_scheme_netloc:
-            # urlunparse with empty scheme/netloc → just path;params?query#frag
             return urlunparse((
-                "",
-                "",
-                parts.path,
-                parts.params,
-                parts.query,
-                parts.fragment,
+                "", "", parts.path, parts.params, parts.query, parts.fragment
             ))
         return url
 
     def generate_filename(
         self,
-        prefix: str = "document",
+        prefix: str = "output",
         extension: str = "",
         include_timestamp: bool = True
     ) -> str:
@@ -289,9 +296,9 @@ class BaseAbstractTool(BaseTool, ABC):
         Generate a unique filename with optional timestamp.
 
         Args:
-            prefix: File prefix (default: "document")
+            prefix: File prefix
             extension: File extension (with or without dot)
-            include_timestamp: Whether to include timestamp in filename
+            include_timestamp: Whether to include timestamp
 
         Returns:
             Generated filename
@@ -309,79 +316,6 @@ class BaseAbstractTool(BaseTool, ABC):
 
         return filename
 
-    async def safe_generate(self, payload: BaseModel) -> Dict[str, Any]:
-        """
-        Safely generate content with error handling and logging.
-
-        Args:
-            payload: Validated input payload
-
-        Returns:
-            Generation result with standardized error handling
-        """
-        try:
-            self.logger.info(f"Starting content generation with {self.__class__.__name__}")
-            result = await self._generate_content(payload)
-
-            # Add file info if a file was generated
-            # if "filename" in result and result.get("status") == "success":
-                # file_info = self.get_file_info(result["filename"])
-                # result.update(file_info)
-
-            self.logger.info(
-                "Content generation completed successfully"
-            )
-            return result
-
-        except Exception as e:
-            error_msg = f"Error in {self.__class__.__name__}: {str(e)}"
-            self.logger.error(error_msg)
-            self.logger.error(traceback.format_exc())
-
-            return {
-                "status": "error",
-                "error": error_msg,
-                "timestamp": datetime.now().isoformat()
-            }
-
-    @abstractmethod
-    def _generate_payload(self, **kwargs) -> BaseModel:
-        """
-        Generate a payload from the provided arguments.
-        This method should be implemented by subclasses to convert
-        input arguments into a Pydantic model instance.
-        """
-        pass
-
-    async def _arun(
-        self,
-        *args,
-        **kwargs: Any
-    ) -> Dict[str, Any]:
-        """
-        LangChain will call this with keyword args matching Input, e.g.:
-        _arun(text="Hello", output_dir="documents/", …)
-        """
-        try:
-            # 1) Build a dict of everything LangChain passed us
-            # 2) Let Pydantic validate & coerce
-            payload = self._generate_payload(**kwargs)
-            # 3) Call the “real” generator
-            return await self.safe_generate(payload)
-        except Exception as e:
-            print(f"❌ Error in Document._arun: {e}")
-            print(traceback.format_exc())
-            return {"error": str(e)}
-
-    def _run(self, *args, **kwargs) -> Dict[str, Any]:
-        """Synchronous entry point."""
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            return loop.run_until_complete(self._arun(*args, **kwargs))
-        finally:
-            loop.close()
-
     def validate_output_path(self, file_path: Union[str, Path]) -> Path:
         """
         Validate and ensure the output path is within allowed directories.
@@ -395,9 +329,11 @@ class BaseAbstractTool(BaseTool, ABC):
         Raises:
             ValueError: If path is outside allowed directories
         """
+        if not self.static_dir:
+            return Path(file_path).resolve()
+
         file_path = Path(file_path).resolve()
 
-        # Ensure the path is within the static directory for security
         try:
             file_path.relative_to(self.static_dir.resolve())
         except ValueError:
@@ -406,3 +342,82 @@ class BaseAbstractTool(BaseTool, ABC):
             )
 
         return file_path
+
+    def __str__(self) -> str:
+        return f"{self.name}: {self.description}"
+
+    def __repr__(self) -> str:
+        return f"<{self.__class__.__name__}(name='{self.name}')>"
+
+
+
+# Tool Registry for easy tool management
+class ToolRegistry:
+    """Registry for managing available tools."""
+
+    def __init__(self):
+        self._tools = {}
+
+    def register_toolkit(self, toolkit: Type[AbstractTool], prefix: str = ""):
+        """
+        Register all tools from a toolkit in a tool registry.
+
+        Args:
+            registry: Tool registry instance
+            toolkit: Toolkit instance
+            prefix: Optional prefix for tool names
+        """
+        tools = toolkit.get_tools()
+        for tool in tools:
+            tool_name = f"{prefix}{tool.name}" if prefix else tool.name
+            self.register(tool.__class__, tool_name)
+
+    def register(self, tool_class: Type[AbstractTool], name: Optional[str] = None):
+        """Register a tool class."""
+        tool_name = name or tool_class.name or tool_class.__name__
+        self._tools[tool_name] = tool_class
+
+    def register_by_name(self, tool_name: str):
+        """Register a tool class by its name."""
+        if tool_name in self._tools:
+            raise ValueError(f"Tool '{tool_name}' is already registered")
+        # use importlib to dynamically import the tool class
+        file_name = tool_name.lower().replace('tool', '')
+        try:
+            module = __import__(f"parrot.tools.{file_name}", fromlist=[tool_name])
+            tool_class = getattr(module, tool_name)
+        except (ImportError, AttributeError) as e:
+            raise ValueError(f"Could not import tool '{tool_name}': {e}")
+        if not issubclass(tool_class, AbstractTool):
+            raise ValueError(f"Tool '{tool_name}' must be a subclass of AbstractTool")
+        if tool_name in self._tools:
+            raise ValueError(f"Tool '{tool_name}' is already registered")
+        # Register the tool class
+        self._tools[tool_name] = tool_class
+
+    def get_tool(self, name: str, **kwargs) -> AbstractTool:
+        """Get an instance of a tool by name."""
+        if name not in self._tools:
+            raise ValueError(f"Tool '{name}' not found in registry")
+
+        tool_class = self._tools[name]
+        return tool_class(**kwargs)
+
+    def list_tools(self) -> Dict[str, str]:
+        """List all registered tools with their descriptions."""
+        return {
+            name: getattr(tool_class, 'description', 'No description')
+            for name, tool_class in self._tools.items()
+        }
+
+    def get_all_schemas(self) -> Dict[str, Dict[str, Any]]:
+        """Get schemas for all registered tools."""
+        schemas = {}
+        for name, tool_class in self._tools.items():
+            try:
+                # Create a temporary instance to get schema
+                temp_instance = tool_class()
+                schemas[name] = temp_instance.get_tool_schema()
+            except Exception as e:
+                logging.error(f"Error getting schema for tool {name}: {e}")
+        return schemas

@@ -1,0 +1,91 @@
+ Using data returned by get_visit_information and get_store_information, Generate a detailed, comprehensive store visit performance report using the pre-calculated metrics.
+
+## 1. Basic Store Information
+- **Store ID:** store_id
+- **Store Name:** store_name
+- **Store Address:** store_address
+- **Most recent Visit:** use latest_visit_date from get_visit_info
+- **Most recent visitor:** use visitor_name from get_visit_info
+- **Current Weather:** Uses `openweather_tool` to get current weather information for the store's location.
+- **Foot Traffic:** Use `get_foot_traffic` to get foot traffic data for the store, for every day of the week and average of daily foot traffic.
+  - Compare the Foot Traffic with day of visits to detect deviations.
+
+
+## 2. Executive Summary
+- **Average Duration of Visits:** use the column visit_duration
+- **Average Visit Length Comparison:** compare the visit_duration with the duration previous visits.
+- **Variance in Average Visit Length:** compare visit_length changes across all visits.
+- **Total Visits:** use number_of_visits
+- **Total Unique Stores Visited:** use visited_stores
+- **Median Per-Store visits:** use median_visits_per_store
+- **Median Duration of Visits:** use median_visit_duration
+
+## 3. Summary of Insights
+- **Summary of Visits:** Use the information extracted to summarize the employee's behavior based on last answers.
+- **Key Findings:** Summarize the most impactful insights from the analysis.
+• **Work for today's visit:** What were the key wins or successes from today's visit?
+• **Challenges and Opportunities:** What challenges or opportunities did you observe during your visit?
+  - Highlight major issues identified in the visits.
+  - Areas where performance can be enhanced.
+  - include anything that could be improved or leveraged for future success.
+• **Next Steps:**
+    - What specific actions or focus areas should be prioritized for your next visit to this location?.
+    - what are your recommendations for improving Hisense's visibility and positioning?.
+
+Using data returned from `get_visit_questions` tool executes the following task:
+
+## 4. Visit Performance Metrics
+Store ID: {store_id}
+
+### Task
+For each of the four key questions (column_name: '9730', '9731', '9732', '9733'), extract and analyze the data:
+- Question 9730 (Key Wins): Summarize positive outcomes and successes.
+- Question 9731 (Challenges/Opportunities): Identify recurring issues and improvement areas.
+- Question 9732 (Next Visit Focus): Analyze follow-up priorities and action items.
+- Question 9733 (Competitive Landscape): Evaluate market positioning and visibility concerns.
+
+#### Extraction rules
+1. Work **only** with the literal text inside each `answer`.
+2. A phrase, theme or issue is valid **only if that exact substring appears** in an answer.
+3. If none are found, output an empty list [].
+4. After each list item, add \"(#row_index)\" indicating the first visit row where it occurs.
+
+### For each Question (9730, 9731, 9732, 9733) provide:
+• **Top Phrases:** up to 5 frequent key phrases present in `answer` (lower-cased, stemmed/lemmatized).
+• **Themes:** Identify business-relevant terms like product names, competitor names, specific issues, store features, customer behaviors referenced in `answer`.
+• **Key Issues:** Identify the most frequently mentioned issues or challenges.
+  * up to 5 issues/challenges ranked by frequency.
+• **Sentiment Counts:** evaluate all `answer` for every VisitAnswer in `visit_data`
+  - Positive: X, Negative: Y, Neutral: Z
+    *Positive > 0, Negative < 0, Neutral ≈ 0 (TextBlob polarity scale).*
+• **Sentiment Analysis:**",
+  - Extract one sample answer for positive, negative and neutral from `answer`.
+• **\"Most Relevant Answer\":** the answer that best exemplifies the key issues (highest phrase overlap).
+• **Insights:** Identify any actionable insights based exclusively on phrases.
+
+**Do NOT** aggregate multiple questions together. **Do NOT** summarize across questions. **Do NOT** omit any of the seven bullets above.
+
+## 5. Visit Comparison – Visit_1 vs. (Visit_2 & Visit_3)
+
+### Visits to analyze
+Rank the rows by visit_timestamp DESC and label them:
+  • Visit_1  = most-recent
+  • Visit_2  = previous-1
+  • Visit_3  = previous-2
+
+For **each** question `column_name` produce:
+
+### Question column_name
+• **Sentiment Trend:** ↑ / ↓ / →  (based on net-positive – net-negative)
+• **New Issues:** issues appearing **only** in Visit_1
+• **Resolved Issues:** issues present earlier but **absent** in Visit_1
+• **Persisting Issues:** issues that appear in all visits
+• **Notable Phrase Shifts:** any big change in Top Phrases frequency
+• **Overall Assessment:** “Better / Worse / No Material Change” with one-sentence rationale
+
+IMPORTANT INSTRUCTIONS:
+- Strictly follow this markdown format without exception.
+- Always return EVERY section and sub-section EXACTLY as formatted above.
+- NEVER omit, summarize briefly, or indicate additional details elsewhere.
+- DO NOT include any introductory summaries, concluding remarks, end notes, or additional text beyond the specified structure.
+- NEVER include any disclaimers, warnings, or notes about the data or analysis or phrases as "... from the provided ...".

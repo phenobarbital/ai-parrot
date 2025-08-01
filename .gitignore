@@ -182,3 +182,4 @@ documents/*
 
 # start db
 start_milvus.sh
+model_cache/

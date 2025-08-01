@@ -1,192 +1,165 @@
+"""
+PowerPoint Tool migrated to use AbstractDocumentTool framework.
+"""
 import re
-import uuid
 from pathlib import Path
-from typing import Dict, List, Optional, Type, Any
-from datetime import datetime
-import asyncio
+from typing import Dict, List, Optional, Any, Union
+import io
 import traceback
-from langchain.tools import BaseTool
-from pydantic import BaseModel, Field, ConfigDict
-from jinja2 import Environment, FileSystemLoader
 from pptx import Presentation
 from pptx.util import Pt
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN
 from pptx.enum.shapes import MSO_SHAPE_TYPE
+from jinja2 import Environment, FileSystemLoader
+from pydantic import Field, field_validator
 import markdown
 from bs4 import BeautifulSoup, NavigableString
-from navconfig import BASE_DIR
-from .abstract import BaseAbstractTool
+from .document import (
+    AbstractDocumentTool,
+    DocumentGenerationArgs
+)
 
+class PowerPointArgs(DocumentGenerationArgs):
+    """Arguments schema for PowerPoint presentation generation."""
 
-class PowerPointInput(BaseModel):
-    """
-    Input schema for the PowerPointGeneratorTool. Users can supply:
-    • text (required): the markdown text to convert to PowerPoint slides
-    • output_filename: (Optional) custom filename (including extension) for the generated presentation
-    • template_name: (Optional) name of the HTML template (e.g. 'presentation.html') to render
-    • template_vars: (Optional) dict of variables to pass into the template
-    • output_dir: (Optional) directory where the PowerPoint file will be saved
-    • pptx_template: (Optional) path to a PowerPoint template file to use as base
-    • slide_layout: (Optional) default slide layout index (default: 1)
-    • title_styles: (Optional) dict of styles to apply to slide titles
-    • content_styles: (Optional) dict of styles to apply to slide content
-    """
-    model_config = ConfigDict(extra='forbid')
-
-    text: str = Field(..., description="The markdown text to convert to PowerPoint slides")
-    output_filename: Optional[str] = Field(
-        None,
-        description="(Optional) Custom filename (including extension) for the generated presentation"
-    )
     template_name: Optional[str] = Field(
         None,
-        description="Name of the HTML template (e.g. 'presentation.html') to render"
+        description="Name of the HTML template (e.g., 'presentation.html') to render before conversion"
     )
     template_vars: Optional[Dict[str, Any]] = Field(
         None,
-        description="Dict of variables to pass into the template"
-    )
-    output_dir: Optional[str] = Field(
-        None,
-        description="Directory where the PowerPoint file will be saved"
+        description="Variables to pass to the HTML template (e.g., title, author, date)"
     )
     pptx_template: Optional[str] = Field(
         None,
-        description="Path to PowerPoint template file to use as base"
+        description="Path to a PowerPoint template file (.pptx or .potx) to use as base"
     )
-    slide_layout: Optional[int] = Field(
+    slide_layout: int = Field(
         1,
-        description="Default slide layout index (0=Title Slide, 1=Title and Content, etc.)"
+        description="Default slide layout index (0=Title Slide, 1=Title and Content, etc.)",
+        ge=0,
+        le=15
     )
     title_styles: Optional[Dict[str, Any]] = Field(
         None,
-        description="Dict of styles to apply to slide titles (font, size, color, etc.)"
+        description="Styles to apply to slide titles (font_name, font_size, bold, italic, font_color, alignment)"
     )
     content_styles: Optional[Dict[str, Any]] = Field(
         None,
-        description="Dict of styles to apply to slide content"
+        description="Styles to apply to slide content (font_name, font_size, bold, italic, font_color, alignment)"
+    )
+    max_slides: int = Field(
+        50,
+        description="Maximum number of slides to generate",
+        ge=1,
+        le=100
+    )
+    split_by_headings: bool = Field(
+        True,
+        description="Whether to split content into slides based on headings (H1, H2, etc.)"
     )
 
+    @field_validator('template_name')
+    @classmethod
+    def validate_template_name(cls, v):
+        if v and not v.endswith('.html'):
+            v = f"{v}.html"
+        return v
 
-class PowerPointGeneratorTool(BaseAbstractTool):
-    """PowerPoint Presentation Generator Tool.
 
-    * How Slide Splitting Works:
-
-    # Main Title          → Slide 1 (Title slide)
-    Content here...
-
-    ## Section 1          → Slide 2 (Title + Content)
-    Paragraphs and lists...
-
-    ### Subsection       → Slide 3 (Title + Content)
-    More content...
-
-    ## Section 2          → Slide 4 (Title + Content)
-    Tables and text...
+class PowerPointTool(AbstractDocumentTool):
     """
-    name: str = "generate_powerpoint_presentation"
-    description: str = (
-        "Create PowerPoint presentations from markdown text, "
-        "splitting content into slides based on headings."
-    )
-    env: Optional[Environment] = None
-    templates_dir: Optional[Path] = None
+    PowerPoint Presentation Generator Tool.
 
-    args_schema: Type[BaseModel] = PowerPointInput
+    This tool converts text content (including Markdown and HTML) into professionally
+    formatted PowerPoint presentations. It automatically splits content into slides
+    based on headings and supports custom templates, styling, and layout options.
+
+    Features:
+    - Automatic slide splitting based on headings (H1, H2, H3, etc.)
+    - Markdown to PowerPoint conversion with proper formatting
+    - HTML to PowerPoint conversion support
+    - Custom PowerPoint template support
+    - Jinja2 HTML template processing
+    - Configurable slide layouts and styling
+    - Table, list, and content formatting
+    - Professional presentation generation
+
+    Slide Splitting Logic:
+    - H1 (# Title) → Title slide (layout 0)
+    - H2 (## Section) → Content slide (layout 1)
+    - H3 (### Subsection) → Content slide (layout 1)
+    - Content between headings → Added to the slide
+    """
+
+    name = "powerpoint_generator"
+    description = (
+        "Generate PowerPoint presentations from text, Markdown, or HTML content. "
+        "Automatically splits content into slides based on headings. "
+        "Supports custom templates, styling, and professional presentation formatting."
+    )
+    args_schema = PowerPointArgs
+
+    # Document type configuration
+    document_type = "presentation"
+    default_extension = "pptx"
+    supported_extensions = [".pptx", ".potx"]
 
     def __init__(
         self,
-        *args,
         templates_dir: Optional[Path] = None,
+        output_dir: Optional[Union[str, Path]] = None,
+        default_html_template: Optional[str] = None,
         **kwargs
     ):
-        """Initialize the PowerPoint generator tool."""
-        super().__init__(*args, **kwargs)
+        """
+        Initialize the PowerPoint Tool.
+
+        Args:
+            templates_dir: Directory containing HTML and PowerPoint templates
+            output_dir: Directory where generated presentations will be saved
+            default_html_template: Default HTML template for content processing
+            **kwargs: Additional arguments for AbstractDocumentTool
+        """
+        # Set up output directory before calling super().__init__
+        if output_dir:
+            kwargs['output_dir'] = Path(output_dir)
+
+        super().__init__(templates_dir=templates_dir, **kwargs)
+
+        self.default_html_template = default_html_template
+
         # Initialize Jinja2 environment for HTML templates
-        if templates_dir:
-            self.templates_dir = templates_dir
-            self.env = Environment(
-                loader=FileSystemLoader(str(templates_dir)),
+        if self.templates_dir:
+            self.html_env = Environment(
+                loader=FileSystemLoader(str(self.templates_dir)),
                 autoescape=True
             )
+        else:
+            self.html_env = None
 
-    def _default_output_dir(self) -> Path:
-        """Get default output directory for PDF files."""
-        return self.static_dir.joinpath('documents', 'presentations')
-
-    def _generate_payload(
-        self,
-        **kwargs
-    ) -> PowerPointInput:
-        try:
-            # Validate input using Pydantic
-            return PowerPointInput(**kwargs)
-        except Exception as e:
-            raise ValueError(f"Invalid input for PowerPoint generation: {e}")
-
-    async def _generate_content(self, input_data: PowerPointInput) -> Dict[str, Any]:
-        """Generate PowerPoint presentation from markdown text."""
-        try:
-            # Process the text through Jinja2 template if provided
-            processed_text = self._render_template(input_data)
-
-            # Preprocess markdown
-            processed_text = self._preprocess_markdown(processed_text)
-
-            # Convert markdown to HTML
-            html_content = self._markdown_to_html(processed_text)
-
-            # Parse HTML and extract slides
-            slides_data = self._extract_slides_from_html(html_content)
-
-            # Create or load PowerPoint presentation
-            prs = self._create_presentation(input_data.pptx_template)
-
-            # Create slides from extracted data
-            self._create_slides(prs, slides_data, input_data)
-
-            # Save presentation
-            output_path = self._save_presentation(prs, input_data)
-            url = self.to_static_url(output_path)
-            return {
-                "status": "success",
-                "file_path": output_path,
-                "filename": output_path,
-                "slides_created": len(slides_data),
-                "url": url,
-                "static_url": self.relative_url(url),
-                "output_filename": input_data.output_filename or output_path.name,
-                "file_path": self.output_dir,
-                "message": f"PowerPoint presentation successfully created at {output_path}"
-            }
-
-        except Exception as e:
-            return {
-                "status": "error",
-                "error": str(e),
-                "message": f"Failed to create PowerPoint presentation: {str(e)}"
-            }
-
-    def _render_template(self, input_data: PowerPointInput) -> str:
-        """Render text through Jinja2 template if provided."""
-        if not input_data.template_name or not self.env:
-            return input_data.text
+    def _render_html_template(self, content: str, template_name: Optional[str], template_vars: Optional[Dict[str, Any]]) -> str:
+        """Render content through Jinja2 HTML template if provided."""
+        if not template_name or not self.html_env:
+            return content
 
         try:
-            template = self.env.get_template(input_data.template_name)
-            template_vars = input_data.template_vars or {}
+            template = self.html_env.get_template(template_name)
+            vars_dict = template_vars or {}
 
-            # Add some default variables
-            template_vars.setdefault('content', input_data.text)
-            template_vars.setdefault('date', datetime.now().strftime('%Y-%m-%d'))
-            template_vars.setdefault('timestamp', datetime.now().isoformat())
+            # Add default variables
+            vars_dict.setdefault('content', content)
+            vars_dict.setdefault('date', self._get_current_date())
+            vars_dict.setdefault('timestamp', self._get_current_timestamp())
 
-            return template.render(**template_vars)
+            rendered = template.render(**vars_dict)
+            self.logger.info(f"Rendered content through HTML template: {template_name}")
+            return rendered
+
         except Exception as e:
-            print(f"Template rendering failed: {e}")
-            return input_data.text
+            self.logger.error(f"HTML template rendering failed: {e}")
+            return content
 
     def _preprocess_markdown(self, text: str) -> str:
         """Preprocess markdown to handle common issues."""
@@ -201,27 +174,45 @@ class PowerPointGeneratorTool(BaseAbstractTool):
         text = re.sub(r'```[a-zA-Z]*\n', '', text)
         text = re.sub(r'```', '', text)
 
-        # Fix heading issues (ensure space after #)
+        # Fix heading issues (ensure space after #) - this should work correctly
         text = re.sub(r'(#+)([^ \n])', r'\1 \2', text)
 
-        return text
+        # Fix escaped newlines if any
+        text = text.replace('\\n', '\n')
+
+        # Clean up extra whitespace but preserve line structure
+        lines = text.split('\n')
+        cleaned_lines = []
+        for line in lines:
+            # Strip leading/trailing whitespace but preserve the line
+            cleaned_line = line.strip()
+            cleaned_lines.append(cleaned_line)
+
+        return '\n'.join(cleaned_lines)
 
     def _markdown_to_html(self, markdown_text: str) -> str:
         """Convert markdown to HTML."""
         try:
+            self.logger.debug(f"Converting markdown to HTML. Input preview: {markdown_text[:100]}...")
+
             html = markdown.markdown(
                 markdown_text,
-                extensions=['extra', 'codehilite', 'toc', 'tables']
+                extensions=['extra', 'codehilite', 'tables']  # Removed 'toc' to avoid issues
             )
+
+            self.logger.debug(f"HTML conversion result preview: {html[:200]}...")
             return html
+
         except Exception as e:
-            print(f"Markdown conversion failed: {e}")
+            self.logger.error(f"Markdown conversion failed: {e}")
             # Fallback: wrap in paragraphs
             paragraphs = markdown_text.split('\n\n')
             html_paragraphs = [f'<p>{p.replace(chr(10), "<br>")}</p>' for p in paragraphs if p.strip()]
-            return '\n'.join(html_paragraphs)
+            fallback_html = '\n'.join(html_paragraphs)
+            self.logger.debug(f"Using fallback HTML: {fallback_html[:200]}...")
+            return fallback_html
 
-    def _extract_slides_from_html(self, html_content: str) -> List[Dict[str, Any]]:
+    def _extract_slides_from_html(self, html_content: str, max_slides: int) -> List[Dict[str, Any]]:
         """Extract slides from HTML content based on headings."""
         soup = BeautifulSoup(html_content, 'html.parser')
         slides = []
@@ -232,112 +223,177 @@ class PowerPointGeneratorTool(BaseAbstractTool):
         if not headings:
             # If no headings, create a single slide with all content
             slides.append({
-                'title': 'Slide',
+                'title': 'Presentation',
                 'content': self._extract_content_elements(soup),
-                'level': 1
+                'level': 1,
+                'layout': 0  # Title slide for single content
             })
             return slides
 
-        for i, heading in enumerate(headings):
-            slide_data = {
-                'title': self._get_text_content(heading),
-                'level': int(heading.name[1]),  # h1 -> 1, h2 -> 2, etc.
-                'content': []
-            }
+        # Get all elements in the document to process sequentially
+        all_elements = soup.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'ul', 'ol', 'table', 'blockquote', 'div'])
 
-            # Find content between this heading and the next one
-            current_element = heading.next_sibling
-            next_heading = headings[i + 1] if i + 1 < len(headings) else None
+        current_slide = None
 
-            while current_element and current_element != next_heading:
-                if hasattr(current_element, 'name') and current_element.name in ['p', 'ul', 'ol', 'table', 'blockquote', 'div']:
-                    slide_data['content'].append(current_element)
-                current_element = current_element.next_sibling
+        for element in all_elements:
+            if len(slides) >= max_slides:
+                self.logger.warning(f"Reached maximum slides limit ({max_slides}), stopping slide creation")
+                break
 
-            slides.append(slide_data)
+            # If this is a heading, start a new slide
+            if element.name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']:
+                # Save the previous slide if it exists
+                if current_slide is not None:
+                    slides.append(current_slide)
+
+                # Start new slide
+                heading_level = int(element.name[1])
+                heading_text = self._get_text_content(element)
+
+                current_slide = {
+                    'title': heading_text,
+                    'level': heading_level,
+                    'content': [],
+                    'layout': 0 if (len(slides) == 0 and heading_level == 1) else 1
+                }
+
+                self.logger.debug(f"Starting new slide: {heading_text}")
+
+            # If this is content and we have a current slide, add it
+            elif element.name in ['p', 'ul', 'ol', 'table', 'blockquote', 'div'] and current_slide is not None:
+                # Skip empty paragraphs
+                content_text = self._get_text_content(element).strip()
+                if content_text:
+                    current_slide['content'].append(element)
+                    self.logger.debug(f"Added content to slide '{current_slide['title']}': {content_text[:50]}...")
+
+        # Don't forget the last slide
+        if current_slide is not None:
+            slides.append(current_slide)
+
+        self.logger.info(f"Extracted {len(slides)} slides from HTML content")
+
+        # Debug: Log slide information
+        for i, slide in enumerate(slides):
+            self.logger.debug(f"Slide {i+1}: '{slide['title']}' with {len(slide['content'])} content elements")
 
         return slides
 
     def _extract_content_elements(self, soup) -> List:
         """Extract content elements from soup."""
         content_elements = []
+
+        # Get all content elements, but exclude headings since they become slide titles
         for element in soup.find_all(['p', 'ul', 'ol', 'table', 'blockquote', 'div']):
+            # Skip if this div only contains headings
+            if element.name == 'div':
+                # Check if div contains only headings or is empty
+                child_tags = [child.name for child in element.find_all() if hasattr(child, 'name')]
+                if all(tag in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'] for tag in child_tags):
+                    continue
+
             content_elements.append(element)
+
         return content_elements
 
     def _create_presentation(self, template_path: Optional[str] = None) -> Presentation:
         """Create or load PowerPoint presentation."""
-        if template_path and Path(template_path).exists():
-            return Presentation(template_path)
-        else:
-            return Presentation()
+        if template_path:
+            pptx_template = self._get_template_path(template_path)
+            if pptx_template and pptx_template.exists():
+                self.logger.info(f"Loading PowerPoint template: {pptx_template}")
+                return Presentation(str(pptx_template))
 
-    def _create_slides(self, prs: Presentation, slides_data: List[Dict[str, Any]], input_data: PowerPointInput):
+        # Create new presentation
+        return Presentation()
+
+    def _create_slides(
+        self,
+        prs: Presentation,
+        slides_data: List[Dict[str, Any]],
+        slide_layout: int,
+        title_styles: Optional[Dict[str, Any]],
+        content_styles: Optional[Dict[str, Any]]
+    ) -> None:
         """Create slides from extracted data."""
-        for i, slide_data in enumerate(slides_data):
-            # Determine slide layout based on heading level or use default
-            if i == 0 and slide_data['level'] == 1:
-                # First slide with h1 might be title slide
-                layout_idx = 0  # Title slide
-            else:
-                layout_idx = input_data.slide_layout or 1  # Title and content
+        for slide_data in slides_data:
+            try:
+                # Determine layout: use slide_data layout or default
+                layout_idx = slide_data.get('layout', slide_layout)
 
-            # Add slide
-            slide_layout = prs.slide_layouts[layout_idx]
-            slide = prs.slides.add_slide(slide_layout)
+                # Ensure layout index is valid
+                if layout_idx >= len(prs.slide_layouts):
+                    layout_idx = min(slide_layout, len(prs.slide_layouts) - 1)
 
-            # Add title
-            if slide.shapes.title:
-                slide.shapes.title.text = slide_data['title']
-                if input_data.title_styles:
-                    self._apply_text_styles(slide.shapes.title, input_data.title_styles)
+                # Add slide
+                slide_layout_obj = prs.slide_layouts[layout_idx]
+                slide = prs.slides.add_slide(slide_layout_obj)
 
-            # Add content
-            if slide_data['content'] and len(slide.shapes.placeholders) > 1:
-                content_placeholder = slide.shapes.placeholders[1]
+                # Add title
+                if slide.shapes.title and slide_data['title']:
+                    # first, remove any "#" at beginning of the title:
+                    _title = slide_data['title'].lstrip('#').strip()
+                    slide.shapes.title.text = _title
+                    if title_styles:
+                        self._apply_text_styles(slide.shapes.title, title_styles)
 
-                # Clear existing content
-                content_placeholder.text = ""
+                # Add content (if there's a content placeholder and content exists)
+                if slide_data['content'] and len(slide.shapes.placeholders) > 1:
+                    content_placeholder = slide.shapes.placeholders[1]
+                    self._add_slide_content(content_placeholder, slide_data['content'], content_styles)
 
-                # Add content based on type
-                self._add_slide_content(content_placeholder, slide_data['content'], input_data)
+                self.logger.debug(
+                    f"Created slide: {slide_data['title']}"
+                )
 
-    def _add_slide_content(self, placeholder, content_elements: List, input_data: PowerPointInput):
+            except Exception as e:
+                self.logger.error(f"Error creating slide '{slide_data.get('title', 'Unknown')}': {e}")
+                continue
+
+    def _add_slide_content(self, placeholder, content_elements: List, content_styles: Optional[Dict[str, Any]]) -> None:
         """Add content to a slide placeholder."""
-        text_frame = placeholder.text_frame
-        text_frame.clear()
+        try:
+            text_frame = placeholder.text_frame
+            text_frame.clear()
 
-        for element in content_elements:
-            if element.name == 'p':
-                # Add paragraph
-                p = text_frame.paragraphs[0] if len(text_frame.paragraphs) == 1 and not text_frame.paragraphs[0].text else text_frame.add_paragraph()
-                p.text = self._get_text_content(element)
-                if input_data.content_styles:
-                    self._apply_paragraph_styles(p, input_data.content_styles)
+            for element in content_elements:
+                if element.name == 'p':
+                    # Add paragraph
+                    if len(text_frame.paragraphs) == 1 and not text_frame.paragraphs[0].text:
+                        p = text_frame.paragraphs[0]
+                    else:
+                        p = text_frame.add_paragraph()
 
-            elif element.name in ['ul', 'ol']:
-                # Add list items
-                for li in element.find_all('li', recursive=False):
+                    p.text = self._get_text_content(element)
+                    if content_styles:
+                        self._apply_paragraph_styles(p, content_styles)
+
+                elif element.name in ['ul', 'ol']:
+                    # Add list items
+                    for li in element.find_all('li', recursive=False):
+                        p = text_frame.add_paragraph()
+                        p.text = self._get_text_content(li)
+                        p.level = 1  # Bullet point level
+                        if content_styles:
+                            self._apply_paragraph_styles(p, content_styles)
+
+                elif element.name == 'table':
+                    # Add table as formatted text
+                    table_text = self._extract_table_text(element)
                     p = text_frame.add_paragraph()
-                    p.text = self._get_text_content(li)
-                    p.level = 1  # Bullet point level
-                    if input_data.content_styles:
-                        self._apply_paragraph_styles(p, input_data.content_styles)
+                    p.text = table_text
+                    if content_styles:
+                        self._apply_paragraph_styles(p, content_styles)
 
-            elif element.name == 'table':
-                # Add table (simplified - would need more work for complex tables)
-                table_text = self._extract_table_text(element)
-                p = text_frame.add_paragraph()
-                p.text = table_text
-                if input_data.content_styles:
-                    self._apply_paragraph_styles(p, input_data.content_styles)
+                elif element.name == 'blockquote':
+                    # Add blockquote
+                    p = text_frame.add_paragraph()
+                    p.text = f'"{self._get_text_content(element)}"'
+                    if content_styles:
+                        self._apply_paragraph_styles(p, content_styles)
 
-            elif element.name == 'blockquote':
-                # Add blockquote
-                p = text_frame.add_paragraph()
-                p.text = f'"{self._get_text_content(element)}"'
-                if input_data.content_styles:
-                    self._apply_paragraph_styles(p, input_data.content_styles)
+        except Exception as e:
+            self.logger.error(f"Error adding slide content: {e}")
 
     def _extract_table_text(self, table_element) -> str:
         """Extract text from table element."""
@@ -352,74 +408,277 @@ class PowerPointGeneratorTool(BaseAbstractTool):
         return '\n'.join(table_lines)
 
     def _get_text_content(self, element) -> str:
-        """Extract text content from HTML element."""
+        """Extract clean text content from HTML element."""
         if isinstance(element, NavigableString):
-            return str(element)
+            return str(element).strip()
 
+        # For HTML elements, get the text content
+        if hasattr(element, 'get_text'):
+            # BeautifulSoup's get_text() method extracts clean text without HTML tags
+            text = element.get_text(strip=True)
+            return text
+
+        # Fallback method for manual text extraction
         text_parts = []
         for content in element.contents:
             if isinstance(content, NavigableString):
-                text_parts.append(str(content))
+                text_parts.append(str(content).strip())
             else:
                 text_parts.append(self._get_text_content(content))
 
-        return ''.join(text_parts).strip()
+        result = ''.join(text_parts).strip()
 
-    def _apply_text_styles(self, shape, styles: Dict[str, Any]):
+        # Additional cleanup: remove any remaining markdown symbols
+        # This shouldn't be necessary if markdown conversion worked correctly,
+        # but it's a safety net
+        result = re.sub(r'^#+\s*', '', result)  # Remove leading hashtags
+        result = re.sub(r'\*\*([^*]+)\*\*', r'\1', result)  # Remove bold markers
+        result = re.sub(r'\*([^*]+)\*', r'\1', result)  # Remove italic markers
+
+        return result
+
+    def _apply_text_styles(self, shape, styles: Dict[str, Any]) -> None:
         """Apply styles to a text shape."""
         if not shape.has_text_frame:
             return
 
-        text_frame = shape.text_frame
+        try:
+            text_frame = shape.text_frame
+            for paragraph in text_frame.paragraphs:
+                self._apply_paragraph_styles(paragraph, styles)
+        except Exception as e:
+            self.logger.error(f"Error applying text styles: {e}")
 
-        for paragraph in text_frame.paragraphs:
-            self._apply_paragraph_styles(paragraph, styles)
-
-    def _apply_paragraph_styles(self, paragraph, styles: Dict[str, Any]):
+    def _apply_paragraph_styles(self, paragraph, styles: Dict[str, Any]) -> None:
         """Apply styles to a paragraph."""
-        # Font styling
-        if 'font_name' in styles:
-            paragraph.font.name = styles['font_name']
-        if 'font_size' in styles:
-            paragraph.font.size = Pt(styles['font_size'])
-        if 'bold' in styles:
-            paragraph.font.bold = styles['bold']
-        if 'italic' in styles:
-            paragraph.font.italic = styles['italic']
-        if 'font_color' in styles:
-            # Convert hex color to RGB
-            color_hex = styles['font_color'].lstrip('#')
-            r, g, b = tuple(int(color_hex[i:i+2], 16) for i in (0, 2, 4))
-            paragraph.font.color.rgb = RGBColor(r, g, b)
+        try:
+            # Font styling
+            if 'font_name' in styles:
+                paragraph.font.name = styles['font_name']
+            if 'font_size' in styles:
+                paragraph.font.size = Pt(styles['font_size'])
+            if 'bold' in styles:
+                paragraph.font.bold = styles['bold']
+            if 'italic' in styles:
+                paragraph.font.italic = styles['italic']
+            if 'font_color' in styles:
+                # Convert hex color to RGB
+                color_hex = styles['font_color'].lstrip('#')
+                r, g, b = tuple(int(color_hex[i:i+2], 16) for i in (0, 2, 4))
+                paragraph.font.color.rgb = RGBColor(r, g, b)
 
-        # Alignment
-        if 'alignment' in styles:
-            alignment_map = {
-                'left': PP_ALIGN.LEFT,
-                'center': PP_ALIGN.CENTER,
-                'right': PP_ALIGN.RIGHT,
-                'justify': PP_ALIGN.JUSTIFY
+            # Alignment
+            if 'alignment' in styles:
+                alignment_map = {
+                    'left': PP_ALIGN.LEFT,
+                    'center': PP_ALIGN.CENTER,
+                    'right': PP_ALIGN.RIGHT,
+                    'justify': PP_ALIGN.JUSTIFY
+                }
+                paragraph.alignment = alignment_map.get(styles['alignment'], PP_ALIGN.LEFT)
+
+        except Exception as e:
+            self.logger.error(f"Error applying paragraph styles: {e}")
+
+    def debug_content_parsing(self, content: str) -> Dict[str, Any]:
+        """
+        Debug method to see how content is being parsed.
+
+        Args:
+            content: Input content to debug
+
+        Returns:
+            Dictionary with debug information
+        """
+        try:
+            # Process the content the same way as in generation
+            processed_content = self._preprocess_markdown(content)
+            html_content = self._markdown_to_html(processed_content)
+
+            # Parse with BeautifulSoup
+            soup = BeautifulSoup(html_content, 'html.parser')
+            headings = soup.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
+
+            # Extract slide information
+            slides_data = self._extract_slides_from_html(html_content, 50)
+
+            debug_info = {
+                "original_content_length": len(content),
+                "original_content_preview": content[:300] + "..." if len(content) > 300 else content,
+                "processed_content_preview": processed_content[:300] + "..." if len(processed_content) > 300 else processed_content,
+                "html_content": html_content,  # Show full HTML to debug
+                "headings_found": [
+                    {
+                        "tag": h.name,
+                        "level": int(h.name[1]),
+                        "raw_html": str(h),
+                        "extracted_text": self._get_text_content(h),
+                        "inner_text": h.get_text() if hasattr(h, 'get_text') else "N/A"
+                    } for h in headings
+                ],
+                "slides_extracted": [
+                    {
+                        "title": slide['title'],
+                        "level": slide['level'],
+                        "layout": slide['layout'],
+                        "content_count": len(slide['content']),
+                        "content_preview": [
+                            {
+                                "tag": elem.name,
+                                "text": self._get_text_content(elem)[:100]
+                            } for elem in slide['content'][:3]
+                        ]
+                    } for slide in slides_data
+                ],
+                "total_slides": len(slides_data)
             }
-            paragraph.alignment = alignment_map.get(styles['alignment'], PP_ALIGN.LEFT)
 
-    def _save_presentation(self, prs: Presentation, input_data: PowerPointInput) -> Path:
-        """Save the presentation and return the file path."""
-        # Determine output directory
-        output_dir = Path(input_data.output_dir) if input_data.output_dir else self.output_dir
-        output_dir.mkdir(parents=True, exist_ok=True)
+            return debug_info
 
-        if input_data.output_filename:
-            output_filename = input_data.output_filename
-            if not output_filename.endswith('.pptx'):
-                output_filename += '.pptx'
-        else:
-            output_filename = self.generate_filename(
-                prefix=input_data.file_prefix or "presentation",
-                extension="pptx"
+        except Exception as e:
+            return {
+                "error": str(e),
+                "traceback": traceback.format_exc(),
+                "message": "Debug parsing failed"
+            }
+
+    async def _generate_document_content(self, content: str, **kwargs) -> bytes:
+        """
+        Generate PowerPoint presentation content from input.
+
+        Args:
+            content: Input content (text, markdown, or HTML)
+            **kwargs: Additional arguments from PowerPointArgs
+
+        Returns:
+            PowerPoint presentation as bytes
+        """
+        try:
+            # Extract arguments
+            template_name = kwargs.get('template_name')
+            template_vars = kwargs.get('template_vars')
+            pptx_template = kwargs.get('pptx_template')
+            slide_layout = kwargs.get('slide_layout', 1)
+            title_styles = kwargs.get('title_styles')
+            content_styles = kwargs.get('content_styles')
+            max_slides = kwargs.get('max_slides', 50)
+            split_by_headings = kwargs.get('split_by_headings', True)
+
+            # Process content through HTML template if provided
+            processed_content = self._render_html_template(content, template_name, template_vars)
+
+            # Preprocess markdown
+            cleaned_content = self._preprocess_markdown(processed_content)
+
+            # Convert to HTML
+            html_content = self._markdown_to_html(cleaned_content)
+
+            # Extract slides from HTML
+            if split_by_headings:
+                slides_data = self._extract_slides_from_html(html_content, max_slides)
+            else:
+                # Create single slide with all content
+                soup = BeautifulSoup(html_content, 'html.parser')
+                slides_data = [{
+                    'title': 'Presentation',
+                    'content': self._extract_content_elements(soup),
+                    'level': 1,
+                    'layout': 0
+                }]
+
+            self.logger.info(f"Generated {len(slides_data)} slides from content")
+
+            # Create PowerPoint presentation
+            prs = self._create_presentation(pptx_template)
+
+            # Create slides
+            self._create_slides(prs, slides_data, slide_layout, title_styles, content_styles)
+
+            # Save presentation to bytes
+            ppt_bytes = io.BytesIO()
+            prs.save(ppt_bytes)
+            ppt_bytes.seek(0)
+
+            return ppt_bytes.getvalue()
+
+        except Exception as e:
+            self.logger.error(f"Error generating PowerPoint presentation: {e}")
+            raise
+
+    async def _execute(
+        self,
+        content: str,
+        output_filename: Optional[str] = None,
+        file_prefix: str = "presentation",
+        output_dir: Optional[str] = None,
+        overwrite_existing: bool = False,
+        template_name: Optional[str] = None,
+        template_vars: Optional[Dict[str, Any]] = None,
+        pptx_template: Optional[str] = None,
+        slide_layout: int = 1,
+        title_styles: Optional[Dict[str, Any]] = None,
+        content_styles: Optional[Dict[str, Any]] = None,
+        max_slides: int = 50,
+        split_by_headings: bool = True,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """
+        Execute PowerPoint presentation generation (AbstractTool interface).
+
+        Args:
+            content: Content to convert to PowerPoint presentation
+            output_filename: Custom filename (without extension)
+            file_prefix: Prefix for auto-generated filenames
+            output_dir: Custom output directory
+            overwrite_existing: Whether to overwrite existing files
+            template_name: HTML template name for content processing
+            template_vars: Variables for HTML template
+            pptx_template: PowerPoint template file path
+            slide_layout: Default slide layout index
+            title_styles: Styles for slide titles
+            content_styles: Styles for slide content
+            max_slides: Maximum number of slides to generate
+            split_by_headings: Whether to split by headings
+            **kwargs: Additional arguments
+
+        Returns:
+            Dictionary with presentation generation results
+        """
+        try:
+            self.logger.info(f"Starting PowerPoint generation with {len(content)} characters of content")
+
+            # Use the safe document creation workflow
+            result = await self._create_document_safely(
+                content=content,
+                output_filename=output_filename,
+                file_prefix=file_prefix,
+                output_dir=output_dir,
+                overwrite_existing=overwrite_existing,
+                extension="pptx",
+                template_name=template_name,
+                template_vars=template_vars,
+                pptx_template=pptx_template,
+                slide_layout=slide_layout,
+                title_styles=title_styles,
+                content_styles=content_styles,
+                max_slides=max_slides,
+                split_by_headings=split_by_headings
             )
-        output_path = output_dir / output_filename
 
-        # Save the presentation
-        prs.save(str(output_path))
+            if result['status'] == 'success':
+                # Add presentation-specific metadata
+                result['presentation_info'] = {
+                    'max_slides_limit': max_slides,
+                    'split_by_headings': split_by_headings,
+                    'slide_layout_used': slide_layout
+                }
 
-        return output_path
+                self.logger.debug(
+                    f"PowerPoint presentation created successfully: {result['metadata']['filename']}"
+                )
+
+            return result
+
+        except Exception as e:
+            self.logger.error(f"Error in PowerPoint generation: {e}")
+            raise

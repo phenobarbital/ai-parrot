@@ -1,6 +1,6 @@
 from aiohttp import web
-from asyncdb.exceptions.exceptions import NoDataFound
-from datamodel.exceptions import ValidationError
+from asyncdb.exceptions.exceptions import NoDataFound  # noqa: E0611
+from datamodel.exceptions import ValidationError  # noqa: E0611
 from navigator_auth.decorators import (
     is_authenticated,
     user_session,
@@ -8,7 +8,7 @@ from navigator_auth.decorators import (
 )
 from navigator.views import BaseView
 from ..bots.abstract import AbstractBot
-from ..models import ChatbotModel
+from .models import BotModel
 
 
 @is_authenticated()
@@ -161,11 +161,11 @@ class BotHandler(BaseView):
         """
         db = self.request.app['database']
         async with await db.acquire() as conn:
-            ChatbotModel.Meta.connection = conn
+            BotModel.Meta.connection = conn
             # check first if chatbot already exists:
             exists = None
             try:
-                exists = await ChatbotModel.get(name=name)
+                exists = await BotModel.get(name=name)
             except NoDataFound:
                 exists = False
             if exists:
@@ -176,7 +176,7 @@ class BotHandler(BaseView):
                     status=202
                 )
             try:
-                chatbot_model = ChatbotModel(
+                chatbot_model = BotModel(
                     name=name,
                     **data
                 )

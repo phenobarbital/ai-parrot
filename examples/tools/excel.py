@@ -1,9 +1,8 @@
+import asyncio
 import pandas as pd
-from parrot.tools.excel import ExcelTool
+from parrot.tools.excel import ExcelTool, DataFrameToExcelTool
 
-
-# Example usage and testing
-if __name__ == "__main__":
+async def example_usage():
     # Create sample DataFrame
     data = {
         'Name': ['Alice', 'Bob', 'Charlie', 'Diana'],
@@ -13,11 +12,39 @@ if __name__ == "__main__":
         'Start Date': ['2020-01-15', '2019-06-01', '2021-03-10', '2020-11-20']
     }
     df = pd.DataFrame(data)
+    # Create tool instance
+    excel_tool = ExcelTool()
+
+    # Export DataFrame with custom styling
+    result = await excel_tool.execute(
+        content=df,
+        sheet_name="Sales Data",
+        output_format="excel",
+        header_styles={
+            "background_color": "366092",
+            "font_color": "FFFFFF",
+            "bold": True
+        },
+        freeze_header=True,
+        output_filename="sales_report"
+    )
+
+    print('First Excel: ', result)
+
+    # Quick export for simple use cases
+    quick_tool = DataFrameToExcelTool()
+    file_path = await quick_tool.quick_export(
+        data=df,
+        filename="quick_export",
+        format="excel"
+    )
+    print(f"Quick export saved to: {file_path}")
+
     # Initialize the tool
     tool = ExcelTool(output_dir="./output")
     # Example 1: Basic Excel export with default styling
-    result1 = tool._run(
-        dataframe=df,
+    result1 = await tool.execute(
+        content=df,
         output_filename="employee_data.xlsx",
         sheet_name="Employees"
     )
@@ -39,8 +66,8 @@ if __name__ == "__main__":
         'horizontal': 'left'
     }
 
-    result2 = tool._run(
-        dataframe=df,
+    result2 = await tool.execute(
+        content=df,
         output_filename="styled_employee_data.xlsx",
         sheet_name="StyledEmployees",
         header_styles=header_styles,
@@ -49,10 +76,13 @@ if __name__ == "__main__":
     print("Example 2:", result2)
 
     # Example 3: ODS export
-    result3 = tool._run(
-        dataframe=df,
+    result3 = await tool.execute(
+        content=df,
         output_filename="employee_data.ods",
         output_format="ods",
         sheet_name="Employees"
     )
     print("Example 3:", result3)
+
+if __name__ == "__main__":
+    asyncio.run(example_usage())

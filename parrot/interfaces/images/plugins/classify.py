@@ -1,23 +1,29 @@
 from pathlib import Path
 from typing import List, Union, Optional
-from enum import Enum
+from enum import Enum, EnumMeta
 from pydantic import BaseModel, Field
 from PIL import Image
 from .abstract import ImagePlugin
 from ....next.google import GoogleModel, GoogleGenAIClient
-
-
 
 DEFAULT_PROMPT = """
 You are an expert in retail image analysis. Your task is to classify the provided image into one of the following categories.
 Please read the definitions carefully and choose the single best fit.
 """
 
+def is_model_class(cls) -> bool:
+    return isinstance(cls, type) and issubclass(cls, BaseModel)
+
+
+def is_enum_class(cls) -> bool:
+    return isinstance(cls, type) and issubclass(cls, Enum)
+
 class ImageCategory(str, Enum):
     """Enumeration for retail image categories."""
     INK_WALL = "Ink Wall"
+    FRONT_OF_STORE = "Front of Store"
     SHELVES_WITH_PRODUCTS = "Shelves with Products"
-    PRODUCTS_ON_FLOOR = "Products on Floor"
+    BOXES_ON_FLOOR = "Boxes on Floor"
     MERCHANDISING_ENDCAP = "Merchandising Endcap"
     OTHER = "Other"
 
@@ -85,7 +91,7 @@ class ClassificationPlugin(ImagePlugin):
         for example, resources.models.categorization_models.ImageCategory
         uses importlib to dynamically import the model class.
         """
-        if isinstance(model_name, Enum):
+        if is_enum_class(model_name):
             # Already a Enum instance, return it directly
             return model_name
         elif isinstance(model_name, str):
@@ -93,15 +99,23 @@ class ClassificationPlugin(ImagePlugin):
             return self._load_model(model_name)
         else:
             raise ValueError(
-                "model_name must be a string or a Enum instance."
+                "Category model_name must be a string or a Enum instance."
             )
 
     def _load_classification_model(self, model_name: Union[str, BaseModel]) -> BaseModel:
         """
         Load the classification model based on the provided model name.
         """
-        return self._load_category_model(model_name)
-
+        if is_model_class(model_name):
+            # Already a BaseModel instance, return it directly
+            return model_name
+        elif isinstance(model_name, str):
+            # Attempt to import the model class dynamically
+            return self._load_model(model_name)
+        else:
+            raise ValueError(
+                "Classification model_name must be a string or a BaseModel instance."
+            )
 
     async def analyze(self, image: Union[Path, Image.Image], **kwargs) -> dict:
         """
@@ -112,7 +126,7 @@ class ClassificationPlugin(ImagePlugin):
         """
         async with GoogleGenAIClient() as client:
             _result = await client.ask_to_image(
-                image_path=image,
+                image=image,
                 prompt=self.prompt,
                 structured_output=self._classification_model,
                 model=self._model_name
