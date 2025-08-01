@@ -8,6 +8,7 @@ from .prompts.nextstop import (
     DEFAULT_CAPABILITIES
 )
 from ..tools import AbstractTool
+from ..tools.nextstop import StoreInfo
 from ..models.responses import AgentResponse
 
 class NextStop(BasicAgent):
@@ -30,7 +31,7 @@ class NextStop(BasicAgent):
         self,
         name: str = 'NextStop',
         agent_id: str = 'nextstop',
-        use_llm: str = 'google',
+        use_llm: str = 'openai',
         llm: str = None,
         tools: List[AbstractTool] = None,
         system_prompt: str = None,
@@ -53,4 +54,4 @@ class NextStop(BasicAgent):
         self.system_prompt_template = prompt_template or AGENT_PROMPT
         self._system_prompt_base = system_prompt or ''
         # Register all the tools:
-        self.tools = self.default_tools(tools or [])
+        self.tools = self.default_tools(StoreInfo().get_tools())

@@ -18,6 +18,7 @@ from google.genai.types import (
 )
 from google.genai import types
 from navconfig import config, BASE_DIR
+import pandas as pd
 from .abstract import AbstractClient, ToolDefinition, StreamingRetryConfig
 from ..models import (
     AIMessage,
@@ -124,14 +125,93 @@ class GoogleGenAIClient(AbstractClient):
 
         has_search_intent = any(keyword in prompt_lower for keyword in search_keywords)
         has_function_intent = any(keyword in prompt_lower for keyword in function_keywords)
-        print(
-            'DEBUG > ', has_search_intent, has_function_intent, prompt_lower
-        )
         if has_search_intent and not has_function_intent:
             return "builtin_tools"
         else:
             # Mixed intent - prefer custom functions if available, otherwise builtin
             return "custom_functions" if self.tools else "builtin_tools"
+
+    def clean_google_schema(self, schema: dict) -> dict:
+        """
+        Clean a Pydantic-generated schema for Google Function Calling compatibility.
+
+        Google's function calling doesn't support many advanced JSON Schema features
+        that Pydantic generates by default.
+
+        Args:
+            schema: Raw Pydantic schema
+
+        Returns:
+            Cleaned schema compatible with Google Function Calling
+        """
+        if not isinstance(schema, dict):
+            return schema
+
+        cleaned = {}
+
+        # Fields that Google Function Calling supports
+        supported_fields = {
+            'type', 'description', 'enum', 'default', 'properties',
+            'required', 'items'
+        }
+
+        # Copy supported fields
+        for key, value in schema.items():
+            if key in supported_fields:
+                if key == 'properties':
+                    # Recursively clean properties
+                    cleaned[key] = {k: self.clean_google_schema(v) for k, v in value.items()}
+                elif key == 'items':
+                    # Clean array items
+                    cleaned[key] = self.clean_google_schema(value)
+                else:
+                    cleaned[key] = value
+
+        # Handle special cases for type conversion
+        if 'type' in cleaned:
+            # Convert complex types to simple ones
+            if cleaned['type'] == 'integer':
+                cleaned['type'] = 'number'  # Google prefers 'number' over 'integer'
+            elif isinstance(cleaned['type'], list):
+                # Handle union types - take the first non-null type
+                non_null_types = [t for t in cleaned['type'] if t != 'null']
+                if non_null_types:
+                    cleaned['type'] = non_null_types[0]
+                else:
+                    cleaned['type'] = 'string'  # fallback
+
+        # Handle anyOf (union types) - convert to simple type
+        if 'anyOf' in schema:
+            # Try to find a non-null type from anyOf
+            for option in schema['anyOf']:
+                if isinstance(option, dict) and option.get('type') != 'null':
+                    cleaned['type'] = option['type']
+                    # If it's an array, also copy the items
+                    if option.get('type') == 'array' and 'items' in option:
+                        cleaned['items'] = self.clean_google_schema(option['items'])
+                    # Copy other relevant fields
+                    for field in ['description', 'enum', 'default']:
+                        if field in option:
+                            cleaned[field] = option[field]
+                    break
+            else:
+                # Fallback to string if no good type found
+                cleaned['type'] = 'string'
+
+        # Remove problematic fields that Google doesn't support
+        problematic_fields = {
+            'prefixItems', 'additionalItems', 'minItems', 'maxItems',
+            'minLength', 'maxLength', 'pattern', 'format', 'minimum',
+            'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'multipleOf',
+            'allOf', 'anyOf', 'oneOf', 'not', 'const', 'examples',
+            '$defs', 'definitions', '$ref', 'title', 'additionalProperties'
+        }
+
+        for field in problematic_fields:
+            cleaned.pop(field, None)
+
+        return cleaned
+
 
     def _build_tools(self, tool_type: str) -> Optional[List[types.Tool]]:
         """Build tools based on the specified type."""
@@ -144,17 +224,19 @@ class GoogleGenAIClient(AbstractClient):
                     tool_description = full_schema.get("description", tool.description)
                     # Extract ONLY the parameters part
                     schema = full_schema.get("parameters", {}).copy()
-                    try:
-                        del schema['additionalProperties']
-                    except KeyError:
-                        pass
+
+                    # Clean the schema for Google compatibility
+                    schema = self.clean_google_schema(schema)
+
                 elif isinstance(tool, ToolDefinition):
                     tool_description = tool.description
-                    schema = tool.input_schema
+                    schema = self.clean_google_schema(tool.input_schema.copy())
                 else:
                     # Fallback for other tool types
                     tool_description = getattr(tool, 'description', f"Tool: {tool_name}")
                     schema = getattr(tool, 'input_schema', {})
+                    schema = self.clean_google_schema(schema)
+
                 # Ensure we have a valid parameters schema
                 if not schema:
                     schema = {
@@ -162,13 +244,20 @@ class GoogleGenAIClient(AbstractClient):
                         "properties": {},
                         "required": []
                     }
-                function_declarations.append(
-                    types.FunctionDeclaration(
-                        name=tool_name,
-                        description=tool_description,
-                        parameters=self._fix_tool_schema(schema.copy())
+
+                try:
+                    function_declarations.append(
+                        types.FunctionDeclaration(
+                            name=tool_name,
+                            description=tool_description,
+                            parameters=self._fix_tool_schema(schema)
+                        )
                     )
-                )
+                except Exception as e:
+                    self.logger.error(f"Error creating function declaration for {tool_name}: {e}")
+                    # Skip this tool if it can't be created
+                    continue
+
             return [
                 types.Tool(function_declarations=function_declarations)
             ]
@@ -354,7 +443,6 @@ class GoogleGenAIClient(AbstractClient):
                     response_content = f"Error: {str(result)}"
                 else:
                     if 'flash' in model:
-                        print('HOLA FLASH')
                         response_content = result
                     else:
                         # Enhanced result formatting for non-flash models
@@ -365,6 +453,23 @@ class GoogleGenAIClient(AbstractClient):
                         response_content = {
                             "result": response_content
                         }
+                # Format response for Google Function Calling
+                if isinstance(response_content, pd.DataFrame):
+                    response_content = response_content.to_dict(orient='records')
+                    if isinstance(response_content, list):
+                        response_content = {
+                            "result": response_content
+                        }
+
+                elif hasattr(result, 'model_dump'):
+                    response_content = response_content.model_dump()
+                elif hasattr(result, 'dict'):  # Older Pydantic versions
+                    response_content = response_content.dict()
+                # Handle lists of Pydantic models
+                elif isinstance(result, list):
+                    response_content = {
+                        "result": response_content
+                    }
                 function_response_parts.append(
                     Part(
                         function_response=types.FunctionResponse(

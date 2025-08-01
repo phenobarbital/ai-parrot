@@ -156,6 +156,9 @@ class ExcelTool(AbstractDocumentTool):
         """
         if isinstance(content, pd.DataFrame):
             return content
+        elif isinstance(content, dict):
+            # Single dictionary, convert to DataFrame
+            return pd.DataFrame(content)
         elif isinstance(content, list):
             if not content:
                 raise ValueError("Content list cannot be empty")
@@ -535,7 +538,7 @@ class ExcelTool(AbstractDocumentTool):
 
             # Use the safe document creation workflow
             result = await self._create_document_safely(
-                content=content,
+                content=dataframe,
                 output_filename=output_filename,
                 file_prefix=file_prefix,
                 output_dir=output_dir,
