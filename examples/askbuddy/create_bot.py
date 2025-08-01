@@ -1,31 +1,41 @@
 import asyncio
-from parrot.chatbots.basic import Chatbot
-from parrot.llms.vertex import VertexLLM
+from parrot.bots.basic import BasicBot
 
 
 async def get_agent():
     """Return the New Agent.
     """
-    llm = VertexLLM(
-        model='gemini-1.5-pro',
-        temperature=0.1,
-        top_k=30,
-        Top_p=0.6,
+    agent = BasicBot(
+        name='AskBuddy'
     )
-    agent = Chatbot(
-        name='AskBuddy',
-        llm=llm
+    embed_model = {
+        "model": "thenlper/gte-base",
+        "model_type": "huggingface"
+    }
+    agent.define_store(
+        vector_store='postgres',
+        embedding_model=embed_model,
+        dsn="postgresql+asyncpg://troc_pgdata:12345678@127.0.0.1:5432/navigator",
+        dimension=768,
     )
     await agent.configure()
     # Create the Collection
-    if agent.store.collection_exists('employee_information'):
-        await agent.store.delete_collection('employee_information')
-    await agent.store.create_collection(  # pylint: disable=E1120
-        collection_name='employee_information',
-        dimension=768,
-        index_type="IVF_SQ8",
-        metric_type='L2'
-    )
+    async with agent.store as store:
+        if await store.collection_exists(
+            table='employee_information',
+            schema='mso'
+        ):
+            await store.delete_collection(
+                table='employee_information',
+                schema='mso'
+            )
+        await store.create_collection(  # pylint: disable=E1120
+            table='employee_information',
+            schema='mso',
+            dimension=768,
+            index_type="COSINE",
+            metric_type='L2'
+        )
 
 
 if __name__ == "__main__":

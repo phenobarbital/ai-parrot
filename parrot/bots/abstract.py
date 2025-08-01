@@ -2,92 +2,25 @@
 Abstract Bot interface.
 """
 from abc import ABC
+import contextlib
 import importlib
-from typing import Any, List, Union, Optional
+from typing import Any, Dict, List, Union, Optional
 from collections.abc import Callable
-import os
 import uuid
 from string import Template
 import asyncio
+import copy
 from aiohttp import web
-from langgraph.checkpoint.memory import MemorySaver
-from langchain_core.vectorstores import VectorStoreRetriever
-from langchain.memory import (
-    ConversationBufferMemory,
-    ConversationBufferWindowMemory
-)
-from langchain.prompts import (
-    ChatPromptTemplate,
-    SystemMessagePromptTemplate,
-    HumanMessagePromptTemplate,
-    PromptTemplate
-)
-from langchain.retrievers import (
-    EnsembleRetriever,
-)
-from langchain.docstore.document import Document
-from langchain.chains.retrieval_qa.base import RetrievalQA
-from langchain.chains.conversational_retrieval.base import (
-    ConversationalRetrievalChain
-)
-from langchain_community.chat_message_histories import (
-    RedisChatMessageHistory
-)
-from langchain_community.retrievers import BM25Retriever
-from pydantic_core._pydantic_core import ValidationError  # pylint: disable=E0611
-# for exponential backoff
-import backoff # for exponential backoff
-from datamodel.exceptions import ValidationError as DataError  # pylint: disable=E0611
 from navconfig.logging import logging
 from navigator_auth.conf import AUTH_SESSION_OBJECT
+
+from parrot.tools.math import MathTool  # pylint: disable=E0611
 from ..interfaces import DBInterface
 from ..exceptions import ConfigError  # pylint: disable=E0611
 from ..conf import (
-    REDIS_HISTORY_URL,
     EMBEDDING_DEFAULT_MODEL
 )
-
-## LLM configuration
-from ..llms import LLM_PRESETS, AbstractLLM
-
-# Vertex
-try:
-    from ..llms.vertex import VertexLLM
-    VERTEX_ENABLED = True
-except (ModuleNotFoundError, ImportError):
-    VERTEX_ENABLED = False
-
-# Google
-try:
-    from ..llms.google import GoogleGenAI
-    GOOGLE_ENABLED = True
-except (ModuleNotFoundError, ImportError):
-    GOOGLE_ENABLED = False
-
-# Anthropic:
-try:
-    from ..llms.anthropic import AnthropicLLM
-    ANTHROPIC_ENABLED = True
-except (ModuleNotFoundError, ImportError):
-    ANTHROPIC_ENABLED = False
-
-# OpenAI
-try:
-    from ..llms.openai import OpenAILLM
-    OPENAI_ENABLED = True
-except (ModuleNotFoundError, ImportError):
-    OPENAI_ENABLED = False
-
-# Groq
-try:
-    from ..llms.groq import GroqLLM
-    GROQ_ENABLED = True
-except (ModuleNotFoundError, ImportError):
-    GROQ_ENABLED = False
-
 from ..utils import SafeDict
-# Chat Response:
-from ..models import ChatResponse
 from .prompts import (
     BASIC_SYSTEM_PROMPT,
     BASIC_HUMAN_PROMPT,
@@ -96,26 +29,27 @@ from .prompts import (
     DEFAULT_CAPABILITIES,
     DEFAULT_BACKHISTORY
 )
-from .interfaces import EmptyRetriever
-## Vector Stores:
-from ..stores import AbstractStore, supported_stores, EmptyStore
-from .retrievals import MultiVectorStoreRetriever
+from ..clients import LLM_PRESETS, SUPPORTED_CLIENTS, AbstractClient
+from ..models import (
+    AIMessage,
+)
+from ..stores import AbstractStore, supported_stores
+from ..stores.models import Document
+from ..tools import AbstractTool
+from ..tools.manager import ToolManager, ToolFormat
+from ..memory import (
+    ConversationMemory,
+    ConversationTurn,
+    ConversationHistory,
+    InMemoryConversation,
+    FileConversationMemory,
+    RedisConversation,
+)
 
-
-os.environ["GRPC_ENABLE_FORK_SUPPORT"] = "0"
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"  # Hide TensorFlow logs if present
 
 logging.getLogger(name='primp').setLevel(logging.INFO)
 logging.getLogger(name='rquest').setLevel(logging.INFO)
 logging.getLogger("grpc").setLevel(logging.CRITICAL)
-logging.getLogger("tensorflow").setLevel(logging.CRITICAL)
-logging.getLogger("transformers").setLevel(logging.CRITICAL)
-logging.getLogger("pymilvus").setLevel(logging.INFO)
-
-
-def predicate(exception):
-    """Return True if we should retry, False otherwise."""
-    return not isinstance(exception, (ValidationError, RuntimeError, DataError))
 
 
 class AbstractBot(DBInterface, ABC):
@@ -123,26 +57,35 @@ class AbstractBot(DBInterface, ABC):
 
     This class is an abstract representation a base abstraction for all Chatbots.
     """
-    # TODO: make tensor and embeddings optional.
     # Define system prompt template
     system_prompt_template = BASIC_SYSTEM_PROMPT
-
     # Define human prompt template
     human_prompt_template = BASIC_HUMAN_PROMPT
+    _default_llm: str = 'google'
 
     def __init__(
         self,
         name: str = 'Nav',
         system_prompt: str = None,
         human_prompt: str = None,
+        use_tools: bool = True,
+        tools: List[Union[str, AbstractTool]] = None,
+        tool_threshold: float = 0.7,  # Confidence threshold for tool usage,
+        debug: bool = False,
         **kwargs
     ):
         """Initialize the Chatbot with the given configuration."""
         self._request: Optional[web.Request] = None
+
+        # System and Human Prompts:
         if system_prompt:
             self.system_prompt_template = system_prompt or self.system_prompt_template
         if human_prompt:
             self.human_prompt_template = human_prompt or self.human_prompt_template
+
+        # Debug mode:
+        self._debug = debug
+
         # Chatbot ID:
         self.chatbot_id: uuid.UUID = kwargs.get(
             'chatbot_id',
@@ -150,20 +93,30 @@ class AbstractBot(DBInterface, ABC):
         )
         if self.chatbot_id is None:
             self.chatbot_id = str(uuid.uuid4().hex)
-        # Basic Information:
+
+        # Basic Bot Information:
         self.name: str = name
         ##  Logging:
         self.logger = logging.getLogger(
             f'{self.name}.Bot'
         )
+        # Agentic Tools:
+        # Replace list with ToolManager
+        self.tool_manager = ToolManager(self.logger)
+        self.tools = tools or []
+        self.tool_threshold = tool_threshold
+        if use_tools:
+            # Set default tools in ToolManager
+            self.tool_manager.register_tools(
+                tools
+            )
+            self.tool_manager.default_tools()
         # Optional aiohttp Application:
         self.app: Optional[web.Application] = None
-        # Optional Redis Memory Saver:
-        self.memory_saver: Optional[MemorySaver] = None
         # Start initialization:
-        self.kb = None
-        self.knowledge_base: List[str] = []
         self.return_sources: bool = kwargs.pop('return_sources', True)
+
+        # Bot Attributes:
         self.description = self._get_default_attr(
             'description',
             'Navigator Chatbot',
@@ -175,46 +128,53 @@ class AbstractBot(DBInterface, ABC):
         self.backstory = kwargs.get('backstory', DEFAULT_BACKHISTORY)
         self.rationale = kwargs.get('rationale', self.default_rationale())
         self.context = kwargs.get('use_context', True)
-        # Definition of LLM
-        self._llm_class: str = None
-        self._default_llm: str = kwargs.get('use_llm', 'vertexai')
-        self._use_chat: bool = kwargs.get('use_chat', False)
-        self._llm_model = kwargs.get('model_name', 'gemini-2.0-flash-001')
+
+        # Definition of LLM Client
+        self._llm_model = kwargs.get('model', 'gemini-2.5-flash')
         self._llm_preset: str = kwargs.get('preset', None)
+        self._llm: Union[str, Any] = kwargs.get('llm', 'google')
+        if isinstance(self._llm, str):
+            self._llm = SUPPORTED_CLIENTS.get(self._llm.lower(), None)
+        if self._llm:
+            with contextlib.suppress(Exception):
+                if not issubclass(self._llm, AbstractClient):
+                    raise ValueError(
+                        f"Invalid LLM Client: {self._llm}. Must be one of {SUPPORTED_CLIENTS.keys()}"
+                    )
         if self._llm_preset:
             try:
                 presetting = LLM_PRESETS[self._llm_preset]
             except KeyError:
                 self.logger.warning(
-                    f"Invalid preset: {self._llm_preset}, default to 'analytical'"
+                    f"Invalid preset: {self._llm_preset}, default to 'default'"
                 )
-                presetting = LLM_PRESETS['analytical']
+                presetting = LLM_PRESETS['default']
             self._llm_temp = presetting.get('temperature', 0.1)
-            self._max_tokens = presetting.get('max_tokens', 4096)
+            self._max_tokens = presetting.get('max_tokens', 1024)
         else:
             # Default LLM Presetting by LLMs
             self._llm_temp = kwargs.get('temperature', 0.1)
-            self._max_tokens = kwargs.get('max_tokens', 4096)
-        self._llm_top_k = kwargs.get('top_k', 41)
-        self._llm_top_p = kwargs.get('top_p', 0.9)
+            self._max_tokens = kwargs.get('max_tokens', 1024)
+        # LLM Configuration:
+        self._top_k = kwargs.get('top_k', 41)
+        self._top_p = kwargs.get('top_p', 0.9)
         self._llm_config = kwargs.get('model_config', {})
         if self._llm_config:
             self._llm_model = self._llm_config.pop('model', self._llm_model)
-            self._llm_class = self._llm_config.pop('name', 'VertexLLM')
+            llm = self._llm_config.pop('name', 'google')
+            self._llm_temp = self._llm_config.pop('temperature', self._llm_temp)
+            self._top_k = self._llm_config.pop('top_k', self._top_k)
+            self._top_p = self._llm_config.pop('top_p', self._top_p)
+            self._llm = SUPPORTED_CLIENTS.get(llm)
         else:
             self._llm_config = {
-                "name":  self._llm_class,
+                "name":  self._llm,
                 "model": self._llm_model,
                 "temperature": self._llm_temp,
-                "top_k": self._llm_top_k,
-                "top_p": self._llm_top_p
+                "top_k": self._top_k,
+                "top_p": self._top_p
             }
-        # Overrriding LLM object
-        self._llm_obj: Callable = kwargs.get('llm', None)
-        # LLM base Object:
-        self._llm: Callable = None
         self.context = kwargs.pop('context', '')
-
         # Pre-Instructions:
         self.pre_instructions: list = kwargs.get(
             'pre_instructions',
@@ -222,7 +182,8 @@ class AbstractBot(DBInterface, ABC):
         )
 
         # Knowledge base:
-        self.knowledge_base: list = []
+        self.kb = None
+        self.knowledge_base: List[str] = []
         self._documents_: list = []
         # Models, Embed and collections
         # Vector information:
@@ -231,10 +192,23 @@ class AbstractBot(DBInterface, ABC):
         self._vector_store: dict = kwargs.get('vector_store', None)
         self.chunk_size: int = int(kwargs.get('chunk_size', 2048))
         self.dimension: int = int(kwargs.get('dimension', 384))
-        # Metric Type:
         self._metric_type: str = kwargs.get('metric_type', 'COSINE')
         self.store: Callable = None
+        # List of Vector Stores:
         self.stores: List[AbstractStore] = []
+
+        # NEW: Unified Conversation Memory System
+        self.conversation_memory: Optional[ConversationMemory] = None
+        self.memory_type: str = kwargs.get('memory_type', 'memory')  # 'memory', 'file', 'redis'
+        self.memory_config: dict = kwargs.get('memory_config', {})
+
+        # Conversation settings
+        self.max_context_turns: int = kwargs.get('max_context_turns', 5)
+        self.enable_tools: bool = kwargs.get('enable_tools', True)
+        self.context_search_limit: int = kwargs.get('context_search_limit', 10)
+        self.context_score_threshold: float = kwargs.get('context_score_threshold', 0.7)
+
+        # Memory settings
         self.memory: Callable = None
         # Embedding Model Name
         self.embedding_model = kwargs.get(
@@ -246,11 +220,6 @@ class AbstractBot(DBInterface, ABC):
         )
         # embedding object:
         self.embeddings = kwargs.get('embeddings', None)
-        self.rag_model = kwargs.get(
-            'rag_model',
-            "rlm/rag-prompt-llama"
-        )
-        # Summarization and Classification Models
         # Bot Security and Permissions:
         _default = self.default_permissions()
         _permissions = kwargs.get('permissions', _default)
@@ -287,7 +256,7 @@ class AbstractBot(DBInterface, ABC):
         return self._permissions
 
     def get_supported_models(self) -> List[str]:
-        return self._llm_obj.get_supported_models()
+        return self._llm.get_supported_models()
 
     def _get_default_attr(self, key, default: Any = None, **kwargs):
         if key in kwargs:
@@ -305,12 +274,9 @@ class AbstractBot(DBInterface, ABC):
         # TODO: read rationale from a file
         return (
             "** Your Style: **\n"
-            "- When responding to user queries, ensure that you provide accurate and up-to-date information.\n"
+            "- When responding to user queries, ensure that you provide accurate and up-to-date information.\n"  # noqa: C0301
             "- Be polite, clear and concise in your explanations.\n"
             "- ensuring that responses are based only on verified information from owned sources.\n"
-            "- If you are unsure, let the user know and avoid making assumptions. Maintain a professional tone in all responses.\n"
-            "- Use simple language for complex topics to ensure user understanding.\n"
-            "- Detect user language: respond in English if the user writes in English; respond in Spanish if the user writes in Spanish."
         )
 
     @property
@@ -319,109 +285,225 @@ class AbstractBot(DBInterface, ABC):
 
     @llm.setter
     def llm(self, model):
-        self._llm_obj = model
-        self._llm = model.get_llm()
+        self._llm = model
 
-    @backoff.on_exception(
-        backoff.expo,
-        Exception,
-        max_tries=3,
-        max_time=60,
-        giveup=lambda e: not predicate(e)  # Don't retry if predicate returns False
-    )
     def llm_chain(
         self,
         llm: str = "vertexai",
         model: str = None,
         **kwargs
-    ) -> AbstractLLM:
+    ) -> AbstractClient:
         """llm_chain.
 
         Args:
             llm (str): The language model to use.
 
         Returns:
-            AbstractLLM: The language model to use.
+            AbstractClient: The language model to use.
 
         """
         try:
-            if llm == 'openai' and OPENAI_ENABLED:
-                mdl = OpenAILLM(model=model or "gpt-4.1", **kwargs)
-            elif llm in ('vertexai', 'VertexLLM') and VERTEX_ENABLED:
-                mdl = VertexLLM(model=model or "gemini-1.5-pro", **kwargs)
-            elif llm == 'anthropic' and ANTHROPIC_ENABLED:
-                mdl = AnthropicLLM(model=model or 'claude-3-5-sonnet-20240620', **kwargs)
-            elif llm in ('groq', 'Groq') and GROQ_ENABLED:
-                mdl = GroqLLM(model=model or "meta-llama/llama-4-maverick-17b-128e-instruct", **kwargs)
-            elif llm == 'llama3' and GROQ_ENABLED:
-                mdl = GroqLLM(model=model or "llama-3.3-70b-versatile", **kwargs)
-            elif llm == 'gemma' and GROQ_ENABLED:
-                mdl = GroqLLM(model=model or "gemma2-9b-it", **kwargs)
-            elif llm == 'mistral' and GROQ_ENABLED:
-                mdl = GroqLLM(model=model or "mistral-saba-24b", **kwargs)
-            elif llm == 'google' and GOOGLE_ENABLED:
-                mdl = GoogleGenAI(model=model or "models/gemini-2.5-pro-preview-03-25", **kwargs)
-            else:
-                raise ValueError(f"Invalid llm: {llm}")
-            # get the LLM:
-            return mdl
+            cls = SUPPORTED_CLIENTS.get(llm.lower(), None)
+            if not cls:
+                raise ValueError(f"Unsupported LLM: {llm}")
+            return cls(model=model, **kwargs)
         except Exception:
             raise
 
     def configure_llm(
         self,
         llm: Union[str, Callable] = None,
-        config: Optional[dict] = None,
-        use_chat: bool = False,
         **kwargs
     ):
         """
         Configuration of LLM.
         """
-        if isinstance(llm, str):
-            # Get the LLM By Name:
-            self._llm_obj = self.llm_chain(
-                llm,
-                **config
-            )
-            # getting langchain LLM from Obj:
-            self._llm = self._llm_obj.get_llm()
-        elif isinstance(llm, AbstractLLM):
-            self._llm_obj = llm
-            self._llm = llm.get_llm()
-        elif callable(llm):
-            # self._llm_obj = llm
-            self._llm = llm()
-        elif isinstance(self._llm_obj, str):
-            # is the name of the LLM object to be used:
-            self._llm_obj = self.llm_chain(
-                llm=self._llm_obj,
-                **kwargs
-            )
-            self._llm = self._llm_obj.get_llm()
-        elif isinstance(self._llm_obj, AbstractLLM):
-            self._llm = self._llm_obj.get_llm()
+        if llm is not None:
+            # If llm is provided, use it to configure the LLM client
+            if isinstance(llm, str):
+                # Get the LLM By Name:
+                cls = SUPPORTED_CLIENTS.get(llm.lower(), None)
+                self._llm = cls(
+                    conversation_memory=self.conversation_memory,
+                    **kwargs
+                )
+            elif issubclass(llm, AbstractClient):
+                self._llm = llm(
+                    conversation_memory=self.conversation_memory,
+                    **kwargs
+                )
+            elif isinstance(llm, AbstractClient):
+                # Set conversation memory on existing client
+                if hasattr(llm, 'conversation_memory'):
+                    llm.conversation_memory = self.conversation_memory
+                self._llm = llm
+            elif callable(llm):
+                self._llm = llm(
+                    conversation_memory=self.conversation_memory,
+                    **kwargs
+                )
+            else:
+                # TODO: Calling a Default LLM based on name
+                # TODO: passing the default configuration
+                try:
+                    self._llm = self.llm_chain(
+                        llm=self._default_llm,
+                        model=self._llm_model,
+                        temperature=self._llm_temp,
+                        top_k=self._top_k,
+                        top_p=self._top_p,
+                        max_tokens=self._max_tokens,
+                    )
+                except Exception as e:
+                    raise ConfigError(
+                        f"Error configuring Default LLM {self._llm_model}: {e}"
+                    )
         else:
-            # TODO: Calling a Default LLM
-            # TODO: passing the default configuration
-            try:
-                self._llm_obj = self.llm_chain(
-                    llm=self._default_llm,
-                    model=self._llm_model,
-                    temperature=self._llm_temp,
-                    top_k=self._llm_top_k,
-                    top_p=self._llm_top_p,
-                    max_tokens=self._max_tokens,
-                    use_chat=use_chat
-                )
-            except Exception as e:
-                self.logger.error(
-                    f"Error configuring Default LLM {self._llm_model}: {e}"
-                )
-                raise ConfigError(
-                    f"Error configuring Default LLM {self._llm_model}: {e}"
-                )
-            self._llm = self._llm_obj.get_llm()
+            if self._llm is None:
+                # If no llm is provided, use the default LLM configuration
+                try:
+                    self._llm = self.llm_chain(
+                        llm=self._default_llm,
+                        model=self._llm_model,
+                        temperature=self._llm_temp,
+                        top_k=self._top_k,
+                        top_p=self._top_p,
+                        max_tokens=self._max_tokens,
+                        conversation_memory=self.conversation_memory,
+                    )
+                except Exception as e:
+                    raise ConfigError(
+                        f"Error configuring Default LLM {self._llm_model}: {e}"
+                    )
+            elif isinstance(self._llm, AbstractClient):
+                if hasattr(self._llm, 'conversation_memory'):
+                    self._llm.conversation_memory = self.conversation_memory
+                return self._llm
+            elif issubclass(self._llm, AbstractClient):
+                try:
+                    # If _llm is already an AbstractClient subclass, just use it
+                    self._llm = self._llm(
+                        model=self._llm_model,
+                        temperature=self._llm_temp,
+                        top_k=self._top_k,
+                        top_p=self._top_p,
+                        max_tokens=self._max_tokens,
+                        conversation_memory=self.conversation_memory,
+                        **kwargs
+                    )
+                except TypeError as e:
+                    raise ConfigError(
+                        f"Error initializing LLM Client {self._llm.__name__}: {e}"
+                    )
+        # Register tools directly on client (like your working examples)
+        if self.tools:
+            for tool in self.tool_manager.get_tools():
+                print('TOOL > ', tool, type(tool))
+                self._llm.register_tool(tool)
+
+    def define_store(
+        self,
+        vector_store: str = 'postgres',
+        **kwargs
+    ):
+        """Define the Vector Store."""
+        self._use_vector = True
+        self._vector_store = {
+            "name": vector_store,
+            **kwargs
+        }
+
+    def configure_store(self, **kwargs):
+        """Configure Vector Store."""
+        if isinstance(self._vector_store, list):
+            for st in self._vector_store:
+                try:
+                    store_cls = self._get_database_store(st)
+                    store_cls.use_database = self._use_vector
+                    self.stores.append(store_cls)
+                except ImportError:
+                    continue
+        elif isinstance(self._vector_store, dict):
+            store_cls = self._get_database_store(self._vector_store)
+            store_cls.use_database = self._use_vector
+            self.stores.append(store_cls)
+        else:
+            raise ValueError(f"Invalid Vector Store Config: {self._vector_store}")
+
+        self.logger.info(f"Configured Vector Stores: {self.stores}")
+        if self.stores:
+            self.store = self.stores[0]
+
+    def _get_database_store(self, store: dict) -> AbstractStore:
+        """Get the VectorStore Class from the store configuration."""
+        name = store.get('name', None)
+        if not name:
+            vector_driver = store.get('vector_database', 'PgVectorStore')
+            name = next(
+                (k for k, v in supported_stores.items() if v == vector_driver), None
+            )
+        store_cls = supported_stores.get(name)
+        cls_path = f"parrot.stores.{name}"
+        try:
+            module = importlib.import_module(cls_path, package=name)
+            store_cls = getattr(module, store_cls)
+            self.logger.notice(
+                f"Using VectorStore: {store_cls.__name__} for {name} with Embedding {self.embedding_model}"  # noqa
+            )
+            if not 'embedding_model' in store:
+                store['embedding_model'] = self.embedding_model
+            if not 'embedding' in store:
+                store['embedding'] = self.embeddings
+            return store_cls(
+                **store
+            )
+        except (ModuleNotFoundError, ImportError) as e:
+            self.logger.error(f"Error importing VectorStore: {e}")
+            raise
+
+    def configure_conversation_memory(self) -> None:
+        """Configure the unified conversation memory system."""
+        try:
+            self.conversation_memory = self.get_conversation_memory(
+                storage_type=self.memory_type,
+                **self.memory_config
+            )
+            self.logger.info(
+                f"Configured conversation memory: {self.memory_type}"
+            )
+        except Exception as e:
+            self.logger.error(f"Error configuring conversation memory: {e}")
+            # Fallback to in-memory
+            self.conversation_memory = self.get_conversation_memory("memory")
+            self.logger.warning(
+                "Fallback to in-memory conversation storage"
+            )
+
+    def _define_prompt(self, config: Optional[dict] = None, **kwargs):
+        """
+        Define the System Prompt and replace variables.
+        """
+        # setup the prompt variables:
+        if config:
+            for key, val in config.items():
+                setattr(self, key, val)
+
+        pre_context = ''
+        if self.pre_instructions:
+            pre_context = "IMPORTANT PRE-INSTRUCTIONS: \n"
+            pre_context += "\n".join(f"- {a}." for a in self.pre_instructions)
+        tmpl = Template(self.system_prompt_template)
+        final_prompt = tmpl.safe_substitute(
+            name=self.name,
+            role=self.role,
+            goal=self.goal,
+            capabilities=self.capabilities,
+            backstory=self.backstory,
+            rationale=self.rationale,
+            pre_context=pre_context,
+            **kwargs
+        )
+        self.system_prompt_template = final_prompt
 
     def create_kb(self, documents: list):
         new_docs = []
@@ -444,57 +526,6 @@ class AbstractBot(DBInterface, ABC):
                 )
         return new_docs
 
-    def safe_format_template(self, template, **kwargs):
-        """
-        Format a template string while preserving content inside triple backticks.
-        """
-        # Split the template by triple backticks
-        parts = template.split("```")
-
-        # Format only the odd-indexed parts (outside triple backticks)
-        for i in range(0, len(parts), 2):
-            parts[i] = parts[i].format_map(SafeDict(**kwargs))
-
-        # Rejoin with triple backticks
-        return "```".join(parts)
-
-    def _define_prompt(self, config: Optional[dict] = None, **kwargs):
-        """
-        Define the System Prompt and replace variables.
-        """
-        # setup the prompt variables:
-        if config:
-            for key, val in config.items():
-                setattr(self, key, val)
-
-        pre_context = ''
-        if self.pre_instructions:
-            pre_context = "Pre-Instructions: \n"
-            pre_context += "\n".join(f"- {a}." for a in self.pre_instructions)
-        context = "{context}"
-        if self.context:
-            context = """
-            Here is a brief summary of relevant information:
-            Context: {context}
-            End of Context.
-
-            Given this information, please provide answers to the following question adding detailed and useful insights.
-            """
-        tmpl = Template(self.system_prompt_template)
-        final_prompt = tmpl.safe_substitute(
-            name=self.name,
-            role=self.role,
-            goal=self.goal,
-            capabilities=self.capabilities,
-            backstory=self.backstory,
-            rationale=self.rationale,
-            pre_context=pre_context,
-            context=context,
-            **kwargs
-        )
-        print('Template Prompt: \n', final_prompt)
-        self.system_prompt_template = final_prompt
-
     async def configure(self, app=None) -> None:
         """Basic Configuration of Bot.
         """
@@ -507,6 +538,9 @@ class AbstractBot(DBInterface, ABC):
         # adding this configured chatbot to app:
         if self.app:
             self.app[f"{self.name.lower()}_bot"] = self
+
+        # Configure conversation memory FIRST
+        self.configure_conversation_memory()
         # Configure LLM:
         try:
             self.configure_llm()
@@ -515,6 +549,13 @@ class AbstractBot(DBInterface, ABC):
                 f"Error configuring LLM: {e}"
             )
             raise
+        # set Client tools:
+        # Workaround for tools assignment:
+        tools = {}
+        for tool in self.tools:
+            tool_name = tool.name
+            tools[tool_name] = tool
+        self._llm.tools = tools
         # And define Prompt:
         try:
             self._define_prompt()
@@ -533,359 +574,658 @@ class AbstractBot(DBInterface, ABC):
                 )
                 raise
 
-
-    def _get_database_store(self, store: dict) -> AbstractStore:
-        """Get the VectorStore Class from the store configuration."""
-        name = store.get('name', None)
-        if not name:
-            vector_driver = store.get('vector_database', 'PgvectorStore')
-            name = next((k for k, v in supported_stores.items() if v == vector_driver), None)
-        store_cls = supported_stores.get(name)
-        cls_path = f"parrot.stores.{name}"
-        try:
-            module = importlib.import_module(cls_path, package=name)
-            store_cls = getattr(module, store_cls)
-            self.logger.notice(
-                f"Using VectorStore: {store_cls.__name__} for {name} with Embedding {self.embedding_model}"
-            )
-            return store_cls(
-                embedding_model=self.embedding_model,
-                embedding=self.embeddings,
-                **store
-            )
-        except (ModuleNotFoundError, ImportError) as e:
-            self.logger.error(
-                f"Error importing VectorStore: {e}"
-            )
-            raise
-
-    def configure_store(self, **kwargs):
-        # TODO: Implement VectorStore Configuration
-        if isinstance(self._vector_store, list):
-            # Is a list of vector stores instances:
-            for st in self._vector_store:
-                try:
-                    store_cls = self._get_database_store(st)
-                    store_cls.use_database = self._use_vector
-                    self.stores.append(store_cls)
-                except ImportError:
-                    continue
-        elif isinstance(self._vector_store, dict):
-            # Is a single vector store instance:
-            store_cls = self._get_database_store(self._vector_store)
-            store_cls.use_database = self._use_vector
-            self.stores.append(store_cls)
+    def get_conversation_memory(
+        self,
+        storage_type: str = "memory",
+        **kwargs
+    ) -> ConversationMemory:
+        """Factory function to create conversation memory instances."""
+        if storage_type == "memory":
+            return InMemoryConversation(**kwargs)
+        elif storage_type == "file":
+            return FileConversationMemory(**kwargs)
+        elif storage_type == "redis":
+            return RedisConversation(**kwargs)
         else:
             raise ValueError(
-                f"Invalid Vector Store Config: {self._vector_store}"
+                f"Unknown storage type: {storage_type}"
             )
-        self.logger.info(
-            f"Configured Vector Stores: {self.stores}"
-        )
-        if self.stores:
-            self.store = self.stores[0]
-        print('=================================')
-        print('END STORES >> ', self.stores, self.store)
-        print('=================================')
 
-
-    def get_memory(
+    async def get_conversation_history(
         self,
-        session_id: str = None,
-        key: str = 'chat_history',
-        input_key: str = 'question',
-        output_key: str = 'answer',
-        size: int = 5,
-        ttl: int = 86400
-    ):
-        args = {
-            'memory_key': key,
-            'input_key': input_key,
-            'output_key': output_key,
-            'return_messages': True,
-            'max_len': size,
-            'k': 10
-        }
-        if session_id:
-            message_history = RedisChatMessageHistory(
-                url=REDIS_HISTORY_URL,
-                session_id=session_id,
-                ttl=ttl
-            )
-            args['chat_memory'] = message_history
-        return ConversationBufferWindowMemory(
-            **args
-        )
+        user_id: str,
+        session_id: str
+    ) -> Optional[ConversationHistory]:
+        """Get conversation history using unified memory system."""
+        if not self.conversation_memory:
+            return None
+        return await self.conversation_memory.get_history(user_id, session_id)
 
-    def clean_history(
+    async def create_conversation_history(
         self,
-        session_id: str = None
-    ):
+        user_id: str,
+        session_id: str,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> ConversationHistory:
+        """Create new conversation history using unified memory system."""
+        if not self.conversation_memory:
+            raise RuntimeError("Conversation memory not configured")
+        return await self.conversation_memory.create_history(user_id, session_id, metadata)
+
+    async def save_conversation_turn(
+        self,
+        user_id: str,
+        session_id: str,
+        turn: ConversationTurn
+    ) -> None:
+        """Save a conversation turn using unified memory system."""
+        if not self.conversation_memory:
+            return
+        await self.conversation_memory.add_turn(user_id, session_id, turn)
+
+    async def clear_conversation_history(self, user_id: str, session_id: str) -> bool:
+        """Clear conversation history using unified memory system."""
+        if not self.conversation_memory:
+            return False
         try:
-            redis_client = RedisChatMessageHistory(
-                url=REDIS_HISTORY_URL,
-                session_id=session_id,
-                ttl=60
+            await self.conversation_memory.clear_history(user_id, session_id)
+            self.logger.info(f"Cleared conversation history for {user_id}/{session_id}")
+            return True
+        except Exception as e:
+            self.logger.error(f"Error clearing conversation history: {e}")
+            return False
+
+    async def delete_conversation_history(self, user_id: str, session_id: str) -> bool:
+        """Delete conversation history entirely using unified memory system."""
+        if not self.conversation_memory:
+            return False
+        try:
+            result = await self.conversation_memory.delete_history(user_id, session_id)
+            self.logger.info(f"Deleted conversation history for {user_id}/{session_id}")
+            return result
+        except Exception as e:
+            self.logger.error(f"Error deleting conversation history: {e}")
+            return False
+
+    async def list_user_conversations(self, user_id: str) -> List[str]:
+        """List all conversation sessions for a user."""
+        if not self.conversation_memory:
+            return []
+        try:
+            return await self.conversation_memory.list_sessions(user_id)
+        except Exception as e:
+            self.logger.error(f"Error listing conversations for user {user_id}: {e}")
+            return []
+
+    async def get_vector_context(
+        self,
+        question: str,
+        search_type: str = 'similarity',  # 'similarity', 'mmr', 'ensemble'
+        search_kwargs: dict = None,
+        metric_type: str = 'COSINE',
+        limit: int = 10,
+        score_threshold: float = None,
+        ensemble_config: dict = None
+    ) -> str:
+        """Get relevant context from vector store.
+        Args:
+            question (str): The user's question to search context for.
+            search_type (str): Type of search to perform ('similarity', 'mmr', 'ensemble').
+            search_kwargs (dict): Additional parameters for the search.
+            metric_type (str): Metric type for vector search (e.g., 'COSINE', 'EUCLIDEAN').
+            limit (int): Maximum number of context items to retrieve.
+            score_threshold (float): Minimum score for context relevance.
+            ensemble_config (dict): Configuration for ensemble search.
+        Returns:
+            tuple: (context_string, metadata_dict)
+        """
+        if not self.store:
+            return "", {}
+
+        try:
+            limit = limit or self.context_search_limit
+            score_threshold = score_threshold or self.context_score_threshold
+            search_results = None
+            metadata = {
+                'search_type': search_type,
+                'score_threshold': score_threshold,
+                'metric_type': metric_type
+            }
+            self.logger.notice(
+                f"Retrieving vector context for question: {question} "
+                f"using {search_type} search with limit {limit} "
+                f"and score threshold {score_threshold}"
             )
-            redis_client.clear()
+            async with self.store as store:
+                # Use the similarity_search method from PgVectorStore
+                if search_type == 'mmr':
+                    if search_kwargs is None:
+                        search_kwargs = {
+                            "k": limit,
+                            "fetch_k": limit * 2,
+                            "lambda_mult": 0.4,
+                        }
+                    search_results = await store.mmr_search(
+                        query=question,
+                        score_threshold=score_threshold,
+                        **(search_kwargs or {})
+                    )
+                elif search_type == 'ensemble':
+                    # Default ensemble configuration
+                    if ensemble_config is None:
+                        ensemble_config = {
+                            'similarity_limit': max(6, int(limit * 1.2)),  # Get more from similarity
+                            'mmr_limit': max(4, int(limit * 0.8)),         # Get fewer but more diverse from MMR
+                            'final_limit': limit,                          # Final number to return
+                            'similarity_weight': 0.6,                      # Weight for similarity scores
+                            'mmr_weight': 0.4,                            # Weight for MMR scores
+                            'dedup_threshold': 0.9,                       # Similarity threshold for deduplication
+                            'rerank_method': 'weighted_score'             # 'weighted_score', 'rrf', 'interleave'
+                        }
+                    search_results = await self._ensemble_search(
+                        store,
+                        question,
+                        ensemble_config,
+                        score_threshold,
+                        metric_type,
+                        search_kwargs
+                    )
+                    metadata.update({
+                        'ensemble_config': ensemble_config,
+                        'similarity_results_count': len(search_results.get('similarity_results', [])),
+                        'mmr_results_count': len(search_results.get('mmr_results', [])),
+                        'final_results_count': len(search_results.get('final_results', []))
+                    })
+                    search_results = search_results['final_results']
+                else:
+                    # doing a similarity search by default
+                    search_results = await store.similarity_search(
+                        query=question,
+                        limit=limit,
+                        score_threshold=score_threshold,
+                        metric=metric_type,
+                        **(search_kwargs or {})
+                    )
+
+            if not search_results:
+                metadata['search_results_count'] = 0
+                return "", metadata
+
+            # Format the context from search results
+            context_parts = []
+            sources = []
+            for i, result in enumerate(search_results):
+                context_parts.append(f"[Context {i+1}]: {result.content}")
+
+                # Extract source information
+                if hasattr(result, 'metadata') and result.metadata:
+                    source_id = result.metadata.get('source', f"result_{i}")
+                    sources.append(source_id)
+
+            context = "\n\n".join(context_parts)
+
+            metadata.update({
+                'search_results_count': len(search_results),
+                'sources': sources
+            })
+
+            self.logger.info(
+                f"Retrieved {len(search_results)} context items using {search_type} search"
+            )
+
+            return context, metadata
+
         except Exception as e:
             self.logger.error(
-                f"Error clearing chat history: {e}"
+                f"Error retrieving vector context: {e}"
+            )
+            return "", {
+                'search_results_count': 0,
+                'search_type': search_type,
+                'error': str(e)
+            }
+
+    def build_conversation_context(
+        self,
+        history: ConversationHistory,
+        max_chars_per_message: int = 200,
+        max_total_chars: int = 1500,
+        include_turn_timestamps: bool = False,
+        smart_truncation: bool = True
+    ) -> str:
+        """Build conversation context from history."""
+        if not history or not history.turns:
+            return ""
+
+        recent_turns = history.get_recent_turns(self.max_context_turns)
+
+        if not recent_turns:
+            return ""
+
+        context_parts = []
+        total_chars = 0
+
+        for i, turn in enumerate(recent_turns):
+            turn_number = len(recent_turns) - i
+
+            # Smart truncation: try to keep complete sentences
+            user_msg = self._smart_truncate(
+                turn.user_message, max_chars_per_message
+            ) if smart_truncation else self._simple_truncate(
+                turn.user_message, max_chars_per_message
+            )
+            assistant_msg = self._smart_truncate(
+                turn.assistant_response, max_chars_per_message
+            ) if smart_truncation else self._simple_truncate(
+                turn.assistant_response,
+                max_chars_per_message
             )
 
-    def get_response(self, response: dict, query: str = None):
-        if 'error' in response:
-            return response  # return this error directly
-        try:
-            response = ChatResponse(**response)
-            response.query = query
-            response.response = self.as_markdown(
-                response,
-                return_sources=self.return_sources
-            )
-            return response
-        except (ValueError, TypeError) as exc:
-            self.logger.error(
-                f"Error validating response: {exc}"
-            )
-            return response
-        except ValidationError as exc:
-            self.logger.error(
-                f"Error on response: {exc.payload}"
-            )
-            return response
+            # Build turn with optional timestamp
+            turn_parts = [f"=== Turn {turn_number} ==="]
+
+            if include_turn_timestamps and hasattr(turn, 'timestamp'):
+                turn_parts.append(f"Time: {turn.timestamp.strftime('%H:%M')}")
+
+            turn_parts.extend([
+                f"👤 User: {user_msg}",
+                f"🤖 Assistant: {assistant_msg}"
+            ])
+
+            turn_text = "\n".join(turn_parts)
+
+            # Check total length
+            if total_chars + len(turn_text) > max_total_chars:
+                if i == 0:  # Always try to include at least the most recent turn
+                    remaining_chars = max_total_chars - 100  # Leave room for formatting
+                    if remaining_chars > 200:
+                        turn_text = turn_text[:remaining_chars].rstrip() + "\n[...truncated]"
+                        context_parts.append(turn_text)
+                break
+
+            context_parts.append(turn_text)
+            total_chars += len(turn_text)
+
+        if not context_parts:
+            return ""
+
+        # Reverse to chronological order
+        context_parts.reverse()
+
+        # Add header
+        header = f"📋 Recent Conversation ({len(context_parts)} turns):"
+        return f"{header}\n\n" + "\n\n".join(context_parts)
+
+    def _smart_truncate(self, text: str, max_length: int) -> str:
+        """Truncate text at sentence boundaries when possible."""
+        if len(text) <= max_length:
+            return text
+
+        # Try to truncate at sentence boundaries
+        sentences = text.split('. ')
+        truncated = ""
+
+        for sentence in sentences:
+            test_text = truncated + sentence + ". " if truncated else sentence + ". "
+            if len(test_text) > max_length - 3:  # Leave room for "..."
+                break
+            truncated = test_text
+
+        # If no complete sentences fit, do character truncation
+        if not truncated or len(truncated) < max_length * 0.5:
+            truncated = text[:max_length - 3]
+
+        return truncated.rstrip() + "..."
+
+    def _simple_truncate(self, text: str, max_length: int) -> str:
+        """Simple character-based truncation."""
+        if len(text) <= max_length:
+            return text
+        return text[:max_length - 3].rstrip() + "..."
+
+    def _use_tools(
+        self,
+        question: str,
+    ) -> bool:
+        """Determine if tools should be enabled for this conversation."""
+        if not self.enable_tools:
+            return False
+
+        question_lower = question.lower()
+        tool_scores = {}
+        suggested_tools = []
+
+        # Simple heuristics - you can enhance this
+        tool_indicators = [
+            'search', 'find', 'lookup', 'get data', 'calculate', 'analyze',
+            'what is the current', 'latest', 'recent', 'today', 'now',
+            'weather', 'time', 'date', 'price', 'stock', 'news',
+            'translate', 'convert', 'generate', 'create file'
+        ]
+
+
+        return any(indicator in question_lower for indicator in tool_indicators)
+
+    async def create_system_prompt(
+        self,
+        vector_context: str = "",
+        conversation_context: str = "",
+        metadata: Optional[Dict[str, Any]] = None,
+        **kwargs
+    ) -> str:
+        """Create the complete system prompt for the LLM."""
+        # Process conversation and vector contexts
+        context_parts = []
+        if vector_context:
+            context_parts.append(vector_context)
+        if metadata:
+            metadata_text = "**Search Metadata:**\n"
+            for key, value in metadata.items():
+                if key == 'sources' and isinstance(value, list):
+                    metadata_text += f"- {key}: {', '.join(value[:3])}{'...' if len(value) > 3 else ''}\n"
+                else:
+                    metadata_text += f"- {key}: {value}\n"
+            context_parts.append(metadata_text)
+
+            # Format conversation context
+        chat_history_section = ""
+        if conversation_context:
+            chat_history_section = f"**Previous Conversation:**\n{conversation_context}"
+
+        # Apply template substitution
+        tmpl = Template(self.system_prompt_template)
+        system_prompt = tmpl.safe_substitute(
+            context="\n\n".join(context_parts) if context_parts else "No additional context available.",
+            chat_history=chat_history_section,
+            **kwargs
+        )
+        # print(f"📝 System Prompt Created: {len(system_prompt)} chars")
+        # print(f"System prompt preview:\n{system_prompt}...")
+        # print('=====')
+        return system_prompt
+
+    def _prepare_tools(self) -> List[Dict[str, Any]]:
+        """
+        Prepare tools in the format expected by the LLM client.
+
+        Returns:
+            List of tool schemas for the client
+        """
+        if not self.tools.list_tools():
+            return []
+
+        # Auto-detect provider format
+        provider_format = ToolFormat.GENERIC
+        if hasattr(self._llm, 'client_type'):
+            client_name = self._llm.client_type.lower()
+            if client_name == "google":
+                provider_format = ToolFormat.GOOGLE
+            elif client_name in "openai":
+                provider_format = ToolFormat.OPENAI
+            elif client_name == "anthropic":
+                provider_format = ToolFormat.ANTHROPIC
+            elif client_name == "groq":
+                provider_format = ToolFormat.GROQ
+            elif client_name == "vertexai":
+                provider_format = ToolFormat.GOOGLE
+            else:
+                self.logger.warning(
+                    f"Unknown LLM client type: {client_name}, using generic tool format"
+                )
+        return self.tools.get_tool_schemas(provider_format)
+
+    def _configure_client_tools(self, client, tools: List[Dict[str, Any]]) -> None:
+        """
+        Configure tools on the LLM client.
+
+        Args:
+            client: The LLM client instance
+            tools: List of prepared tool schemas
+        """
+        if not tools:
+            self.logger.debug("No tools to configure")
+            return
+        for tool_schema in tools:
+            tool_name = tool_schema.get('name')
+            description = tool_schema.get('description', '')
+            tool_instance = tool_schema.pop('_tool_instance', None)
+            if tool_name and tool_instance:
+                if hasattr(client, 'register_tool'):
+                    client.register_tool(
+                        tool_instance,
+                        name=tool_name,
+                        description=description
+                    )
 
     async def conversation(
-            self,
-            question: str,
-            chain_type: str = 'stuff',
-            search_type: str = 'similarity',  # 'similarity', 'mmr', 'ensemble'
-            search_kwargs: dict = None,
-            return_docs: bool = True,
-            metric_type: str = 'EUCLIDEAN_DISTANCE',
-            memory: Any = None,
-            limit: Optional[int] = 5,
-            score_threshold: float = None,
-            **kwargs
-    ):
-        # re-configure LLM:
-        new_llm = kwargs.pop('llm', None)
-        llm_config = kwargs.pop(
-            'llm_config',
-            {
-                "temperature": 0.1,
-                "top_k": 41,
-                "Top_p": 0.9
-            }
-        )
-        if search_kwargs is None:
-            search_kwargs = {
-                "k": limit,
-                "fetch_k": limit * 2,  # Fetch 2x for MMR, but still limited
-                "lambda_mult": 0.4,  # Balance relevance vs diversity
-            }
-        if new_llm:
-            self.configure_llm(llm=new_llm, config=llm_config)
-        # Create prompt templates
-        system_prompt = SystemMessagePromptTemplate.from_template(
-            self.system_prompt_template
-        )
-        human_prompt = HumanMessagePromptTemplate.from_template(
-            self.human_prompt_template,
-            input_variables=['question', 'chat_history']
-        )
-        # Combine into a ChatPromptTemplate
-        chat_prompt = ChatPromptTemplate.from_messages([
-            system_prompt,
-            human_prompt
-        ])
-        if not memory:
-            memory = self.memory
-        if not self.memory:
-            # Initialize memory
-            self.memory = ConversationBufferMemory(
-                memory_key="chat_history",
-                input_key="question",
-                output_key='answer',
-                return_messages=True
-            )
+        self,
+        question: str,
+        session_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        search_type: str = 'similarity',  # 'similarity', 'mmr', 'ensemble'
+        search_kwargs: dict = None,
+        metric_type: str = 'COSINE',
+        use_vector_context: bool = True,
+        use_conversation_history: bool = True,
+        return_sources: bool = True,
+        return_context: bool = False,
+        memory: Optional[Callable] = None,
+        ensemble_config: dict = None,
+        mode: str = "adaptive",
+        **kwargs
+    ) -> AIMessage:
+        """
+        Conversation method with vector store and history integration.
+
+        Args:
+            question: The user's question
+            session_id: Session identifier for conversation history
+            user_id: User identifier
+            search_type: Type of search to perform ('similarity', 'mmr', 'ensemble')
+            search_kwargs: Additional search parameters
+            metric_type: Metric type for vector search (e.g., 'COSINE', 'EUCLIDEAN')
+            limit: Maximum number of context items to retrieve
+            score_threshold: Minimum score for context relevance
+            use_vector_context: Whether to retrieve context from vector store
+            use_conversation_history: Whether to use conversation history
+            **kwargs: Additional arguments for LLM
+
+        Returns:
+            AIMessage: The response from the LLM
+        """
+        # Generate session ID if not provided
+        if not session_id:
+            session_id = str(uuid.uuid4())
+        turn_id = str(uuid.uuid4())
+
+        limit = kwargs.get('limit', self.context_search_limit)
+        score_threshold = kwargs.get('score_threshold', self.context_score_threshold)
+
         try:
-            if self._use_vector:
-                async with self.store as store:  #pylint: disable=E1101
-                    vector = store.get_vector(
-                        metric_type=metric_type,
-                        score_threshold=score_threshold
+            # Get conversation history using unified memory
+            conversation_history = None
+            conversation_context = ""
+
+            memory = memory or self.conversation_memory
+
+            if use_conversation_history and memory:
+                conversation_history = await self.get_conversation_history(user_id, session_id)
+                if not conversation_history:
+                    conversation_history = await self.create_conversation_history(
+                        user_id, session_id
                     )
-                    retriever = VectorStoreRetriever(
-                        vectorstore=vector,
-                        search_type=search_type,
-                        chain_type=chain_type,
-                        search_kwargs=search_kwargs
-                    )
-                    # Create the ConversationalRetrievalChain with custom prompt
-                    chain = ConversationalRetrievalChain.from_llm(
-                        llm=self._llm,
-                        retriever=retriever,
-                        memory=self.memory,
-                        chain_type=chain_type,  # e.g., 'stuff', 'map_reduce', etc.
-                        verbose=True,
-                        return_source_documents=return_docs,
-                        return_generated_question=True,
-                        combine_docs_chain_kwargs={
-                            'prompt': chat_prompt
-                        },
-                        **kwargs
-                    )
-                    response = await chain.ainvoke(
-                        {"question": question}
-                    )
-            else:
-                retriever = EmptyRetriever()
-                # Create the ConversationalRetrievalChain with custom prompt
-                chain = ConversationalRetrievalChain.from_llm(
-                    llm=self._llm,
-                    retriever=retriever,
-                    memory=self.memory,
-                    chain_type=chain_type,  # e.g., 'stuff', 'map_reduce', etc.
-                    verbose=True,
-                    return_source_documents=return_docs,
-                    return_generated_question=True,
-                    combine_docs_chain_kwargs={
-                        'prompt': chat_prompt
-                    },
-                    **kwargs
+
+                conversation_context = self.build_conversation_context(conversation_history)
+
+            # Get vector context if store exists and enabled
+            vector_context = ""
+            vector_metadata = {}
+            if use_vector_context and self.store:
+                # Custom ensemble configuration
+                if search_type == 'ensemble' and not ensemble_config:
+                    ensemble_config = {
+                        'similarity_limit': 6,      # Get 6 results from similarity
+                        'mmr_limit': 4,             # Get 4 results from MMR
+                        'final_limit': 5,           # Return top 5 combined
+                        'similarity_weight': 0.6,   # Similarity results weight
+                        'mmr_weight': 0.4,          # MMR results weight
+                        'rerank_method': 'weighted_score'  # or 'rrf' or 'interleave'
+                    }
+                vector_context, vector_metadata = await self.get_vector_context(
+                    question,
+                    search_type=search_type,
+                    search_kwargs=search_kwargs,
+                    metric_type=metric_type,
+                    limit=limit,
+                    score_threshold=score_threshold,
+                    ensemble_config=ensemble_config,
                 )
-                response = await chain.ainvoke(
-                    {"question": question}
+
+            # Determine if tools should be used
+            use_tools = self._use_tools(question)
+            if mode == "adaptive":
+                effective_mode = "agentic" if use_tools else "conversational"
+            elif mode == "agentic":
+                use_tools = True
+                effective_mode = "agentic"
+            else:  # conversational
+                use_tools = False
+                effective_mode = "conversational"
+
+            # Log tool usage decision
+            self.logger.info(
+                f"Tool usage decision: use_tools={use_tools}, mode={mode}, "
+                f"effective_mode={effective_mode}, available_tools={len(self.tools)}"
+            )
+            # # Prepare tools for LLM client
+            # client_tools = []
+            # if use_tools and self.tools:
+            #     client_tools = self._prepare_tools()
+            #     self.logger.info(
+            #         f"Prepared {len(client_tools)} tools for LLM client"
+            #     )
+
+            # Create system prompt
+            system_prompt = await self.create_system_prompt(
+                vector_context=vector_context,
+                conversation_context=conversation_context,
+                vector_metadata=vector_metadata,
+                **kwargs
+            )
+            # Configure LLM if needed
+            new_llm = kwargs.pop('llm', None)
+            if new_llm:
+                self.configure_llm(
+                    llm=new_llm,
+                    **kwargs.pop('llm_config', {})
                 )
+
+            # Make the LLM call using the Claude client
+            async with self._llm as client:
+                # # Configure tools if needed
+                # if use_tools and hasattr(client, 'tools'):
+                #     # Enable tools on the client
+                #     self._configure_client_tools(client, client_tools)
+                response = await client.ask(
+                    prompt=question,
+                    system_prompt=system_prompt,
+                    model=kwargs.get('model', self._llm_model),
+                    max_tokens=kwargs.get('max_tokens', self._max_tokens),
+                    temperature=kwargs.get('temperature', self._llm_temp),
+                    user_id=user_id,
+                    session_id=session_id,
+                )
+
+                # Enhance the response with context metadata
+                response.set_vector_context_info(
+                    used=bool(vector_context),
+                    context_length=len(vector_context) if vector_context else 0,
+                    search_results_count=vector_metadata.get('search_results_count', 0),
+                    search_type=search_type if vector_context else None,
+                    score_threshold=score_threshold,
+                    sources=vector_metadata.get('sources', [])
+                )
+
+                response.set_conversation_context_info(
+                    used=bool(conversation_context),
+                    context_length=len(conversation_context) if conversation_context else 0
+                )
+
+                # Set additional metadata
+                response.session_id = session_id
+                response.turn_id = turn_id
+
+                # return the response Object:
+                return self.get_response(response, return_sources, return_context)
+
         except asyncio.CancelledError:
-            # Handle task cancellation
-            print("Conversation task was cancelled.")
-        except Exception as e:
-            self.logger.error(
-                f"Error in conversation: {e}"
-            )
+            self.logger.info("Conversation task was cancelled.")
             raise
-        return self.get_response(response, question)
-
-    async def question(
-            self,
-            question: str,
-            chain_type: str = 'stuff',
-            search_type: str = 'similarity',
-            search_kwargs: dict = {"k": 4, "fetch_k": 10, "lambda_mult": 0.15},
-            return_docs: bool = True,
-            metric_type: str = None,
-            **kwargs
-    ):
-        system_prompt = self.system_prompt_template
-        human_prompt = self.human_prompt_template.replace(
-            '**Chat History:**', ''
-        )
-        human_prompt = human_prompt.format_map(
-            SafeDict(
-                chat_history=''
-            )
-        )
-        # re-configure LLM:
-        new_llm = kwargs.pop('llm', None)
-        if new_llm:
-            llm_config = kwargs.pop(
-                'llm_config',
-                {
-                    "temperature": 0.2,
-                    "top_k": 41,
-                    "Top_p": 0.9
-                }
-            )
-            self.configure_llm(llm=new_llm, config=llm_config)
-        # Combine into a ChatPromptTemplate
-        prompt = PromptTemplate(
-            template=system_prompt + '\n' + human_prompt,
-            input_variables=['context', 'question']
-        )
-        try:
-            if self._use_vector:
-                async with self.store as store:  #pylint: disable=E1101
-                    vector = store.get_vector(metric_type=metric_type)
-                    retriever = VectorStoreRetriever(
-                        vectorstore=vector,
-                        search_type=search_type,
-                        chain_type=chain_type,
-                        search_kwargs=search_kwargs
-                    )
-                    chain = RetrievalQA.from_chain_type(
-                        llm=self._llm,
-                        chain_type=chain_type,  # e.g., 'stuff', 'map_reduce', etc.
-                        retriever=retriever,
-                        chain_type_kwargs={
-                            'prompt': prompt,
-                        },
-                        return_source_documents=return_docs,
-                        **kwargs
-                    )
-                    response = await chain.ainvoke(
-                        question
-                    )
-            else:
-                retriever = EmptyRetriever()
-                # Create the RetrievalQA chain with custom prompt
-                chain = RetrievalQA.from_chain_type(
-                    llm=self._llm,
-                    chain_type=chain_type,  # e.g., 'stuff', 'map_reduce', etc.
-                    retriever=retriever,
-                    chain_type_kwargs={
-                        'prompt': prompt,
-                    },
-                    return_source_documents=return_docs,
-                    **kwargs
-                )
-                response = await chain.ainvoke(
-                    question
-                )
-        except (RuntimeError, asyncio.CancelledError):
-            # check for "Event loop is closed"
-            response = chain.invoke(
-                question
-            )
         except Exception as e:
-            # Handle exceptions
-            self.logger.error(
-                f"An error occurred: {e}"
-            )
-            response = {
-                "query": question,
-                "error": str(e)
-            }
-        return self.get_response(response, question)
+            self.logger.error(f"Error in conversation: {e}")
+            raise
 
-    def as_markdown(self, response: ChatResponse, return_sources: bool = False) -> str:
-        markdown_output = f"**Question**: {response.question}  \n"
-        markdown_output += f"**Answer**: \n {response.answer}  \n"
-        if return_sources is True and response.source_documents:
-            source_documents = response.source_documents
+    def as_markdown(
+        self,
+        response: AIMessage,
+        return_sources: bool = False,
+        return_context: bool = False,
+    ) -> str:
+        """Enhanced markdown formatting with context information."""
+        markdown_output = f"**Question**: {response.input}  \n"
+        markdown_output += f"**Answer**: \n {response.output}  \n"
+
+        # Add context information if available
+        if return_context and response.has_context:
+            context_info = []
+            if response.used_vector_context:
+                context_info.append(
+                    f"Vector search ({response.search_type}, {response.search_results_count} results)"
+                )
+            if response.used_conversation_history:
+                context_info.append(
+                    "Conversation history"
+                )
+
+            if context_info:
+                markdown_output += f"\n**Context Used**: {', '.join(context_info)}  \n"
+
+        # Add tool information if tools were used
+        if response.has_tools:
+            tool_names = [tc.name for tc in response.tool_calls]
+            markdown_output += f"\n**Tools Used**: {', '.join(tool_names)}  \n"
+
+        # Handle sources as before
+        if return_sources and response.documents:
+            source_documents = response.documents
             current_sources = []
             block_sources = []
             count = 0
             d = {}
+
             for source in source_documents:
                 if count >= 20:
-                    break  # Exit loop after processing 10 documents
-                metadata = source.metadata
+                    break  # Exit loop after processing 20 documents
+
+                metadata = getattr(source, 'metadata', {})
                 if 'url' in metadata:
                     src = metadata.get('url')
                 elif 'filename' in metadata:
                     src = metadata.get('filename')
                 else:
                     src = metadata.get('source', 'unknown')
+
                 if src == 'knowledge-base':
                     continue  # avoid attaching kb documents
+
                 source_title = metadata.get('title', src)
                 if source_title in current_sources:
                     continue
+
                 current_sources.append(source_title)
                 if src:
                     d[src] = metadata.get('document_meta', {})
+
                 source_filename = metadata.get('filename', src)
                 if src:
                     block_sources.append(f"- [{source_title}]({src})")
@@ -896,16 +1236,42 @@ class AbstractBot(DBInterface, ABC):
                         )
                     else:
                         block_sources.append(f"- {source_filename}")
+                count += 1
+
             if block_sources:
-                markdown_output += f"**Sources**:  \n"
+                markdown_output += f"\n**Sources**:  \n"
                 markdown_output += "\n".join(block_sources)
+
             if d:
                 response.documents = d
+
         return markdown_output
 
+    def get_response(
+        self,
+        response: AIMessage,
+        return_sources: bool = True,
+        return_context: bool = False
+    ) -> AIMessage:
+        """Response processing with error handling."""
+        if hasattr(response, 'error') and response.error:
+            return response  # return this error directly
+
+        try:
+            response.response = self.as_markdown(
+                response,
+                return_sources=return_sources,
+                return_context=return_context
+            )
+            return response
+        except (ValueError, TypeError) as exc:
+            self.logger.error(f"Error validating response: {exc}")
+            return response
+        except Exception as exc:
+            self.logger.error(f"Error on response: {exc}")
+            return response
+
     async def __aenter__(self):
-        if not self.store:
-            self.store = EmptyStore()
         return self
 
     async def __aexit__(self, exc_type, exc_value, traceback):
@@ -1017,120 +1383,330 @@ class AbstractBot(DBInterface, ABC):
     async def invoke(
         self,
         question: str,
-        chain_type: str = 'stuff',
-        search_type: str = 'similarity',
-        search_kwargs: dict = {"k": 4, "fetch_k": 12, "lambda_mult": 0.4},
-        score_threshold: float = None,
-        return_docs: bool = True,
-        metric_type: str = None,
-        memory: Any = None,
+        session_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        use_conversation_history: bool = True,
+        memory: Optional[Callable] = None,
         **kwargs
-    ) -> ChatResponse:
-        """Build a Chain to answer Questions using AI Models.
+    ) -> AIMessage:
         """
-        new_llm = kwargs.pop('llm', None)
-        if new_llm is not None:
-            # re-configure LLM:
-            llm_config = kwargs.pop(
-                'llm_config',
-                {
-                    "temperature": 0.1,
-                    "top_k": 41,
-                    "top_p": 0.9
-                }
+        Simplified conversation method with adaptive mode and conversation history.
+
+        Args:
+            question: The user's question
+            session_id: Session identifier for conversation history
+            user_id: User identifier
+            use_conversation_history: Whether to use conversation history
+            memory: Optional memory callable override
+            **kwargs: Additional arguments for LLM
+
+        Returns:
+            AIMessage: The response from the LLM
+        """
+        # Generate session ID if not provided
+        if not session_id:
+            session_id = str(uuid.uuid4())
+        turn_id = str(uuid.uuid4())
+
+        try:
+            # Get conversation history using unified memory
+            conversation_history = None
+            conversation_context = ""
+
+            memory = memory or self.conversation_memory
+
+            if use_conversation_history and memory:
+                conversation_history = await self.get_conversation_history(user_id, session_id)
+                if not conversation_history:
+                    conversation_history = await self.create_conversation_history(
+                        user_id, session_id
+                    )
+
+                conversation_context = self.build_conversation_context(conversation_history)
+
+            # Determine if tools should be used (adaptive mode)
+            use_tools = self._use_tools(question)
+            effective_mode = "agentic" if use_tools else "conversational"
+
+            # Log tool usage decision
+            self.logger.info(
+                f"Tool usage decision: use_tools={use_tools}, "
+                f"effective_mode={effective_mode}, available_tools={len(self.tools)}"
             )
-            self.configure_llm(llm=new_llm, config=llm_config)
-        # define the Pre-Context
-        pre_context = "\n".join(f"- {a}." for a in self.pre_instructions)
-        custom_template = self.system_prompt_template.format_map(
-            SafeDict(
-                summaries=pre_context
+
+            # Create system prompt (no vector context)
+            system_prompt = await self.create_system_prompt(
+                conversation_context=conversation_context,
+                **kwargs
             )
-        )
-        # Create prompt templates
-        self.system_prompt = SystemMessagePromptTemplate.from_template(
-            custom_template
-        )
-        self.human_prompt = HumanMessagePromptTemplate.from_template(
-            self.human_prompt_template,
-            input_variables=['question', 'chat_history']
-        )
-        # Combine into a ChatPromptTemplate
-        chat_prompt = ChatPromptTemplate.from_messages([
-            self.system_prompt,
-            self.human_prompt
-        ])
-        if not memory:
-            memory = self.memory
-        if not self.memory:
-            # Initialize memory
-            self.memory = ConversationBufferMemory(
-                memory_key="chat_history",
-                input_key="question",
-                output_key='answer',
-                return_messages=True
-            )
-        async with self.store as store:  #pylint: disable=E1101
-            # Check if we have multiple stores:
-            if self._use_vector:
-                if len(self.stores) > 1:
-                    store = self.stores[0]
-                #     retriever = MultiVectorStoreRetriever(
-                #         stores=self.stores,
-                #         metric_type=metric_type,
-                #         search_type=search_type,
-                #         chain_type=chain_type,
-                #         search_kwargs=search_kwargs
-                #     )
-                # else:
-                metric = metric_type or self._metric_type
-                if metric == 'COSINE':
-                    score_threshold = score_threshold or 0.16
-                elif metric == 'EUCLIDEAN_DISTANCE':
-                    score_threshold = score_threshold or 1.0
-                vector = store.get_vector(
-                    metric_type=metric,
-                    score_threshold=score_threshold
+
+            # Configure LLM if needed
+            new_llm = kwargs.pop('llm', None)
+            if new_llm:
+                self.configure_llm(
+                    llm=new_llm,
+                    **kwargs.pop('llm_config', {})
                 )
-                retriever = VectorStoreRetriever(
-                    vectorstore=vector,
-                    search_type=search_type,
-                    chain_type=chain_type,
-                    search_kwargs=search_kwargs,
-                    verbose=True
+
+            # Make the LLM call using the Claude client
+            async with self._llm as client:
+                response = await client.ask(
+                    prompt=question,
+                    system_prompt=system_prompt,
+                    model=kwargs.get('model', self._llm_model),
+                    max_tokens=kwargs.get('max_tokens', self._max_tokens),
+                    temperature=kwargs.get('temperature', self._llm_temp),
+                    user_id=user_id,
+                    session_id=session_id,
                 )
+
+                # Set conversation context info
+                response.set_conversation_context_info(
+                    used=bool(conversation_context),
+                    context_length=len(conversation_context) if conversation_context else 0
+                )
+
+                # Set additional metadata
+                response.session_id = session_id
+                response.turn_id = turn_id
+
+                # Return the response
+                return self.get_response(response, return_sources=False, return_context=False)
+
+        except asyncio.CancelledError:
+            self.logger.info("Conversation task was cancelled.")
+            raise
+        except Exception as e:
+            self.logger.error(f"Error in conversation: {e}")
+            raise
+
+    # Additional utility methods for conversation management
+    async def get_conversation_summary(self, user_id: str, session_id: str) -> Optional[Dict[str, Any]]:
+        """Get a summary of the conversation history."""
+        history = await self.get_conversation_history(user_id, session_id)
+        if not history.turns:
+            return None
+
+        return {
+            'session_id': session_id,
+            'user_id': history.user_id,
+            'total_turns': len(history.turns),
+            'created_at': history.created_at.isoformat(),
+            'updated_at': history.updated_at.isoformat(),
+            'last_user_message': history.turns[-1].user_message if history.turns else None,
+            'last_assistant_response': history.turns[-1].assistant_response[:100] + "..." if history.turns else None,
+        }
+
+## Ensemble Search Method
+    async def _ensemble_search(
+        self,
+        store,
+        question: str,
+        config: dict,
+        score_threshold: float,
+        metric_type: str,
+        search_kwargs: dict = None
+    ) -> dict:
+        """Perform ensemble search combining similarity and MMR approaches."""
+
+        # Perform similarity search
+        similarity_results = await store.similarity_search(
+            query=question,
+            limit=config['similarity_limit'],
+            score_threshold=score_threshold,
+            metric=metric_type,
+            **(search_kwargs or {})
+        )
+        # Perform MMR search
+        mmr_search_kwargs = {
+            "k": config['mmr_limit'],
+            "fetch_k": config['mmr_limit'] * 2,
+            "lambda_mult": 0.4,
+        }
+        if search_kwargs:
+            mmr_search_kwargs.update(search_kwargs)
+        mmr_results = await store.mmr_search(
+            query=question,
+            score_threshold=score_threshold,
+            **mmr_search_kwargs
+        )
+        # Combine and rerank results
+        final_results = self._combine_search_results(
+            similarity_results,
+            mmr_results,
+            config
+        )
+
+        return {
+            'similarity_results': similarity_results,
+            'mmr_results': mmr_results,
+            'final_results': final_results
+        }
+
+    def _combine_search_results(self, similarity_results: list, mmr_results: list, config: dict) -> list:
+        """Combine and rerank results from different search methods."""
+
+        # Create a mapping of content to results for deduplication
+        content_map = {}
+        all_results = []
+
+        # Add similarity results with their weights and ranks
+        for rank, result in enumerate(similarity_results):
+            content_key = self._get_content_key(result.content)
+            if content_key not in content_map:
+                # Create a copy of the result and add ensemble information
+                result_copy = result.model_copy() if hasattr(result, 'model_copy') else result.copy()
+                result_copy.ensemble_score = result.score * config['similarity_weight']
+                result_copy.search_source = 'similarity'
+                result_copy.similarity_rank = rank
+                result_copy.mmr_rank = None
+
+                content_map[content_key] = result_copy
+                all_results.append(result_copy)
+
+        # Add MMR results, handling duplicates
+        for rank, result in enumerate(mmr_results):
+            content_key = self._get_content_key(result.content)
+            if content_key in content_map:
+                # If duplicate, boost the score and update metadata
+                existing = content_map[content_key]
+                mmr_score = result.score * config['mmr_weight']
+                existing.ensemble_score += mmr_score
+                existing.search_source = 'both'
+                existing.mmr_rank = rank
             else:
-                retriever = EmptyRetriever()
-            if self.kb:
-                b25_retriever = BM25Retriever.from_documents(self.kb)
-                retriever = EnsembleRetriever(
-                    retrievers=[retriever, b25_retriever],
-                    weights=[0.9, 0.1]
-                )
-            try:
-                # Create the ConversationalRetrievalChain with custom prompt
-                chain = ConversationalRetrievalChain.from_llm(
-                    llm=self._llm,
-                    retriever=retriever,
-                    memory=self.memory,
-                    chain_type=chain_type,  # e.g., 'stuff', 'map_reduce', etc.
-                    verbose=True,
-                    return_source_documents=return_docs,
-                    return_generated_question=True,
-                    combine_docs_chain_kwargs={
-                        'prompt': chat_prompt
-                    },
-                    **kwargs
-                )
-                response = await chain.ainvoke(
-                    {"question": question}
-                )
-                return self.get_response(response, question)
-            except asyncio.CancelledError:
-                # Handle task cancellation
-                print("Conversation task was cancelled.")
-            except Exception as e:
-                self.logger.error(
-                    f"Error in conversation: {e}"
-                )
-                raise
+                # New result from MMR
+                result_copy = result.model_copy() if hasattr(result, 'model_copy') else result.copy()
+                result_copy.ensemble_score = result.score * config['mmr_weight']
+                result_copy.search_source = 'mmr'
+                result_copy.similarity_rank = None
+                result_copy.mmr_rank = rank
+
+                content_map[content_key] = result_copy
+                all_results.append(result_copy)
+
+        # Rerank based on method
+        rerank_method = config.get('rerank_method', 'weighted_score')
+
+        if rerank_method == 'weighted_score':
+            # Sort by ensemble score
+            all_results.sort(key=lambda x: x.ensemble_score, reverse=True)
+
+        elif rerank_method == 'rrf':
+            # Reciprocal Rank Fusion
+            all_results = self._reciprocal_rank_fusion(similarity_results, mmr_results)
+
+        elif rerank_method == 'interleave':
+            # Interleave results from both searches
+            all_results = self._interleave_results(similarity_results, mmr_results)
+
+        # Return top results
+        final_limit = config.get('final_limit', 5)
+        return all_results[:final_limit]
+
+    def _get_content_key(self, content: str) -> str:
+        """Generate a key for content deduplication."""
+        # Simple approach: use first 100 characters, normalized
+        return content[:100].lower().strip()
+
+    def _copy_result(self, result):
+        """Create a copy of a search result."""
+        # This depends on your result object structure
+        # Adjust based on your actual result class
+        return copy.deepcopy(result)
+
+    def _reciprocal_rank_fusion(self, similarity_results: list, mmr_results: list, k: int = 60) -> list:
+        """Implement Reciprocal Rank Fusion for combining ranked lists."""
+
+        # Create score mappings and result mappings
+        content_scores = {}
+        result_map = {}
+
+        # Add similarity scores and track results
+        for rank, result in enumerate(similarity_results):
+            content_key = self._get_content_key(result.content)
+            rrf_score = 1 / (k + rank + 1)
+            content_scores[content_key] = content_scores.get(content_key, 0) + rrf_score
+
+            if content_key not in result_map:
+                result_copy = result.model_copy() if hasattr(result, 'model_copy') else result.copy()
+                result_copy.similarity_rank = rank
+                result_copy.mmr_rank = None
+                result_copy.search_source = 'similarity'
+                result_map[content_key] = result_copy
+
+        # Add MMR scores and update results
+        for rank, result in enumerate(mmr_results):
+            content_key = self._get_content_key(result.content)
+            rrf_score = 1 / (k + rank + 1)
+            content_scores[content_key] = content_scores.get(content_key, 0) + rrf_score
+
+            if content_key in result_map:
+                # Update existing result
+                result_map[content_key].mmr_rank = rank
+                result_map[content_key].search_source = 'both'
+            else:
+                # New result from MMR
+                result_copy = result.model_copy() if hasattr(result, 'model_copy') else result.copy()
+                result_copy.similarity_rank = None
+                result_copy.mmr_rank = rank
+                result_copy.search_source = 'mmr'
+                result_map[content_key] = result_copy
+
+        # Set ensemble scores based on RRF and sort
+        for content_key, rrf_score in content_scores.items():
+            if content_key in result_map:
+                result_map[content_key].ensemble_score = rrf_score
+
+        # Sort by RRF score
+        sorted_items = sorted(content_scores.items(), key=lambda x: x[1], reverse=True)
+
+        # Return sorted results
+        return [result_map[content_key] for content_key, _ in sorted_items if content_key in result_map]
+
+    def _interleave_results(self, similarity_results: list, mmr_results: list) -> list:
+        """Interleave results from both search methods."""
+
+        interleaved = []
+        seen_content = set()
+
+        max_len = max(len(similarity_results), len(mmr_results))
+
+        for i in range(max_len):
+            # Add from similarity first
+            if i < len(similarity_results):
+                result = similarity_results[i]
+                content_key = self._get_content_key(result.content)
+                if content_key not in seen_content:
+                    result_copy = result.model_copy() if hasattr(result, 'model_copy') else result.copy()
+                    result_copy.ensemble_score = 1.0 - (i * 0.1)  # Decreasing score based on position
+                    result_copy.search_source = 'similarity'
+                    result_copy.similarity_rank = i
+                    result_copy.mmr_rank = None
+
+                    interleaved.append(result_copy)
+                    seen_content.add(content_key)
+
+            # Add from MMR
+            if i < len(mmr_results):
+                result = mmr_results[i]
+                content_key = self._get_content_key(result.content)
+                if content_key not in seen_content:
+                    result_copy = result.model_copy() if hasattr(result, 'model_copy') else result.copy()
+                    result_copy.ensemble_score = 0.9 - (i * 0.1)  # Slightly lower base score for MMR
+                    result_copy.search_source = 'mmr'
+                    result_copy.similarity_rank = None
+                    result_copy.mmr_rank = i
+
+                    interleaved.append(result_copy)
+                    seen_content.add(content_key)
+
+        return interleaved
+
+    def register_tool(self, tool: Any, name: Optional[str] = None) -> None:
+        """Register a single tool."""
+        self.tools.register_tool(tool, name)
+
+    def register_tools(self, tools: Union[List[Any], Dict[str, Any]]) -> None:
+        """Register multiple tools."""
+        self.tools.register_tools(tools)

@@ -1,0 +1,17 @@
+from enum import Enum
+
+
+class OpenAIModel(Enum):
+    """Enum class for OpenAI models."""
+    GPT4_TURBO = "gpt-4-turbo"
+    GPT4_1 = "gpt-4.1"
+    GPT3_5_TURBO = "gpt-3.5-turbo"
+    GPT_4_1_MINI = "gpt-4.1-mini"
+    GPT_O4 = "gpt-4o-2024-08-06"
+    GPT4 = "gpt-4"
+    GPT_4O_SEARCH = "gpt-4o-search-preview"
+    GPT_4O_MINI_SEARCH = "gpt-4o-mini-search-preview"
+    O4_MINI = "o4-mini"
+    O3 = "o3"
+    O3_DEEP_RESEARCH = "o3-deep-research"
+    GPT_IMAGE_1 = "gpt-image-1"

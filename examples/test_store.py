@@ -2,7 +2,7 @@ import asyncio
 from langchain.docstore.document import Document
 from navconfig import BASE_DIR
 from parrot.stores.faiss import FaissStore
-from parrot.stores.chroma import ChromaStore
+from parrot.stores.deprecated.chroma import ChromaStore
 from parrot.stores.duck import DuckDBStore
 from parrot.stores.postgres import PgvectorStore
 from parrot.stores.qdrant import QdrantStore

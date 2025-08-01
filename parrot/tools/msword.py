@@ -1,175 +1,117 @@
-from datetime import datetime
-from typing import Any, Dict, List, Optional, Type, Union
+"""
+MS Word Tool migrated to use AbstractDocumentTool framework.
+"""
 import re
 import tempfile
 import os
 from pathlib import Path
-import uuid
-import asyncio
-import traceback
-import logging
+from typing import Any, Dict, List, Optional, Union
 from urllib.parse import urlparse
 import aiohttp
 import aiofiles
+import io
 from docx import Document
 from docx.shared import Inches, Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.style import WD_STYLE_TYPE
 from jinja2 import Environment, FileSystemLoader
-from pydantic import BaseModel, Field, ConfigDict
-from langchain.tools import BaseTool
-from markdownify import markdownify as md
+from pydantic import BaseModel, Field, field_validator
 import mammoth
 import markdown
 from bs4 import BeautifulSoup, NavigableString
-import html2text
-from navconfig import BASE_DIR
+from markdownify import markdownify as md
+from .document import AbstractDocumentTool, DocumentGenerationArgs
 
 
-logging.getLogger('MARKDOWN').setLevel(logging.ERROR)  # Suppress markdown warnings
+class MSWordArgs(DocumentGenerationArgs):
+    """Arguments schema for MS Word Document generation."""
 
-
-class DocxInput(BaseModel):
-    """
-    Input schema for the DocxGeneratorTool.  Users can supply:
-    • text (required): the transcript or Markdown to saved as a DOCX File.
-    • output_filename: (Optional) a custom filename (including extension) for the generated DOCX.
-    • template_name: (Optional) name of the HTML template (e.g. 'report.html') to render
-    • template_vars: (Optional) dict of variables to pass into the template (e.g. title, author, date)
-    • stylesheets: (Optional) list of CSS file paths (relative to your templates dir) to apply
-    • output_dir: (Optional) directory where the DOCX file will be saved.
-    • docx_template: (Optional) path to a DOCX template file to use as base
-    """
-    # Add a model_config to prevent additional properties
-    model_config = ConfigDict(extra='forbid')
-
-    text: str = Field(..., description="The text (plaintext or Markdown) to convert to DOCX File")
-    # If you’d like users to control the output filename/location:
-    output_filename: Optional[str] = Field(
-        None,
-        description="(Optional) A custom filename (including extension) for the generated DOCX."
-    )
     template_name: Optional[str] = Field(
         None,
-        description="Name of the HTML template (e.g. 'report.html') to render"
+        description="Name of the HTML template (e.g., 'report.html') to render before conversion"
     )
-    template_vars: Optional[Dict[str, str]] = Field(
+    template_vars: Optional[Dict[str, Any]] = Field(
         None,
-        description="Dict of variables to pass into the template (e.g. title, author, date)"
-    )
-    stylesheets: Optional[List[str]] = Field(
-        None,
-        description="List of CSS file paths (relative to your templates dir) to apply"
-    )
-    output_dir: Optional[str] = Field(
-        None,
-        description="Directory where the DOCX file will be saved."
+        description="Variables to pass to the HTML template (e.g., title, author, date)"
     )
     docx_template: Optional[str] = Field(
         None,
         description="Path to a DOCX template file to use as base document"
     )
+    style_config: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Custom styling configuration for the document"
+    )
+    page_margins: Optional[Dict[str, float]] = Field(
+        None,
+        description="Page margins in inches (top, bottom, left, right)"
+    )
+
+    @field_validator('template_name')
+    @classmethod
+    def validate_template_name(cls, v):
+        if v and not v.endswith('.html'):
+            v = f"{v}.html"
+        return v
 
 
-class DocxGeneratorTool(BaseTool):
-    """Microsoft Word DOCX Generator Tool."""
-    name: str = "generate_ms_word_document"
-    description: str = "Use this tool for generating DOCX, provide text in markdown or HTML format with sections, headings."
-    output_dir: Optional[Path] = None
-    env: Optional[Environment] = None
-    templates_dir: Optional[Path] = None
+class MSWordTool(AbstractDocumentTool):
+    """
+    Microsoft Word Document Generation Tool.
 
-    # Add a proper args_schema for tool-calling compatibility
-    args_schema: Type[BaseModel] = DocxInput
+    This tool converts text content (including Markdown and HTML) into professionally
+    formatted Word documents (.docx). It supports custom templates, styling, and
+    advanced document formatting features.
+
+    Features:
+    - Markdown to Word conversion with proper formatting
+    - HTML to Word conversion support
+    - Custom DOCX template support
+    - Jinja2 HTML template processing
+    - Configurable styling and page setup
+    - Table, list, and heading support
+    - Professional document formatting
+    """
+
+    name = "msword_generator"
+    description = (
+        "Generate Microsoft Word documents from text, Markdown, or HTML content. "
+        "Supports custom templates, styling, and professional document formatting. "
+        "Perfect for creating reports, documentation, and formatted documents."
+    )
+    args_schema = MSWordArgs
+
+    # Document type configuration
+    document_type = "document"
+    default_extension = "docx"
+    supported_extensions = [".docx", ".dotx"]
 
     def __init__(
         self,
-        templates_dir: Path = None,
-        output_dir: str = None
+        templates_dir: Optional[Path] = None,
+        default_html_template: Optional[str] = None,
+        **kwargs
     ):
-        """Initialize the DOCX generator tool."""
-        super().__init__()
-        self.output_dir = Path(output_dir) if output_dir else BASE_DIR.joinpath("static", "documents", "docs")
-        if not self.output_dir.exists():
-            self.output_dir.mkdir(parents=True, exist_ok=True)
+        """
+        Initialize the MS Word Tool.
+
+        Args:
+            templates_dir: Directory containing HTML and DOCX templates
+            default_html_template: Default HTML template for content processing
+            **kwargs: Additional arguments for AbstractDocumentTool
+        """
+        super().__init__(templates_dir=templates_dir, **kwargs)
+
+        self.default_html_template = default_html_template
+
         # Initialize Jinja2 environment for HTML templates
-        if templates_dir:
-            self.templates_dir = templates_dir
-            self.env = Environment(
-                loader=FileSystemLoader(str(templates_dir)),
+        if self.templates_dir:
+            self.html_env = Environment(
+                loader=FileSystemLoader(str(self.templates_dir)),
                 autoescape=True
             )
-        self.templates_dir = templates_dir
-
-
-    async def _arun(
-        self,
-        text: str,
-        output_filename: Optional[str] = None,
-        **kwargs: Any
-    ) -> Dict[str, Any]:
-        """
-        LangChain will call this with keyword args matching DocxInput, e.g.:
-        _arun(text="Hello", output_dir="documents/", …)
-        """
-        try:
-            # 1) Build a dict of everything LangChain passed us
-            payload_dict = {
-                "text": text,
-                "output_filename": output_filename,
-                **kwargs
-            }
-            # 2) Let Pydantic validate & coerce
-            payload = DocxInput(**{k: v for k, v in payload_dict.items() if v is not None})
-            # 3) Call the “real” generator
-            return await self._generate_docx(payload)
-        except Exception as e:
-            print(f"❌ Error in DocxGeneratorTool._arun: {e}")
-            print(traceback.format_exc())
-            return {"error": str(e)}
-
-    def _run(
-        self,
-        text: Union[str, Dict[str, Any]],
-        **kwargs
-    ) -> Dict[str, Any]:
-        """
-        Synchronous entrypoint. If text_or_json is a JSON string, we load it first.
-        Otherwise, assume it’s already a dict of the correct shape.
-        """
-        try:
-            # Validate with DocxInput
-            payload = DocxInput(text=text, **kwargs)
-        except Exception as e:
-            return {"error": f"Invalid input: {e}"}
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                return loop.run_until_complete(self._generate_docx(payload))
-            else:
-                return asyncio.run(self._generate_docx(payload))
-        except RuntimeError:
-            # If the event loop is not running, we can run it in a new loop
-            return asyncio.run(self._generate_docx(payload))
-
-    def _render_template(self, input_data: DocxInput) -> str:
-        """Render text through Jinja2 template if provided."""
-        if not input_data.template_name or not self.env:
-            return input_data.text
-
-        try:
-            template = self.env.get_template(input_data.template_name)
-            template_vars = input_data.template_vars or {}
-
-            # Add some default variables
-            template_vars.setdefault('content', input_data.text)
-            template_vars.setdefault('date', datetime.now().strftime('%Y-%m-%d'))
-            template_vars.setdefault('timestamp', datetime.now().isoformat())
-
-            return template.render(**template_vars)
-        except Exception as e:
-            print(f"Template rendering failed: {e}")
-            return input_data.text
+        else:
+            self.html_env = None
 
     def _detect_content_type(self, text: str) -> str:
         """Detect if content is HTML, Markdown, or plain text."""
@@ -177,19 +119,18 @@ class DocxGeneratorTool(BaseTool):
 
         # Simple HTML detection
         if (text_stripped.startswith('<') and text_stripped.endswith('>')) or \
-            ('<html' in text_stripped.lower() or '<div' in text_stripped.lower() or
-            '<p' in text_stripped.lower() or '<h1' in text_stripped.lower()):
+           any(tag in text_stripped.lower() for tag in ['<html', '<div', '<p', '<h1']):
             return 'html'
 
-        # Markdown detection (look for common markdown patterns)
+        # Markdown detection
         markdown_patterns = [
-            r'^#{1,6}\s',  # Headers
-            r'^\*\s',      # Bullet points
-            r'^\d+\.\s',   # Numbered lists
-            r'\*\*.*?\*\*', # Bold
-            r'\*.*?\*',    # Italic
-            r'`.*?`',      # Code
-            r'\[.*?\]\(.*?\)', # Links
+            r'^#{1,6}\s',           # Headers
+            r'^\*\s',               # Bullet points
+            r'^\d+\.\s',            # Numbered lists
+            r'\*\*.*?\*\*',         # Bold
+            r'\*.*?\*',             # Italic
+            r'`.*?`',               # Code
+            r'\[.*?\]\(.*?\)',      # Links
         ]
 
         for pattern in markdown_patterns:
@@ -198,41 +139,36 @@ class DocxGeneratorTool(BaseTool):
 
         return 'markdown'  # Default to markdown for processing
 
-    async def _generate_docx(self, payload: DocxInput) -> dict:
-        """Generate a DOCX document from markdown text."""
-        # Process the text through Jinja2 template if provided
-        processed_text = self._render_template(payload)
-        # Detect content type and convert to DOCX
-        content_type = self._detect_content_type(processed_text)
-        # Create or load DOCX document
-        doc = self._create_document(payload.docx_template)
+    def _render_html_template(
+        self,
+        content: str,
+        template_name: Optional[str],
+        template_vars: Optional[Dict[str, Any]]
+    ) -> str:
+        """Render content through Jinja2 HTML template if provided."""
+        if not template_name or not self.html_env:
+            return content
 
-        # Convert content to DOCX based on type
-        if content_type == 'html':
-            self._html_to_docx(processed_text, doc)
-        else:  # markdown or plain text
-            processed_text = self._preprocess_markdown(processed_text)
-            # Convert markdown to HTML first
-            html_content = self._markdown_to_html(processed_text)
-            self._html_to_docx(html_content, doc)
         try:
-            # Generate filename and save
-            output_path = self._save_document(doc, payload)
-            return {
-                "status": "success",
-                "file_path": str(output_path),
-                "filename": output_path.name,
-                "message": f"DOCX file successfully created at {output_path}"
-            }
+            template = self.html_env.get_template(template_name)
+            vars_dict = template_vars or {}
+
+            # Add default variables
+            vars_dict.setdefault('content', content)
+            vars_dict.setdefault('date', self._get_current_date())
+            vars_dict.setdefault('timestamp', self._get_current_timestamp())
+
+            rendered = template.render(**vars_dict)
+            self.logger.info(
+                f"Rendered content through HTML template: {template_name}"
+            )
+            return rendered
 
         except Exception as e:
-            return {
-                "status": "error",
-                "error": str(e),
-                "message": f"Failed to create DOCX file: {str(e)}"
-            }
+            self.logger.error(f"HTML template rendering failed: {e}")
+            return content
 
-    def _preprocess_markdown(self, text):
+    def _preprocess_markdown(self, text: str) -> str:
         """Preprocess markdown to handle common issues."""
         # Replace placeholder variables with empty strings
         text = re.sub(r'\{[a-zA-Z0-9_]+\}', '', text)
@@ -241,12 +177,15 @@ class DocxGeneratorTool(BaseTool):
         text = re.sub(r'f"""(.*?)"""', r'\1', text, flags=re.DOTALL)
         text = re.sub(r"f'''(.*?)'''", r'\1', text, flags=re.DOTALL)
 
-        # Remove triple backticks and language indicators (common in code blocks)
+        # Remove triple backticks and language indicators
         text = re.sub(r'```[a-zA-Z]*\n', '', text)
         text = re.sub(r'```', '', text)
 
-        # Fix any heading issues (ensure space after #)
+        # Fix heading issues (ensure space after #)
         text = re.sub(r'(#+)([^ \n])', r'\1 \2', text)
+
+        # Fix escaped newlines if any
+        text = text.replace('\\n', '\n')
 
         return text
 
@@ -255,11 +194,11 @@ class DocxGeneratorTool(BaseTool):
         try:
             html = markdown.markdown(
                 markdown_text,
-                extensions=['extra', 'codehilite', 'toc']
+                extensions=['extra', 'codehilite', 'tables']  # Removed 'toc' to avoid issues
             )
             return html
         except Exception as e:
-            print(f"Markdown conversion failed: {e}")
+            self.logger.error(f"Markdown conversion failed: {e}")
             # Fallback: wrap in paragraphs
             paragraphs = markdown_text.split('\n\n')
             html_paragraphs = [f'<p>{p.replace(chr(10), "<br>")}</p>' for p in paragraphs if p.strip()]
@@ -267,59 +206,83 @@ class DocxGeneratorTool(BaseTool):
 
     def _create_document(self, template_path: Optional[str] = None) -> Document:
         """Create or load DOCX document."""
-        if template_path and Path(template_path).exists():
-            return Document(template_path)
+        if template_path:
+            template_file = self._get_template_path(template_path)
+            if template_file and template_file.exists():
+                self.logger.info(f"Loading DOCX template: {template_file}")
+                return Document(str(template_file))
 
         # Create new document with basic styling
         doc = Document()
-
-        # Set up styles
         self._setup_document_styles(doc)
-
         return doc
 
-    def _setup_document_styles(self, doc: Document):
+    def _setup_document_styles(self, doc: Document) -> None:
         """Set up basic document styles."""
         try:
             styles = doc.styles
 
-            # Normal style
-            normal = styles['Normal']
-            normal.font.name = 'Calibri'
-            normal.font.size = Pt(11)
+            # Configure Normal style
+            if 'Normal' in styles:
+                normal = styles['Normal']
+                normal.font.name = 'Calibri'
+                normal.font.size = Pt(11)
 
-            # Heading styles
+            # Configure heading styles
             for i in range(1, 7):
                 heading_name = f'Heading {i}'
                 if heading_name in styles:
                     heading = styles[heading_name]
                     heading.font.name = 'Calibri'
-                    heading.font.size = Pt(16 - i)
+                    heading.font.size = Pt(18 - i * 2)
+
+            self.logger.debug("Document styles configured successfully")
 
         except Exception as e:
-            print(f"Style setup failed: {e}")
+            self.logger.error(f"Style setup failed: {e}")
 
-    def _html_to_docx(self, html_content: str, doc: Document):
+    def _apply_page_margins(self, doc: Document, margins: Dict[str, float]) -> None:
+        """Apply custom page margins to the document."""
+        try:
+            section = doc.sections[0]
+
+            if 'top' in margins:
+                section.top_margin = Inches(margins['top'])
+            if 'bottom' in margins:
+                section.bottom_margin = Inches(margins['bottom'])
+            if 'left' in margins:
+                section.left_margin = Inches(margins['left'])
+            if 'right' in margins:
+                section.right_margin = Inches(margins['right'])
+
+            self.logger.debug(f"Applied page margins: {margins}")
+
+        except Exception as e:
+            self.logger.error(f"Failed to apply page margins: {e}")
+
+    def _html_to_docx(self, html_content: str, doc: Document) -> None:
         """Convert HTML content to DOCX document."""
         try:
             soup = BeautifulSoup(html_content, 'html.parser')
 
             # Process each element in the HTML
-            for element in soup.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'div', 'ul', 'ol', 'li', 'br']):
+            for element in soup.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'div', 'ul', 'ol', 'table', 'br']):
                 self._process_html_element(element, doc)
 
         except Exception as e:
-            print(f"HTML to DOCX conversion failed: {e}")
+            self.logger.error(f"HTML to DOCX conversion failed: {e}")
             # Fallback: add as plain text
             doc.add_paragraph(html_content)
 
-    def _process_html_element(self, element, doc: Document):
+    def _process_html_element(self, element, doc: Document) -> None:
         """Process individual HTML elements."""
         tag_name = element.name.lower()
 
         if tag_name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']:
             level = int(tag_name[1])
-            heading = doc.add_heading(self._get_text_content(element), level=level)
+            heading_text = self._get_text_content(element)
+            if heading_text.strip():
+                doc.add_heading(heading_text, level=level)
 
         elif tag_name in ['p', 'div']:
             text = self._get_text_content(element)
@@ -334,7 +297,8 @@ class DocxGeneratorTool(BaseTool):
             for li in element.find_all('li', recursive=False):
                 text = self._get_text_content(li)
                 if text.strip():
-                    doc.add_paragraph(text, style='List Bullet' if tag_name == 'ul' else 'List Number')
+                    list_style = 'List Bullet' if tag_name == 'ul' else 'List Number'
+                    doc.add_paragraph(text, style=list_style)
 
         elif tag_name == 'br':
             doc.add_paragraph()
@@ -353,25 +317,33 @@ class DocxGeneratorTool(BaseTool):
 
         return ''.join(text_parts).strip()
 
-    def _process_table(self, table_element, doc: Document):
+    def _process_table(self, table_element, doc: Document) -> None:
         """Process HTML table and convert to DOCX table."""
         rows = table_element.find_all('tr')
         if not rows:
             return
 
         # Create table with appropriate dimensions
-        cols = len(rows[0].find_all(['td', 'th']))
-        table = doc.add_table(rows=0, cols=cols)
+        max_cols = max(len(row.find_all(['td', 'th'])) for row in rows)
+        table = doc.add_table(rows=0, cols=max_cols)
         table.style = 'Table Grid'
 
         for row in rows:
             cells = row.find_all(['td', 'th'])
             table_row = table.add_row()
+
             for i, cell in enumerate(cells):
                 if i < len(table_row.cells):
-                    table_row.cells[i].text = self._get_text_content(cell)
+                    cell_text = self._get_text_content(cell)
+                    table_row.cells[i].text = cell_text
 
-    def _add_formatted_text(self, paragraph, element):
+                    # Make header cells bold
+                    if cell.name == 'th':
+                        for paragraph in table_row.cells[i].paragraphs:
+                            for run in paragraph.runs:
+                                run.bold = True
+
+    def _add_formatted_text(self, paragraph, element) -> None:
         """Add formatted text to paragraph maintaining basic formatting."""
         if isinstance(element, NavigableString):
             paragraph.add_run(str(element))
@@ -381,131 +353,283 @@ class DocxGeneratorTool(BaseTool):
             if isinstance(content, NavigableString):
                 run = paragraph.add_run(str(content))
             else:
-                run = paragraph.add_run(self._get_text_content(content))
+                text_content = self._get_text_content(content)
+                run = paragraph.add_run(text_content)
 
-                # Apply basic formatting
-                if content.name == 'strong' or content.name == 'b':
-                    run.bold = True
-                elif content.name == 'em' or content.name == 'i':
-                    run.italic = True
-                elif content.name == 'code':
-                    run.font.name = 'Courier New'
+                # Apply basic formatting based on HTML tags
+                if hasattr(content, 'name'):
+                    if content.name in ['strong', 'b']:
+                        run.bold = True
+                    elif content.name in ['em', 'i']:
+                        run.italic = True
+                    elif content.name == 'code':
+                        run.font.name = 'Courier New'
+                        run.font.size = Pt(10)
 
-    def _save_document(self, doc: Document, input_data: DocxInput) -> Path:
-        """Save the document and return the file path."""
-        # Determine output directory
-        output_dir = Path(input_data.output_dir) if input_data.output_dir else self.output_dir
-        output_dir.mkdir(parents=True, exist_ok=True)
+    async def _generate_document_content(self, content: str, **kwargs) -> bytes:
+        """
+        Generate Word document content from input.
 
-        # Generate filename
-        if input_data.output_filename:
-            filename = input_data.output_filename
-            if not filename.endswith('.docx'):
-                filename += '.docx'
-        else:
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            filename = f"document_{timestamp}_{uuid.uuid4().hex[:8]}.docx"
+        Args:
+            content: Input content (text, markdown, or HTML)
+            **kwargs: Additional arguments from MSWordArgs
 
-        output_path = output_dir / filename
+        Returns:
+            DOCX document as bytes
+        """
+        try:
+            # Extract arguments
+            template_name = kwargs.get('template_name')
+            template_vars = kwargs.get('template_vars')
+            docx_template = kwargs.get('docx_template')
+            style_config = kwargs.get('style_config')
+            page_margins = kwargs.get('page_margins')
 
-        # Save the document
-        doc.save(str(output_path))
+            # Process content through HTML template if provided
+            processed_content = self._render_html_template(content, template_name, template_vars)
 
-        return output_path
+            # Detect content type
+            content_type = self._detect_content_type(processed_content)
+            self.logger.info(f"Detected content type: {content_type}")
 
-class WordToMarkdownTool(BaseTool):
-    """Converts a Word document to Markdown format by downloading it from a URL."""
-    name: str = "word_to_markdown_tool"
-    description: str = (
-        "Converts a Word document to Markdown format from a URL. "
-        "This tool downloads the Word document from the provided URL, "
-        "converts it to Markdown format, and returns the content. "
-        "Useful for processing Word documents and making them easier to analyze by LLMs."
-        "\nThe input must be the complete URL of the Word document."
+            # Create DOCX document
+            doc = self._create_document(docx_template)
+
+            # Apply page margins if specified
+            if page_margins:
+                self._apply_page_margins(doc, page_margins)
+
+            # Convert content to DOCX based on type
+            if content_type == 'html':
+                self._html_to_docx(processed_content, doc)
+            else:  # markdown or plain text
+                # Preprocess and convert markdown to HTML
+                cleaned_content = self._preprocess_markdown(processed_content)
+                html_content = self._markdown_to_html(cleaned_content)
+                self._html_to_docx(html_content, doc)
+
+            # Save document to bytes
+            doc_bytes = io.BytesIO()
+            doc.save(doc_bytes)
+            doc_bytes.seek(0)
+
+            return doc_bytes.getvalue()
+
+        except Exception as e:
+            self.logger.error(f"Error generating Word document: {e}")
+            raise
+
+    async def _execute(
+        self,
+        content: str,
+        output_filename: Optional[str] = None,
+        file_prefix: str = "document",
+        output_dir: Optional[str] = None,
+        overwrite_existing: bool = False,
+        template_name: Optional[str] = None,
+        template_vars: Optional[Dict[str, Any]] = None,
+        docx_template: Optional[str] = None,
+        style_config: Optional[Dict[str, Any]] = None,
+        page_margins: Optional[Dict[str, float]] = None,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """
+        Execute Word document generation (AbstractTool interface).
+
+        Args:
+            content: Content to convert to Word document
+            output_filename: Custom filename (without extension)
+            file_prefix: Prefix for auto-generated filenames
+            output_dir: Custom output directory
+            overwrite_existing: Whether to overwrite existing files
+            template_name: HTML template name for content processing
+            template_vars: Variables for HTML template
+            docx_template: DOCX template file path
+            style_config: Custom styling configuration
+            page_margins: Page margins configuration
+            **kwargs: Additional arguments
+
+        Returns:
+            Dictionary with document generation results
+        """
+        try:
+            self.logger.info(
+                f"Starting Word document generation with {len(content)} characters of content"
+            )
+
+            # Use the safe document creation workflow
+            result = await self._create_document_safely(
+                content=content,
+                output_filename=output_filename,
+                file_prefix=file_prefix,
+                output_dir=output_dir,
+                overwrite_existing=overwrite_existing or self.overwrite_existing,
+                extension="docx",
+                template_name=template_name,
+                template_vars=template_vars,
+                docx_template=docx_template,
+                style_config=style_config,
+                page_margins=page_margins
+            )
+
+            if result['status'] == 'success':
+                self.logger.info(
+                    f"Word document created successfully: {result['metadata']['filename']}"
+                )
+
+            return result
+
+        except Exception as e:
+            self.logger.error(f"Error in Word document generation: {e}")
+            raise
+
+
+class WordToMarkdownTool(AbstractDocumentTool):
+    """
+    Tool for converting Word documents to Markdown format.
+
+    This tool downloads Word documents from URLs and converts them to Markdown
+    format for easier processing by LLMs and other text analysis tools.
+    """
+
+    name = "word_to_markdown"
+    description = (
+        "Convert Word documents to Markdown format from URLs. "
+        "Downloads Word documents and converts them to clean Markdown text. "
+        "Useful for processing and analyzing Word documents."
     )
-    return_direct: bool = False
-    _temp_dir: Optional[str] = None
+
+    # Document type configuration
+    document_type = "conversion"
+    default_extension = "md"
+    supported_extensions = [".md", ".txt"]
+
+    def __init__(self, **kwargs):
+        """Initialize the Word to Markdown tool."""
+        super().__init__(**kwargs)
+        self._temp_dir = None
 
     async def _download_file(self, url: str) -> str:
-        """Downloads a file from a URL to a temporary file."""
-        # Create a temporary directory if it doesn't exist
+        """Download Word document from URL to temporary file."""
+        # Create temporary directory if needed
         if not self._temp_dir:
             self._temp_dir = tempfile.mkdtemp()
 
-        # Get the filename from the URL
+        # Generate filename from URL
         parsed_url = urlparse(url)
         filename = os.path.basename(parsed_url.path)
         if not filename.endswith(('.docx', '.doc')):
-            filename += '.docx'  # Add extension if it doesn't exist
+            filename += '.docx'
 
-        # Complete path to the temporary file
         file_path = os.path.join(self._temp_dir, filename)
 
-        # Download the file
+        # Download file
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as response:
                 if response.status != 200:
-                    raise Exception(f"Error downloading the file: {response.status}")
+                    raise Exception(f"Download failed with status {response.status}")
 
-                # Save the file
                 async with aiofiles.open(file_path, 'wb') as f:
                     await f.write(await response.read())
 
+        self.logger.info(f"Downloaded Word document: {filename}")
         return file_path
 
     async def _convert_to_markdown(self, file_path: str) -> str:
-        """Converts a Word document to Markdown."""
-        # Use mammoth to convert to HTML and then to Markdown
-        with open(file_path, "rb") as docx_file:
-            result = mammoth.convert_to_html(docx_file)
-            html = result.value
-            markdown_text = md(html)
-
-            # If there are warning messages, add them as a comment at the beginning
-            if result.messages:
-                warnings = "\n".join([f"<!-- Warning: {msg} -->" for msg in result.messages])
-                markdown_text = f"{warnings}\n\n{markdown_text}"
-
-            return markdown_text
-
-    async def _process_word_document(self, url: str) -> Dict[str, Any]:
-        """Processes a Word document from a URL and converts it to Markdown."""
+        """Convert Word document to Markdown using mammoth."""
         try:
-            file_path = await self._download_file(url)
-            markdown_text = await self._convert_to_markdown(file_path)
+            with open(file_path, "rb") as docx_file:
+                result = mammoth.convert_to_html(docx_file)
+                html = result.value
+                markdown_text = md(html)
 
-            # Cleanup of temporary files
-            if os.path.exists(file_path):
+                # Add conversion warnings as comments
+                if result.messages:
+                    warnings = "\n".join([f"<!-- Warning: {msg} -->" for msg in result.messages])
+                    markdown_text = f"{warnings}\n\n{markdown_text}"
+
+                return markdown_text
+
+        except Exception as e:
+            self.logger.error(f"Conversion to markdown failed: {e}")
+            raise
+
+    async def _cleanup_temp_files(self, file_path: Optional[str] = None) -> None:
+        """Clean up temporary files and directory."""
+        try:
+            if file_path and os.path.exists(file_path):
                 os.remove(file_path)
 
-            return {
-                "markdown": markdown_text,
-                "source_url": url,
-                "success": True
-            }
+            if self._temp_dir and os.path.exists(self._temp_dir):
+                if not os.listdir(self._temp_dir):  # Only remove if empty
+                    os.rmdir(self._temp_dir)
+                    self._temp_dir = None
+
         except Exception as e:
+            self.logger.warning(f"Cleanup failed: {e}")
+
+    async def convert_from_url(self, url: str, save_markdown: bool = False, **kwargs) -> Dict[str, Any]:
+        """
+        Convert Word document from URL to Markdown.
+
+        Args:
+            url: URL of the Word document
+            save_markdown: Whether to save the markdown to a file
+            **kwargs: Additional arguments for file saving
+
+        Returns:
+            Dictionary with conversion results
+        """
+        file_path = None
+        try:
+            # Download the file
+            file_path = await self._download_file(url)
+
+            # Convert to markdown
+            markdown_content = await self._convert_to_markdown(file_path)
+
+            result = {
+                "status": "success",
+                "markdown_content": markdown_content,
+                "source_url": url,
+                "content_length": len(markdown_content),
+                "message": "Word document converted to Markdown successfully"
+            }
+
+            # Optionally save markdown to file
+            if save_markdown:
+                file_result = await self._create_document_safely(
+                    content=markdown_content,
+                    extension="md",
+                    **kwargs
+                )
+                if file_result['status'] == 'success':
+                    result.update({
+                        "saved_file": file_result['metadata'],
+                        "file_path": file_result['metadata']['file_path'],
+                        "file_url": file_result['metadata']['file_url']
+                    })
+
+            return result
+
+        except Exception as e:
+            self.logger.error(f"Word to Markdown conversion failed: {e}")
             return {
+                "status": "error",
                 "error": str(e),
                 "source_url": url,
-                "success": False
+                "message": f"Failed to convert Word document: {str(e)}"
             }
+
         finally:
-            # Ensure cleanup of the temporary directory if it's empty
-            if self._temp_dir and os.path.exists(self._temp_dir) and not os.listdir(self._temp_dir):
-                os.rmdir(self._temp_dir)
+            # Clean up temporary files
+            await self._cleanup_temp_files(file_path)
 
-    async def _arun(self, url: str) -> Dict[str, Any]:
-        """Runs the tool asynchronously."""
-        return await self._process_word_document(url)
+    async def _generate_document_content(self, content: str, **kwargs) -> str:
+        """Generate markdown content (implementation required by AbstractDocumentTool)."""
+        # This tool is primarily for URL conversion, but we implement this for completeness
+        return content
 
-    def _run(self, url: str) -> Dict[str, Any]:
-        """Runs the tool synchronously."""
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                return loop.run_until_complete(self._process_word_document(url))
-            else:
-                return asyncio.run(self._process_word_document(url))
-        except RuntimeError:
-            # If the event loop is not running, we can run it in a new loop
-            return asyncio.run(self._process_word_document(url))
+    async def _execute(self, url: str, save_markdown: bool = False, **kwargs) -> Dict[str, Any]:
+        """Execute Word to Markdown conversion."""
+        return await self.convert_from_url(url, save_markdown, **kwargs)

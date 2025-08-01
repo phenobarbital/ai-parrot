@@ -2,47 +2,49 @@
 Load RFP documents into bot.
 """
 import asyncio
-from navconfig import BASE_DIR
 from pprint import pprint
 from pathlib import Path
-from parrot.chatbots.basic import Chatbot
-from parrot.llms.vertex import VertexLLM
+from parrot.bots.basic import BasicBot
 from parrot.loaders import (
     PDFLoader
 )
 
 async def get_agent():
-    llm = VertexLLM(
-        model='gemini-1.5-pro',
-        temperature=0.1,
-        top_k=30,
-        Top_p=0.5,
+    agent = BasicBot(
+        name='AskBuddy'
     )
-    agent = Chatbot(
-        name='AskBuddy',
-        llm=llm
+    embed_model = {
+        "model": "thenlper/gte-base",
+        "model_type": "huggingface"
+    }
+    agent.define_store(
+        table='employee_information',
+        schema='mso',
+        vector_store='postgres',
+        embedding_model=embed_model,
+        dsn="postgresql+asyncpg://troc_pgdata:12345678@127.0.0.1:5432/navigator",
+        dimension=768,
     )
-    # Add LLM
     await agent.configure()
-    # directory = BASE_DIR.joinpath("docs", "askbuddy")
     directory = Path('/home/jesuslara/proyectos/navigator/navigator-ai').joinpath("docs", "askbuddy")
-    for filename in directory.glob('*.pdf'):
+    # for filename in directory.glob('*.pdf'):
         # Loading File by File to avoid overheat in database
-        print(':: Processing: ', filename)
         # PDF Files
-        loader = PDFLoader(
-            filename,
-            source_type=f"MSO {filename.name}",
-            llm=llm.get_llm(),
-            language="en",
-            parse_images=False,
-            page_as_images=True
-        )
-        docs = loader.load()
-        pprint(docs)
-        await agent.load_documents(
-            docs
-        )
+    loader = PDFLoader(
+        directory,
+        source_type=f"MSO",
+        language="en",
+        parse_images=False,
+        as_markdown=True,
+        use_chapters=False
+    )
+    docs = await loader.load()
+    pprint(docs)
+    await agent.store.add_documents(
+        table='employee_information',
+        schema='mso',
+        documents=docs
+    )
     return agent
 
 
