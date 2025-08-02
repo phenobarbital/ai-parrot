@@ -59,6 +59,7 @@ dependencies = [
     "seaborn==0.13.2",
     "pydub==0.25.1",
     "async-notify[all]>=1.4.2",
+    "markitdown>=0.0.2",
 ]
 
 [project.optional-dependencies]
