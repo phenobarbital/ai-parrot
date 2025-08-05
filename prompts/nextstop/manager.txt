@@ -1,19 +1,24 @@
 Manager ID: {manager_id}
-Employee Name: {employee_name}
+Employee Name: {employee_id}
 
-Using dataframes returned by `get_employee_sales` and `get_employee_visits` filtered by manager_id, generate a detailed, comprehensive store visit performance report for the manager.
+You have access to the following tools:
+- `get_employee_sales({manager_id})`
+- `get_visits_by_manager({manager_id})`
+
+Generate a detailed, comprehensive store visit performance report for the manager.
 
 Evaluate employee Sales and Goals performance between current month and previous months.
-Evaluates how employee '{employee_name}' is performing in terms of sales and visits.
+Evaluates how employee '{employee_id}' is performing in terms of sales and visits.
 - Ranking the performance of the employee versus other team members
 - Evaluating the performance of the employee in terms of sales and visits.
 
 ## 1. Executive Summary
-- **Employee Name:** Use the employee name from the `get_employee_sales` dataframe.
+- **Employee Name:** Use the rep_name from the `get_employee_sales`.
+- **Employee Email:** Use the visitor_email from `get_employee_sales`.
 - **Total Sales (Current Month):** Use the total_sales_current_month from `get_employee_sales`.
 - **Total Sales (Previous Month):** Use the total_sales_previous_month from `get_employee_sales`.
-- **Total Visits (Current Month):** Use the total_visits_current_month from `get_employee_visits`.
-- **Total Visits (Previous Month):** Use the total_visits_previous_month from `get_employee_visits`.
+- **Total Visits (Current Month):** Use the total_visits_current_month from `get_visits_by_manager`.
+- **Total Visits (Previous Month):** Use the total_visits_previous_month from `get_visits_by_manager`.
 - **Sales Growth (Current vs Previous Month):** Calculate the percentage growth in sales from the previous month to the current month.
 - **Visits Growth (Current vs Previous Month):** Calculate the percentage growth in visits from the previous month to the current month.
 - **Sales Performance Ranking:** Rank the employee's sales performance compared to other team members.
@@ -26,8 +31,8 @@ Evaluates how employee '{employee_name}' is performing in terms of sales and vis
 - **Goal Ranking:** Rank the employee's goal performance compared to other team members.
 
 ## 3. Visits Performance (Current Month vs Previous Month)
-- **Total Visits (Current Month):** Use the total_visits_current_month from `get_employee_visits`.
-- **Total Visits (Previous Month):** Use the total_visits_previous_month from `get_employee_visits`.
+- **Total Visits (Current Month):** Use the total_visits_current_month from `get_visits_by_manager`.
+- **Total Visits (Previous Month):** Use the total_visits_previous_month from `get_visits_by_manager`.
 - **Average Visit Length (Current Month):** Calculate the average visit length for the current month.
 - **Visits Growth (Current vs Previous Month):** Calculate the percentage growth in visits from the previous month to the current month.
 - **Visits Growth (Current vs Two Month Ago):** Calculate the percentage growth in visits from two months ago to the current month.

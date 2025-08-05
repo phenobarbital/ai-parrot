@@ -156,31 +156,32 @@ class AbstractClient(ABC):
         conversation_memory: Optional[ConversationMemory] = None,
         preset: Optional[str] = None,
         tools: Optional[List[Union[str, AbstractTool]]] = None,
-        use_tools: bool = True,
+        use_tools: bool = False,
         debug: bool = True,
         **kwargs
     ):
+        self.__name__ = self.__class__.__name__
         self.model: str = kwargs.get('model', None)
         self.session: Optional[aiohttp.ClientSession] = None
         if preset:
             preset_config = LLM_PRESETS.get(preset, LLM_PRESETS['default'])
             # define temp, top_k, top_p, max_tokens from selected preset:
             self.temperature = preset_config.get('temperature', 0.4)
-            self.top_k = preset_config.get('top_k', 40)
-            self.top_p = preset_config.get('top_p', 0.9)
+            self.top_k = preset_config.get('top_k', 30)
+            self.top_p = preset_config.get('top_p', 0.2)
             self.max_tokens = preset_config.get('max_tokens', 1024)
         else:
             # define default values from preset default:
-            self.temperature = kwargs.get('temperature', 0.4)
-            self.top_k = kwargs.get('top_k', 40)
-            self.top_p = kwargs.get('top_p', 0.9)
+            self.temperature = kwargs.get('temperature', 0)
+            self.top_k = kwargs.get('top_k', 30)
+            self.top_p = kwargs.get('top_p', 0.2)
             self.max_tokens = kwargs.get('max_tokens', 4096)
         self.conversation_memory = conversation_memory or InMemoryConversation()
         self.base_headers.update(kwargs.get('headers', {}))
         self.api_key = kwargs.get('api_key', None)
         self.version = kwargs.get('version', self.version)
         self._config = config
-        self.logger: logging.Logger = logging.getLogger(__name__)
+        self.logger: logging.Logger = logging.getLogger(self.__name__)
         self._json: Any = JSONContent()
         self.client_type: str = kwargs.get('client_type', self.client_type)
         self._debug: bool = debug
@@ -190,9 +191,11 @@ class AbstractClient(ABC):
             debug=self._debug
         )
         self.tools: Dict[str, Union[ToolDefinition, AbstractTool]] = {}
+        self.enable_tools: bool = use_tools
         # Initialize tools if provided
         if use_tools and tools:
             self.tool_manager.default_tools(tools)
+            self.enable_tools = True
 
     async def __aenter__(self):
         self.session = aiohttp.ClientSession(
@@ -289,6 +292,7 @@ class AbstractClient(ABC):
     ) -> None:
         """Register multiple tools at once."""
         self.tool_manager.register_tools(tools)
+        self.enable_tools = True
 
     def register_python_tool(
         self,
@@ -499,7 +503,8 @@ class AbstractClient(ABC):
         system_prompt: Optional[str] = None,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
-        tools: Optional[List[Dict[str, Any]]] = None
+        tools: Optional[List[Dict[str, Any]]] = None,
+        use_tools: Optional[bool] = None,
     ) -> MessageResponse:
         """Send a prompt to the model and return the response."""
         raise NotImplementedError("Subclasses must implement this method.")

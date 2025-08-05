@@ -270,8 +270,7 @@ class AbstractBot(DBInterface, ABC):
         return (
             "** Your Style: **\n"
             "- When responding to user queries, ensure that you provide accurate and up-to-date information.\n"  # noqa: C0301
-            "- Be polite, clear and concise in your explanations.\n"
-            "- ensuring that responses are based only on verified information from owned sources.\n"
+            "- ensuring that responses are based only on verified information.\n"
         )
 
     @property
