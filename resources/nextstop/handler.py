@@ -16,7 +16,7 @@ from navigator_auth.decorators import (
 from navigator.responses import JSONResponse
 from parrot.bots.nextstop import NextStop
 from parrot.handlers.agents import AgentHandler
-from parrot.tools.nextstop import StoreInfo
+from parrot.tools.nextstop import StoreInfo, EmployeeToolkit
 from .models import NextStopStore
 
 
@@ -53,7 +53,7 @@ class NextStopAgent(AgentHandler):
     agent_id: str = "nextstop"
     _agent_class: type = NextStop
     _agent_response = NextStopResponse
-    _tools = StoreInfo().get_tools()
+    _tools = StoreInfo().get_tools() + EmployeeToolkit().get_tools()
     base_route: str = '/api/v1/agents/nextstop'
     additional_routes: dict = [
         {

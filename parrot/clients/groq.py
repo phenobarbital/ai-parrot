@@ -8,7 +8,7 @@ import json
 from datamodel.parsers.json import json_decoder  # pylint: disable=E0611 # noqa
 from navconfig import config
 from groq import AsyncGroq
-from .abstract import AbstractClient
+from .base import AbstractClient
 from ..models import (
     AIMessage,
     AIMessageFactory,

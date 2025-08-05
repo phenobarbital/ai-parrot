@@ -19,7 +19,7 @@ from tenacity import (
 )
 from openai import AsyncOpenAI
 from openai import APIConnectionError, RateLimitError, APIError
-from .abstract import AbstractClient
+from .base import AbstractClient
 from ..models import (
     AIMessage,
     AIMessageFactory,

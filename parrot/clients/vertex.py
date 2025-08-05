@@ -16,7 +16,7 @@ from vertexai.generative_models import (
     GenerationConfig
 )
 from navconfig import config, BASE_DIR
-from .abstract import AbstractClient, ToolDefinition, StreamingRetryConfig
+from .base import AbstractClient, ToolDefinition, StreamingRetryConfig
 from ..models import (
     AIMessage,
     AIMessageFactory,
