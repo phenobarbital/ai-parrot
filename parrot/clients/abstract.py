@@ -36,6 +36,11 @@ from ..models import (
     OutputFormat
 )
 from ..tools.abstract import AbstractTool, ToolResult
+from ..tools.manager import (
+    ToolManager,
+    ToolFormat,
+    ToolDefinition
+)
 
 
 LLM_PRESETS = {
@@ -106,17 +111,6 @@ class MessageResponse(TypedDict):
     stop_sequence: Optional[str]
     usage: Dict[str, int]
 
-
-@dataclass
-class ToolDefinition:
-    """Data structure for tool definition."""
-    """Defines a tool with its name, description, input schema, and function."""
-    __slots__ = ('name', 'description', 'input_schema', 'function')
-    name: str
-    description: str
-    input_schema: Dict[str, Any]
-    function: Callable
-
 @dataclass
 class BatchRequest:
     """Data structure for batch request."""
@@ -161,11 +155,13 @@ class AbstractClient(ABC):
         self,
         conversation_memory: Optional[ConversationMemory] = None,
         preset: Optional[str] = None,
+        tools: Optional[List[Union[str, AbstractTool]]] = None,
+        use_tools: bool = True,
+        debug: bool = True,
         **kwargs
     ):
         self.model: str = kwargs.get('model', None)
         self.session: Optional[aiohttp.ClientSession] = None
-        self.tools: Dict[str, Union[ToolDefinition, AbstractTool]] = {}
         if preset:
             preset_config = LLM_PRESETS.get(preset, LLM_PRESETS['default'])
             # define temp, top_k, top_p, max_tokens from selected preset:
@@ -187,6 +183,16 @@ class AbstractClient(ABC):
         self.logger: logging.Logger = logging.getLogger(__name__)
         self._json: Any = JSONContent()
         self.client_type: str = kwargs.get('client_type', self.client_type)
+        self._debug: bool = debug
+        # Initialize ToolManager instead of direct tools dict
+        self.tool_manager = ToolManager(
+            logger=self.logger,
+            debug=self._debug
+        )
+        self.tools: Dict[str, Union[ToolDefinition, AbstractTool]] = {}
+        # Initialize tools if provided
+        if use_tools and tools:
+            self.tool_manager.default_tools(tools)
 
     async def __aenter__(self):
         self.session = aiohttp.ClientSession(
@@ -240,6 +246,26 @@ class AbstractClient(ABC):
             return []
         return await self.conversation_memory.list_sessions(user_id)
 
+    def set_tools(self, tools: List[Union[str, AbstractTool]]) -> None:
+        """Set complete list of tools, replacing existing."""
+        self.tool_manager.clear_tools()
+        self.tools.clear()
+        self.register_tools(tools)
+
+    def get_tool(self, name: str) -> Optional[AbstractTool]:
+        """Get a tool by name from ToolManager or legacy tools."""
+        # Try ToolManager first
+        tool = self.tool_manager.get_tool(name)
+        if tool:
+            return tool
+
+        # Fall back to legacy tools
+        legacy_tool = self.tools.get(name)
+        if isinstance(legacy_tool, AbstractTool):
+            return legacy_tool
+
+        return None
+
     def register_tool(
         self,
         tool: Union[ToolDefinition, AbstractTool] = None,
@@ -249,67 +275,20 @@ class AbstractClient(ABC):
         function: Callable = None,
     ) -> None:
         """Register a Python function as a tool for LLM to call."""
-        # check if tool is already on self.tools:
-        tool_name = tool.name if isinstance(tool, (ToolDefinition, AbstractTool)) else name
-        if tool_name in self.tools:
-            self.logger.warning(f"Tool '{tool_name}' is already registered.")
-            return
-        # If tool is already registered, skip registration
-        if isinstance(tool, dict):
-            tool_name = tool.get('name')
-            if tool_name in self.tools:
-                self.logger.warning(f"Tool '{tool_name}' is already registered.")
-                return
-            self.tools[tool_name] = ToolDefinition(
-                name=tool_name,
-                description=tool.get('description', ''),
-                input_schema=tool.get('parameters', {}),
-                function=tool.get('_tool_instance')
-            )
-        elif isinstance(tool, ToolDefinition):
-            self.tools[tool_name] = tool
-        elif isinstance(tool, AbstractTool):
-            self.tools[tool_name] = tool
-        elif name and description and input_schema and function:
-            # Create a ToolDefinition from the provided parameters
-            self.tools[tool_name] = ToolDefinition(
-                name=name,
-                description=description,
-                input_schema=input_schema,
-                function=function
-            )
-        else:
-            raise ValueError(
-                "Tool must be a ToolDefinition, AbstractTool, or provide all parameters: "
-                "name, description, input_schema, function."
-            )
+        self.tool_manager.register_tool(
+            tool=tool,
+            name=name,
+            description=description,
+            input_schema=input_schema,
+            function=function
+        )
 
     def register_tools(
         self,
         tools: List[Union[ToolDefinition, AbstractTool]]
     ) -> None:
         """Register multiple tools at once."""
-        for tool in tools:
-            if isinstance(tool, dict):
-                tool_name = tool.get('name')
-                if tool_name in self.tools:
-                    continue
-                _instance = tool.get('_tool_instance')
-                self.tools[tool_name] = _instance
-                continue
-            tool_name = tool.name if isinstance(tool, (ToolDefinition, AbstractTool)) else None
-            if tool_name in self.tools:
-                continue
-            if isinstance(tool, ToolDefinition):
-                self.tools[tool.name] = tool
-            elif isinstance(tool, AbstractTool):
-                self.tools[tool.name] = tool
-            else:
-                raise ValueError(f"Unknown tool type: {type(tool)}")
-
-    def set_tools(self, tools: List[AbstractTool]) -> None:
-        """Set complete list of tools, replacing existing."""
-        self.tools = {tool.name: tool for tool in tools}
+        self.tool_manager.register_tools(tools)
 
     def register_python_tool(
         self,
@@ -334,31 +313,17 @@ class AbstractClient(ABC):
         tool = PythonREPLTool(
             report_dir=report_dir,
             plt_style=plt_style,
-            palette=palette
+            palette=palette,
+            debug=self._debug,
         )
-        self.register_tool(tool)
+        self.tool_manager.add_tool(tool)
         return tool
 
-    def get_tool(self, name: str) -> Optional[AbstractTool]:
-        """
-        Get a tool by name.
-
-        Args:
-            name: Tool name
-
-        Returns:
-            AbstractTool instance or None if not found
-        """
-        return self.tools.get(name)
-
     def list_tools(self) -> List[str]:
-        """
-        Get a list of all registered tool names.
-
-        Returns:
-            List of tool names
-        """
-        return list(self.tools.keys())
+        """Get a list of all registered tool names."""
+        tool_names = self.tool_manager.list_tools()
+        legacy_names = list(self.tools.keys())
+        return tool_names + [name for name in legacy_names if name not in tool_names]
 
     def remove_tool(self, name: str) -> bool:
         """
@@ -370,17 +335,13 @@ class AbstractClient(ABC):
         Returns:
             True if tool was removed, False if not found
         """
-        if name in self.tools:
-            del self.tools[name]
-            self.logger.info(f"Removed tool: {name}")
-            return True
-        return False
+        self.tool_manager.remove_tool(name)
 
     def clear_tools(self) -> None:
         """Clear all registered tools."""
-        count = len(self.tools)
+        self.tool_manager.clear_tools()
         self.tools.clear()
-        self.logger.info(f"Cleared {count} tools")
+        self.logger.info(f"Cleared all tools")
 
     def _encode_file(self, file_path: Union[str, Path]) -> Dict[str, Any]:
         """Encode file for API upload."""
@@ -401,69 +362,52 @@ class AbstractClient(ABC):
 
     def _prepare_tools(self) -> List[Dict[str, Any]]:
         """Convert registered tools to API format."""
-        if not self.tools:
-            return []
         tool_schemas = []
         processed_tools = set()  # Track processed tools to avoid duplicates
-        for tool_name, tool in self.tools.items():
-            # Skip duplicates
-            if tool_name in processed_tools:
-                continue
-            processed_tools.add(tool_name)
-            try:
-                if isinstance(tool, ToolDefinition):
-                    # Handle ToolDefinition (legacy)
-                    base_schema = {
-                        "name": tool.name,
-                        "description": tool.description,
-                    }
-                    if self.client_type == 'openai':
-                        base_schema['parameters'] = tool.input_schema
-                        tool_schemas.append({
-                            "type": "function",
-                            "function": base_schema
-                        })
-                    else:
-                        # Claude/Anthropic format
-                        base_schema['input_schema'] = tool.input_schema
-                        tool_schemas.append(base_schema)
-                elif isinstance(tool, AbstractTool):
-                    # Handle AbstractTool (new)
-                    try:
-                        schema = tool.get_tool_schema()
-                        # Extract the correct components
-                        tool_name = schema.get("name", tool.name)
-                        tool_description = schema.get("description", tool.description)
-                        tool_parameters = schema.get("parameters", {})
-                        base_schema = {
-                            "name": tool_name,
-                            "description": tool_description,
-                        }
-                        if self.client_type == 'openai':
-                            # OpenAI format
-                            base_schema['parameters'] = tool_parameters
-                            tool_schemas.append({
-                                "type": "function",
-                                "function": base_schema
-                            })
-                        else:
-                            # Claude/Anthropic format
-                            base_schema['input_schema'] = tool_parameters
-                            tool_schemas.append(base_schema)
-                    except Exception as e:
-                        self.logger.error(
-                            f"Error getting schema for AbstractTool {tool.name}: {e}"
-                        )
-                        continue
-                else:
-                    self.logger.error(
-                        f"Unknown tool type: {type(tool)} for tool {tool_name}"
-                    )
-                    continue
 
-            except Exception as e:
-                self.logger.error(f"Error preparing tool {tool_name}: {e}")
-                continue
+        # Determine the format based on client type
+        if self.client_type == 'openai':
+            provider_format = ToolFormat.OPENAI
+        elif self.client_type == 'google':
+            provider_format = ToolFormat.GOOGLE
+        elif self.client_type == 'groq':
+            provider_format = ToolFormat.GROQ
+        elif self.client_type == 'vertex':
+            provider_format = ToolFormat.VERTEX
+        else:
+            provider_format = ToolFormat.ANTHROPIC  # Default to Anthropic for Claude
+
+        # Get tools from ToolManager using the correct method
+        manager_tools = self.tool_manager.get_tool_schemas(provider_format=provider_format)
+
+        for tool_schema in manager_tools:
+            # Remove the _tool_instance for API formatting
+            clean_schema = tool_schema.copy()
+            clean_schema.pop('_tool_instance', None)
+
+            tool_name = clean_schema.get('name')
+            if tool_name and tool_name not in processed_tools:
+                # Format according to the client type
+                if self.client_type == 'openai':
+                    # OpenAI expects function wrapper
+                    formatted_schema = {
+                        "type": "function",
+                        "function": {
+                            "name": clean_schema["name"],
+                            "description": clean_schema["description"],
+                            "parameters": clean_schema.get("parameters", {})
+                        }
+                    }
+                else:
+                    # Claude/Anthropic and others use direct format
+                    formatted_schema = {
+                        "name": clean_schema["name"],
+                        "description": clean_schema["description"],
+                        "input_schema": clean_schema.get("parameters", {})
+                    }
+
+                tool_schemas.append(formatted_schema)
+                processed_tools.add(tool_name)
 
         self.logger.debug(f"Prepared {len(tool_schemas)} tool schemas")
         return tool_schemas
@@ -474,31 +418,17 @@ class AbstractClient(ABC):
         parameters: Dict[str, Any]
     ) -> Any:
         """Execute a registered tool function."""
-
-        if tool_name not in self.tools:
-            raise ValueError(f"Tool '{tool_name}' not registered")
         try:
-            tool = self.tools[tool_name]
-            if isinstance(tool, ToolDefinition):
-                if asyncio.iscoroutinefunction(tool.function):
-                    result = await tool.function(**parameters)
-                else:
-                    result = tool.function(**parameters)
-            elif isinstance(tool, AbstractTool):
-                # Handle AbstractTool (new)
-                result = await tool.execute(**parameters)
-
-                # Handle ToolResult objects
-                if isinstance(result, ToolResult):
-                    if result.status == "error":
-                        raise ValueError(result.error)
-                    return result.result
-            else:
-                raise ValueError(f"Unknown tool type: {type(tool)}")
-
+            result = await self.tool_manager.execute_tool(tool_name, parameters)
+            if isinstance(result, ToolResult):
+                if result.status == "error":
+                    raise ValueError(result.error)
+                return result.result
             return result
         except Exception as e:
-            self.logger.error(f"Error executing tool {tool_name}: {e}")
+            self.logger.error(
+                f"Error executing tool {tool_name}: {e}"
+            )
             raise
 
     async def _execute_tool_call(
@@ -731,8 +661,7 @@ class AbstractClient(ABC):
             "content": current_message_parts
         })
 
-        self.logger.debug(f"Prepared {len(messages)} messages for conversation context")
-
+        # self.logger.debug(f"Prepared {len(messages)} messages for conversation context")
         return messages, conversation_history, system_prompt
 
     async def _update_conversation_memory(

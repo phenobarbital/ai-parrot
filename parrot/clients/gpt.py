@@ -140,7 +140,7 @@ class OpenAIClient(AbstractClient):
         if tools and isinstance(tools, list):
             for tool in tools:
                 self.register_tool(tool)
-        tools = self._prepare_tools() if self.tools else None
+        tools = self._prepare_tools()
         args = {}
 
         # Handle search models

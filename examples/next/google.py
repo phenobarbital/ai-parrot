@@ -72,54 +72,54 @@ async def main():
         print("- Math data:", math_response.output)
         print("- Parallel tools used:", len(math_response.tool_calls))
 
-    #     # Register multiple tools for parallel execution
-    #     def add_numbers(a: float, b: float) -> float:
-    #         """Add two numbers."""
-    #         return a + b
+        # Register multiple tools for parallel execution
+        def add_numbers(a: float, b: float) -> float:
+            """Add two numbers."""
+            return a + b
 
-    #     def multiply_numbers(a: float, b: float) -> float:
-    #         """Multiply two numbers."""
-    #         return a * b
+        def multiply_numbers(a: float, b: float) -> float:
+            """Multiply two numbers."""
+            return a * b
 
-    #     client.register_tool(
-    #         name="add_numbers",
-    #         description="Add two numbers together",
-    #         input_schema={
-    #             "type": "object",
-    #             "properties": {
-    #                 "a": {"type": "number", "description": "First number"},
-    #                 "b": {"type": "number", "description": "Second number"}
-    #             },
-    #             "required": ["a", "b"]
-    #         },
-    #         function=add_numbers
-    #     )
+        client.register_tool(
+            name="add_numbers",
+            description="Add two numbers together",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "a": {"type": "number", "description": "First number"},
+                    "b": {"type": "number", "description": "Second number"}
+                },
+                "required": ["a", "b"]
+            },
+            function=add_numbers
+        )
 
-    #     client.register_tool(
-    #         name="multiply_numbers",
-    #         description="Multiply two numbers together",
-    #         input_schema={
-    #             "type": "object",
-    #             "properties": {
-    #                 "a": {"type": "number", "description": "First number"},
-    #                 "b": {"type": "number", "description": "Second number"}
-    #             },
-    #             "required": ["a", "b"]
-    #         },
-    #         function=multiply_numbers
-    #     )
+        client.register_tool(
+            name="multiply_numbers",
+            description="Multiply two numbers together",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "a": {"type": "number", "description": "First number"},
+                    "b": {"type": "number", "description": "Second number"}
+                },
+                "required": ["a", "b"]
+            },
+            function=multiply_numbers
+        )
 
-    #     # Parallel tool execution
-    #     response = await client.ask(
-    #         "Calculate both: 5 + 3 and 4 * 7. Use the appropriate tools for each calculation.",
-    #         model=GoogleModel.GEMINI_2_5_FLASH
-    #     )
-    #     print("Response text:", response.text)
-    #     print("Model used:", response.model)
-    #     print("Provider:", response.provider)
-    #     print("Has tools:", response.has_tools)
-    #     print("Tool calls:", [f"{tc.name}({tc.arguments}) = {tc.result}" for tc in response.tool_calls])
-    #     print("Total execution time:", sum(tc.execution_time for tc in response.tool_calls))
+        # Parallel tool execution
+        response = await client.ask(
+            "Calculate both: 5 + 3 and 4 * 7. Use the appropriate tools for each calculation.",
+            model=GoogleModel.GEMINI_2_5_FLASH
+        )
+        print("Response text:", response.output)
+        print("Model used:", response.model)
+        print("Provider:", response.provider)
+        print("Has tools:", response.has_tools)
+        print("Tool calls:", [f"{tc.name}({tc.arguments}) = {tc.result}" for tc in response.tool_calls])
+        print("Total execution time:", sum(tc.execution_time for tc in response.tool_calls))
 
     memory = GoogleGenAIClient.create_conversation_memory("memory")
     async with GoogleGenAIClient(conversation_memory=memory) as client:
@@ -240,47 +240,47 @@ async def main():
     #         print(f"- {img}")
 
 
-    print(' --- Audio Features --- ')
-    async with GoogleGenAIClient() as client:
-        output_directory = BASE_DIR.joinpath('static', 'generated_audio')
-        output_directory.mkdir(parents=True, exist_ok=True)
-        print("--- Starting Single-Voice Speech Generation ---")
-        single_voice_prompt = SpeechGenerationPrompt(
-            prompt="Say cheerfully: Hello! Welcome to NextStop Report!",
-            speakers=[SpeakerConfig(name="Narrator", voice="zephyr")]
-        )
+#     print(' --- Audio Features --- ')
+#     async with GoogleGenAIClient() as client:
+#         output_directory = BASE_DIR.joinpath('static', 'generated_audio')
+#         output_directory.mkdir(parents=True, exist_ok=True)
+#         print("--- Starting Single-Voice Speech Generation ---")
+#         single_voice_prompt = SpeechGenerationPrompt(
+#             prompt="Say cheerfully: Hello! Welcome to NextStop Report!",
+#             speakers=[SpeakerConfig(name="Narrator", voice="zephyr")]
+#         )
 
-        speech_result_1 = await client.generate_speech(
-            prompt_data=single_voice_prompt,
-            output_directory=output_directory
-        )
+#         speech_result_1 = await client.generate_speech(
+#             prompt_data=single_voice_prompt,
+#             output_directory=output_directory
+#         )
 
-        if speech_result_1 and speech_result_1.files:
-            print(f"✅ Single-voice speech saved to: {speech_result_1.files[0]}")
+#         if speech_result_1 and speech_result_1.files:
+#             print(f"✅ Single-voice speech saved to: {speech_result_1.files[0]}")
 
-        # --- 2. Multi-Voice Example ---
-        print("--- Starting Multi-Voice Speech Generation ---")
-        multi_voice_prompt = SpeechGenerationPrompt(
-            prompt="""
-Jesus: How are you today, Lara?
-Lara: I'm doing great, thanks for asking, Jesus! How about you?
-Jesus: I'm feeling fantastic!
-            """,
-            speakers=[
-                SpeakerConfig(name="Jesus", voice="enceladus"),
-                SpeakerConfig(name="Lara", voice="vindemiatrix"),
-            ]
-        )
+#         # --- 2. Multi-Voice Example ---
+#         print("--- Starting Multi-Voice Speech Generation ---")
+#         multi_voice_prompt = SpeechGenerationPrompt(
+#             prompt="""
+# Jesus: How are you today, Lara?
+# Lara: I'm doing great, thanks for asking, Jesus! How about you?
+# Jesus: I'm feeling fantastic!
+#             """,
+#             speakers=[
+#                 SpeakerConfig(name="Jesus", voice="enceladus"),
+#                 SpeakerConfig(name="Lara", voice="vindemiatrix"),
+#             ]
+#         )
 
-        speech_result_2 = await client.generate_speech(
-            prompt_data=multi_voice_prompt,
-            output_directory=output_directory,
-        )
+#         speech_result_2 = await client.generate_speech(
+#             prompt_data=multi_voice_prompt,
+#             output_directory=output_directory,
+#         )
 
-        if speech_result_2 and speech_result_2.files:
-            print(f"✅ Multi-voice speech saved to: {speech_result_2.files[0]}")
-        else:
-            print("❌ Failed to generate multi-voice speech.")
+#         if speech_result_2 and speech_result_2.files:
+#             print(f"✅ Multi-voice speech saved to: {speech_result_2.files[0]}")
+#         else:
+#             print("❌ Failed to generate multi-voice speech.")
 
         # Image Clasification:
     # async with GoogleGenAIClient() as client:
@@ -446,48 +446,48 @@ Jesus: I'm feeling fantastic!
         #     print("\n❌ Failed to get a structured analysis.")
         #     # Access the raw text via the .text property of the AIMessage
         #     print("Raw response:", analysis_result.text if analysis_result else "No response returned.")
-    memory = GoogleGenAIClient.create_conversation_memory("memory")
-    user_id = "user123"
-    session_id = "google_session_010"
-    async with GoogleGenAIClient(conversation_memory=memory) as client:
-        # do an iteration 3 times:
-        for _ in range(3):
-            # First interaction
-            response1 = await client.ask(
-                "Hi, my name is Jesus and I love Python programming",
-                user_id=user_id,
-                session_id=session_id
-            )
-            print("Response 1:", response1.output)
+#     memory = GoogleGenAIClient.create_conversation_memory("memory")
+#     user_id = "user123"
+#     session_id = "google_session_010"
+#     async with GoogleGenAIClient(conversation_memory=memory) as client:
+#         # do an iteration 3 times:
+#         for _ in range(3):
+#             # First interaction
+#             response1 = await client.ask(
+#                 "Hi, my name is Jesus and I love Python programming",
+#                 user_id=user_id,
+#                 session_id=session_id
+#             )
+#             print("Response 1:", response1.output)
 
-            # Second interaction with memory
-            response2 = await client.ask(
-                "What's my name and what do I like?",
-                user_id=user_id,
-                session_id=session_id
-            )
-            print("Response 2:", response2.output)
+#             # Second interaction with memory
+#             response2 = await client.ask(
+#                 "What's my name and what do I like?",
+#                 user_id=user_id,
+#                 session_id=session_id
+#             )
+#             print("Response 2:", response2.output)
 
-            # Third interaction with tools
-            response3 = await client.ask(
-                "Can you search for recent Python news?",
-                user_id=user_id,
-                session_id=session_id,
-                force_tool_usage="custom_functions"
-            )
-            print("Response 3:", response3.output)
+#             # Third interaction with tools
+#             response3 = await client.ask(
+#                 "Can you search for recent Python news?",
+#                 user_id=user_id,
+#                 session_id=session_id,
+#                 force_tool_usage="custom_functions"
+#             )
+#             print("Response 3:", response3.output)
 
-            # Check conversation history
-            history = await client.get_conversation(user_id, session_id)
-            if history:
-                print(f"\nConversation summary:")
-                print(f"Total turns: {len(history.turns)}")
-                for i, turn in enumerate(history.turns):
-                    print(f"Turn {i+1}:")
-                    print(f"  User: {turn.user_message[:50]}...")
-                    print(f"  Assistant: {turn.assistant_response[:50]}...")
-                    if turn.tools_used:
-                        print(f"  Tools used: {', '.join(turn.tools_used)}")
+#             # Check conversation history
+#             history = await client.get_conversation(user_id, session_id)
+#             if history:
+#                 print(f"\nConversation summary:")
+#                 print(f"Total turns: {len(history.turns)}")
+#                 for i, turn in enumerate(history.turns):
+#                     print(f"Turn {i+1}:")
+#                     print(f"  User: {turn.user_message[:50]}...")
+#                     print(f"  Assistant: {turn.assistant_response[:50]}...")
+#                     if turn.tools_used:
+#                         print(f"  Tools used: {', '.join(turn.tools_used)}")
 
 async def test_scripter():
     output_directory = BASE_DIR.joinpath('static', 'generated_audio')
@@ -541,5 +541,5 @@ Market expansion into Europe has been slower than projected, with only a 5% mark
             print("❌ Failed to generate multi-voice speech.")
 
 if __name__ == "__main__":
-    # asyncio.run(main())
-    asyncio.run(test_scripter())
+    asyncio.run(main())
+    # asyncio.run(test_scripter())

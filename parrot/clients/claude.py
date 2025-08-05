@@ -99,9 +99,7 @@ class ClaudeClient(AbstractClient):
         if tools and isinstance(tools, list):
             for tool in tools:
                 self.register_tool(tool)
-        if self.tools:
-            payload["tools"] = self._prepare_tools()
-
+        payload["tools"] = self._prepare_tools()
         # Track tool calls for the response
         all_tool_calls = []
 
@@ -262,8 +260,7 @@ class ClaudeClient(AbstractClient):
                 if system_prompt:
                     payload["system"] = system_prompt
 
-                if self.tools:
-                    payload["tools"] = self._prepare_tools()
+                payload["tools"] = self._prepare_tools()
 
                 assistant_content = ""
                 max_tokens_reached = False

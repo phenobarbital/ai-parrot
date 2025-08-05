@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Union
 import importlib
 from collections.abc import Callable
+from datamodel.parsers.json import JSONContent  # pylint: disable=E0611 # noqa
 from navconfig.logging import logging
 from ..conf import (
     EMBEDDING_DEFAULT_MODEL
@@ -84,6 +85,8 @@ class AbstractStore(ABC):
         )
         # Track context depth
         self._context_depth = 0
+        # JSON parser (based on orjson):
+        self._json = JSONContent()
 
     @property
     def connected(self) -> bool:
