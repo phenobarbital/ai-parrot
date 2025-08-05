@@ -1038,8 +1038,13 @@ class AbstractBot(DBInterface, ABC):
             session_id = str(uuid.uuid4())
         turn_id = str(uuid.uuid4())
 
-        limit = kwargs.get('limit', self.context_search_limit)
-        score_threshold = kwargs.get('score_threshold', self.context_score_threshold)
+        limit = kwargs.get(
+            'limit',
+            self.context_search_limit
+        )
+        score_threshold = kwargs.get(
+            'score_threshold', self.context_score_threshold
+        )
 
         try:
             # Get conversation history using unified memory
