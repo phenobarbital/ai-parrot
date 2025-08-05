@@ -106,11 +106,10 @@ class GroqClient(AbstractClient):
 
     def _prepare_groq_tools(self) -> List[dict]:
         """Convert registered tools to Groq format."""
-        if not self.tools:
-            return []
-
         groq_tools = []
-        for tool_name, tool in self.tools.items():
+        for tool in self.tool_manager.all_tools():
+            tool_name = tool.name if hasattr(tool, 'name') else tool.__class__.__name__
+            print(f":::: Preparing tool: {tool_name}")
             # Fix the tool schema for Groq
             if hasattr(tool, 'input_schema'):
                 # Convert dict schema to Groq-compliant schema
@@ -176,22 +175,7 @@ class GroqClient(AbstractClient):
         session_id: Optional[str] = None,
         tools: Optional[List[dict]] = None
     ) -> AIMessage:
-        """Ask Groq a question with optional conversation memory.
-
-        Args:
-            prompt (str): The question or prompt to ask.
-            model (str): The Groq model to use.
-            max_tokens (int): Maximum tokens for the response.
-            temperature (float): Sampling temperature.
-            top_p (float): Top-p sampling.
-            files (Optional[List[Union[str, Path]]]): Optional files to attach.
-            system_prompt (Optional[str]): Optional system prompt for the conversation.
-            structured_output (Optional[type]): Optional Pydantic model for structured output.
-            user_id (Optional[str]): User identifier for conversation memory.
-            session_id (Optional[str]): Session identifier for conversation memory.
-        Returns:
-            AIMessage: The response from Groq.
-        """
+        """Ask Groq a question with optional conversation memory."""
         model = model.value if isinstance(model, GroqModel) else model
         # Generate unique turn ID for tracking
         turn_id = str(uuid.uuid4())
@@ -252,12 +236,33 @@ class GroqClient(AbstractClient):
         # Make initial request
         response = await self.client.chat.completions.create(**request_args)
         result = response.choices[0].message
-        print('RESPONSE > ', response)
-        print('RESULT > ', result)
 
         # Handle tool calls in a loop (only if tools were enabled)
         if use_tools:
-            while result.tool_calls:
+            # Keep track of conversation turns
+            conversation_turns = 0
+            max_turns = 10  # Prevent infinite loops
+
+            while result.tool_calls and conversation_turns < max_turns:
+                conversation_turns += 1
+
+                # Add the assistant's message with tool calls to conversation
+                messages.append({
+                    "role": "assistant",
+                    "content": result.content or "",
+                    "tool_calls": [
+                        {
+                            "id": tc.id,
+                            "type": "function",
+                            "function": {
+                                "name": tc.function.name,
+                                "arguments": tc.function.arguments
+                            }
+                        } for tc in result.tool_calls
+                    ]
+                })
+
+                # Execute each tool call
                 for tool_call in result.tool_calls:
                     tool_name = tool_call.function.name
                     try:
@@ -278,6 +283,8 @@ class GroqClient(AbstractClient):
                         execution_time = time.time() - start_time
                         tc.result = tool_result
                         tc.execution_time = execution_time
+
+                        # Add tool result to conversation
                         messages.append({
                             "role": "tool",
                             "tool_call_id": tool_call.id,
@@ -287,6 +294,7 @@ class GroqClient(AbstractClient):
                     except Exception as e:
                         tc.error = str(e)
                         trace = traceback.format_exc()
+                        # Add error to conversation
                         messages.append({
                             "role": "tool",
                             "tool_call_id": tool_call.id,
@@ -297,16 +305,7 @@ class GroqClient(AbstractClient):
 
                     all_tool_calls.append(tc)
 
-                # Add assistant message with tool calls
-                messages.append({
-                    "role": "assistant",
-                    "content": result.content,
-                    "tool_calls": [
-                        tc.dict() if hasattr(tc, 'dict') else tc for tc in result.tool_calls
-                    ]
-                })
-
-                # Continue conversation with tool results
+                # Continue conversation with tool results to get final response
                 continue_args = {
                     "model": model,
                     "messages": messages,
@@ -314,16 +313,21 @@ class GroqClient(AbstractClient):
                     "temperature": temperature,
                     "top_p": top_p,
                     "stream": False,
-                    "tool_choice": "auto",
-                    "tools": tools
                 }
-                if model != GroqModel.GEMMA2_9B_IT:
-                    continue_args["parallel_tool_calls"] = True
+
+                # Only add tools if we want to allow further tool calls
+                # For final response, we might want to remove tools to force a text response
+                if conversation_turns < max_turns - 1:  # Allow more tool calls if not at limit
+                    continue_args["tools"] = tools
+                    continue_args["tool_choice"] = "auto"
+                    if model != GroqModel.GEMMA2_9B_IT:
+                        continue_args["parallel_tool_calls"] = True
+                else:
+                    # Force final response without more tool calls
+                    continue_args["tool_choice"] = "none"
 
                 response = await self.client.chat.completions.create(**continue_args)
                 result = response.choices[0].message
-
-                print('CONTINUE RESPONSE > ', response)
 
         # Handle structured output after tools if needed
         final_output = None
@@ -387,11 +391,12 @@ class GroqClient(AbstractClient):
         else:
             final_output = result.content
 
-        # Add final assistant message to conversation
-        messages.append({
-            "role": "assistant",
-            "content": result.content
-        })
+        # Add final assistant message to conversation (if not already added)
+        if not (use_tools and result.content):  # Only add if we haven't already added it in tool handling
+            messages.append({
+                "role": "assistant",
+                "content": result.content or ""
+            })
 
         # Update conversation memory
         tools_used = [tc.name for tc in all_tool_calls]
