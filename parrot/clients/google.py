@@ -366,6 +366,39 @@ class GoogleGenAIClient(AbstractClient):
 
         return final_response
 
+    def _process_tool_result_for_api(self, result) -> dict:
+        """Process tool result for Google Function Calling API compatibility."""
+
+        if isinstance(result, Exception):
+            return {"result": f"Error: {str(result)}", "error": True}
+
+        # Convert complex types to basic Python types
+        if isinstance(result, pd.DataFrame):
+            clean_result = result.to_dict(orient='records')
+        elif hasattr(result, 'model_dump'):  # Pydantic v2
+            clean_result = result.model_dump()
+        elif hasattr(result, 'dict'):  # Pydantic v1
+            clean_result = result.dict()
+        elif isinstance(result, list):
+            clean_result = [
+                item.model_dump() if hasattr(item, 'model_dump')
+                else item.dict() if hasattr(item, 'dict')
+                else item
+                for item in result
+            ]
+        else:
+            clean_result = result
+
+        # Serialize with orjson to handle time/datetime objects
+        serialized = self._json.dumps(clean_result)
+        json_compatible_result = self._json.loads(serialized)
+
+        # Wrap for Google Function Calling format
+        if isinstance(json_compatible_result, dict) and 'result' in json_compatible_result:
+            return json_compatible_result
+        else:
+            return {"result": json_compatible_result}
+
     async def _handle_multiturn_function_calls(
         self,
         chat,
@@ -390,6 +423,31 @@ class GoogleGenAIClient(AbstractClient):
             # Get function calls (including converted from tool_code)
             function_calls = self._get_function_calls_from_response(current_response)
             if not function_calls:
+                # Check if we have any text content in the response
+                final_text = self._safe_extract_text(current_response)
+                if not final_text and all_tool_calls:
+                    self.logger.warning(
+                        "Final response is empty after tool execution, generating summary..."
+                    )
+                    try:
+                        synthesis_prompt = """
+Please now generate the complete response based on all the information gathered from the tools.
+Provide a comprehensive answer to the original request.
+Synthesize the data and provide insights, analysis, and conclusions as appropriate.
+                        """
+                        current_response = await chat.send_message(
+                            synthesis_prompt,
+                            config=config
+                        )
+                        # Check if this worked
+                        synthesis_text = self._safe_extract_text(current_response)
+                        if synthesis_text:
+                            self.logger.info("Successfully generated synthesis response")
+                        else:
+                            self.logger.warning("Synthesis attempt also returned empty response")
+                    except Exception as e:
+                        self.logger.error(f"Synthesis attempt failed: {e}")
+
                 self.logger.info(f"No function calls found - completed after {iteration-1} iterations")
                 break
 
@@ -422,59 +480,37 @@ class GoogleGenAIClient(AbstractClient):
                     self.logger.error(f"Tool {tc.name} failed: {result}")
                 else:
                     tc.result = result
-                    self.logger.info(f"Tool {tc.name} result: {result}")
+                    # self.logger.info(f"Tool {tc.name} result: {result}")
 
             all_tool_calls.extend(tool_call_objects)
-
-            # Try different approaches for function response formatting
             function_response_parts = []
             for fc, result in zip(function_calls, tool_results):
                 tool_id = fc.id or f"call_{uuid.uuid4().hex[:8]}"
-                if isinstance(result, Exception):
-                    response_content = f"Error: {str(result)}"
-                else:
-                    if 'flash' in model:
-                        response_content = result
-                    else:
-                        # Enhanced result formatting for non-flash models
-                        if isinstance(result, dict) and 'result' in result:
-                            response_content = result['result']
-                        else:
-                            response_content = str(result)
-                        response_content = {
-                            "result": response_content
-                        }
-                # Format response for Google Function Calling
-                if isinstance(response_content, pd.DataFrame):
-                    response_content = response_content.to_dict(orient='records')
-                    if isinstance(response_content, list):
-                        response_content = {
-                            "result": response_content
-                        }
 
-                elif hasattr(result, 'model_dump'):
-                    response_content = response_content.model_dump()
-                elif hasattr(result, 'dict'):  # Older Pydantic versions
-                    response_content = response_content.dict()
-                # Handle lists of Pydantic models
-                elif isinstance(result, list):
-                    response_content = {
-                        "result": response_content
-                    }
-                elif isinstance(result, (str, int, float, bool)):
-                    response_content = {
-                        "result": response_content
-                    }
-                function_response_parts.append(
-                    Part(
-                        function_response=types.FunctionResponse(
-                            id=tool_id,
-                            name=fc.name,
-                            response=response_content
+                try:
+                    response_content = self._process_tool_result_for_api(result)
+
+                    function_response_parts.append(
+                        Part(
+                            function_response=types.FunctionResponse(
+                                id=tool_id,
+                                name=fc.name,
+                                response=response_content
+                            )
                         )
                     )
-                )
 
+                except Exception as e:
+                    self.logger.error(f"Error processing result for tool {fc.name}: {e}")
+                    function_response_parts.append(
+                        Part(
+                            function_response=types.FunctionResponse(
+                                id=tool_id,
+                                name=fc.name,
+                                response={"result": f"Tool error: {str(e)}", "error": True}
+                            )
+                        )
+                    )
             # Send responses back
             try:
                 self.logger.debug(
@@ -649,16 +685,42 @@ class GoogleGenAIClient(AbstractClient):
                             parts = content.parts
                             self.logger.debug(f"Parts count: {len(parts) if parts else 0}")
 
-                            for i, part in enumerate(parts):
-                                self.logger.debug(f"Part {i} type: {type(part)}")
+                            # ADD DEBUG CODE HERE:
+                            # Debug finish reason and response state
+                            if hasattr(candidate, 'finish_reason'):
+                                self.logger.debug(f"Finish reason: {candidate.finish_reason}")
 
-                                # Try different ways to access text
-                                for attr in ['text', 'content', 'data']:
-                                    if hasattr(part, attr):
-                                        value = getattr(part, attr)
-                                        if value and isinstance(value, str):
-                                            self.logger.debug(f"Found text in part.{attr}: '{value[:50]}...'")
-                                            return value.strip()
+                            if parts is None:
+                                self.logger.error("Parts is None!")
+                            elif len(parts) == 0:
+                                self.logger.error("Parts list is empty - no content generated!")
+                                # Check if the model stopped for a specific reason
+                                if hasattr(candidate, 'finish_reason'):
+                                    finish_reason = str(candidate.finish_reason)
+                                    if 'STOP' in finish_reason:
+                                        self.logger.error("Model finished normally but generated no content")
+                                    elif 'MAX_TOKENS' in finish_reason:
+                                        self.logger.error("Model hit token limit")
+                                    elif 'SAFETY' in finish_reason:
+                                        self.logger.error("Model stopped due to safety filters")
+                                    else:
+                                        self.logger.error(f"Model stopped with reason: {finish_reason}")
+                            else:
+                                # Parts exist, debug each one
+                                for i, part in enumerate(parts):
+                                    self.logger.debug(f"Part {i} type: {type(part)}")
+
+                                    # Check all possible attributes of the part
+                                    part_attrs = [attr for attr in dir(part) if not attr.startswith('_')]
+                                    self.logger.debug(f"Part {i} attributes: {part_attrs}")
+
+                                    # Try different ways to access text
+                                    for attr in ['text', 'content', 'data']:
+                                        if hasattr(part, attr):
+                                            value = getattr(part, attr)
+                                            if value and isinstance(value, str):
+                                                self.logger.debug(f"Found text in part.{attr}: '{value[:50]}...'")
+                                                return value.strip()
 
         except Exception as e:
             self.logger.error(f"Deep text extraction failed: {e}")
@@ -678,8 +740,8 @@ class GoogleGenAIClient(AbstractClient):
         structured_output: Union[type, StructuredOutputConfig] = None,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
-        force_tool_usage: Optional[str] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
+        use_tools: Optional[bool] = None,
         stateless: bool = False
     ) -> AIMessage:
         """
@@ -700,6 +762,9 @@ class GoogleGenAIClient(AbstractClient):
             stateless (bool): If True, don't use conversation memory (stateless mode).
         """
         model = model.value if isinstance(model, GoogleModel) else model
+        # If use_tools is None, use the instance default
+        _use_tools = use_tools if use_tools is not None else self.enable_tools
+
         if not model:
             model = self.model
         # Generate unique turn ID for tracking
@@ -757,25 +822,30 @@ class GoogleGenAIClient(AbstractClient):
         output_config = self._get_structured_config(structured_output)
 
         # Tool selection
-        if tools and isinstance(tools, list):
-            for tool in tools:
-                self.register_tool(tool)
-
-        # Determine tool usage based on prompt analysis or forced usage
-        tool_type = force_tool_usage or self._analyze_prompt_for_tools(prompt)
-        tools = self._build_tools(tool_type) if tool_type else None
-        self.logger.debug(
-            f"Selected tool type: {tool_type}"
-        )
-        use_tools = bool(tools)
-        use_structured_output = bool(structured_output)
-        if use_tools:
+        if _use_tools:
+            if tools and isinstance(tools, list):
+                for tool in tools:
+                    self.register_tool(tool)
+            tool_type = "custom_functions"
             # if Tools, reduce temperature to avoid hallucinations.
             generation_config["temperature"] = 0
+        elif _use_tools is None:
+            # If not explicitly set, analyze the prompt to decide
+            tool_type = self._analyze_prompt_for_tools(prompt)
+        else:
+            tool_type = 'builtin_tools' if _use_tools else None
 
+        tools = self._build_tools(tool_type) if tool_type else None
+        self.logger.debug(
+            f"Using model: {model}, max_tokens: {max_tokens}, temperature: {temperature}, "
+            f"structured_output: {structured_output}, "
+            f"use_tools: {_use_tools}, tool_type: {tool_type}, tools: {len(tools)}, "
+        )
+
+        use_structured_output = bool(structured_output)
         # Google limitation: Cannot combine tools with structured output
         # Strategy: If both are requested, use tools first, then apply structured output to final result
-        if use_tools and use_structured_output:
+        if _use_tools and use_structured_output:
             self.logger.info(
                 "Google Gemini doesn't support tools + structured output simultaneously. "
                 "Using tools first, then applying structured output to the final result."
@@ -821,6 +891,16 @@ class GoogleGenAIClient(AbstractClient):
         chat = None
         final_config = GenerateContentConfig(
             system_instruction=system_prompt,
+            safety_settings=[
+                types.SafetySetting(
+                    category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
+                    threshold=types.HarmBlockThreshold.BLOCK_NONE,
+                ),
+                types.SafetySetting(
+                    category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+                    threshold=types.HarmBlockThreshold.BLOCK_NONE,
+                ),
+            ],
             tools=tools,
             **generation_config
         )
@@ -855,17 +935,12 @@ class GoogleGenAIClient(AbstractClient):
                 history=history
             )
             # Send initial message
-            self.logger.info(
-                f"Sending initial message: {prompt}"
-            )
-
-            # Send initial message
             response = await chat.send_message(
                 message=prompt,
                 config=final_config
             )
 
-            self.logger.info(
+            self.logger.debug(
                 f"Initial response has function calls: {bool(getattr(response, 'candidates', [{}])[0].content.parts if hasattr(response, 'candidates') else False)}"
             )
 
@@ -949,7 +1024,10 @@ class GoogleGenAIClient(AbstractClient):
         final_assistant_message = {
             "role": "model",
             "content": [
-                {"type": "text", "text": str(final_output) if final_output != assistant_response_text else assistant_response_text}
+                {
+                    "type": "text",
+                    "text": str(final_output) if final_output != assistant_response_text else assistant_response_text
+                }
             ]
         }
 
