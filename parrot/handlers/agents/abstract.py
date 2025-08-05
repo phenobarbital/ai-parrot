@@ -862,7 +862,6 @@ class AgentHandler(BaseView):
                 )
         try:
             response = await agent.conversation(query)
-            print(':: RESPONSE >> ', response)
             if isinstance(response, Exception):
                 raise response
         except Exception as e:

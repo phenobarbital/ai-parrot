@@ -163,7 +163,16 @@ class AbstractTool(ABC):
             Validated arguments as Pydantic model instance
         """
         if self.args_schema and self.args_schema != AbstractToolArgsSchema:
-            return self.args_schema(**kwargs)
+            try:
+                result = self.args_schema(**kwargs)
+                if not result:
+                    self.logger.warning(
+                        f"Validation failed for {self.name} with args: {kwargs}"
+                    )
+                return result
+            except Exception as e:
+                self.logger.error(f"Validation error in {self.name}: {e}")
+                raise ValueError(f"Invalid arguments for {self.name}: {e}")
         else:
             # If no schema is defined, return a basic model with the kwargs
             return AbstractToolArgsSchema()
@@ -183,8 +192,6 @@ class AbstractTool(ABC):
 
             # Validate arguments
             validated_args = self.validate_args(**kwargs)
-            print('Validated args:', validated_args)
-            print('ARGS > ', args, kwargs)
 
             # Execute the tool
             if hasattr(validated_args, 'model_dump'):

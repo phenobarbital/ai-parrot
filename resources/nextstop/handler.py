@@ -310,7 +310,7 @@ class NextStopAgent(AgentHandler):
         query = await self.open_prompt('for_store.txt')
         question = query.format(store_id=store_id)
         try:
-            response, message = await self.ask_agent(question)
+            response, _ = await self.ask_agent(question)
         except Exception as e:
             print(f"Error invoking agent: {e}")
             raise RuntimeError(
@@ -325,43 +325,31 @@ class NextStopAgent(AgentHandler):
         query = await self.open_prompt('for_employee.txt')
         question = query.format(employee_id=employee_id)
         try:
-            _, response = await self.ask_agent(question)
+            response, _ = await self.ask_agent(question)
         except Exception as e:
             print(f"Error invoking agent: {e}")
             raise RuntimeError(
                 f"Failed to generate report due to an error in the agent invocation: {e}"
             )
-        # sections.append(response.output.strip())
-        # Join all sections into a single report
-        # final_report = "\n\n".join(sections)
         final_report = response.output.strip()
-        # Use the joined report to generate a PDF and a Podcast:
-        query = await self.open_prompt('for_pdf.txt')
-        query = textwrap.dedent(query)
-        for_pdf = query.format(
-            final_report=final_report
-        )
-        # Invoke the agent with the PDF generation prompt
-        try:
-            response_data, response = await self.ask_agent(for_pdf, employee_id=employee_id)
-        except Exception as e:
-            print(f"Error invoking agent: {e}")
-            raise RuntimeError(
-                f"Failed to generate report due to an error in the agent invocation: {e}"
-            )
-        response_data.output = final_report
-        return response_data
+        print(f"Final report generated: {final_report}")
+        # Saving the script to a file, and generate a PDF and a Podcast:
 
-    async def _nextstop_manager(self, manager_id: str, employee_name: str, **kwargs) -> NextStopResponse:
+
+    async def _nextstop_manager(
+        self,
+        manager_id: str,
+        employee_name: str,
+        **kwargs
+    ) -> NextStopResponse:
         """Generate a report for the NextStop agent."""
-        # TODO: migrate to safeDict on open_prompt and using Jinja2 templating
         query = await self.open_prompt('manager.txt')
         question = query.format(
             manager_id=manager_id,
             employee_name=employee_name
         )
         try:
-            _, response = await self.ask_agent(question)
+            response, _ = await self.ask_agent(question)
         except Exception as e:
             print(f"Error invoking agent: {e}")
             raise RuntimeError(
@@ -369,26 +357,14 @@ class NextStopAgent(AgentHandler):
             )
         # Join all sections into a single report
         final_report = response.output.strip()
-        # Use the joined report to generate a PDF and a Podcast:
-        query = await self.open_prompt('for_pdf.txt')
-        query = textwrap.dedent(query)
-        for_pdf = query.format(
-            final_report=final_report,
-            manager_id=manager_id,
-            employee_name=employee_name
-        )
-        # Invoke the agent with the PDF generation prompt
-        try:
-            response_data, response = await self.ask_agent(for_pdf)
-        except Exception as e:
-            print(f"Error invoking agent: {e}")
-            raise RuntimeError(
-                f"Failed to generate report due to an error in the agent invocation: {e}"
-            )
-        return response_data
 
 
-    async def _team_performance(self, manager_id: str, project: str, **kwargs) -> NextStopResponse:
+    async def _team_performance(
+        self,
+        manager_id: str,
+        project: str,
+        **kwargs
+    ) -> NextStopResponse:
         """Generate a report for the NextStop agent."""
         query = await self.open_prompt('team_performance.txt')
         question = query.format(
@@ -396,7 +372,7 @@ class NextStopAgent(AgentHandler):
             project=project
         )
         try:
-            _, response = await self.ask_agent(question)
+            response, _ = await self.ask_agent(question)
         except Exception as e:
             print(f"Error invoking agent: {e}")
             raise RuntimeError(
@@ -404,21 +380,6 @@ class NextStopAgent(AgentHandler):
             )
         # Join all sections into a single report
         final_report = response.output.strip()
-        # Use the joined report to generate a PDF and a Podcast:
-        query = await self.open_prompt('for_pdf.txt')
-        query = textwrap.dedent(query)
-        for_pdf = query.format(
-            final_report=final_report
-        )
-        # Invoke the agent with the PDF generation prompt
-        try:
-            response_data, response = await self.ask_agent(for_pdf)
-        except Exception as e:
-            print(f"Error invoking agent: {e}")
-            raise RuntimeError(
-                f"Failed to generate report due to an error in the agent invocation: {e}"
-            )
-        return response_data
 
 
     async def _query(self, query: str, **kwargs) -> NextStopResponse:
@@ -430,7 +391,5 @@ class NextStopAgent(AgentHandler):
             raise RuntimeError(
                 f"Failed to generate report due to an error in the agent invocation: {e}"
             )
-        print('RESPONSE > ', response, type(response))
-        print('RESPONSE > ', response_data, type(response_data))
         response_data.output = response.output.strip()
         return response_data
