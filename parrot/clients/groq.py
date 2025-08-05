@@ -173,13 +173,15 @@ class GroqClient(AbstractClient):
         structured_output: Optional[type] = None,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
-        tools: Optional[List[dict]] = None
+        tools: Optional[List[dict]] = None,
+        use_tools: Optional[bool] = None
     ) -> AIMessage:
         """Ask Groq a question with optional conversation memory."""
         model = model.value if isinstance(model, GroqModel) else model
         # Generate unique turn ID for tracking
         turn_id = str(uuid.uuid4())
         original_prompt = prompt
+        _use_tools = use_tools if use_tools is not None else self.enable_tools
 
         messages, conversation_session, system_prompt = await self._prepare_conversation_context(
             prompt, files, user_id, session_id, system_prompt
@@ -192,11 +194,14 @@ class GroqClient(AbstractClient):
         if tools and isinstance(tools, list):
             for tool in tools:
                 self.register_tool(tool)
-        tools = self._prepare_groq_tools()
+        if _use_tools:
+            tools = self._prepare_groq_tools()
+        else:
+            tools = None
 
         # Groq doesn't support combining structured output with tools
         # Priority: tools first, then structured output in separate request if needed
-        use_tools = bool(tools)
+        use_tools = _use_tools
         use_structured_output = bool(structured_output)
 
         if use_tools and use_structured_output:

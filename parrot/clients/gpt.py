@@ -107,13 +107,15 @@ class OpenAIClient(AbstractClient):
         structured_output: Optional[type] = None,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
-        tools: Optional[List[Dict[str, Any]]] = None
+        tools: Optional[List[Dict[str, Any]]] = None,
+        use_tools: Optional[bool] = None
     ) -> AIMessage:
         """Ask OpenAI a question with optional conversation memory."""
 
         # Generate unique turn ID for tracking
         turn_id = str(uuid.uuid4())
         original_prompt = prompt
+        _use_tools = use_tools if use_tools is not None else self.enable_tools
 
         # Extract model value if it's an enum
         model_str = model.value if isinstance(model, Enum) else model
@@ -140,9 +142,12 @@ class OpenAIClient(AbstractClient):
         if tools and isinstance(tools, list):
             for tool in tools:
                 self.register_tool(tool)
-        tools = self._prepare_tools()
-        args = {}
+        if _use_tools:
+            tools = self._prepare_tools()
+        else:
+            tools = None
 
+        args = {}
         # Handle search models
         if model in [OpenAIModel.GPT_4O_MINI_SEARCH, OpenAIModel.GPT_4O_SEARCH]:
             args['web_search_options'] = {
