@@ -37,6 +37,7 @@ class NextStopResponse(BaseModel):
     manager_id: str = Field(required=False, description="ID of the manager associated with the session")
     created_at: datetime = Field(default=datetime.now)
     podcast_path: str = Field(required=False, description="Path to the podcast associated with the session")
+    script_path: str = Field(required=False, description="Path to the script associated with the session")
     pdf_path: str = Field(required=False, description="Path to the PDF associated with the session")
     document_path: str = Field(required=False, description="Path to document generated during session")
     documents: list[Path] = Field(default_factory=list, description="List of documents associated with the session")
@@ -305,6 +306,54 @@ class NextStopAgent(AgentHandler):
             status=204,
         )
 
+    async def _generate_report(self, response: NextStopResponse) -> NextStopResponse:
+        """Generate a report from the response data."""
+        final_report = response.output.strip()
+        print(f"Final report generated: {final_report}")
+        if not final_report:
+            response.output = "No report generated."
+            response.status = "error"
+            return response
+        response.transcript = final_report
+        # generate the transcript file:
+        if not self._agent:
+            agent = self.request.app[self.agent_id]
+        else:
+            agent = self._agent
+        try:
+            _path = await agent.save_transcript(
+                transcript=final_report,
+            )
+            response.document_path = str(_path)
+            response.documents.append(response.document_path)
+        except Exception as e:
+            self.logger.error(f"Error generating transcript: {e}")
+        # generate the PDF file:
+        try:
+            pdf_output = await agent.pdf_report(
+                content=final_report
+            )
+            response.pdf_path = str(pdf_output.get('file_path', None))
+            response.documents.append(response.pdf_path)
+        except Exception as e:
+            self.logger.error(f"Error generating PDF: {e}")
+        # generate the podcast file:
+        try:
+            podcast_output = await agent.speech_report(
+                report=final_report,
+                max_lines=15
+            )
+            response.podcast_path = str(podcast_output.get('podcast_path', None))
+            response.script_path = str(podcast_output.get('script_path', None))
+            response.documents.append(response.podcast_path)
+            response.documents.append(response.script_path)
+        except Exception as e:
+            self.logger.error(f"Error generating podcast: {e}")
+        # Save the final report to the response
+        response.output = textwrap.fill(final_report, width=80)
+        response.status = "success"
+        return response
+
     async def _nextstop_store(self, store_id: str, **kwargs) -> NextStopResponse:
         """Generate a report for the NextStop agent."""
         query = await self.open_prompt('for_store.txt')
@@ -316,9 +365,7 @@ class NextStopAgent(AgentHandler):
             raise RuntimeError(
                 f"Failed to generate report due to an error in the agent invocation: {e}"
             )
-        final_report = response.output.strip()
-        print(f"Final report generated: {final_report}")
-        return response
+        return await self._generate_report(response)
 
     async def _nextstop_employee(self, employee_id: str, **kwargs) -> NextStopResponse:
         """Generate a report for the NextStop agent."""
@@ -331,9 +378,7 @@ class NextStopAgent(AgentHandler):
             raise RuntimeError(
                 f"Failed to generate report due to an error in the agent invocation: {e}"
             )
-        final_report = response.output.strip()
-        print(f"Final report generated: {final_report}")
-        # Saving the script to a file, and generate a PDF and a Podcast:
+        return await self._generate_report(response)
 
 
     async def _nextstop_manager(
@@ -355,8 +400,7 @@ class NextStopAgent(AgentHandler):
             raise RuntimeError(
                 f"Failed to generate report due to an error in the agent invocation: {e}"
             )
-        # Join all sections into a single report
-        final_report = response.output.strip()
+        return await self._generate_report(response)
 
 
     async def _team_performance(
@@ -378,8 +422,7 @@ class NextStopAgent(AgentHandler):
             raise RuntimeError(
                 f"Failed to generate report due to an error in the agent invocation: {e}"
             )
-        # Join all sections into a single report
-        final_report = response.output.strip()
+        return await self._generate_report(response)
 
 
     async def _query(self, query: str, **kwargs) -> NextStopResponse:
