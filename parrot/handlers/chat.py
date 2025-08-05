@@ -1,4 +1,5 @@
 from aiohttp import web
+import uuid
 from asyncdb.exceptions.exceptions import NoDataFound  # noqa: E0611
 from datamodel.exceptions import ValidationError  # noqa: E0611
 from navigator_auth.decorators import (
@@ -108,27 +109,22 @@ class ChatHandler(BaseView):
                 status=400
             )
         try:
-            async with chatbot.retrieval(request=self.request) as retrieval:
+            async with chatbot.retrieval(self.request) as bot:
                 session_id = session.get('session_id', None)
-                memory_key = f'{session.session_id}_{name}_message_store'
-                memory = retrieval.get_memory(session_id=memory_key)
-                result = await retrieval.invoke(
+                user_id = session.get('user_id', None)
+                if not session_id:
+                    session_id = str(uuid.uuid4())
+                result = await bot.conversation(
                     question=question,
+                    session_id=session_id,
+                    user_id=user_id,
+                    search_type='ensemble',
                     llm=llm,
-                    memory=memory,
                     **data
                 )
-                # Drop "memory" information:
-                result.chat_history = None
-                if result.source_documents:
-                    documents = []
-                    for doc in result.source_documents:
-                        dc = {
-                            **doc.metadata
-                        }
-                        documents.append(dc)
-                    result.source_documents = documents
-                return self.json_response(response=result)
+                return self.json_response(
+                    response=result.model_dump()
+                )
         except ValueError as exc:
             return self.error(
                 f"{exc}",
