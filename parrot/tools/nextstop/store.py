@@ -5,11 +5,8 @@ from typing import Dict, Any, List, Optional, Union, Literal, Callable
 from datetime import datetime, time
 from pydantic import BaseModel, Field
 import pandas as pd
-from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611
-# AsyncDB database connections
-from asyncdb import AsyncDB
-from querysource.conf import default_dsn
-from ..toolkit import AbstractToolkit, tool_schema
+from ..toolkit import tool_schema
+from .base import BaseNextStop
 
 
 # Pydantic models for structured outputs
@@ -124,79 +121,17 @@ class DatasetQueryInput(BaseModel):
     )
 
 
-class StoreInfo(AbstractToolkit):
+class StoreInfo(BaseNextStop):
     """Comprehensive toolkit for store information and demographic analysis.
 
     This toolkit provides tools to:
-    1. Get detailed visit information for specific stores including recent visit history
-    2. Retrieve comprehensive store information including location and visit statistics
-    3. Foot traffic analysis for stores, providing insights into customer behavior
-    4. Search for stores by location (city, state, zipcode)
-    5. Execute custom dataset queries
+    1. get_visit_information: Get visit information for an store including recent visit history.
+    2. get_store_information: Retrieve comprehensive store information including location and visit statistics
+    3. get_foot_traffic: Foot traffic analysis for stores, providing insights into customer behavior
+    4. search_stores: Search for stores by location (city, state, zipcode)
 
     All tools are designed to work asynchronously with database connections and external APIs.
     """
-
-    def __init__(self, dsn: str = None, program: str = None, **kwargs):
-        """Initialize the StoreInfo toolkit.
-
-        Args:
-            dsn: Default database connection string
-            **kwargs: Additional configuration options
-        """
-        super().__init__(**kwargs)
-        self.default_dsn = dsn or default_dsn
-        self.program = program or 'hisense'
-
-    async def _get_dataset(
-        self,
-        query: str,
-        output_format: str = 'pandas',
-        structured_obj: Optional[Callable[[Dict[str, Any]], Any]] = None
-    ) -> Union[pd.DataFrame, Dict[str, Any]]:
-        """Fetch a dataset based on the provided query.
-
-        Args:
-            query: The SQL query string to fetch the dataset
-            output_format: Output format ('pandas' or 'dict')
-
-        Returns:
-            Union[pd.DataFrame, Dict]: Dataset in the requested format
-
-        Raises:
-            Exception: If there's an error executing the query
-        """
-        frmt = output_format.lower()
-        if frmt == 'structured':
-            frmt = 'pandas'  # Default to pandas for structured output
-        db = AsyncDB('pg', dsn=self.default_dsn)
-        async with await db.connection() as conn:  # pylint: disable=E1101  # noqa
-            conn.output_format(frmt)
-            result, error = await conn.query(query)
-            if error:
-                raise Exception(
-                    f"Error fetching dataset: {error}"
-                )
-            if result.empty:
-                raise ValueError(
-                    "No data found for the provided query."
-                )
-            if output_format == "pandas":
-                return result
-            elif output_format == "json":
-                return json_encoder(
-                    result.to_dict(orient='records')
-                )
-            elif output_format == "structured":
-                # Convert DataFrame to Pydantic models
-                data = []
-                for _, row in result.iterrows():
-                    data.append(structured_obj(**row.to_dict()))
-                return data
-            else:
-                raise TypeError(
-                    f"Unsupported output format: {output_format}"
-                )
 
     @tool_schema(FootTrafficInput)
     async def get_foot_traffic(

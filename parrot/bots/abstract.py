@@ -36,7 +36,7 @@ from ..models import (
 from ..stores import AbstractStore, supported_stores
 from ..stores.models import Document
 from ..tools import AbstractTool
-from ..tools.manager import ToolManager, ToolFormat
+from ..tools.manager import ToolManager, ToolFormat, ToolDefinition
 from ..memory import (
     ConversationMemory,
     ConversationTurn,
@@ -103,6 +103,9 @@ class AbstractBot(DBInterface, ABC):
         # Agentic Tools:
         self.tools = tools or []
         self.tool_threshold = tool_threshold
+        self.enable_tools: bool = use_tools or kwargs.get('enable_tools', True)
+        if len(self.tools) > 0:
+            self.enable_tools = True
         # Optional aiohttp Application:
         self.app: Optional[web.Application] = None
         # Start initialization:
@@ -172,7 +175,8 @@ class AbstractBot(DBInterface, ABC):
             'pre_instructions',
             []
         )
-
+        # Operational Mode:
+        self.operation_mode: str = kwargs.get('operation_mode', 'adaptive')
         # Knowledge base:
         self.kb = None
         self.knowledge_base: List[str] = []
@@ -196,7 +200,6 @@ class AbstractBot(DBInterface, ABC):
 
         # Conversation settings
         self.max_context_turns: int = kwargs.get('max_context_turns', 5)
-        self.enable_tools: bool = kwargs.get('enable_tools', True)
         self.context_search_limit: int = kwargs.get('context_search_limit', 10)
         self.context_score_threshold: float = kwargs.get('context_score_threshold', 0.7)
 
@@ -370,7 +373,6 @@ class AbstractBot(DBInterface, ABC):
             elif isinstance(self._llm, AbstractClient):
                 if hasattr(self._llm, 'conversation_memory'):
                     self._llm.conversation_memory = self.conversation_memory
-                return self._llm
             elif issubclass(self._llm, AbstractClient):
                 try:
                     # If _llm is already an AbstractClient subclass, just use it
@@ -388,13 +390,13 @@ class AbstractBot(DBInterface, ABC):
                         f"Error initializing LLM Client {self._llm.__name__}: {e}"
                     )
         # Register tools directly on client (like your working examples)
-        if self.tools:
-            try:
-                self._llm.register_tools(self.tools)
-            except Exception as e:
-                self.logger.error(
-                    f"Error registering tools: {e}"
-                )
+        try:
+            self._llm.register_tools(self.tools)
+            self.logger.info(
+                f"Registered {len(self.tools)} tools with LLM client"
+            )
+        except Exception as e:
+            self.logger.error(f"Error registering tools: {e}")
 
     def define_store(
         self,
@@ -545,12 +547,15 @@ class AbstractBot(DBInterface, ABC):
             )
             raise
         # set Client tools:
-        # Workaround for tools assignment:
-        tools = {}
-        for tool in self.tools:
-            tool_name = tool.name
-            tools[tool_name] = tool
-        self._llm.tools = tools
+        # Log tools configuration AFTER LLM is configured
+        tools_summary = self.get_tools_summary()
+        self.logger.info(
+            f"Configuration complete: "
+            f"tools_enabled={tools_summary['tools_enabled']}, "
+            f"operation_mode={tools_summary['operation_mode']}, "
+            f"tools_count={tools_summary['tools_count']}, "
+            f"effective_mode={tools_summary['effective_mode']}"
+        )
         # And define Prompt:
         try:
             self._define_prompt()
@@ -878,6 +883,32 @@ class AbstractBot(DBInterface, ABC):
             return text
         return text[:max_length - 3].rstrip() + "..."
 
+    def is_agent_mode(self) -> bool:
+        """Check if the bot is configured to operate in agent mode."""
+        return (
+            self.enable_tools and
+            self.has_tools() and
+            self.operation_mode in ['agentic', 'adaptive']
+        )
+
+    def is_conversational_mode(self) -> bool:
+        """Check if the bot is configured for pure conversational mode."""
+        return (
+            not self.enable_tools or
+            not self.has_tools() or
+            self.operation_mode == 'conversational'
+        )
+
+    def get_operation_mode(self) -> str:
+        """Get the current operation mode of the bot."""
+        if self.operation_mode == 'adaptive':
+            # In adaptive mode, determine based on current configuration
+            if self.has_tools():  # ✅ Uses LLM client's tool_manager
+                return 'agentic'
+            else:
+                return 'conversational'
+        return self.operation_mode
+
     def _use_tools(
         self,
         question: str,
@@ -886,20 +917,44 @@ class AbstractBot(DBInterface, ABC):
         if not self.enable_tools:
             return False
 
-        question_lower = question.lower()
-        tool_scores = {}
-        suggested_tools = []
+        # Check if tools are enabled and available via LLM client
+        if not self.enable_tools or not self.has_tools():
+            return False
 
-        # Simple heuristics - you can enhance this
-        tool_indicators = [
-            'search', 'find', 'lookup', 'get data', 'calculate', 'analyze',
-            'what is the current', 'latest', 'recent', 'today', 'now',
-            'weather', 'time', 'date', 'price', 'stock', 'news',
-            'translate', 'convert', 'generate', 'create file'
-        ]
+        # For agentic mode, always use tools if available
+        if self.operation_mode == 'agentic':
+            return True
 
+        # For conversational mode, never use tools
+        if self.operation_mode == 'conversational':
+            return False
 
-        return any(indicator in question_lower for indicator in tool_indicators)
+        # For adaptive mode, use heuristics
+        if self.operation_mode == 'adaptive':
+            # Simple heuristics based on question content
+            tool_keywords = [
+                'calculate', 'compute', 'analyze', 'search', 'find',
+                'create', 'generate', 'plot', 'chart', 'graph',
+                'execute', 'run', 'process', 'convert', 'transform'
+            ]
+
+            question_lower = question.lower()
+            return any(keyword in question_lower for keyword in tool_keywords)
+
+        return False
+
+    def get_tools_summary(self) -> Dict[str, Any]:
+        """Get a summary of available tools and configuration."""
+        return {
+            'tools_enabled': self.enable_tools,
+            'operation_mode': self.operation_mode,
+            'tools_count': self.get_tools_count(),
+            'available_tools': self.get_available_tools(),
+            'has_tools': self.has_tools(),
+            'is_agent_mode': self.is_agent_mode(),
+            'is_conversational_mode': self.is_conversational_mode(),
+            'effective_mode': self.get_operation_mode()
+        }
 
     async def create_system_prompt(
         self,
@@ -1360,10 +1415,13 @@ class AbstractBot(DBInterface, ABC):
             use_tools = self._use_tools(question)
             effective_mode = "agentic" if use_tools else "conversational"
 
+            # FIXED: Use the new method that checks LLM client's tool_manager
+            available_tools_count = self.get_tools_count()
+
             # Log tool usage decision
             self.logger.info(
                 f"Tool usage decision: use_tools={use_tools}, "
-                f"effective_mode={effective_mode}, available_tools={len(self.tools)}"
+                f"effective_mode={effective_mode}, available_tools={available_tools_count}"
             )
 
             # Create system prompt (no vector context)
@@ -1635,10 +1693,57 @@ class AbstractBot(DBInterface, ABC):
 
         return interleaved
 
-    def register_tool(self, tool: Any, name: Optional[str] = None) -> None:
-        """Register a single tool."""
-        self._llm.register_tool(tool, name)
+    # Tool Management:
+    def get_tools_count(self) -> int:
+        """Get the total number of available tools from LLM client."""
+        # During initialization, before LLM is configured, fall back to self.tools
+        if self._llm is None:
+            return len(self.tools)
+        else:
+            return self._llm.tool_manager.tool_count()
 
-    def register_tools(self, tools: Union[List[Any], Dict[str, Any]]) -> None:
-        """Register multiple tools."""
-        self._llm.register_tools(tools)
+    def has_tools(self) -> bool:
+        """Check if any tools are available via LLM client."""
+        return self.get_tools_count() > 0
+
+    def get_available_tools(self) -> List[str]:
+        """Get list of available tool names from LLM client."""
+        if hasattr(self, '_llm') and self._llm and hasattr(self._llm, 'tool_manager'):
+            return list(self._llm.tool_manager.list_tools())
+        return []
+
+    def register_tool(
+        self,
+        tool: Union[ToolDefinition, AbstractTool] = None,
+        name: str = None,
+        description: str = None,
+        input_schema: Dict[str, Any] = None,
+        function: Callable = None,
+    ) -> None:
+        """Register a tool via LLM client's tool_manager."""
+        if hasattr(self, '_llm') and self._llm and hasattr(self._llm, 'tool_manager'):
+            self._llm.tool_manager.register_tool(
+                tool=tool,
+                name=name,
+                description=description,
+                input_schema=input_schema,
+                function=function
+            )
+        else:
+            # Store for later registration when LLM client is created
+            if not hasattr(self, 'tools'):
+                self.tools = []
+            self.tools.append({
+                'tool': tool,
+                'name': name,
+                'description': description,
+                'input_schema': input_schema,
+                'function': function
+            })
+
+    def register_tools(self, tools: List[Union[ToolDefinition, AbstractTool]]) -> None:
+        """Register multiple tools via LLM client's tool_manager."""
+        if hasattr(self, '_llm') and self._llm and hasattr(self._llm, 'tool_manager'):
+            self._llm.tool_manager.register_tools(tools)
+        else:
+            self.tools.extend(tools)

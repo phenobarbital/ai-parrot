@@ -774,3 +774,7 @@ class ToolManager:
                 "is_error": True,
                 "content": str(e)
             }
+
+    def tool_count(self) -> int:
+        """Get the number of registered tools."""
+        return len(self._tools)

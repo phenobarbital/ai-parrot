@@ -20,6 +20,7 @@ from ..models.google import (
     FictionalSpeaker
 )
 from ..models.responses import AIMessage, AgentResponse
+from ..conf import STATIC_DIR
 
 
 class BasicAgent(Chatbot):
@@ -91,24 +92,24 @@ class BasicAgent(Chatbot):
             [
                 OpenWeatherTool(default_request='weather'),
                 PythonPandasTool(
-                    report_dir=BASE_DIR.joinpath('static', self.name, 'documents')
+                    report_dir=STATIC_DIR.joinpath(self.name, 'documents')
                 ),
                 GoogleLocationTool(),
                 GoogleRoutesTool(
-                    output_dir=BASE_DIR.joinpath('static', self.name, 'routes')
+                    output_dir=STATIC_DIR.joinpath(self.name, 'routes')
                 ),
                 ExcelTool(
-                    output_dir=BASE_DIR.joinpath('static', self.name, 'documents')
+                    output_dir=STATIC_DIR.joinpath(self.name, 'documents')
                 ),
                 GoogleVoiceTool(
                     use_long_audio_synthesis=True,
-                    output_dir=BASE_DIR.joinpath('static', self.name, 'podcasts')
+                    output_dir=STATIC_DIR.joinpath(self.name, 'podcasts')
                 ),
                 PDFPrintTool(
-                    output_dir=BASE_DIR.joinpath('static', self.name, 'documents')
+                    output_dir=STATIC_DIR.joinpath(self.name, 'documents')
                 ),
                 PowerPointTool(
-                    output_dir=BASE_DIR.joinpath('static', self.name, 'presentations')
+                    output_dir=STATIC_DIR.joinpath(self.name, 'presentations')
                 )
             ]
         )
