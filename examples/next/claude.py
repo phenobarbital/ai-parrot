@@ -95,37 +95,37 @@ async def example_usage():
         )
         print("Area response:", response.output)
 
-        # Start a conversation with memory
-        user_id = "user123"
-        session_id = "chat001"
-        # await client.start_conversation(user_id, session_id)
+        # # Start a conversation with memory
+        # user_id = "user123"
+        # session_id = "chat001"
+        # # await client.start_conversation(user_id, session_id)
 
-        # Multi-turn conversation with memory
-        response1 = await client.ask(
-            "My name is Jesus and I like Python programming",
-            user_id=user_id,
-            session_id=session_id
-        )
-        print("Response 1:", response1)
+        # # Multi-turn conversation with memory
+        # response1 = await client.ask(
+        #     "My name is Jesus and I like Python programming",
+        #     user_id=user_id,
+        #     session_id=session_id
+        # )
+        # print("Response 1:", response1)
 
-        response2 = await client.ask(
-            "What's my name and what do I like?",
-            user_id=user_id,
-            session_id=session_id
-        )
-        print("Response 2:", response2)
+        # response2 = await client.ask(
+        #     "What's my name and what do I like?",
+        #     user_id=user_id,
+        #     session_id=session_id
+        # )
+        # print("Response 2:", response2)
 
-        # 3. Check conversation history
-        print("\n=== Step 3: Conversation History ===")
-        history = await client.get_conversation(user_id, session_id)
-        if history:
-            print(f"Total turns: {len(history.turns)}")
-            for i, turn in enumerate(history.turns):
-                print(f"Turn {i+1}:")
-                print(f"  User: {turn.user_message[:100]}...")
-                print(f"  Assistant: {turn.assistant_response[:100]}...")
-        else:
-            print("No conversation history found")
+        # # 3. Check conversation history
+        # print("\n=== Step 3: Conversation History ===")
+        # history = await client.get_conversation(user_id, session_id)
+        # if history:
+        #     print(f"Total turns: {len(history.turns)}")
+        #     for i, turn in enumerate(history.turns):
+        #         print(f"Turn {i+1}:")
+        #         print(f"  User: {turn.user_message[:100]}...")
+        #         print(f"  Assistant: {turn.assistant_response[:100]}...")
+        # else:
+        #     print("No conversation history found")
 
     #     # Simple question
     #     response = await client.ask("What is the capital of France?")
@@ -225,13 +225,12 @@ async def example_usage():
         # Use the tool through Claude
         response = await client.ask(
             "Create a simple DataFrame with 3 rows and 2 columns, then show its info",
-            model=ClaudeModel.SONNET_4,
-            tools=[repl_tool],
+            model=ClaudeModel.SONNET_4
         )
         print(response)
 
         # Direct usage of the tool
-        result = repl_tool.execute("""
+        result = await repl_tool.execute(code="""
 import pandas as pd
 df = pd.DataFrame({'A': [1, 2, 3], 'B': [4, 5, 6]})
 df.head()
@@ -337,41 +336,41 @@ df.head()
 
         # Example 6: Custom structured output
 
-        class ProductAnalysis(BaseModel):
-            """Example structured output model for product analysis."""
-            brand: str = Field(description="The brand name of the product (e.g., 'Samsung', 'Apple', 'HP')")
-            model: str = Field(description="The specific model name or number of the product")
-            key_features: List[str] = Field(description="List of key features visible in the image")
-            condition: str = Field(
-                description="The apparent condition of the product (e.g., 'New', 'Used', 'Refurbished')"
-            )
-            estimated_price_range: str = Field(
-                description="Estimated price range (e.g., '$100-200', 'Under $50')"
-            )
+        # class ProductAnalysis(BaseModel):
+        #     """Example structured output model for product analysis."""
+        #     brand: str = Field(description="The brand name of the product (e.g., 'Samsung', 'Apple', 'HP')")
+        #     model: str = Field(description="The specific model name or number of the product")
+        #     key_features: List[str] = Field(description="List of key features visible in the image")
+        #     condition: str = Field(
+        #         description="The apparent condition of the product (e.g., 'New', 'Used', 'Refurbished')"
+        #     )
+        #     estimated_price_range: str = Field(
+        #         description="Estimated price range (e.g., '$100-200', 'Under $50')"
+        #     )
 
 
-        response = await client.ask_to_image(
-            prompt="""Analyze this product and respond with ONLY this JSON structure:
-            {
-                "brand": "exact brand name",
-                "model": "exact model name",
-                "key_features": ["list", "of", "features"],
-                "condition": "condition description",
-                "estimated_price_range": "price range"
-            }
-            Use exactly these field names.""",
-            image=image_path,
-            structured_output=ProductAnalysis,
-            model=ClaudeModel.SONNET_4
-        )
+        # response = await client.ask_to_image(
+        #     prompt="""Analyze this product and respond with ONLY this JSON structure:
+        #     {
+        #         "brand": "exact brand name",
+        #         "model": "exact model name",
+        #         "key_features": ["list", "of", "features"],
+        #         "condition": "condition description",
+        #         "estimated_price_range": "price range"
+        #     }
+        #     Use exactly these field names.""",
+        #     image=image_path,
+        #     structured_output=ProductAnalysis,
+        #     model=ClaudeModel.SONNET_4
+        # )
 
-        if response.is_structured:
-            analysis = response.output
-            print(f"Brand: {analysis.brand}")
-            print(f"Model: {analysis.model}")
-            print(f"Features: {', '.join(analysis.key_features)}")
-            print(f"Condition: {analysis.condition}")
-            print(f"Price Range: {analysis.estimated_price_range}")
+        # if response.is_structured:
+        #     analysis = response.output
+        #     print(f"Brand: {analysis.brand}")
+        #     print(f"Model: {analysis.model}")
+        #     print(f"Features: {', '.join(analysis.key_features)}")
+        #     print(f"Condition: {analysis.condition}")
+        #     print(f"Price Range: {analysis.estimated_price_range}")
 
 if __name__ == "__main__":
     asyncio.run(example_usage())
