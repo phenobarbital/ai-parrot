@@ -105,14 +105,14 @@ class BotModel(Model):
     """
 
     # Primary key
-    chatbot_id: uuid.UUID = Field(primary_key=True, required=False, default_factory=uuid.uuid4)
+    chatbot_id: uuid.UUID = Field(primary_key=True, required=False, default_factory=uuid.uuid4, ui_help="The bot’s unique identifier.")
 
     # Basic bot information
-    name: str = Field(required=True)
-    description: str = Field(required=False)
-    avatar: str = Field(required=False)
-    enabled: bool = Field(required=True, default=True)
-    timezone: str = Field(required=False, max=75, default="UTC")
+    name: str = Field(required=True, ui_help="The bot’s display name.")
+    description: str = Field(required=False, ui_help="A brief summary of what the bot does or us designed to do.")
+    avatar: str = Field(required=False, ui_help="A visual representation of the bot.")
+    enabled: bool = Field(required=True, default=True, ui_help="Whether the bot is enabled or not.")
+    timezone: str = Field(required=False, max=75, default="UTC", ui_help="The bot’s timezone.")
 
     # Bot personality and behavior
     role: str = Field(
@@ -122,25 +122,30 @@ class BotModel(Model):
     )
     goal: str = Field(
         default="Help users accomplish their tasks effectively.",
-        required=True
+        required=True,
+        ui_help="primary outcome the bot is designed to achieve. Keep it clear and specific. "
     )
     backstory: str = Field(
         default="I am an AI assistant created to help users with various tasks.",
-        required=True
+        required=True,
+        ui_help="Outlines the bot’s knowledge base, data sources, restrictions, and configuration rules (both technical and non-technical). Also, what is prohibited or undesirable behavior for the bot. "
     )
     rationale: str = Field(
         default="I maintain a professional tone and provide accurate, helpful information.",
-        required=True
+        required=True,
+        ui_help="Defines how the bot behaves in conversation — its tone, style, error handling, and hot it deals with off-topic inputs."
     )
     capabilities: str = Field(
         default="I can engage in conversation, answer questions, and use tools when needed.",
-        required=False
+        required=False,
+        ui_help="The bot’s capabilities and features."
     )
 
     # Prompt configuration
     system_prompt_template: Optional[str] = Field(
         default=None,
-        required=False
+        required=False,
+        ui_help="The bot’s system prompt template."
     )
     human_prompt_template: Optional[str] = Field(
         default=None,
@@ -148,47 +153,48 @@ class BotModel(Model):
     )
     pre_instructions: List[str] = Field(
         default_factory=list,
-        required=False
+        required=False,
+        ui_help="Guidelines for consistent behavior and proper use of context. These ensure the bot uses only the predefined context to generate responses."
     )
 
     # LLM configuration
-    llm: str = Field(default='google', required=False)
-    model_name: str = Field(default='gemini-2.0-flash-001', required=False)
-    temperature: float = Field(default=0.1, required=False)
-    max_tokens: int = Field(default=1024, required=False)
-    top_k: int = Field(default=41, required=False)
-    top_p: float = Field(default=0.9, required=False)
-    model_config: dict = Field(default_factory=dict, required=False)
+    llm: str = Field(default='google', required=False, ui_help="Large Language Model powering the bot. ")
+    model_name: str = Field(default='gemini-2.0-flash-001', required=False, ui_help="Exact version or identifier of the model being used.")
+    temperature: float = Field(default=0.1, required=False, ui_help="Controls how creative or constrained the bot’s responses are. Lower values (e.g., 0.1) keep answers close to the context. Higher values increase variation and creativity.")   
+    max_tokens: int = Field(default=1024, required=False, ui_help="The bot’s maximum number of tokens.")
+    top_k: int = Field(default=41, required=False, ui_help="The bot’s top-k parameter.")
+    top_p: float = Field(default=0.9, required=False, ui_help="The bot’s top-p parameter.")
+    model_config: dict = Field(default_factory=dict, required=False, ui_help="The bot’s model configuration.")
 
     # Tool and agent configuration
-    tools_enabled: bool = Field(default=True, required=False)
-    auto_tool_detection: bool = Field(default=True, required=False)
-    tool_threshold: float = Field(default=0.7, required=False)
-    tools: List[str] = Field(default_factory=list, required=False)
-    operation_mode: str = Field(default='adaptive', required=False)  # 'conversational', 'agentic', 'adaptive'
+    tools_enabled: bool = Field(default=True, required=False, ui_help="Whether the bot’s tools are enabled or not.")
+    auto_tool_detection: bool = Field(default=True, required=False, ui_help="Whether the bot’s auto tool detection is enabled or not.")
+    tool_threshold: float = Field(default=0.7, required=False, ui_help="The bot’s tool threshold.")
+    tools: List[str] = Field(default_factory=list, required=False, ui_help="The bot’s tools.")
+    operation_mode: str = Field(default='adaptive', required=False, ui_help="The bot’s operation mode.")  # 'conversational', 'agentic', 'adaptive'
 
     # Vector store and retrieval configuration
-    use_vector: bool = Field(default=False, required=False)
-    vector_store_config: dict = Field(default_factory=dict, required=False)
-    embedding_model: dict = Field(default=default_embed_model, required=False)
-    context_search_limit: int = Field(default=10, required=False)
-    context_score_threshold: float = Field(default=0.7, required=False)
+    use_vector: bool = Field(default=False, required=False, ui_help="Whether the bot’s vector store is enabled or not.")
+    vector_store_config: dict = Field(default_factory=dict, required=False, ui_help="The bot’s vector store configuration.")
+    embedding_model: dict = Field(default=default_embed_model, required=False, ui_help="The bot’s embedding model.")
+    context_search_limit: int = Field(default=10, required=False, ui_help="The bot’s context search limit.")
+    context_score_threshold: float = Field(default=0.7, required=False, ui_help="The bot’s context score threshold.")
 
     # Memory and conversation configuration
-    memory_type: str = Field(default='memory', required=False)  # 'memory', 'file', 'redis'
-    memory_config: dict = Field(default_factory=dict, required=False)
-    max_context_turns: int = Field(default=5, required=False)
-    use_conversation_history: bool = Field(default=True, required=False)
+    memory_type: str = Field(default='memory', required=False, ui_help="The bot’s memory type.")  # 'memory', 'file', 'redis'
+    memory_config: dict = Field(default_factory=dict, required=False, ui_help="The bot’s memory configuration.")
+    max_context_turns: int = Field(default=5, required=False, ui_help="The bot’s maximum context turns.")
+    use_conversation_history: bool = Field(default=True, required=False, ui_help="Whether the bot’s conversation history is enabled or not.")
 
     # Security and permissions
-    permissions: dict = Field(required=False, default_factory=dict)
+    permissions: dict = Field(required=False, default_factory=dict, ui_help="The bot’s permissions.")
 
     # Metadata
-    language: str = Field(default='en', required=False)
-    disclaimer: Optional[str] = Field(required=False)
-    created_at: datetime = Field(required=False, default=datetime.now)
-    created_by: Optional[int] = Field(required=False)
-    updated_at: datetime = Field(required=False, default=datetime.now)
+    language: str = Field(default='en', required=False, ui_help="The bot’s language.")
+    disclaimer: Optional[str] = Field(required=False, ui_help="Message shown to users before interacting with the bot. Use it for usage tips, limitations, or important notices.")
+    created_at: datetime = Field(required=False, default=datetime.now, ui_help="The bot’s creation timestamp.")
+    created_by: Optional[int] = Field(required=False, ui_help="The bot’s creator.")
+    updated_at: datetime = Field(required=False, default=datetime.now, ui_help="The bot’s last update timestamp.")
 
     def __post_init__(self) -> None:
         super(BotModel, self).__post_init__()
