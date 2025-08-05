@@ -101,16 +101,8 @@ class AbstractBot(DBInterface, ABC):
             f'{self.name}.Bot'
         )
         # Agentic Tools:
-        # Replace list with ToolManager
-        self.tool_manager = ToolManager(self.logger)
         self.tools = tools or []
         self.tool_threshold = tool_threshold
-        if use_tools:
-            # Set default tools in ToolManager
-            self.tool_manager.register_tools(
-                tools
-            )
-            self.tool_manager.default_tools()
         # Optional aiohttp Application:
         self.app: Optional[web.Application] = None
         # Start initialization:
@@ -397,9 +389,12 @@ class AbstractBot(DBInterface, ABC):
                     )
         # Register tools directly on client (like your working examples)
         if self.tools:
-            for tool in self.tool_manager.get_tools():
-                print('TOOL > ', tool, type(tool))
-                self._llm.register_tool(tool)
+            try:
+                self._llm.register_tools(self.tools)
+            except Exception as e:
+                self.logger.error(
+                    f"Error registering tools: {e}"
+                )
 
     def define_store(
         self,
@@ -939,63 +934,7 @@ class AbstractBot(DBInterface, ABC):
             chat_history=chat_history_section,
             **kwargs
         )
-        # print(f"📝 System Prompt Created: {len(system_prompt)} chars")
-        # print(f"System prompt preview:\n{system_prompt}...")
-        # print('=====')
         return system_prompt
-
-    def _prepare_tools(self) -> List[Dict[str, Any]]:
-        """
-        Prepare tools in the format expected by the LLM client.
-
-        Returns:
-            List of tool schemas for the client
-        """
-        if not self.tools.list_tools():
-            return []
-
-        # Auto-detect provider format
-        provider_format = ToolFormat.GENERIC
-        if hasattr(self._llm, 'client_type'):
-            client_name = self._llm.client_type.lower()
-            if client_name == "google":
-                provider_format = ToolFormat.GOOGLE
-            elif client_name in "openai":
-                provider_format = ToolFormat.OPENAI
-            elif client_name == "anthropic":
-                provider_format = ToolFormat.ANTHROPIC
-            elif client_name == "groq":
-                provider_format = ToolFormat.GROQ
-            elif client_name == "vertexai":
-                provider_format = ToolFormat.GOOGLE
-            else:
-                self.logger.warning(
-                    f"Unknown LLM client type: {client_name}, using generic tool format"
-                )
-        return self.tools.get_tool_schemas(provider_format)
-
-    def _configure_client_tools(self, client, tools: List[Dict[str, Any]]) -> None:
-        """
-        Configure tools on the LLM client.
-
-        Args:
-            client: The LLM client instance
-            tools: List of prepared tool schemas
-        """
-        if not tools:
-            self.logger.debug("No tools to configure")
-            return
-        for tool_schema in tools:
-            tool_name = tool_schema.get('name')
-            description = tool_schema.get('description', '')
-            tool_instance = tool_schema.pop('_tool_instance', None)
-            if tool_name and tool_instance:
-                if hasattr(client, 'register_tool'):
-                    client.register_tool(
-                        tool_instance,
-                        name=tool_name,
-                        description=description
-                    )
 
     async def conversation(
         self,
@@ -1102,14 +1041,6 @@ class AbstractBot(DBInterface, ABC):
                 f"Tool usage decision: use_tools={use_tools}, mode={mode}, "
                 f"effective_mode={effective_mode}, available_tools={len(self.tools)}"
             )
-            # # Prepare tools for LLM client
-            # client_tools = []
-            # if use_tools and self.tools:
-            #     client_tools = self._prepare_tools()
-            #     self.logger.info(
-            #         f"Prepared {len(client_tools)} tools for LLM client"
-            #     )
-
             # Create system prompt
             system_prompt = await self.create_system_prompt(
                 vector_context=vector_context,
@@ -1127,10 +1058,6 @@ class AbstractBot(DBInterface, ABC):
 
             # Make the LLM call using the Claude client
             async with self._llm as client:
-                # # Configure tools if needed
-                # if use_tools and hasattr(client, 'tools'):
-                #     # Enable tools on the client
-                #     self._configure_client_tools(client, client_tools)
                 response = await client.ask(
                     prompt=question,
                     system_prompt=system_prompt,
@@ -1710,8 +1637,8 @@ class AbstractBot(DBInterface, ABC):
 
     def register_tool(self, tool: Any, name: Optional[str] = None) -> None:
         """Register a single tool."""
-        self.tools.register_tool(tool, name)
+        self._llm.register_tool(tool, name)
 
     def register_tools(self, tools: Union[List[Any], Dict[str, Any]]) -> None:
         """Register multiple tools."""
-        self.tools.register_tools(tools)
+        self._llm.register_tools(tools)

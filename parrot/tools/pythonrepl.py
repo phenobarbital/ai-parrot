@@ -126,6 +126,7 @@ class PythonREPLTool(AbstractTool):
         sanitize_input_enabled: bool = True,
         auto_save_plots: bool = True,
         return_plot_as_base64: bool = False,
+        debug: bool = False,
         **kwargs
     ):
         """
@@ -176,6 +177,9 @@ class PythonREPLTool(AbstractTool):
 
         # Setup the environment
         self._setup_environment()
+
+        # Debug:
+        self.debug = debug
 
         # Bootstrap the environment if not already done
         self._bootstrap()
@@ -411,7 +415,6 @@ print("Use 'execution_results' dict to store intermediate results.")
         try:
             plt.style.use(self.plt_style)
             sns.set_palette(self.palette)
-            self.logger.debug(f"Set matplotlib style: {self.plt_style}, palette: {self.palette}")
         except Exception as e:
             self.logger.error("Error setting plot style", exc_info=e)
 

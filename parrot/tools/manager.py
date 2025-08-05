@@ -1,11 +1,22 @@
 from collections.abc import Generator
-from json import tool
-from typing import Dict, List, Any, Union, Optional
-from abc import ABC, abstractmethod
+import asyncio
+from typing import Dict, List, Any, Union, Optional, Callable
+from dataclasses import dataclass
 import logging
 from enum import Enum
 from .math import MathTool
-from .abstract import AbstractTool
+from .abstract import AbstractTool, ToolResult
+
+
+@dataclass
+class ToolDefinition:
+    """Data structure for tool definition."""
+    """Defines a tool with its name, description, input schema, and function."""
+    __slots__ = ('name', 'description', 'input_schema', 'function')
+    name: str
+    description: str
+    input_schema: Dict[str, Any]
+    function: Callable
 
 
 class ToolFormat(Enum):
@@ -164,7 +175,8 @@ class ToolManager:
 
     def __init__(
         self,
-        logger: Optional[logging.Logger] = None
+        logger: Optional[logging.Logger] = None,
+        debug: bool = False
     ):
         """
         Initialize tool manager.
@@ -173,6 +185,7 @@ class ToolManager:
             logger: Logger instance
         """
         self.logger = logger or logging.getLogger(self.__class__.__name__)
+        self._debug: bool = debug
         self._tools: Dict[str, Any] = {}  # Unified storage as dictionary
 
     def default_tools(self, tools: list = None) -> List[AbstractTool]:
@@ -184,7 +197,33 @@ class ToolManager:
         ]
         self.register_tools(default_tools)
 
-    def register_tool(self, tool: Any, name: Optional[str] = None) -> None:
+    def add_tool(self, tool: Union[ToolDefinition, AbstractTool], name: Optional[str] = None) -> None:
+        """
+        Add a tool to the manager.
+
+        Args:
+            tool: Tool instance (AbstractTool or ToolDefinition)
+            name: Optional custom name for the tool
+        """
+        tool_name = name or getattr(tool, 'name', None) or tool.__class__.__name__
+        if isinstance(tool, AbstractTool) or isinstance(tool, ToolDefinition):
+            self._tools[tool_name] = tool
+            self.logger.debug(
+                f"Registered tool: {tool_name}"
+            )
+        else:
+            self.logger.error(
+                f"Unsupported tool type: {type(tool)}"
+            )
+
+    def register_tool(
+        self,
+        tool: Union[dict, ToolDefinition, AbstractTool] = None,
+        name: str = None,
+        description: str = None,
+        input_schema: Dict[str, Any] = None,
+        function: Callable = None,
+    ) -> None:
         """
         Register a tool in the unified format.
 
@@ -192,55 +231,84 @@ class ToolManager:
             tool: Tool instance (AbstractTool, ToolDefinition, or dict)
             name: Optional custom name for the tool
         """
+        tool_name = tool.name if isinstance(tool, (ToolDefinition, AbstractTool)) else name
+        if tool_name in self._tools:
+            self.logger.warning(
+                f"Tool '{tool_name}' is already registered."
+            )
+            return
         try:
-            # Determine tool name
-            if name:
-                tool_name = name
-            elif hasattr(tool, 'name') and tool.name:
-                tool_name = tool.name
-            elif hasattr(tool, '__class__'):
-                tool_name = tool.__class__.__name__
-            elif isinstance(tool, dict) and 'name' in tool:
-                tool_name = tool['name']
+            if isinstance(tool, (ToolDefinition, AbstractTool)):
+                self._tools[tool_name] = tool
+            elif isinstance(tool, dict):
+                tool_name = tool.get('name')
+                if tool_name in self._tools:
+                    self.logger.warning(f"Tool '{tool_name}' is already registered.")
+                    return
+                self._tools[tool_name] = ToolDefinition(
+                    name=tool_name,
+                    description=tool.get('description', ''),
+                    input_schema=tool.get('parameters', {}),
+                    function=tool.get('_tool_instance')
+                )
+            elif name and description and input_schema and function:
+                # Create a ToolDefinition from the provided parameters
+                self._tools[tool_name] = ToolDefinition(
+                    name=name,
+                    description=description,
+                    input_schema=input_schema,
+                    function=function
+                )
             else:
-                tool_name = f"tool_{len(self._tools)}"
-
-            # Store the tool
-            self._tools[tool_name] = tool
+                # TODO: if provided a function and a name, create the input_schema based on instrospection
+                if not (name and description and input_schema and function):
+                    self.logger.error(
+                        f"Tool '{tool_name}' must be a ToolDefinition, AbstractTool, or provide all parameters: "
+                        "name, description, input_schema, function."
+                    )
+                raise ValueError(
+                    "Tool must be a ToolDefinition, AbstractTool, or provide all parameters: "
+                    "name, description, input_schema, function."
+                )
             self.logger.debug(
                 f"Registered tool: {tool_name}"
             )
-
         except Exception as e:
-            self.logger.error(f"Error registering tool: {e}")
+            self.logger.error(
+                f"Error registering tool: {e}"
+            )
 
-    def register_tools(self, tools: Union[List[Any], Dict[str, Any]]) -> None:
+    def register_tools(
+        self,
+        tools: List[Union[ToolDefinition, AbstractTool]]
+    ) -> None:
         """
         Register multiple tools from list or dictionary.
 
         Args:
             tools: List of tools or dictionary of tools
         """
-        if tools is None:
+        if not tools:
             return
-        if isinstance(tools, dict):
-            for name, tool in tools.items():
-                self.register_tool(tool, name)
-        elif isinstance(tools, list):
-            for tool in tools:
-                if isinstance(tool, str):
-                    # Use load_tool to get tool instance by name
-                    self.load_tool(tool)
-                else:
-                    # Register tool instance directly
-                    if hasattr(tool, 'name'):
-                        self.register_tool(tool, tool.name)
-                    else:
-                        self.register_tool(tool)
-        else:
-            self.logger.error(
-                f"Invalid tools format: {type(tools)}"
-            )
+        for tool in tools:
+            if isinstance(tool, str):
+                # If tool is a string, load it by name
+                self.load_tool(tool)
+            elif isinstance(tool, AbstractTool):
+                # Register AbstractTool instance directly
+                self.register_tool(tool)
+            elif isinstance(tool, ToolDefinition):
+                # Register ToolDefinition instance directly
+                self.register_tool(tool, tool.name)
+            elif isinstance(tool, dict):
+                # Register dictionary as a tool
+                self.register_tool(tool)
+            elif hasattr(tool, 'name'):
+                self.register_tool(tool, tool.name)
+            else:
+                self.logger.error(
+                    f"Unsupported tool type: {type(tool)}"
+                )
 
     def load_tool(self, tool_name: str, **kwargs) -> Optional[Any]:
         """
@@ -291,17 +359,13 @@ class ToolManager:
                 if schema:
                     # Add tool instance reference for execution
                     schema['_tool_instance'] = tool
-
                     # Clean schema for provider compatibility
                     cleaned_schema = ToolSchemaAdapter.clean_schema_for_provider(
                         schema, provider_format
                     )
-
                     # Re-add tool instance after cleaning
                     cleaned_schema['_tool_instance'] = tool
-
                     client_tools.append(cleaned_schema)
-                    self.logger.debug(f"Prepared tool schema for: {tool_name}")
 
             except Exception as e:
                 self.logger.error(f"Error preparing tool {tool_name}: {e}")
@@ -407,7 +471,9 @@ class ToolManager:
         """
         if tool_name in self._tools:
             del self._tools[tool_name]
-            self.logger.debug(f"Removed tool: {tool_name}")
+            self.logger.debug(
+                f"Removed tool: {tool_name}"
+            )
         else:
             self.logger.warning(f"Tool not found: {tool_name}")
 
@@ -644,3 +710,67 @@ class ToolManager:
             "count": len(self._tools),
             "tools": tools_info
         }
+
+    async def execute_tool(
+        self,
+        tool_name: str,
+        parameters: Dict[str, Any]
+    ) -> Any:
+        """Execute a registered tool function."""
+
+        if tool_name not in self._tools:
+            raise ValueError(
+                f"Tool '{tool_name}' not registered"
+            )
+        try:
+            tool = self._tools[tool_name]
+            if isinstance(tool, ToolDefinition):
+                if asyncio.iscoroutinefunction(tool.function):
+                    result = await tool.function(**parameters)
+                else:
+                    result = tool.function(**parameters)
+                self.logger.debug(
+                    f"Executed tool '{tool_name}' with parameters: {parameters}"
+                )
+                return result
+            elif isinstance(tool, AbstractTool):
+                # Handle AbstractTool (new)
+                result = await tool.execute(**parameters)
+                # Handle ToolResult objects
+                if isinstance(result, ToolResult):
+                    if result.status == "error":
+                        raise ValueError(result.error)
+                    return result.result
+            else:
+                raise ValueError(
+                    f"Unknown tool type: {type(tool)}"
+                )
+        except Exception as e:
+            self.logger.error(
+                f"Error executing tool {tool_name}: {e}"
+            )
+            raise
+
+    async def execute_tool_call(
+        self,
+        content_block: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Execute a single tool call and return the result."""
+        tool_name = content_block["name"]
+        tool_input = content_block["input"]
+        tool_id = content_block["id"]
+
+        try:
+            tool_result = await self.execute_tool(tool_name, tool_input)
+            return {
+                "type": "tool_result",
+                "tool_use_id": tool_id,
+                "content": str(tool_result)
+            }
+        except Exception as e:
+            return {
+                "type": "tool_result",
+                "tool_use_id": tool_id,
+                "is_error": True,
+                "content": str(e)
+            }
