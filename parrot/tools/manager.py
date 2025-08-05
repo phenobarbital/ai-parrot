@@ -777,5 +777,4 @@ class ToolManager:
 
     def tool_count(self) -> int:
         """Get the number of registered tools."""
-        print('TOOLS > ', self._tools)
         return len(self._tools)
