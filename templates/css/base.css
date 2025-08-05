@@ -1,0 +1,229 @@
+/* templates/css/base.css */
+
+/* --- Page & Typography --- */
+@page {
+  size: A4 portrait;
+  margin: 2cm;
+}
+
+body {
+  font-family: 'Segoe UI', Roboto, Arial, sans-serif;
+  font-size: 12pt;
+  line-height: 1.6;
+  color: #333;
+  background: white;
+  margin: 0;
+  padding: 0;
+}
+
+.report-content {
+  max-width: 100%;
+}
+
+h1, h2, h3 {
+  color: #004080;
+  font-weight: 600;
+  margin-top: 2em;
+  border-bottom: 1px solid #ddd;
+  padding-bottom: 0.3em;
+}
+
+h1 {
+  font-size: 24pt;
+}
+h2 {
+  font-size: 18pt;
+}
+h3 {
+  font-size: 14pt;
+}
+
+p {
+  margin: 0.8em 0;
+}
+
+ul, ol {
+  margin-left: 2em;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1em 0;
+  font-size: 10pt;
+}
+
+th, td {
+  border: 1px solid #ccc;
+  padding: 6px 10px;
+  text-align: left;
+}
+
+th {
+  background-color: #f2f4f8;
+  font-weight: bold;
+  color: #003366;
+}
+
+tr:nth-child(even) {
+  background-color: #f9f9f9;
+}
+
+code {
+  font-family: 'Courier New', monospace;
+  background: #f4f4f4;
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+
+pre {
+  background: #f4f4f4;
+  padding: 10px;
+  overflow-x: auto;
+  border-left: 4px solid #ccc;
+}
+
+@media print {
+  a::after {
+    content: "";
+  }
+
+  nav, .no-print {
+    display: none;
+  }
+}
+
+/* --- Adjustments for Compactness and Readability --- */
+@page {
+  margin: 0.5in; /* Reduced margin for compactness */
+}
+body {
+  font-family: Arial, sans-serif;
+  line-height: 1.5; /* Slightly reduced line height for compactness */
+  margin: 0.5in; /* Reduced margin from 1in to 0.5in */
+  color: #333;
+  font-size: 10pt; /* Overall base font size for the document */
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Helvetica Neue', sans-serif;
+  margin-top: 1em; /* Slightly reduced top margin */
+  margin-bottom: 0.5em; /* Slightly reduced bottom margin */
+  line-height: 1.2; /* Tighter line height for headings */
+}
+
+h1 { font-size: 20pt; } /* Specific font sizes for headings */
+h2 { font-size: 16pt; }
+h3 { font-size: 14pt; }
+h4 { font-size: 12pt; }
+h5 { font-size: 11pt; }
+h6 { font-size: 10pt; }
+
+p {
+  font-size: 10pt; /* Explicitly set paragraph font size */
+  margin: 0.5em 0; /* Reduced vertical margin for paragraphs */
+}
+
+.meta, .footer {
+  font-size: 0.8em; /* Slightly smaller for meta info */
+  color: #666;
+  text-align: center;
+}
+
+/* --- Lists --- */
+ul, ol {
+  margin: 0.5em 0 0.5em 1em; /* Reduced margins and indent */
+  font-size: 10pt; /* Ensure list items also have the desired font size */
+}
+li {
+  margin: 0.2em 0; /* Reduced vertical margin for list items */
+}
+
+/* --- Blockquotes --- */
+blockquote {
+  margin: 0.6em 0.8em; /* Reduced margins */
+  padding: 0.3em 0.8em; /* Reduced padding */
+  border-left: 3px solid #ccc; /* Slightly thinner border */
+  color: #555;
+  background: #f9f9f9;
+  font-size: 9.5pt; /* Slightly smaller font for blockquotes */
+}
+
+/* --- Code & Preformatted --- */
+code {
+  font-family: Consolas, monospace;
+  background: #f4f4f4;
+  padding: 0.1em 0.3em; /* Reduced padding */
+  border-radius: 2px; /* Slightly smaller border-radius */
+  font-size: 9pt; /* Smaller font for inline code */
+}
+pre {
+  background: #f4f4f4;
+  padding: 0.6em; /* Reduced padding */
+  overflow: auto; /* Allows scrolling for wide content, though WeasyPrint handles pagination */
+  border-radius: 3px;
+  font-size: 9pt; /* Smaller font for code blocks */
+  white-space: pre-wrap; /* Ensures long lines wrap */
+  word-wrap: break-word; /* Breaks long words if necessary */
+}
+
+/* --- Tables --- */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.6em 0; /* Reduced vertical margin for tables */
+  page-break-inside: avoid; /* Keep tables from breaking across pages if possible */
+  font-size: 9.5pt; /* Reduced font size for table content */
+  table-layout: fixed; /* Helps with column width distribution */
+  word-wrap: break-word; /* Ensures text within cells wraps */
+}
+th, td {
+  border: 1px solid #bbb;
+  padding: 0.3em 0.5em; /* Reduced padding within cells */
+  vertical-align: top;
+}
+th {
+  background: #eaeaea;
+  font-weight: bold;
+}
+/* Optional: zebra-stripe for readability */
+tr:nth-child(even) td {
+  background: #fbfbfb;
+}
+tbody tr:nth-of-type(odd) {
+  background-color: #fcfcfc;
+}
+
+/* Add responsive behavior for tables that overflow */
+.table-container {
+  overflow-x: auto; /* Enable horizontal scrolling on small screens */
+}
+
+
+/* --- Images (if any) --- */
+img {
+  max-width: 100%;
+  height: auto;
+  page-break-inside: avoid;
+}
+
+/* Horizontal rule spacing */
+hr {
+  margin: 1em 0;
+  border: 0;
+  border-top: 1px solid #eee;
+}
+
+/* Header and Footer specific styles */
+header {
+    padding-bottom: 0.5em;
+}
+
+footer {
+    padding-top: 0.5em;
+}
+
+/* Small adjustments to improve overall density */
+main {
+    line-height: 1.5;
+}

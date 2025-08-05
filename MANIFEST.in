@@ -1,0 +1,20 @@
+include LICENSE
+include README.md
+global-include *.typed
+recursive-include parrot *
+# Exclude directories
+prune videos
+prune examples
+prune docs
+prune documents
+prune etc
+prune env
+prune resources
+prune dist
+prune settings
+prune templates
+prune static
+
+# Optionally, you can also specify any other unwanted directories
+prune tests
+prune *.egg-info

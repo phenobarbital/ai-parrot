@@ -1,0 +1,270 @@
+[build-system]
+requires = [
+    "setuptools>=67.6.1",
+    "setuptools_scm[toml]>=6.0",
+    "Cython==3.0.11",
+    "wheel>=0.44.0"
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-parrot"
+dynamic = ["version"]
+description = "Chatbot services for Navigator, based on Langchain"
+authors = [
+    {name = "Jesus Lara", email = "jesuslara@phenobarbital.info"}
+]
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10.1"
+keywords = ["asyncio", "asyncpg", "aioredis", "aiomcache", "artificial intelligence", "ai", "chatbot", "agents"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX :: Linux",
+    "Environment :: Web Environment",
+    "License :: OSI Approved :: MIT License",
+    "Topic :: Software Development :: Build Tools",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3 :: Only",
+    "Framework :: AsyncIO",
+    "Typing :: Typed",
+]
+
+dependencies = [
+    "Cython==3.0.11",
+    "faiss-cpu>=1.9.0",
+    "jq==1.7.0",
+    "rank_bm25==0.2.2",
+    "tabulate==0.9.0",
+    "sentencepiece==0.2.0",
+    "markdown2==2.4.13",
+    "psycopg-binary==3.2.6",
+    "python-datamodel>=0.10.17",
+    "backoff==2.2.1",
+    "asyncdb>=2.11.6",
+    "google-cloud-bigquery>=3.30.0",
+    "numexpr==2.10.2",
+    "fpdf==1.7.2",
+    "python-docx==1.1.2",
+    "typing_extensions>=4.13.2,<=4.14.0",
+    "navconfig[default]>=1.7.13",
+    "navigator-auth>=0.15.8",
+    "navigator-session>=0.6.5",
+    "navigator-api[uvloop,locale]>=2.13.5",
+    "matplotlib==3.10.0",
+    "seaborn==0.13.2",
+    "pydub==0.25.1",
+    "async-notify[all]>=1.4.2",
+    "markitdown>=0.0.2",
+]
+
+[project.optional-dependencies]
+agents = [
+    "sentence_transformers==5.0.0",
+    "yfinance==0.2.54",
+    "youtube_search==2.1.2",
+    "wikipedia==1.4.0",
+    "mediawikiapi==1.2",
+    "pyowm==3.3.0",
+    "stackapi==0.3.1",
+    "duckduckgo-search==7.5.0",
+    "google-search-results==2.4.2",
+    "google-api-python-client>=2.151.0",
+    "pomegranate==1.1.0",
+    "autoviz==0.1.905",
+    "spacy==3.8.6",
+    "html2text==2025.4.15"
+]
+
+loaders = [
+    "mammoth==1.8.0",
+    "markdownify==1.1.0",
+    "python-docx==1.1.2",
+    "pymupdf==1.26.3",
+    "pymupdf4llm==0.0.27",
+    "pdf4llm==0.0.27",
+    "pytube==15.0.0",
+    "youtube_transcript_api==1.0.3",
+    "python-pptx==1.0.2",
+]
+
+images = [
+    "torchvision==0.21.0",
+    "timm==1.0.15",
+    "ultralytics==8.3.121",
+    "albumentations==2.0.6",
+    "filetype==1.2.0",
+    "imagehash==4.3.1",
+    "pgvector==0.3.6",
+    "pyheif==0.8.0",
+    "exif==1.6.1",
+    "pillow-avif-plugin==1.5.2",
+    "pillow-heif==0.22.0",
+    "python-xmp-toolkit==2.0.2",
+    "exifread==3.3.1",
+    "transformers>=4.51.1,<=4.51.3",
+    "ffmpeg==1.4",
+    "holoviews==1.21.0",
+    "bokeh==3.7.3",
+    "pandas-bokeh==0.5.5",
+    "plotly==5.22.0",
+    "ipywidgets==8.1.0",
+    "altair==5.5.0",
+]
+
+vector = [
+    "torch>=2.5.1,<=2.6.0",
+    "tiktoken==0.9.0",
+    "accelerate==0.34.2",
+    "llama-index==0.12.39",
+    "llama_cpp_python==0.2.56",
+    "bitsandbytes==0.44.1",
+    "datasets>=3.0.2",
+    "safetensors>=0.4.3",
+    "transformers>=4.51.1,<=4.51.3",
+    "sentence-transformers>=5.0.0",
+    "tokenizers>=0.20.0,<=0.21.1",
+    "tensorflow==2.18.0",
+    "tf-keras==2.18.0",
+    "simsimd>=4.3.1",
+    "opencv-python==4.10.0.84",
+    "chromadb==0.6.3",
+]
+
+anthropic = [
+    "anthropic==0.58.2",
+]
+
+openai = [
+    "openai==1.97.0",
+    "tiktoken==0.9.0"
+]
+
+google = [
+    "google-api-python-client>=2.166.0,<=2.177.0",
+    "google-cloud-texttospeech==2.27.0",
+    "google-genai>=1.26.0",
+    "vertexai==1.71.1",
+    "google-cloud-aiplatform==1.71.1",
+]
+
+groq = [
+    "groq==0.30.0",
+    "typing_extensions>=4.13.2,<=4.14.1",
+]
+
+milvus = [
+    "pymilvus==2.4.8",
+    "milvus==2.3.5"
+]
+
+chroma = [
+    "chroma==0.2.0",
+]
+
+eda = [
+    "ydata-profiling==4.16.1",
+    "sweetviz==2.1.4",
+]
+
+# Convenience groups
+all = [
+    "ai-parrot[agents,loaders,images,vector,anthropic,openai,google,groq,milvus,chroma]"
+]
+
+dev = [
+    "pytest>=7.2.2",
+    "pytest-asyncio==0.21.1",
+    "pytest-xdist==3.3.1",
+    "pytest-assume==2.4.3",
+    "black",
+    "pylint",
+    "mypy",
+    "coverage",
+]
+
+[project.urls]
+Homepage = "https://github.com/phenobarbital/ai-parrot"
+Source = "https://github.com/phenobarbital/ai-parrot"
+Tracker = "https://github.com/phenobarbital/ai-parrot/issues"
+Documentation = "https://github.com/phenobarbital/ai-parrot/"
+Funding = "https://paypal.me/phenobarbital"
+"Say Thanks!" = "https://saythanks.io/to/phenobarbital"
+
+# Version from parrot/version.py
+[tool.setuptools_scm]
+write_to = "parrot/_version.py"
+
+[tool.setuptools.dynamic]
+version = {attr = "parrot.__version__"}
+
+# Package discovery
+[tool.setuptools.packages.find]
+exclude = [
+    "env*",
+    "etc*",
+    "bin*",
+    "contrib*",
+    "docs*",
+    "documents*",
+    "tests*",
+    "examples*",
+    "libraries*",
+    "db*",
+    "cache*",
+    ".jupyter*",
+    "locale*",
+    "lab*",
+    "notebooks*",
+    "resources*",
+    "static*",
+    "templates*",
+    "settings*",
+    "videos*"
+]
+
+[tool.setuptools.package-data]
+parrot = ["py.typed"]
+
+[tool.pytest.ini_options]
+addopts = [
+    "--strict-config",
+    "--strict-markers",
+]
+log_cli = true
+log_cli_level = "DEBUG"
+log_cli_format = "%(asctime)s [%(levelname)8s] %(message)s (%(filename)s:%(lineno)s)"
+log_cli_date_format = "%Y-%m-%d %H:%M:%S"
+filterwarnings = [
+    "error",
+    'ignore:The loop argument is deprecated since Python 3\.8, and scheduled for removal in Python 3\.10:DeprecationWarning:asyncio',
+]
+
+[tool.black]
+line-length = 120
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | _build
+  | buck-out
+  | build
+  | dist
+)/
+'''
+
+[tool.pylint.messages_control]
+disable = ["C0330", "C0326"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true

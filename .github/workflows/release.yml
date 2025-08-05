@@ -1,0 +1,72 @@
+name: Python package build and publish with uv
+
+on:
+  release:
+    types: [created]
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install twine
+
+      - name: Build wheels on Ubuntu
+        if: matrix.os == 'ubuntu-latest'
+        uses: RalfG/python-wheels-manylinux-build@v0.7.1-manylinux2014_x86_64
+        with:
+          python-versions: 'cp310-cp310 cp311-cp311 cp312-cp312'
+          build-requirements: 'cython setuptools wheel'
+          system-packages: 'libmemcached-devel openssl-devel zlib-devel'
+
+      - name: Upload wheel artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.os }}-py${{ matrix.python-version }}
+          path: dist/*.whl
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release'
+    environment:
+      name: pypi
+      url: https://pypi.org/p/ai-parrot
+    permissions:
+      id-token: write  # For trusted publishing
+    steps:
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist-artifacts
+
+      - name: Move wheel files to dist directory
+        run: |
+          mkdir -p dist
+          find dist-artifacts -name '*.whl' -exec mv {} dist/ \;
+
+      - name: List files in dist
+        run: ls -l dist
+
+      - name: Publish to PyPI
+        run: |
+          uv tool install twine
+          uv tool run twine upload dist/*-manylinux*.whl --username __token__ --password ${{ secrets.NAV_AIPARROT_API_SECRET }}
