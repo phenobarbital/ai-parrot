@@ -11,3 +11,8 @@ cdef class ConfigError(ParrotError):
 cdef class SpeechGenerationError(ParrotError):
     """Capture Errors related to speech generation."""
     pass
+
+
+cdef class DriverError(ParrotError):
+    """Capture Errors related to driver operations."""
+    pass
