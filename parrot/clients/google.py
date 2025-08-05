@@ -117,28 +117,12 @@ class GoogleGenAIClient(AbstractClient):
             'news',
             'weather'
         ]
-        function_keywords = [
-            'get',
-            'use',
-            'tool',
-            'execute',
-            'call',
-        ]
-        if self.tools:
-            function_keywords = [
-                tool.name.lower() for tool in self.tools.values()
-            ]
-            function_keywords.extend(
-                [tool.description.lower() for tool in self.tools.values()]
-            )
-
         has_search_intent = any(keyword in prompt_lower for keyword in search_keywords)
-        has_function_intent = any(keyword in prompt_lower for keyword in function_keywords)
-        if has_search_intent and not has_function_intent:
+        if has_search_intent:
             return "builtin_tools"
         else:
             # Mixed intent - prefer custom functions if available, otherwise builtin
-            return "custom_functions" if self.tools else "builtin_tools"
+            return "custom_functions"
 
     def clean_google_schema(self, schema: dict) -> dict:
         """
@@ -224,10 +208,11 @@ class GoogleGenAIClient(AbstractClient):
 
     def _build_tools(self, tool_type: str) -> Optional[List[types.Tool]]:
         """Build tools based on the specified type."""
-        if tool_type == "custom_functions" and self.tools:
+        if tool_type == "custom_functions":
             # migrate to use abstractool + tool definition:
             function_declarations = []
-            for tool_name, tool in self.tools.items():
+            for tool in self.tool_manager.all_tools():
+                tool_name = tool.name
                 if isinstance(tool, AbstractTool):
                     full_schema = tool.get_tool_schema()
                     tool_description = full_schema.get("description", tool.description)
@@ -268,11 +253,15 @@ class GoogleGenAIClient(AbstractClient):
                     continue
 
             return [
-                types.Tool(function_declarations=function_declarations)
+                types.Tool(
+                    function_declarations=function_declarations
+                )
             ]
         elif tool_type == "builtin_tools":
             return [
-                types.Tool(google_search=types.GoogleSearch()),
+                types.Tool(
+                    google_search=types.GoogleSearch()
+                ),
             ]
 
         return None
@@ -554,8 +543,8 @@ class GoogleGenAIClient(AbstractClient):
                                 args[key] = int(value)
                         except ValueError:
                             args[key] = value  # Keep as string
-                # extract tool from self.tools:
-                tool = self.tools.get(tool_name)
+                # extract tool from Tool Manager
+                tool = self.tool_manager.get_tool(tool_name)
                 if tool:
                     # Create function call
                     fc = types.FunctionCall(
@@ -1021,24 +1010,23 @@ class GoogleGenAIClient(AbstractClient):
         if tools and isinstance(tools, list):
             for tool in tools:
                 self.register_tool(tool)
-        if self.tools:
-            # Convert to newer API format - create proper Tool objects
-            function_declarations = []
+        # Convert to newer API format - create proper Tool objects
+        function_declarations = []
 
-            # Add custom function tools
-            for tool in self.tools.values():
-                function_declarations.append(
-                    types.FunctionDeclaration(
-                        name=tool.name,
-                        description=tool.description,
-                        parameters=self._fix_tool_schema(tool.input_schema.copy())
-                    )
+        # Add custom function tools
+        for tool in self.tool_manager.all_tools():
+            function_declarations.append(
+                types.FunctionDeclaration(
+                    name=tool.name,
+                    description=tool.description,
+                    parameters=self._fix_tool_schema(tool.input_schema.copy())
                 )
+            )
 
-            # Create a single Tool object with all function declarations plus built-in tools
-            tools = [
-                types.Tool(function_declarations=function_declarations),
-            ]
+        # Create a single Tool object with all function declarations plus built-in tools
+        tools = [
+            types.Tool(function_declarations=function_declarations),
+        ]
 
         while retry_count <= retry_config.max_retries:
             try:
