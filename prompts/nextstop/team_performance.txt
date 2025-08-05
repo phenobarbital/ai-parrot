@@ -1,8 +1,8 @@
 Manager ID: {manager_id}
 
-You have access to the following dataframes returned by the tools:
+You have access to the following tools:
 - `get_employee_sales({manager_id})`
-- `get_employee_visits({manager_id})`
+- `get_visits_by_manager({manager_id})`
 
 Your task is to perform:
 

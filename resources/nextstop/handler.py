@@ -54,7 +54,8 @@ class NextStopAgent(AgentHandler):
     agent_id: str = "nextstop"
     _agent_class: type = NextStop
     _agent_response = NextStopResponse
-    _tools = StoreInfo().get_tools() + EmployeeToolkit().get_tools()
+    _tools = []
+
     base_route: str = '/api/v1/agents/nextstop'
     additional_routes: dict = [
         {
@@ -73,6 +74,12 @@ class NextStopAgent(AgentHandler):
             "handler": "find_jobs"
         }
     ]
+
+    def define_tools(self):
+        """Define the tools for the NextStop agent."""
+        tools = StoreInfo().get_tools()
+        tools.extend(EmployeeToolkit().get_tools())
+        self._tools = tools
 
     async def get_results(self, request: web.Request) -> web.Response:
         """Return the results of the agent."""
@@ -333,7 +340,7 @@ class NextStopAgent(AgentHandler):
             pdf_output = await agent.pdf_report(
                 content=final_report
             )
-            response.pdf_path = str(pdf_output.get('file_path', None))
+            response.pdf_path = str(pdf_output.result.get('file_path', None))
             response.documents.append(response.pdf_path)
         except Exception as e:
             self.logger.error(f"Error generating PDF: {e}")
@@ -359,7 +366,7 @@ class NextStopAgent(AgentHandler):
         query = await self.open_prompt('for_store.txt')
         question = query.format(store_id=store_id)
         try:
-            response, _ = await self.ask_agent(question)
+            response, _ = await self.ask_agent(query=question)
         except Exception as e:
             print(f"Error invoking agent: {e}")
             raise RuntimeError(
@@ -372,7 +379,7 @@ class NextStopAgent(AgentHandler):
         query = await self.open_prompt('for_employee.txt')
         question = query.format(employee_id=employee_id)
         try:
-            response, _ = await self.ask_agent(question)
+            response, _ = await self.ask_agent(query=question)
         except Exception as e:
             print(f"Error invoking agent: {e}")
             raise RuntimeError(

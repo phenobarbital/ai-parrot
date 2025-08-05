@@ -43,6 +43,7 @@ from ...bots.agent import BasicAgent
 from ...tools.abstract import AbstractTool
 from ...models.responses import AgentResponse, AIMessage
 from ...clients.gpt import OpenAIClient
+from ...clients.claude import ClaudeClient
 
 
 class RedisWriter:
@@ -251,6 +252,8 @@ class AgentHandler(BaseView):
                 tracker_type='redis',  # Use 'redis' for Redis-based tracking
                 service_name=f"{self.agent_name}_tasker"
             )
+        # Tool definition:
+        self.define_tools()
         # Startup and shutdown callbacks
         app.on_startup.append(self.create_agent)
 
@@ -266,6 +269,10 @@ class AgentHandler(BaseView):
         self.logger.info("Starting up agent handler...")
         # Initialize the agent
         await self._create_agent(app)
+
+    def define_tools(self):
+        """Define the tools for the agent."""
+        pass
 
     def db_connection(
         self,
@@ -773,11 +780,15 @@ class AgentHandler(BaseView):
             llm = OpenAIClient(
                 model="gpt-4.1-mini",
             )
+            # llm = ClaudeClient(
+            #     model="claude-3-5-sonnet-20241022"
+            # )
             agent = self._agent_class(
                 name=self.agent_name,
                 tools=self._tools,
-                llm=llm,
-                model="gpt-4.1-mini",
+                #llm=llm,
+                #model="gpt-4.1-mini",
+                # model="claude-3-5-sonnet-20241022",
             )
             agent.set_response(self._agent_response)
             await agent.configure()
@@ -861,7 +872,10 @@ class AgentHandler(BaseView):
                     "No query provided or found in the request."
                 )
         try:
-            response = await agent.conversation(query)
+            response = await agent.conversation(
+                question=query,
+                max_tokens=8192
+            )
             if isinstance(response, Exception):
                 raise response
         except Exception as e:
@@ -881,11 +895,6 @@ class AgentHandler(BaseView):
             status="success",
             created_at=datetime.now(),
             output=response.output,
-            # transcript=transcript,
-            # pdf_path=str(pdf_path),
-            # podcast_path=str(podcast_path),
-            # document_path=str(document_path),
-            # documents=response.documents if hasattr(response, 'documents') else [],
             **kwargs
         )
         return response_data, response

@@ -326,6 +326,8 @@ JOIN median_visits mv USING(visitor_username)
                 if column_name in question_data:
                     # first: truncate answer if is too long
                     answer = qa_item.get('answer', '')
+                    if answer is None:
+                        answer = "No answer provided"
                     if len(answer) > 100:
                         answer = answer[:100] + '...'
                     question_data[column_name].append({
