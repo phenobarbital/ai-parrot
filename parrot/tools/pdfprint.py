@@ -1,5 +1,5 @@
 """
-PDF Print Tool migrated to use AbstractTool framework.
+Enhanced PDF Print Tool with improved Markdown table support.
 """
 import re
 import logging
@@ -19,13 +19,13 @@ from .abstract import AbstractTool
 # Suppress various library warnings
 logging.getLogger("weasyprint").setLevel(logging.ERROR)
 logging.getLogger("tiktoken").setLevel(logging.ERROR)
+logging.getLogger("MARKDOWN").setLevel(logging.ERROR)
 logging.getLogger("fontTools.ttLib.ttFont").setLevel(logging.ERROR)
 logging.getLogger("fontTools.subset.timer").setLevel(logging.ERROR)
 logging.getLogger("fontTools.subset").setLevel(logging.ERROR)
 
 
-
-def count_tokens(text: str, model: str = "gpt-4.1") -> int:
+def count_tokens(text: str, model: str = "gpt-4") -> int:
     """Count tokens in text using tiktoken."""
     try:
         enc = tiktoken.encoding_for_model(model)
@@ -88,26 +88,16 @@ class PDFPrintArgs(BaseModel):
 
 class PDFPrintTool(AbstractTool):
     """
-    Tool for generating PDF documents from text content.
+    Enhanced PDF Print Tool with improved Markdown table support.
 
-    This tool can process both plain text and Markdown content, converting them
-    into professionally formatted PDF documents. It supports custom HTML templates,
-    CSS styling, and variable substitution for dynamic content generation.
-
-    Features:
-    - Automatic Markdown detection and conversion
-    - Custom HTML template support
-    - CSS styling with multiple stylesheet support
-    - Variable substitution in templates
-    - Professional PDF output with proper formatting
-    - Token counting for content analysis
+    This tool processes both plain text and Markdown content, with special
+    attention to proper table rendering in PDF output.
     """
 
     name = "pdf_print"
     description = (
-        "Generate PDF documents from text content. Supports both plain text and Markdown. "
-        "Can use custom HTML templates and CSS styling. Perfect for creating reports, "
-        "documentation, and formatted documents from text content."
+        "Generate PDF documents from text content. Supports both plain text and Markdown "
+        "with enhanced table rendering. Can use custom HTML templates and CSS styling."
     )
     args_schema = PDFPrintArgs
 
@@ -118,20 +108,11 @@ class PDFPrintTool(AbstractTool):
         default_stylesheets: Optional[List[str]] = None,
         **kwargs
     ):
-        """
-        Initialize the PDF Print Tool.
-
-        Args:
-            templates_dir: Directory containing HTML templates and CSS files
-            default_template: Default template to use if none specified
-            default_stylesheets: Default CSS files to include
-            **kwargs: Additional arguments for AbstractTool
-        """
+        """Initialize the PDF Print Tool with enhanced table support."""
         super().__init__(**kwargs)
 
         # Set up templates directory
         if templates_dir is None:
-            # Try to find templates directory relative to the tool
             possible_paths = [
                 Path.cwd() / "templates",
                 Path(__file__).parent.parent / "templates",
@@ -144,7 +125,6 @@ class PDFPrintTool(AbstractTool):
                     break
 
             if templates_dir is None:
-                # Create a basic templates directory
                 templates_dir = self.static_dir / "templates" if self.static_dir else Path("templates")
                 templates_dir.mkdir(parents=True, exist_ok=True)
                 self._create_default_template(templates_dir)
@@ -171,7 +151,7 @@ class PDFPrintTool(AbstractTool):
         return self.static_dir / "documents" / "pdf"
 
     def _create_default_template(self, templates_dir: Path) -> None:
-        """Create a default HTML template if none exists."""
+        """Create a default HTML template with enhanced table styling."""
         try:
             # Create directories
             (templates_dir / "css").mkdir(parents=True, exist_ok=True)
@@ -201,7 +181,7 @@ class PDFPrintTool(AbstractTool):
 </body>
 </html>"""
 
-            # Default CSS
+            # Enhanced CSS with better table styling
             default_css = """
 body {
     font-family: 'Arial', sans-serif;
@@ -216,31 +196,89 @@ header {
     padding-bottom: 1em;
 }
 
-h1 { color: #2c3e50; font-size: 2.5em; margin-bottom: 0.5em; }
-h2 { color: #34495e; font-size: 2em; margin-top: 1.5em; }
-h3 { color: #7f8c8d; font-size: 1.5em; margin-top: 1.2em; }
+h1 {
+    color: #2c3e50;
+    font-size: 2.5em;
+    margin-bottom: 0.5em;
+}
 
-.author, .date { font-style: italic; color: #7f8c8d; margin: 0.5em 0; }
+h2 {
+    color: #34495e;
+    font-size: 2em;
+    margin-top: 1.5em;
+    page-break-after: avoid;
+}
 
+h3 {
+    color: #7f8c8d;
+    font-size: 1.5em;
+    margin-top: 1.2em;
+    page-break-after: avoid;
+}
+
+.author, .date {
+    font-style: italic;
+    color: #7f8c8d;
+    margin: 0.5em 0;
+}
+
+/* Enhanced table styling */
 table {
     border-collapse: collapse;
     width: 100%;
-    margin: 1em 0;
+    margin: 1.5em 0;
+    background-color: white;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    page-break-inside: avoid;
 }
 
 th, td {
     border: 1px solid #ddd;
-    padding: 8px;
+    padding: 12px 8px;
     text-align: left;
+    vertical-align: top;
 }
 
-th { background-color: #f2f2f2; font-weight: bold; }
+th {
+    background-color: #f8f9fa;
+    font-weight: bold;
+    color: #2c3e50;
+    border-bottom: 2px solid #34495e;
+}
 
+tbody tr:nth-child(even) {
+    background-color: #f8f9fa;
+}
+
+tbody tr:hover {
+    background-color: #e3f2fd;
+}
+
+/* Responsive table */
+@media screen and (max-width: 768px) {
+    table {
+        font-size: 0.9em;
+    }
+
+    th, td {
+        padding: 8px 4px;
+    }
+}
+
+/* Number alignment */
+td[align="right"],
+th[align="right"],
+.number {
+    text-align: right;
+}
+
+/* Code styling */
 code {
     background-color: #f4f4f4;
     padding: 2px 4px;
     border-radius: 3px;
     font-family: 'Courier New', monospace;
+    font-size: 0.9em;
 }
 
 pre {
@@ -248,6 +286,12 @@ pre {
     padding: 1em;
     border-radius: 5px;
     overflow-x: auto;
+    border-left: 4px solid #3498db;
+}
+
+pre code {
+    background-color: transparent;
+    padding: 0;
 }
 
 blockquote {
@@ -255,6 +299,17 @@ blockquote {
     margin: 1em 0;
     padding-left: 1em;
     font-style: italic;
+    background-color: #f8f9fa;
+    padding: 1em 1em 1em 2em;
+}
+
+ul, ol {
+    margin: 1em 0;
+    padding-left: 2em;
+}
+
+li {
+    margin: 0.5em 0;
 }
 
 footer {
@@ -265,10 +320,39 @@ footer {
     color: #7f8c8d;
 }
 
+/* Print specific styles */
 @media print {
-    body { margin: 1cm; }
-    header { page-break-after: avoid; }
-    h1, h2, h3 { page-break-after: avoid; }
+    body {
+        margin: 1cm;
+    }
+
+    header {
+        page-break-after: avoid;
+    }
+
+    h1, h2, h3 {
+        page-break-after: avoid;
+    }
+
+    table {
+        page-break-inside: avoid;
+    }
+
+    tr {
+        page-break-inside: avoid;
+    }
+
+    th {
+        background-color: #f0f0f0 !important;
+        -webkit-print-color-adjust: exact;
+        color-adjust: exact;
+    }
+
+    tbody tr:nth-child(even) {
+        background-color: #f8f8f8 !important;
+        -webkit-print-color-adjust: exact;
+        color-adjust: exact;
+    }
 }
 """
             # Write files
@@ -278,13 +362,13 @@ footer {
             with open(templates_dir / "css" / "base.css", 'w', encoding='utf-8') as f:
                 f.write(default_css)
 
-            self.logger.info("Created default template files")
+            self.logger.info("Created default template files with enhanced table support")
 
         except Exception as e:
             self.logger.error(f"Error creating default template: {e}")
 
     def _is_markdown(self, text: str) -> bool:
-        """Determine if the text appears to be Markdown formatted."""
+        """Enhanced Markdown detection including table patterns."""
         if not text or not isinstance(text, str):
             return False
 
@@ -301,7 +385,7 @@ footer {
         if first_char.isdigit() and re.match(r'^\d+\.', text):
             return True
 
-        # Check for common Markdown patterns
+        # Enhanced Markdown patterns including tables
         markdown_patterns = [
             r"#{1,6}\s+",                    # Headers
             r"\*\*.*?\*\*",                  # Bold
@@ -314,7 +398,9 @@ footer {
             r"^\s*\d+\.\s+",                # Ordered lists
             r"```.*?```",                    # Code blocks
             r"^\s*>\s+",                     # Blockquotes
-            r"^\s*\|.*\|",                   # Tables
+            r"^\s*\|.*\|.*$",               # Table rows
+            r"^\s*\|[-\s:|]+\|.*$",         # Table separator rows
+            r"^\s*\|[\-\s]+\|[\-\s\|]*$",   # ASCII-style table separators
         ]
 
         for pattern in markdown_patterns:
@@ -323,16 +409,359 @@ footer {
 
         return False
 
+    def _preprocess_markdown_tables(self, text: str) -> str:
+        """
+        Preprocess Markdown tables to ensure proper formatting.
+
+        This function fixes common table formatting issues and ensures
+        tables are properly recognized by the Markdown parser.
+        """
+        lines = text.split('\n')
+        processed_lines = []
+        in_table = False
+        table_buffer = []
+
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+
+            # Detect potential table rows
+            if stripped and '|' in stripped:
+                # Check if this is an ASCII-style table separator with many dashes
+                if re.match(r'^\s*\|[\-\s]+\|[\-\s\|]*$', stripped):
+                    # Convert ASCII separator to Markdown format
+                    # Count the number of columns from the previous line
+                    if table_buffer:
+                        prev_line = table_buffer[-1]
+                        col_count = prev_line.count('|') - 1
+                        markdown_separator = '|' + '---|' * col_count
+                        table_buffer.append(markdown_separator)
+                    else:
+                        # Fallback separator
+                        table_buffer.append('|---|---|---|')
+                    in_table = True
+                    continue
+
+                # Check if this looks like a table row (starts and ends with |)
+                if stripped.startswith('|') and stripped.endswith('|'):
+                    # Clean up the row - remove extra spaces and normalize
+                    cells = [cell.strip() for cell in stripped.split('|')[1:-1]]
+                    cleaned_row = '| ' + ' | '.join(cells) + ' |'
+                    table_buffer.append(cleaned_row)
+                    in_table = True
+                    continue
+
+                # Check for table row without proper pipe formatting
+                if stripped.count('|') >= 2:
+                    # Ensure the line starts and ends with pipes
+                    if not stripped.startswith('|'):
+                        stripped = '| ' + stripped
+                    if not stripped.endswith('|'):
+                        stripped = stripped + ' |'
+
+                    # Clean up the row
+                    cells = [cell.strip() for cell in stripped.split('|')[1:-1]]
+                    cleaned_row = '| ' + ' | '.join(cells) + ' |'
+                    table_buffer.append(cleaned_row)
+                    in_table = True
+                    continue
+
+            # If we were in a table and hit a non-table line
+            if in_table and not stripped:
+                # End of table - add the buffered table and empty line
+                if table_buffer:
+                    processed_lines.extend(table_buffer)
+                    processed_lines.append('')  # Add empty line after table
+                    table_buffer = []
+                in_table = False
+                processed_lines.append(line)
+                continue
+            elif in_table and stripped and '|' not in stripped:
+                # End of table - add the buffered table
+                if table_buffer:
+                    processed_lines.extend(table_buffer)
+                    processed_lines.append('')  # Add empty line after table
+                    table_buffer = []
+                in_table = False
+                processed_lines.append(line)
+                continue
+
+            # Not a table line
+            if not in_table:
+                processed_lines.append(line)
+
+        # Handle any remaining table buffer
+        if table_buffer:
+            processed_lines.extend(table_buffer)
+
+        return '\n'.join(processed_lines)
+
+    def _convert_ascii_tables_to_html(self, text: str) -> str:
+        """
+        Convert ASCII-style tables directly to HTML if Markdown conversion fails.
+        """
+        lines = text.split('\n')
+        result_lines = []
+        i = 0
+
+        while i < len(lines):
+            line = lines[i].strip()
+
+            # Look for potential table start (line with pipes)
+            if line and '|' in line and line.count('|') >= 2:
+                # Check if next line is a separator
+                table_lines = [line]
+                j = i + 1
+
+                # Collect all consecutive lines that look like table rows
+                while j < len(lines):
+                    next_line = lines[j].strip()
+                    if next_line and '|' in next_line:
+                        table_lines.append(next_line)
+                        j += 1
+                    elif not next_line:  # Empty line
+                        j += 1
+                        break
+                    else:
+                        break
+
+                # If we have at least 2 lines, try to convert to HTML table
+                if len(table_lines) >= 2:
+                    html_table = self._ascii_to_html_table(table_lines)
+                    if html_table:
+                        result_lines.append(html_table)
+                        i = j
+                        continue
+
+            # Not a table line, add as-is
+            result_lines.append(lines[i])
+            i += 1
+
+        return '\n'.join(result_lines)
+
+    def _ascii_to_html_table(self, table_lines: List[str]) -> str:
+        """
+        Convert ASCII table lines to HTML table.
+        """
+        try:
+            # Remove empty lines and separator lines
+            data_lines = []
+            for line in table_lines:
+                if line.strip() and not re.match(r'^\s*\|[\-\s]+\|[\-\s\|]*$', line.strip()):
+                    data_lines.append(line.strip())
+
+            if len(data_lines) < 1:
+                return ""
+
+            html_parts = ['<table class="ascii-table">']
+
+            # Process each line
+            for idx, line in enumerate(data_lines):
+                # Split by pipe and clean up
+                cells = [cell.strip() for cell in line.split('|')[1:-1]]  # Remove first/last empty parts
+
+                if idx == 0:
+                    # First row is header
+                    html_parts.append('<thead><tr>')
+                    for cell in cells:
+                        html_parts.append(f'<th>{cell}</th>')
+                    html_parts.append('</tr></thead><tbody>')
+                else:
+                    # Data row
+                    html_parts.append('<tr>')
+                    for cell in cells:
+                        # Check if cell content is numeric for right alignment
+                        if re.match(r'^\s*\d+(?:\.\d+)?\s*$', cell):
+                            html_parts.append(f'<td align="right">{cell}</td>')
+                        else:
+                            html_parts.append(f'<td>{cell}</td>')
+                    html_parts.append('</tr>')
+
+            html_parts.append('</tbody></table>')
+            return '\n'.join(html_parts)
+
+        except Exception as e:
+            self.logger.warning(f"Failed to convert ASCII table to HTML: {e}")
+            return ""
+
+    def _post_process_html_tables(self, html_content: str) -> str:
+        """
+        Post-process HTML to improve table formatting.
+        """
+        # Add CSS classes to tables for better styling
+        html_content = re.sub(
+            r'<table>',
+            '<table class="markdown-table">',
+            html_content,
+            flags=re.IGNORECASE
+        )
+
+        # Ensure numeric columns are right-aligned
+        def align_numeric_cells(match):
+            cell_content = match.group(1)
+            # Check if content looks like a number
+            if re.match(r'^\s*\d+(?:\.\d+)?\s*$', cell_content.strip()):
+                return f'<td align="right">{cell_content}</td>'
+            return match.group(0)
+
+        html_content = re.sub(
+            r'<td>(.*?)</td>',
+            align_numeric_cells,
+            html_content,
+            flags=re.IGNORECASE | re.DOTALL
+        )
+
+        return html_content
+
+    def _process_content(
+        self,
+        text: str,
+        auto_detect_markdown: bool,
+        template_name: Optional[str],
+        template_vars: Optional[Dict[str, Any]]
+    ) -> str:
+        """Enhanced content processing with better table handling."""
+        content = text.strip()
+
+        # Convert Markdown to HTML if needed
+        if auto_detect_markdown and self._is_markdown(content):
+            self.logger.info("Detected Markdown content, converting to HTML")
+            try:
+                # Preprocess tables for better recognition
+                content = self._preprocess_markdown_tables(content)
+
+                # Configure markdown with all necessary extensions
+                md = markdown.Markdown(
+                    extensions=[
+                        'tables',           # Table support
+                        'fenced_code',      # Code blocks
+                        'nl2br',           # Newline to break
+                        'attr_list',        # Attribute lists
+                        'def_list',         # Definition lists
+                        'footnotes',        # Footnotes
+                        'toc',              # Table of contents
+                        'codehilite',       # Code highlighting
+                        'extra'             # Meta extension with many sub-extensions
+                    ],
+                    extension_configs={
+                        'tables': {
+                            'use_align_attribute': True
+                        },
+                        'codehilite': {
+                            'css_class': 'highlight',
+                            'use_pygments': False
+                        }
+                    },
+                    output_format='html5'
+                )
+
+                content = md.convert(content)
+
+                # If no tables were converted but we suspect there are ASCII tables, try fallback
+                if '<table' not in content and '|' in text and text.count('|') > 4:
+                    self.logger.info("Markdown didn't create tables, trying ASCII table conversion")
+                    content = self._convert_ascii_tables_to_html(text)
+
+                # Post-process HTML tables
+                content = self._post_process_html_tables(content)
+
+                self.logger.debug(f"Markdown converted with tables. Length: {len(content)}")
+
+                # Log table detection
+                table_count = content.count('<table')
+                if table_count > 0:
+                    self.logger.info(f"Successfully converted {table_count} table(s) to HTML")
+                else:
+                    self.logger.warning("No tables were detected in the conversion")
+
+            except Exception as e:
+                self.logger.warning(f"Markdown conversion failed: {e}, trying ASCII table conversion")
+                # Try ASCII table conversion as fallback
+                try:
+                    content = self._convert_ascii_tables_to_html(content)
+                    if '<table' not in content:
+                        # Convert line breaks for plain text
+                        content = content.replace('\n', '<br>')
+                except Exception as ascii_error:
+                    self.logger.warning(f"ASCII table conversion also failed: {ascii_error}")
+                    content = content.replace('\n', '<br>')
+
+        # Apply template if specified
+        if template_name:
+            try:
+                template = self.env.get_template(template_name)
+
+                # Prepare template context
+                context = {
+                    "body": content,
+                    "content": content,
+                    "generated_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    **(template_vars or {})
+                }
+
+                content = template.render(**context)
+                self.logger.info(f"Applied template: {template_name}")
+
+            except Exception as e:
+                self.logger.error(f"Error applying template {template_name}: {e}")
+
+                # Create a simple HTML wrapper with table-friendly styling
+                title = template_vars.get('title', 'Document') if template_vars else 'Document'
+                author = template_vars.get('author', '') if template_vars else ''
+
+                content = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>{title}</title>
+    <style>
+        body {{ font-family: Arial, sans-serif; margin: 2cm; line-height: 1.6; }}
+        table {{ border-collapse: collapse; width: 100%; margin: 1em 0; }}
+        th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+        th {{ background-color: #f2f2f2; font-weight: bold; }}
+        h1, h2, h3 {{ color: #333; }}
+    </style>
+</head>
+<body>
+    <header>
+        <h1>{title}</h1>
+        {f'<p><em>By: {author}</em></p>' if author else ''}
+        <p><em>Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</em></p>
+        <hr>
+    </header>
+    <main>
+        {content}
+    </main>
+</body>
+</html>"""
+                self.logger.info("Applied simple HTML wrapper as template fallback")
+        else:
+            # No template specified - ensure we have a complete HTML document with table styling
+            if not content.strip().startswith('<!DOCTYPE') and not content.strip().startswith('<html'):
+                content = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Document</title>
+    <style>
+        body {{ font-family: Arial, sans-serif; margin: 2cm; line-height: 1.6; }}
+        table {{ border-collapse: collapse; width: 100%; margin: 1em 0; }}
+        th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+        th {{ background-color: #f2f2f2; font-weight: bold; }}
+        tbody tr:nth-child(even) {{ background-color: #f8f9fa; }}
+        h1, h2, h3 {{ color: #333; }}
+    </style>
+</head>
+<body>
+    {content}
+</body>
+</html>"""
+                self.logger.info("Added basic HTML wrapper with table styling to content")
+
+        return content
+
     def _load_stylesheets(self, stylesheets: Optional[List[str]]) -> List[CSS]:
-        """
-        Load CSS stylesheets for PDF generation.
-
-        Args:
-            stylesheets: List of CSS file paths relative to templates directory
-
-        Returns:
-            List of CSS objects for WeasyPrint
-        """
+        """Load CSS stylesheets for PDF generation."""
         css_objects = []
 
         # Use provided stylesheets or defaults
@@ -371,22 +800,21 @@ footer {
         auto_detect_markdown: bool = True,
         **kwargs
     ) -> Dict[str, Any]:
-        """
-        Execute PDF generation with enhanced debugging.
-        """
+        """Execute PDF generation with enhanced table support."""
         try:
             self.logger.debug(
                 f"Starting PDF generation with {len(text)} characters of content"
             )
 
-            # Process content
+            # Process content with enhanced table handling
             processed_content = self._process_content(
                 text, auto_detect_markdown, template_name, template_vars
             )
 
-            # Debug: Log the processed content length and first 500 chars
-            self.logger.info(f"Processed content length: {len(processed_content)}")
-            self.logger.debug(f"Processed content preview: {processed_content[:500]}...")
+            # Log table information
+            table_count = processed_content.count('<table')
+            if table_count > 0:
+                self.logger.info(f"Content contains {table_count} HTML table(s)")
 
             # Load stylesheets
             css_objects = self._load_stylesheets(stylesheets)
@@ -415,21 +843,21 @@ footer {
             except Exception as e:
                 self.logger.warning(f"Could not save debug HTML: {e}")
 
-            # Generate PDF with detailed error handling
+            # Generate PDF with enhanced error handling
             try:
-                # Create HTML object
                 html_obj = HTML(
                     string=processed_content,
                     base_url=str(self.templates_dir)
                 )
 
-                # Generate PDF
+                # Generate PDF with print-friendly settings
                 html_obj.write_pdf(
                     str(output_path),
-                    stylesheets=css_objects
+                    stylesheets=css_objects,
+                    presentational_hints=True  # This helps with table rendering
                 )
 
-                # Check if file was actually created
+                # Verify file creation
                 if not output_path.exists():
                     raise Exception("PDF file was not created")
 
@@ -441,67 +869,7 @@ footer {
 
             except Exception as pdf_error:
                 self.logger.error(f"PDF generation failed: {pdf_error}")
-
-                # Try alternative approaches
-                try:
-                    self.logger.info("Attempting PDF generation with minimal HTML...")
-
-                    # Create minimal HTML wrapper
-                    minimal_html = f"""<!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <title>Document</title>
-        <style>
-            body {{ font-family: Arial, sans-serif; margin: 2cm; line-height: 1.6; }}
-            h1, h2, h3 {{ color: #333; }}
-            ul, ol {{ margin: 1em 0; }}
-            li {{ margin: 0.5em 0; }}
-        </style>
-    </head>
-    <body>
-        {processed_content}
-    </body>
-    </html>"""
-
-                    # Try with minimal HTML
-                    HTML(string=minimal_html).write_pdf(str(output_path))
-
-                    if output_path.exists() and output_path.stat().st_size > 0:
-                        self.logger.info("PDF generated with minimal HTML approach")
-                    else:
-                        raise Exception("Minimal HTML approach also failed")
-
-                except Exception as minimal_error:
-                    self.logger.error(f"Minimal HTML approach failed: {minimal_error}")
-
-                    # Last resort: plain text
-                    try:
-                        self.logger.info("Attempting PDF generation with plain text...")
-
-                        plain_html = f"""<!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <title>Document</title>
-    </head>
-    <body>
-        <pre style="white-space: pre-wrap; font-family: Arial; margin: 2cm;">
-    {text}
-        </pre>
-    </body>
-    </html>"""
-
-                        HTML(string=plain_html).write_pdf(str(output_path))
-
-                        if not output_path.exists() or output_path.stat().st_size == 0:
-                            raise Exception("Plain text approach also failed")
-
-                        self.logger.warning("PDF generated with plain text fallback")
-
-                    except Exception as plain_error:
-                        self.logger.error(f"All PDF generation approaches failed: {plain_error}")
-                        raise Exception(f"PDF generation completely failed. Last error: {plain_error}")
+                raise Exception(f"PDF generation failed: {pdf_error}")
 
             # Generate URLs and results
             file_url = self.to_static_url(output_path)
@@ -521,7 +889,8 @@ footer {
                     "tokens": token_count,
                     "was_markdown": auto_detect_markdown and self._is_markdown(text),
                     "template_used": template_name or self.default_template,
-                    "stylesheets_count": len(css_objects)
+                    "stylesheets_count": len(css_objects),
+                    "tables_detected": processed_content.count('<table')
                 },
                 "generation_info": {
                     "timestamp": datetime.now().isoformat(),
@@ -531,145 +900,13 @@ footer {
                 }
             }
 
-            self.logger.info(f"PDF generation completed: {file_size} bytes, {token_count} tokens")
+            self.logger.info(f"PDF generation completed: {file_size} bytes, {token_count} tokens, {result['content_stats']['tables_detected']} tables")
             return result
 
         except Exception as e:
             self.logger.error(f"Error in PDF generation: {e}")
             self.logger.error(traceback.format_exc())
             raise
-
-
-    def _process_content(
-        self,
-        text: str,
-        auto_detect_markdown: bool,
-        template_name: Optional[str],
-        template_vars: Optional[Dict[str, Any]]
-    ) -> str:
-        """
-        Enhanced content processing with better debugging.
-        """
-        content = text.strip()
-
-        # Convert Markdown to HTML if needed
-        if auto_detect_markdown and self._is_markdown(content):
-            self.logger.info("Detected Markdown content, converting to HTML")
-            try:
-                content = markdown.markdown(
-                    content,
-                    extensions=['tables', 'fenced_code', 'nl2br', 'extra'],
-                    output_format='html5'
-                )
-                self.logger.debug(f"Markdown converted. Length: {len(content)}")
-            except Exception as e:
-                self.logger.warning(f"Markdown conversion failed: {e}, using plain text")
-                # Convert line breaks for plain text
-                content = content.replace('\n', '<br>')
-
-        # Apply template if specified
-        if template_name:
-            try:
-                template = self.env.get_template(template_name)
-
-                # Prepare template context
-                context = {
-                    "body": content,      # Keep for backward compatibility
-                    "content": content,   # Add for your template
-                    "generated_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    **(template_vars or {})
-                }
-
-                content = template.render(**context)
-                self.logger.info(f"Applied template: {template_name}")
-
-            except Exception as e:
-                self.logger.error(f"Error applying template {template_name}: {e}")
-
-                # Create a simple HTML wrapper instead of using template
-                title = template_vars.get('title', 'Document') if template_vars else 'Document'
-                author = template_vars.get('author', '') if template_vars else ''
-
-                content = f"""<!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <title>{title}</title>
-    </head>
-    <body>
-        <header>
-            <h1>{title}</h1>
-            {f'<p><em>By: {author}</em></p>' if author else ''}
-            <p><em>Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</em></p>
-            <hr>
-        </header>
-        <main>
-            {content}
-        </main>
-    </body>
-    </html>"""
-                self.logger.info("Applied simple HTML wrapper as template fallback")
-        else:
-            # No template specified - ensure we have a complete HTML document
-            if not content.strip().startswith('<!DOCTYPE') and not content.strip().startswith('<html'):
-                content = f"""<!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <title>Document</title>
-    </head>
-    <body>
-        {content}
-    </body>
-    </html>"""
-                self.logger.info("Added basic HTML wrapper to content")
-
-        return content
-
-
-    # Debugging helper function
-    def debug_pdf_generation(self, tool_instance, text: str) -> Dict[str, Any]:
-        """
-        Debug helper to diagnose PDF generation issues.
-
-        Args:
-            tool_instance: Instance of PDFPrintTool
-            text: Text content to debug
-
-        Returns:
-            Dictionary with debug information
-        """
-        debug_info = {
-            "original_text_length": len(text),
-            "is_markdown_detected": tool_instance._is_markdown(text),
-            "templates_dir_exists": tool_instance.templates_dir.exists(),
-            "templates_dir_path": str(tool_instance.templates_dir),
-            "output_dir_exists": tool_instance.output_dir.exists(),
-            "output_dir_path": str(tool_instance.output_dir),
-            "available_templates": tool_instance.get_available_templates(),
-            "available_stylesheets": tool_instance.get_available_stylesheets(),
-        }
-
-        # Test content processing
-        try:
-            processed = tool_instance._process_content(
-                text, True, None, {"title": "Debug Test"}
-            )
-            debug_info["processed_content_length"] = len(processed)
-            debug_info["processed_content_preview"] = processed[:500]
-            debug_info["content_processing"] = "SUCCESS"
-        except Exception as e:
-            debug_info["content_processing"] = f"FAILED: {e}"
-
-        # Test CSS loading
-        try:
-            css_objects = tool_instance._load_stylesheets(None)
-            debug_info["css_loading"] = f"SUCCESS: {len(css_objects)} stylesheets"
-        except Exception as e:
-            debug_info["css_loading"] = f"FAILED: {e}"
-
-        return debug_info
 
     def execute_sync(
         self,
@@ -743,10 +980,20 @@ footer {
         """Convert Markdown to HTML for preview purposes."""
         try:
             if self._is_markdown(text):
-                return markdown.markdown(
+                # Use the same preprocessing for consistency
+                text = self._preprocess_markdown_tables(text)
+
+                html = markdown.markdown(
                     text,
-                    extensions=['tables', 'fenced_code', 'toc', 'nl2br']
+                    extensions=['tables', 'fenced_code', 'toc', 'nl2br', 'extra'],
+                    extension_configs={
+                        'tables': {
+                            'use_align_attribute': True
+                        }
+                    }
                 )
+
+                return self._post_process_html_tables(html)
             else:
                 return f"<pre>{text}</pre>"
         except Exception as e:

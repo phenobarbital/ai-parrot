@@ -646,7 +646,7 @@ LIMIT 100;
     @tool_schema(EmployeeInput)
     async def get_by_employee_visits(
         self,
-        email: str,
+        employee_id: str,
         **kwargs
     ) -> EmployeeVisit:
         """Get statistics about visits made by an Employee during the current week.
@@ -692,7 +692,7 @@ WITH visit_data AS (
     SELECT firstdate  FROM public.week_range((current_date::date - interval '1 week')::date, (current_date::date - interval '1 week')::date))
     and (SELECT lastdate  FROM public.week_range((current_date::date - interval '1 week')::date, (current_date::date - interval '1 week')::date))
     AND column_name IN ('9733','9731','9732','9730')
-    AND d.visitor_email = '{email}'
+    AND d.visitor_email = '{employee_id}'
     GROUP BY
         form_id, formid, visit_date, visit_timestamp, visit_length, d.visit_hour, d.account_name,
         time_in, time_out, d.store_id, st.alt_name, visitor_name, visitor_email, visitor_role, d.visit_dow
@@ -741,11 +741,11 @@ group by visitor_name, vd.visitor_email, rs.visited_retailers
             )
             if not visit_data:
                 raise ToolError(
-                    f"No Employee Visit data found for email {email}."
+                    f"No Employee Visit data found for email {employee_id}."
                 )
             return visit_data
         except ToolError as te:
-            return f"No Employee Visit data found for email {email}, error: {te}"
+            return f"No Employee Visit data found for email {employee_id}, error: {te}"
         except ValueError as ve:
             return f"Invalid data format, error: {ve}"
         except Exception as e:

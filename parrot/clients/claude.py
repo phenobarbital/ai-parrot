@@ -67,12 +67,19 @@ class ClaudeClient(AbstractClient):
         structured_output: Optional[type] = None,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
-        tools: Optional[List[Dict[str, Any]]] = None
+        tools: Optional[List[Dict[str, Any]]] = None,
+        use_tools: Optional[bool] = None,
     ) -> AIMessage:
-        """Ask Claude a question with optional conversation memory."""
+        """Ask Claude a question with optional conversation memory.
+
+        Args:
+            use_tools: If None, uses instance default. If True/False, overrides for this call.
+        """
         if not self.session:
             raise RuntimeError("Client not initialized. Use async context manager.")
 
+        # If use_tools is None, use the instance default
+        _use_tools = use_tools if use_tools is not None else self.enable_tools
 
         # Generate unique turn ID for tracking
         turn_id = str(uuid.uuid4())
@@ -96,18 +103,24 @@ class ClaudeClient(AbstractClient):
         if system_prompt:
             payload["system"] = system_prompt
 
-        if tools and isinstance(tools, list):
-            for tool in tools:
-                self.register_tool(tool)
-        payload["tools"] = self._prepare_tools()
+        if _use_tools:
+            if tools and isinstance(tools, list):
+                for tool in tools:
+                    self.register_tool(tool)
+
+        if _use_tools:
+            payload["tools"] = self._prepare_tools()
+
         # Track tool calls for the response
         all_tool_calls = []
 
         # Handle tool calls in a loop
+        print(f"Claude ask payload: {json.dumps(payload, indent=2)}")
         while True:
             async with self.session.post(f"{self.base_url}/v1/messages", json=payload) as response:
                 response.raise_for_status()
                 result = await response.json()
+                print(f"Claude response: {result}")
 
                 # Check if Claude wants to use a tool
                 if result.get("stop_reason") == "tool_use":

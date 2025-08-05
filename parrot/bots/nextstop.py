@@ -54,4 +54,4 @@ class NextStop(BasicAgent):
         self.system_prompt_template = prompt_template or AGENT_PROMPT
         self._system_prompt_base = system_prompt or ''
         # Register all the tools:
-        self.tools = self.default_tools(StoreInfo().get_tools())
+        self.tools = self.default_tools(tools)
