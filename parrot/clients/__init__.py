@@ -3,7 +3,11 @@ Client for Interactions with LLMs (Language Models)
 This module provides a client interface for interacting with various LLMs.
 It includes functionality for sending requests, receiving responses, and handling errors.
 """
-from .abstract import AbstractClient, LLM_PRESETS, StreamingRetryConfig
+from .base import (
+    AbstractClient,
+    LLM_PRESETS,
+    StreamingRetryConfig
+)
 from .claude import ClaudeClient, ClaudeModel
 from .vertex import VertexAIClient, VertexAIModel
 from .google import GoogleGenAIClient, GoogleModel
