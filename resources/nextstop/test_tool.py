@@ -1,7 +1,7 @@
 import asyncio
 from navconfig import BASE_DIR
 from querysource.conf import default_dsn
-from parrot.tools.nextstop import StoreInfo
+from parrot.tools.nextstop import StoreInfo, EmployeeToolkit
 
 
 async def test_tool():
@@ -33,6 +33,20 @@ async def test_tool():
     # Get Visit Information:
     visit_info = await toolkit.get_visit_information(store_id="BBY1220")
     print(visit_info)
+
+async def test_employee_tool():
+    toolkit = EmployeeToolkit(dsn=default_dsn, program="hisense")
+    # Get all tools (automatic)
+    tools = toolkit.get_tools()
+    print(f"Available tools: {[tool.name for tool in tools]}")
+    # List tool names
+    tool_names = toolkit.list_tool_names()
+    print(f"Tool names: {tool_names}")
+    # Get by Employee visits:
+    employee_visits = await toolkit.get_by_employee_visits(
+        email='nsackett@hisenseretail.com'
+    )
+    print(employee_visits)
 
 
 if __name__ == "__main__":
