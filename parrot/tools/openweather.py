@@ -4,6 +4,7 @@ OpenWeather Tool migrated to use AbstractTool framework with aiohttp.
 import os
 from typing import Dict, Any, Optional, Literal
 from pathlib import Path
+import json
 import asyncio
 import aiohttp
 from pydantic import BaseModel, Field, field_validator
@@ -500,8 +501,6 @@ class OpenWeatherTool(AbstractTool):
         file_path = self.validate_output_path(file_path)
 
         try:
-            import json
-
             # Save both the result and metadata from ToolResult
             save_data = {
                 "weather_data": weather_data,
