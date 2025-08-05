@@ -181,7 +181,7 @@ class BasicAgent(Chatbot):
                         prefix='report', extension='txt'
                     )
                     async with aiofiles.open(
-                        BASE_DIR.joinpath('static', self.name, 'documents', report_filename),
+                        STATIC_DIR.joinpath(self.name, 'documents', report_filename),
                         'w'
                     ) as report_file:
                         await report_file.write(final_report)
@@ -194,15 +194,35 @@ class BasicAgent(Chatbot):
             self.logger.error(f"Error generating report: {e}")
             return str(e)
 
-    async def pdf_report(self, prompt: str, **kwargs) -> str:
+    async def save_transcript(
+        self,
+        transcript: str,
+        filename: str = None,
+        prefix: str = 'transcript',
+        subdir='transcripts'
+    ) -> str:
+        """Save the transcript to a file."""
+        if not filename:
+            filename = self._create_filename(prefix=prefix, extension='txt')
+        file_path = STATIC_DIR.joinpath(self.name, subdir, filename)
+        try:
+            async with aiofiles.open(file_path, 'w') as f:
+                await f.write(transcript)
+            self.logger.info(f"Transcript saved to {file_path}")
+            return file_path
+        except Exception as e:
+            self.logger.error(f"Error saving transcript: {e}")
+            raise RuntimeError(f"Failed to save transcript: {e}")
+
+    async def pdf_report(self, content: str, **kwargs) -> str:
         """Generate a report based on the provided prompt."""
         # Create a unique filename for the report
         pdf_tool = PDFPrintTool(
             templates_dir=BASE_DIR.joinpath('templates'),
-            output_dir=BASE_DIR.joinpath('static', self.name, 'documents')
+            output_dir=STATIC_DIR.joinpath(self.name, 'documents')
         )
         result = await pdf_tool.execute(
-            text=prompt,
+            text=content,
             template_name="report_template.html",
             file_prefix="nextstop_report",
         )
@@ -210,7 +230,7 @@ class BasicAgent(Chatbot):
 
     async def speech_report(self, report: str, max_lines: int = 15, **kwargs) -> Dict[str, Any]:
         """Generate a PDF Report and a Podcast based on findings."""
-        output_directory = BASE_DIR.joinpath('static', self.name, 'generated_scripts')
+        output_directory = STATIC_DIR.joinpath(self.name, 'generated_scripts')
         output_directory.mkdir(parents=True, exist_ok=True)
         script_name = self._create_filename(prefix='script', extension='txt')
         # creation of speakers:
