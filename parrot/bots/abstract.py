@@ -100,6 +100,11 @@ class AbstractBot(DBInterface, ABC):
         self.logger = logging.getLogger(
             f'{self.name}.Bot'
         )
+        # Initialize ToolManager instead of direct tools dict
+        self.tool_manager = ToolManager(
+            logger=self.logger,
+            debug=self._debug
+        )        
         # Agentic Tools:
         self.tools = tools or []
         self.tool_threshold = tool_threshold
