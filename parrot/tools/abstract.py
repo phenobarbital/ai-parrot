@@ -183,12 +183,20 @@ class AbstractTool(ABC):
 
             # Validate arguments
             validated_args = self.validate_args(**kwargs)
+            print('Validated args:', validated_args)
+            print('ARGS > ', args, kwargs)
 
             # Execute the tool
             if hasattr(validated_args, 'model_dump'):
                 result = await self._execute(*args, **validated_args.model_dump())
             else:
                 result = await self._execute(*args, **kwargs)
+
+            # if is an toolResult, return it directly
+            if isinstance(result, ToolResult):
+                return result
+            if result is None:
+                raise ValueError("Tool execution returned None, expected a result.")
 
             self.logger.info(f"Tool {self.name} executed successfully")
 
