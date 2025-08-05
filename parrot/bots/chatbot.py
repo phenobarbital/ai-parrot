@@ -18,10 +18,6 @@ from ..handlers.models import BotModel
 from .abstract import AbstractBot
 from ..tools import (
     AbstractTool,
-    MathTool,
-    PythonREPLTool,
-    AbstractToolkit,
-    ToolkitTool
 )
 
 class Chatbot(AbstractBot):
@@ -111,7 +107,6 @@ class Chatbot(AbstractBot):
         else:
             # Manual configuration
             await self.from_manual_config()
-
         # Call parent configuration
         await super().configure(app)
 
@@ -154,8 +149,7 @@ class Chatbot(AbstractBot):
         self.operation_mode = getattr(self, 'operation_mode', 'adaptive')
 
         # Load manual tools
-        if self.tools:
-            self.tools_description = self.build_tools_description()
+        if hasattr(self, 'tools') and self.tools:
             self.logger.info(
                 f"Loaded {len(self.tools)} manual tools"
             )
@@ -221,17 +215,6 @@ class Chatbot(AbstractBot):
                     return False
             except NoDataFound:
                 return False
-
-    def build_tools_description(
-        self,
-        style="detailed",
-        include_parameters: bool = True
-    ) -> str:
-        return self.tool_manager.build_tools_description(
-            format_style=style,
-            include_parameters=include_parameters,
-            max_tools=self._max_tools
-        )
 
     async def from_database(
         self,
@@ -305,11 +288,7 @@ class Chatbot(AbstractBot):
         # Load tools from database
         tool_names = self._from_db(bot, 'tools', default=[])
         if tool_names and self.enable_tools:
-            self.tool_manager.register_tools(tool_names)
-            # Build tools description for system prompt
-            self.tools_description = self.build_tools_description()
-        else:
-            self.tools_description = ""
+            self.tools = tool_names
 
         # Embedding Model Configuration
         self.embedding_model: dict = self._from_db(
@@ -368,9 +347,6 @@ class Chatbot(AbstractBot):
 
         # Build tools context if tools are available
         tools_context = ''
-        if hasattr(self, 'tools_description') and self.tools_description:
-            tools_context = f"{self.tools_description}"
-
         # Apply template substitution
         tmpl = Template(self.system_prompt_template)
         final_prompt = tmpl.safe_substitute(
@@ -392,32 +368,6 @@ class Chatbot(AbstractBot):
             self.logger.debug(
                 f"System prompt configured with tools: {len(self.tools)} tools available"
             )
-
-    def is_agent_mode(self) -> bool:
-        """Check if the bot is configured to operate in agent mode."""
-        return (
-            self.enable_tools and
-            len(self.tools) > 0 and
-            self.operation_mode in ['agentic', 'adaptive']
-        )
-
-    def is_conversational_mode(self) -> bool:
-        """Check if the bot is configured for pure conversational mode."""
-        return (
-            not self.enable_tools or
-            len(self.tools) == 0 or
-            self.operation_mode == 'conversational'
-        )
-
-    def get_operation_mode(self) -> str:
-        """Get the current operation mode of the bot."""
-        if self.operation_mode == 'adaptive':
-            # In adaptive mode, determine based on current configuration
-            if len(self.tools) > 0:
-                return 'agentic'
-            else:
-                return 'conversational'
-        return self.operation_mode
 
     async def update_database_config(self, **updates) -> bool:
         """

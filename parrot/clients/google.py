@@ -10,13 +10,6 @@ import io
 import uuid
 from PIL import Image
 import aiohttp
-from openai import max_retries
-from tenacity import (
-    retry,
-    stop_after_attempt,
-    wait_exponential,
-    retry_if_exception_type
-)
 from google import genai
 from google.genai.types import (
     GenerateContentConfig,
@@ -27,7 +20,7 @@ from google.genai.types import (
 from google.genai import types
 from navconfig import config, BASE_DIR
 import pandas as pd
-from .abstract import AbstractClient, ToolDefinition, StreamingRetryConfig
+from .base import AbstractClient, ToolDefinition, StreamingRetryConfig
 from ..models import (
     AIMessage,
     AIMessageFactory,

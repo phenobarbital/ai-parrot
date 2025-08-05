@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 from navconfig import config
 from datamodel.exceptions import ParserError  # pylint: disable=E0611 # noqa
 from datamodel.parsers.json import json_decoder  # pylint: disable=E0611 # noqa
-from .abstract import AbstractClient, BatchRequest, StreamingRetryConfig
+from .base import AbstractClient, BatchRequest, StreamingRetryConfig
 from ..models import (
     AIMessage,
     AIMessageFactory,
