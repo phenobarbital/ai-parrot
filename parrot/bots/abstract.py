@@ -1700,8 +1700,7 @@ class AbstractBot(DBInterface, ABC):
         if self._llm is None:
             return len(self.tools)
         else:
-            self._llm.tool_manager.tool_count()
-        return 0
+            return self._llm.tool_manager.tool_count()
 
     def has_tools(self) -> bool:
         """Check if any tools are available via LLM client."""

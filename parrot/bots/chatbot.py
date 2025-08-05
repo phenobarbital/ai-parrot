@@ -107,8 +107,6 @@ class Chatbot(AbstractBot):
         else:
             # Manual configuration
             await self.from_manual_config()
-        print('FALLING HERE > ', self.tools)
-        print('LLM  >', self._llm)
         # Call parent configuration
         await super().configure(app)
 
