@@ -179,7 +179,7 @@ class AbstractTool(ABC):
             Standardized ToolResult
         """
         try:
-            self.logger.info(f"Executing tool: {self.name}")
+            self.logger.notice(f"Executing tool: {self.name}")
 
             # Validate arguments
             validated_args = self.validate_args(**kwargs)
