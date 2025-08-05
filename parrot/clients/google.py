@@ -468,6 +468,10 @@ class GoogleGenAIClient(AbstractClient):
                     response_content = {
                         "result": response_content
                     }
+                elif isinstance(result, (str, int, float, bool)):
+                    response_content = {
+                        "result": response_content
+                    }
                 function_response_parts.append(
                     Part(
                         function_response=types.FunctionResponse(
@@ -727,8 +731,6 @@ class GoogleGenAIClient(AbstractClient):
         # Prepare conversation history for Google GenAI format
         history = []
         # Construct history directly from the 'messages' array, which should be in the correct format
-        # The last message in 'messages' is the current prompt, which should not be part of history.
-        # It's passed separately in `send_message`.
         if messages:
             for msg in messages[:-1]: # Exclude the current user message (last in list)
                 role = msg['role'].lower()
@@ -761,16 +763,6 @@ class GoogleGenAIClient(AbstractClient):
         # Prepare structured output configuration
         output_config = self._get_structured_config(structured_output)
 
-        if structured_output:
-            if isinstance(structured_output, type):
-                # Pydantic model passed directly
-                generation_config["response_mime_type"] = "application/json"
-                generation_config["response_schema"] = structured_output
-            elif isinstance(structured_output, StructuredOutputConfig):
-                if structured_output.format == OutputFormat.JSON:
-                    generation_config["response_mime_type"] = "application/json"
-                    generation_config["response_schema"] = structured_output.output_type
-
         # Tool selection
         if tools and isinstance(tools, list):
             for tool in tools:
@@ -782,14 +774,41 @@ class GoogleGenAIClient(AbstractClient):
         self.logger.debug(
             f"Selected tool type: {tool_type}"
         )
-        if tools:
+        use_tools = bool(tools)
+        use_structured_output = bool(structured_output)
+        if use_tools:
             # if Tools, reduce temperature to avoid hallucinations.
             generation_config["temperature"] = 0
+
+        # Google limitation: Cannot combine tools with structured output
+        # Strategy: If both are requested, use tools first, then apply structured output to final result
+        if use_tools and use_structured_output:
+            self.logger.info(
+                "Google Gemini doesn't support tools + structured output simultaneously. "
+                "Using tools first, then applying structured output to the final result."
+            )
+            structured_output_for_later = structured_output
+            # Don't set structured output in initial config
+            structured_output = None
+            output_config = None
+        else:
+            structured_output_for_later = None
+            # Set structured output in generation config if no tools conflict
+            if structured_output:
+                if isinstance(structured_output, type):
+                    # Pydantic model passed directly
+                    generation_config["response_mime_type"] = "application/json"
+                    generation_config["response_schema"] = structured_output
+                elif isinstance(structured_output, StructuredOutputConfig):
+                    if structured_output.format == OutputFormat.JSON:
+                        generation_config["response_mime_type"] = "application/json"
+                        generation_config["response_schema"] = structured_output.output_type
 
         # Track tool calls for the response
         all_tool_calls = []
         # Build contents for conversation
         contents = []
+
         for msg in messages:
             role = "model" if msg["role"] == "assistant" else msg["role"]
             if role in ["user", "model"]:
@@ -854,7 +873,7 @@ class GoogleGenAIClient(AbstractClient):
             )
 
             self.logger.info(
-                f"Initial response has {len(all_tool_calls)} function calls"
+                f"Initial response has function calls: {bool(getattr(response, 'candidates', [{}])[0].content.parts if hasattr(response, 'candidates') else False)}"
             )
 
             # Multi-turn function calling loop
@@ -873,7 +892,56 @@ class GoogleGenAIClient(AbstractClient):
 
         # Handle structured output
         final_output = None
-        if structured_output:
+        if structured_output_for_later and use_tools and assistant_response_text:
+            try:
+                # Create a new generation config for structured output only
+                structured_config = {
+                    "max_output_tokens": max_tokens or self.max_tokens,
+                    "temperature": temperature or self.temperature,
+                    "response_mime_type": "application/json"
+                }
+                # Set the schema based on the type of structured output
+                if isinstance(structured_output_for_later, type):
+                    structured_config["response_schema"] = structured_output_for_later
+                elif isinstance(structured_output_for_later, StructuredOutputConfig):
+                    if structured_output_for_later.format == OutputFormat.JSON:
+                        structured_config["response_schema"] = structured_output_for_later.output_type
+                # Create a new client call without tools for structured output
+                format_prompt = (
+                    f"Please format the following information according to the requested JSON structure. "
+                    f"Return only the JSON object with the requested fields:\n\n{assistant_response_text}"
+                )
+                structured_response = await self.client.aio.models.generate_content(
+                    model=model,
+                    contents=[{"role": "user", "parts": [{"text": format_prompt}]}],
+                    config=GenerateContentConfig(**structured_config)
+                )
+                # Extract structured text
+                if structured_text := self._safe_extract_text(structured_response):
+                    # Parse the structured output
+                    if isinstance(structured_output_for_later, type):
+                        if hasattr(structured_output_for_later, 'model_validate_json'):
+                            final_output = structured_output_for_later.model_validate_json(structured_text)
+                        elif hasattr(structured_output_for_later, 'model_validate'):
+                            parsed_json = self._json.loads(structured_text)
+                            final_output = structured_output_for_later.model_validate(parsed_json)
+                        else:
+                            final_output = self._json.loads(structured_text)
+                    elif isinstance(structured_output_for_later, StructuredOutputConfig):
+                        final_output = await self._parse_structured_output(
+                            structured_text,
+                            structured_output_for_later
+                        )
+                    else:
+                        final_output = self._json.loads(structured_text)
+                else:
+                    self.logger.warning("No structured text received, falling back to original response")
+                    final_output = assistant_response_text
+            except Exception as e:
+                self.logger.error(f"Error parsing structured output: {e}")
+                # Fallback to original text if structured output fails
+                final_output = assistant_response_text
+        elif structured_output and not use_tools:
             try:
                 final_output = await self._parse_structured_output(
                     assistant_response_text,
@@ -888,7 +956,7 @@ class GoogleGenAIClient(AbstractClient):
         final_assistant_message = {
             "role": "model",
             "content": [
-                {"type": "text", "text": final_output}
+                {"type": "text", "text": str(final_output) if final_output != assistant_response_text else assistant_response_text}
             ]
         }
 

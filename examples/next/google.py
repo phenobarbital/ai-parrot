@@ -114,7 +114,7 @@ async def main():
             "Calculate both: 5 + 3 and 4 * 7. Use the appropriate tools for each calculation.",
             model=GoogleModel.GEMINI_2_5_FLASH
         )
-        print("Response text:", response.text)
+        print("Response text:", response.output)
         print("Model used:", response.model)
         print("Provider:", response.provider)
         print("Has tools:", response.has_tools)
