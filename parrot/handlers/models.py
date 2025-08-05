@@ -117,6 +117,7 @@ class BotModel(Model):
     # Bot personality and behavior
     role: str = Field(
         default="AI Assistant",
+        ui_help="The bot’s function or identity from the user’s perspective.", 
         required=False
     )
     goal: str = Field(
