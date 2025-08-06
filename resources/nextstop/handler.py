@@ -349,14 +349,16 @@ class NextStopAgent(AgentHandler):
             podcast_output = await agent.speech_report(
                 report=final_report,
                 max_lines=20,
-                speakers=1
+                num_speakers=1
             )
             response.podcast_path = str(podcast_output.get('podcast_path', None))
             response.script_path = str(podcast_output.get('script_path', None))
             response.documents.append(response.podcast_path)
             response.documents.append(response.script_path)
         except Exception as e:
-            self.logger.error(f"Error generating podcast: {e}")
+            self.logger.error(
+                f"Error generating podcast: {e}"
+            )
         # Save the final report to the response
         response.output = textwrap.fill(final_report, width=80)
         response.status = "success"
