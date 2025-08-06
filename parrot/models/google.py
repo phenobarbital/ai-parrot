@@ -107,6 +107,10 @@ class ConversationalScriptConfig(BaseModel):
         None,
         description="An optional system prompt to guide the AI's behavior during script generation."
     )
+    system_instruction: Optional[str] = Field(
+        None,
+        description="An optional system instruction to provide additional context or constraints for the script generation."
+    )
 
 
 # Define the gender type for clarity and validation
