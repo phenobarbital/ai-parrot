@@ -95,6 +95,9 @@ class BasicAgent(Chatbot):
                 PythonPandasTool(
                     report_dir=STATIC_DIR.joinpath(self.agent_id, 'documents')
                 ),
+                # PDFPrintTool(
+                #     output_dir=STATIC_DIR.joinpath(self.agent_id, 'documents')
+                # ),
                 # GoogleLocationTool(),
                 # GoogleRoutesTool(
                 #     output_dir=STATIC_DIR.joinpath(self.agent_id, 'routes')
@@ -106,9 +109,6 @@ class BasicAgent(Chatbot):
                 #     use_long_audio_synthesis=True,
                 #     output_dir=STATIC_DIR.joinpath(self.agent_id, 'podcasts')
                 # ),
-                PDFPrintTool(
-                    output_dir=STATIC_DIR.joinpath(self.agent_id, 'documents')
-                ),
                 # PowerPointTool(
                 #     output_dir=STATIC_DIR.joinpath(self.agent_id, 'presentations')
                 # )
@@ -233,19 +233,20 @@ class BasicAgent(Chatbot):
         )
         return result
 
-    async def speech_report(self, report: str, max_lines: int = 15, speakers: int = 2, **kwargs) -> Dict[str, Any]:
+    async def speech_report(self, report: str, max_lines: int = 15, num_speakers: int = 2, **kwargs) -> Dict[str, Any]:
         """Generate a PDF Report and a Podcast based on findings."""
         output_directory = STATIC_DIR.joinpath(self.agent_id, 'generated_scripts')
         output_directory.mkdir(parents=True, exist_ok=True)
         script_name = self._create_filename(prefix='script', extension='txt')
         # creation of speakers:
         speakers = []
-        num_speakers = 0
         for _, speaker in self.speakers.items():
             speaker['gender'] = speaker.get('gender', 'neutral').lower()
             speakers.append(FictionalSpeaker(**speaker))
-            num_speakers += 1
-            if num_speakers >= speakers:
+            if len(speakers) > num_speakers:
+                self.logger.warning(
+                    f"Too many speakers defined, limiting to {num_speakers}."
+                )
                 break
 
         # 1. Define the script configuration
