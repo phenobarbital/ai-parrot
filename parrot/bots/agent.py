@@ -35,6 +35,7 @@ class BasicAgent(Chatbot):
     _agent_response = AgentResponse
     speech_context: str = ""
     speech_system_prompt: str = ""
+    podcast_system_instruction: str = None
     speech_length: int = 10  # Default length for the speech report
     speakers: Dict[str, str] = {
         "interviewer": {
@@ -136,9 +137,10 @@ class BasicAgent(Chatbot):
                 content = await f.read()
             return content
         except Exception as e:
-            raise RuntimeError(
+            self.logger.error(
                 f"Failed to read prompt file {prompt_file}: {e}"
             )
+            return None
 
     async def generate_report(
         self,
@@ -231,23 +233,35 @@ class BasicAgent(Chatbot):
         )
         return result
 
-    async def speech_report(self, report: str, max_lines: int = 15, **kwargs) -> Dict[str, Any]:
+    async def speech_report(self, report: str, max_lines: int = 15, speakers: int = 2, **kwargs) -> Dict[str, Any]:
         """Generate a PDF Report and a Podcast based on findings."""
         output_directory = STATIC_DIR.joinpath(self.agent_id, 'generated_scripts')
         output_directory.mkdir(parents=True, exist_ok=True)
         script_name = self._create_filename(prefix='script', extension='txt')
         # creation of speakers:
         speakers = []
+        num_speakers = 0
         for _, speaker in self.speakers.items():
             speaker['gender'] = speaker.get('gender', 'neutral').lower()
             speakers.append(FictionalSpeaker(**speaker))
+            num_speakers += 1
+            if num_speakers >= speakers:
+                break
+
         # 1. Define the script configuration
+        podcast_instruction = await self.open_prompt(
+            'for_podcast.txt'
+        )
+        podcast_instruction.format(
+            report_text=report,
+        )
         script_config = ConversationalScriptConfig(
             context=self.speech_context,
             speakers=speakers,
             report_text=report,
             system_prompt=self.speech_system_prompt,
             length=self.speech_length,  # Use the speech_length attribute
+            system_instruction=podcast_instruction or None
         )
         async with self.client as client:
             # 2. Generate the conversational script
@@ -263,6 +277,8 @@ class BasicAgent(Chatbot):
                 await script_file.write(voice_prompt.prompt)
             self.logger.info(f"Script saved to {script_output_path}")
             # 4. Generate the audio podcast
+            output_directory = STATIC_DIR.joinpath(self.agent_id, 'podcasts')
+            output_directory.mkdir(parents=True, exist_ok=True)
             speech_result = await client.generate_speech(
                 prompt_data=voice_prompt,
                 output_directory=output_directory,

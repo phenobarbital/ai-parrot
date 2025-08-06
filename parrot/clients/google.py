@@ -1665,7 +1665,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
 
         if not interviewer or not interviewee:
             raise ValueError("Must have exactly one interviewer and one interviewee.")
-        system_instruction = f"""
+        system_instruction = report_data.system_instruction or f"""
 You are a scriptwriter. Your task is {system_prompt} for a conversation between {interviewer.name} and {interviewee.name}. "
 
 **Source Report:**"
@@ -1707,7 +1707,17 @@ You are a scriptwriter. Your task is {system_prompt} for a conversation between 
 
         final_config = GenerateContentConfig(
             system_instruction=system_instruction,
-            tools=None,  # No tools needed for translation
+            safety_settings=[
+                types.SafetySetting(
+                    category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
+                    threshold=types.HarmBlockThreshold.BLOCK_NONE,
+                ),
+                types.SafetySetting(
+                    category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+                    threshold=types.HarmBlockThreshold.BLOCK_NONE,
+                ),
+            ],
+            tools=None,  # No tools needed for conversation script:
             **generation_config
         )
 
