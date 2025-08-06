@@ -97,6 +97,11 @@ class AIMessage(BaseModel):
         default_factory=datetime.now, description="When the response was created"
     )
 
+    response_time: Optional[float] = Field(
+        default=None,
+        description="Time taken to generate the response (in seconds)"
+    )
+
     # Raw response for debugging
     raw_response: Optional[Dict[str, Any]] = Field(
         default=None, description="Original response from provider"
@@ -221,7 +226,7 @@ class AIMessage(BaseModel):
         self.search_type = search_type
         self.search_score_threshold = score_threshold
         if sources:
-            self.context_sources.extend(sources)  # noqa
+            self.context_sources.extend(sources)   # pylint: disable=E1101 # noqa
 
     def set_conversation_context_info(
         self,
@@ -258,7 +263,7 @@ class AIMessage(BaseModel):
                 'count': len(self.tool_calls)
             },
             'timing': {
-                'created_at': self.created_at.isoformat()  # noqa
+                'created_at': self.created_at.isoformat()  # pylint: disable=E1101 # noqa
             }
         }
 
@@ -435,6 +440,50 @@ class AIMessageFactory:
             response=content
         )
 
+        if conversation_history:
+            ai_message.used_conversation_history = True
+            ai_message.conversation_context_length = len(conversation_history.turns) if hasattr(conversation_history, 'turns') else 0
+
+        return ai_message
+
+    @staticmethod
+    def create_message(
+        response: Any,
+        input_text: str,
+        model: str,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        turn_id: Optional[str] = None,
+        structured_output: Any = None,
+        tool_calls: List[ToolCall] = None,
+        # Add these new parameters:
+        conversation_history: Optional[Any] = None,
+        text_response: Optional[str] = None,
+        usage: Optional[CompletionUsage] = None,
+        response_time: Optional[float] = None
+    ) -> AIMessage:
+        """Create AIMessage from any provider response."""
+        if hasattr(response, 'provider'):
+            provider = response.provider.lower()
+        else:
+            provider = "unknown"
+
+        ai_message = AIMessage(
+            input=input_text,
+            output=structured_output,
+            model=model,
+            provider=provider,
+            stop_reason="completed",
+            finish_reason="completed",
+            tool_calls=tool_calls or [],
+            user_id=user_id,
+            session_id=session_id,
+            turn_id=turn_id,
+            raw_response=response.__dict__ if hasattr(response, '__dict__') else {"result": text_response},
+            response=text_response,
+            usage=usage if usage else CompletionUsage.from_response(response),
+            response_time=response_time
+        )
         if conversation_history:
             ai_message.used_conversation_history = True
             ai_message.conversation_context_length = len(conversation_history.turns) if hasattr(conversation_history, 'turns') else 0

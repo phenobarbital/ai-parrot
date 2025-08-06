@@ -76,7 +76,6 @@ For **each** question `column_name` produce:
 • **Resolved Issues:** issues present earlier but **absent** `Visit 1`
 • **Persisting Issues:** issues that appear in all visits
 • **Notable Phrase Shifts:** any big change in Top Phrases frequency
-• **Overall Assessment:** “Better / Worse / No Material Change” with one-sentence rationale
 
 IMPORTANT INSTRUCTIONS:
 - Strictly follow this markdown format without exception.
