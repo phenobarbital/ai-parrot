@@ -217,6 +217,8 @@ class AbstractTool(ABC):
             )
 
         except Exception as e:
+            print('ERROR')
+            print(f'============ {e} ============')
             error_msg = f"Error in {self.name}: {str(e)}"
             self.logger.error(error_msg)
             self.logger.error(traceback.format_exc())

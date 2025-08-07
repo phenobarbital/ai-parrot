@@ -179,6 +179,8 @@ class AgentHandler(BaseView):
     agent_id: str = "nextstop"
     _tools: List[AbstractTool] = []
     _agent: BasicAgent = None
+    _use_llm: str = 'google'
+    _use_model: str = 'gemini-2.5-pro'
     # signals
     on_startup: Optional[Callable] = None
     on_shutdown: Optional[Callable] = None
@@ -777,18 +779,19 @@ class AgentHandler(BaseView):
     ) -> BasicAgent:
         """Create and configure a BasicAgent instance."""
         try:
-            llm = OpenAIClient(
-                model="gpt-4.1-mini",
-            )
+            # llm = OpenAIClient(
+            #     model="gpt-4.1-mini",
+            # )
             # llm = ClaudeClient(
             #     model="claude-3-5-sonnet-20241022"
             # )
             agent = self._agent_class(
                 name=self.agent_name,
                 tools=self._tools,
-                #llm=llm,
+                llm=self._use_llm,
                 #model="gpt-4.1-mini",
                 # model="claude-3-5-sonnet-20241022",
+                model=self._use_model
             )
             agent.set_response(self._agent_response)
             await agent.configure()
