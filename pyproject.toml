@@ -136,7 +136,7 @@ vector = [
 ]
 
 anthropic = [
-    "anthropic==0.58.2",
+    "anthropic==0.61.0",
 ]
 
 openai = [
