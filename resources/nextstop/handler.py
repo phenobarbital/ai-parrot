@@ -54,6 +54,8 @@ class NextStopAgent(AgentHandler):
     agent_id: str = "nextstop"
     _agent_class: type = NextStop
     _agent_response = NextStopResponse
+    _use_llm: str = 'openai'
+    _use_model: str = 'gpt-4.1-mini'
     _tools = []
 
     base_route: str = '/api/v1/agents/nextstop'
@@ -187,7 +189,6 @@ class NextStopAgent(AgentHandler):
         # Get Store ID if Provided:
         store_id = data.get('store_id', None)
         manager_id = data.get('manager_id', None)
-        employee = data.get('employee_name', None)
         employee_id = data.get('employee_id', None)
         query = data.get('query', None)
         if not store_id and not manager_id and not employee_id and not query:
@@ -217,6 +218,27 @@ class NextStopAgent(AgentHandler):
                 'store_id': store_id,
 
             }
+        elif manager_id and employee_id:
+            job = await self.register_background_task(
+                task=self._nextstop_manager,
+                done_callback=self.done_question,
+                **{
+                    'content': f"Manager: {manager_id}, Employee: {employee_id}",
+                    'attributes': {
+                        'agent_name': self.agent_name,
+                        'user_id': self._userid,
+                        "manager_id": manager_id,
+                        "employee_id": employee_id
+                    },
+                    'manager_id': manager_id,
+                    'employee_id': employee_id
+                }
+            )
+            rsp_args = {
+                "message": f"NextStopAgent is processing the request for manager {manager_id} and employee {manager_id}",
+                'manager_id': manager_id,
+                'employee': manager_id
+            }
         elif employee_id:
             # Execute the NextStop agent for a specific employee using the Background task:
             job = await self.register_background_task(
@@ -235,27 +257,6 @@ class NextStopAgent(AgentHandler):
             rsp_args = {
                 "message": f"NextStopAgent is processing the request for employee {employee_id}",
                 'employee_id': employee_id
-            }
-        elif manager_id and employee:
-            job = await self.register_background_task(
-                task=self._nextstop_manager,
-                done_callback=self.done_question,
-                **{
-                    'content': f"Manager: {manager_id}, Employee: {employee}",
-                    'attributes': {
-                        'agent_name': self.agent_name,
-                        'user_id': self._userid,
-                        "manager_id": manager_id,
-                        "employee_name": employee
-                    },
-                    'manager_id': manager_id,
-                    'employee_name': employee
-                }
-            )
-            rsp_args = {
-                "message": f"NextStopAgent is processing the request for manager {manager_id} and employee {employee}",
-                'manager_id': manager_id,
-                'employee': employee
             }
         elif manager_id:
             # Execute the NextStop agent for a specific manager using the Background task:
@@ -394,14 +395,14 @@ class NextStopAgent(AgentHandler):
     async def _nextstop_manager(
         self,
         manager_id: str,
-        employee_name: str,
+        employee_id: str,
         **kwargs
     ) -> NextStopResponse:
         """Generate a report for the NextStop agent."""
-        query = await self.open_prompt('manager.txt')
+        query = await self.open_prompt('employee_comparison.txt')
         question = query.format(
             manager_id=manager_id,
-            employee_name=employee_name
+            employee_id=employee_id
         )
         try:
             response, _ = await self.ask_agent(question)

@@ -6,8 +6,8 @@
 - **Store ID:** store_id
 - **Store Name:** store_name
 - **Store Address:** store_address
-- **Most recent Visit:** use latest_visit_date from get_visit_info
-- **Most recent visitor:** use visitor_name from get_visit_info
+- **Most recent Visit:** use latest_visit_date from get_visit_information
+- **Most recent visitor:** use visitor_name from get_visit_information
 - **Current Weather:** Uses `openweather_tool` to get current weather information for the store's location.
 - **Foot Traffic:** Use `get_foot_traffic` to get foot traffic data for the store, for every day of the week and average of daily foot traffic.
   - Compare the Foot Traffic with day of visits to detect deviations.
