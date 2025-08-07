@@ -14,9 +14,9 @@ def today_date() -> date:
 
 class EmployeeInput(BaseModel):
     """Input for the employee-related operations in the NextStop tool."""
-    employee_id: str = Field(description="Unique identifier for the employee")
-    display_name: str = Field(description="Name of the employee")
-    email: str = Field(..., description="Email address of the employee")
+    employee_id: Optional[str] = Field(default=None, description="Unique identifier for the employee")
+    display_name: Optional[str] = Field(default=None, description="Name of the employee")
+    email: Optional[str] = Field(default=None, description="Email address of the employee")
 
     # Add a model_config to prevent additional properties
     model_config = ConfigDict(
@@ -27,8 +27,6 @@ class EmployeeInput(BaseModel):
 class ManagerInput(BaseModel):
     """Input for the manager-related operations in the NextStop tool."""
     manager_id: str = Field(description="Unique identifier for the manager")
-    display_name: str = Field(description="Name of the manager")
-    email: str = Field(description="Email address of the manager")
 
     # Add a model_config to prevent additional properties
     model_config = ConfigDict(
@@ -58,6 +56,66 @@ class VisitDetail(BaseModel):
             return v[:max_length-6] + " (...)"
 
         return v
+
+class VisitsByManager(BaseModel):
+    """Individual record for visits by manager data"""
+    visitor_name: str = Field(..., description="Name of the visitor/manager")
+    visitor_email: str = Field(..., description="Email address of the visitor")
+    assigned_stores: int = Field(..., description="Number of stores assigned to the manager")
+    total_visits: int = Field(..., description="Total number of visits made")
+    visited_stores: int = Field(..., description="Number of stores actually visited")
+    visit_duration: float = Field(..., description="Total visit duration in minutes")
+    average_visit_duration: Optional[float] = Field(..., description="Average visit duration in minutes")
+    hour_of_visit: float = Field(..., description="Average hour of visit (24-hour format)")
+    current_visits: int = Field(..., description="Number of visits in current month")
+    previous_week_visits: int = Field(..., description="Number of visits in previous week")
+    previous_month_visits: int = Field(..., description="Number of visits in previous month's week")
+    most_frequent_day_of_week: int = Field(..., description="Most frequent day of week (0=Monday, 6=Sunday)")
+    most_frequent_store: str = Field(..., description="Most frequently visited store")
+    most_frequent_store_visits: int = Field(..., description="Number of visits to the most frequent store")
+    visit_ratio: str = Field(..., description="Ratio of visited stores to assigned stores")
+    day_of_week: str = Field(..., description="Most frequent day name")
+    ranking_visits: int = Field(..., description="Current ranking by visits")
+    previous_week_ranking: int = Field(..., description="Previous week ranking by visits")
+    previous_month_ranking: int = Field(..., description="Previous month ranking by visits")
+    ranking_duration: int = Field(..., description="Ranking by visit duration")
+
+class VisitsByManagerOutput(BaseModel):
+    """Structured output for get_visits_by_manager tool"""
+    records: List[VisitsByManager] = Field(..., description="List of visitor stats")
+    total_records: int = Field(..., description="Total number of records returned")
+    generated_at: datetime = Field(default_factory=datetime.now, description="Timestamp when data was generated")
+
+    class Config:
+        json_encoders = {
+            datetime: lambda dt: dt.isoformat()
+        }
+
+
+class EmployeeSales(BaseModel):
+    """Individual record for employee sales data"""
+    visitor_name: str = Field(..., description="Name of the employee/visitor")
+    visitor_email: str = Field(..., description="Email address of the employee")
+    total_sales: Optional[int] = Field(description="Total sales amount across all periods")
+    sales_current_week: Optional[int] = Field(description="Sales in current week")
+    sales_previous_week: Optional[int] = Field(description="Sales in previous week")
+    sales_previous_month: Optional[int] = Field(description="Sales from week of previous month")
+    current_ranking: Optional[int] = Field(description="Current ranking by sales performance")
+    previous_week_ranking: Optional[int] = Field(description="Previous month ranking by sales")
+    previous_month_ranking: Optional[int] = Field(description="Two months ago ranking by sales")
+
+
+class EmployeeSalesOutput(BaseModel):
+    """Structured output for get_employee_sales tool"""
+    records: List[EmployeeSales] = Field(..., description="List of employee sales")
+    total_records: int = Field(..., description="Total number of records returned")
+    generated_at: datetime = Field(default_factory=datetime.now, description="Timestamp when data was generated")
+
+    class Config:
+        json_encoders = {
+            datetime: lambda dt: dt.isoformat()
+        }
+
 
 class EmployeeVisit(BaseModel):
     """
@@ -335,81 +393,101 @@ class EmployeeToolkit(BaseNextStop):
 
     This toolkit provides tools to:
     - employee_information: Get basic employee information.
-    - get_employee_sales: Fetch sales data for a specific employee and ranked performance.
     - search_employee: Search for employees based on display name or email.
     - get_by_employee_visits: Get visit information for a specific employee.
     - get_visits_by_manager: Get visit information for a specific manager, including their employees.
+    - get_employee_sales: Fetch sales data for a specific employee and ranked performance.
     """
 
     @tool_schema(ManagerInput)
-    async def get_visits_by_manager(self, manager_id: str, **kwargs) -> str:
+    async def get_visits_by_manager(self, manager_id: str, **kwargs) -> List[VisitsByManager]:
         """Get Employee Visits data for a specific Manager, requires the associated_oid of the manager.
         including total visits, average visit duration, and most frequent visit hours.
         Useful for analyzing employee performance and visit patterns.
         """
         sql = f"""
-WITH base_data AS (
+WITH employee_data AS (
+WITH employee_info AS (
     SELECT
-        d.rep_name,
-        d.rep_email AS visitor_email,
-        st.store_id,
-        f.form_id,
-        f.visit_date,
-        f.visit_timestamp,
-        f.visit_length,
-        f.visit_dow,
-        EXTRACT(HOUR FROM f.visit_timestamp) AS visit_hour,
-        DATE_TRUNC('month', f.visit_date) AS visit_month,
-        DATE_TRUNC('month', CURRENT_DATE) AS current_month,
-        DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '1 month' AS previous_month,
-        DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '2 month' AS two_months_ago
+        d.rep_name as visitor_name,
+        d.rep_email as visitor_email,
+        COUNT(DISTINCT st.store_id) AS assigned_stores,
+      -- 1) Current week Sunday → Saturday
+      (CURRENT_DATE
+        - EXTRACT(dow FROM CURRENT_DATE) * INTERVAL '1 day'
+      )::date                               AS current_week_start,
+      (CURRENT_DATE
+        - EXTRACT(dow FROM CURRENT_DATE) * INTERVAL '1 day'
+        + INTERVAL '6 days'
+      )::date                               AS current_week_end,
+
+      -- 2) Previous week (the Sunday–Saturday immediately before)
+      (
+        CURRENT_DATE
+        - EXTRACT(dow FROM CURRENT_DATE) * INTERVAL '1 day'
+        - INTERVAL '1 week'
+      )::date                               AS previous_week_start,
+      (
+        CURRENT_DATE
+        - EXTRACT(dow FROM CURRENT_DATE) * INTERVAL '1 day'
+        - INTERVAL '1 week'
+        + INTERVAL '6 days'
+      )::date                               AS previous_week_end,
+
+      -- 3) “Same week” one month ago (Sunday–Saturday)
+      (
+        (CURRENT_DATE - INTERVAL '1 month')::date
+        - EXTRACT(dow FROM (CURRENT_DATE - INTERVAL '1 month')) * INTERVAL '1 day'
+      )::date                               AS week_prev_month_start,
+      (
+        (CURRENT_DATE - INTERVAL '1 month')::date
+        - EXTRACT(dow FROM (CURRENT_DATE - INTERVAL '1 month')) * INTERVAL '1 day'
+        + INTERVAL '6 days'
+      )::date                               AS week_prev_month_end
     FROM hisense.vw_stores st
     LEFT JOIN hisense.stores_details d USING (store_id)
-    LEFT JOIN hisense.form_information f ON d.rep_email = f.visitor_email
-    WHERE
-        cast_to_integer(st.customer_id) = 401865
-        AND d.manager_name = '{manager_id}'
-        AND d.rep_name <> '0'
-        AND f.visit_date >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '2 months'
-),
-employee_info AS (
-    SELECT
-        d.rep_name,
-        d.rep_email AS visitor_email,
-        COUNT(DISTINCT st.store_id) AS assigned_stores
-    FROM hisense.vw_stores st
-    LEFT JOIN hisense.stores_details d USING (store_id)
-    WHERE
-        cast_to_integer(st.customer_id) = 401865
-        AND d.manager_name = 'mcarter@trocglobal.com'
-        AND d.rep_name <> '0'
+    WHERE d.manager_name = '{manager_id}'
+        AND d.rep_email <> '' and d.rep_name <> '0'
     GROUP BY d.rep_name, d.rep_email
-),
-monthly_visits AS (
+)
     SELECT
-        bd.rep_name,
-        bd.visitor_email,
-        COALESCE(count(DISTINCT bd.form_id) FILTER(where visit_month = bd.current_month), 0)::integer AS current_visits,
-        COALESCE(count(DISTINCT bd.form_id) FILTER(where visit_month = bd.previous_month), 0)::integer AS previous_month_visits,
-        COALESCE(count(DISTINCT bd.form_id) FILTER(where visit_month = bd.two_months_ago), 0)::integer AS two_month_visits,
-        COUNT(DISTINCT bd.store_id) AS visited_stores,
-        AVG(bd.visit_length) AS visit_duration,
-        AVG(bd.visit_hour) AS hour_of_visit,
-        AVG(bd.visit_dow)::integer AS most_frequent_day_of_week
-    FROM base_data bd
-    GROUP BY bd.rep_name, bd.visitor_email
-),
-final AS (
-    SELECT
-        ei.*,
-        mv.current_visits,
-        mv.previous_month_visits,
-        mv.two_month_visits,
-        mv.visited_stores,
-        mv.visit_duration,
-        mv.hour_of_visit,
-        mv.most_frequent_day_of_week,
-        CASE most_frequent_day_of_week
+        e.visitor_name,
+        e.visitor_email,
+        e.assigned_stores,
+        -- visit stats:
+        count(distinct f.form_id) as total_visits,
+        count(distinct f.store_id) as visited_stores,
+        SUM(f.visit_length) AS visit_duration,
+        AVG(f.visit_length) AS average_visit_duration,
+        AVG(f.visit_hour) AS hour_of_visit,
+        count(DISTINCT f.form_id) FILTER(WHERE f.visit_date between current_week_start and current_week_end) AS current_visits,
+        count(DISTINCT f.form_id) FILTER(WHERE f.visit_date between previous_week_start and previous_week_end) AS previous_week_visits,
+        count(DISTINCT f.form_id) FILTER(WHERE f.visit_date between week_prev_month_start and week_prev_month_end) AS previous_month_visits,
+        AVG(f.visit_dow)::integer AS most_frequent_day_of_week,
+        ts.store_id   AS most_frequent_store,
+        ts.visits_cnt AS most_frequent_store_visits
+    FROM hisense.form_information f
+    JOIN employee_info e USING(visitor_email)
+    LEFT JOIN hisense.stores_details d USING (store_id)
+    LEFT JOIN LATERAL (
+      SELECT
+      f2.store_id,
+      COUNT(*) AS visits_cnt
+      FROM hisense.form_information f2
+      WHERE f2.visitor_email = e.visitor_email
+      AND f2.visit_date >= e.week_prev_month_start
+      GROUP BY f2.store_id
+      ORDER BY visits_cnt DESC
+      LIMIT 1
+    ) as ts ON TRUE
+    WHERE f.visit_date >= week_prev_month_start
+    AND d.manager_name = 'mcarter@trocglobal.com'
+    GROUP BY e.visitor_name, e.visitor_email, e.assigned_stores, ts.store_id, ts.visits_cnt
+)
+SELECT
+    ed.*,
+    round(coalesce(troc_percent(visited_stores, assigned_stores), 0) * 100, 1)::text   || '%' AS visit_ratio,
+    CASE most_frequent_day_of_week
         WHEN 0 THEN 'Monday'
         WHEN 1 THEN 'Tuesday'
         WHEN 2 THEN 'Wednesday'
@@ -418,134 +496,90 @@ final AS (
         WHEN 5 THEN 'Saturday'
         WHEN 6 THEN 'Sunday'
         ELSE 'Unknown' -- Handle any unexpected values
-    END AS day_of_week
-    FROM employee_info ei
-    LEFT JOIN monthly_visits mv
-        ON ei.visitor_email = mv.visitor_email
-    WHERE mv.current_visits is not null
-)
-SELECT
-    *,
+    END AS day_of_week,
     RANK() OVER (ORDER BY current_visits DESC) AS ranking_visits,
+    RANK() OVER (ORDER BY previous_week_visits DESC) AS previous_week_ranking,
     RANK() OVER (ORDER BY previous_month_visits DESC) AS previous_month_ranking,
-    RANK() OVER (ORDER BY two_month_visits DESC) AS two_month_ranking,
     RANK() OVER (ORDER BY visit_duration DESC) AS ranking_duration
-FROM final
+FROM employee_data ed
 ORDER BY visitor_email DESC;
         """
         try:
-            visit_data = await self._get_dataset(
+            return await self._get_dataset(
                 sql,
-                output_format='pandas',
-                structured_obj=None
+                output_format='structured',
+                structured_obj=VisitsByManager
             )
-            if visit_data.empty:
-                raise ToolError(
-                    f"No Employee Visit data found for manager {manager_id}."
-                )
-            return self._json_encoder(
-                visit_data.to_dict(orient='records')
-            )  # type: ignore[return-value]
         except ToolError as te:
-            return f"No Employee Visit data found for manager {manager_id}, error: {te}"
+            raise ValueError(
+                f"No Employee Visit data found for manager {manager_id}, error: {te}"
+            )
         except ValueError as ve:
-            return f"Invalid data format, error: {ve}"
+            raise ValueError(f"Invalid data format, error: {ve}")
         except Exception as e:
-            return f"Error fetching employee visit data: {e}"
+            raise ValueError(f"Error fetching employee visit data: {e}")
 
+    @tool_schema(ManagerInput)
     async def get_employee_sales(
         self,
         manager_id: str,
         **kwargs
-    ) -> str:
+    ) -> List[EmployeeSales]:
         """Get Sales and goals for all employees related to a Manager.
         Returns a ranked list of employees based on their sales performance.
         Useful for understanding employee performance and sales distribution.
         """
         sql = f"""
-WITH sales AS (
-WITH stores as(
-    select st.store_id, d.rep_name, market_name, region_name, d.rep_email as visitor_email,
+WITH stores AS (
+    SELECT
+    st.store_id, d.rep_name as visitor_name, market_name, region_name, d.rep_email as visitor_email,
     count(store_id) filter(where focus = true) as focus_400,
     count(store_id) filter(where wall_display = true) as wall_display,
     count(store_id) filter(where triple_stack = true) as triple_stack,
     count(store_id) filter(where covered = true) as covered,
     count(store_id) filter(where end_cap = true) as endcap,
-    count(store_id)  as stores
+    DATE_TRUNC('week', CURRENT_DATE)::date - 1 AS current_week,
+    (DATE_TRUNC('week', CURRENT_DATE)::date - 1) - INTERVAL '1 week' AS previous_week,
+    (DATE_TRUNC('week', (CURRENT_DATE - INTERVAL '1 month'))::date - 1)::date AS week_previous_month
     FROM hisense.vw_stores st
     left join hisense.stores_details d using(store_id)
-    where cast_to_integer(st.customer_id) = 401865
-    and manager_name = '{manager_id}' and rep_name <> '0'
-    group by st.store_id, d.rep_name, d.rep_email, market_name, region_name
-), dates as (
-    select date_trunc('month', case when firstdate < '2025-04-01' then '2025-04-01' else firstdate end)::date as month,
-    case when firstdate < '2025-04-01' then '2025-04-01' else firstdate end as firstdate,
-    case when lastdate > case when '2025-06-19' >= current_date then current_date - 1 else '2025-06-19' end then case when '2025-06-19' >= current_date then current_date - 1 else '2025-06-19' end else lastdate end as lastdate
-    from public.week_range('2025-04-01'::date, (case when '2025-06-19' >= current_date then current_date - 1 else '2025-06-19' end)::date)
-), goals as (
-    select date_trunc('month',firstdate)::date as month, store_id,
-    case when lower(effective_date) < firstdate and upper(effective_date)-1 = lastdate then
-        troc_percent(goal_value,7) * (lastdate - firstdate + 1)::integer else
-    case when lower(effective_date) = firstdate and upper(effective_date)-1 > lastdate then
-        troc_percent(goal_value,7) * (lastdate - lower(effective_date) + 1)::integer else
-    goal_value
-    end end as goal_mes,
-    lower(effective_date) as firstdate_effective, firstdate,  upper(effective_date)-1 as lastdate_effective, lastdate, goal_value, (lastdate - firstdate + 1)::integer as dias_one, (lastdate - lower(effective_date) + 1)::integer as last_one, (firstdate - lower(effective_date) + 1)::integer as dias
-    from hisense.stores_goals g
-    cross join dates d
-    where effective_date @> firstdate::date
-    and goal_name = 'Sales Weekly Premium'
-), total_goals as (
-    select month, store_id, sum(goal_mes) as goal_value
-    from goals
-    group by month, store_id
-), sales as (
-    select date_trunc('month',order_date_week)::date as month, store_id, coalesce(sum(net_sales),0) as sales
-    from hisense.summarized_inventory i
-    INNER JOIN hisense.all_products p using(model)
-    where order_date_week::date between '2025-04-01'::date and (case when '2025-06-19' >= current_date then current_date - 1 else '2025-06-19' end)::date
-    and cast_to_integer(i.customer_id) = 401865
-    and new_model = true
-    and store_id is not null
-    group by date_trunc('month',order_date_week)::date, store_id
-)
-select rep_name, visitor_email,
-coalesce(sum(st.stores),0)/3 as count_store,
-coalesce(sum(sales) filter(where month = '2025-06-01'),0)::integer as sales_current,
-coalesce(sum(sales) filter(where month = '2025-05-01'),0)::integer as sales_previous_month,
-coalesce(sum(sales) filter(where month = '2025-04-01'),0)::integer as sales_2_month,
-coalesce(sum(goal_value) filter(where month = '2025-06-01'),0) as goal_current,
-coalesce(sum(goal_value) filter(where month = '2025-05-01'),0) as goal_previous_month,
-coalesce(sum(goal_value) filter(where month = '2025-04-01'),0) as goal_2_month
-from stores st
-left join total_goals g using(store_id)
-left join sales s using(month, store_id)
-group by rep_name, visitor_email
+    WHERE manager_name = '{manager_id}'
+    and rep_name <> '0' and rep_email <> ''
+    GROUP BY st.store_id, d.rep_name, d.rep_email, market_name, region_name
+), sales AS (
+  SELECT
+  st.visitor_name,
+  st.visitor_email,
+  sum(coalesce(net_sales, 0)) as total_sales,
+  sum(net_sales) FILTER(WHERE i.order_date_week::date = st.current_week::date) AS sales_current_week,
+  sum(net_sales) FILTER(where i.order_date_week::date = st.previous_week::date) AS sales_previous_week,
+  sum(net_sales) FILTER(where i.order_date_week::date = st.week_previous_month::date) AS sales_previous_month
+  FROM hisense.summarized_inventory i
+  JOIN stores st USING(store_id)
+  INNER JOIN hisense.all_products p using(model)
+  WHERE order_date_week::date between st.week_previous_month and current_date - 1
+  AND new_model = True
+  and i.store_id is not null
+  GROUP BY st.visitor_name, st.visitor_email
 )
 SELECT *,
-rank() over (order by sales_current DESC) as sales_ranking,
-rank() over (order by goal_current DESC) as goal_ranking
-FROM sales
+ rank() over (order by sales_current_week DESC) as current_ranking,
+ rank() over (order by sales_previous_week DESC) as previous_week_ranking,
+ rank() over (order by sales_previous_month DESC) as previous_month_ranking
+FROM sales;
         """
         try:
-            sales_data = await self._get_dataset(
+            return await self._get_dataset(
                 sql,
-                output_format='pandas',
-                structured_obj=None
+                output_format='structured',
+                structured_obj=EmployeeSales
             )
-            if sales_data.empty:
-                raise ToolError(
-                    f"No Sales data found for manager {manager_id}."
-                )
-            return self._json_encoder(
-                sales_data.to_dict(orient='records')
-            )  # type: ignore[return-value]
         except ToolError as te:
-            return f"No Sales data found for manager {manager_id}, error: {te}"
+            raise ValueError(f"No Sales data found for manager {manager_id}, error: {te}")
         except ValueError as ve:
-            return f"Invalid data format, error: {ve}"
+            raise ValueError(f"Invalid data format, error: {ve}")
         except Exception as e:
-            return f"Error fetching employee sales data: {e}"
+            raise ValueError(f"Error fetching employee sales data: {e}")
 
     @tool_schema(EmployeeInput)
     async def employee_information(
@@ -745,8 +779,14 @@ group by visitor_name, vd.visitor_email, rs.visited_retailers
                 )
             return visit_data
         except ToolError as te:
-            return f"No Employee Visit data found for email {employee_id}, error: {te}"
+            raise ValueError(
+                f"No Employee Visit data found for email {employee_id}, error: {te}"
+            )
         except ValueError as ve:
-            return f"Invalid data format, error: {ve}"
+            raise ValueError(
+                f"Invalid data format, error: {ve}"
+            )
         except Exception as e:
-            return f"Error fetching employee visit data: {e}"
+            raise ValueError(
+                f"Error fetching employee visit data: {e}"
+            )

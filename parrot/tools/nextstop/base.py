@@ -1,9 +1,69 @@
-from typing import Optional, Callable, Dict, Any, Union
+import inspect
+from typing import Union, Optional, Callable, Dict, Any, get_origin, get_args
+from pydantic import BaseModel
 import pandas as pd
 from asyncdb import AsyncDB
 from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611
 from querysource.conf import default_dsn
 from ..toolkit import AbstractToolkit, tool_schema
+
+
+def is_collection_model(structured_obj: type) -> bool:
+    """
+    Determine if a BaseModel is a collection container (single instance with records field)
+    or a direct list model (List[SomeModel]).
+
+    Args:
+        structured_obj: The class/type to inspect
+
+    Returns:
+        bool: True if it's a collection container, False if it's a direct list
+    """
+    # Check if it's a List type annotation like List[SomeModel]
+    origin = get_origin(structured_obj)
+    if origin is list or origin is Union:
+        return False
+
+    # Check if it's a BaseModel subclass with a 'records' field
+    if inspect.isclass(structured_obj) and issubclass(structured_obj, BaseModel):
+        # Get model fields
+        if hasattr(structured_obj, 'model_fields'):
+            fields = structured_obj.model_fields
+        else:
+            # Fallback for older Pydantic versions
+            fields = getattr(structured_obj, '__fields__', {})
+
+        # Check if it has a 'records' field that's a list
+        if 'records' in fields:
+            field_info = fields['records']
+            field_type = field_info.annotation if hasattr(field_info, 'annotation') else field_info.type_
+            return get_origin(field_type) is list
+
+    return False
+
+def get_model_from_collection(collection_model: type) -> type:
+    """
+    Extract the individual record model from a collection container model.
+
+    Args:
+        collection_model: Collection model like VisitsByManagerOutput
+
+    Returns:
+        type: Individual record model like VisitsByManagerRecord
+    """
+    if hasattr(collection_model, 'model_fields'):
+        fields = collection_model.model_fields
+    else:
+        fields = getattr(collection_model, '__fields__', {})
+
+    if 'records' in fields:
+        field_info = fields['records']
+        field_type = field_info.annotation if hasattr(field_info, 'annotation') else field_info.type_
+        args = get_args(field_type)
+        if args:
+            return args[0]  # Return the type inside List[Type]
+
+    raise ValueError(f"Could not extract record model from {collection_model}")
 
 
 class BaseNextStop(AbstractToolkit):
@@ -99,7 +159,7 @@ class BaseNextStop(AbstractToolkit):
             Exception: If there's an error executing the query
         """
         frmt = output_format.lower()
-        if frmt == 'structured':
+        if frmt in ('structured', 'json'):
             frmt = 'pandas'  # Default to pandas for structured output
         db = AsyncDB('pg', dsn=self.default_dsn)
         async with await db.connection() as conn:  # pylint: disable=E1101  # noqa
@@ -122,9 +182,37 @@ class BaseNextStop(AbstractToolkit):
             elif output_format == "structured":
                 # Convert DataFrame to Pydantic models
                 data = []
-                for _, row in result.iterrows():
-                    data.append(structured_obj(**row.to_dict()))
-                return data
+                try:
+                    if structured_obj is None:
+                        raise ValueError(
+                            "structured_obj must be provided for structured output"
+                        )
+                    # Convert DataFrame rows to dictionaries
+                    records_data = [row.to_dict() for _, row in result.iterrows()]
+                    print(
+                        f"Detected collection model: {structured_obj.__name__}"
+                    )
+                    if is_collection_model(structured_obj):
+                        record_model = get_model_from_collection(structured_obj)
+                        individual_records = [record_model(**row_dict) for row_dict in records_data]
+                        # Create the container model with records
+                        return structured_obj(
+                            records=individual_records,
+                            total_records=len(individual_records)
+                        )
+                    elif get_origin(structured_obj) is list:
+                        # Handle direct list types like List[VisitsByManagerRecord]
+                        record_model = get_args(structured_obj)[0]
+                        return [record_model(**row_dict) for row_dict in records_data]
+                    # Convert each row to the structured object
+                    else:
+                        for _, row in result.iterrows():
+                            data.append(structured_obj(**row.to_dict()))
+                        return data
+                except Exception as e:
+                    raise ValueError(
+                        f"Error converting to structured output: {e}"
+                    )
             else:
                 raise TypeError(
                     f"Unsupported output format: {output_format}"
