@@ -10,8 +10,7 @@ import asyncio
 import logging
 from urllib.parse import urlparse, urlunparse
 from pydantic import BaseModel, Field
-from datamodel.parsers.json import json_decoder, json_encoder  # noqa  pylint: disable=E0611
-from navconfig import BASE_DIR
+from datamodel.parsers.json import json_decoder, json_encoder, JSONContent  # noqa  pylint: disable=E0611
 from navconfig.logging import logging
 from ..conf import BASE_STATIC_URL, STATIC_DIR
 
@@ -87,6 +86,7 @@ class AbstractTool(ABC):
         # JSON encoders/decoders
         self._json_encoder = json_encoder
         self._json_decoder = json_decoder
+        self._json = JSONContent()
 
         # File and URL configuration
         self.base_url = base_url or BASE_STATIC_URL

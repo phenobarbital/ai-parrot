@@ -60,6 +60,7 @@ dependencies = [
     "pydub==0.25.1",
     "async-notify[all]>=1.4.2",
     "markitdown>=0.0.2",
+    "ddgs>=9.5.2",
 ]
 
 [project.optional-dependencies]

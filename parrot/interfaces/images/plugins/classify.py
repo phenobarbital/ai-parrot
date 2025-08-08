@@ -4,7 +4,7 @@ from enum import Enum, EnumMeta
 from pydantic import BaseModel, Field
 from PIL import Image
 from .abstract import ImagePlugin
-from ....next.google import GoogleModel, GoogleGenAIClient
+from ....clients.google import GoogleModel, GoogleGenAIClient
 
 DEFAULT_PROMPT = """
 You are an expert in retail image analysis. Your task is to classify the provided image into one of the following categories.
