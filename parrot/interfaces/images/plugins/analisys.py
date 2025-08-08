@@ -4,7 +4,7 @@ import yaml
 from pydantic import BaseModel
 from PIL import Image
 from .abstract import ImagePlugin
-from ....next.google import GoogleModel, GoogleGenAIClient
+from ....clients.google import GoogleModel, GoogleGenAIClient
 
 
 class AnalysisPlugin(ImagePlugin):

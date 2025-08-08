@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Union
 from pydantic import BaseModel
 from PIL import Image
-from ....next.google import GoogleGenAIClient
+from ....clients.google import GoogleGenAIClient
 from .classifybase import ClassifyBase
 
 
