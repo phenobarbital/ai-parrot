@@ -3,8 +3,8 @@ from typing import List, Optional
 from pydantic import BaseModel
 import pandas as pd
 from .abstract import ImagePlugin
-from ....next.google import GoogleModel
-from ....next.models import ObjectDetectionResult
+from ....clients.google import GoogleModel
+from ....models import ObjectDetectionResult
 
 
 def is_model_class(cls) -> bool:
