@@ -73,8 +73,6 @@ class VisitInfo(BaseModel):
     median_visits_per_store: Optional[float] = Field(default=None, description="Median visits per store")
     median_visit_duration: Optional[float] = Field(default=None, description="Median visit duration")
 
-
-
 # Input schemas for tools
 class StoreInfoInput(BaseModel):
     """Input schema for store information queries."""

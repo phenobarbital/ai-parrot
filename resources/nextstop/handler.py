@@ -14,10 +14,30 @@ from navigator_auth.decorators import (
     user_session
 )
 from navigator.responses import JSONResponse
+from navigator.views import ModelView
 from parrot.bots.nextstop import NextStop
 from parrot.handlers.agents import AgentHandler
 from parrot.tools.nextstop import StoreInfo, EmployeeToolkit
 from .models import NextStopStore
+
+
+class NextStopStoreView(ModelView):
+    """
+    NextStopStoreView is a view that handles the NextStopStore model.
+    It provides methods to interact with the NextStopStore data.
+    """
+    model = NextStopStore
+    name = "NextStopStore"
+    path = '/api/v1/nextstop_responses'
+    pk: str = 'report_id'
+
+
+    async def _set_created_by(self, value, column, data):
+        return await self.get_userid(session=self._session)
+
+    async def _set_is_new(self, value, column, data):
+        """Always mark as false for existing records."""
+        return False
 
 
 class NextStopResponse(BaseModel):
