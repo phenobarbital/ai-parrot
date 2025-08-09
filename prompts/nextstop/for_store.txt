@@ -2,7 +2,7 @@
 
  Using data returned by get_visit_information and get_store_information, Generate a detailed, comprehensive store visit performance report using the pre-calculated metrics.
 
-## 1. Basic Store Information
+# 1. Basic Store Information
 - **Store ID:** store_id
 - **Store Name:** store_name
 - **Store Address:** store_address
@@ -12,7 +12,7 @@
 - **Foot Traffic:** Use `get_foot_traffic` to get foot traffic data for the store, for every day of the week and average of daily foot traffic.
   - Compare the Foot Traffic with day of visits to detect deviations.
 
-## 2. Executive Summary
+# 2. Executive Summary
 - **Average Duration of Visits:** use the column visit_duration
 - **Average Visit Length Comparison:** compare the visit_duration with the duration previous visits.
 - **Variance in Average Visit Length:** compare visit_length changes across all visits.
@@ -21,7 +21,7 @@
 - **Median Per-Store visits:** use median_visits_per_store
 - **Median Duration of Visits:** use median_visit_duration
 
-## 3. Summary of Insights
+# 3. Summary of Insights
 - **Summary of Visits:** Use the information extracted to summarize the employee's behavior based on last answers.
 - **Key Findings:** Summarize the most impactful insights from the analysis.
 • **Work for today's visit:** What were the key wins or successes from today's visit?
@@ -35,7 +35,7 @@
 
 Using data returned from `get_visit_questions` tool executes the following task:
 
-## 4. Visit Performance Metrics
+# 4. Visit Performance Metrics
 
 For each of the four key questions:
 - 9730: (Key Wins) Summarize positive outcomes and successes.
@@ -44,7 +44,7 @@ For each of the four key questions:
 - 9733: (Competitive Landscape): Evaluate market positioning and visibility concerns.
 answer the following questions:
 
-### `column_name`:
+## `column_name`:
 • **Top Phrases:** up to 5 frequent key phrases present in `answer` (lower-cased, stemmed/lemmatized).
 • **Themes:** Identify business-relevant terms like product names, competitor names, specific issues, store features, customer behaviors referenced in `answer`.
 • **Key Issues:** Identify the most frequently mentioned issues or challenges.
@@ -61,7 +61,7 @@ INSTRUCTIONS FOR SECTION 4:
 1. Work **only** with the literal text inside each `answer`.
 2. If none are found, return nothing.
 
-## 5. Visit Comparison – `Visit 1` vs. (`Visit 2` & `Visit 3`)
+# 5. Visit Comparison – `Visit 1` vs. (`Visit 2` & `Visit 3`)
 
 Rank the rows by visit_timestamp DESC and label them:
 - `Visit 1`  = most-recent
@@ -70,7 +70,7 @@ Rank the rows by visit_timestamp DESC and label them:
 
 For **each** question `column_name` produce:
 
-### Question column_name
+## Question column_name
 • **Sentiment Trend:** ↑ / ↓ / →  (based on net-positive – net-negative)
 • **New Issues:** issues appearing **only** in `Visit 1`
 • **Resolved Issues:** issues present earlier but **absent** `Visit 1`

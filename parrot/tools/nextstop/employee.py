@@ -35,6 +35,45 @@ class ManagerInput(BaseModel):
     )
 
 ## Outputs:
+class VisitDetailed(BaseModel):
+    """Detailed visit information model."""
+    visit_date: date = Field(..., description="Date of the visit")
+    column_name: str = Field(..., description="Column identifier for the data point")
+    store_id: str = Field(description="Store identifier")
+    question: str = Field(..., description="Question asked during the visit")
+    answer: Optional[str] = Field(None, description="Answer provided for the question")
+    account_name: str = Field(..., description="Name of the retail account/store")
+    visit_timestamp: Optional[datetime] = Field(default=None, description="Visit timestamp")
+    visit_length: Optional[float] = Field(default=None, description="Visit length")
+    time_in: Optional[time] = Field(default=None, description="Check-in time")
+    time_out: Optional[time] = Field(default=None, description="Check-out time")
+
+    @field_validator('question', mode='before')
+    @classmethod
+    def truncate_question(cls, v: str) -> str:
+        """Truncate question if longer than 200 characters."""
+        if not isinstance(v, str):
+            return v
+        return v[:200] + " (...)" if len(v) > 200 else v
+
+class VisitInformation(BaseModel):
+    """Visit information model."""
+    # Basic visit info
+    visitor_name: str = Field(..., description="Name of the visitor/manager")
+    visitor_email: str = Field(..., description="Email address of the visitor")
+    visitor_name: Optional[str] = Field(default=None, description="Visitor name")
+    visitor_username: Optional[str] = Field(default=None, description="Visitor username")
+    # aggregated visit data
+    visit_data: Optional[List[VisitDetailed]] = Field(
+        default=None,
+        description="Visit data aggregated"
+    )
+    # Aggregated questions:
+    questions: Optional[Dict[str, List[Dict[str, Any]]]] = Field(
+        default=None,
+        description="Aggregated visit questions and answers organized by question type"
+    )
+
 class VisitDetail(BaseModel):
     """Individual visit detail from the visit_data JSONB array."""
     visit_date: date = Field(..., description="Date of the visit")
