@@ -97,6 +97,16 @@ class NextStopStore(Model):
         description="ID of the manager associated with the record.",
         title="Manager ID"
     )
+    store_id: str = Field(
+        default=None,
+        description="ID of the store associated with the record.",
+        title="Store ID"
+    )
+    employee_id: str = Field(
+        default=None,
+        description="ID of the employee associated with the record.",
+        title="Employee ID"
+    )
 
     class Meta:
         """Meta class for NextStopStore model."""

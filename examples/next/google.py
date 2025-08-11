@@ -15,139 +15,139 @@ from parrot.models.google import ConversationalScriptConfig, FictionalSpeaker
 from parrot.tools.math import MathTool
 
 async def main():
-    question = "Give me a list of 10 European cities and their capitals. Use a list format."
+    # question = "Give me a list of 10 European cities and their capitals. Use a list format."
 
-    print("\n--- Asking Google GenAI ---")
-    async with GoogleGenAIClient() as client:
-        response = await client.ask(
-            question
-        )
-        print(response.output)                    # Response text
-        print(response.usage.prompt_tokens)     # 39 (from usage_metadata)
-        print(response.usage.completion_tokens) # 5 (from usage_metadata)
-        print(response.usage.total_tokens)      # 110 (from usage_metadata)
-        print(response.provider)                # "vertex_ai"
+    # print("\n--- Asking Google GenAI ---")
+    # async with GoogleGenAIClient() as client:
+    #     response = await client.ask(
+    #         question
+    #     )
+    #     print(response.output)                    # Response text
+    #     print(response.usage.prompt_tokens)     # 39 (from usage_metadata)
+    #     print(response.usage.completion_tokens) # 5 (from usage_metadata)
+    #     print(response.usage.total_tokens)      # 110 (from usage_metadata)
+    #     print(response.provider)                # "vertex_ai"
 
-    async with GoogleGenAIClient() as client:
-        math_tool = MathTool()
+    # async with GoogleGenAIClient() as client:
+    #     math_tool = MathTool()
 
-        # Register the tool's methods
-        client.register_tool(
-            math_tool
-        )
-        # question = "What is 150 plus 79, and also what is 1024 divided by 256?"
-        question = "use the tool for calculate (245*38)/3"
-        response = await client.ask(
-            question,
-        )
-        print('--- Google GenAI Tool Call Response ---')
-        print(response.output)                    # Response text
-        print(response.usage.prompt_tokens)     # 39 (from usage_metadata)
-        print(response.usage.completion_tokens) # 5 (from usage_metadata)
-        print(response.usage.total_tokens)      # 110 (from usage_metadata)
-        print(response.provider)                # "google_genai"
-        print("Has tools:", response.has_tools)
-        print("Tool calls:", [f"{tc.name}({tc.arguments}) = {tc.result}" for tc in response.tool_calls])
-        print("Total execution time:", sum(tc.execution_time for tc in response.tool_calls))
+    #     # Register the tool's methods
+    #     client.register_tool(
+    #         math_tool
+    #     )
+    #     # question = "What is 150 plus 79, and also what is 1024 divided by 256?"
+    #     question = "use the tool for calculate (245*38)/3"
+    #     response = await client.ask(
+    #         question,
+    #     )
+    #     print('--- Google GenAI Tool Call Response ---')
+    #     print(response.output)                    # Response text
+    #     print(response.usage.prompt_tokens)     # 39 (from usage_metadata)
+    #     print(response.usage.completion_tokens) # 5 (from usage_metadata)
+    #     print(response.usage.total_tokens)      # 110 (from usage_metadata)
+    #     print(response.provider)                # "google_genai"
+    #     print("Has tools:", response.has_tools)
+    #     print("Tool calls:", [f"{tc.name}({tc.arguments}) = {tc.result}" for tc in response.tool_calls])
+    #     print("Total execution time:", sum(tc.execution_time for tc in response.tool_calls))
 
-        response = await client.ask(
-            "What is the result of multiplying 5 and 10?"
-        )
-        print('--- Google AI Tool Call Response ---')
-        print(response.output)                    # Response text
+    #     response = await client.ask(
+    #         "What is the result of multiplying 5 and 10?"
+    #     )
+    #     print('--- Google AI Tool Call Response ---')
+    #     print(response.output)                    # Response text
 
-        print('Math Tool Results:')
-        class MathOperations(BaseModel):
-            addition_result: float
-            multiplication_result: float
-            explanation: str
+    #     print('Math Tool Results:')
+    #     class MathOperations(BaseModel):
+    #         addition_result: float
+    #         multiplication_result: float
+    #         explanation: str
 
-        math_response = await client.ask(
-            "use the tool and calculate 12 + 8 and 6 * 9, then format the results",
-            structured_output=MathOperations,
-        )
-        print("Structured math response:")
-        print("- Is structured:", math_response.is_structured)
-        print("- Output type:", type(math_response.output))
-        print("- Math data:", math_response.output)
-        print("- Parallel tools used:", len(math_response.tool_calls))
+    #     math_response = await client.ask(
+    #         "use the tool and calculate 12 + 8 and 6 * 9, then format the results",
+    #         structured_output=MathOperations,
+    #     )
+    #     print("Structured math response:")
+    #     print("- Is structured:", math_response.is_structured)
+    #     print("- Output type:", type(math_response.output))
+    #     print("- Math data:", math_response.output)
+    #     print("- Parallel tools used:", len(math_response.tool_calls))
 
-        # Register multiple tools for parallel execution
-        def add_numbers(a: float, b: float) -> float:
-            """Add two numbers."""
-            return a + b
+    #     # Register multiple tools for parallel execution
+    #     def add_numbers(a: float, b: float) -> float:
+    #         """Add two numbers."""
+    #         return a + b
 
-        def multiply_numbers(a: float, b: float) -> float:
-            """Multiply two numbers."""
-            return a * b
+    #     def multiply_numbers(a: float, b: float) -> float:
+    #         """Multiply two numbers."""
+    #         return a * b
 
-        client.register_tool(
-            name="add_numbers",
-            description="Add two numbers together",
-            input_schema={
-                "type": "object",
-                "properties": {
-                    "a": {"type": "number", "description": "First number"},
-                    "b": {"type": "number", "description": "Second number"}
-                },
-                "required": ["a", "b"]
-            },
-            function=add_numbers
-        )
+    #     client.register_tool(
+    #         name="add_numbers",
+    #         description="Add two numbers together",
+    #         input_schema={
+    #             "type": "object",
+    #             "properties": {
+    #                 "a": {"type": "number", "description": "First number"},
+    #                 "b": {"type": "number", "description": "Second number"}
+    #             },
+    #             "required": ["a", "b"]
+    #         },
+    #         function=add_numbers
+    #     )
 
-        client.register_tool(
-            name="multiply_numbers",
-            description="Multiply two numbers together",
-            input_schema={
-                "type": "object",
-                "properties": {
-                    "a": {"type": "number", "description": "First number"},
-                    "b": {"type": "number", "description": "Second number"}
-                },
-                "required": ["a", "b"]
-            },
-            function=multiply_numbers
-        )
+    #     client.register_tool(
+    #         name="multiply_numbers",
+    #         description="Multiply two numbers together",
+    #         input_schema={
+    #             "type": "object",
+    #             "properties": {
+    #                 "a": {"type": "number", "description": "First number"},
+    #                 "b": {"type": "number", "description": "Second number"}
+    #             },
+    #             "required": ["a", "b"]
+    #         },
+    #         function=multiply_numbers
+    #     )
 
-        # Parallel tool execution
-        response = await client.ask(
-            "Calculate both: 5 + 3 and 4 * 7. Use the appropriate tools for each calculation.",
-            model=GoogleModel.GEMINI_2_5_FLASH
-        )
-        print("Response text:", response.output)
-        print("Model used:", response.model)
-        print("Provider:", response.provider)
-        print("Has tools:", response.has_tools)
-        print("Tool calls:", [f"{tc.name}({tc.arguments}) = {tc.result}" for tc in response.tool_calls])
-        print("Total execution time:", sum(tc.execution_time for tc in response.tool_calls))
+    #     # Parallel tool execution
+    #     response = await client.ask(
+    #         "Calculate both: 5 + 3 and 4 * 7. Use the appropriate tools for each calculation.",
+    #         model=GoogleModel.GEMINI_2_5_FLASH
+    #     )
+    #     print("Response text:", response.output)
+    #     print("Model used:", response.model)
+    #     print("Provider:", response.provider)
+    #     print("Has tools:", response.has_tools)
+    #     print("Tool calls:", [f"{tc.name}({tc.arguments}) = {tc.result}" for tc in response.tool_calls])
+    #     print("Total execution time:", sum(tc.execution_time for tc in response.tool_calls))
 
-    memory = GoogleGenAIClient.create_conversation_memory("memory")
-    async with GoogleGenAIClient(conversation_memory=memory) as client:
-        math_tool = MathTool()
-        # Conversation with memory
-        user_id = "user123"
-        session_id = "chat001"
+    # memory = GoogleGenAIClient.create_conversation_memory("memory")
+    # async with GoogleGenAIClient(conversation_memory=memory) as client:
+    #     math_tool = MathTool()
+    #     # Conversation with memory
+    #     user_id = "user123"
+    #     session_id = "chat001"
 
-        client.register_tool(math_tool)
+    #     client.register_tool(math_tool)
 
-        # await client.start_conversation(user_id, session_id, "You are a helpful math assistant.")
+    #     # await client.start_conversation(user_id, session_id, "You are a helpful math assistant.")
 
-        response1 = await client.ask(
-            "My lucky numbers are 3 and 7",
-            user_id=user_id,
-            session_id=session_id,
-            model=GoogleModel.GEMINI_2_5_FLASH,
-        )
-        print("Response 1 text:", response1.output)
+    #     response1 = await client.ask(
+    #         "My lucky numbers are 3 and 7",
+    #         user_id=user_id,
+    #         session_id=session_id,
+    #         model=GoogleModel.GEMINI_2_5_FLASH,
+    #     )
+    #     print("Response 1 text:", response1.output)
 
-        response2 = await client.ask(
-            "Add my two lucky numbers together using the add function and multiply by 7",
-            user_id=user_id,
-            session_id=session_id,
-            model=GoogleModel.GEMINI_2_5_FLASH
-        )
-        print("Response 2:", response2)
-        print("Tools used:", [tc.name for tc in response2.tool_calls])
+    #     response2 = await client.ask(
+    #         "Add my two lucky numbers together using the add function and multiply by 7",
+    #         user_id=user_id,
+    #         session_id=session_id,
+    #         model=GoogleModel.GEMINI_2_5_FLASH
+    #     )
+    #     print("Response 2:", response2)
+    #     print("Tools used:", [tc.name for tc in response2.tool_calls])
 
     # print('Using Google GenAI Client with conversation memory:')
     # memory = GoogleGenAIClient.create_conversation_memory("memory")
@@ -201,7 +201,7 @@ async def main():
     #         number_of_videos=1,
     #         model=GoogleModel.VEO_3_0,
     #         aspect_ratio="16:9",
-    #         duration=10,  # Duration in seconds
+    #         duration=8,  # Duration in seconds
     #     )
     #     output_directory = BASE_DIR.joinpath('static', 'generated_videos')
     #     output_directory.mkdir(parents=True, exist_ok=True)
@@ -214,31 +214,31 @@ async def main():
     #     print("Generated videos:")
     #     for video in response.videos:
     #         print(f"✅ Video saved to: {video.video}")
-    # print(' --- Image Features --- ')
-    # async with GoogleGenAIClient() as client:
-    #     # Image Generation:
-    #     prompt_data = ImageGenerationPrompt(
-    #         prompt="A serene landscape with mountains and a lake at sunset",
-    #         styles=["photorealistic", "vibrant"],
-    #         model=GoogleModel.IMAGEN_3,
-    #         aspect_ratio="16:9",
-    #         negative_prompt="no people, no buildings"
-    #     )
-    #     output_directory = BASE_DIR.joinpath('static', 'generated_images')
-    #     output_directory.mkdir(parents=True, exist_ok=True)
 
-    #     response = await client.generate_images(
-    #         prompt_data=prompt_data,
-    #         output_directory=output_directory,
-    #         output_mime_type="image/jpeg",
-    #         number_of_images=3,  # Generate 3 images
-    #         user_id="user123",
-    #         session_id="session001"
-    #     )
-    #     print("Generated images:")
-    #     for img in response.images:
-    #         print(f"- {img}")
+    print(' --- Image Features --- ')
+    async with GoogleGenAIClient() as client:
+        # Image Generation:
+        prompt_data = ImageGenerationPrompt(
+            prompt="A futuristic city skyline at sunset, with flying cars and neon lights, the buildings are tall and sleek, reflecting the vibrant colors of the sky, the scene is bustling with activity, showcasing a blend of technology and nature",
+            styles=["photorealistic", "vibrant"],
+            model=GoogleModel.IMAGEN_3,
+            aspect_ratio="16:9",
+            negative_prompt="no people, no buildings"
+        )
+        output_directory = BASE_DIR.joinpath('static', 'generated_images')
+        output_directory.mkdir(parents=True, exist_ok=True)
 
+        response = await client.generate_images(
+            prompt_data=prompt_data,
+            output_directory=output_directory,
+            # output_mime_type="image/jpeg",
+            number_of_images=3,  # Generate 3 images
+            user_id="user123",
+            session_id="session001"
+        )
+        print("Generated images:")
+        for img in response.images:
+            print(f"- {img}")
 
 #     print(' --- Audio Features --- ')
 #     async with GoogleGenAIClient() as client:
