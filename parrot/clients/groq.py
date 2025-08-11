@@ -174,7 +174,8 @@ class GroqClient(AbstractClient):
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
         tools: Optional[List[dict]] = None,
-        use_tools: Optional[bool] = None
+        use_tools: Optional[bool] = None,
+        use_code_interpreter: Optional[bool] = None
     ) -> AIMessage:
         """Ask Groq a question with optional conversation memory."""
         model = model.value if isinstance(model, GroqModel) else model
@@ -226,11 +227,21 @@ class GroqClient(AbstractClient):
 
         # Add tools if available and not conflicting with structured output
         if use_tools and not use_structured_output:
-            request_args["tools"] = tools
             request_args["tool_choice"] = "auto"
             # Enable parallel tool calls for supported models
             if model != GroqModel.GEMMA2_9B_IT:
                 request_args["parallel_tool_calls"] = True
+        elif use_code_interpreter:
+            if model in ("openai/gpt-oss-20b", "openai/gpt-oss-120b"):
+                request_args["tool_choice"] = "required"
+                request_args["tools"] = [
+                    {
+                        "type": "browser_search"
+                    },
+                    {
+                        "type": "code_interpreter"
+                    }
+                ]
 
         # Add structured output format if no tools
         if structured_output and not use_tools:

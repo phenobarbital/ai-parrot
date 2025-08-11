@@ -1,9 +1,9 @@
 WITH visits AS (
 WITH last_visits AS (
     select store_id, visit_timestamp
-    from hisense.form_information
+    from hisense.form_information d
     where store_id = '{store_id}'
-    order by visit_timestamp desc limit {limit}
+    order by visit_timestamp DESC NULLS LAST limit {limit}
 )
     SELECT
         form_id,
