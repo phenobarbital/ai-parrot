@@ -19,3 +19,5 @@ class GroqModel(Enum):
     LLAMA_3_1_8B_INSTANT = "llama-3.1-8b-instant"
     GEMMA2_9B_IT = "gemma2-9b-it"
     QWEN_QWEN3_32B = "qwen/qwen3-32b"
+    OPENAI_GPT_OSS_20B = "openai/gpt-oss-20b"
+    OPENAI_GPT_OSS_120B = "openai/gpt-oss-120b"
