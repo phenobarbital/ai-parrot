@@ -269,7 +269,7 @@ class StoreInfo(BaseNextStop):
         for the specified store. Essential for store analysis and planning.
         """
         sql = await self._get_query("store_info")
-        sql = sql.format(store_id=store_id)
+        sql = sql.format(store_id=store_id, limit=3)
 
         # Fetch the store data
         try:
