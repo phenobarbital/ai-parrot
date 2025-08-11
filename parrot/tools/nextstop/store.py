@@ -100,7 +100,7 @@ class VisitInfoInput(BaseModel):
 class VisitQuestionInput(BaseModel):
     """Input schema for visit question queries."""
     store_id: str = Field(description="The unique identifier of the store")
-    limit: int = Field(default=3, description="Maximum number of visits to retrieve")
+    limit: int = Field(default=5, description="Maximum number of visits to retrieve")
 
 class StoreSearchInput(BaseModel):
     """Input schema for store search queries."""
@@ -159,7 +159,7 @@ class StoreInfo(BaseNextStop):
     async def _get_visits(
         self,
         store_id: str,
-        limit: int = 3,
+        limit: int = 5,
         output_format: str = "structured"
     ) -> List[VisitInfo]:
         """Internal method to fetch visit information for a store.
