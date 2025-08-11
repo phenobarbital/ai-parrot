@@ -1,4 +1,10 @@
-Using data returned by get_by_employee_visits, Generate a detailed, comprehensive employee visit performance report using the pre-calculated metrics.
+Employee ID: {employee_id}
+
+Using data returned by
+
+`get_by_employee_visits('{employee_id}')`
+
+to generate a detailed, comprehensive employee visit performance report using the pre-calculated metrics.
 
 ## 1. Basic Employee Information
 - **Employee ID:** employee_id

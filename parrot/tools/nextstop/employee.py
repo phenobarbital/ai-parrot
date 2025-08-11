@@ -603,10 +603,10 @@ LIMIT 100;
         Data is returned as a Structured JSON object.
         Useful for analyzing employee visit patterns and performance.
         """
-        print('EMPLOYEE ID:', employee_id)  # Debugging line to check the employee_id
+        if not employee_id:
+            employee_id = kwargs.get('email', '').strip().lower()
         sql = await self._get_query("employee_visits")
         sql = sql.format(employee_id=employee_id)
-        print(f"SQL Query: {sql}")  # Debugging line to check the SQL query
         try:
             visit_data = await self._fetch_one(
                 sql,
