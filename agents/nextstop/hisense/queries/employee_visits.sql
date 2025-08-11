@@ -28,13 +28,9 @@ WITH visit_data AS (
                 'account_name', d.account_name
             ) ORDER BY column_name
         ) AS visit_info
-    FROM last_visits lv
-    JOIN hisense.form_data d using(store_id, visit_timestamp)
-    ---cross join dates da
+    FROM hisense.form_data d
     INNER JOIN troc.stores st ON st.store_id = d.store_id AND st.program_slug = 'hisense'
-    WHERE visit_date::date between (
-    SELECT firstdate  FROM public.week_range((current_date::date - interval '1 week')::date, (current_date::date - interval '1 week')::date))
-    and (SELECT lastdate  FROM public.week_range((current_date::date - interval '1 week')::date, (current_date::date - interval '1 week')::date))
+    WHERE visit_date::date between (current_date::date - interval '1 week')::date and current_date::date
     AND column_name IN ('9733','9731','9732','9730')
     AND d.visitor_email = '{employee_id}'
     GROUP BY
