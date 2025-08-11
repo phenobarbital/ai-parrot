@@ -14,9 +14,19 @@ def today_date() -> date:
 
 class EmployeeInput(BaseModel):
     """Input for the employee-related operations in the NextStop tool."""
-    employee_id: Optional[str] = Field(default=None, description="Unique identifier for the employee")
-    display_name: Optional[str] = Field(default=None, description="Name of the employee")
-    email: Optional[str] = Field(default=None, description="Email address of the employee")
+    employee_id: Optional[str] = Field(
+        default=None,
+        description="Unique identifier for the employee"
+    )
+
+    display_name: Optional[str] = Field(
+        default=None,
+        description="Name of the employee"
+    )
+    email: Optional[str] = Field(
+        default=None,
+        description="Email address of the employee"
+    )
 
     # Add a model_config to prevent additional properties
     model_config = ConfigDict(
@@ -593,8 +603,10 @@ LIMIT 100;
         Data is returned as a Structured JSON object.
         Useful for analyzing employee visit patterns and performance.
         """
+        print('EMPLOYEE ID:', employee_id)  # Debugging line to check the employee_id
         sql = await self._get_query("employee_visits")
         sql = sql.format(employee_id=employee_id)
+        print(f"SQL Query: {sql}")  # Debugging line to check the SQL query
         try:
             visit_data = await self._fetch_one(
                 sql,

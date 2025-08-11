@@ -44,10 +44,10 @@ async def test_employee_tool():
     print(f"Tool names: {tool_names}")
     # Get by Employee visits:
     employee_visits = await toolkit.get_by_employee_visits(
-        email='nsackett@hisenseretail.com'
+        employee_id='ahidalgo@hisenseretail.com'
     )
     print(employee_visits)
 
 
 if __name__ == "__main__":
-    asyncio.run(test_tool())
+    asyncio.run(test_employee_tool())
