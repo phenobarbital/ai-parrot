@@ -1,7 +1,10 @@
-import inspect
 from typing import Union, Optional, Callable, Dict, Any, get_origin, get_args
+import inspect
+from pathlib import Path
 from pydantic import BaseModel
+import aiofiles
 import pandas as pd
+from navconfig import BASE_DIR
 from asyncdb import AsyncDB
 from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611
 from querysource.conf import default_dsn
@@ -87,6 +90,66 @@ class BaseNextStop(AbstractToolkit):
         self.program = program or 'hisense'
         self._json_encoder = json_encoder
         self._json_decoder = json_decoder
+
+    def set_program(self, program: str):
+        """Set the program slug for the toolkit.
+
+        Args:
+            program: The program slug to set
+        """
+        self.program = program
+
+    @property
+    def program_slug(self) -> str:
+        """Get the program slug."""
+        return self.program
+
+    async def _open_file(self, file_path: Path) -> str:
+        """Open a file and return its content as a string."""
+        try:
+            async with aiofiles.open(file_path, mode='r', encoding='utf-8') as f:
+                content = await f.read()
+            return content
+        except FileNotFoundError:
+            raise FileNotFoundError(f"File not found: {file_path}")
+        except Exception as e:
+            raise Exception(f"Error reading file {file_path}: {e}")
+
+    async def _get_prompt(self, prompt_file: str) -> str:
+        """Fetch the prompt content from the specified file."""
+        prompt_path = BASE_DIR.joinpath(
+            'agents',
+            'nextstop',
+            self.program,
+            'prompts', f"{prompt_file}.txt"
+        )
+        return await self._open_file(prompt_path)
+
+    async def _get_query(
+        self,
+        query_name: str
+    ) -> str:
+        """Fetch a SQL query from the toolkit's queries directory.
+
+        Args:
+            query_name: The name of the SQL query file (without extension)
+
+        Returns:
+            str: The content of the SQL query file
+
+        Raises:
+            FileNotFoundError: If the query file does not exist
+        """
+        query_path = BASE_DIR.joinpath(
+            'agents',
+            'nextstop',
+            self.program,
+            'queries',
+            f"{query_name}.sql"
+        )
+        if not query_path.exists():
+            raise FileNotFoundError(f"Query file not found: {query_path}")
+        return await self._open_file(query_path)
 
     async def _fetch_one(
         self,

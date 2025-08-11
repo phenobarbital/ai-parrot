@@ -1,4 +1,5 @@
 from datetime import datetime, date
+import uuid
 from pathlib import Path
 # Model:
 from asyncdb.models import Model, Field
@@ -10,8 +11,13 @@ def today_date() -> date:
 
 class NextStopStore(Model):
     """Model representing Table for the NextStop system."""
-    user_id: str = Field(
+    report_id: uuid.UUID = Field(
+        default_factory=uuid.uuid4,
         primary_key=True,
+        description="Unique identifier for the report.",
+        title="Report ID"
+    )
+    user_id: str = Field(
         description="Unique identifier for the user.",
         title="User ID",
     )
@@ -26,13 +32,11 @@ class NextStopStore(Model):
         title="Content"
     )
     agent_name: str = Field(
-        primary_key=True,
         description="Name of the agent associated.",
         title="Agent Name",
         default="NextStopAgent"
     )
     program_slug: str = Field(
-        primary_key=True,
         description="Unique identifier for the program slug.",
         example="nextstop",
         title="Program Slug",
@@ -83,6 +87,26 @@ class NextStopStore(Model):
         title="Attributes"
     )
     created_at: datetime
+    is_new: bool = Field(
+        default=True,
+        description="Flag indicating if the record is new.",
+        title="Is New"
+    )
+    manager_id: str = Field(
+        default=None,
+        description="ID of the manager associated with the record.",
+        title="Manager ID"
+    )
+    store_id: str = Field(
+        default=None,
+        description="ID of the store associated with the record.",
+        title="Store ID"
+    )
+    employee_id: str = Field(
+        default=None,
+        description="ID of the employee associated with the record.",
+        title="Employee ID"
+    )
 
     class Meta:
         """Meta class for NextStopStore model."""
