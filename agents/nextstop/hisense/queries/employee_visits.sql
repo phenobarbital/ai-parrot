@@ -28,7 +28,8 @@ WITH visit_data AS (
                 'account_name', d.account_name
             ) ORDER BY column_name
         ) AS visit_info
-    FROM hisense.form_data d
+    FROM last_visits lv
+    JOIN hisense.form_data d using(store_id, visit_timestamp)
     ---cross join dates da
     INNER JOIN troc.stores st ON st.store_id = d.store_id AND st.program_slug = 'hisense'
     WHERE visit_date::date between (
