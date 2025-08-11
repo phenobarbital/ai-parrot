@@ -482,6 +482,10 @@ class EmployeeToolkit(BaseNextStop):
         Useful for understanding employee performance and sales distribution.
         """
         sql = await self._get_query("employee_sales")
+        if not manager_id:
+            manager_id = kwargs.get('email')
+        if not manager_id:
+            raise ToolError("Manager ID is required to fetch employee sales data.")
         sql = sql.format(manager_id=manager_id)
         try:
             return await self._get_dataset(
