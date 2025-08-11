@@ -41,8 +41,8 @@ class User(Model):
     birthday: str = Column(required=False)
     worker_type: str = Column(required=False)
     created_at: datetime = Column(required=False)
-    reports_to_associate_oid: str = Column(required=False)
-    manager_id: str = Column(required=False)
+    # reports_to_associate_oid: str = Column(required=False)
+    # manager_id: str = Column(required=False)
 
     def birth_date(self):
         if self.birthday:

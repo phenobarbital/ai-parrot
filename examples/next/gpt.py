@@ -57,7 +57,7 @@ async def example_usage():
         # Simple question
         response = await client.ask(
             "What's the weather like in New York?",
-            model=OpenAIModel.GPT_4_1_MINI
+            model=OpenAIModel.O3
         )
         # response is an AIMessage object
         print("Weather response:", response.output)
