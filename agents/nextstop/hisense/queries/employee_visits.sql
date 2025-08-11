@@ -1,9 +1,4 @@
-WITH last_visits AS (
-    select store_id, visit_timestamp
-    from hisense.form_information d
-    where store_id = '{store_id}'
-    order by visit_timestamp DESC NULLS LAST limit {limit}
-), visit_data AS (
+WITH visit_data AS (
     SELECT
         form_id,
         formid,
@@ -37,7 +32,10 @@ WITH last_visits AS (
     JOIN hisense.form_data d using(store_id, visit_timestamp)
     ---cross join dates da
     INNER JOIN troc.stores st ON st.store_id = d.store_id AND st.program_slug = 'hisense'
-    WHERE column_name IN ('9733','9731','9732','9730')
+    WHERE visit_date::date between (
+    SELECT firstdate  FROM public.week_range((current_date::date - interval '1 week')::date, (current_date::date - interval '1 week')::date))
+    and (SELECT lastdate  FROM public.week_range((current_date::date - interval '1 week')::date, (current_date::date - interval '1 week')::date))
+    AND column_name IN ('9733','9731','9732','9730')
     AND d.visitor_email = '{employee_id}'
     GROUP BY
         form_id, formid, visit_date, visit_timestamp, visit_length, d.visit_hour, d.account_name,
