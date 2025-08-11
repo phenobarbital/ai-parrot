@@ -95,10 +95,10 @@ class BasicAgent(Chatbot):
                 PythonPandasTool(
                     report_dir=STATIC_DIR.joinpath(self.agent_id, 'documents')
                 ),
+                GoogleLocationTool(),
                 # PDFPrintTool(
                 #     output_dir=STATIC_DIR.joinpath(self.agent_id, 'documents')
                 # ),
-                # GoogleLocationTool(),
                 # GoogleRoutesTool(
                 #     output_dir=STATIC_DIR.joinpath(self.agent_id, 'routes')
                 # ),

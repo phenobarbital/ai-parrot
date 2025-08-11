@@ -35,6 +35,45 @@ class ManagerInput(BaseModel):
     )
 
 ## Outputs:
+class VisitDetailed(BaseModel):
+    """Detailed visit information model."""
+    visit_date: date = Field(..., description="Date of the visit")
+    column_name: str = Field(..., description="Column identifier for the data point")
+    store_id: str = Field(description="Store identifier")
+    question: str = Field(..., description="Question asked during the visit")
+    answer: Optional[str] = Field(None, description="Answer provided for the question")
+    account_name: str = Field(..., description="Name of the retail account/store")
+    visit_timestamp: Optional[datetime] = Field(default=None, description="Visit timestamp")
+    visit_length: Optional[float] = Field(default=None, description="Visit length")
+    time_in: Optional[time] = Field(default=None, description="Check-in time")
+    time_out: Optional[time] = Field(default=None, description="Check-out time")
+
+    @field_validator('question', mode='before')
+    @classmethod
+    def truncate_question(cls, v: str) -> str:
+        """Truncate question if longer than 200 characters."""
+        if not isinstance(v, str):
+            return v
+        return v[:200] + " (...)" if len(v) > 200 else v
+
+class VisitInformation(BaseModel):
+    """Visit information model."""
+    # Basic visit info
+    visitor_name: str = Field(..., description="Name of the visitor/manager")
+    visitor_email: str = Field(..., description="Email address of the visitor")
+    visitor_name: Optional[str] = Field(default=None, description="Visitor name")
+    visitor_username: Optional[str] = Field(default=None, description="Visitor username")
+    # aggregated visit data
+    visit_data: Optional[List[VisitDetailed]] = Field(
+        default=None,
+        description="Visit data aggregated"
+    )
+    # Aggregated questions:
+    questions: Optional[Dict[str, List[Dict[str, Any]]]] = Field(
+        default=None,
+        description="Aggregated visit questions and answers organized by question type"
+    )
+
 class VisitDetail(BaseModel):
     """Individual visit detail from the visit_data JSONB array."""
     visit_date: date = Field(..., description="Date of the visit")
@@ -405,105 +444,8 @@ class EmployeeToolkit(BaseNextStop):
         including total visits, average visit duration, and most frequent visit hours.
         Useful for analyzing employee performance and visit patterns.
         """
-        sql = f"""
-WITH employee_data AS (
-WITH employee_info AS (
-    SELECT
-        d.rep_name as visitor_name,
-        d.rep_email as visitor_email,
-        COUNT(DISTINCT st.store_id) AS assigned_stores,
-      -- 1) Current week Sunday → Saturday
-      (CURRENT_DATE
-        - EXTRACT(dow FROM CURRENT_DATE) * INTERVAL '1 day'
-      )::date                               AS current_week_start,
-      (CURRENT_DATE
-        - EXTRACT(dow FROM CURRENT_DATE) * INTERVAL '1 day'
-        + INTERVAL '6 days'
-      )::date                               AS current_week_end,
-
-      -- 2) Previous week (the Sunday–Saturday immediately before)
-      (
-        CURRENT_DATE
-        - EXTRACT(dow FROM CURRENT_DATE) * INTERVAL '1 day'
-        - INTERVAL '1 week'
-      )::date                               AS previous_week_start,
-      (
-        CURRENT_DATE
-        - EXTRACT(dow FROM CURRENT_DATE) * INTERVAL '1 day'
-        - INTERVAL '1 week'
-        + INTERVAL '6 days'
-      )::date                               AS previous_week_end,
-
-      -- 3) “Same week” one month ago (Sunday–Saturday)
-      (
-        (CURRENT_DATE - INTERVAL '1 month')::date
-        - EXTRACT(dow FROM (CURRENT_DATE - INTERVAL '1 month')) * INTERVAL '1 day'
-      )::date                               AS week_prev_month_start,
-      (
-        (CURRENT_DATE - INTERVAL '1 month')::date
-        - EXTRACT(dow FROM (CURRENT_DATE - INTERVAL '1 month')) * INTERVAL '1 day'
-        + INTERVAL '6 days'
-      )::date                               AS week_prev_month_end
-    FROM hisense.vw_stores st
-    LEFT JOIN hisense.stores_details d USING (store_id)
-    WHERE d.manager_name = '{manager_id}'
-        AND d.rep_email <> '' and d.rep_name <> '0'
-    GROUP BY d.rep_name, d.rep_email
-)
-    SELECT
-        e.visitor_name,
-        e.visitor_email,
-        e.assigned_stores,
-        -- visit stats:
-        count(distinct f.form_id) as total_visits,
-        count(distinct f.store_id) as visited_stores,
-        SUM(f.visit_length) AS visit_duration,
-        AVG(f.visit_length) AS average_visit_duration,
-        AVG(f.visit_hour) AS hour_of_visit,
-        count(DISTINCT f.form_id) FILTER(WHERE f.visit_date between current_week_start and current_week_end) AS current_visits,
-        count(DISTINCT f.form_id) FILTER(WHERE f.visit_date between previous_week_start and previous_week_end) AS previous_week_visits,
-        count(DISTINCT f.form_id) FILTER(WHERE f.visit_date between week_prev_month_start and week_prev_month_end) AS previous_month_visits,
-        AVG(f.visit_dow)::integer AS most_frequent_day_of_week,
-        ts.store_id   AS most_frequent_store,
-        ts.visits_cnt AS most_frequent_store_visits
-    FROM hisense.form_information f
-    JOIN employee_info e USING(visitor_email)
-    LEFT JOIN hisense.stores_details d USING (store_id)
-    LEFT JOIN LATERAL (
-      SELECT
-      f2.store_id,
-      COUNT(*) AS visits_cnt
-      FROM hisense.form_information f2
-      WHERE f2.visitor_email = e.visitor_email
-      AND f2.visit_date >= e.week_prev_month_start
-      GROUP BY f2.store_id
-      ORDER BY visits_cnt DESC
-      LIMIT 1
-    ) as ts ON TRUE
-    WHERE f.visit_date >= week_prev_month_start
-    AND d.manager_name = 'mcarter@trocglobal.com'
-    GROUP BY e.visitor_name, e.visitor_email, e.assigned_stores, ts.store_id, ts.visits_cnt
-)
-SELECT
-    ed.*,
-    round(coalesce(troc_percent(visited_stores, assigned_stores), 0) * 100, 1)::text   || '%' AS visit_ratio,
-    CASE most_frequent_day_of_week
-        WHEN 0 THEN 'Monday'
-        WHEN 1 THEN 'Tuesday'
-        WHEN 2 THEN 'Wednesday'
-        WHEN 3 THEN 'Thursday'
-        WHEN 4 THEN 'Friday'
-        WHEN 5 THEN 'Saturday'
-        WHEN 6 THEN 'Sunday'
-        ELSE 'Unknown' -- Handle any unexpected values
-    END AS day_of_week,
-    RANK() OVER (ORDER BY current_visits DESC) AS ranking_visits,
-    RANK() OVER (ORDER BY previous_week_visits DESC) AS previous_week_ranking,
-    RANK() OVER (ORDER BY previous_month_visits DESC) AS previous_month_ranking,
-    RANK() OVER (ORDER BY visit_duration DESC) AS ranking_duration
-FROM employee_data ed
-ORDER BY visitor_email DESC;
-        """
+        sql = await self._get_query("visits_by_manager")
+        sql = sql.format(manager_id=manager_id)
         try:
             return await self._get_dataset(
                 sql,
@@ -529,45 +471,8 @@ ORDER BY visitor_email DESC;
         Returns a ranked list of employees based on their sales performance.
         Useful for understanding employee performance and sales distribution.
         """
-        sql = f"""
-WITH stores AS (
-    SELECT
-    st.store_id, d.rep_name as visitor_name, market_name, region_name, d.rep_email as visitor_email,
-    count(store_id) filter(where focus = true) as focus_400,
-    count(store_id) filter(where wall_display = true) as wall_display,
-    count(store_id) filter(where triple_stack = true) as triple_stack,
-    count(store_id) filter(where covered = true) as covered,
-    count(store_id) filter(where end_cap = true) as endcap,
-    DATE_TRUNC('week', CURRENT_DATE)::date - 1 AS current_week,
-    (DATE_TRUNC('week', CURRENT_DATE)::date - 1) - INTERVAL '1 week' AS previous_week,
-    (DATE_TRUNC('week', (CURRENT_DATE - INTERVAL '1 month'))::date - 1)::date AS week_previous_month
-    FROM hisense.vw_stores st
-    left join hisense.stores_details d using(store_id)
-    WHERE manager_name = '{manager_id}'
-    and rep_name <> '0' and rep_email <> ''
-    GROUP BY st.store_id, d.rep_name, d.rep_email, market_name, region_name
-), sales AS (
-  SELECT
-  st.visitor_name,
-  st.visitor_email,
-  sum(coalesce(net_sales, 0)) as total_sales,
-  sum(net_sales) FILTER(WHERE i.order_date_week::date = st.current_week::date) AS sales_current_week,
-  sum(net_sales) FILTER(where i.order_date_week::date = st.previous_week::date) AS sales_previous_week,
-  sum(net_sales) FILTER(where i.order_date_week::date = st.week_previous_month::date) AS sales_previous_month
-  FROM hisense.summarized_inventory i
-  JOIN stores st USING(store_id)
-  INNER JOIN hisense.all_products p using(model)
-  WHERE order_date_week::date between st.week_previous_month and current_date - 1
-  AND new_model = True
-  and i.store_id is not null
-  GROUP BY st.visitor_name, st.visitor_email
-)
-SELECT *,
- rank() over (order by sales_current_week DESC) as current_ranking,
- rank() over (order by sales_previous_week DESC) as previous_week_ranking,
- rank() over (order by sales_previous_month DESC) as previous_month_ranking
-FROM sales;
-        """
+        sql = await self._get_query("employee_sales")
+        sql = sql.format(manager_id=manager_id)
         try:
             return await self._get_dataset(
                 sql,
@@ -688,85 +593,8 @@ LIMIT 100;
         Data is returned as a Structured JSON object.
         Useful for analyzing employee visit patterns and performance.
         """
-        sql = f"""
-WITH visit_data AS (
-    SELECT
-        form_id,
-        formid,
-        visit_date::date AS visit_date,
-        visitor_name,
-        visitor_email,
-        visit_timestamp,
-        visit_length,
-        visit_hour,
-        time_in,
-        time_out,
-        d.store_id,
-        d.visit_dow,
-        d.account_name,
-        -- Calculate time spent in decimal minutes
-        CASE
-            WHEN time_in IS NOT NULL AND time_out IS NOT NULL THEN
-                EXTRACT(EPOCH FROM (time_out::time - time_in::time)) / 60.0
-            ELSE NULL END AS time_spent_minutes,
-        -- Aggregate visit data
-        jsonb_agg(
-            jsonb_build_object(
-                'visit_date', visit_date,
-                'column_name', column_name,
-                'question', question,
-                'answer', data,
-                'account_name', d.account_name
-            ) ORDER BY column_name
-        ) AS visit_info
-    FROM hisense.form_data d
-    ---cross join dates da
-    INNER JOIN troc.stores st ON st.store_id = d.store_id AND st.program_slug = 'hisense'
-    WHERE visit_date::date between (
-    SELECT firstdate  FROM public.week_range((current_date::date - interval '1 week')::date, (current_date::date - interval '1 week')::date))
-    and (SELECT lastdate  FROM public.week_range((current_date::date - interval '1 week')::date, (current_date::date - interval '1 week')::date))
-    AND column_name IN ('9733','9731','9732','9730')
-    AND d.visitor_email = '{employee_id}'
-    GROUP BY
-        form_id, formid, visit_date, visit_timestamp, visit_length, d.visit_hour, d.account_name,
-        time_in, time_out, d.store_id, st.alt_name, visitor_name, visitor_email, visitor_role, d.visit_dow
-),
-retailer_summary AS (
-  -- compute per-visitor, per-account counts, then turn into a single JSONB
-  SELECT
-    visitor_email,
-    jsonb_object_agg(account_name, cnt) AS visited_retailers
-  FROM (
-    SELECT
-      visitor_email,
-      account_name,
-      COUNT(*) AS cnt
-    FROM visit_data
-    GROUP BY visitor_email, account_name
-  ) t
-  GROUP BY visitor_email
-)
-SELECT
-visitor_name,
-vd.visitor_email,
-max(visit_date) as latest_visit_date,
-COUNT(DISTINCT form_id) AS number_of_visits,
-count(distinct store_id) as visited_stores,
-avg(visit_length) as visit_duration,
-AVG(visit_hour) AS average_hour_visit,
-min(time_in) as min_time_in,
-max(time_out) as max_time_out,
-mode() WITHIN GROUP (ORDER BY visit_hour) as most_frequent_hour_of_day,
-mode() WITHIN GROUP (ORDER BY visit_dow) AS most_frequent_day_of_week,
-percentile_disc(0.5) WITHIN GROUP (ORDER BY visit_length) AS median_visit_duration,
-jsonb_agg(elem) AS visit_data,
-rs.visited_retailers
-FROM visit_data vd
-CROSS JOIN LATERAL jsonb_array_elements(visit_info) AS elem
-LEFT JOIN retailer_summary rs
-    ON rs.visitor_email = vd.visitor_email
-group by visitor_name, vd.visitor_email, rs.visited_retailers
-        """
+        sql = await self._get_query("employee_visits")
+        sql = sql.format(employee_id=employee_id)
         try:
             visit_data = await self._fetch_one(
                 sql,

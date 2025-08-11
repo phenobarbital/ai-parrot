@@ -4,20 +4,41 @@ import textwrap
 from pathlib import Path
 import asyncio
 from aiohttp import web
-
+import re
 from datamodel import BaseModel, Field
 from datamodel.parsers.json import json_encoder  # pylint: disable=E0611
 from asyncdb.exceptions import NoDataFound
 from navconfig import BASE_DIR
+from navigator_session import get_session, AUTH_SESSION_OBJECT
 from navigator_auth.decorators import (
     is_authenticated,
     user_session
 )
 from navigator.responses import JSONResponse
+from navigator.views import ModelView
 from parrot.bots.nextstop import NextStop
 from parrot.handlers.agents import AgentHandler
 from parrot.tools.nextstop import StoreInfo, EmployeeToolkit
 from .models import NextStopStore
+
+
+class NextStopStoreView(ModelView):
+    """
+    NextStopStoreView is a view that handles the NextStopStore model.
+    It provides methods to interact with the NextStopStore data.
+    """
+    model = NextStopStore
+    name = "NextStopStore"
+    path = '/api/v1/nextstop_responses'
+    pk: str = 'report_id'
+
+
+    async def _set_created_by(self, value, column, data):
+        return await self.get_userid(session=self._session)
+
+    async def _set_is_new(self, value, column, data):
+        """Always mark as false for existing records."""
+        return False
 
 
 class NextStopResponse(BaseModel):
@@ -26,21 +47,54 @@ class NextStopResponse(BaseModel):
     for the NextStop agent.
     """
     user_id: str = Field(..., description="Unique identifier for the user")
-    agent_name: str = Field(required=False, description="Name of the agent that processed the request")
+    agent_name: str = Field(
+        required=False,
+        description="Name of the agent that processed the request"
+    )
     data: str = Field(..., description="Data returned by the agent")
     status: str = Field(default="success", description="Status of the response")
     output: str = Field(required=False)
-    transcript: str = Field(required=False, description="Transcript of the conversation with the agent")
-    attributes: dict = Field(default_factory=dict, description="Additional attributes related to the response")
-    store_id: str = Field(required=False, description="ID of the store associated with the session")
-    employee_id: str = Field(required=False, description="ID of the employee associated with the session")
-    manager_id: str = Field(required=False, description="ID of the manager associated with the session")
+    transcript: str = Field(
+        required=False,
+        description="Transcript of the conversation with the agent"
+    )
+    attributes: dict = Field(
+        default_factory=dict,
+        description="Additional attributes related to the response"
+    )
+    store_id: str = Field(
+        required=False,
+        description="ID of the store associated with the session"
+    )
+    employee_id: str = Field(
+        required=False,
+        description="ID of the employee associated with the session"
+    )
+    manager_id: str = Field(
+        required=False,
+        description="ID of the manager associated with the session"
+    )
     created_at: datetime = Field(default=datetime.now)
-    podcast_path: str = Field(required=False, description="Path to the podcast associated with the session")
-    script_path: str = Field(required=False, description="Path to the script associated with the session")
-    pdf_path: str = Field(required=False, description="Path to the PDF associated with the session")
-    document_path: str = Field(required=False, description="Path to document generated during session")
-    documents: list[Path] = Field(default_factory=list, description="List of documents associated with the session")
+    podcast_path: str = Field(
+        required=False,
+        description="Path to the podcast associated with the session"
+    )
+    script_path: str = Field(
+        required=False,
+        description="Path to the script associated with the session"
+    )
+    pdf_path: str = Field(
+        required=False,
+        description="Path to the PDF associated with the session"
+    )
+    document_path: str = Field(
+        required=False,
+        description="Path to document generated during session"
+    )
+    documents: list[Path] = Field(
+        default_factory=list,
+        description="List of documents associated with the session"
+    )
 
 
 @user_session()
@@ -113,11 +167,56 @@ class NextStopAgent(AgentHandler):
             # Save the result to the database
             NextStopStore.Meta.connection = conn
             try:
+                # Determine the kind value based on the job record and attributes
+                base_kind = job_record.name if job_record else 'nextstop'
+                def extract_store_id_from_data(data_content: str) -> str:
+                    """Extract store ID from the data content using regex."""
+                    # Look for patterns like "Store ID:** BBY1220" or "**Store ID:** BBY1220"
+                    store_id_pattern = r'\*\*Store ID:\*\*\s*([A-Z0-9]+)'
+                    match = re.search(store_id_pattern, data_content)
+                    return match.group(1) if match else None
+
+                def extract_employee_id_from_data(data_content: str) -> str:
+                    """Extract employee ID from the data content."""
+                    # Look for employee ID patterns in the content
+                    employee_pattern = r'employee[_\s]*id[:\s]*([A-Z0-9]+)'
+                    match = re.search(employee_pattern, data_content, re.IGNORECASE)
+                    return match.group(1) if match else None
+
+                if base_kind == '_nextstop_store':
+                    if result.store_id:
+                        # Use store_id from attributes
+                        kind = f"{base_kind}_{result.store_id}"
+                    elif result.data:
+                        # Extract from data content
+                        store_id = extract_store_id_from_data(result.data)
+                        kind = f"{base_kind}_{store_id}" if store_id else base_kind
+                    else:
+                        kind = base_kind
+                elif base_kind == '_nextstop_employee':
+                    if result.employee_id:
+                        # Use employee_id from attributes
+                        kind = f"{base_kind}_{result.employee_id}"
+                    elif result.data:
+                        # Extract from data content
+                        employee_id = extract_employee_id_from_data(result.data)
+                        kind = f"{base_kind}_{employee_id}" if employee_id else base_kind
+                    else:
+                        kind = base_kind
+                else:
+                    kind = base_kind
+
+            except Exception as e:
+                print(f"Error determining kind: {e}")
+                kind = 'nextstop'
+
+            # Create a new NextStopStore record
+            try:
                 record = NextStopStore(
                     user_id=result.user_id,
                     agent_name=result.agent_name,
                     program_slug='hisense',
-                    kind=job_record.name if job_record else 'nextstop',
+                    kind=kind,
                     content=job_record.content,
                     data=result.data,
                     output=result.output,
@@ -125,6 +224,9 @@ class NextStopAgent(AgentHandler):
                     pdf_path=str(result.pdf_path),
                     documents=json_encoder(result.documents),
                     attributes=result.attributes,
+                    manager_id=result.manager_id,
+                    employee_id=result.employee_id,
+                    store_id=result.store_id,
                 )
                 await record.save()
             except Exception as e:
@@ -314,10 +416,34 @@ class NextStopAgent(AgentHandler):
             status=204,
         )
 
+    async def get_manager_id(self, request: web.Request) -> str:
+        """Retrieve the manager ID from the request session."""
+        session = await get_session(request)
+        manager_id = None
+        if not session:
+            raise web.HTTPUnauthorized(reason="Session not found")
+        userinfo = session.get(AUTH_SESSION_OBJECT, {})
+        email = userinfo.get('email', None)
+        if not userinfo:
+            return None
+        manager_id = userinfo.get('manager_id', None)
+        if not manager_id:
+            # retrieve manager id from database:
+            pg = self.db_connection()
+            async with await pg.connection() as conn:  # pylint: disable=E1101  # noqa
+                qry = f"""
+SELECT m.corporate_email as manager_id from troc.troc_employees e
+INNER JOIN troc.troc_employees m ON e.reports_to_associate_oid = m.associate_oid
+where e.corporate_email = '{email!s}'
+                """
+                result = await conn.fetch_one(qry)
+                manager_id = result['manager_id'] if result else None
+        return manager_id
+
     async def _generate_report(self, response: NextStopResponse) -> NextStopResponse:
         """Generate a report from the response data."""
         final_report = response.output.strip()
-        print(f"Final report generated: {final_report}")
+        # print(f"Final report generated: {final_report}")
         if not final_report:
             response.output = "No report generated."
             response.status = "error"
@@ -328,6 +454,10 @@ class NextStopAgent(AgentHandler):
             agent = self.request.app[self.agent_id]
         else:
             agent = self._agent
+        # Set the manager ID from session:
+        manager_id = await self.get_manager_id(self.request)
+        if not response.manager_id:
+            response.manager_id = manager_id
         try:
             _path = await agent.save_transcript(
                 transcript=final_report,
@@ -376,6 +506,7 @@ class NextStopAgent(AgentHandler):
             raise RuntimeError(
                 f"Failed to generate report due to an error in the agent invocation: {e}"
             )
+        response.store_id = store_id
         return await self._generate_report(response)
 
     async def _nextstop_employee(self, employee_id: str, **kwargs) -> NextStopResponse:
@@ -389,6 +520,7 @@ class NextStopAgent(AgentHandler):
             raise RuntimeError(
                 f"Failed to generate report due to an error in the agent invocation: {e}"
             )
+        response.employee_id = employee_id
         return await self._generate_report(response)
 
 
@@ -405,12 +537,15 @@ class NextStopAgent(AgentHandler):
             employee_id=employee_id
         )
         try:
+            # Invoke the agent with the formatted question
             response, _ = await self.ask_agent(question)
         except Exception as e:
             print(f"Error invoking agent: {e}")
             raise RuntimeError(
                 f"Failed to generate report due to an error in the agent invocation: {e}"
             )
+        response.manager_id = manager_id
+        response.employee_id = employee_id
         return await self._generate_report(response)
 
 
@@ -433,6 +568,7 @@ class NextStopAgent(AgentHandler):
             raise RuntimeError(
                 f"Failed to generate report due to an error in the agent invocation: {e}"
             )
+        response.manager_id = manager_id
         return await self._generate_report(response)
 
 
