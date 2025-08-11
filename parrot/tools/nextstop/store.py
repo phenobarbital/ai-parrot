@@ -130,6 +130,21 @@ class StoreInfo(BaseNextStop):
 
     All tools are designed to work asynchronously with database connections and external APIs.
     """
+    def _pad_storeid(self, store_id: str , width: int = 4) -> str:
+        """Pad the store ID with leading zeros to ensure it has a fixed width.
+
+        Split a store id into prefix + numeric suffix and zero-fill the number.
+
+        Examples:
+            pad_store_id("BBY599") -> "BBY0599"
+            pad_store_id("BBY4")   -> "BBY0004"
+        """
+        s = store_id.strip()
+        # extract the prefix (BBY) and numeric suffix (599)
+
+        prefix = s[:-3]
+        numeric_suffix = s[-3:].zfill(width)
+        return f"{prefix}{numeric_suffix}"
 
     @tool_schema(FootTrafficInput)
     async def get_foot_traffic(
@@ -173,6 +188,7 @@ class StoreInfo(BaseNextStop):
             List[VisitInfo]: List of visit information objects
         """
         sql = await self._get_query("store_visits")
+        store_id = self._pad_storeid(store_id)
         sql = sql.format(store_id=store_id, limit=limit)
         try:
             return await self._get_dataset(
@@ -269,6 +285,7 @@ class StoreInfo(BaseNextStop):
         for the specified store. Essential for store analysis and planning.
         """
         sql = await self._get_query("store_info")
+        store_id = self._pad_storeid(store_id)
         sql = sql.format(store_id=store_id, limit=3)
 
         # Fetch the store data

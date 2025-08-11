@@ -87,6 +87,11 @@ class NextStopStore(Model):
         title="Attributes"
     )
     created_at: datetime
+    created_by: str = Field(
+        default="",
+        description="ID of the user who created the record.",
+        title="Created By"
+    )
     is_new: bool = Field(
         default=True,
         description="Flag indicating if the record is new.",

@@ -1,3 +1,5 @@
+# Employee Performance Report:
+
 Employee ID: {employee_id}
 
 Using data returned by
@@ -6,43 +8,29 @@ Using data returned by
 
 to generate a detailed, comprehensive employee visit performance report using the pre-calculated metrics.
 
-## 1. Basic Employee Information
-- **Employee ID:** employee_id
-- **Employee Name:** employee_name
-- **Total Stores Visited:** total_stores_visited
-- **Most Recent Visit Date:** use latest_visit_date from get_by_employee_visits
-- **Most Recent Store Visited:** use store_name from get_by_employee_visits
-- **Current Location/Territory:** employee_territory or location
-- **Employee Performance Rating:** overall_performance_score (if available)
+# 1. Basic Employee Information
+**Employee ID:** employee_id
+**Employee Name:** employee_name
+**Total Stores Visited:** total_stores_visited
+**Most Recent Visit Date:** use latest_visit_date from get_by_employee_visits
+**Most Recent Store Visited:** use store_name from get_by_employee_visits
+**Current Location/Territory:** employee_territory or location
+**Employee Performance Rating:** overall_performance_score (if available)
 
-## 2. Executive Summary
-- **Average Duration of Visits:** use the column visit_duration
-- **Average Visit Length Comparison:** compare the visit_duration with the duration of previous visits.
-- **Variance in Average Visit Length:** compare visit_length changes across all visits.
-- **Total Visits Completed:** use number_of_visits
-- **Total Unique Stores Visited:** use visited_stores
-- **Median Per-Store Visits:** use median_visits_per_store
-- **Median Duration of Visits:** use median_visit_duration
-- **Visit Frequency:** visits per week/month based on date range
-- **Territory Coverage:** percentage of assigned stores visited
-
-## 3. Summary of Insights
-- **Summary of Employee Performance:** Use the information extracted to summarize the employee's behavior and performance patterns.
-- **Key Findings:** Summarize the most impactful insights from the analysis.
-• **Strengths and Successes:** What were the key wins or successes across the employee's recent visits?
-• **Challenges and Areas for Improvement:** What challenges or opportunities did you observe during the employee's visits?
-  - Highlight major issues identified across visits.
-  - Areas where performance can be enhanced.
-  - Include anything that could be improved or leveraged for future success.
-• **Performance Trends:** How has the employee's performance changed over time?
-• **Recommendations:**
-    - What specific actions or focus areas should be prioritized for this employee's development?
-    - What training or support might help improve their visit quality?
-    - What are your recommendations for optimizing their territory coverage and visit efficiency?
+# 2. Executive Summary
+**Average Duration of Visits:** use the column visit_duration
+**Average Visit Length Comparison:** compare the visit_duration with the duration of previous visits.
+**Variance in Average Visit Length:** compare visit_length changes across all visits.
+**Total Visits Completed:** use number_of_visits
+**Total Unique Stores Visited:** use visited_stores
+**Median Per-Store Visits:** use median_visits_per_store
+**Median Duration of Visits:** use median_visit_duration
+**Visit Frequency:** visits per week/month based on date range
+**Territory Coverage:** percentage of assigned stores visited
 
 Using data returned from `get_by_employee_visits` tool executes the following task:
 
-## 4. Visit Performance Metrics by Employee
+# 3. Visit Performance Metrics by Employee
 Employee ID: {employee_id}
 
 ### Task
@@ -73,7 +61,7 @@ For each of the four key questions (column_name: '9730', '9731', '9732', '9733')
 
 **Do NOT** aggregate multiple questions together. **Do NOT** summarize across questions. **Do NOT** omit any of the seven bullets above.
 
-## 5. Employee Performance Trends – Visit_1 vs. (Visit_2 & Visit_3)
+## 4. Employee Performance Trends – Visit_1 vs. (Visit_2 & Visit_3)
 
 ### Visits to analyze
 Rank the rows by visit_timestamp DESC and label them:
@@ -92,19 +80,33 @@ For **each** question `column_name` produce:
 • **Overall Assessment:** "Better / Worse / No Material Change" with one-sentence rationale
 • **Performance Development:** How has the employee's approach or effectiveness changed between visits?
 
-## 6. Employee Development Recommendations
+# 5. Summary of Insights
+**Summary of Employee Performance:** Use the information extracted to summarize the employee's behavior and performance patterns.
+**Key Findings:** Summarize the most impactful insights from the analysis.
+**Strengths and Successes:** What were the key wins or successes across the employee's recent visits?
+**Challenges and Areas for Improvement:** What challenges or opportunities did you observe during the employee's visits?
+  - Highlight major issues identified across visits.
+  - Areas where performance can be enhanced.
+  - Include anything that could be improved or leveraged for future success.
+**Performance Trends:** How has the employee's performance changed over time?
+**Recommendations:**
+    - What specific actions or focus areas should be prioritized for this employee's development?
+    - What training or support might help improve their visit quality?
+    - What are your recommendations for optimizing their territory coverage and visit efficiency?
 
-### Based on Visit Analysis
-• **Training Needs:** Identify specific areas where additional training would benefit the employee
-• **Best Practices to Reinforce:** What successful approaches should the employee continue?
-• **Improvement Areas:** Priority areas for performance enhancement
-• **Territory Management:** Recommendations for optimizing store coverage and visit scheduling
-• **Goal Setting:** Suggested metrics and targets for future performance measurement
+# 6. Employee Development Recommendations
 
-### Action Plan
-• **Short-term (Next 30 days):** Immediate focus areas and quick wins
-• **Medium-term (Next Quarter):** Skills development and process improvements
-• **Long-term (Next 6 months):** Career development and territory expansion opportunities
+## Based on Visit Analysis
+**Training Needs:** Identify specific areas where additional training would benefit the employee
+**Best Practices to Reinforce:** What successful approaches should the employee continue?
+**Improvement Areas:** Priority areas for performance enhancement
+**Territory Management:** Recommendations for optimizing store coverage and visit scheduling
+**Goal Setting:** Suggested metrics and targets for future performance measurement
+
+## Action Plan
+**Short-term (Next 30 days):** Immediate focus areas and quick wins
+**Medium-term (Next Quarter):** Skills development and process improvements
+**Long-term (Next 6 months):** Career development and territory expansion opportunities
 
 IMPORTANT INSTRUCTIONS:
 - Strictly follow this markdown format without exception.
