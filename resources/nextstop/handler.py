@@ -227,6 +227,7 @@ class NextStopAgent(AgentHandler):
                     manager_id=result.manager_id,
                     employee_id=result.employee_id,
                     store_id=result.store_id,
+                    created_by=result.user_id
                 )
                 await record.save()
             except Exception as e:
@@ -247,11 +248,27 @@ class NextStopAgent(AgentHandler):
             NextStopStore.Meta.connection = conn
             try:
                 # Retrieve all records from the NextStopStore table
-                userid = self._userid if self._userid else self.request.session.get('user_id', None)
+                session = await get_session(self.request)
+                if not session:
+                    return web.json_response(
+                        {"error": "Session not found"}, status=401
+                    )
+                userinfo = session.get(AUTH_SESSION_OBJECT, {})
+                userid = self._userid if self._userid else userinfo.get('user_id', None)
+                email = userinfo.get('email', None)
+                if not userid:
+                    return web.json_response(
+                        {"error": "User ID not found in session"}, status=401
+                    )
                 _filter = {
-                    "user_id": str(userid),
-                    "agent_name": self.agent_name,
-                    "program_slug": "hisense"
+                    "where": {
+                        "$or": [
+                            {"user_id": str(userid)},
+                            {"manager_id": email},
+                        ],
+                        "agent_name": self.agent_name,
+                        "program_slug": "hisense"
+                    }
                 }
                 records = await NextStopStore.filter(**_filter)
                 if not records:
@@ -337,9 +354,9 @@ class NextStopAgent(AgentHandler):
                 }
             )
             rsp_args = {
-                "message": f"NextStopAgent is processing the request for manager {manager_id} and employee {manager_id}",
+                "message": f"NextStopAgent is processing the request for manager {manager_id} and employee {employee_id}",
                 'manager_id': manager_id,
-                'employee': manager_id
+                'employee': employee_id
             }
         elif employee_id:
             # Execute the NextStop agent for a specific employee using the Background task:
@@ -456,7 +473,7 @@ where e.corporate_email = '{email!s}'
             agent = self._agent
         # Set the manager ID from session:
         manager_id = await self.get_manager_id(self.request)
-        if not response.manager_id:
+        if manager_id:
             response.manager_id = manager_id
         try:
             _path = await agent.save_transcript(

@@ -13,16 +13,18 @@ Evaluates how employee '{employee_id}' is performing in terms of sales and visit
 - Evaluating the performance of the employee in terms of sales and visits.
 
 # 1. Executive Summary
-- **Employee Name:** `visitor_name`.
-- **Employee Email:** `visitor_email`.
+**Employee Name:** `visitor_name`.
+**Employee Email:** `visitor_email`.
+
 ## Employee Totals
 **Total Sales (Current Week):**
 **Total Sales (Previous Week):**
 **Total Visits (Current Week):**
 **Total Visits (Previous Week):**
 ## Growth
-- **Sales Growth (Current vs Previous Week):** Calculate the percentage growth in sales from the previous Week to the current Week.
-- **Visits Growth (Current vs Previous Week):** Calculate the percentage growth in visits from the previous Week to the current Week.
+**Sales Growth (Current vs Previous Week):** Calculate the percentage growth in sales from the previous Week to the current Week.
+**Visits Growth (Current vs Previous Week):** Calculate the percentage growth in visits from the previous Week to the current Week.
+
 ## Sales Performance Ranking
     Rank the employee's sales performance compared to other team members.
     - Display as: current ranking vs total of team members.
