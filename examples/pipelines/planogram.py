@@ -10,7 +10,7 @@ from parrot.clients.claude import (
 
 async def main():
     """Example usage of the 3-step pipeline"""
-    llm = OpenAIClient(model=OpenAIModel.GPT5_MINI)
+    llm = OpenAIClient(model=OpenAIModel.GPT_4_1_MINI)
     # llm = ClaudeClient(model=ClaudeModel.SONNET_4)  # Uncomment to use Claude
 
     # Initialize pipeline
@@ -22,10 +22,11 @@ async def main():
     # Define expected planogram
     planogram = PlanogramDescription(
         shelves={
-            "header": ["epson ecotank advertisement"],
+            "header": ["epson ecotank advertisement", "promotional_graphic"],
             "top": ["ET-2980", "ET-3950", "ET-4950"],
-            "middle": ["fact_tag", "fact_tag", "fact_tag"],
+            "shelf1": ["price_tag", "price_tag", "price_tag"],
             "bottom": ["ET-2980 box", "ET-3950 box", "ET-4950 box"],
+            "shelf2": ["price_tag", "price_tag", "price_tag", "price_tag"],
         }
     )
 
@@ -44,7 +45,9 @@ async def main():
         image=image_path,
         reference_images=reference_images,
         planogram_description=planogram,
-        confidence_threshold=0.6
+        confidence_threshold=0.6,
+        return_overlay="identified",
+        overlay_save_path="/tmp/planogram_overlay.jpg",
     )
 
     # Print results
@@ -62,6 +65,9 @@ async def main():
             print(f"  Unexpected: {result.unexpected_products}")
         print(f"  Score: {result.compliance_score:.1%}")
         print()
+
+    # Render the Image:
+    print(results['overlay_path'])
 
 
 if __name__ == "__main__":
