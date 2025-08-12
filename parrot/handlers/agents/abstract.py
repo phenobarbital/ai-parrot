@@ -493,6 +493,7 @@ class AgentHandler(BaseView):
             self._session = session
             # extract other user information as groups, programs and username:
             userinfo = session.get(AUTH_SESSION_OBJECT, {})
+            self._session['email'] = userinfo.get('email', None)
             self._session['username'] = userinfo.get('username', None)
             self._session['programs'] = userinfo.get('programs', [])
             self._session['groups'] = userinfo.get('groups', [])

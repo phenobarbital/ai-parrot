@@ -213,7 +213,7 @@ class NextStopAgent(AgentHandler):
             # Create a new NextStopStore record
             try:
                 record = NextStopStore(
-                    user_id=result.user_id,
+                    user_id=int(result.user_id),
                     agent_name=result.agent_name,
                     program_slug='hisense',
                     kind=kind,
@@ -226,7 +226,6 @@ class NextStopAgent(AgentHandler):
                     attributes=result.attributes,
                     manager_id=result.manager_id,
                     employee_id=result.employee_id,
-                    store_id=result.store_id,
                     created_by=result.user_id
                 )
                 await record.save()
@@ -263,7 +262,7 @@ class NextStopAgent(AgentHandler):
                 _filter = {
                     "where": {
                         "$or": [
-                            {"user_id": str(userid)},
+                            {"employee_id": email},
                             {"manager_id": email},
                         ],
                         "agent_name": self.agent_name,
@@ -305,10 +304,16 @@ class NextStopAgent(AgentHandler):
     async def post(self) -> web.Response:
         """Handle POST requests."""
         data = await self.request.json()
+        if 'hisense' not in self._session['programs']:
+            return web.json_response(
+                {"error": "This agent is not available for your current program."},
+                status=403
+            )
         # Get Store ID if Provided:
+        session_email = self._session['email']
         store_id = data.get('store_id', None)
         manager_id = data.get('manager_id', None)
-        employee_id = data.get('employee_id', None)
+        employee_id = data.get('employee_id')
         query = data.get('query', None)
         if not store_id and not manager_id and not employee_id and not query:
             return web.json_response(
@@ -330,6 +335,7 @@ class NextStopAgent(AgentHandler):
                         "store_id": store_id
                     },
                     'store_id': store_id,
+                    'employee_id': employee_id,
                 }
             )
             rsp_args = {
@@ -350,7 +356,7 @@ class NextStopAgent(AgentHandler):
                         "employee_id": employee_id
                     },
                     'manager_id': manager_id,
-                    'employee_id': employee_id
+                    'employee_id': session_email if not employee_id else employee_id,
                 }
             )
             rsp_args = {
@@ -390,6 +396,7 @@ class NextStopAgent(AgentHandler):
                         "manager_id": manager_id
                     },
                     'manager_id': manager_id,
+                    'employee_id': manager_id,
                     'project': data.get('project', 'Navigator')
                 }
             )
@@ -512,7 +519,7 @@ where e.corporate_email = '{email!s}'
         response.status = "success"
         return response
 
-    async def _nextstop_store(self, store_id: str, **kwargs) -> NextStopResponse:
+    async def _nextstop_store(self, store_id: str, employee_id: str, **kwargs) -> NextStopResponse:
         """Generate a report for the NextStop agent."""
         query = await self.open_prompt('for_store.txt')
         question = query.format(store_id=store_id)
@@ -524,6 +531,7 @@ where e.corporate_email = '{email!s}'
                 f"Failed to generate report due to an error in the agent invocation: {e}"
             )
         response.store_id = store_id
+        response.employee_id = employee_id
         return await self._generate_report(response)
 
     async def _nextstop_employee(self, employee_id: str, **kwargs) -> NextStopResponse:
@@ -586,6 +594,7 @@ where e.corporate_email = '{email!s}'
                 f"Failed to generate report due to an error in the agent invocation: {e}"
             )
         response.manager_id = manager_id
+        response.employee_id = manager_id
         return await self._generate_report(response)
 
 
