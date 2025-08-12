@@ -335,7 +335,7 @@ class NextStopAgent(AgentHandler):
                         "store_id": store_id
                     },
                     'store_id': store_id,
-                    'employee_id': employee_id,
+                    'employee_id': employee_id if employee_id else session_email,
                 }
             )
             rsp_args = {
