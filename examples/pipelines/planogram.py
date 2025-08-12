@@ -10,8 +10,8 @@ from parrot.clients.claude import (
 
 async def main():
     """Example usage of the 3-step pipeline"""
-    # llm = OpenAIClient(model=OpenAIModel.GPT5_MINI)
-    llm = ClaudeClient(model=ClaudeModel.SONNET_4)  # Uncomment to use Claude
+    llm = OpenAIClient(model=OpenAIModel.GPT5_MINI)
+    # llm = ClaudeClient(model=ClaudeModel.SONNET_4)  # Uncomment to use Claude
 
     # Initialize pipeline
     pipeline = PlanogramCompliancePipeline(
