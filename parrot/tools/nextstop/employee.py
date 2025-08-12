@@ -141,8 +141,8 @@ class VisitsByManagerOutput(BaseModel):
         }
 
 
-class EmployeeSales(BaseModel):
-    """Individual record for employee sales data"""
+class ManagerSales(BaseModel):
+    """Individual record for Manager sales data"""
     visitor_name: str = Field(..., description="Name of the employee/visitor")
     visitor_email: str = Field(..., description="Email address of the employee")
     total_sales: Optional[int] = Field(description="Total sales amount across all periods")
@@ -154,9 +154,9 @@ class EmployeeSales(BaseModel):
     previous_month_ranking: Optional[int] = Field(description="Two months ago ranking by sales")
 
 
-class EmployeeSalesOutput(BaseModel):
-    """Structured output for get_employee_sales tool"""
-    records: List[EmployeeSales] = Field(..., description="List of employee sales")
+class ManagerSalesOutput(BaseModel):
+    """Structured output for get_manager_sales tool"""
+    records: List[ManagerSales] = Field(..., description="List of manager sales")
     total_records: int = Field(..., description="Total number of records returned")
     generated_at: datetime = Field(default_factory=datetime.now, description="Timestamp when data was generated")
 
@@ -164,6 +164,15 @@ class EmployeeSalesOutput(BaseModel):
         json_encoders = {
             datetime: lambda dt: dt.isoformat()
         }
+
+class EmployeeSales(BaseModel):
+    """Individual record for Employee sales data"""
+    store_id: str = Field(..., description="Store identifier")
+    tier: str = Field(..., description="Sales ranking")
+    sales_current_week: Optional[float] = Field(..., description="Sales in current week")
+    sales_previous_week: Optional[float] = Field(..., description="Sales in previous week")
+    week_over_week_delta: Optional[float] = Field(..., description="Week over week sales delta")
+    week_over_week_variance: Optional[float] = Field(..., description="Week over week sales variance")
 
 
 class EmployeeVisit(BaseModel):
@@ -445,7 +454,8 @@ class EmployeeToolkit(BaseNextStop):
     - search_employee: Search for employees based on display name or email.
     - get_by_employee_visits: Get visit information for a specific employee.
     - get_visits_by_manager: Get visit information for a specific manager, including their employees.
-    - get_employee_sales: Fetch sales data for a specific employee and ranked performance.
+    - get_manager_sales: Fetch sales data for a specific manager and ranked performance.
+    - get_employee_sales: Fetch sales data for a specific employee.
     """
 
     @tool_schema(ManagerInput)
@@ -472,16 +482,16 @@ class EmployeeToolkit(BaseNextStop):
             raise ValueError(f"Error fetching employee visit data: {e}")
 
     @tool_schema(ManagerInput)
-    async def get_employee_sales(
+    async def get_manager_sales(
         self,
         manager_id: str,
         **kwargs
-    ) -> List[EmployeeSales]:
+    ) -> List[ManagerSales]:
         """Get Sales and goals for all employees related to a Manager.
         Returns a ranked list of employees based on their sales performance.
         Useful for understanding employee performance and sales distribution.
         """
-        sql = await self._get_query("employee_sales")
+        sql = await self._get_query("manager_sales")
         if not manager_id:
             manager_id = kwargs.get('email')
         if not manager_id:
@@ -491,7 +501,7 @@ class EmployeeToolkit(BaseNextStop):
             return await self._get_dataset(
                 sql,
                 output_format='structured',
-                structured_obj=EmployeeSales
+                structured_obj=ManagerSales
             )
         except ToolError as te:
             raise ValueError(f"No Sales data found for manager {manager_id}, error: {te}")
@@ -633,4 +643,42 @@ LIMIT 100;
         except Exception as e:
             raise ValueError(
                 f"Error fetching employee visit data: {e}"
+            )
+
+    @tool_schema(EmployeeInput)
+    async def get_employee_sales(
+        self,
+        employee_id: str,
+        **kwargs
+    ) -> List[EmployeeSales]:
+        """Get sales information for a specific employee.
+        Returns a collection of EmployeeSales objects with detailed sales data.
+        Useful for analyzing individual employee sales patterns and performance.
+        """
+        if not employee_id:
+            employee_id = kwargs.get('email', '').strip().lower()
+        sql = await self._get_query("employee_sales")
+        sql = sql.format(employee_id=employee_id)
+        try:
+            sales_data = await self._get_dataset(
+                sql,
+                output_format='structured',
+                structured_obj=EmployeeSales
+            )
+            if not sales_data:
+                raise ToolError(
+                    f"No Employee Sales data found for email {employee_id}."
+                )
+            return sales_data
+        except ToolError as te:
+            raise ValueError(
+                f"No Employee Sales data found for email {employee_id}, error: {te}"
+            )
+        except ValueError as ve:
+            raise ValueError(
+                f"Invalid data format, error: {ve}"
+            )
+        except Exception as e:
+            raise ValueError(
+                f"Error fetching employee Sales data: {e}"
             )
