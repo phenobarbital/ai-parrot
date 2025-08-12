@@ -543,7 +543,6 @@ class PlanogramCompliancePipeline(AbstractPipeline):
                         detections=detections,
                         shelf_regions=shelf_regions,
                         reference_images=reference_images,
-                        model=self.llm_model or "gpt-4o-mini",
                         temperature=0.0,
                         ocr_hints=True
                     )

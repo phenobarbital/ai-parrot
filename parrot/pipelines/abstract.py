@@ -34,6 +34,8 @@ class AbstractPipeline(ABC):
                 llm_model,
                 **kwargs
             )
+        else:
+            self.llm_provider = llm.client_name.lower()
 
     def _get_llm(
         self,
