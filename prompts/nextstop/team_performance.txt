@@ -75,9 +75,10 @@ Compare the visit duration of the top-performing employee (highest minutes) with
 
 # 3. Sales Performance:
 ## Sales Trend Analysis
-For each employee, calculate and display:
-    - week-over-week change: (sales_current_week - sales_previous_week) / sales_previous_week * 100
-    - Previous-month change: (sales_current_week - sales_previous_month) / sales_previous_month * 100
+For each employee, show, calculate and display:
+    - Current Week Sales: `sales_current_week`
+    - week-over-week change: (`sales_current_week` - `sales_previous_week`) / `sales_previous_week` * 100
+    - Previous-month change: (`sales_current_week` - `sales_previous_month`) / `sales_previous_month` * 100
     - Trend indicators:
       - ↑ (Positive growth >5%)
       - ↓ (Negative growth <-5%)
