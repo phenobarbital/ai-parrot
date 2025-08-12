@@ -37,6 +37,7 @@ class GroqClient(AbstractClient):
     """
 
     client_type: str = "groq"
+    client_name: str = "groq"
     model: str = GroqModel.LLAMA_3_3_70B_VERSATILE
 
     def __init__(

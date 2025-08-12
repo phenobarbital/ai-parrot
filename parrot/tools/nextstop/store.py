@@ -140,10 +140,16 @@ class StoreInfo(BaseNextStop):
             pad_store_id("BBY4")   -> "BBY0004"
         """
         s = store_id.strip()
-        # extract the prefix (BBY) and numeric suffix (599)
-
-        prefix = s[:-3]
-        numeric_suffix = s[-3:].zfill(width)
+        # extract non-numeric characters as prefix
+        prefix = ''.join(filter(str.isalpha, s))
+        # extract the suffix from store_id, to get the numeric part:
+        s = s.replace(prefix, '', 1)
+        if len(s) < width:
+            # zero-fill the numeric part to the specified width
+            s = s.lstrip('0')  # remove leading zeros first
+            numeric_suffix = s.zfill(width)
+        else:
+            numeric_suffix = s
         return f"{prefix}{numeric_suffix}"
 
     @tool_schema(FootTrafficInput)
@@ -287,6 +293,8 @@ class StoreInfo(BaseNextStop):
         sql = await self._get_query("store_info")
         store_id = self._pad_storeid(store_id)
         sql = sql.format(store_id=store_id, limit=3)
+
+        print('QUERY > ', sql)
 
         # Fetch the store data
         try:

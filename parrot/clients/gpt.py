@@ -43,6 +43,7 @@ class OpenAIClient(AbstractClient):
 
     client_type: str = "openai"
     model: str = OpenAIModel.GPT4_TURBO.value
+    client_name: str = "openai"
 
     def __init__(
         self,
