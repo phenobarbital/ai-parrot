@@ -24,7 +24,7 @@ venv:
 # Install production dependencies using lock file
 install:
 	uv sync --frozen --no-dev --extra google --extra groq --extra agents \
-	        --extra vector --extra images --extra loaders --extra openai \
+	        --extra vectors --extra images --extra loaders --extra openai \
 			--extra anthropic
 	uv pip install querysource
 	@echo "Production dependencies installed. Use 'make develop' for development setup."
