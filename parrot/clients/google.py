@@ -65,6 +65,7 @@ class GoogleGenAIClient(AbstractClient):
     Only Gemini-2.5-pro works well with multi-turn function calling.
     """
     client_type: str = 'google'
+    client_name: str = 'google'
 
     def __init__(self, **kwargs):
         api_key = kwargs.pop('api_key', config.get('GOOGLE_API_KEY'))

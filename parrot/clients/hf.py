@@ -60,6 +60,7 @@ class TransformersClient(AbstractClient):
     """
 
     client_type: str = "transformers"
+    client_name: str = "transformers"
 
     def __init__(
         self,
@@ -85,6 +86,7 @@ class TransformersClient(AbstractClient):
 
         # Model configuration
         self.model_name = model.value if isinstance(model, TransformersModel) else model
+        self.client_name = self.model_name.split("/")[-1]  # Use last part of model name as client name
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.torch_dtype = torch_dtype or (torch.float16 if torch.cuda.is_available() else torch.float32)
         self.trust_remote_code = trust_remote_code

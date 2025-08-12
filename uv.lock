@@ -83,6 +83,7 @@ dependencies = [
     { name = "numexpr" },
     { name = "psycopg-binary" },
     { name = "pydub" },
+    { name = "pytesseract" },
     { name = "python-datamodel" },
     { name = "python-docx" },
     { name = "rank-bm25" },
@@ -110,16 +111,12 @@ agents = [
     { name = "youtube-search" },
 ]
 all = [
-    { name = "accelerate" },
     { name = "albumentations" },
     { name = "altair" },
     { name = "anthropic" },
     { name = "autoviz" },
-    { name = "bitsandbytes" },
     { name = "bokeh" },
     { name = "chroma" },
-    { name = "chromadb" },
-    { name = "datasets" },
     { name = "duckduckgo-search" },
     { name = "exif" },
     { name = "exifread" },
@@ -135,14 +132,11 @@ all = [
     { name = "html2text" },
     { name = "imagehash" },
     { name = "ipywidgets" },
-    { name = "llama-cpp-python" },
-    { name = "llama-index" },
     { name = "mammoth" },
     { name = "markdownify" },
     { name = "mediawikiapi" },
     { name = "milvus" },
     { name = "openai" },
-    { name = "opencv-python" },
     { name = "pandas-bokeh" },
     { name = "pdf4llm" },
     { name = "pgvector" },
@@ -159,17 +153,11 @@ all = [
     { name = "python-pptx" },
     { name = "python-xmp-toolkit" },
     { name = "pytube" },
-    { name = "safetensors" },
     { name = "sentence-transformers" },
-    { name = "simsimd" },
     { name = "spacy" },
     { name = "stackapi" },
-    { name = "tensorflow" },
-    { name = "tf-keras" },
     { name = "tiktoken" },
     { name = "timm" },
-    { name = "tokenizers" },
-    { name = "torch" },
     { name = "torchvision" },
     { name = "transformers" },
     { name = "typing-extensions" },
@@ -253,7 +241,7 @@ openai = [
     { name = "openai" },
     { name = "tiktoken" },
 ]
-vector = [
+vectors = [
     { name = "accelerate" },
     { name = "bitsandbytes" },
     { name = "chromadb" },
@@ -274,7 +262,7 @@ vector = [
 
 [package.metadata]
 requires-dist = [
-    { name = "accelerate", marker = "extra == 'vector'", specifier = "==0.34.2" },
+    { name = "accelerate", marker = "extra == 'vectors'", specifier = "==0.34.2" },
     { name = "ai-parrot", extras = ["agents", "anthropic", "chroma", "google", "groq", "images", "loaders", "milvus", "openai", "vector"], marker = "extra == 'all'" },
     { name = "albumentations", marker = "extra == 'images'", specifier = "==2.0.6" },
     { name = "altair", marker = "extra == 'images'", specifier = "==5.5.0" },
@@ -283,14 +271,14 @@ requires-dist = [
     { name = "asyncdb", specifier = ">=2.11.6" },
     { name = "autoviz", marker = "extra == 'agents'", specifier = "==0.1.905" },
     { name = "backoff", specifier = "==2.2.1" },
-    { name = "bitsandbytes", marker = "extra == 'vector'", specifier = "==0.44.1" },
+    { name = "bitsandbytes", marker = "extra == 'vectors'", specifier = "==0.44.1" },
     { name = "black", marker = "extra == 'dev'" },
     { name = "bokeh", marker = "extra == 'images'", specifier = "==3.7.3" },
     { name = "chroma", marker = "extra == 'chroma'", specifier = "==0.2.0" },
-    { name = "chromadb", marker = "extra == 'vector'", specifier = "==0.6.3" },
+    { name = "chromadb", marker = "extra == 'vectors'", specifier = "==0.6.3" },
     { name = "coverage", marker = "extra == 'dev'" },
     { name = "cython", specifier = "==3.0.11" },
-    { name = "datasets", marker = "extra == 'vector'", specifier = ">=3.0.2" },
+    { name = "datasets", marker = "extra == 'vectors'", specifier = ">=3.0.2" },
     { name = "ddgs", specifier = ">=9.5.2" },
     { name = "duckduckgo-search", marker = "extra == 'agents'", specifier = "==7.5.0" },
     { name = "exif", marker = "extra == 'images'", specifier = "==1.6.1" },
@@ -312,8 +300,8 @@ requires-dist = [
     { name = "imagehash", marker = "extra == 'images'", specifier = "==4.3.1" },
     { name = "ipywidgets", marker = "extra == 'images'", specifier = "==8.1.0" },
     { name = "jq", specifier = "==1.7.0" },
-    { name = "llama-cpp-python", marker = "extra == 'vector'", specifier = "==0.2.56" },
-    { name = "llama-index", marker = "extra == 'vector'", specifier = "==0.12.39" },
+    { name = "llama-cpp-python", marker = "extra == 'vectors'", specifier = "==0.2.56" },
+    { name = "llama-index", marker = "extra == 'vectors'", specifier = "==0.12.39" },
     { name = "mammoth", marker = "extra == 'loaders'", specifier = "==1.8.0" },
     { name = "markdown2", specifier = "==2.4.13" },
     { name = "markdownify", marker = "extra == 'loaders'", specifier = "==1.1.0" },
@@ -328,7 +316,7 @@ requires-dist = [
     { name = "navigator-session", specifier = ">=0.6.5" },
     { name = "numexpr", specifier = "==2.10.2" },
     { name = "openai", marker = "extra == 'openai'", specifier = "==1.97.0" },
-    { name = "opencv-python", marker = "extra == 'vector'", specifier = "==4.10.0.84" },
+    { name = "opencv-python", marker = "extra == 'vectors'", specifier = "==4.10.0.84" },
     { name = "pandas-bokeh", marker = "extra == 'images'", specifier = "==0.5.5" },
     { name = "pdf4llm", marker = "extra == 'loaders'", specifier = "==0.0.27" },
     { name = "pgvector", marker = "extra == 'images'", specifier = "==0.3.6" },
@@ -344,6 +332,7 @@ requires-dist = [
     { name = "pymupdf", marker = "extra == 'loaders'", specifier = "==1.26.3" },
     { name = "pymupdf4llm", marker = "extra == 'loaders'", specifier = "==0.0.27" },
     { name = "pyowm", marker = "extra == 'agents'", specifier = "==3.3.0" },
+    { name = "pytesseract", specifier = ">=0.3.13" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.2.2" },
     { name = "pytest-assume", marker = "extra == 'dev'", specifier = "==2.4.3" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = "==0.21.1" },
@@ -355,26 +344,26 @@ requires-dist = [
     { name = "python-xmp-toolkit", marker = "extra == 'images'", specifier = "==2.0.2" },
     { name = "pytube", marker = "extra == 'loaders'", specifier = "==15.0.0" },
     { name = "rank-bm25", specifier = "==0.2.2" },
-    { name = "safetensors", marker = "extra == 'vector'", specifier = ">=0.4.3" },
+    { name = "safetensors", marker = "extra == 'vectors'", specifier = ">=0.4.3" },
     { name = "seaborn", specifier = "==0.13.2" },
     { name = "sentence-transformers", marker = "extra == 'agents'", specifier = "==5.0.0" },
-    { name = "sentence-transformers", marker = "extra == 'vector'", specifier = ">=5.0.0" },
+    { name = "sentence-transformers", marker = "extra == 'vectors'", specifier = ">=5.0.0" },
     { name = "sentencepiece", specifier = "==0.2.0" },
-    { name = "simsimd", marker = "extra == 'vector'", specifier = ">=4.3.1" },
+    { name = "simsimd", marker = "extra == 'vectors'", specifier = ">=4.3.1" },
     { name = "spacy", marker = "extra == 'agents'", specifier = "==3.8.6" },
     { name = "stackapi", marker = "extra == 'agents'", specifier = "==0.3.1" },
     { name = "sweetviz", marker = "extra == 'eda'", specifier = "==2.1.4" },
     { name = "tabulate", specifier = "==0.9.0" },
-    { name = "tensorflow", marker = "extra == 'vector'", specifier = "==2.18.0" },
-    { name = "tf-keras", marker = "extra == 'vector'", specifier = "==2.18.0" },
+    { name = "tensorflow", marker = "extra == 'vectors'", specifier = "==2.18.0" },
+    { name = "tf-keras", marker = "extra == 'vectors'", specifier = "==2.18.0" },
     { name = "tiktoken", marker = "extra == 'openai'", specifier = "==0.9.0" },
-    { name = "tiktoken", marker = "extra == 'vector'", specifier = "==0.9.0" },
+    { name = "tiktoken", marker = "extra == 'vectors'", specifier = "==0.9.0" },
     { name = "timm", marker = "extra == 'images'", specifier = "==1.0.15" },
-    { name = "tokenizers", marker = "extra == 'vector'", specifier = ">=0.20.0,<=0.21.1" },
-    { name = "torch", marker = "extra == 'vector'", specifier = ">=2.5.1,<=2.6.0" },
+    { name = "tokenizers", marker = "extra == 'vectors'", specifier = ">=0.20.0,<=0.21.1" },
+    { name = "torch", marker = "extra == 'vectors'", specifier = ">=2.5.1,<=2.6.0" },
     { name = "torchvision", marker = "extra == 'images'", specifier = "==0.21.0" },
     { name = "transformers", marker = "extra == 'images'", specifier = ">=4.51.1,<=4.51.3" },
-    { name = "transformers", marker = "extra == 'vector'", specifier = ">=4.51.1,<=4.51.3" },
+    { name = "transformers", marker = "extra == 'vectors'", specifier = ">=4.51.1,<=4.51.3" },
     { name = "typing-extensions", specifier = ">=4.13.2,<=4.14.0" },
     { name = "typing-extensions", marker = "extra == 'groq'", specifier = ">=4.13.2,<=4.14.1" },
     { name = "ultralytics", marker = "extra == 'images'", specifier = "==8.3.121" },
@@ -385,7 +374,7 @@ requires-dist = [
     { name = "youtube-search", marker = "extra == 'agents'", specifier = "==2.1.2" },
     { name = "youtube-transcript-api", marker = "extra == 'loaders'", specifier = "==1.0.3" },
 ]
-provides-extras = ["agents", "loaders", "images", "vector", "anthropic", "openai", "google", "groq", "milvus", "chroma", "eda", "all", "dev"]
+provides-extras = ["agents", "loaders", "images", "vectors", "anthropic", "openai", "google", "groq", "milvus", "chroma", "eda", "all", "dev"]
 
 [[package]]
 name = "aioboto3"
@@ -8386,6 +8375,19 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/bd/11/293dd436aea955d45fc4e8a35b6ae7270f5b8e00b53cf6c024c83b657a11/PySocks-1.7.1.tar.gz", hash = "sha256:3f8804571ebe159c380ac6de37643bb4685970655d3bba243530d6558b799aa0", size = 284429, upload-time = "2019-09-20T02:07:35.714Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/8d/59/b4572118e098ac8e46e399a1dd0f2d85403ce8bbaad9ec79373ed6badaf9/PySocks-1.7.1-py3-none-any.whl", hash = "sha256:2725bd0a9925919b9b51739eea5f9e2bae91e83288108a9ad338b2e3a4435ee5", size = 16725, upload-time = "2019-09-20T02:06:22.938Z" },
+]
+
+[[package]]
+name = "pytesseract"
+version = "0.3.13"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "packaging" },
+    { name = "pillow" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/9f/a6/7d679b83c285974a7cb94d739b461fa7e7a9b17a3abfd7bf6cbc5c2394b0/pytesseract-0.3.13.tar.gz", hash = "sha256:4bf5f880c99406f52a3cfc2633e42d9dc67615e69d8a509d74867d3baddb5db9", size = 17689, upload-time = "2024-08-16T02:33:56.762Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7a/33/8312d7ce74670c9d39a532b2c246a853861120486be9443eebf048043637/pytesseract-0.3.13-py3-none-any.whl", hash = "sha256:7a99c6c2ac598360693d83a416e36e0b33a67638bb9d77fdcac094a3589d4b34", size = 14705, upload-time = "2024-08-16T02:36:10.09Z" },
 ]
 
 [[package]]

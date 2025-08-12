@@ -153,6 +153,10 @@ class AIMessage(BaseModel):
         default_factory=list,
         description="List of source identifiers for context used"
     )
+    structured_output: Any = Field(
+        default=None,
+        description="Structured output if applicable (e.g. JSON, DataFrame)"
+    )
 
     class Config:
         """Pydantic configuration for AIMessage."""
@@ -385,7 +389,8 @@ class AIMessageFactory:
             session_id=session_id,
             turn_id=turn_id,
             raw_response=response,
-            response=content
+            response=content,
+            structured_output=structured_output
         )
 
     @staticmethod
