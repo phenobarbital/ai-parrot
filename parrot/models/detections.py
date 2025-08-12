@@ -23,6 +23,10 @@ class ShelfRegion(BaseModel):
 
 class IdentifiedProduct(BaseModel):
     """Product identified by LLM using reference images"""
+    brand: Optional[str] = Field(None, description="Brand on the item (e.g., Epson)")
+    advertisement_type: Optional[str] = Field(
+        None, description="Ad type if promotional (backlit_graphic, endcap_poster, shelf_talker, banner, digital_display)"
+    )
     detection_box: Optional[DetectionBox] = Field(None, description="Detection box information")
     product_type: str = Field(description="Type of product")
     product_model: Optional[str] = Field(None, description="Specific product model")

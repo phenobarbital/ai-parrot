@@ -790,11 +790,12 @@ class OpenAIClient(AbstractClient):
         detections: List[DetectionBox],          # from parrot.models.detections
         shelf_regions: List[ShelfRegion],        # "
         reference_images: Optional[List[Union[Path, bytes, Image.Image]]] = None,
-        model: Union[OpenAIModel, str] = OpenAIModel.GPT5_MINI,
+        model: Union[OpenAIModel, str] = OpenAIModel.GPT_4_1_MINI,
         temperature: float = 0.0,
         ocr_hints: bool = True,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
+        max_tokens: Optional[int] = None
     ) -> List[IdentifiedProduct]:
         """
         Step-2: Identify products using the detected boxes + reference images.
@@ -898,6 +899,18 @@ class OpenAIClient(AbstractClient):
             content_blocks.append(c["img_content"])
 
         # --- JSON schema (strict) for enforcement ---
+        properties = {
+            "detection_id": {"type": "integer", "minimum": 1},
+            "product_type": {"type": "string"},
+            "product_model": {"type": ["string", "null"]},          # optional but required presence
+            "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+            "visual_features": {"type": "array", "items": {"type": "string"}},
+            "reference_match": {"type": ["string", "null"]},        # optional but required presence
+            "shelf_location": {"type": "string"},
+            "position_on_shelf": {"type": "string"},
+            "brand": {"type": ["string", "null"]},
+            "advertisement_type": {"type": ["string", "null"]},
+        }
         # We wrap the array in an object {"items":[...]} so json_schema works consistently.
         item_schema = {
             "type": "object",
@@ -910,10 +923,11 @@ class OpenAIClient(AbstractClient):
                 "visual_features": {"type": "array", "items": {"type": "string"}},
                 "reference_match": {"type": ["string", "null"]},
                 "shelf_location": {"type": "string"},
-                "position_on_shelf": {"type": "string"}
+                "position_on_shelf": {"type": "string"},
+                "brand": {"type": ["string", "null"]},
+                "advertisement_type": {"type": ["string", "null"]},
             },
-            "required": ["detection_id", "product_type", "confidence",
-                        "shelf_location", "position_on_shelf"]
+            "required": list(properties.keys()),
         }
         resp_format = {
             "type": "json_schema",
@@ -943,8 +957,8 @@ class OpenAIClient(AbstractClient):
         response = await self.client.chat.completions.create(
             model=model.value if isinstance(model, Enum) else model,
             messages=messages,
-            temperature=temperature,
-            max_tokens=2000,
+            max_tokens=max_tokens or self.max_tokens,
+            temperature=temperature or self.temperature,
             response_format=resp_format
         )
 
@@ -980,7 +994,10 @@ class OpenAIClient(AbstractClient):
                     visual_features=it.get("visual_features", []),
                     reference_match=it.get("reference_match"),
                     shelf_location=shelf,
-                    position_on_shelf=pos
+                    position_on_shelf=pos,
+                    detection_id=det_id,
+                    brand=it.get("brand"),
+                    advertisement_type=it.get("advertisement_type"),
                 )
             )
         return out
