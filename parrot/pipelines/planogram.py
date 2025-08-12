@@ -537,7 +537,18 @@ class PlanogramCompliancePipeline(AbstractPipeline):
                         structured_output=IdentificationResponse,
                         max_tokens=4000
                     )
-                else:  # OpenAI
+                elif self.llm_provider == "openai":
+                    identified_products = await client.image_identification(
+                        image=image,
+                        detections=detections,
+                        shelf_regions=shelf_regions,
+                        reference_images=reference_images,
+                        model=self.llm_model or "gpt-4o-mini",
+                        temperature=0.0,
+                        ocr_hints=True
+                    )
+                    return identified_products
+                else:  # Fallback
                     response = await client.ask_to_image(
                         image=annotated_image,
                         prompt=prompt,
