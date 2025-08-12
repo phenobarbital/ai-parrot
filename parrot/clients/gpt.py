@@ -1,4 +1,4 @@
-from typing import AsyncIterator, Dict, List, Optional, Union, Any
+from typing import AsyncIterator, Dict, List, Optional, Union, Any, Tuple
 import base64
 import io
 import json
@@ -9,6 +9,7 @@ import time
 from logging import getLogger
 from enum import Enum
 from PIL import Image
+import pytesseract
 from datamodel.parsers.json import json_decoder  # pylint: disable=E0611 # noqa
 from navconfig import config
 from tenacity import (
@@ -31,6 +32,11 @@ from ..models.outputs import (
     SentimentAnalysis,
     ProductReview
 )
+from ..models.detections import (
+    DetectionBox,
+    ShelfRegion,
+    IdentifiedProduct
+)
 
 
 getLogger('httpx').setLevel('WARNING')
@@ -43,6 +49,7 @@ class OpenAIClient(AbstractClient):
 
     client_type: str = "openai"
     model: str = OpenAIModel.GPT4_TURBO.value
+    client_name: str = "openai"
 
     def __init__(
         self,
@@ -775,3 +782,205 @@ class OpenAIClient(AbstractClient):
             turn_id=turn_id,
             structured_output=ProductReview,
         )
+
+    async def image_identification(
+        self,
+        *,
+        image: Union[Path, bytes, Image.Image],
+        detections: List[DetectionBox],          # from parrot.models.detections
+        shelf_regions: List[ShelfRegion],        # "
+        reference_images: Optional[List[Union[Path, bytes, Image.Image]]] = None,
+        model: str = "gpt-4o-mini",
+        temperature: float = 0.0,
+        ocr_hints: bool = True,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+    ) -> List[IdentifiedProduct]:
+        """
+        Step-2: Identify products using the detected boxes + reference images.
+
+        Returns a list[IdentifiedProduct] with bbox, type, model, confidence, features,
+        reference_match, shelf_location, and position_on_shelf.
+        """
+        _has_tesseract = True
+
+        def _crop_box(pil_img: Image.Image, box) -> Image.Image:
+            # small padding to include context
+            pad = 6
+            x1 = max(0, box.x1 - pad); y1 = max(0, box.y1 - pad)
+            x2 = min(pil_img.width,  box.x2 + pad); y2 = min(pil_img.height, box.y2 + pad)
+            return pil_img.crop((x1, y1, x2, y2))
+
+        def _shelf_and_position(box, regions: List[ShelfRegion]) -> Tuple[str, str]:
+            # map to shelf by containment / Y overlap
+            best = None; best_overlap = 0
+            for r in regions:
+                rx1, ry1, rx2, ry2 = r.bbox.x1, r.bbox.y1, r.bbox.x2, r.bbox.y2
+                ix1, iy1 = max(rx1, box.x1), max(ry1, box.y1)
+                ix2, iy2 = min(rx2, box.x2), min(ry2, box.y2)
+                ov = max(0, ix2 - ix1) * max(0, iy2 - iy1)
+                if ov > best_overlap:
+                    best_overlap, best = ov, r
+            shelf = best.level if best else "unknown"
+
+            # left/center/right inside the shelf bbox
+            if best:
+                mid = (box.x1 + box.x2) / 2.0
+                thirds = (best.bbox.x1 + (best.bbox.x2 - best.bbox.x1) / 3.0,
+                        best.bbox.x1 + 2 * (best.bbox.x2 - best.bbox.x1) / 3.0)
+                position = "left" if mid < thirds[0] else ("right" if mid > thirds[1] else "center")
+            else:
+                position = "center"
+            return shelf, position
+
+        # --- prepare images ---
+        if isinstance(image, (str, Path)):
+            pil_image = Image.open(image).convert("RGB")
+        elif isinstance(image, bytes):
+            pil_image = Image.open(io.BytesIO(image)).convert("RGB")
+        else:
+            pil_image = image.convert("RGB")
+
+        # crops per detection
+        crops = []
+        for i, det in enumerate(detections, start=1):
+            crop = _crop_box(pil_image, det)
+            text_hint = ""
+            if ocr_hints and _has_tesseract:
+                try:
+                    text = pytesseract.image_to_string(crop)
+                    text_hint = text.strip()
+                except Exception:
+                    text_hint = ""
+            shelf, pos = _shelf_and_position(det, shelf_regions)
+            crops.append({
+                "id": i,
+                "det": det,
+                "shelf": shelf,
+                "position": pos,
+                "ocr": text_hint,
+                "img_content": self._encode_image_for_openai(crop)
+            })
+
+        # --- build messages (full image + crops + references) ---
+        # Put references first, then the full scene, then each crop.
+        content_blocks = []
+
+        # 1) reference images
+        if reference_images:
+            for ref in reference_images:
+                content_blocks.append(self._encode_image_for_openai(ref))
+
+        # 2) full scene
+        content_blocks.append(self._encode_image_for_openai(pil_image))
+
+        # 3) one block with per-detection crop + text hint
+        #    Images go as separate blocks; the textual metadata goes in one text block.
+        meta_lines = [
+            "DETECTIONS:",
+            # id, bbox, class_name, shelf, position, OCR
+        ]
+        for c in crops:
+            d = c["det"]
+            meta_lines.append(
+                f"- id:{c['id']} bbox:[{d.x1},{d.y1},{d.x2},{d.y2}] class:{d.class_name} "
+                f"shelf:{c['shelf']} position:{c['position']} ocr:{c['ocr'][:80] or 'None'}"
+            )
+        content_blocks.append({"type": "text", "text":
+            "Identify each detection by comparing with the reference images. "
+            "Prefer visual features (shape, control panel, ink tank layout) and use OCR hints only as supportive evidence. "
+            "Allowed product_type: ['printer','product_box','fact_tag','promotional_graphic','ink_bottle']. "
+            "Models to look for (if any): ['ET-2980','ET-3950','ET-4950']. "
+            "Return one item per detection id.\n" + "\n".join(meta_lines)
+        })
+        # add crops
+        for c in crops:
+            content_blocks.append(c["img_content"])
+
+        # --- JSON schema (strict) for enforcement ---
+        # We wrap the array in an object {"items":[...]} so json_schema works consistently.
+        item_schema = {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "detection_id": {"type": "integer", "minimum": 1},
+                "product_type": {"type": "string"},
+                "product_model": {"type": ["string", "null"]},
+                "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+                "visual_features": {"type": "array", "items": {"type": "string"}},
+                "reference_match": {"type": ["string", "null"]},
+                "shelf_location": {"type": "string"},
+                "position_on_shelf": {"type": "string"}
+            },
+            "required": ["detection_id", "product_type", "confidence",
+                        "shelf_location", "position_on_shelf"]
+        }
+        resp_format = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "identified_products",
+                "schema": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "items": {
+                            "type": "array",
+                            "items": item_schema,
+                            "minItems": len(detections),
+                        }
+                    },
+                    "required": ["items"]
+                },
+                "strict": True
+            }
+        }
+
+        # ensure shelves/positions are precomputed in case the model drops them
+        shelf_pos_map = {c["id"]: (c["shelf"], c["position"]) for c in crops}
+
+        # --- call OpenAI ---
+        messages = [{"role": "user", "content": content_blocks}]
+        response = await self.client.chat.completions.create(
+            model=model,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=2000,
+            response_format=resp_format
+        )
+
+        raw = response.choices[0].message.content or "{}"
+        try:
+            parsed = json.loads(raw)
+            items = parsed.get("items", [])
+        except Exception:
+            # fallback: try best-effort parse if model didn’t honor schema
+            items = self._json.loads(
+                self._json.extract_json(raw)).get("items", []
+            )
+
+        # --- build IdentifiedProduct list ---
+        out: List[IdentifiedProduct] = []
+        for it in items:
+            det_id = int(it.get("detection_id", 0))
+            if not (1 <= det_id <= len(detections)):
+                continue
+            det = detections[det_id - 1]
+            shelf, pos = shelf_pos_map.get(det_id, ("unknown", "center"))
+
+            # allow model to override if present; otherwise use deterministic values
+            shelf = it.get("shelf_location") or shelf
+            pos = it.get("position_on_shelf") or pos
+
+            out.append(
+                IdentifiedProduct(
+                    detection_box=det,
+                    product_type=it.get("product_type", "unknown"),
+                    product_model=it.get("product_model"),
+                    confidence=float(it.get("confidence", 0.5)),
+                    visual_features=it.get("visual_features", []),
+                    reference_match=it.get("reference_match"),
+                    shelf_location=shelf,
+                    position_on_shelf=pos
+                )
+            )
+        return out
