@@ -17,7 +17,7 @@ class NextStopStore(Model):
         description="Unique identifier for the report.",
         title="Report ID"
     )
-    user_id: str = Field(
+    user_id: int = Field(
         description="Unique identifier for the user.",
         title="User ID",
     )
@@ -81,6 +81,11 @@ class NextStopStore(Model):
         description="List of documents related to the NextStop agent's response.",
         title="Documents"
     )
+    document_path: str = Field(
+        default=None,
+        description="Path to the document file related to the NextStop agent's response.",
+        title="Document Path"
+    )
     attributes: dict = Field(
         default_factory=dict,
         description="Attributes related to the NextStop agent's response.",
@@ -101,11 +106,6 @@ class NextStopStore(Model):
         default=None,
         description="ID of the manager associated with the record.",
         title="Manager ID"
-    )
-    store_id: str = Field(
-        default=None,
-        description="ID of the store associated with the record.",
-        title="Store ID"
     )
     employee_id: str = Field(
         default=None,
