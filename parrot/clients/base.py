@@ -150,6 +150,7 @@ class AbstractClient(ABC):
         "Content-Type": "application/json",
     }
     client_type: str = "generic"
+    client_name: str = 'generic'
 
     def __init__(
         self,

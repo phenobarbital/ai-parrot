@@ -40,6 +40,7 @@ class ClaudeClient(AbstractClient):
     """Client for interacting with the Claude API."""
     version: str = "2023-06-01"
     client_type: str = "anthropic"
+    client_name: str = "claude"
 
     def __init__(
         self,
@@ -686,6 +687,8 @@ class ClaudeClient(AbstractClient):
             text_content,
             tools_used
         )
+
+
 
         # Create AIMessage using factory
         ai_message = AIMessageFactory.from_claude(
