@@ -68,6 +68,8 @@ For **each** question `column_name` produce:
 • **Resolved Issues:** issues present earlier but **absent** `Visit 1`
 • **Persisting Issues:** issues that appear in all visits
 • **Notable Phrase Shifts:** any big change in Top Phrases frequency
+• **Overall Assessment:** "Better / Worse / No Material Change" with one-sentence rationale
+• **Performance Development:** How has the employee's approach or effectiveness changed between visits?
 
 # 5. Summary of Insights
 **Summary of Visits:** Use the information extracted to summarize the employee's behavior based on last answers.

@@ -1,6 +1,8 @@
 DROP TABLE IF EXISTS troc.nextstop_responses;
 CREATE TABLE IF NOT EXISTS troc.nextstop_responses (
-  user_id        varchar         NOT NULL,
+  report_id uuid DEFAULT uuid_generate_v4() NOT NULL,
+  user_id    integer NOT NULL,
+  employee_id        varchar         NOT NULL,
   agent_name     varchar         NOT NULL,
   kind varchar NOT NULL,
   content        varchar NOT NULL,
@@ -13,8 +15,13 @@ CREATE TABLE IF NOT EXISTS troc.nextstop_responses (
   image_path     TEXT,
   documents      jsonb,
   attributes     jsonb,
+  document_path character varying,
+  is_new boolean DEFAULT true,
+  manager_id     varchar,
   created_at     TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-  PRIMARY KEY (user_id, agent_name, program_slug, kind, request_date)
+  created_by     varchar NOT NULL DEFAULT 'system',
+  PRIMARY KEY (report_id),
+  CONSTRAINT nextstop_unique UNIQUE (employee_id, agent_name, program_slug, kind, request_date)
 );
 
 

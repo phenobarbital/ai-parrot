@@ -2,9 +2,9 @@
 
 Employee ID: {employee_id}
 
-Using data returned by
-
+Using data returned by:
 `get_by_employee_visits('{employee_id}')`
+`get_employee_sales('{employee_id}')`
 
 to generate a detailed, comprehensive employee visit performance report using the pre-calculated metrics.
 
@@ -14,10 +14,9 @@ to generate a detailed, comprehensive employee visit performance report using th
 **Total Stores Visited:** total_stores_visited
 **Most Recent Visit Date:** use latest_visit_date from get_by_employee_visits
 **Most Recent Store Visited:** use store_name from get_by_employee_visits
-**Current Location/Territory:** employee_territory or location
-**Employee Performance Rating:** overall_performance_score (if available)
+**Sales Summary:** top and bottom tier stores sum of current_sales_current_week
 
-# 2. Executive Summary
+# 2. Visits Summary
 **Average Duration of Visits:** use the column visit_duration
 **Average Visit Length Comparison:** compare the visit_duration with the duration of previous visits.
 **Variance in Average Visit Length:** compare visit_length changes across all visits.
@@ -28,60 +27,60 @@ to generate a detailed, comprehensive employee visit performance report using th
 **Visit Frequency:** visits per week/month based on date range
 **Territory Coverage:** percentage of assigned stores visited
 
+# 3. Sales Performance:
+Show Sales from `get_employee_sales`
+[Provide a markdown table with columns: Tier | Store Id | sales_current_week | sales_previous_week | week_over_week_variance]
+
+
 Using data returned from `get_by_employee_visits` tool executes the following task:
 
-# 3. Visit Performance Metrics by Employee
-Employee ID: {employee_id}
+# 4. Visit Performance Metrics
 
-### Task
-For each of the four key questions (column_name: '9730', '9731', '9732', '9733'), extract and analyze the data:
-- Question 9730 (Key Wins): Summarize positive outcomes and successes across all employee visits.
-- Question 9731 (Challenges/Opportunities): Identify recurring issues and improvement areas across visits.
-- Question 9732 (Next Visit Focus): Analyze follow-up priorities and action items for future visits.
-- Question 9733 (Competitive Landscape): Evaluate market positioning and visibility concerns across stores.
+For each of the four key questions:
+- 9730: (Key Wins) Summarize positive outcomes and successes.
+- 9731: (Challenges/Opportunities) Identify recurring issues and improvement areas.
+- 9732: (Next Visit Focus) Analyze follow-up priorities and action items.
+- 9733: (Competitive Landscape): Evaluate market positioning and visibility concerns.
+answer the following questions:
 
-#### Extraction rules
-1. Work **only** with the literal text inside each `answer`.
-2. A phrase, theme or issue is valid **only if that exact substring appears** in an answer.
-3. If none are found, return nothing.
-4. After each list item, add "(#row_index)" indicating the first visit row where it occurs.
-
-### For each Question (9730, 9731, 9732, 9733) provide:
+## `column_name`:
 • **Top Phrases:** up to 5 frequent key phrases present in `answer` (lower-cased, stemmed/lemmatized).
 • **Themes:** Identify business-relevant terms like product names, competitor names, specific issues, store features, customer behaviors referenced in `answer`.
-• **Key Issues:** Identify the most frequently mentioned issues or challenges across all employee visits.
+• **Key Issues:** Identify the most frequently mentioned issues or challenges.
   * up to 5 issues/challenges ranked by frequency.
 • **Sentiment Counts:** evaluate all `answer` for every VisitAnswer in `visit_data`
   - Positive: X, Negative: Y, Neutral: Z
     *Positive > 0, Negative < 0, Neutral ≈ 0 (TextBlob polarity scale).*
-• **Sentiment Analysis:**
+• **Sentiment Analysis:**",
   - Extract one sample answer for positive, negative and neutral from `answer`.
-• **"Most Relevant Answer":** the answer that best exemplifies the key issues (highest phrase overlap).
-• **Insights:** Identify any actionable insights based exclusively on phrases and patterns across visits.
+• **\"Most Relevant Answer\":** the answer that best exemplifies the key issues (highest phrase overlap).
+• **Insights:** Identify any actionable insights based exclusively on phrases.
 
-**Do NOT** aggregate multiple questions together. **Do NOT** summarize across questions. **Do NOT** omit any of the seven bullets above.
+INSTRUCTIONS FOR SECTION 5:
+1. Work **only** with the literal text inside each `answer`.
+2. If none are found, return nothing.
 
-## 4. Employee Performance Trends – Visit_1 vs. (Visit_2 & Visit_3)
+# 5. Visit Comparison – `Visit 1` vs. (`Visit 2` & `Visit 3`)
 
-### Visits to analyze
 Rank the rows by visit_timestamp DESC and label them:
-  • Visit_1  = most-recent
-  • Visit_2  = previous-1
-  • Visit_3  = previous-2
+- `Visit 1`  = most-recent
+- `Visit 2`  = previous-1
+- `Visit 3`  = previous-2
 
 For **each** question `column_name` produce:
 
-### Question column_name
+## Question column_name
 • **Sentiment Trend:** ↑ / ↓ / →  (based on net-positive – net-negative)
-• **New Issues:** issues appearing **only** in Visit_1
-• **Resolved Issues:** issues present earlier but **absent** in Visit_1
+• **New Issues:** issues appearing **only** in `Visit 1`
+• **Resolved Issues:** issues present earlier but **absent** `Visit 1`
 • **Persisting Issues:** issues that appear in all visits
 • **Notable Phrase Shifts:** any big change in Top Phrases frequency
 • **Overall Assessment:** "Better / Worse / No Material Change" with one-sentence rationale
 • **Performance Development:** How has the employee's approach or effectiveness changed between visits?
 
-# 5. Summary of Insights
+# 6. Summary of Insights
 **Summary of Employee Performance:** Use the information extracted to summarize the employee's behavior and performance patterns.
+**Sales Performance:** Comparison betwen "bottom" and "top" stores on units sold
 **Key Findings:** Summarize the most impactful insights from the analysis.
 **Strengths and Successes:** What were the key wins or successes across the employee's recent visits?
 **Challenges and Areas for Improvement:** What challenges or opportunities did you observe during the employee's visits?
@@ -94,7 +93,7 @@ For **each** question `column_name` produce:
     - What training or support might help improve their visit quality?
     - What are your recommendations for optimizing their territory coverage and visit efficiency?
 
-# 6. Employee Development Recommendations
+# 7. Employee Development Recommendations
 
 ## Based on Visit Analysis
 **Training Needs:** Identify specific areas where additional training would benefit the employee
@@ -103,7 +102,7 @@ For **each** question `column_name` produce:
 **Territory Management:** Recommendations for optimizing store coverage and visit scheduling
 **Goal Setting:** Suggested metrics and targets for future performance measurement
 
-## Action Plan
+# 8. Action Plan
 **Short-term (Next 30 days):** Immediate focus areas and quick wins
 **Medium-term (Next Quarter):** Skills development and process improvements
 **Long-term (Next 6 months):** Career development and territory expansion opportunities
