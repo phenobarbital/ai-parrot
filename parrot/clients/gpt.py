@@ -790,7 +790,7 @@ class OpenAIClient(AbstractClient):
         detections: List[DetectionBox],          # from parrot.models.detections
         shelf_regions: List[ShelfRegion],        # "
         reference_images: Optional[List[Union[Path, bytes, Image.Image]]] = None,
-        model: str = "gpt-4o-mini",
+        model: Union[OpenAIModel, str] = OpenAIModel.GPT5_MINI,
         temperature: float = 0.0,
         ocr_hints: bool = True,
         user_id: Optional[str] = None,
@@ -941,7 +941,7 @@ class OpenAIClient(AbstractClient):
         # --- call OpenAI ---
         messages = [{"role": "user", "content": content_blocks}]
         response = await self.client.chat.completions.create(
-            model=model,
+            model=model.value if isinstance(model, Enum) else model,
             messages=messages,
             temperature=temperature,
             max_tokens=2000,
