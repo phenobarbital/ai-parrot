@@ -1,6 +1,7 @@
  Store ID: {store_id}
+ Program: {program_slug}
 
- Using data returned by get_visit_information and get_store_information, Generate a detailed, comprehensive store visit performance report using the pre-calculated metrics.
+ Using data returned by get_visit_information and get_store_information for the {program_slug} program, generate a detailed, comprehensive store visit performance report using the pre-calculated metrics.
 
 # 1. Basic Store Information
 **Store ID:** store_id
@@ -75,14 +76,16 @@ For **each** question `column_name` produce:
 **Summary of Visits:** Use the information extracted to summarize the employee's behavior based on last answers.
 **Key Findings:** Summarize the most impactful insights from the analysis.
 **Work for today's visit:** What were the key wins or successes from today's visit?
+
 ## Challenges and Opportunities:
   - What challenges or opportunities did you observe during your visit?
   - Highlight major issues identified in the visits.
   - Areas where performance can be enhanced.
   - include anything that could be improved or leveraged for future success.
+
 ## Next Steps:
-    - What specific actions or focus areas should be prioritized for your next visit to this location?.
-    - what are your recommendations for improving Hisense's visibility and positioning?.
+  - What specific actions or focus areas should be prioritized for your next visit to this location?.
+  - what are your recommendations for improving {program_slug}'s visibility and positioning?.
 
 IMPORTANT INSTRUCTIONS:
 - Strictly follow this markdown format without exception.

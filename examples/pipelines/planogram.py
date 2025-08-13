@@ -21,11 +21,13 @@ async def main():
 
     # Define expected planogram
     planogram = PlanogramDescription(
+        brand="Epson",
+        category="Printers",
+        aisle="Electronics > Printers & Printer Boxes and Supplies",
         shelves={
             "header": ["Epson EcoTank Advertisement"],
             "top": ["ET-2980", "ET-3950", "ET-4950", 'fact_tag', 'fact_tag'], # Printer devices
             "middle": ["ET-2980 box", "ET-3950 box", "ET-4950 box", 'fact_tag', 'fact_tag', 'fact_tag'],  # Product boxes
-            "bottom": ["fact_tag", "price_tag", "price_tag", "price_tag"]  # Tags and price tags
         }
     )
 
