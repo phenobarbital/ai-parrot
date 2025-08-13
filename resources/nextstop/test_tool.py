@@ -3,7 +3,6 @@ from navconfig import BASE_DIR
 from querysource.conf import default_dsn
 from parrot.tools.nextstop import StoreInfo, EmployeeToolkit
 
-
 async def test_tool():
     toolkit = StoreInfo(dsn=default_dsn, program="hisense")
     # Get all tools (automatic)
@@ -34,6 +33,20 @@ async def test_tool():
     visit_info = await toolkit.get_visit_information(store_id="BBY1220")
     print(visit_info)
 
+async def store_tool():
+    toolkit = StoreInfo(dsn=default_dsn, program="epson")
+    # Get all tools (automatic)
+    tools = toolkit.get_tools()
+    print(f"Available tools: {[tool.name for tool in tools]}")
+
+    # Use tools directly
+    store_info = await toolkit.get_store_information("BBY104", program="epson")
+    print(store_info)
+
+    # Get Visit Information:
+    visit_info = await toolkit.get_visit_information(store_id="BBY104", program="epson")
+    print(visit_info)
+
 async def test_employee_tool():
     toolkit = EmployeeToolkit(dsn=default_dsn, program="hisense")
     # Get all tools (automatic)
@@ -50,4 +63,4 @@ async def test_employee_tool():
 
 
 if __name__ == "__main__":
-    asyncio.run(test_employee_tool())
+    asyncio.run(store_tool())

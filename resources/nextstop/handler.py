@@ -1,10 +1,10 @@
 from typing import Any
+import re
 from datetime import datetime
 import textwrap
 from pathlib import Path
 import asyncio
 from aiohttp import web
-import re
 from datamodel import BaseModel, Field
 from datamodel.parsers.json import json_encoder  # pylint: disable=E0611
 from asyncdb.exceptions import NoDataFound
@@ -51,6 +51,7 @@ class NextStopResponse(BaseModel):
         required=False,
         description="Name of the agent that processed the request"
     )
+    program: str = Field(default="hisense", description="Program slug for the agent")
     data: str = Field(..., description="Data returned by the agent")
     status: str = Field(default="success", description="Status of the response")
     output: str = Field(required=False)
@@ -108,8 +109,10 @@ class NextStopAgent(AgentHandler):
     agent_id: str = "nextstop"
     _agent_class: type = NextStop
     _agent_response = NextStopResponse
-    _use_llm: str = 'openai'
-    _use_model: str = 'gpt-4.1-mini'
+    # _use_llm: str = 'openai'
+    # _use_model: str = 'gpt-4.1-mini'
+    _use_llm: str = 'google'
+    _use_model: str = 'gemini-2.5-pro'
     _tools = []
 
     base_route: str = '/api/v1/agents/nextstop'
@@ -133,8 +136,10 @@ class NextStopAgent(AgentHandler):
 
     def define_tools(self):
         """Define the tools for the NextStop agent."""
-        tools = StoreInfo().get_tools()
-        tools.extend(EmployeeToolkit().get_tools())
+        # Get program from session or default
+        program = getattr(self, '_program', 'hisense')
+        tools = StoreInfo(program=program).get_tools()
+        tools.extend(EmployeeToolkit(program=program).get_tools())
         self._tools = tools
 
     async def get_results(self, request: web.Request) -> web.Response:
@@ -215,7 +220,7 @@ class NextStopAgent(AgentHandler):
                 record = NextStopStore(
                     user_id=int(result.user_id),
                     agent_name=result.agent_name,
-                    program_slug='hisense',
+                    program_slug=result.program,
                     kind=kind,
                     content=job_record.content,
                     data=result.data,
@@ -304,7 +309,8 @@ class NextStopAgent(AgentHandler):
     async def post(self) -> web.Response:
         """Handle POST requests."""
         data = await self.request.json()
-        if 'hisense' not in self._session['programs']:
+        program_slug = data.get('program', 'hisense')
+        if program_slug not in self._session['programs']:
             return web.json_response(
                 {"error": "This agent is not available for your current program."},
                 status=403
@@ -336,11 +342,13 @@ class NextStopAgent(AgentHandler):
                     },
                     'store_id': store_id,
                     'employee_id': employee_id if employee_id else session_email,
+                    'program_slug': program_slug
                 }
             )
             rsp_args = {
                 "message": f"NextStopAgent is processing the request for store {store_id}",
                 'store_id': store_id,
+                'program_slug': program_slug,
 
             }
         elif manager_id and employee_id:
@@ -357,12 +365,14 @@ class NextStopAgent(AgentHandler):
                     },
                     'manager_id': manager_id,
                     'employee_id': session_email if not employee_id else employee_id,
+                    'program_slug': program_slug
                 }
             )
             rsp_args = {
                 "message": f"NextStopAgent is processing the request for manager {manager_id} and employee {employee_id}",
                 'manager_id': manager_id,
-                'employee': employee_id
+                'employee': employee_id,
+                'program_slug': program_slug
             }
         elif employee_id:
             # Execute the NextStop agent for a specific employee using the Background task:
@@ -376,12 +386,14 @@ class NextStopAgent(AgentHandler):
                         'user_id': self._userid,
                         "employee_id": employee_id
                     },
-                    'employee_id': employee_id
+                    'employee_id': employee_id,
+                    'program_slug': program_slug
                 }
             )
             rsp_args = {
                 "message": f"NextStopAgent is processing the request for employee {employee_id}",
-                'employee_id': employee_id
+                'employee_id': employee_id,
+                'program_slug': program_slug
             }
         elif manager_id:
             # Execute the NextStop agent for a specific manager using the Background task:
@@ -397,12 +409,14 @@ class NextStopAgent(AgentHandler):
                     },
                     'manager_id': manager_id,
                     'employee_id': manager_id,
-                    'project': data.get('project', 'Navigator')
+                    'project': data.get('project', 'Navigator'),
+                    'program_slug': program_slug
                 }
             )
             rsp_args = {
                 "message": f"NextStopAgent is processing the request for manager {manager_id}",
                 'manager_id': manager_id,
+                'program_slug': program_slug
             }
         else:
             query = data.get('query', None)
@@ -417,17 +431,21 @@ class NextStopAgent(AgentHandler):
                         'user_id': self._userid
                     },
                     'project': data.get('project', 'Navigator'),
-                    'query': query
+                    'query': query,
+                    'program_slug': program_slug
                 }
             )
             rsp_args = {
-                "message": f"NextStopAgent is processing the request for query {query}"
+                "message": f"NextStopAgent is processing the request for query {query}",
+                'program_slug': program_slug
             }
         # Return the response data
         if job:
             response = {
                 'user_id': self._userid,
                 'task_id': job.task_id,
+                'agent_name': self.agent_name,
+                'program_slug': program_slug,
                 "job": job,
                 **rsp_args
             }
@@ -521,8 +539,16 @@ where e.corporate_email = '{email!s}'
 
     async def _nextstop_store(self, store_id: str, employee_id: str, **kwargs) -> NextStopResponse:
         """Generate a report for the NextStop agent."""
+        # Get program from data or session
+        program_slug = kwargs.get('program_slug', 'hisense')  # fallback to hisense
+
         query = await self.open_prompt('for_store.txt')
-        question = query.format(store_id=store_id)
+        question = query.format(store_id=store_id, program_slug=program_slug)
+
+        # Set program in agent before asking
+        if hasattr(self._agent, 'set_program'):
+            self._agent.set_program(program_slug)
+
         try:
             response, _ = await self.ask_agent(query=question)
         except Exception as e:
@@ -532,6 +558,7 @@ where e.corporate_email = '{email!s}'
             )
         response.store_id = store_id
         response.employee_id = employee_id
+        response.program = program_slug
         return await self._generate_report(response)
 
     async def _nextstop_employee(self, employee_id: str, **kwargs) -> NextStopResponse:

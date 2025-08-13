@@ -215,6 +215,11 @@ class AgentHandler(BaseView):
         # Temporal Agent Uploader
         self.temp_dir = self.create_temp_directory()
         self.app = app
+        self._program: str = kwargs.pop('program_slug', 'parrot')  # Default program slug
+
+    def set_program(self, program_slug: str) -> None:
+        """Set the program slug for the agent."""
+        self._program = program_slug
 
     def setup(
         self,

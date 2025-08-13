@@ -18,5 +18,11 @@ class ComplianceResult(BaseModel):
     found_products: List[str] = Field(description="Products actually found")
     missing_products: List[str] = Field(description="Expected but not found")
     unexpected_products: List[str] = Field(description="Found but not expected")
-    compliance_status: ComplianceStatus = Field(description="Overall compliance for this shelf")
-    compliance_score: float = Field(ge=0.0, le=1.0, description="Compliance score")
+    compliance_status: ComplianceStatus = Field(
+        description="Overall compliance for this shelf"
+    )
+    compliance_score: float = Field(
+        ge=0.0,
+        le=1.0,
+        description="Compliance score"
+    )
