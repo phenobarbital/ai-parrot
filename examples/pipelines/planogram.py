@@ -16,17 +16,18 @@ async def main():
     # Initialize pipeline
     pipeline = PlanogramCompliancePipeline(
         llm=llm,
-        detection_model="yolov8n"  # or "yolov8s", "yolov8m", etc.
+        detection_model="YOLOv8m"  # or "yolov8s", "yolov8m", etc.
     )
 
     # Define expected planogram
     planogram = PlanogramDescription(
+        brand="Epson",
+        category="Printers",
+        aisle="Electronics > Printers & Printer Boxes and Supplies",
         shelves={
-            "header": ["epson ecotank advertisement", "promotional_graphic"],
-            "top": ["ET-2980", "ET-3950", "ET-4950"],
-            "shelf1": ["price_tag", "price_tag", "price_tag"],
-            "bottom": ["ET-2980 box", "ET-3950 box", "ET-4950 box"],
-            "shelf2": ["price_tag", "price_tag", "price_tag", "price_tag"],
+            "header": ["Epson EcoTank Advertisement"],
+            "top": ["ET-2980", "ET-3950", "ET-4950", 'fact_tag', 'fact_tag'], # Printer devices
+            "middle": ["ET-2980 box", "ET-3950 box", "ET-4950 box", 'fact_tag', 'fact_tag', 'fact_tag'],  # Product boxes
         }
     )
 

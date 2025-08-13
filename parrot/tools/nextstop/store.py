@@ -77,6 +77,10 @@ class VisitInfo(BaseModel):
 class StoreInfoInput(BaseModel):
     """Input schema for store information queries."""
     store_id: str = Field(description="The unique identifier of the store")
+    program: Optional[str] = Field(
+        default=None,
+        description="Program slug for the store (e.g., 'hisense', 'epson')"
+    )
 
 
 class FootTrafficInput(BaseModel):
@@ -139,6 +143,13 @@ class StoreInfo(BaseNextStop):
             pad_store_id("BBY599") -> "BBY0599"
             pad_store_id("BBY4")   -> "BBY0004"
         """
+        if self.program != "hisense":
+            return store_id.strip()  # No padding needed for other programs
+
+        # Ensure the store_id is a string and strip whitespace
+        store_id = str(store_id)
+        if not store_id:
+            raise ValueError("Store ID cannot be empty")
         s = store_id.strip()
         # extract non-numeric characters as prefix
         prefix = ''.join(filter(str.isalpha, s))
@@ -212,7 +223,8 @@ class StoreInfo(BaseNextStop):
         self,
         store_id: str,
         limit: int = 3,
-        output_format: str = "structured"
+        output_format: str = "structured",
+        program: Optional[str] = None
     ) -> Union[pd.DataFrame, List[VisitInfo]]:
         """Get visit information for a specific store.
 
@@ -220,6 +232,9 @@ class StoreInfo(BaseNextStop):
         including visitor statistics and aggregated visit data.
         """
         try:
+            # Ensure the program is set correctly
+            if program:
+                self.program = program
             visits = await self._get_visits(store_id, limit, output_format)
             if isinstance(visits, str):  # If an error message was returned
                 return visits
@@ -284,17 +299,18 @@ class StoreInfo(BaseNextStop):
         return question_data
 
     @tool_schema(StoreInfoInput)
-    async def get_store_information(self, store_id: str) -> StoreBasicInfo:
+    async def get_store_information(self, store_id: str, program: str) -> StoreBasicInfo:
         """Get comprehensive store information including location and basic details,
         contact information, operating hours, and aggregate visit statistics.
         Provides total visits, unique visitors, and average visit duration
         for the specified store. Essential for store analysis and planning.
         """
+        # Ensure the program is set correctly
+        if program:
+            self.program = program
         sql = await self._get_query("store_info")
         store_id = self._pad_storeid(store_id)
         sql = sql.format(store_id=store_id, limit=3)
-
-        print('QUERY > ', sql)
 
         # Fetch the store data
         try:

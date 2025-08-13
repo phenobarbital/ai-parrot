@@ -186,6 +186,7 @@ class AbstractClient(ABC):
         self._json: Any = JSONContent()
         self.client_type: str = kwargs.get('client_type', self.client_type)
         self._debug: bool = debug
+        self._program: str = kwargs.get('program', 'parrot')  # Default program slug
         # Initialize ToolManager instead of direct tools dict
         self.tool_manager = ToolManager(
             logger=self.logger,
@@ -207,6 +208,10 @@ class AbstractClient(ABC):
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         if self.session:
             await self.session.close()
+
+    def set_program(self, program_slug: str) -> None:
+        """Set the program slug for the client."""
+        self._program = program_slug
 
     async def start_conversation(
         self,

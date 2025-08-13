@@ -791,6 +791,7 @@ class OpenAIClient(AbstractClient):
         shelf_regions: List[ShelfRegion],        # "
         reference_images: Optional[List[Union[Path, bytes, Image.Image]]] = None,
         model: Union[OpenAIModel, str] = OpenAIModel.GPT_4_1_MINI,
+        prompt: Optional[str] = None,
         temperature: float = 0.0,
         ocr_hints: bool = True,
         user_id: Optional[str] = None,
@@ -808,13 +809,16 @@ class OpenAIClient(AbstractClient):
         def _crop_box(pil_img: Image.Image, box) -> Image.Image:
             # small padding to include context
             pad = 6
-            x1 = max(0, box.x1 - pad); y1 = max(0, box.y1 - pad)
-            x2 = min(pil_img.width,  box.x2 + pad); y2 = min(pil_img.height, box.y2 + pad)
+            x1 = max(0, box.x1 - pad)
+            y1 = max(0, box.y1 - pad)
+            x2 = min(pil_img.width,  box.x2 + pad)
+            y2 = min(pil_img.height, box.y2 + pad)
             return pil_img.crop((x1, y1, x2, y2))
 
         def _shelf_and_position(box, regions: List[ShelfRegion]) -> Tuple[str, str]:
             # map to shelf by containment / Y overlap
-            best = None; best_overlap = 0
+            best = None
+            best_overlap = 0
             for r in regions:
                 rx1, ry1, rx2, ry2 = r.bbox.x1, r.bbox.y1, r.bbox.x2, r.bbox.y2
                 ix1, iy1 = max(rx1, box.x1), max(ry1, box.y1)
@@ -877,40 +881,30 @@ class OpenAIClient(AbstractClient):
 
         # 3) one block with per-detection crop + text hint
         #    Images go as separate blocks; the textual metadata goes in one text block.
-        meta_lines = [
-            "DETECTIONS:",
-            # id, bbox, class_name, shelf, position, OCR
-        ]
+        meta_lines = ["DETECTIONS:"]
         for c in crops:
             d = c["det"]
             meta_lines.append(
                 f"- id:{c['id']} bbox:[{d.x1},{d.y1},{d.x2},{d.y2}] class:{d.class_name} "
                 f"shelf:{c['shelf']} position:{c['position']} ocr:{c['ocr'][:80] or 'None'}"
             )
-        content_blocks.append({"type": "text", "text":
-            "Identify each detection by comparing with the reference images. "
-            "Prefer visual features (shape, control panel, ink tank layout) and use OCR hints only as supportive evidence. "
-            "Allowed product_type: ['printer','product_box','fact_tag','promotional_graphic','ink_bottle']. "
-            "Models to look for (if any): ['ET-2980','ET-3950','ET-4950']. "
-            "Return one item per detection id.\n" + "\n".join(meta_lines)
-        })
+        if prompt:
+            text_block = prompt + "\n\nReturn ONLY JSON with top-level key 'items' that matches the provided schema." + "\n".join(meta_lines)
+        else:
+            text_block = (
+                "Identify each detection by comparing with the reference images. "
+                "Prefer visual features (shape, control panel, ink tank layout) and use OCR hints only as supportive evidence. "
+                "Allowed product_type: ['printer','product_box','fact_tag','promotional_graphic','ink_bottle']. "
+                "Models to look for (if any): ['ET-2980','ET-3950','ET-4950']. "
+                "Return one item per detection id.\n"
+                + "\n".join(meta_lines)
+            )
+        content_blocks.append({"type": "text", "text": text_block})
         # add crops
         for c in crops:
             content_blocks.append(c["img_content"])
 
         # --- JSON schema (strict) for enforcement ---
-        properties = {
-            "detection_id": {"type": "integer", "minimum": 1},
-            "product_type": {"type": "string"},
-            "product_model": {"type": ["string", "null"]},          # optional but required presence
-            "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
-            "visual_features": {"type": "array", "items": {"type": "string"}},
-            "reference_match": {"type": ["string", "null"]},        # optional but required presence
-            "shelf_location": {"type": "string"},
-            "position_on_shelf": {"type": "string"},
-            "brand": {"type": ["string", "null"]},
-            "advertisement_type": {"type": ["string", "null"]},
-        }
         # We wrap the array in an object {"items":[...]} so json_schema works consistently.
         item_schema = {
             "type": "object",
@@ -927,12 +921,16 @@ class OpenAIClient(AbstractClient):
                 "brand": {"type": ["string", "null"]},
                 "advertisement_type": {"type": ["string", "null"]},
             },
-            "required": list(properties.keys()),
+            "required": [
+                "detection_id","product_type","product_model","confidence","visual_features",
+                "reference_match","shelf_location","position_on_shelf","brand","advertisement_type"
+            ],
         }
         resp_format = {
             "type": "json_schema",
             "json_schema": {
                 "name": "identified_products",
+                "strict": True,
                 "schema": {
                     "type": "object",
                     "additionalProperties": False,
@@ -940,13 +938,12 @@ class OpenAIClient(AbstractClient):
                         "items": {
                             "type": "array",
                             "items": item_schema,
-                            "minItems": len(detections),
+                            "minItems": len(detections),   # drop or lower if this causes 400s
                         }
                     },
-                    "required": ["items"]
+                    "required": ["items"],
                 },
-                "strict": True
-            }
+            },
         }
 
         # ensure shelves/positions are precomputed in case the model drops them
@@ -964,26 +961,49 @@ class OpenAIClient(AbstractClient):
 
         raw = response.choices[0].message.content or "{}"
         try:
-            parsed = json.loads(raw)
-            items = parsed.get("items", [])
+            data = json.loads(raw)
+            items = data.get("items") or data.get("detections") or []
         except Exception:
             # fallback: try best-effort parse if model didn’t honor schema
-            items = self._json.loads(
-                self._json.extract_json(raw)).get("items", []
+            data = self._json.loads(
+                raw
             )
+            items = data.get("items") or data.get("detections") or []
 
         # --- build IdentifiedProduct list ---
         out: List[IdentifiedProduct] = []
-        for it in items:
-            det_id = int(it.get("detection_id", 0))
+        for idx, it in enumerate(items, start=1):
+            det_id = int(it.get("detection_id") or idx)
             if not (1 <= det_id <= len(detections)):
                 continue
+
             det = detections[det_id - 1]
             shelf, pos = shelf_pos_map.get(det_id, ("unknown", "center"))
 
-            # allow model to override if present; otherwise use deterministic values
-            shelf = it.get("shelf_location") or shelf
-            pos = it.get("position_on_shelf") or pos
+            # allow model to override if present
+            shelf = (it.get("shelf_location") or shelf)
+            pos = (it.get("position_on_shelf") or pos)
+
+            # --- COERCION / DEFAULTS ---
+            det_cls = det.class_name.lower()
+            pt = (it.get("product_type") or "").strip().lower()
+            pm = (it.get("product_model") or None)
+
+            # Default to detector class when empty
+            if not pt:
+                pt = "price_tag" if det_cls in ("price_tag", "fact_tag") else det_cls
+
+            # Shelf rule: middle/bottom should be boxes; detector box forces box
+            if shelf in ("middle", "bottom") or det_cls == "product_box":
+                if pt == "printer":
+                    pt = "product_box"
+
+            # Fill sensible models
+            if pt in ("price_tag", "fact_tag") and not pm:
+                pm = "price tag"
+            if pt == "promotional_graphic" and not pm:
+                # light OCR-based guess if you like; otherwise leave None
+                pm = None
 
             out.append(
                 IdentifiedProduct(

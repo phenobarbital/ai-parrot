@@ -43,9 +43,9 @@ class IdentificationResponse(BaseModel):
         description="List of identified products from the image"
     )
 
-class ImprovedRetailDetector:
+class RetailDetector:
     """
-    Enhanced detector with image preprocessing and retail-specific focus
+    Enhanced detector with improved price tag detection
     """
 
     def __init__(self, detection_model_name: str = "yolov8n"):
@@ -58,47 +58,47 @@ class ImprovedRetailDetector:
         try:
             from ultralytics import YOLO
             self.detection_model = YOLO(self.detection_model_name)
-            print(f"Loaded {self.detection_model_name} for enhanced detection")
+            print(
+                f"Loaded {self.detection_model_name} for enhanced detection"
+            )
         except ImportError:
-            print("ultralytics not installed")
+            print(
+                "ultralytics not installed"
+            )
             self.detection_model = None
         except Exception as e:
-            print(f"Failed to load YOLO model: {e}")
+            print(
+                f"Failed to load YOLO model: {e}"
+            )
             self.detection_model = None
 
     def preprocess_image_for_detection(
         self, image: Union[str, Path, Image.Image]
     ) -> Tuple[Image.Image, np.ndarray]:
-        """
-        Enhance image for better object detection
-        """
-
+        """Enhance image for better object detection"""
         if isinstance(image, (str, Path)):
             pil_image = Image.open(image)
         else:
             pil_image = image
 
-        # Convert to RGB if needed
         if pil_image.mode != 'RGB':
             pil_image = pil_image.convert('RGB')
 
-        print("Applying image enhancements for better detection...")
-
         # 1. Increase contrast to make objects stand out
         enhancer = ImageEnhance.Contrast(pil_image)
-        enhanced = enhancer.enhance(1.4)  # 40% more contrast
+        enhanced = enhancer.enhance(1.4)
 
         # 2. Increase brightness to handle dim lighting
         enhancer = ImageEnhance.Brightness(enhanced)
-        enhanced = enhancer.enhance(1.2)  # 20% brighter
+        enhanced = enhancer.enhance(1.2)
 
         # 3. Increase sharpness to make edges clearer
         enhancer = ImageEnhance.Sharpness(enhanced)
-        enhanced = enhancer.enhance(1.5)  # 50% sharper
+        enhanced = enhancer.enhance(1.5)
 
         # 4. Apply slight color saturation to distinguish products
         enhancer = ImageEnhance.Color(enhanced)
-        enhanced = enhancer.enhance(1.1)  # 10% more saturated
+        enhanced = enhancer.enhance(1.1)
 
         # 5. Apply edge enhancement filter
         enhanced = enhanced.filter(ImageFilter.EDGE_ENHANCE)
@@ -108,15 +108,38 @@ class ImprovedRetailDetector:
 
         return enhanced, img_array
 
+    def _has_price_amount(
+        self,
+        roi_rgb: np.ndarray,
+        min_score_noocr: float = 0.62
+    ) -> bool:
+        try:
+            import pytesseract
+            gray = cv2.cvtColor(roi_rgb, cv2.COLOR_RGB2GRAY)
+            gray = cv2.resize(gray, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+            thr = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1]
+            txt = pytesseract.image_to_string(
+                thr,
+                config="--oem 3 --psm 6 -c tessedit_char_whitelist=$€£0123456789.,"
+            )
+            return bool(
+                re.search(r'[ $€£]?\s*\d{1,3}(?:[.,]\d{2})?', txt)
+            )
+        except Exception:
+            # Fallback: require strong text-like signal if OCR is unavailable
+            score = self._calculate_text_likelihood(
+                cv2.cvtColor(
+                    roi_rgb, cv2.COLOR_RGB2GRAY
+                )
+            )
+            return score >= min_score_noocr
+
     def detect_retail_products(
         self,
         image: Union[str, Path, Image.Image],
         confidence_threshold: float = 0.5
     ) -> List[DetectionBox]:
-        """
-        Enhanced retail product detection with preprocessing
-        """
-
+        """Enhanced retail product detection with better price tag detection"""
         # Preprocess image
         enhanced_pil, img_array = self.preprocess_image_for_detection(image)
 
@@ -134,11 +157,15 @@ class ImprovedRetailDetector:
         product_detections = self._detect_large_products(img_array, confidence_threshold)
         all_detections.extend(product_detections)
 
-        # 4) SECOND YOLO PASS: small price/fact tags
+        # 4) ENHANCED: Dedicated price tag detection
+        price_tags = self._detect_price_tags_enhanced(img_array)
+        all_detections.extend(price_tags)
+
+        # 5) SECOND YOLO PASS: small price/fact tags (with corrected terminology)
         small_tags = self._yolo_small_tag_detection(img_array)
         all_detections.extend(small_tags)
 
-        # 5) merge (keep your current strategy) THEN shrink to reduce overlap
+        # 6) merge and shrink
         final_detections = self._intelligent_merge(all_detections, confidence_threshold)
         final_detections = self._shrink_detections(final_detections)
 
@@ -147,6 +174,98 @@ class ImprovedRetailDetector:
             print(f"  {i+1}: {det.class_name} at ({det.x1},{det.y1},{det.x2},{det.y2}) conf={det.confidence:.2f}")
 
         return final_detections
+
+    def _detect_price_tags_enhanced(self, img_array: np.ndarray) -> List[DetectionBox]:
+        """
+        Enhanced dedicated price tag detection using multiple methods
+        """
+        height, width = img_array.shape[:2]
+        detections = []
+
+        # Method 1: Look for price tags in expected shelf edge locations
+        shelf_edge_tags = self._detect_shelf_edge_price_tags(img_array)
+        detections.extend(shelf_edge_tags)
+
+        # Method 2: Look for white rectangular tags with text
+        text_based_tags = self._detect_text_based_price_tags(img_array)
+        detections.extend(text_based_tags)
+
+        # Method 3: Template matching for typical price tag shapes
+        template_tags = self._detect_template_price_tags(img_array)
+        detections.extend(template_tags)
+
+        print(f"Enhanced price tag detection found {len(detections)} price tags")
+        return detections
+
+    def _detect_shelf_edge_price_tags(self, img_array: np.ndarray) -> List[DetectionBox]:
+        """Detect price tags along shelf edges"""
+        height, width = img_array.shape[:2]
+        detections = []
+
+        # Define shelf edge regions where price tags typically appear
+        shelf_edges = [
+            {"y1": int(0.47 * height), "y2": int(0.63 * height), "name": "top_shelf_edge"},
+            {"y1": int(0.62 * height), "y2": int(0.75 * height), "name": "middle_area"},
+            {"y1": int(0.83 * height), "y2": int(0.995 * height), "name": "bottom_shelf_edge"},
+        ]
+
+        for edge in shelf_edges:
+            y1, y2 = edge["y1"], edge["y2"]
+            if y2 <= y1:
+                continue
+
+            # Extract the shelf edge strip
+            edge_strip = img_array[y1:y2, :]
+
+            # Convert to grayscale for processing
+            gray_strip = cv2.cvtColor(edge_strip, cv2.COLOR_RGB2GRAY)
+
+            # Enhance contrast for better tag detection
+            clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8,8))
+            enhanced = clahe.apply(gray_strip)
+
+            # Threshold to find white/light regions (typical price tags)
+            _, thresh = cv2.threshold(enhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
+            # Morphological operations to clean up and connect text regions
+            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 3))
+            cleaned = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
+
+            # Find contours
+            contours, _ = cv2.findContours(cleaned, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+            for contour in contours:
+                x, y, w, h = cv2.boundingRect(contour)
+
+                # Filter by price tag dimensions
+                if (34 <= w <= 220 and 12 <= h <= 60) and 1.2 <= w/h <= 9.0:  # Typical price tag size
+                    aspect_ratio = w / h
+                    if 1.5 <= aspect_ratio <= 8.0:  # Price tags are usually wide
+
+                        # Calculate confidence based on how "tag-like" it is
+                        area = w * h
+                        contour_area = cv2.contourArea(contour)
+                        solidity = contour_area / area if area > 0 else 0
+
+                        # Check if it has text-like regions inside
+                        tag_region = edge_strip[y:y+h, x:x+w]  # RGB slice
+                        text_score = self._calculate_text_likelihood(tag_region)
+                        if not self._has_price_amount(tag_region):
+                            continue
+
+                        confidence = 0.3 + 0.4 * solidity + 0.3 * text_score
+
+                        if confidence >= 0.4:  # Lower threshold for price tags
+                            detection = DetectionBox(
+                                x1=x, y1=y1+y, x2=x+w, y2=y1+y+h,
+                                confidence=confidence,
+                                class_id=self._get_retail_class_id("price_tag"),
+                                class_name="price_tag",
+                                area=area
+                            )
+                            detections.append(detection)
+
+        return detections
 
     def _enhanced_yolo_detection(self, img_array: np.ndarray, confidence_threshold: float) -> List[DetectionBox]:
         """Enhanced YOLO detection focused on larger objects"""
@@ -256,19 +375,28 @@ class ImprovedRetailDetector:
         try:
             # Convert to grayscale for contour detection
             gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
+            bilat = cv2.bilateralFilter(gray, 7, 50, 50)
+            edges = cv2.Canny(bilat, 40, 120)
+            closed = cv2.morphologyEx(
+                edges,
+                cv2.MORPH_CLOSE,
+                cv2.getStructuringElement(cv2.MORPH_RECT, (9, 7)),
+                iterations=2
+            )
+            contours, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
             # Apply Gaussian blur to reduce noise
-            blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+            #blurred = cv2.GaussianBlur(gray, (5, 5), 0)
 
             # Apply threshold to get binary image
-            _, thresh = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            #_, thresh = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
             # Find contours
-            contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            # contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
             height, width = img_array.shape[:2]
-            min_area = width * height * 0.01  # Minimum 1% of image
-            max_area = width * height * 0.3   # Maximum 30% of image
+            min_area = width * height * 0.005  # Minimum 0.5% of image
+            max_area = width * height * 0.35   # Maximum 35% of image
 
             for contour in contours:
                 # Get bounding rectangle
@@ -349,34 +477,22 @@ class ImprovedRetailDetector:
         """Classify object based on position and size in retail context"""
 
         height, width = img_shape[:2]
-        y_ratio = y1 / height
+        y_center = (y1 + y2) * 0.5
+        y_ratio = y_center / height
         relative_area = area / (width * height)
-        aspect_ratio = (x2 - x1) / (y2 - y1) if (y2 - y1) > 0 else 1.0
+        aspect_ratio = (x2 - x1) / max(1.0, (y2 - y1))
 
-        # Header area (promotional graphics)
-        if y_ratio < 0.25:
+        # Header (promo)
+        if y_ratio < 0.22:
             return "promotional_graphic"
 
-        # Top shelf area (printers)
-        elif 0.25 <= y_ratio < 0.6:
-            if relative_area > 0.02:  # Large enough for printer
-                return "printer"
-            else:
-                return "fact_tag"
+        # Top shelf (printers)
+        elif y_ratio < 0.58:
+            return "printer" if relative_area > 0.015 else "price_tag"
 
-        # Bottom shelf area (product boxes)
-        elif y_ratio >= 0.65:
-            if relative_area > 0.015:  # Large enough for box
-                return "product_box"
-            else:
-                return "fact_tag"
-
-        # Middle area
+        # Middle/Bottom shelves (boxes)
         else:
-            if relative_area < 0.005:
-                return "fact_tag"
-            else:
-                return "ink_bottle"
+            return "product_box" if relative_area > 0.008 else "price_tag"
 
     def _classify_by_position_and_size(
         self, x1: float, y1: float, x2: float, y2: float,
@@ -389,34 +505,333 @@ class ImprovedRetailDetector:
 
         if y_ratio < 0.3:
             return "promotional_graphic"
-        elif y_ratio < 0.6:
+        elif y_ratio < 0.58:
             return "printer"
         else:
             return "product_box"
 
+    def create_mser(self, delta=5, min_area=200, max_area=5000):
+        """OpenCV-version-safe MSER factory."""
+        try:
+            # Some builds accept only _delta as kwarg
+            mser = cv2.MSER_create(_delta=delta)
+            if hasattr(mser, "setMinArea"): mser.setMinArea(int(min_area))
+            if hasattr(mser, "setMaxArea"): mser.setMaxArea(int(max_area))
+            return mser
+        except TypeError:
+            # Older builds: positionals
+            try:
+                return cv2.MSER_create(int(delta), int(min_area), int(max_area))
+            except TypeError:
+                # Fallback: create default and set via setters
+                mser = cv2.MSER_create()
+                if hasattr(mser, "setDelta"):    mser.setDelta(int(delta))
+                if hasattr(mser, "setMinArea"):  mser.setMinArea(int(min_area))
+                if hasattr(mser, "setMaxArea"):  mser.setMaxArea(int(max_area))
+                return mser
+
+    def _detect_text_based_price_tags(self, img_array: np.ndarray) -> List[DetectionBox]:
+        """Detect price tags by looking for text patterns"""
+        height, width = img_array.shape[:2]
+        s = max(0.6, min(1.6, height / 1080.0))
+        detections = []
+
+        # Convert to grayscale
+        gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
+
+        # Look for text regions using MSER (Maximally Stable Extremal Regions)
+        try:
+            mser = self.create_mser(
+                delta=5,
+                min_area=int(200 * s * s),  # area scales with pixels
+                max_area=int(5000 * s * s)
+            )
+
+            regions, _ = mser.detectRegions(gray)
+
+            for region in regions:
+                # Get bounding box of the region
+                x, y, w, h = cv2.boundingRect(region.reshape(-1, 1, 2))
+
+                # Filter by price tag characteristics
+                if (30 <= w <= 180 and 12 <= h <= 50):
+                    aspect_ratio = w / h
+                    if 1.2 <= aspect_ratio <= 7.0:
+
+                        # Check if this looks like a price tag region
+                        y_ratio = y / height
+                        if 0.45 <= y_ratio <= 0.95:  # Price tags are in lower portion
+
+                            # Extract the region and check for tag-like properties
+                            tag_region = gray[y:y+h, x:x+w]
+                            tag_score = self._score_price_tag_region(tag_region)
+
+                            if tag_score >= 0.4:
+                                confidence = min(0.85, tag_score)
+                                detection = DetectionBox(
+                                    x1=x, y1=y, x2=x+w, y2=y+h,
+                                    confidence=confidence,
+                                    class_id=self._get_retail_class_id("price_tag"),
+                                    class_name="price_tag",
+                                    area=w*h
+                                )
+                                detections.append(detection)
+
+        except Exception as e:
+            print(f"MSER text detection failed: {e}")
+
+        return detections
+
+    def _detect_template_price_tags(self, img_array: np.ndarray) -> List[DetectionBox]:
+        """Detect price tags using edge detection and geometric filtering"""
+        height, width = img_array.shape[:2]
+        detections = []
+
+        # Convert to grayscale
+        gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
+
+        # Apply adaptive threshold to handle varying lighting
+        adaptive = cv2.adaptiveThreshold(
+            gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2
+        )
+
+        # Find contours of potential rectangular regions
+        contours, _ = cv2.findContours(adaptive, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        for contour in contours:
+            # Approximate contour to polygon
+            epsilon = 0.02 * cv2.arcLength(contour, True)
+            approx = cv2.approxPolyDP(contour, epsilon, True)
+
+            # Look for rectangular shapes (4 corners)
+            if len(approx) >= 4:
+                x, y, w, h = cv2.boundingRect(contour)
+
+                # Price tag size filtering
+                if (25 <= w <= 150 and 10 <= h <= 40):
+                    aspect_ratio = w / h
+                    if 1.8 <= aspect_ratio <= 6.0:  # Wide rectangular shape
+
+                        # Position filtering - price tags are usually in lower half
+                        y_ratio = y / height
+                        if 0.5 <= y_ratio <= 0.98:
+
+                            # Calculate how rectangular the shape is
+                            contour_area = cv2.contourArea(contour)
+                            bbox_area = w * h
+                            rectangularity = contour_area / bbox_area if bbox_area > 0 else 0
+
+                            if rectangularity >= 0.6:  # Reasonably rectangular
+                                confidence = 0.4 + 0.4 * rectangularity
+
+                                detection = DetectionBox(
+                                    x1=x, y1=y, x2=x+w, y2=y+h,
+                                    confidence=confidence,
+                                    class_id=self._get_retail_class_id("price_tag"),
+                                    class_name="price_tag",
+                                    area=w*h
+                                )
+                                detections.append(detection)
+
+        return detections
+
+    def _calculate_text_likelihood(self, region: np.ndarray) -> float:
+        """Calculate how likely a region contains text"""
+        if region.size == 0:
+            return 0.0
+
+        # Calculate horizontal edge density (text has many horizontal edges)
+        sobelx = cv2.Sobel(region, cv2.CV_64F, 1, 0, ksize=3)
+        sobely = cv2.Sobel(region, cv2.CV_64F, 0, 1, ksize=3)
+
+        horizontal_edges = np.sum(np.abs(sobelx))
+        vertical_edges = np.sum(np.abs(sobely))
+
+        if horizontal_edges + vertical_edges == 0:
+            return 0.0
+
+        # Text typically has more horizontal than vertical edges
+        edge_ratio = horizontal_edges / (horizontal_edges + vertical_edges)
+
+        # Variance indicates presence of text vs solid color
+        variance = np.var(region)
+        variance_score = min(1.0, variance / 1000)
+
+        return min(1.0, edge_ratio + variance_score) / 2
+
+    def _score_price_tag_region(self, region: np.ndarray) -> float:
+        """Score how likely a region is to be a price tag"""
+        if region.size == 0:
+            return 0.0
+
+        # 1. Check for text-like patterns
+        text_score = self._calculate_text_likelihood(region)
+
+        # 2. Check for typical price tag intensity distribution
+        mean_intensity = np.mean(region)
+        intensity_score = 1.0 if 180 <= mean_intensity <= 255 else mean_intensity / 255
+
+        # 3. Check for horizontal text lines
+        horizontal_profile = np.mean(region, axis=1)
+        profile_variance = np.var(horizontal_profile)
+        profile_score = min(1.0, profile_variance / 500)
+
+        # Combined score
+        combined = (text_score * 0.4 + intensity_score * 0.3 + profile_score * 0.3)
+        return combined
+
     def _get_retail_class_id(self, class_name: str) -> int:
-        """Get class ID for retail products"""
+        """Get class ID for retail products - UPDATED to include price_tag"""
         mapping = {
             "printer": 100,
             "product_box": 101,
-            "fact_tag": 102,
+            "fact_tag": 102,      # Keep for backward compatibility
+            "price_tag": 102,     # Same ID as fact_tag
             "promotional_graphic": 103,
             "ink_bottle": 104,
             "unknown": 199
         }
         return mapping.get(class_name, 199)
 
+    def _yolo_small_tag_detection(
+        self,
+        img_array: np.ndarray,
+        price_band: Optional[Tuple[int, int]] = None,
+        conf: float = 0.03,
+        iou: float = 0.20,
+        imgsz: int = 1280,
+    ) -> List[DetectionBox]:
+        """
+        YOLO as a proposal generator for tiny shelf-edge tags.
+        UPDATED: Use 'price_tag' instead of 'fact_tag'
+        """
+        dets: List[DetectionBox] = []
+        if self.detection_model is None:
+            return dets
+
+        try:
+            r = self.detection_model(
+                img_array,
+                conf=conf,
+                iou=iou,
+                imgsz=imgsz,
+                max_det=600,
+                verbose=False
+            )[0]
+            if not hasattr(r, "boxes") or r.boxes is None:
+                return dets
+
+            boxes = r.boxes.xyxy.cpu().numpy()
+            base_confs = r.boxes.conf.cpu().numpy()
+            H, W = img_array.shape[:2]
+            img_area = float(W * H)
+
+            # Enhanced band for price tags - focus on shelf edges
+            y1_band, y2_band = (int(0.42*H), int(0.995*H))  # Expanded to include bottom shelf
+            if price_band is not None:
+                y1_band, y2_band = price_band
+
+            for (x1, y1, x2, y2), bconf in zip(boxes, base_confs):
+                w = max(1.0, x2 - x1); h = max(1.0, y2 - y1)
+                area = w * h; rel = area / img_area
+                ar = w / h
+                y_center = 0.5 * (y1 + y2)
+
+                # price tag geometry + band constraint
+                if not (y1_band <= y_center <= y2_band):
+                    continue
+                if not (0.0001 <= rel <= 0.008):  # Slightly larger range for price tags
+                    continue
+                if not (1.2 <= ar <= 8.0):  # Wider aspect ratio range for price tags
+                    continue
+
+                # geometry-based score
+                ar_score  = max(0.0, 1.0 - abs(np.log(ar / 3.5)))      # best when ar≈3.5
+                size_score = max(0.0, 1.0 - abs(rel - 0.003) / 0.003)  # best when rel≈0.003
+                geo = 0.45 + 0.3 * min(1.0, ar_score) + 0.25 * min(1.0, size_score)
+
+                dets.append(
+                    DetectionBox(
+                        x1=int(x1), y1=int(y1), x2=int(x2), y2=int(y2),
+                        confidence=float(max(bconf, geo)),
+                        class_id=self._get_retail_class_id("price_tag"),
+                        class_name="price_tag",  # CHANGED: from "fact_tag" to "price_tag"
+                        area=int(area),
+                    )
+                )
+        except Exception as e:
+            print(f"YOLO small-tag pass failed: {e}")
+
+        return dets
+
+    def _price_tag_band_filter(
+        self,
+        tag: DetectionBox,
+        img_rgb: np.ndarray,
+        shelf: str,
+        detections: list[DetectionBox],
+        band_pad_px: int = 4,
+    ) -> bool:
+
+        H, W = img_rgb.shape[:2]
+
+        # 1) build list of “big objects” on this shelf
+        big = [d for d in detections if d.class_name in ("printer", "product_box")]
+        if shelf == "top":
+            # lip is the bottom of top printers
+            lip_y = max((d.y2 for d in big if (d.y2 / H) < 0.70), default=int(0.50 * H))
+            band = (lip_y + band_pad_px, lip_y + max(band_pad_px + 18, int(0.06 * H)))
+        elif shelf == "bottom":
+            # rail band at the very bottom
+            band = (int(0.92 * H), int(0.995 * H))
+        else:
+            # middle shelf bands are noisy → be conservative
+            lip_y = max((d.y2 for d in big if 0.55 <= (d.y2 / H) <= 0.85), default=int(0.72 * H))
+            band = (lip_y + band_pad_px, lip_y + max(band_pad_px + 16, int(0.05 * H)))
+
+        # 2) the tag must be inside the band
+        yc = 0.5 * (tag.y1 + tag.y2)
+        if yc < band[0] or yc > band[1]:
+            return False
+
+        # 3) reject if overlapping big objects (kills stickers on faces)
+        for b in big:
+            if self._calculate_iou(tag, b) > 0.10:
+                return False
+            # also reject if tag center sits inside a big box/printer
+            if (b.x1 <= (tag.x1 + tag.x2) // 2 <= b.x2) and (b.y1 <= yc <= b.y2):
+                return False
+
+        # 4) conservative geometry for tags
+        w, h = tag.x2 - tag.x1, tag.y2 - tag.y1
+        if w < 28 or h < 12:
+            return False
+        ar = w / max(1, h)
+        if not (1.2 <= ar <= 6.5):
+            return False
+
+        # 5) must contain digits (OCR or fallback)
+        roi = img_rgb[tag.y1:tag.y2, tag.x1:tag.x2]
+        if not self._has_price_amount(roi):  # you already have this helper
+            return False
+
+        return True
+
+
     def _intelligent_merge(self, detections: List[DetectionBox], confidence_threshold: float) -> List[DetectionBox]:
-        """Per-class filtering + simple NMS, then shrink to reduce shelf overlap."""
+        """
+        Per-class filtering + simple NMS, with updated price_tag handling
+        """
         if not detections:
             return []
 
-        # --- per-class thresholds (let tiny tags survive) ---
+        # Updated per-class thresholds
         per_conf = {
             "printer": max(0.45, confidence_threshold),
             "product_box": max(0.45, confidence_threshold),
             "promotional_graphic": 0.35,
-            "fact_tag": 0.18,
+            "fact_tag": 0.22,
+            "price_tag": 0.28,     # raise from 0.15
             "ink_bottle": 0.30,
             "unknown": 0.40,
         }
@@ -425,15 +840,16 @@ class ImprovedRetailDetector:
         if not filtered:
             return []
 
-        # --- sort by conf then area ---
+        # Sort by confidence then area
         sorted_dets = sorted(filtered, key=lambda x: (x.confidence, x.area), reverse=True)
 
-        # --- class-aware IoU ---
+        # Updated class-aware IoU
         per_iou = {
             "printer": 0.35,
             "product_box": 0.35,
             "promotional_graphic": 0.50,
-            "fact_tag": 0.20,     # allow tags to sit near bigger boxes/printers
+            "fact_tag": 0.20,
+            "price_tag": 0.15,     # Lower IoU threshold for price tags (allow closer placement)
             "ink_bottle": 0.30,
             "unknown": 0.30,
         }
@@ -442,43 +858,47 @@ class ImprovedRetailDetector:
         for d in sorted_dets:
             keep = True
             for m in merged:
-                # lower IoU when classes differ to avoid wiping out tags near printers
+                # Lower IoU when classes differ to avoid wiping out tags near printers
                 iou_thresh = per_iou.get(d.class_name, 0.30)
                 if m.class_name != d.class_name:
-                    iou_thresh = min(0.20, iou_thresh)
+                    iou_thresh = min(0.10, iou_thresh)  # Even more lenient for different classes
                 if self._calculate_iou(d, m) > iou_thresh:
                     keep = False
                     break
             if keep:
                 merged.append(d)
 
-        # --- ensure expected coverage unchanged (your existing log) ---
+        # Coverage check
         has_top_products = any(d.class_name == "printer" for d in merged)
         has_bottom_products = any(d.class_name == "product_box" for d in merged)
         has_header = any(d.class_name == "promotional_graphic" for d in merged)
-        print(f"Coverage check - Top: {has_top_products}, Bottom: {has_bottom_products}, Header: {has_header}")
+        has_price_tags = any(d.class_name == "price_tag" for d in merged)
+        print(f"Coverage check - Top: {has_top_products}, Bottom: {has_bottom_products}, Header: {has_header}, Price Tags: {has_price_tags}")
 
-        # --- ALWAYS shrink before returning ---
+        # Always shrink before returning
         merged = self._shrink_detections(merged)
-
-        # optional: quick debug to verify shrinking visually
-        for d in merged:
-            if d.class_name in ("printer", "product_box"):
-                print(f"shrink -> {d.class_name}: ({d.x1},{d.y1})-({d.x2},{d.y2}) area={d.area}")
 
         return merged
 
-    def _ensure_product_coverage(self, detections: List[DetectionBox]) -> List[DetectionBox]:
-        """Ensure we detect products in expected areas"""
-
-        # Check for gaps in expected product areas
-        has_top_products = any(d.class_name == "printer" for d in detections)
-        has_bottom_products = any(d.class_name == "product_box" for d in detections)
-        has_header = any(d.class_name == "promotional_graphic" for d in detections)
-
-        print(f"Coverage check - Top: {has_top_products}, Bottom: {has_bottom_products}, Header: {has_header}")
-
-        return detections
+    def _shrink_detections(self, dets: List[DetectionBox]) -> List[DetectionBox]:
+        """
+        Per-class shrink to avoid cross-shelf bleeding
+        UPDATED: Add price_tag handling
+        """
+        per_class = {
+            "printer": 0.08,
+            "product_box": 0.08,
+            "promotional_graphic": 0.04,
+            "fact_tag": 0.00,     # Keep for backward compatibility
+            "price_tag": 0.00,    # Don't shrink price tags (they're already small)
+            "ink_bottle": 0.06,
+            "unknown": 0.06,
+        }
+        out = []
+        for d in dets:
+            pct = per_class.get(d.class_name, 0.06)
+            out.append(self._shrink_box(d, pct) if pct > 0 else d)
+        return out
 
     def _shrink_box(self, d: DetectionBox, pct: float = 0.06) -> DetectionBox:
         """Shrink a box by pct around its center to reduce shelf overlap."""
@@ -495,97 +915,9 @@ class ImprovedRetailDetector:
         if y2 <= y1: y2 = y1 + 1
         area = int((x2 - x1) * (y2 - y1))
 
-        # Pydantic: use copy(update=...) instead of positional ctor
         return d.model_copy(
             update={"x1": x1, "y1": y1, "x2": x2, "y2": y2, "area": area}
         )
-
-
-    def _shrink_detections(self, dets: List[DetectionBox]) -> List[DetectionBox]:
-        """
-        Per-class shrink to avoid cross-shelf bleeding:
-        - printers & product boxes: shrink more
-        - header promo: slight shrink
-        - fact tags: keep as-is (they're already tiny)
-        """
-        per_class = {
-            "printer": 0.08,
-            "product_box": 0.08,
-            "promotional_graphic": 0.04,
-            "fact_tag": 0.00,
-            "ink_bottle": 0.06,
-            "unknown": 0.06,
-        }
-        out = []
-        for d in dets:
-            pct = per_class.get(d.class_name, 0.06)
-            out.append(self._shrink_box(d, pct) if pct > 0 else d)
-        return out
-
-    def _yolo_small_tag_detection(
-        self,
-        img_array: np.ndarray,
-        price_band: Optional[Tuple[int, int]] = None,   # (y1, y2) of the shelf edge/price strip
-        conf: float = 0.03,
-        iou: float = 0.20,
-        imgsz: int = 1280,
-    ) -> List[DetectionBox]:
-        """
-        YOLO as a proposal generator for tiny shelf-edge tags.
-        We compute our own geometry-based confidence so results clear per-class thresholds.
-        """
-        dets: List[DetectionBox] = []
-        if self.detection_model is None:
-            return dets
-
-        try:
-            r = self.detection_model(img_array, conf=conf, iou=iou, imgsz=imgsz, max_det=600, verbose=False)[0]
-            if not hasattr(r, "boxes") or r.boxes is None:
-                return dets
-
-            boxes = r.boxes.xyxy.cpu().numpy()
-            base_confs = r.boxes.conf.cpu().numpy()
-            H, W = img_array.shape[:2]
-            img_area = float(W * H)
-
-            # default band: where shelves usually live
-            y1_band, y2_band = (int(0.45 * H), int(0.78 * H))
-            if price_band is not None:
-                y1_band, y2_band = price_band
-
-            for (x1, y1, x2, y2), bconf in zip(boxes, base_confs):
-                w = max(1.0, x2 - x1); h = max(1.0, y2 - y1)
-                area = w * h; rel = area / img_area
-                ar = w / h
-                y_center = 0.5 * (y1 + y2)
-
-                # price/fact-tag geometry + band constraint
-                if not (y1_band <= y_center <= y2_band):
-                    continue
-                if not (0.00025 <= rel <= 0.006):
-                    continue
-                if not (1.15 <= ar <= 6.5):
-                    continue
-
-                # geometry-based score so these pass merge thresholds
-                # (favor typical tag size/aspect)
-                ar_score  = max(0.0, 1.0 - abs(np.log(ar / 3.0)))      # best when ar≈3
-                size_score = max(0.0, 1.0 - abs(rel - 0.002) / 0.002)  # best when rel≈0.002
-                geo = 0.45 + 0.3 * min(1.0, ar_score) + 0.25 * min(1.0, size_score)
-
-                dets.append(
-                    DetectionBox(
-                        x1=int(x1), y1=int(y1), x2=int(x2), y2=int(y2),
-                        confidence=float(max(bconf, geo)),   # <-- boost with our score
-                        class_id=self._get_retail_class_id("fact_tag"),
-                        class_name="fact_tag",
-                        area=int(area),
-                    )
-                )
-        except Exception as e:
-            print(f"YOLO small-tag pass failed: {e}")
-
-        return dets
 
     def _calculate_iou(self, box1: DetectionBox, box2: DetectionBox) -> float:
         """Calculate IoU between two boxes"""
@@ -601,6 +933,7 @@ class ImprovedRetailDetector:
         union = box1.area + box2.area - intersection
 
         return intersection / union if union > 0 else 0.0
+
 class PlanogramCompliancePipeline(AbstractPipeline):
     """
     Pipeline for planogram compliance checking.
@@ -635,9 +968,9 @@ class PlanogramCompliancePipeline(AbstractPipeline):
             **kwargs
         )
         # Initialize the generic shape detector
-        self.shape_detector = ImprovedRetailDetector(detection_model)
+        self.shape_detector = RetailDetector(detection_model)
         self.logger.debug(
-            f"Initialized ImprovedRetailDetector with {detection_model}"
+            f"Initialized RetailDetector with {detection_model}"
         )
 
     def detect_objects_and_shelves(
@@ -697,7 +1030,7 @@ class PlanogramCompliancePipeline(AbstractPipeline):
         max_width: int = 280,
         min_height: int = 14,
         max_height: int = 100,
-        iou_suppress: float = 0.3,
+        iou_suppress: float = 0.2,
     ) -> List[DetectionBox]:
         """
         Heuristic price-tag recovery:
@@ -783,7 +1116,7 @@ class PlanogramCompliancePipeline(AbstractPipeline):
                         x1=int(gx1), y1=int(gy1), x2=int(gx2), y2=int(gy2),
                         confidence=confidence,
                         class_id=102,
-                        class_name="fact_tag",
+                        class_name="price_tag",
                         area=int(rect_area),
                     )
                 )
@@ -916,11 +1249,13 @@ class PlanogramCompliancePipeline(AbstractPipeline):
                         max_tokens=4000
                     )
                 elif self.llm_provider == "openai":
+                    extra_refs = [annotated_image] + (reference_images or [])
                     identified_products = await client.image_identification(
                         image=image,
+                        prompt=prompt,
                         detections=detections,
                         shelf_regions=shelf_regions,
-                        reference_images=reference_images,
+                        reference_images=extra_refs,
                         temperature=0.0,
                         ocr_hints=True
                     )
@@ -975,7 +1310,6 @@ class PlanogramCompliancePipeline(AbstractPipeline):
 
             except Exception as e:
                 self.logger.error(f"Error in structured identification: {e}")
-                import traceback
                 traceback.print_exc()
                 return self._create_simple_fallbacks(detections, shelf_regions)
 
@@ -1039,30 +1373,49 @@ DETECTED OBJECTS:
         prompt += f"""
 TASK: Identify each detected object using the reference images.
 
+IMPORTANT NAMING RULES:
+1. For printer devices: Use model name only (e.g., "ET-2980", "ET-3950", "ET-4950")
+2. For product boxes: Use model name + " box" (e.g., "ET-2980 box", "ET-3950 box", "ET-4950 box")
+3. For promotional graphics: Use descriptive name (e.g., "Epson EcoTank Advertisement")
+4. For price/fact tags: Use "price tag" or "fact tag"
+
 For each detection (ID 1-{len(detections)}), provide:
 - detection_id: The exact ID number from the red bounding box (1-{len(detections)})
 - product_type: printer, product_box, fact_tag, promotional_graphic, or ink_bottle
-- product_model: Specific model if identifiable (ET-2980, ET-3950, ET-4950)
+- product_model: Follow naming rules above based on product_type
 - confidence: Your confidence (0.0-1.0)
 - visual_features: List of visual features
 - reference_match: Which reference image matches (or "none")
 - shelf_location: header, top, middle, or bottom
 - position_on_shelf: left, center, or right
 
+EXAMPLES:
+- If you see a printer device: product_type="printer", product_model="ET-2980"
+- If you see a product box: product_type="product_box", product_model="ET-2980 box"
+- If you see a price tag: product_type="fact_tag", product_model="price tag"
+
 Example format:
 {{
   "detections": [
     {{
       "detection_id": 1,
-      "product_type": "promotional_graphic",
-      "product_model": "Epson EcoTank Advertisement",
+      "product_type": "printer",
+      "product_model": "ET-2980",
       "confidence": 0.95,
-      "visual_features": ["large banner", "Epson branding"],
-      "reference_match": "none",
-      "shelf_location": "header",
-      "position_on_shelf": "right",
-      "brand": "Epson",
-      "advertisement_type": "backlit_graphic"
+      "visual_features": ["white printer", "LCD screen", "ink tanks visible"],
+      "reference_match": "first reference image",
+      "shelf_location": "top",
+      "position_on_shelf": "left"
+    }},
+    {{
+      "detection_id": 2,
+      "product_type": "product_box",
+      "product_model": "ET-2980 box",
+      "confidence": 0.90,
+      "visual_features": ["blue box", "printer image", "Epson branding"],
+      "reference_match": "box reference image",
+      "shelf_location": "bottom",
+      "position_on_shelf": "left"
     }}
   ]
 }}
@@ -1108,7 +1461,17 @@ Respond with the structured data for all {len(detections)} objects.
             elif detection.class_name == "box":
                 product_type = "product_box"
             else:
-                product_type = "unknown"
+                cls = detection.class_name
+                if cls == "promotional_graphic":
+                    product_type = "promotional_graphic"
+                elif cls == "printer":
+                    product_type = "printer"
+                elif cls == "product_box":
+                    product_type = "product_box"
+                elif cls in ("price_tag", "fact_tag"):
+                    product_type = "fact_tag"
+                else:
+                    product_type = "unknown"
 
             product = IdentifiedProduct(
                 detection_box=detection,
@@ -1164,6 +1527,13 @@ Respond with the structured data for all {len(detections)} objects.
             expected_normalized = [self._normalize_product_name(p) for p in expected_products]
             found_normalized = found_products
 
+            # Debug logging
+            print(f"\nShelf Level: {shelf_level}")
+            print(f"Expected (raw): {expected_products}")
+            print(f"Expected (normalized): {expected_normalized}")
+            print(f"Found (raw): {[p.product_model for p in products_by_shelf.get(shelf_level, []) if p.product_type not in ['fact_tag', 'price_tag']]}")
+            print(f"Found (normalized): {found_normalized}")
+
             # Calculate compliance
             missing = [p for p in expected_normalized if p not in found_normalized]
             unexpected = [p for p in found_normalized if p not in expected_normalized]
@@ -1203,27 +1573,64 @@ Respond with the structured data for all {len(detections)} objects.
 
         # Map various representations to standard names
         mapping = {
+            # Printer models (device only)
             "et-2980": "et_2980",
             "et2980": "et_2980",
             "et-3950": "et_3950",
             "et3950": "et_3950",
             "et-4950": "et_4950",
             "et4950": "et_4950",
+
+            # Box versions (explicit box naming)
+            "et-2980 box": "et_2980_box",
+            "et2980 box": "et_2980_box",
+            "et-3950 box": "et_3950_box",
+            "et3950 box": "et_3950_box",
+            "et-4950 box": "et_4950_box",
+            "et4950 box": "et_4950_box",
+
+            # Alternative box patterns
+            "et-2980 product box": "et_2980_box",
+            "et-3950 product box": "et_3950_box",
+            "et-4950 product box": "et_4950_box",
+
+            # Generic terms
             "printer": "device",
-            "fact tag": "fact_tag",
-            "price tag": "fact_tag",
-            "graphic": "sign",
-            "backlit": "sign",
-            "promotional_graphic": "backlit_graphic",
-            "epson ecotank advertisement": "backlit_graphic",
-            "epson eco tank advertisement": "promotional_graphic",
-            "graphic": "backlit_graphic",
-            "backlit": "backlit_graphic",
+            "product_box": "box",
+            "fact_tag": "price_tag",
+            "price_tag": "price_tag",
+            "fact tag": "price_tag",
+            "price tag": "price_tag",
+            "promotional_graphic": "promotional_graphic",
+            "epson ecotank advertisement": "promotional_graphic",
+            "backlit_graphic": "promotional_graphic",
         }
 
-        for key, value in mapping.items():
-            if key in name:
-                return value
+        # First try exact matches
+        if name in mapping:
+            return mapping[name]
+
+        # Then try pattern matching for boxes
+        for pattern in ["et-2980", "et2980"]:
+            if pattern in name and "box" in name:
+                return "et_2980_box"
+        for pattern in ["et-3950", "et3950"]:
+            if pattern in name and "box" in name:
+                return "et_3950_box"
+        for pattern in ["et-4950", "et4950"]:
+            if pattern in name and "box" in name:
+                return "et_4950_box"
+
+        # Pattern matching for printers (without box)
+        for pattern in ["et-2980", "et2980"]:
+            if pattern in name and "box" not in name:
+                return "et_2980"
+        for pattern in ["et-3950", "et3950"]:
+            if pattern in name and "box" not in name:
+                return "et_3950"
+        for pattern in ["et-4950", "et4950"]:
+            if pattern in name and "box" not in name:
+                return "et_4950"
 
         return name
 

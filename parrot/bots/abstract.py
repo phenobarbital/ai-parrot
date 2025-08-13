@@ -110,7 +110,8 @@ class AbstractBot(DBInterface, ABC):
         self.app: Optional[web.Application] = None
         # Start initialization:
         self.return_sources: bool = kwargs.pop('return_sources', True)
-
+        # program slug:
+        self._program_slug: str = kwargs.pop('program_slug', 'parrot')
         # Bot Attributes:
         self.description = self._get_default_attr(
             'description',
@@ -221,6 +222,10 @@ class AbstractBot(DBInterface, ABC):
         if _permissions is None:
             _permissions = {}
         self._permissions = {**_default, **_permissions}
+
+    def set_program(self, program_slug: str) -> None:
+        """Set the program slug for the bot."""
+        self._program_slug = program_slug
 
     def default_permissions(self) -> dict:
         """
