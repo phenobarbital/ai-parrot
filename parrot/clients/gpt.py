@@ -791,6 +791,7 @@ class OpenAIClient(AbstractClient):
         shelf_regions: List[ShelfRegion],        # "
         reference_images: Optional[List[Union[Path, bytes, Image.Image]]] = None,
         model: Union[OpenAIModel, str] = OpenAIModel.GPT_4_1_MINI,
+        prompt: Optional[str] = None,
         temperature: float = 0.0,
         ocr_hints: bool = True,
         user_id: Optional[str] = None,
@@ -877,40 +878,30 @@ class OpenAIClient(AbstractClient):
 
         # 3) one block with per-detection crop + text hint
         #    Images go as separate blocks; the textual metadata goes in one text block.
-        meta_lines = [
-            "DETECTIONS:",
-            # id, bbox, class_name, shelf, position, OCR
-        ]
+        meta_lines = ["DETECTIONS:"]
         for c in crops:
             d = c["det"]
             meta_lines.append(
                 f"- id:{c['id']} bbox:[{d.x1},{d.y1},{d.x2},{d.y2}] class:{d.class_name} "
                 f"shelf:{c['shelf']} position:{c['position']} ocr:{c['ocr'][:80] or 'None'}"
             )
-        content_blocks.append({"type": "text", "text":
-            "Identify each detection by comparing with the reference images. "
-            "Prefer visual features (shape, control panel, ink tank layout) and use OCR hints only as supportive evidence. "
-            "Allowed product_type: ['printer','product_box','fact_tag','promotional_graphic','ink_bottle']. "
-            "Models to look for (if any): ['ET-2980','ET-3950','ET-4950']. "
-            "Return one item per detection id.\n" + "\n".join(meta_lines)
-        })
+        if prompt:
+            text_block = prompt + "\n\nReturn ONLY JSON with top-level key 'items' that matches the provided schema." + "\n".join(meta_lines)
+        else:
+            text_block = (
+                "Identify each detection by comparing with the reference images. "
+                "Prefer visual features (shape, control panel, ink tank layout) and use OCR hints only as supportive evidence. "
+                "Allowed product_type: ['printer','product_box','fact_tag','promotional_graphic','ink_bottle']. "
+                "Models to look for (if any): ['ET-2980','ET-3950','ET-4950']. "
+                "Return one item per detection id.\n"
+                + "\n".join(meta_lines)
+            )
+        content_blocks.append({"type": "text", "text": text_block})
         # add crops
         for c in crops:
             content_blocks.append(c["img_content"])
 
         # --- JSON schema (strict) for enforcement ---
-        properties = {
-            "detection_id": {"type": "integer", "minimum": 1},
-            "product_type": {"type": "string"},
-            "product_model": {"type": ["string", "null"]},          # optional but required presence
-            "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
-            "visual_features": {"type": "array", "items": {"type": "string"}},
-            "reference_match": {"type": ["string", "null"]},        # optional but required presence
-            "shelf_location": {"type": "string"},
-            "position_on_shelf": {"type": "string"},
-            "brand": {"type": ["string", "null"]},
-            "advertisement_type": {"type": ["string", "null"]},
-        }
         # We wrap the array in an object {"items":[...]} so json_schema works consistently.
         item_schema = {
             "type": "object",
@@ -927,12 +918,16 @@ class OpenAIClient(AbstractClient):
                 "brand": {"type": ["string", "null"]},
                 "advertisement_type": {"type": ["string", "null"]},
             },
-            "required": list(properties.keys()),
+            "required": [
+                "detection_id","product_type","product_model","confidence","visual_features",
+                "reference_match","shelf_location","position_on_shelf","brand","advertisement_type"
+            ],
         }
         resp_format = {
             "type": "json_schema",
             "json_schema": {
                 "name": "identified_products",
+                "strict": True,
                 "schema": {
                     "type": "object",
                     "additionalProperties": False,
@@ -940,13 +935,12 @@ class OpenAIClient(AbstractClient):
                         "items": {
                             "type": "array",
                             "items": item_schema,
-                            "minItems": len(detections),
+                            "minItems": len(detections),   # drop or lower if this causes 400s
                         }
                     },
-                    "required": ["items"]
+                    "required": ["items"],
                 },
-                "strict": True
-            }
+            },
         }
 
         # ensure shelves/positions are precomputed in case the model drops them
@@ -964,13 +958,14 @@ class OpenAIClient(AbstractClient):
 
         raw = response.choices[0].message.content or "{}"
         try:
-            parsed = json.loads(raw)
-            items = parsed.get("items", [])
+            data = json.loads(raw)
+            items = data.get("items") or data.get("detections") or []
         except Exception:
             # fallback: try best-effort parse if model didn’t honor schema
-            items = self._json.loads(
-                self._json.extract_json(raw)).get("items", []
+            data = self._json.loads(
+                self._json.extract_json(raw)
             )
+            items = data.get("items") or data.get("detections") or []
 
         # --- build IdentifiedProduct list ---
         out: List[IdentifiedProduct] = []
