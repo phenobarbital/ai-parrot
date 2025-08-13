@@ -809,13 +809,16 @@ class OpenAIClient(AbstractClient):
         def _crop_box(pil_img: Image.Image, box) -> Image.Image:
             # small padding to include context
             pad = 6
-            x1 = max(0, box.x1 - pad); y1 = max(0, box.y1 - pad)
-            x2 = min(pil_img.width,  box.x2 + pad); y2 = min(pil_img.height, box.y2 + pad)
+            x1 = max(0, box.x1 - pad)
+            y1 = max(0, box.y1 - pad)
+            x2 = min(pil_img.width,  box.x2 + pad)
+            y2 = min(pil_img.height, box.y2 + pad)
             return pil_img.crop((x1, y1, x2, y2))
 
         def _shelf_and_position(box, regions: List[ShelfRegion]) -> Tuple[str, str]:
             # map to shelf by containment / Y overlap
-            best = None; best_overlap = 0
+            best = None
+            best_overlap = 0
             for r in regions:
                 rx1, ry1, rx2, ry2 = r.bbox.x1, r.bbox.y1, r.bbox.x2, r.bbox.y2
                 ix1, iy1 = max(rx1, box.x1), max(ry1, box.y1)
@@ -963,22 +966,44 @@ class OpenAIClient(AbstractClient):
         except Exception:
             # fallback: try best-effort parse if model didn’t honor schema
             data = self._json.loads(
-                self._json.extract_json(raw)
+                raw
             )
             items = data.get("items") or data.get("detections") or []
 
         # --- build IdentifiedProduct list ---
         out: List[IdentifiedProduct] = []
-        for it in items:
-            det_id = int(it.get("detection_id", 0))
+        for idx, it in enumerate(items, start=1):
+            det_id = int(it.get("detection_id") or idx)
             if not (1 <= det_id <= len(detections)):
                 continue
+
             det = detections[det_id - 1]
             shelf, pos = shelf_pos_map.get(det_id, ("unknown", "center"))
 
-            # allow model to override if present; otherwise use deterministic values
-            shelf = it.get("shelf_location") or shelf
-            pos = it.get("position_on_shelf") or pos
+            # allow model to override if present
+            shelf = (it.get("shelf_location") or shelf)
+            pos = (it.get("position_on_shelf") or pos)
+
+            # --- COERCION / DEFAULTS ---
+            det_cls = det.class_name.lower()
+            pt = (it.get("product_type") or "").strip().lower()
+            pm = (it.get("product_model") or None)
+
+            # Default to detector class when empty
+            if not pt:
+                pt = "price_tag" if det_cls in ("price_tag", "fact_tag") else det_cls
+
+            # Shelf rule: middle/bottom should be boxes; detector box forces box
+            if shelf in ("middle", "bottom") or det_cls == "product_box":
+                if pt == "printer":
+                    pt = "product_box"
+
+            # Fill sensible models
+            if pt in ("price_tag", "fact_tag") and not pm:
+                pm = "price tag"
+            if pt == "promotional_graphic" and not pm:
+                # light OCR-based guess if you like; otherwise leave None
+                pm = None
 
             out.append(
                 IdentifiedProduct(
