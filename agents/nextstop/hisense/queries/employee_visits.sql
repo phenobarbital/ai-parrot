@@ -13,6 +13,7 @@ WITH visit_data AS (
         d.store_id,
         d.visit_dow,
         d.account_name,
+        d.store_name,
         -- Calculate time spent in decimal minutes
         CASE
             WHEN time_in IS NOT NULL AND time_out IS NOT NULL THEN
@@ -25,7 +26,9 @@ WITH visit_data AS (
                 'column_name', column_name,
                 'question', question,
                 'answer', data,
-                'account_name', d.account_name
+                'account_name', d.account_name,
+                'visit_length', visit_length,
+                'store_id', d.store_id
             ) ORDER BY column_name
         ) AS visit_info
     FROM hisense.form_data d
@@ -34,7 +37,7 @@ WITH visit_data AS (
     AND column_name IN ('9733','9731','9732','9730')
     AND d.visitor_email = '{employee_id}'
     GROUP BY
-        form_id, formid, visit_date, visit_timestamp, visit_length, d.visit_hour, d.account_name,
+        form_id, formid, visit_date, visit_timestamp, visit_length, d.visit_hour, d.account_name, d.store_name,
         time_in, time_out, d.store_id, st.alt_name, visitor_name, visitor_email, visitor_role, d.visit_dow
 ),
 retailer_summary AS (
@@ -56,6 +59,7 @@ SELECT
 visitor_name,
 vd.visitor_email,
 max(visit_date) as latest_visit_date,
+max(store_name) as latest_store_visited,
 COUNT(DISTINCT form_id) AS number_of_visits,
 count(distinct store_id) as visited_stores,
 avg(visit_length) as visit_duration,
