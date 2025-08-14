@@ -1691,6 +1691,14 @@ You are a scriptwriter. Your task is {system_prompt} for a conversation between 
 - The conversation should be engaging, natural, and suitable for a TTS system.
 - The script should be formatted for TTS, with clear speaker lines.
 
+**Gender–Neutral Output (Strict)**
+- Do NOT infer anyone's gender or use third-person gendered pronouns or titles: he, him, his, she, her, hers, Mr., Mrs., Ms., sir, ma’am, etc.
+- If a third person must be referenced, use singular they/them/their or repeat the name/role (e.g., “the manager”, “Alex”).
+- Do not include gendered stage directions (“in a feminine/masculine voice”).
+- First/second person is fine inside dialogue (“I”, “you”), but NEVER use gendered third-person forms.
+
+Before finalizing, scan and fix any gendered terms. If any banned term appears, rewrite that line to comply.
+
 - **IMPORTANT**: Generate ONLY the dialogue script. Do not include headers, titles, or any text other than the speaker lines. The format must be exactly:
 {interviewer.name}: [dialogue]
 {interviewee.name}: [dialogue]

@@ -147,7 +147,9 @@ class NextStopAgent(AgentHandler):
         sid = request.match_info.get('sid', None)
         if not sid:
             return web.json_response(
-                {"error": "Session ID is required"}, status=400
+                {
+                    "error": "Session ID is required"
+                }, status=400
             )
         # Retrieve the task status using uuid of background task:
         return await self.get_task_status(sid, request)
@@ -308,15 +310,18 @@ class NextStopAgent(AgentHandler):
     @AgentHandler.service_auth
     async def post(self) -> web.Response:
         """Handle POST requests."""
+        security_groups = {'hisense360', 'epson360', 'hisense', 'epson'}
         data = await self.request.json()
+        session_email = self._session['email']
         program_slug = data.get('program', 'hisense')
         if program_slug not in self._session['programs']:
-            return web.json_response(
-                {"error": "This agent is not available for your current program."},
-                status=403
-            )
+            # check if in session['programs'] is one of the security groups:
+            if not any(group in self._session['programs'] for group in security_groups):
+                # If the program is not available, return an error response
+                self.logger.error(
+                    f"Program {program_slug} is not available for user {session_email}"
+                )
         # Get Store ID if Provided:
-        session_email = self._session['email']
         store_id = data.get('store_id', None)
         manager_id = data.get('manager_id', None)
         employee_id = data.get('employee_id')
