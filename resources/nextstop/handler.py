@@ -273,7 +273,6 @@ class NextStopAgent(AgentHandler):
                             {"manager_id": email},
                         ],
                         "agent_name": self.agent_name,
-                        "program_slug": "hisense"
                     }
                 }
                 records = await NextStopStore.filter(**_filter)
