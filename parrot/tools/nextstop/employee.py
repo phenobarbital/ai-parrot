@@ -41,6 +41,10 @@ class EmployeeInput(BaseModel):
 class ManagerInput(BaseModel):
     """Input for the manager-related operations in the NextStop tool."""
     manager_id: str = Field(description="Unique identifier for the manager")
+    program: Optional[str] = Field(
+        default=None,
+        description="Program slug for the store (e.g., 'hisense', 'epson')"
+    )
 
     # Add a model_config to prevent additional properties
     model_config = ConfigDict(
