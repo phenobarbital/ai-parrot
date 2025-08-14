@@ -1,6 +1,7 @@
 # Employee Performance Report:
 
 Employee ID: {employee_id}
+Program: {program_slug}
 
 Using data returned by:
 `get_by_employee_visits('{employee_id}')`
@@ -13,30 +14,55 @@ to generate a detailed, comprehensive employee visit performance report using th
 **Employee Name:** employee_name
 **Total Stores Visited:** total_stores_visited
 **Most Recent Visit Date:** use latest_visit_date from get_by_employee_visits
-**Most Recent Store Visited:** use store_name from get_by_employee_visits
-**Sales Summary:** top and bottom tier stores sum of current_sales_current_week
+**Most Recent Store Visited:** show `latest_store_visited` from get_by_employee_visits
+**Average Duration of Visits:** use `visit_duration`
+**Total Visits:** use `number_of_visits`
+**Total Unique Stores Visited:** use `visited_stores`
+**Median Duration of Visits:** show `median_visit_duration`
+**Visited Retailers**: show `visited_retailers`
+## Sales Summary
+ **Current Units Sold:** sum of `current_sales_current_week`
+ **Previous Week:** sum of `sales_previous_week`
+ **Week over Week comparison:**
 
 # 2. Visits Summary
-**Average Duration of Visits:** use the column visit_duration
-**Average Visit Length Comparison:** compare the visit_duration with the duration of previous visits.
-**Variance in Average Visit Length:** compare visit_length changes across all visits.
-**Total Visits Completed:** use number_of_visits
-**Total Unique Stores Visited:** use visited_stores
-**Median Per-Store Visits:** use median_visits_per_store
-**Median Duration of Visits:** use median_visit_duration
-**Visit Frequency:** visits per week/month based on date range
-**Territory Coverage:** percentage of assigned stores visited
+
+Using ONLY the objects in `visit_data` (an array of visits). Do NOT invent data.
+
+Each object at `visit_data` have:
+* visit_date
+* column_name
+* question
+* answer
+* account_name: Name of retailer (e.g. Best Buy, Lowe's)
+* visit_length
+* store_id: ID of Store
+
+And visits span over a week.
+
+**Top-3 Longest Duration Visits:** retrieve 3 Longest visits by visit_length
+  [Display as a markdown table: | Store ID | Visit Date | visit length (min) | ]
+**Top-3 Shortest Duration Visits:** retrieve 3 Shortest visits by visit_length
+  [Display as a markdown table: | Store ID | Visit Date | visit length (min) | ]
+**Most Frequent Store visited:** count individually each `store_id`, get the most visited store.
+**Variance in Average Visit Length:** compare `visit_length` changes across all visits.
+**Median Per-Store Visits:** for each `store_id`, count visits; take the median across stores
+
+## Visit Frequency
+  - Daily: <avg per day, 2 decimals>
+  - most frequent hour: `most_frequent_hour_of_day`
+  - most frequent day: `most_frequent_day_of_week`
+  - Time Range: `min_time_in`/`max_time_out` (in format hh:mm)
 
 # 3. Sales Performance:
-Show Sales from `get_employee_sales`
+Show Top-3 and Bottom-3 Stores from `get_employee_sales`
 [Provide a markdown table with columns: Tier | Store Id | sales_current_week | sales_previous_week | week_over_week_variance]
-
 
 Using data returned from `get_by_employee_visits` tool executes the following task:
 
 # 4. Visit Performance Metrics
 
-For each of the four key questions:
+For each of the four key questions on `visit_data`:
 - 9730: (Key Wins) Summarize positive outcomes and successes.
 - 9731: (Challenges/Opportunities) Identify recurring issues and improvement areas.
 - 9732: (Next Visit Focus) Analyze follow-up priorities and action items.
@@ -93,22 +119,8 @@ For **each** question `column_name` produce:
     - What training or support might help improve their visit quality?
     - What are your recommendations for optimizing their territory coverage and visit efficiency?
 
-# 7. Employee Development Recommendations
-
-## Based on Visit Analysis
-**Training Needs:** Identify specific areas where additional training would benefit the employee
-**Best Practices to Reinforce:** What successful approaches should the employee continue?
-**Improvement Areas:** Priority areas for performance enhancement
-**Territory Management:** Recommendations for optimizing store coverage and visit scheduling
-**Goal Setting:** Suggested metrics and targets for future performance measurement
-
-# 8. Action Plan
-**Short-term (Next 30 days):** Immediate focus areas and quick wins
-**Medium-term (Next Quarter):** Skills development and process improvements
-**Long-term (Next 6 months):** Career development and territory expansion opportunities
-
 IMPORTANT INSTRUCTIONS:
-- Strictly follow this markdown format without exception.
+- Strictly follow markdown format without exception.
 - Always return EVERY section and sub-section EXACTLY as formatted above.
 - NEVER omit, summarize briefly, or indicate additional details elsewhere.
 - DO NOT include any introductory summaries, concluding remarks, end notes, or additional text beyond the specified structure.

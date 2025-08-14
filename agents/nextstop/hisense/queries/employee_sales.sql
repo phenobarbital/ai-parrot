@@ -46,20 +46,13 @@ FROM ranked s
       PARTITION BY f.tier
       ORDER BY
         -- For 'top' we want highest first; for 'bottom' we want lowest first.
-        CASE WHEN f.tier = 'top'    THEN -f.sales_current_week
-             WHEN f.tier = 'bottom' THEN  f.sales_current_week
-             ELSE  0
+        CASE
+          WHEN f.tier = 'top'    THEN -f.sales_current_week
+          WHEN f.tier = 'bottom' THEN  f.sales_current_week
+          ELSE  0
         END,
         f.store_id
     ) AS rn_tier
     FROM filter f WHERE f.tier IN ('top','bottom')
 )
-SELECT
-  store_id,
-  sales_current_week,
-  sales_previous_week,
-  week_over_week_delta,
-  week_over_week_variance,
-  tier
-FROM numbered
-WHERE rn_tier <= 3
+select * from numbered;
