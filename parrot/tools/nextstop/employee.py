@@ -18,6 +18,10 @@ class EmployeeInput(BaseModel):
         default=None,
         description="Unique identifier for the employee"
     )
+    program: Optional[str] = Field(
+        default=None,
+        description="Program slug for the store (e.g., 'hisense', 'epson')"
+    )
 
     display_name: Optional[str] = Field(
         default=None,
@@ -91,6 +95,8 @@ class VisitDetail(BaseModel):
     question: str = Field(..., description="Question asked during the visit")
     answer: Optional[str] = Field(None, description="Answer provided for the question")
     account_name: str = Field(..., description="Name of the retail account/store")
+    visit_length: Optional[float] = Field(default=None, description="Visit length in minutes")
+    store_id: str = Field(..., description="Store identifier")
 
     @field_validator('question', mode='before')
     @classmethod
@@ -191,6 +197,11 @@ class EmployeeVisit(BaseModel):
     # Visit Statistics
     latest_visit_date: date = Field(..., description="Date of the most recent visit")
     number_of_visits: int = Field(..., ge=0, description="Total number of visits made")
+    latest_store_visited: Optional[str] = Field(
+        None,
+        description="Name of the most recently visited store"
+    )
+    # Unique stores visited
     visited_stores: int = Field(..., ge=0, description="Number of unique stores visited")
 
     # Time-based Metrics
@@ -610,6 +621,7 @@ LIMIT 100;
     async def get_by_employee_visits(
         self,
         employee_id: str,
+        program: str,
         **kwargs
     ) -> EmployeeVisit:
         """Get statistics about visits made by an Employee during the current week.
@@ -617,6 +629,8 @@ LIMIT 100;
         Data is returned as a Structured JSON object.
         Useful for analyzing employee visit patterns and performance.
         """
+        if program:
+            self.program = program
         if not employee_id:
             employee_id = kwargs.get('email', '').strip().lower()
         sql = await self._get_query("employee_visits")
@@ -649,12 +663,15 @@ LIMIT 100;
     async def get_employee_sales(
         self,
         employee_id: str,
+        program: str,
         **kwargs
     ) -> List[EmployeeSales]:
         """Get sales information for a specific employee.
         Returns a collection of EmployeeSales objects with detailed sales data.
         Useful for analyzing individual employee sales patterns and performance.
         """
+        if program:
+            self.program = program
         if not employee_id:
             employee_id = kwargs.get('email', '').strip().lower()
         sql = await self._get_query("employee_sales")
