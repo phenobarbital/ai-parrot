@@ -109,10 +109,10 @@ class NextStopAgent(AgentHandler):
     agent_id: str = "nextstop"
     _agent_class: type = NextStop
     _agent_response = NextStopResponse
-    # _use_llm: str = 'openai'
-    # _use_model: str = 'gpt-4.1-mini'
-    _use_llm: str = 'google'
-    _use_model: str = 'gemini-2.5-pro'
+    _use_llm: str = 'openai'
+    _use_model: str = 'gpt-4.1-mini'
+    # _use_llm: str = 'google'
+    # _use_model: str = 'gemini-2.5-pro'
     _tools = []
 
     base_route: str = '/api/v1/agents/nextstop'
@@ -563,8 +563,14 @@ where e.corporate_email = '{email!s}'
 
     async def _nextstop_employee(self, employee_id: str, **kwargs) -> NextStopResponse:
         """Generate a report for the NextStop agent."""
+        program_slug = kwargs.get('program_slug', 'hisense')  # fallback to hisense
+
+        # Set program in agent before asking
+        if hasattr(self._agent, 'set_program'):
+            self._agent.set_program(program_slug)
+
         query = await self.open_prompt('for_employee.txt')
-        question = query.format(employee_id=employee_id)
+        question = query.format(employee_id=employee_id, program_slug=program_slug)
         try:
             response, _ = await self.ask_agent(query=question)
         except Exception as e:
