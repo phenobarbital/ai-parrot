@@ -179,10 +179,20 @@ class EmployeeSales(BaseModel):
     """Individual record for Employee sales data"""
     store_id: str = Field(..., description="Store identifier")
     tier: str = Field(..., description="Sales ranking")
-    sales_current_week: Optional[float] = Field(..., description="Sales in current week")
-    sales_previous_week: Optional[float] = Field(..., description="Sales in previous week")
-    week_over_week_delta: Optional[float] = Field(..., description="Week over week sales delta")
-    week_over_week_variance: Optional[float] = Field(..., description="Week over week sales variance")
+    sales_current_week: Optional[float] = Field(
+        ...,
+        description="Sales in current week"
+    )
+    sales_previous_week: Optional[float] = Field(
+        ...,
+        description="Sales in previous week"
+    )
+    week_over_week_delta: Optional[float] = Field(
+        ..., description="Week over week sales delta"
+    )
+    week_over_week_variance: Optional[float] = Field(
+        ..., description="Week over week sales variance"
+    )
 
 
 class EmployeeVisit(BaseModel):
