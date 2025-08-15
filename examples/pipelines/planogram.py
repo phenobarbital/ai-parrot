@@ -63,17 +63,24 @@ async def main():
     print(f"COMPLIANCE SCORE: {results['overall_compliance_score']:.1%}")
     print("="*60)
 
+    # Print results will now show text compliance
     print("\nSHELF-BY-SHELF RESULTS:")
     for result in results['step3_compliance_results']:
-        print('RESULT > ', result)
-        print(f"{result.shelf_level.upper()}: {result.compliance_status.value}")
+        print(f"{result.shelf_level.upper()}: {result.compliance_status}")
         print(f"  Expected: {result.expected_products}")
         print(f"  Found: {result.found_products}")
-        if result.missing_products:
-            print(f"  Missing: {result.missing_products}")
-        if result.unexpected_products:
-            print(f"  Unexpected: {result.unexpected_products}")
-        print(f"  Score: {result.compliance_score:.1%}")
+        print(f"  Product Score: {result.compliance_score:.1%}")
+        print(f"  Text Score: {result.text_compliance_score:.1%}")
+        print(f"  Text Compliant: {'✅' if result.overall_text_compliant else '❌'}")
+
+        # Show text compliance details
+        if result.text_compliance_results:
+            print("  Text Requirements:")
+            for text_result in result.text_compliance_results:
+                status = "✅" if text_result.found else "❌"
+                print(f"    {status} '{text_result.required_text}' (confidence: {text_result.confidence:.2f})")
+                if text_result.matched_features:
+                    print(f"        Matched: {text_result.matched_features}")
         print()
 
     # Render the Image:
