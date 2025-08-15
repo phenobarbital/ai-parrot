@@ -38,6 +38,31 @@ class IdentifiedProduct(BaseModel):
     detection_id: Optional[int] = Field(None, description="Detection ID from annotated image")
 
 
+# Enhanced models for text-aware compliance
+class TextRequirement(BaseModel):
+    """Text requirement for promotional graphics"""
+    required_text: str = Field(description="Required text that must be present")
+    match_type: str = Field(
+        default="contains",
+        description="Type of matching: 'exact', 'contains', 'regex', 'fuzzy'"
+    )
+    case_sensitive: bool = Field(default=False, description="Whether matching is case sensitive")
+    confidence_threshold: float = Field(default=0.8, description="Minimum confidence for fuzzy matching")
+
+class PromotionalRequirement(BaseModel):
+    """Requirements for promotional graphics including text"""
+    product_type: str = Field(default="promotional_graphic")
+    brand: Optional[str] = Field(None, description="Expected brand (e.g., 'Epson')")
+    advertisement_type: Optional[str] = Field(None, description="Expected ad type")
+    required_texts: List[TextRequirement] = Field(
+        default_factory=list,
+        description="List of required text elements"
+    )
+    allow_additional_text: bool = Field(
+        default=True,
+        description="Whether additional text beyond requirements is allowed"
+    )
+
 class PlanogramDescription(BaseModel):
     """Expected planogram layout
 
@@ -50,3 +75,28 @@ class PlanogramDescription(BaseModel):
     }
     """
     shelves: Dict[str, List[str]] = Field(description="Expected products per shelf level")
+    brand: Optional[str] = Field(
+        description="Brand name for compliance checks (e.g., 'Epson')",
+        default=None
+    )
+    category: Optional[str] = Field(
+        description="Product category (e.g., 'Printers')",
+        default=None
+    )
+    aisle: Optional[str] = Field(
+        description="Aisle location in the store",
+        default=None
+    )
+    promotional_requirements: Dict[str, List[PromotionalRequirement]] = Field(
+        default_factory=dict,
+        description="Text requirements for promotional graphics per shelf"
+    )
+    compliance_thresholds: Dict[str, float] = Field(
+        description="Custom compliance thresholds per shelf",
+        default_factory=lambda: {
+            "header": 0.9,
+            "top": 0.8,
+            "middle": 0.8,
+            "bottom": 0.8
+        }
+    )
