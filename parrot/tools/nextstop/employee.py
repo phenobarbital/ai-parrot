@@ -22,6 +22,10 @@ class EmployeeInput(BaseModel):
         default=None,
         description="Program slug for the store (e.g., 'hisense', 'epson')"
     )
+    output_format: Optional[str] = Field(
+        default='structured',
+        description="Output format for the employee data"
+    )
 
     display_name: Optional[str] = Field(
         default=None,
@@ -44,6 +48,10 @@ class ManagerInput(BaseModel):
     program: Optional[str] = Field(
         default=None,
         description="Program slug for the store (e.g., 'hisense', 'epson')"
+    )
+    output_format: Optional[str] = Field(
+        default='structured',
+        description="Output format for the employee data"
     )
 
     # Add a model_config to prevent additional properties

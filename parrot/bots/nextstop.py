@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import List
 import textwrap
+from datetime import datetime
 from navconfig import BASE_DIR
 from .agent import BasicAgent
 from .prompts.nextstop import (
@@ -79,8 +80,20 @@ class NextStop(BasicAgent):
                 f"Failed to generate report due to an error in the agent invocation: {e}"
             )
         # Prepare the response object:
+        final_report = response.output.strip()
         for key, value in kwargs.items():
-            setattr(response, key, value)
+            if hasattr(response, key):
+                setattr(response, key, value)
+        response = self._agent_response(
+            user_id=str(kwargs.get('user_id', 'system')),
+            agent_name=self.name,
+            attributes=kwargs.pop('attributes', {}),
+            data=final_report,
+            status="success",
+            created_at=datetime.now(),
+            output=response.output,
+            **kwargs
+        )
         return await self._generate_report(response)
 
     async def _generate_report(self, response: AgentResponse) -> AgentResponse:

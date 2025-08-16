@@ -1877,7 +1877,31 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                 )
                 execution_time = time.time() - start_time
 
-                audio_data = response.candidates[0].content.parts[0].inline_data.data
+                # Robust audio data extraction with proper validation
+                audio_data = self._extract_audio_data(response)
+                if audio_data is None:
+                    # Log the response structure for debugging
+                    self.logger.error(f"Failed to extract audio data from response")
+                    self.logger.debug(f"Response type: {type(response)}")
+                    if hasattr(response, 'candidates'):
+                        self.logger.debug(f"Candidates count: {len(response.candidates) if response.candidates else 0}")
+                        if response.candidates and len(response.candidates) > 0:
+                            candidate = response.candidates[0]
+                            self.logger.debug(f"Candidate type: {type(candidate)}")
+                            self.logger.debug(f"Candidate has content: {hasattr(candidate, 'content')}")
+                            if hasattr(candidate, 'content'):
+                                content = candidate.content
+                                self.logger.debug(f"Content is None: {content is None}")
+                                if content:
+                                    self.logger.debug(f"Content has parts: {hasattr(content, 'parts')}")
+                                    if hasattr(content, 'parts'):
+                                        self.logger.debug(f"Parts count: {len(content.parts) if content.parts else 0}")
+
+                    raise SpeechGenerationError(
+                        "No audio data found in response. The speech generation may have failed or "
+                        "the model may not support speech generation for this request."
+                    )
+
                 saved_file_paths = []
 
                 if output_directory:
@@ -1976,6 +2000,47 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                         f"Speech generation failed: {error_msg}"
                     ) from e
 
+    def _extract_audio_data(self, response):
+        """
+        Robustly extract audio data from Google GenAI response.
+        Similar to the text extraction pattern used elsewhere in the codebase.
+        """
+        try:
+            # First attempt: Direct access to expected structure
+            if (hasattr(response, 'candidates') and
+                response.candidates and
+                len(response.candidates) > 0 and
+                hasattr(response.candidates[0], 'content') and
+                response.candidates[0].content and
+                hasattr(response.candidates[0].content, 'parts') and
+                response.candidates[0].content.parts and
+                len(response.candidates[0].content.parts) > 0):
+
+                for part in response.candidates[0].content.parts:
+                    # Check for inline_data with audio data
+                    if (hasattr(part, 'inline_data') and
+                        part.inline_data and
+                        hasattr(part.inline_data, 'data') and
+                        part.inline_data.data):
+                        self.logger.debug("Found audio data in inline_data.data")
+                        return part.inline_data.data
+
+                    # Alternative: Check for direct data attribute
+                    if hasattr(part, 'data') and part.data:
+                        self.logger.debug("Found audio data in part.data")
+                        return part.data
+
+                    # Alternative: Check for binary data
+                    if hasattr(part, 'binary') and part.binary:
+                        self.logger.debug("Found audio data in part.binary")
+                        return part.binary
+
+            self.logger.warning("No audio data found in expected response structure")
+            return None
+
+        except Exception as e:
+            self.logger.error(f"Audio data extraction failed: {e}")
+            return None
 
     async def generate_videos(
         self,
