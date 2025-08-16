@@ -1,7 +1,7 @@
 import asyncio
 from navconfig import BASE_DIR
 from parrot.pipelines.planogram import PlanogramCompliancePipeline
-from parrot.models.detections import PlanogramDescription
+from parrot.models.detections import PlanogramDescription, TextRequirement, PromotionalRequirement
 from parrot.clients.gpt import OpenAIClient, OpenAIModel
 from parrot.clients.claude import (
     ClaudeClient,
@@ -16,18 +16,24 @@ async def main():
     # Initialize pipeline
     pipeline = PlanogramCompliancePipeline(
         llm=llm,
-        detection_model="YOLOv8m"  # or "yolov8s", "yolov8m", etc.
+        # detection_model="yolov9m.pt"  # or "yolov8s", "yolov8m", etc.
+        detection_model="yolo11m.pt",
     )
 
-    # Define expected planogram
-    planogram = PlanogramDescription(
+    planogram = pipeline.create_planogram_description(
         brand="Epson",
         category="Printers",
         aisle="Electronics > Printers & Printer Boxes and Supplies",
         shelves={
             "header": ["Epson EcoTank Advertisement"],
-            "top": ["ET-2980", "ET-3950", "ET-4950", 'fact_tag', 'fact_tag'], # Printer devices
-            "middle": ["ET-2980 box", "ET-3950 box", "ET-4950 box", 'fact_tag', 'fact_tag', 'fact_tag'],  # Product boxes
+            "top": ["ET-2980", "ET-3950", "ET-4950"],  # Printer devices
+            "middle": ["ET-2980 box", "ET-3950 box", "ET-4950 box"],  # Product boxes
+        },
+        add_text_requirements=True,
+        compliance_thresholds={
+            "header": 1.0,  # Header must be perfect
+            "top": 0.9,     # Allow some flexibility for printers
+            "middle": 0.8   # More flexibility for boxes
         }
     )
 
@@ -52,19 +58,29 @@ async def main():
     )
 
     # Print results
+    print("\n" + "="*60)
     print(f"\nOVERALL COMPLIANCE: {results['overall_compliant']}")
     print(f"COMPLIANCE SCORE: {results['overall_compliance_score']:.1%}")
+    print("="*60)
 
+    # Print results will now show text compliance
     print("\nSHELF-BY-SHELF RESULTS:")
     for result in results['step3_compliance_results']:
-        print(f"{result.shelf_level.upper()}: {result.compliance_status.value}")
+        print(f"{result.shelf_level.upper()}: {result.compliance_status}")
         print(f"  Expected: {result.expected_products}")
         print(f"  Found: {result.found_products}")
-        if result.missing_products:
-            print(f"  Missing: {result.missing_products}")
-        if result.unexpected_products:
-            print(f"  Unexpected: {result.unexpected_products}")
-        print(f"  Score: {result.compliance_score:.1%}")
+        print(f"  Product Score: {result.compliance_score:.1%}")
+        print(f"  Text Score: {result.text_compliance_score:.1%}")
+        print(f"  Text Compliant: {'✅' if result.overall_text_compliant else '❌'}")
+
+        # Show text compliance details
+        if result.text_compliance_results:
+            print("  Text Requirements:")
+            for text_result in result.text_compliance_results:
+                status = "✅" if text_result.found else "❌"
+                print(f"    {status} '{text_result.required_text}' (confidence: {text_result.confidence:.2f})")
+                if text_result.matched_features:
+                    print(f"        Matched: {text_result.matched_features}")
         print()
 
     # Render the Image:
