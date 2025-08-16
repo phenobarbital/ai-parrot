@@ -1542,16 +1542,8 @@ Respond with the structured data for all {len(detections)} objects.
         planogram_description: PlanogramDescription
     ) -> List[ComplianceResult]:
         """
-        Step 3: Compare identified products against expected planogram
-
-        Args:
-            identified_products: Products identified in Step 2
-            planogram_description: Expected planogram layout
-
-        Returns:
-            Compliance results per shelf level
+        FIXED: Step 3: Compare identified products against expected planogram
         """
-
         results = []
 
         # Group identified products by shelf level
@@ -1605,7 +1597,7 @@ Respond with the structured data for all {len(detections)} objects.
                 if expected_normalized else 1.0
             )
 
-            # Check text compliance for promotional graphics
+            # Initialize text compliance variables with defaults
             text_compliance_results = []
             text_compliance_score = 1.0
             overall_text_compliant = True
@@ -1626,7 +1618,7 @@ Respond with the structured data for all {len(detections)} objects.
                     ]
 
                     if not matching_promos:
-                        # No promotional graphic found for this requirement
+                        # No promotional graphic found
                         for text_req in requirement.required_texts:
                             text_compliance_results.append(
                                 TextComplianceResult(
@@ -1641,19 +1633,25 @@ Respond with the structured data for all {len(detections)} objects.
                         continue
 
                     # Check text requirements for each matching promotional product
-                    for promo in matching_promos:
-                        for text_req in requirement.required_texts:
-                            result = TextMatcher.check_text_match(
-                                required_text=text_req.required_text,
-                                visual_features=promo.visual_features or [],
-                                match_type=text_req.match_type,
-                                case_sensitive=text_req.case_sensitive,
-                                confidence_threshold=text_req.confidence_threshold
-                            )
-                            text_compliance_results.append(result)
+                    for text_req in requirement.required_texts:
+                        # Combine visual features from all matching promotional products
+                        all_visual_features = []
+                        for promo in matching_promos:
+                            if promo.visual_features:
+                                all_visual_features.extend(promo.visual_features)
 
-                            if not result.found:
-                                overall_text_compliant = False
+                        # Check against combined features
+                        result = TextMatcher.check_text_match(
+                            required_text=text_req.required_text,
+                            visual_features=all_visual_features,
+                            match_type=text_req.match_type,
+                            case_sensitive=text_req.case_sensitive,
+                            confidence_threshold=text_req.confidence_threshold
+                        )
+                        text_compliance_results.append(result)
+
+                        if not result.found:
+                            overall_text_compliant = False
 
             # Calculate overall text compliance score
             if text_compliance_results:
@@ -1668,16 +1666,16 @@ Respond with the structured data for all {len(detections)} objects.
 
             # Determine overall compliance status using string values (FIX for enum issue)
             if basic_compliance_score >= compliance_threshold and not unexpected and overall_text_compliant:
-                status = "compliant"
+                status = ComplianceStatus.COMPLIANT
             elif basic_compliance_score == 0.0:
-                status = "missing"
+                status = ComplianceStatus.MISSING
             else:
-                status = "non_compliant"
+                status = ComplianceStatus.NON_COMPLIANT
 
             # Combine scores (weighted: 70% product compliance, 30% text compliance)
             combined_score = (basic_compliance_score * 0.7) + (text_compliance_score * 0.3)
 
-            # FIX: Create ComplianceResult with all required fields including new text compliance fields
+            # FIX: Always provide valid values instead of None
             result = ComplianceResult(
                 shelf_level=shelf_level,
                 expected_products=expected_products,
@@ -1686,10 +1684,9 @@ Respond with the structured data for all {len(detections)} objects.
                 unexpected_products=unexpected,
                 compliance_status=status,  # Use string value to avoid enum error
                 compliance_score=combined_score,
-                # Add text compliance fields if ComplianceResult supports them
-                text_compliance_results=text_compliance_results if hasattr(ComplianceResult, 'text_compliance_results') else None,
-                text_compliance_score=text_compliance_score if hasattr(ComplianceResult, 'text_compliance_score') else None,
-                overall_text_compliant=overall_text_compliant if hasattr(ComplianceResult, 'overall_text_compliant') else None
+                text_compliance_results=text_compliance_results,  # Always provide list (never None)
+                text_compliance_score=text_compliance_score,      # Always provide float (never None)
+                overall_text_compliant=overall_text_compliant     # Always provide bool (never None)
             )
 
             results.append(result)
