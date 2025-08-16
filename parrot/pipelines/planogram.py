@@ -19,22 +19,16 @@ from ..models.detections import (
     DetectionBox,
     ShelfRegion,
     IdentifiedProduct,
-    PlanogramDescription
+    PlanogramDescription,
+    TextRequirement,
+    PromotionalRequirement,
 )
-from ..models.compliance import ComplianceResult, ComplianceStatus
-
-
-"""
-Generic shape and boundary detection without product classification
-YOLO detects shapes/boxes, LLM identifies what they are
-"""
-from typing import List, Dict, Any, Optional, Union, Tuple
-from pathlib import Path
-from PIL import Image
-import numpy as np
-import cv2
-from parrot.models.detections import DetectionBox, ShelfRegion
-
+from ..models.compliance import (
+    ComplianceResult,
+    ComplianceStatus,
+    TextComplianceResult,
+    TextMatcher,
+)
 
 class IdentificationResponse(BaseModel):
     """Response model for product identification"""
@@ -45,7 +39,7 @@ class IdentificationResponse(BaseModel):
 
 class RetailDetector:
     """
-    Enhanced detector with improved price tag detection
+    Enhanced detector with improved price tag detection and reduced false positives
     """
 
     def __init__(self, detection_model_name: str = "yolov8n"):
@@ -53,23 +47,41 @@ class RetailDetector:
         self.detection_model = None
         self._load_detection_model()
 
+        # Enhanced filtering parameters for price tags
+        self.price_tag_config = {
+            # More restrictive size constraints
+            "min_width": 40,        # Increased from 34
+            "max_width": 200,       # Decreased from 220
+            "min_height": 18,       # Increased from 12
+            "max_height": 55,       # Decreased from 60
+            "min_aspect_ratio": 1.5, # More restrictive (wider tags)
+            "max_aspect_ratio": 8.0, # Less extreme ratios
+
+            # Content validation thresholds
+            "min_confidence": 0.4,   # Higher minimum confidence
+            "text_score_threshold": 0.3,  # Minimum text likelihood
+            "intensity_threshold": 120,   # Minimum brightness for price tags
+
+            # OCR validation
+            "require_price_pattern": True,  # Must contain price-like text
+            "min_ocr_confidence": 0.6,     # Minimum OCR confidence
+        }
+
     def _load_detection_model(self):
-        """Load YOLO model"""
+        """Load YOLO model with enhanced error handling"""
         try:
             from ultralytics import YOLO
-            self.detection_model = YOLO(self.detection_model_name)
-            print(
-                f"Loaded {self.detection_model_name} for enhanced detection"
-            )
+
+            model_name = self.detection_model_name.lower()
+            if not model_name.endswith('.pt'):
+                model_name = f"{model_name}.pt"
+            self.detection_model = YOLO(model_name)
+            print(f"Loaded {model_name} for enhanced detection")
         except ImportError:
-            print(
-                "ultralytics not installed"
-            )
+            print("ultralytics not installed")
             self.detection_model = None
         except Exception as e:
-            print(
-                f"Failed to load YOLO model: {e}"
-            )
+            print(f"Failed to load YOLO model: {e}")
             self.detection_model = None
 
     def preprocess_image_for_detection(
@@ -108,29 +120,232 @@ class RetailDetector:
 
         return enhanced, img_array
 
-    def _has_price_amount(
-        self,
-        roi_rgb: np.ndarray,
-        min_score_noocr: float = 0.62
-    ) -> bool:
+    def _is_valid_price_tag_size(self, w: int, h: int) -> bool:
+        """Enhanced size validation for price tags with stricter constraints"""
+        config = self.price_tag_config
+
+        # Basic size constraints
+        if not (config["min_width"] <= w <= config["max_width"]):
+            return False
+        if not (config["min_height"] <= h <= config["max_height"]):
+            return False
+
+        # Aspect ratio constraint (price tags are typically wide)
+        aspect_ratio = w / h
+        if not (config["min_aspect_ratio"] <= aspect_ratio <= config["max_aspect_ratio"]):
+            return False
+
+        return True
+
+    def _validate_price_tag_content_enhanced(self, tag_region: np.ndarray) -> Tuple[bool, float]:
+        """
+        Enhanced content validation with stricter criteria
+        Returns: (is_valid, confidence_score)
+        """
+        if tag_region.size == 0:
+            return False, 0.0
+
+        config = self.price_tag_config
+
+        # Convert to grayscale if needed
+        if len(tag_region.shape) == 3:
+            gray_tag = cv2.cvtColor(tag_region, cv2.COLOR_RGB2GRAY)
+        else:
+            gray_tag = tag_region
+
+        # 1. Brightness check - price tags are typically light colored
+        mean_intensity = np.mean(gray_tag)
+        if mean_intensity < config["intensity_threshold"]:
+            return False, 0.0
+
+        # 2. Text likelihood check
+        text_score = self._calculate_text_likelihood_enhanced(gray_tag)
+        if text_score < config["text_score_threshold"]:
+            return False, 0.0
+
+        # 3. OCR validation for price patterns
+        ocr_confidence = 0.0
+        if config["require_price_pattern"]:
+            has_price, ocr_confidence = self._validate_price_content_ocr(tag_region)
+            if not has_price or ocr_confidence < config["min_ocr_confidence"]:
+                return False, 0.0
+
+        # Calculate overall confidence
+        intensity_score = min(1.0, mean_intensity / 255.0)
+        overall_confidence = (text_score * 0.4 + intensity_score * 0.3 + ocr_confidence * 0.3)
+
+        return True, overall_confidence
+
+    def _calculate_text_likelihood_enhanced(self, gray_region: np.ndarray) -> float:
+        """Enhanced text likelihood calculation with better edge detection"""
+        if gray_region.size == 0:
+            return 0.0
+
+        # 1. Edge density analysis
+        edges = cv2.Canny(gray_region, 30, 100)
+        edge_density = np.sum(edges > 0) / edges.size
+
+        # 2. Horizontal vs vertical edge analysis (text has more horizontal edges)
+        sobelx = cv2.Sobel(gray_region, cv2.CV_64F, 1, 0, ksize=3)
+        sobely = cv2.Sobel(gray_region, cv2.CV_64F, 0, 1, ksize=3)
+
+        h_edges = np.sum(np.abs(sobelx))
+        v_edges = np.sum(np.abs(sobely))
+
+        if h_edges + v_edges > 0:
+            horizontal_ratio = h_edges / (h_edges + v_edges)
+        else:
+            horizontal_ratio = 0.0
+
+        # 3. Texture analysis
+        variance = np.var(gray_region)
+        texture_score = min(1.0, variance / 800)
+
+        # 4. Line structure analysis (look for horizontal text lines)
+        horizontal_profile = np.mean(gray_region, axis=1)
+        profile_variance = np.var(horizontal_profile)
+        line_score = min(1.0, profile_variance / 300)
+
+        # Combine scores with emphasis on horizontal structure
+        text_likelihood = (
+            edge_density * 0.3 +
+            horizontal_ratio * 0.4 +
+            texture_score * 0.2 +
+            line_score * 0.1
+        )
+
+        return min(1.0, text_likelihood)
+
+    def _validate_price_content_ocr(self, tag_region: np.ndarray) -> Tuple[bool, float]:
+        """
+        Enhanced OCR validation specifically for price content
+        Returns: (has_price_pattern, confidence)
+        """
         try:
             import pytesseract
+
+            # Convert to grayscale if needed
+            if len(tag_region.shape) == 3:
+                gray = cv2.cvtColor(tag_region, cv2.COLOR_RGB2GRAY)
+            else:
+                gray = tag_region
+
+            # Enhance for OCR
+            # Resize for better OCR
+            height, width = gray.shape
+            if height < 40 or width < 100:
+                scale_factor = max(40/height, 100/width, 2.0)
+                new_height = int(height * scale_factor)
+                new_width = int(width * scale_factor)
+                gray = cv2.resize(gray, (new_width, new_height), interpolation=cv2.INTER_CUBIC)
+
+            # Apply CLAHE for better contrast
+            clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8,8))
+            enhanced = clahe.apply(gray)
+
+            # Threshold for better text detection
+            _, thresh = cv2.threshold(enhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
+            # OCR with configuration optimized for price tags
+            custom_config = r'--oem 3 --psm 8 -c tessedit_char_whitelist=0123456789.$€£¢¥₹₽'
+            ocr_result = pytesseract.image_to_data(
+                thresh,
+                config=custom_config,
+                output_type=pytesseract.Output.DICT
+            )
+
+            # Extract text and confidence
+            text_parts = []
+            confidences = []
+
+            for i, conf in enumerate(ocr_result['conf']):
+                if int(conf) > 30:  # Only consider high-confidence text
+                    text = ocr_result['text'][i].strip()
+                    if text:
+                        text_parts.append(text)
+                        confidences.append(int(conf))
+
+            full_text = ' '.join(text_parts)
+            avg_confidence = np.mean(confidences) / 100.0 if confidences else 0.0
+
+            # Look for price patterns
+            price_patterns = [
+                r'\$\s*\d{1,4}(?:[.,]\d{2})?',  # $XX.XX
+                r'€\s*\d{1,4}(?:[.,]\d{2})?',   # €XX.XX
+                r'£\s*\d{1,4}(?:[.,]\d{2})?',   # £XX.XX
+                r'\d{1,4}(?:[.,]\d{2})?\s*\$',  # XX.XX$
+                r'\d{1,4}(?:[.,]\d{2})?',       # Just numbers
+            ]
+
+            has_price = any(re.search(pattern, full_text) for pattern in price_patterns)
+
+            # Additional validation - check for minimum number of digits
+            digit_count = sum(c.isdigit() for c in full_text)
+            has_sufficient_digits = digit_count >= 2
+
+            return has_price and has_sufficient_digits, avg_confidence
+
+        except ImportError:
+            # Fallback without OCR - use pattern matching on image features
+            return self._fallback_price_detection(tag_region)
+        except Exception as e:
+            print(f"OCR validation failed: {e}")
+            return False, 0.0
+
+    def _fallback_price_detection(self, tag_region: np.ndarray) -> Tuple[bool, float]:
+        """Fallback price detection without OCR"""
+        if len(tag_region.shape) == 3:
+            gray = cv2.cvtColor(tag_region, cv2.COLOR_RGB2GRAY)
+        else:
+            gray = tag_region
+
+        # Look for digit-like patterns using template matching or contour analysis
+        # This is a simplified fallback
+        text_score = self._calculate_text_likelihood_enhanced(gray)
+        intensity_ok = np.mean(gray) > 140
+
+        return text_score > 0.5 and intensity_ok, text_score * 0.7
+
+    def _has_price_amount(self, roi_rgb: np.ndarray, min_score_noocr: float = 0.7) -> bool:
+        """
+        Enhanced price amount detection with stricter validation
+        """
+        try:
+            import pytesseract
+
+            # Convert and enhance
             gray = cv2.cvtColor(roi_rgb, cv2.COLOR_RGB2GRAY)
-            gray = cv2.resize(gray, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
-            thr = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1]
-            txt = pytesseract.image_to_string(
-                thr,
-                config="--oem 3 --psm 6 -c tessedit_char_whitelist=$€£0123456789.,"
-            )
-            return bool(
-                re.search(r'[ $€£]?\s*\d{1,3}(?:[.,]\d{2})?', txt)
-            )
-        except Exception:
-            # Fallback: require strong text-like signal if OCR is unavailable
-            score = self._calculate_text_likelihood(
-                cv2.cvtColor(
-                    roi_rgb, cv2.COLOR_RGB2GRAY
-                )
+
+            # More aggressive enhancement for small price tags
+            gray = cv2.resize(gray, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
+
+            # Apply CLAHE for better contrast
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+            enhanced = clahe.apply(gray)
+
+            # Threshold
+            _, thresh = cv2.threshold(enhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
+            # OCR with strict whitelist
+            config = "--oem 3 --psm 8 -c tessedit_char_whitelist=$€£¢¥₹₽0123456789.,"
+            text = pytesseract.image_to_string(thresh, config=config).strip()
+
+            # More strict price pattern matching
+            price_patterns = [
+                r'[\$€£¢¥₹₽]\s*\d{1,4}(?:[.,]\d{2})?',
+                r'\d{1,4}(?:[.,]\d{2})?\s*[\$€£¢¥₹₽]',
+                r'\d{2,4}(?:[.,]\d{2})?'  # At least 2 digits for price
+            ]
+
+            has_price = any(re.search(pattern, text) for pattern in price_patterns)
+            digit_count = sum(c.isdigit() for c in text)
+
+            return has_price and digit_count >= 2
+
+        except ImportError:
+            # Fallback without OCR - much stricter requirements
+            score = self._calculate_text_likelihood_enhanced(
+                cv2.cvtColor(roi_rgb, cv2.COLOR_RGB2GRAY)
             )
             return score >= min_score_noocr
 
@@ -139,74 +354,57 @@ class RetailDetector:
         image: Union[str, Path, Image.Image],
         confidence_threshold: float = 0.5
     ) -> List[DetectionBox]:
-        """Enhanced retail product detection with better price tag detection"""
+        """Enhanced retail product detection with improved price tag filtering"""
+
         # Preprocess image
         enhanced_pil, img_array = self.preprocess_image_for_detection(image)
 
         all_detections: List[DetectionBox] = []
 
-        # 1) main YOLO proposals (big stuff)
+        # 1) Main YOLO detection (for larger objects)
         yolo_detections = self._enhanced_yolo_detection(img_array, confidence_threshold)
         all_detections.extend(yolo_detections)
 
-        # 2) retail regions (rule-based anchors)
+        # 2) Retail regions (rule-based anchors)
         retail_detections = self._detect_retail_regions(img_array, confidence_threshold)
         all_detections.extend(retail_detections)
 
-        # 3) large rectangular products (contour pass)
+        # 3) Large rectangular products
         product_detections = self._detect_large_products(img_array, confidence_threshold)
         all_detections.extend(product_detections)
 
-        # 4) ENHANCED: Dedicated price tag detection
-        price_tags = self._detect_price_tags_enhanced(img_array)
+        # 4) IMPROVED: Enhanced price tag detection with stricter validation
+        price_tags = self._detect_price_tags_enhanced_strict(img_array)
         all_detections.extend(price_tags)
 
-        # 5) SECOND YOLO PASS: small price/fact tags (with corrected terminology)
-        small_tags = self._yolo_small_tag_detection(img_array)
+        # 5) Second YOLO pass for small tags (with enhanced filtering)
+        small_tags = self._yolo_small_tag_detection_enhanced(img_array)
         all_detections.extend(small_tags)
 
-        # 6) merge and shrink
-        final_detections = self._intelligent_merge(all_detections, confidence_threshold)
+        # 6) Enhanced merging with better NMS
+        final_detections = self._intelligent_merge_enhanced(all_detections, confidence_threshold)
         final_detections = self._shrink_detections(final_detections)
 
         print(f"Enhanced detection found {len(final_detections)} retail products")
         for i, det in enumerate(final_detections):
-            print(f"  {i+1}: {det.class_name} at ({det.x1},{det.y1},{det.x2},{det.y2}) conf={det.confidence:.2f}")
+            w, h = det.x2 - det.x1, det.y2 - det.y1
+            print(f"  {i+1}: {det.class_name} at ({det.x1},{det.y1},{det.x2},{det.y2}) "
+                  f"size=({w}x{h}) conf={det.confidence:.2f}")
 
         return final_detections
 
-    def _detect_price_tags_enhanced(self, img_array: np.ndarray) -> List[DetectionBox]:
+    def _detect_price_tags_enhanced_strict(self, img_array: np.ndarray) -> List[DetectionBox]:
         """
-        Enhanced dedicated price tag detection using multiple methods
+        Enhanced price tag detection with much stricter validation
         """
         height, width = img_array.shape[:2]
         detections = []
 
-        # Method 1: Look for price tags in expected shelf edge locations
-        shelf_edge_tags = self._detect_shelf_edge_price_tags(img_array)
-        detections.extend(shelf_edge_tags)
-
-        # Method 2: Look for white rectangular tags with text
-        text_based_tags = self._detect_text_based_price_tags(img_array)
-        detections.extend(text_based_tags)
-
-        # Method 3: Template matching for typical price tag shapes
-        template_tags = self._detect_template_price_tags(img_array)
-        detections.extend(template_tags)
-
-        print(f"Enhanced price tag detection found {len(detections)} price tags")
-        return detections
-
-    def _detect_shelf_edge_price_tags(self, img_array: np.ndarray) -> List[DetectionBox]:
-        """Detect price tags along shelf edges"""
-        height, width = img_array.shape[:2]
-        detections = []
-
-        # Define shelf edge regions where price tags typically appear
+        # Focus on specific shelf edge regions only
         shelf_edges = [
-            {"y1": int(0.47 * height), "y2": int(0.63 * height), "name": "top_shelf_edge"},
-            {"y1": int(0.62 * height), "y2": int(0.75 * height), "name": "middle_area"},
-            {"y1": int(0.83 * height), "y2": int(0.995 * height), "name": "bottom_shelf_edge"},
+            {"y1": int(0.50 * height), "y2": int(0.65 * height), "name": "top_shelf_edge"},
+            {"y1": int(0.70 * height), "y2": int(0.82 * height), "name": "middle_shelf_edge"},
+            {"y1": int(0.87 * height), "y2": int(0.97 * height), "name": "bottom_shelf_edge"},
         ]
 
         for edge in shelf_edges:
@@ -214,59 +412,219 @@ class RetailDetector:
             if y2 <= y1:
                 continue
 
-            # Extract the shelf edge strip
+            # Extract shelf edge strip
             edge_strip = img_array[y1:y2, :]
-
-            # Convert to grayscale for processing
             gray_strip = cv2.cvtColor(edge_strip, cv2.COLOR_RGB2GRAY)
 
-            # Enhance contrast for better tag detection
+            # Enhanced preprocessing for price tag detection
+            # 1. CLAHE for better local contrast
             clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8,8))
             enhanced = clahe.apply(gray_strip)
 
-            # Threshold to find white/light regions (typical price tags)
-            _, thresh = cv2.threshold(enhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            # 2. Focus on light regions (price tags are typically white/light)
+            # Use a higher threshold to focus on lighter regions
+            _, light_regions = cv2.threshold(enhanced, 160, 255, cv2.THRESH_BINARY)
 
-            # Morphological operations to clean up and connect text regions
-            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 3))
-            cleaned = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
+            # 3. Morphological operations to connect text regions
+            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (7, 3))
+            connected = cv2.morphologyEx(light_regions, cv2.MORPH_CLOSE, kernel)
 
-            # Find contours
-            contours, _ = cv2.findContours(cleaned, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            # 4. Find contours
+            contours, _ = cv2.findContours(connected, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
             for contour in contours:
                 x, y, w, h = cv2.boundingRect(contour)
 
-                # Filter by price tag dimensions
-                if (34 <= w <= 220 and 12 <= h <= 60) and 1.2 <= w/h <= 9.0:  # Typical price tag size
-                    aspect_ratio = w / h
-                    if 1.5 <= aspect_ratio <= 8.0:  # Price tags are usually wide
+                # Apply strict size filtering
+                if not self._is_valid_price_tag_size(w, h):
+                    continue
 
-                        # Calculate confidence based on how "tag-like" it is
-                        area = w * h
-                        contour_area = cv2.contourArea(contour)
-                        solidity = contour_area / area if area > 0 else 0
+                # Extract tag region for validation
+                tag_region = edge_strip[y:y+h, x:x+w]
 
-                        # Check if it has text-like regions inside
-                        tag_region = edge_strip[y:y+h, x:x+w]  # RGB slice
-                        text_score = self._calculate_text_likelihood(tag_region)
-                        if not self._has_price_amount(tag_region):
-                            continue
+                # Enhanced content validation
+                is_valid, confidence = self._validate_price_tag_content_enhanced(tag_region)
 
-                        confidence = 0.3 + 0.4 * solidity + 0.3 * text_score
+                if not is_valid:
+                    continue
 
-                        if confidence >= 0.4:  # Lower threshold for price tags
-                            detection = DetectionBox(
-                                x1=x, y1=y1+y, x2=x+w, y2=y1+y+h,
-                                confidence=confidence,
-                                class_id=self._get_retail_class_id("price_tag"),
-                                class_name="price_tag",
-                                area=area
-                            )
-                            detections.append(detection)
+                # Additional geometric validation
+                contour_area = cv2.contourArea(contour)
+                bbox_area = w * h
+                rectangularity = contour_area / bbox_area if bbox_area > 0 else 0
 
+                if rectangularity < 0.6:  # Must be reasonably rectangular
+                    continue
+
+                # Adjust confidence based on rectangularity and position
+                position_bonus = 0.1 if edge["name"] in ["top_shelf_edge", "bottom_shelf_edge"] else 0
+                final_confidence = min(0.95, confidence + position_bonus * rectangularity)
+
+                if final_confidence >= self.price_tag_config["min_confidence"]:
+                    detection = DetectionBox(
+                        x1=x, y1=y1+y, x2=x+w, y2=y1+y+h,
+                        confidence=final_confidence,
+                        class_id=self._get_retail_class_id("price_tag"),
+                        class_name="price_tag",
+                        area=w*h
+                    )
+                    detections.append(detection)
+
+        print(f"Strict price tag detection found {len(detections)} price tags")
         return detections
 
+    def _yolo_small_tag_detection_enhanced(self, img_array: np.ndarray) -> List[DetectionBox]:
+        """
+        Enhanced YOLO small tag detection with stricter filtering
+        """
+        dets: List[DetectionBox] = []
+        if self.detection_model is None:
+            return dets
+
+        try:
+            results = self.detection_model(
+                img_array,
+                conf=0.02,  # Very low to catch small objects
+                iou=0.15,   # Lower IoU for small objects
+                imgsz=1280,  # Higher resolution for small objects
+                max_det=300,  # Fewer detections to focus on quality
+                verbose=False
+            )[0]
+
+            if not hasattr(results, "boxes") or results.boxes is None:
+                return dets
+
+            boxes = results.boxes.xyxy.cpu().numpy()
+            base_confs = results.boxes.conf.cpu().numpy()
+            H, W = img_array.shape[:2]
+            img_area = float(W * H)
+
+            # More focused band for price tags
+            y1_band, y2_band = (int(0.45*H), int(0.98*H))
+
+            for (x1, y1, x2, y2), bconf in zip(boxes, base_confs):
+                w = max(1.0, x2 - x1)
+                h = max(1.0, y2 - y1)
+                area = w * h
+                rel_area = area / img_area
+                aspect_ratio = w / h
+                y_center = 0.5 * (y1 + y2)
+
+                # Stricter geometric constraints
+                if not (y1_band <= y_center <= y2_band):
+                    continue
+                if not (0.0002 <= rel_area <= 0.006):  # Tighter area range
+                    continue
+                if not (2.0 <= aspect_ratio <= 6.0):   # Tighter aspect ratio
+                    continue
+
+                # Additional size validation
+                if not self._is_valid_price_tag_size(int(w), int(h)):
+                    continue
+
+                # Content validation for small YOLO detections
+                roi = img_array[int(y1):int(y2), int(x1):int(x2)]
+                if roi.size > 0:
+                    is_valid, content_conf = self._validate_price_tag_content_enhanced(roi)
+                    if not is_valid:
+                        continue
+
+                    # Use content confidence instead of just geometric score
+                    final_confidence = max(bconf, content_conf * 0.8)
+                else:
+                    final_confidence = bconf
+
+                if final_confidence >= 0.4:
+                    dets.append(
+                        DetectionBox(
+                            x1=int(x1), y1=int(y1), x2=int(x2), y2=int(y2),
+                            confidence=float(final_confidence),
+                            class_id=self._get_retail_class_id("price_tag"),
+                            class_name="price_tag",
+                            area=int(area),
+                        )
+                    )
+        except Exception as e:
+            print(f"Enhanced YOLO small-tag detection failed: {e}")
+
+        return dets
+
+    def _intelligent_merge_enhanced(self, detections: List[DetectionBox], confidence_threshold: float) -> List[DetectionBox]:
+        """
+        Enhanced merging with better price tag handling and false positive reduction
+        """
+        if not detections:
+            return []
+
+        # Enhanced per-class confidence thresholds
+        per_conf = {
+            "printer": max(0.45, confidence_threshold),
+            "product_box": max(0.45, confidence_threshold),
+            "promotional_graphic": 0.35,
+            "price_tag": 0.5,  # Significantly higher threshold for price tags
+            "ink_bottle": 0.30,
+            "unknown": 0.40,
+        }
+
+        # Filter by enhanced confidence thresholds
+        filtered = [d for d in detections if d.confidence >= per_conf.get(d.class_name, confidence_threshold)]
+
+        if not filtered:
+            return []
+
+        # Sort by confidence and area
+        sorted_dets = sorted(filtered, key=lambda x: (x.confidence, x.area), reverse=True)
+
+        # Enhanced IoU thresholds with stricter price tag merging
+        per_iou = {
+            "printer": 0.3,
+            "product_box": 0.3,
+            "promotional_graphic": 0.4,
+            "price_tag": 0.2,  # Higher IoU threshold to prevent overlapping tags
+            "ink_bottle": 0.25,
+            "unknown": 0.3,
+        }
+
+        merged = []
+        for d in sorted_dets:
+            keep = True
+            for m in merged:
+                iou_thresh = per_iou.get(d.class_name, 0.3)
+
+                # Special handling for price tags vs other objects
+                if d.class_name == "price_tag" and m.class_name != "price_tag":
+                    # Check if price tag overlaps significantly with larger objects
+                    if self._calculate_iou(d, m) > 0.15:
+                        keep = False
+                        break
+                elif m.class_name == "price_tag" and d.class_name != "price_tag":
+                    # Larger objects take precedence over price tags if they overlap
+                    if self._calculate_iou(d, m) > 0.15:
+                        # Remove the existing price tag and add the larger object
+                        merged = [x for x in merged if x != m]
+                elif d.class_name == m.class_name:
+                    # Same class merging
+                    if self._calculate_iou(d, m) > iou_thresh:
+                        keep = False
+                        break
+
+            if keep:
+                merged.append(d)
+
+        # Final validation pass for price tags
+        validated_merged = []
+        for detection in merged:
+            if detection.class_name == "price_tag":
+                # Double-check price tag validity
+                w, h = detection.x2 - detection.x1, detection.y2 - detection.y1
+                if self._is_valid_price_tag_size(w, h) and detection.confidence >= 0.5:
+                    validated_merged.append(detection)
+            else:
+                validated_merged.append(detection)
+
+        return validated_merged
+
+    # Keep all existing methods that are working well
     def _enhanced_yolo_detection(self, img_array: np.ndarray, confidence_threshold: float) -> List[DetectionBox]:
         """Enhanced YOLO detection focused on larger objects"""
         detections = []
@@ -316,6 +674,7 @@ class RetailDetector:
 
         return detections
 
+    # Keep existing methods that work well
     def _detect_retail_regions(self, img_array: np.ndarray, confidence_threshold: float) -> List[DetectionBox]:
         """Detect specific retail product regions"""
         height, width = img_array.shape[:2]
@@ -384,15 +743,6 @@ class RetailDetector:
                 iterations=2
             )
             contours, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-            # Apply Gaussian blur to reduce noise
-            #blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-
-            # Apply threshold to get binary image
-            #_, thresh = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-
-            # Find contours
-            # contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
             height, width = img_array.shape[:2]
             min_area = width * height * 0.005  # Minimum 0.5% of image
@@ -510,178 +860,8 @@ class RetailDetector:
         else:
             return "product_box"
 
-    def create_mser(self, delta=5, min_area=200, max_area=5000):
-        """OpenCV-version-safe MSER factory."""
-        try:
-            # Some builds accept only _delta as kwarg
-            mser = cv2.MSER_create(_delta=delta)
-            if hasattr(mser, "setMinArea"): mser.setMinArea(int(min_area))
-            if hasattr(mser, "setMaxArea"): mser.setMaxArea(int(max_area))
-            return mser
-        except TypeError:
-            # Older builds: positionals
-            try:
-                return cv2.MSER_create(int(delta), int(min_area), int(max_area))
-            except TypeError:
-                # Fallback: create default and set via setters
-                mser = cv2.MSER_create()
-                if hasattr(mser, "setDelta"):    mser.setDelta(int(delta))
-                if hasattr(mser, "setMinArea"):  mser.setMinArea(int(min_area))
-                if hasattr(mser, "setMaxArea"):  mser.setMaxArea(int(max_area))
-                return mser
-
-    def _detect_text_based_price_tags(self, img_array: np.ndarray) -> List[DetectionBox]:
-        """Detect price tags by looking for text patterns"""
-        height, width = img_array.shape[:2]
-        s = max(0.6, min(1.6, height / 1080.0))
-        detections = []
-
-        # Convert to grayscale
-        gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
-
-        # Look for text regions using MSER (Maximally Stable Extremal Regions)
-        try:
-            mser = self.create_mser(
-                delta=5,
-                min_area=int(200 * s * s),  # area scales with pixels
-                max_area=int(5000 * s * s)
-            )
-
-            regions, _ = mser.detectRegions(gray)
-
-            for region in regions:
-                # Get bounding box of the region
-                x, y, w, h = cv2.boundingRect(region.reshape(-1, 1, 2))
-
-                # Filter by price tag characteristics
-                if (30 <= w <= 180 and 12 <= h <= 50):
-                    aspect_ratio = w / h
-                    if 1.2 <= aspect_ratio <= 7.0:
-
-                        # Check if this looks like a price tag region
-                        y_ratio = y / height
-                        if 0.45 <= y_ratio <= 0.95:  # Price tags are in lower portion
-
-                            # Extract the region and check for tag-like properties
-                            tag_region = gray[y:y+h, x:x+w]
-                            tag_score = self._score_price_tag_region(tag_region)
-
-                            if tag_score >= 0.4:
-                                confidence = min(0.85, tag_score)
-                                detection = DetectionBox(
-                                    x1=x, y1=y, x2=x+w, y2=y+h,
-                                    confidence=confidence,
-                                    class_id=self._get_retail_class_id("price_tag"),
-                                    class_name="price_tag",
-                                    area=w*h
-                                )
-                                detections.append(detection)
-
-        except Exception as e:
-            print(f"MSER text detection failed: {e}")
-
-        return detections
-
-    def _detect_template_price_tags(self, img_array: np.ndarray) -> List[DetectionBox]:
-        """Detect price tags using edge detection and geometric filtering"""
-        height, width = img_array.shape[:2]
-        detections = []
-
-        # Convert to grayscale
-        gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
-
-        # Apply adaptive threshold to handle varying lighting
-        adaptive = cv2.adaptiveThreshold(
-            gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2
-        )
-
-        # Find contours of potential rectangular regions
-        contours, _ = cv2.findContours(adaptive, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-        for contour in contours:
-            # Approximate contour to polygon
-            epsilon = 0.02 * cv2.arcLength(contour, True)
-            approx = cv2.approxPolyDP(contour, epsilon, True)
-
-            # Look for rectangular shapes (4 corners)
-            if len(approx) >= 4:
-                x, y, w, h = cv2.boundingRect(contour)
-
-                # Price tag size filtering
-                if (25 <= w <= 150 and 10 <= h <= 40):
-                    aspect_ratio = w / h
-                    if 1.8 <= aspect_ratio <= 6.0:  # Wide rectangular shape
-
-                        # Position filtering - price tags are usually in lower half
-                        y_ratio = y / height
-                        if 0.5 <= y_ratio <= 0.98:
-
-                            # Calculate how rectangular the shape is
-                            contour_area = cv2.contourArea(contour)
-                            bbox_area = w * h
-                            rectangularity = contour_area / bbox_area if bbox_area > 0 else 0
-
-                            if rectangularity >= 0.6:  # Reasonably rectangular
-                                confidence = 0.4 + 0.4 * rectangularity
-
-                                detection = DetectionBox(
-                                    x1=x, y1=y, x2=x+w, y2=y+h,
-                                    confidence=confidence,
-                                    class_id=self._get_retail_class_id("price_tag"),
-                                    class_name="price_tag",
-                                    area=w*h
-                                )
-                                detections.append(detection)
-
-        return detections
-
-    def _calculate_text_likelihood(self, region: np.ndarray) -> float:
-        """Calculate how likely a region contains text"""
-        if region.size == 0:
-            return 0.0
-
-        # Calculate horizontal edge density (text has many horizontal edges)
-        sobelx = cv2.Sobel(region, cv2.CV_64F, 1, 0, ksize=3)
-        sobely = cv2.Sobel(region, cv2.CV_64F, 0, 1, ksize=3)
-
-        horizontal_edges = np.sum(np.abs(sobelx))
-        vertical_edges = np.sum(np.abs(sobely))
-
-        if horizontal_edges + vertical_edges == 0:
-            return 0.0
-
-        # Text typically has more horizontal than vertical edges
-        edge_ratio = horizontal_edges / (horizontal_edges + vertical_edges)
-
-        # Variance indicates presence of text vs solid color
-        variance = np.var(region)
-        variance_score = min(1.0, variance / 1000)
-
-        return min(1.0, edge_ratio + variance_score) / 2
-
-    def _score_price_tag_region(self, region: np.ndarray) -> float:
-        """Score how likely a region is to be a price tag"""
-        if region.size == 0:
-            return 0.0
-
-        # 1. Check for text-like patterns
-        text_score = self._calculate_text_likelihood(region)
-
-        # 2. Check for typical price tag intensity distribution
-        mean_intensity = np.mean(region)
-        intensity_score = 1.0 if 180 <= mean_intensity <= 255 else mean_intensity / 255
-
-        # 3. Check for horizontal text lines
-        horizontal_profile = np.mean(region, axis=1)
-        profile_variance = np.var(horizontal_profile)
-        profile_score = min(1.0, profile_variance / 500)
-
-        # Combined score
-        combined = (text_score * 0.4 + intensity_score * 0.3 + profile_score * 0.3)
-        return combined
-
     def _get_retail_class_id(self, class_name: str) -> int:
-        """Get class ID for retail products - UPDATED to include price_tag"""
+        """Get class ID for retail products"""
         mapping = {
             "printer": 100,
             "product_box": 101,
@@ -693,197 +873,9 @@ class RetailDetector:
         }
         return mapping.get(class_name, 199)
 
-    def _yolo_small_tag_detection(
-        self,
-        img_array: np.ndarray,
-        price_band: Optional[Tuple[int, int]] = None,
-        conf: float = 0.03,
-        iou: float = 0.20,
-        imgsz: int = 1280,
-    ) -> List[DetectionBox]:
-        """
-        YOLO as a proposal generator for tiny shelf-edge tags.
-        UPDATED: Use 'price_tag' instead of 'fact_tag'
-        """
-        dets: List[DetectionBox] = []
-        if self.detection_model is None:
-            return dets
-
-        try:
-            r = self.detection_model(
-                img_array,
-                conf=conf,
-                iou=iou,
-                imgsz=imgsz,
-                max_det=600,
-                verbose=False
-            )[0]
-            if not hasattr(r, "boxes") or r.boxes is None:
-                return dets
-
-            boxes = r.boxes.xyxy.cpu().numpy()
-            base_confs = r.boxes.conf.cpu().numpy()
-            H, W = img_array.shape[:2]
-            img_area = float(W * H)
-
-            # Enhanced band for price tags - focus on shelf edges
-            y1_band, y2_band = (int(0.42*H), int(0.995*H))  # Expanded to include bottom shelf
-            if price_band is not None:
-                y1_band, y2_band = price_band
-
-            for (x1, y1, x2, y2), bconf in zip(boxes, base_confs):
-                w = max(1.0, x2 - x1); h = max(1.0, y2 - y1)
-                area = w * h; rel = area / img_area
-                ar = w / h
-                y_center = 0.5 * (y1 + y2)
-
-                # price tag geometry + band constraint
-                if not (y1_band <= y_center <= y2_band):
-                    continue
-                if not (0.0001 <= rel <= 0.008):  # Slightly larger range for price tags
-                    continue
-                if not (1.2 <= ar <= 8.0):  # Wider aspect ratio range for price tags
-                    continue
-
-                # geometry-based score
-                ar_score  = max(0.0, 1.0 - abs(np.log(ar / 3.5)))      # best when ar≈3.5
-                size_score = max(0.0, 1.0 - abs(rel - 0.003) / 0.003)  # best when rel≈0.003
-                geo = 0.45 + 0.3 * min(1.0, ar_score) + 0.25 * min(1.0, size_score)
-
-                dets.append(
-                    DetectionBox(
-                        x1=int(x1), y1=int(y1), x2=int(x2), y2=int(y2),
-                        confidence=float(max(bconf, geo)),
-                        class_id=self._get_retail_class_id("price_tag"),
-                        class_name="price_tag",  # CHANGED: from "fact_tag" to "price_tag"
-                        area=int(area),
-                    )
-                )
-        except Exception as e:
-            print(f"YOLO small-tag pass failed: {e}")
-
-        return dets
-
-    def _price_tag_band_filter(
-        self,
-        tag: DetectionBox,
-        img_rgb: np.ndarray,
-        shelf: str,
-        detections: list[DetectionBox],
-        band_pad_px: int = 4,
-    ) -> bool:
-
-        H, W = img_rgb.shape[:2]
-
-        # 1) build list of “big objects” on this shelf
-        big = [d for d in detections if d.class_name in ("printer", "product_box")]
-        if shelf == "top":
-            # lip is the bottom of top printers
-            lip_y = max((d.y2 for d in big if (d.y2 / H) < 0.70), default=int(0.50 * H))
-            band = (lip_y + band_pad_px, lip_y + max(band_pad_px + 18, int(0.06 * H)))
-        elif shelf == "bottom":
-            # rail band at the very bottom
-            band = (int(0.92 * H), int(0.995 * H))
-        else:
-            # middle shelf bands are noisy → be conservative
-            lip_y = max((d.y2 for d in big if 0.55 <= (d.y2 / H) <= 0.85), default=int(0.72 * H))
-            band = (lip_y + band_pad_px, lip_y + max(band_pad_px + 16, int(0.05 * H)))
-
-        # 2) the tag must be inside the band
-        yc = 0.5 * (tag.y1 + tag.y2)
-        if yc < band[0] or yc > band[1]:
-            return False
-
-        # 3) reject if overlapping big objects (kills stickers on faces)
-        for b in big:
-            if self._calculate_iou(tag, b) > 0.10:
-                return False
-            # also reject if tag center sits inside a big box/printer
-            if (b.x1 <= (tag.x1 + tag.x2) // 2 <= b.x2) and (b.y1 <= yc <= b.y2):
-                return False
-
-        # 4) conservative geometry for tags
-        w, h = tag.x2 - tag.x1, tag.y2 - tag.y1
-        if w < 28 or h < 12:
-            return False
-        ar = w / max(1, h)
-        if not (1.2 <= ar <= 6.5):
-            return False
-
-        # 5) must contain digits (OCR or fallback)
-        roi = img_rgb[tag.y1:tag.y2, tag.x1:tag.x2]
-        if not self._has_price_amount(roi):  # you already have this helper
-            return False
-
-        return True
-
-
-    def _intelligent_merge(self, detections: List[DetectionBox], confidence_threshold: float) -> List[DetectionBox]:
-        """
-        Per-class filtering + simple NMS, with updated price_tag handling
-        """
-        if not detections:
-            return []
-
-        # Updated per-class thresholds
-        per_conf = {
-            "printer": max(0.45, confidence_threshold),
-            "product_box": max(0.45, confidence_threshold),
-            "promotional_graphic": 0.35,
-            "fact_tag": 0.22,
-            "price_tag": 0.28,     # raise from 0.15
-            "ink_bottle": 0.30,
-            "unknown": 0.40,
-        }
-        filtered = [d for d in detections if d.confidence >= per_conf.get(d.class_name, confidence_threshold)]
-
-        if not filtered:
-            return []
-
-        # Sort by confidence then area
-        sorted_dets = sorted(filtered, key=lambda x: (x.confidence, x.area), reverse=True)
-
-        # Updated class-aware IoU
-        per_iou = {
-            "printer": 0.35,
-            "product_box": 0.35,
-            "promotional_graphic": 0.50,
-            "fact_tag": 0.20,
-            "price_tag": 0.15,     # Lower IoU threshold for price tags (allow closer placement)
-            "ink_bottle": 0.30,
-            "unknown": 0.30,
-        }
-
-        merged: List[DetectionBox] = []
-        for d in sorted_dets:
-            keep = True
-            for m in merged:
-                # Lower IoU when classes differ to avoid wiping out tags near printers
-                iou_thresh = per_iou.get(d.class_name, 0.30)
-                if m.class_name != d.class_name:
-                    iou_thresh = min(0.10, iou_thresh)  # Even more lenient for different classes
-                if self._calculate_iou(d, m) > iou_thresh:
-                    keep = False
-                    break
-            if keep:
-                merged.append(d)
-
-        # Coverage check
-        has_top_products = any(d.class_name == "printer" for d in merged)
-        has_bottom_products = any(d.class_name == "product_box" for d in merged)
-        has_header = any(d.class_name == "promotional_graphic" for d in merged)
-        has_price_tags = any(d.class_name == "price_tag" for d in merged)
-        print(f"Coverage check - Top: {has_top_products}, Bottom: {has_bottom_products}, Header: {has_header}, Price Tags: {has_price_tags}")
-
-        # Always shrink before returning
-        merged = self._shrink_detections(merged)
-
-        return merged
-
     def _shrink_detections(self, dets: List[DetectionBox]) -> List[DetectionBox]:
         """
         Per-class shrink to avoid cross-shelf bleeding
-        UPDATED: Add price_tag handling
         """
         per_class = {
             "printer": 0.08,
@@ -933,6 +925,54 @@ class RetailDetector:
         union = box1.area + box2.area - intersection
 
         return intersection / union if union > 0 else 0.0
+
+    # Additional helper methods for compatibility
+    def create_mser(self, delta=5, min_area=200, max_area=5000):
+        """OpenCV-version-safe MSER factory."""
+        try:
+            # Some builds accept only _delta as kwarg
+            mser = cv2.MSER_create(_delta=delta)
+            if hasattr(mser, "setMinArea"): mser.setMinArea(int(min_area))
+            if hasattr(mser, "setMaxArea"): mser.setMaxArea(int(max_area))
+            return mser
+        except TypeError:
+            # Older builds: positionals
+            try:
+                return cv2.MSER_create(int(delta), int(min_area), int(max_area))
+            except TypeError:
+                # Fallback: create default and set via setters
+                mser = cv2.MSER_create()
+                if hasattr(mser, "setDelta"):    mser.setDelta(int(delta))
+                if hasattr(mser, "setMinArea"):  mser.setMinArea(int(min_area))
+                if hasattr(mser, "setMaxArea"):  mser.setMaxArea(int(max_area))
+                return mser
+
+    def _calculate_text_likelihood(self, region: np.ndarray) -> float:
+        """Legacy method for backward compatibility"""
+        return self._calculate_text_likelihood_enhanced(region)
+
+    def _detect_price_tags_enhanced(self, img_array: np.ndarray) -> List[DetectionBox]:
+        """Legacy method name for backward compatibility"""
+        return self._detect_price_tags_enhanced_strict(img_array)
+
+    def _yolo_small_tag_detection(
+        self,
+        img_array: np.ndarray,
+        price_band: Optional[Tuple[int, int]] = None,
+        conf: float = 0.03,
+        iou: float = 0.20,
+        imgsz: int = 1280
+    ) -> List[DetectionBox]:
+        """Legacy method for backward compatibility"""
+        return self._yolo_small_tag_detection_enhanced(img_array)
+
+    def _intelligent_merge(
+        self,
+        detections: List[DetectionBox],
+        confidence_threshold: float
+    ) -> List[DetectionBox]:
+        """Legacy method for backward compatibility"""
+        return self._intelligent_merge_enhanced(detections, confidence_threshold)
 
 class PlanogramCompliancePipeline(AbstractPipeline):
     """
@@ -1487,6 +1527,14 @@ Respond with the structured data for all {len(detections)} objects.
 
         return results
 
+    def _is_promotional_product(self, product_name: str) -> bool:
+        """Check if a product name refers to promotional material"""
+        promotional_keywords = [
+            'advertisement', 'graphic', 'promo', 'banner', 'sign', 'poster', 'display'
+        ]
+        product_lower = product_name.lower()
+        return any(keyword in product_lower for keyword in promotional_keywords)
+
     # STEP 3: Planogram Compliance Check
     def check_planogram_compliance(
         self,
@@ -1494,16 +1542,8 @@ Respond with the structured data for all {len(detections)} objects.
         planogram_description: PlanogramDescription
     ) -> List[ComplianceResult]:
         """
-        Step 3: Compare identified products against expected planogram
-
-        Args:
-            identified_products: Products identified in Step 2
-            planogram_description: Expected planogram layout
-
-        Returns:
-            Compliance results per shelf level
+        FIXED: Step 3: Compare identified products against expected planogram
         """
-
         results = []
 
         # Group identified products by shelf level
@@ -1517,47 +1557,136 @@ Respond with the structured data for all {len(detections)} objects.
         # Check each shelf level
         for shelf_level, expected_products in planogram_description.shelves.items():
             found_products = []
+            promotional_products = []
+
+            # FIX: Process products in the current shelf level correctly
             if shelf_level in products_by_shelf:
-                found_products = [
-                    self._normalize_product_name(p.product_model or p.product_type)
-                    for p in products_by_shelf[shelf_level]
-                ]
+                for product in products_by_shelf[shelf_level]:
+                    if product.product_type == "promotional_graphic":
+                        promotional_products.append(product)
+                        # FIX: Also add promotional products to found_products for counting
+                        found_products.append(
+                            self._normalize_product_name(product.product_model or "promotional_graphic")
+                        )
+                    elif product.product_type not in ['fact_tag', 'price_tag']:
+                        # Only count non-tag products
+                        product_name = self._normalize_product_name(
+                            product.product_model or product.product_type
+                        )
+                        found_products.append(product_name)
 
             # Normalize expected product names
-            expected_normalized = [self._normalize_product_name(p) for p in expected_products]
-            found_normalized = found_products
+            expected_normalized = [
+                self._normalize_product_name(p) for p in expected_products
+            ]
 
             # Debug logging
             print(f"\nShelf Level: {shelf_level}")
             print(f"Expected (raw): {expected_products}")
             print(f"Expected (normalized): {expected_normalized}")
-            print(f"Found (raw): {[p.product_model for p in products_by_shelf.get(shelf_level, []) if p.product_type not in ['fact_tag', 'price_tag']]}")
-            print(f"Found (normalized): {found_normalized}")
+            print(f"Found products: {[p.product_model or p.product_type for p in products_by_shelf.get(shelf_level, []) if p.product_type not in ['fact_tag', 'price_tag']]}")
+            print(f"Found (normalized): {found_products}")
+            print(f"Promotional products found: {len(promotional_products)}")
 
             # Calculate compliance
-            missing = [p for p in expected_normalized if p not in found_normalized]
-            unexpected = [p for p in found_normalized if p not in expected_normalized]
+            missing = [p for p in expected_normalized if p not in found_products]
+            unexpected = [p for p in found_products if p not in expected_normalized]
 
-            compliance_score = len(
-                [p for p in expected_normalized if p in found_normalized]
-            ) / len(expected_normalized) if expected_normalized else 1.0
+            basic_compliance_score = (
+                len([p for p in expected_normalized if p in found_products]) / len(expected_normalized)
+                if expected_normalized else 1.0
+            )
 
-            # Determine compliance status
-            if compliance_score == 1.0 and not unexpected:
+            # Initialize text compliance variables with defaults
+            text_compliance_results = []
+            text_compliance_score = 1.0
+            overall_text_compliant = True
+
+            # FIX: Check if promotional_requirements exists and has the shelf_level
+            if (hasattr(planogram_description, 'promotional_requirements') and
+                planogram_description.promotional_requirements and
+                shelf_level in planogram_description.promotional_requirements):
+
+                promo_requirements = planogram_description.promotional_requirements[shelf_level]
+
+                for requirement in promo_requirements:
+                    # Find matching promotional products
+                    matching_promos = [
+                        p for p in promotional_products
+                        if (not requirement.brand or p.brand == requirement.brand) and
+                        (not requirement.advertisement_type or p.advertisement_type == requirement.advertisement_type)
+                    ]
+
+                    if not matching_promos:
+                        # No promotional graphic found
+                        for text_req in requirement.required_texts:
+                            text_compliance_results.append(
+                                TextComplianceResult(
+                                    required_text=text_req.required_text,
+                                    found=False,
+                                    matched_features=[],
+                                    confidence=0.0,
+                                    match_type=text_req.match_type
+                                )
+                            )
+                        overall_text_compliant = False
+                        continue
+
+                    # Check text requirements for each matching promotional product
+                    for text_req in requirement.required_texts:
+                        # Combine visual features from all matching promotional products
+                        all_visual_features = []
+                        for promo in matching_promos:
+                            if promo.visual_features:
+                                all_visual_features.extend(promo.visual_features)
+
+                        # Check against combined features
+                        result = TextMatcher.check_text_match(
+                            required_text=text_req.required_text,
+                            visual_features=all_visual_features,
+                            match_type=text_req.match_type,
+                            case_sensitive=text_req.case_sensitive,
+                            confidence_threshold=text_req.confidence_threshold
+                        )
+                        text_compliance_results.append(result)
+
+                        if not result.found:
+                            overall_text_compliant = False
+
+            # Calculate overall text compliance score
+            if text_compliance_results:
+                text_compliance_score = sum(
+                    r.confidence for r in text_compliance_results if r.found
+                ) / len(text_compliance_results)
+
+            # Get compliance threshold for this shelf
+            compliance_threshold = 0.8
+            if hasattr(planogram_description, 'compliance_thresholds'):
+                compliance_threshold = planogram_description.compliance_thresholds.get(shelf_level, 0.8)
+
+            # Determine overall compliance status using string values (FIX for enum issue)
+            if basic_compliance_score >= compliance_threshold and not unexpected and overall_text_compliant:
                 status = ComplianceStatus.COMPLIANT
-            elif compliance_score == 0.0:
+            elif basic_compliance_score == 0.0:
                 status = ComplianceStatus.MISSING
             else:
                 status = ComplianceStatus.NON_COMPLIANT
 
+            # Combine scores (weighted: 70% product compliance, 30% text compliance)
+            combined_score = (basic_compliance_score * 0.7) + (text_compliance_score * 0.3)
+
+            # FIX: Always provide valid values instead of None
             result = ComplianceResult(
                 shelf_level=shelf_level,
                 expected_products=expected_products,
                 found_products=found_products,
                 missing_products=missing,
                 unexpected_products=unexpected,
-                compliance_status=status,
-                compliance_score=compliance_score
+                compliance_status=status,  # Use string value to avoid enum error
+                compliance_score=combined_score,
+                text_compliance_results=text_compliance_results,  # Always provide list (never None)
+                text_compliance_score=text_compliance_score,      # Always provide float (never None)
+                overall_text_compliant=overall_text_compliant     # Always provide bool (never None)
             )
 
             results.append(result)
@@ -1604,11 +1733,29 @@ Respond with the structured data for all {len(detections)} objects.
             "promotional_graphic": "promotional_graphic",
             "epson ecotank advertisement": "promotional_graphic",
             "backlit_graphic": "promotional_graphic",
+
+            # Handle promotional graphics correctly
+            "promotional_graphic": "promotional_graphic",
+            "epson ecotank advertisement": "promotional_graphic",
+            "backlit_graphic": "promotional_graphic",
+            "advertisement": "promotional_graphic",
+            "graphic": "promotional_graphic",
+            "promo": "promotional_graphic",
+            "banner": "promotional_graphic",
+            "sign": "promotional_graphic",
+            "poster": "promotional_graphic",
+            "display": "promotional_graphic",
+            # Handle None values for promotional graphics
+            "none": "promotional_graphic"
         }
 
         # First try exact matches
         if name in mapping:
             return mapping[name]
+
+        promotional_keywords = ['advertisement', 'graphic', 'promo', 'banner', 'sign', 'poster', 'display', 'ecotank']
+        if any(keyword in name for keyword in promotional_keywords):
+            return "promotional_graphic"
 
         # Then try pattern matching for boxes
         for pattern in ["et-2980", "et2980"]:
@@ -1816,3 +1963,88 @@ Respond with the structured data for all {len(detections)} objects.
             base.save(save_to, quality=90)
 
         return base
+
+    def create_planogram_description(
+        self,
+        brand: str = "Epson",
+        category: str = "Printers",
+        aisle: str = "Electronics",
+        shelves: Optional[Dict[str, List[str]]] = None,
+        add_text_requirements: bool = True,
+        compliance_thresholds: Optional[Dict[str, float]] = None
+    ) -> PlanogramDescription:
+        """
+        Create a planogram description with optional text requirements
+
+        Args:
+            brand: Brand name (e.g., "Epson")
+            category: Product category (e.g., "Printers")
+            aisle: Store aisle location
+            shelves: Dict of shelf_level -> list of expected products
+            add_text_requirements: Whether to add promotional text requirements
+            compliance_thresholds: Custom compliance thresholds per shelf
+
+        Returns:
+            PlanogramDescription object ready for compliance checking
+        """
+
+        # Default shelves if not provided
+        if shelves is None:
+            shelves = {
+                "header": ["Epson EcoTank Advertisement"],
+                "top": ["ET-2980", "ET-3950", "ET-4950"],
+                "middle": ["ET-2980 box", "ET-3950 box", "ET-4950 box"]
+            }
+
+        # Default compliance thresholds
+        if compliance_thresholds is None:
+            compliance_thresholds = {
+                "header": 0.9,
+                "top": 0.8,
+                "middle": 0.8,
+                "bottom": 0.8
+            }
+
+        promotional_requirements = {}
+
+        if add_text_requirements:
+            # Text requirements for promotional graphics
+            goodbye_cartridges_req = TextRequirement(
+                required_text="Goodbye Cartridges",
+                match_type="contains",
+                case_sensitive=False
+            )
+
+            hello_savings_req = TextRequirement(
+                required_text="Hello Savings",
+                match_type="contains",
+                case_sensitive=False
+            )
+
+            epson_logo_req = TextRequirement(
+                required_text="Epson",
+                match_type="contains",
+                case_sensitive=False
+            )
+
+            # Promotional requirement for header
+            header_promo_req = PromotionalRequirement(
+                product_type="promotional_graphic",
+                brand=brand,
+                advertisement_type="backlit_graphic",
+                required_texts=[goodbye_cartridges_req, hello_savings_req, epson_logo_req],
+                allow_additional_text=True
+            )
+
+            # Add promotional requirements for header if it exists
+            if "header" in shelves:
+                promotional_requirements["header"] = [header_promo_req]
+
+        return PlanogramDescription(
+            shelves=shelves,
+            brand=brand,
+            category=category,
+            aisle=aisle,
+            promotional_requirements=promotional_requirements,
+            compliance_thresholds=compliance_thresholds
+        )
