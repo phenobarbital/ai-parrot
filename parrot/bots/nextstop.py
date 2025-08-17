@@ -85,7 +85,7 @@ class NextStop(BasicAgent):
             if hasattr(response, key):
                 setattr(response, key, value)
         response = self._agent_response(
-            user_id=str(kwargs.get('user_id', 'system')),
+            user_id=str(kwargs.get('user_id', 1)),
             agent_name=self.name,
             attributes=kwargs.pop('attributes', {}),
             data=final_report,
