@@ -1,3 +1,4 @@
+from typing import List
 from datetime import datetime, date
 import uuid
 from pathlib import Path
@@ -111,6 +112,16 @@ class NextStopStore(Model):
         default=None,
         description="ID of the employee associated with the record.",
         title="Employee ID"
+    )
+    script_path: str = Field(
+        default=None,
+        description="Path to the script file related to the NextStop agent's response.",
+        title="Script Path"
+    )
+    attachments: List[str] = Field(
+        default_factory=list,
+        description="List of attachment paths related to the NextStop agent's response.",
+        title="Attachments"
     )
 
     class Meta:
