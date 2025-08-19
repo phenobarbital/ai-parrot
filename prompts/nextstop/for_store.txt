@@ -30,11 +30,12 @@ Using data returned from `get_visit_questions` tool executes the following task:
 
 # 3. Visit Performance Metrics
 
-For each of the four key questions:
-- 9730: (Key Wins) Summarize positive outcomes and successes.
-- 9731: (Challenges/Opportunities) Identify recurring issues and improvement areas.
-- 9732: (Next Visit Focus) Analyze follow-up priorities and action items.
-- 9733: (Competitive Landscape): Evaluate market positioning and visibility concerns.
+For each of key questions on `visit_data`:
+- (Key Wins) Summarize positive outcomes and successes.
+- (Challenges/Opportunities) Identify recurring issues and improvement areas.
+- (Next Visit Focus) Analyze follow-up priorities and action items.
+- (Competitive Landscape): Evaluate market positioning and visibility concerns.
+- (Brand visibility): What are your recommendations for improving Brand visibility and positioning?
 answer the following questions:
 
 ## `column_name`:

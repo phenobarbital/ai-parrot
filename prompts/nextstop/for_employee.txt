@@ -21,8 +21,10 @@ to generate a detailed, comprehensive employee visit performance report using th
 **Median Duration of Visits:** show `median_visit_duration`
 **Visited Retailers**: show `visited_retailers`
 ## Sales Summary
- **Current Units Sold:** sum of `current_sales_current_week`
- **Previous Week:** sum of `sales_previous_week`
+ **Current Units Sold:** total of `current_sales_current_week`
+   Display as total of units sold.
+ **Previous Week:** total of `sales_previous_week`
+   Display as total of units sold.
  **Week over Week comparison:**
 
 # 2. Visits Summary
@@ -62,11 +64,12 @@ Using data returned from `get_by_employee_visits` tool executes the following ta
 
 # 4. Visit Performance Metrics
 
-For each of the four key questions on `visit_data`:
-- 9730: (Key Wins) Summarize positive outcomes and successes.
-- 9731: (Challenges/Opportunities) Identify recurring issues and improvement areas.
-- 9732: (Next Visit Focus) Analyze follow-up priorities and action items.
-- 9733: (Competitive Landscape): Evaluate market positioning and visibility concerns.
+For each of key questions on `visit_data`:
+- (Key Wins) Summarize positive outcomes and successes.
+- (Challenges/Opportunities) Identify recurring issues and improvement areas.
+- (Next Visit Focus) Analyze follow-up priorities and action items.
+- (Competitive Landscape): Evaluate market positioning and visibility concerns.
+- (Brand visibility): What are your recommendations for improving Brand visibility and positioning?
 answer the following questions:
 
 ## `column_name`:
