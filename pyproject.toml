@@ -150,7 +150,6 @@ google = [
     "google-api-python-client>=2.166.0,<=2.177.0",
     "google-cloud-texttospeech==2.27.0",
     "google-genai>=1.31.0",
-    "vertexai==1.71.1",
     "google-cloud-aiplatform==1.110.0",
 ]
 

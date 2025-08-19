@@ -162,7 +162,6 @@ all = [
     { name = "transformers" },
     { name = "typing-extensions" },
     { name = "ultralytics" },
-    { name = "vertexai" },
     { name = "wikipedia" },
     { name = "yfinance" },
     { name = "youtube-search" },
@@ -193,7 +192,6 @@ google = [
     { name = "google-cloud-aiplatform" },
     { name = "google-cloud-texttospeech" },
     { name = "google-genai" },
-    { name = "vertexai" },
 ]
 groq = [
     { name = "groq" },
@@ -289,10 +287,10 @@ requires-dist = [
     { name = "fpdf", specifier = "==1.7.2" },
     { name = "google-api-python-client", marker = "extra == 'agents'", specifier = ">=2.151.0" },
     { name = "google-api-python-client", marker = "extra == 'google'", specifier = ">=2.166.0,<=2.177.0" },
-    { name = "google-cloud-aiplatform", marker = "extra == 'google'", specifier = "==1.71.1" },
+    { name = "google-cloud-aiplatform", marker = "extra == 'google'", specifier = "==1.110.0" },
     { name = "google-cloud-bigquery", specifier = ">=3.30.0" },
     { name = "google-cloud-texttospeech", marker = "extra == 'google'", specifier = "==2.27.0" },
-    { name = "google-genai", marker = "extra == 'google'", specifier = ">=1.26.0" },
+    { name = "google-genai", marker = "extra == 'google'", specifier = ">=1.31.0" },
     { name = "google-search-results", marker = "extra == 'agents'", specifier = "==2.4.2" },
     { name = "groq", marker = "extra == 'groq'", specifier = "==0.30.0" },
     { name = "holoviews", marker = "extra == 'images'", specifier = "==1.21.0" },
@@ -366,8 +364,7 @@ requires-dist = [
     { name = "transformers", marker = "extra == 'vectors'", specifier = ">=4.51.1,<=4.51.3" },
     { name = "typing-extensions", specifier = ">=4.13.2,<=4.14.0" },
     { name = "typing-extensions", marker = "extra == 'groq'", specifier = ">=4.13.2,<=4.14.1" },
-    { name = "ultralytics", marker = "extra == 'images'", specifier = "==8.3.121" },
-    { name = "vertexai", marker = "extra == 'google'", specifier = "==1.71.1" },
+    { name = "ultralytics", marker = "extra == 'images'", specifier = "==8.3.179" },
     { name = "wikipedia", marker = "extra == 'agents'", specifier = "==1.4.0" },
     { name = "ydata-profiling", marker = "extra == 'eda'", specifier = "==4.16.1" },
     { name = "yfinance", marker = "extra == 'agents'", specifier = "==0.2.54" },
@@ -3167,7 +3164,7 @@ wheels = [
 
 [[package]]
 name = "google-cloud-aiplatform"
-version = "1.71.1"
+version = "1.110.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "docstring-parser" },
@@ -3176,15 +3173,17 @@ dependencies = [
     { name = "google-cloud-bigquery" },
     { name = "google-cloud-resource-manager" },
     { name = "google-cloud-storage" },
+    { name = "google-genai" },
     { name = "packaging" },
     { name = "proto-plus" },
     { name = "protobuf" },
     { name = "pydantic" },
     { name = "shapely" },
+    { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ed/d6/3fbc064701c93c0bb76a54f8348e3389e6b9115aaffaae316f39d01e92bb/google-cloud-aiplatform-1.71.1.tar.gz", hash = "sha256:0013527e06853382ff0885898195bb7f3cf4a70eb7e5d53e4b1a28c8bd1775e2", size = 7491661, upload-time = "2024-10-31T19:38:13.355Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ee/a4/af1052083e715f4f47b81b9f8139fe188c666f8512f9ca5188b3363797a6/google_cloud_aiplatform-1.110.0.tar.gz", hash = "sha256:e77a0d8fb4f58f4cae2e6bea12e63ef277ecceba23ab38d2a3a5c20022e6a6b5", size = 9525223, upload-time = "2025-08-18T23:07:49.545Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c8/37/c87b883be064b6c015b91a26cc454d667c797e0d01a85c47ac73e8aa565e/google_cloud_aiplatform-1.71.1-py2.py3-none-any.whl", hash = "sha256:4cd49bbc7f8ad88b92029a090b834ebacf9efadc844226f1e74d015d68f69ef5", size = 6189637, upload-time = "2024-10-31T19:38:10.244Z" },
+    { url = "https://files.pythonhosted.org/packages/1b/9f/79d9734841b36459c0f3ba288827e8c0ec78b10950bc86cb78f53eb0f0bd/google_cloud_aiplatform-1.110.0-py2.py3-none-any.whl", hash = "sha256:c4e4f0a45845daeadba1e60706dfd1f1cd579336e3140e4ab4fb48507b25c2fe", size = 7916508, upload-time = "2025-08-18T23:07:46.707Z" },
 ]
 
 [[package]]
@@ -3303,7 +3302,7 @@ wheels = [
 
 [[package]]
 name = "google-genai"
-version = "1.28.0"
+version = "1.31.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -3315,9 +3314,9 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "websockets" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/23/f1/039bb08df4670e204c55b5da0b2fa5228dff3346bda01389a86b300f6f58/google_genai-1.28.0.tar.gz", hash = "sha256:e93053c02e616842679ba5ecce5b99db8c0ca6310623c55ff6245b5b1d293138", size = 221029, upload-time = "2025-07-30T21:39:57.002Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e0/1b/da30fa6e2966942d7028a58eb7aa7d04544dcc3aa66194365b2e0adac570/google_genai-1.31.0.tar.gz", hash = "sha256:8572b47aa684357c3e5e10d290ec772c65414114939e3ad2955203e27cd2fcbc", size = 233482, upload-time = "2025-08-18T23:40:21.733Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/3f/ea/b704df3b348d3ae3572b0db5b52438fa426900b0830cff664107abfdba69/google_genai-1.28.0-py3-none-any.whl", hash = "sha256:7fd506799005cc87d3c5704a2eb5a2cb020d45b4d216a802e606700308f7f2f3", size = 219384, upload-time = "2025-07-30T21:39:55.652Z" },
+    { url = "https://files.pythonhosted.org/packages/41/27/1525bc9cbec58660f0842ebcbfe910a1dde908c2672373804879666e0bb8/google_genai-1.31.0-py3-none-any.whl", hash = "sha256:5c6959bcf862714e8ed0922db3aaf41885bacf6318751b3421bf1e459f78892f", size = 231876, upload-time = "2025-08-18T23:40:20.385Z" },
 ]
 
 [[package]]
@@ -10628,7 +10627,7 @@ wheels = [
 
 [[package]]
 name = "ultralytics"
-version = "8.3.121"
+version = "8.3.179"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "matplotlib" },
@@ -10641,15 +10640,14 @@ dependencies = [
     { name = "pyyaml" },
     { name = "requests" },
     { name = "scipy" },
-    { name = "seaborn" },
     { name = "torch" },
     { name = "torchvision" },
     { name = "tqdm" },
     { name = "ultralytics-thop" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/13/72/bf624d7719829a7f5e9b012d2deb4863bf518a19992b8346fa252c34be1c/ultralytics-8.3.121.tar.gz", hash = "sha256:8fa3d99f1c33b997d240409665a9331f65fec9b1a577d51ea0ab6c21eba2c1ae", size = 863208, upload-time = "2025-04-29T21:56:47.873Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/9d/b3/9551b71429620541beea5c392ed65d569360bb6707c501b8dce3ff51e6da/ultralytics-8.3.179.tar.gz", hash = "sha256:bf0a617c534aa9ac334c4c8a7ae9f44618295f78f1588707528d27e92ec35376", size = 895505, upload-time = "2025-08-13T22:15:27.305Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/88/e9/2d1d9a3e9f6bb5d8c0a0c503382b01d7ebe0ea56b382208d19ba1d47601c/ultralytics-8.3.121-py3-none-any.whl", hash = "sha256:c631aa1dea3146662228e9c8f7a9527b64786fdeeeb03d5bf537cec9282ac5da", size = 1004739, upload-time = "2025-04-29T21:56:45.213Z" },
+    { url = "https://files.pythonhosted.org/packages/3d/de/6f7d35bd5ab190ac7936b69d06eef87a577764e682e987da505543deacc9/ultralytics-8.3.179-py3-none-any.whl", hash = "sha256:521fbb7853edb2fd0f74583a95e7f40be6c7c3e7cb13abe2892bf83e423a82a3", size = 1042993, upload-time = "2025-08-13T22:15:24.593Z" },
 ]
 
 [[package]]
@@ -10738,18 +10736,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/d2/19/f5b78616566ea68edd42aacaf645adbf71fbd83fc52281fba555dc27e3f1/uvloop-0.21.0-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:f3df876acd7ec037a3d005b3ab85a7e4110422e4d9c1571d4fc89b0fc41b6816", size = 4701068, upload-time = "2024-10-14T23:38:06.385Z" },
     { url = "https://files.pythonhosted.org/packages/47/57/66f061ee118f413cd22a656de622925097170b9380b30091b78ea0c6ea75/uvloop-0.21.0-cp313-cp313-musllinux_1_2_aarch64.whl", hash = "sha256:bd53ecc9a0f3d87ab847503c2e1552b690362e005ab54e8a48ba97da3924c0dc", size = 4454428, upload-time = "2024-10-14T23:38:08.416Z" },
     { url = "https://files.pythonhosted.org/packages/63/9a/0962b05b308494e3202d3f794a6e85abe471fe3cafdbcf95c2e8c713aabd/uvloop-0.21.0-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:a5c39f217ab3c663dc699c04cbd50c13813e31d917642d459fdcec07555cc553", size = 4660018, upload-time = "2024-10-14T23:38:10.888Z" },
-]
-
-[[package]]
-name = "vertexai"
-version = "1.71.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "google-cloud-aiplatform" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/14/40/3de2395f98ea374e78234d9728d595aa0ad8bad4f2d77c59d9fc9492e7bc/vertexai-1.71.1.tar.gz", hash = "sha256:cd74fe42ea05bb155aff0a4c150fd3d8af74df399297560a09027fa85e1fdbd7", size = 9288, upload-time = "2024-10-31T19:38:25.1Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/1a/76/162f62df15ce89ffb7587bf68cf7f81c49c4a7f326a3737b07ffc5253e52/vertexai-1.71.1-py3-none-any.whl", hash = "sha256:86162d5fe18badc76044a0950c8cd8accc7a81c16d787adf7430db32881d6063", size = 7268, upload-time = "2024-10-31T19:38:23.882Z" },
 ]
 
 [[package]]
