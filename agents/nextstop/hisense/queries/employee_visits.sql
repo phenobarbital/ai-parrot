@@ -34,11 +34,12 @@ WITH visit_data AS (
     FROM hisense.form_data d
     INNER JOIN troc.stores st ON st.store_id = d.store_id AND st.program_slug = 'hisense'
     WHERE visit_date::date between (current_date::date - interval '1 week')::date and current_date::date
-    AND column_name IN ('9733','9731','9732','9730')
+    AND column_name IN ('9730', '9731','9732','9733')
     AND d.visitor_email = '{employee_id}'
     GROUP BY
-        form_id, formid, visit_date, visit_timestamp, visit_length, d.visit_hour, d.account_name, d.store_name,
-        time_in, time_out, d.store_id, st.alt_name, visitor_name, visitor_email, visitor_role, d.visit_dow
+        form_id, formid, visit_date, visit_timestamp, visit_length, d.visit_hour,
+        d.account_name, d.store_name, time_in, time_out, d.store_id, st.alt_name,
+        visitor_name, visitor_email, visitor_role, d.visit_dow
 ),
 retailer_summary AS (
   -- compute per-visitor, per-account counts, then turn into a single JSONB
