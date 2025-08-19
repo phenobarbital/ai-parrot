@@ -48,7 +48,7 @@ Calculate the average visit length for the current Week.
 **Visits Growth (Current vs Previous Month):** Calculate the percentage growth in visits from previous month to the current Week.
 **Visits Ranking:** Rank the employee's visits performance compared to other team members.
 ## Visit Analysis
-### For each Question (9730, 9731, 9732, 9733) provide:
+### For each key Question provide:
 • **Top Phrases:** up to 5 frequent key phrases present in `answer` (lower-cased, stemmed/lemmatized).
 • **Themes:** Identify business-relevant terms like product names, competitor names, specific issues, store features
 
