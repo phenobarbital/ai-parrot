@@ -16,7 +16,9 @@ from navconfig import BASE_DIR
 from asyncdb import AsyncDB
 from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611
 from querysource.conf import default_dsn
+from querysource.queries.qs import QS
 from .toolkit import AbstractToolkit
+from ..exceptions import ToolError
 
 
 def is_collection_model(structured_obj: type) -> bool:
@@ -324,3 +326,70 @@ class QueryToolkit(AbstractToolkit):
                 raise TypeError(
                     f"Unsupported output format: {output_format}"
                 )
+
+    async def _get_queryslug(
+        self,
+        slug: str,
+        output_format: str = 'pandas',
+        conditions: Optional[Dict[str, Any]] = None,
+        structured_obj: Optional[Callable[[Dict[str, Any]], Any]] = None
+    ) -> Union[pd.DataFrame, Dict[str, Any]]:
+        """Execute a query and return the results in the specified format.
+
+        Args:
+            slug: The Query slug for the query
+            output_format: Output format ('pandas', 'json', or 'structured')
+
+        Returns:
+            Union[pd.DataFrame, Dict]: Query results in the requested format
+
+        Raises:
+            Exception: If there's an error executing the query
+        """
+        qs = QS(slug=slug, conditions=conditions)
+        result, error = await qs.query()
+        if error:
+            raise ToolError(
+                f"Error executing query '{slug}': {error}"
+            )
+        if isinstance(result, pd.DataFrame) and result.empty:
+            raise ValueError(
+                f"No data found for query '{slug}'."
+            )
+        elif not result:
+            raise ValueError(
+                f"No data found for query '{slug}'."
+            )
+        if isinstance(result, dict):
+            result = [result]  # Convert single dict to list for consistency
+        if output_format == 'pandas':
+            return pd.DataFrame([dict(row) for row in result])
+        elif output_format == 'json':
+            return json_encoder([dict(row) for row in result])
+        elif output_format == 'structured':
+            if structured_obj is None:
+                raise ValueError(
+                    "structured_obj must be provided for structured output"
+                )
+            if is_collection_model(structured_obj):
+                record_model = get_model_from_collection(structured_obj)
+                individual_records = [record_model(**row_dict) for row_dict in result]
+                # Create the container model with records
+                return structured_obj(
+                    records=individual_records,
+                    total_records=len(individual_records)
+                )
+            elif get_origin(structured_obj) is list:
+                # Handle direct list types like List[VisitsByManagerRecord]
+                record_model = get_args(structured_obj)[0]
+                return [record_model(**row_dict) for row_dict in result]
+            else:
+                # Convert each row to the structured object
+                data = []
+                for row in result:
+                    data.append(structured_obj(**row))
+                return data
+        else:
+            raise TypeError(
+                f"Unsupported output format: {output_format}"
+            )

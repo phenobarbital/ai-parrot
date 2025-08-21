@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title | default('Product Analysis Report') }}</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .slide-break {
+            page-break-before: always;
+            margin-top: 2em;
+        }
+
+        .product-image {
+            text-align: center;
+            margin: 20px 0;
+        }
+
+        .product-image img {
+            max-width: 400px;
+            height: auto;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+
+        .info-box {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #007acc;
+        }
+
+        .specs-list {
+            columns: 2;
+            column-gap: 30px;
+            margin: 15px 0;
+        }
+
+        .rating {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: bold;
+            color: #28a745;
+        }
+
+        .positive {
+            color: #28a745;
+        }
+
+        .negative {
+            color: #dc3545;
+        }
+
+        .complaint-themes {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+
+        .theme-box {
+            background: #fff3cd;
+            padding: 10px;
+            border-radius: 6px;
+            text-align: center;
+            border: 1px solid #ffeaa7;
+        }
+
+        .highlight-box {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            text-align: center;
+        }
+
+        ul, ol {
+            margin: 10px 0 20px 20px;
+        }
+
+        li {
+            margin: 8px 0;
+        }
+    </style>
+</head>
+<body>
+    <!-- Title Slide -->
+    <h1>{{ title | default('Product Analysis Report') }}</h1>
+
+    <div class="highlight-box">
+        <h2 style="margin-top: 0;">{{ product_name | default('Product Analysis') }}</h2>
+        {% if author %}<p><strong>Analyst:</strong> {{ author }}</p>{% endif %}
+        {% if date %}<p><strong>Date:</strong> {{ date }}</p>{% endif %}
+        <p><strong>Generated:</strong> {{ generated_date | default(timestamp) }}</p>
+    </div>
+
+    <!-- Process the main content -->
+    <div class="slide-break">
+        {{ content | safe }}
+    </div>
+
+    <!-- Enhanced sections for better slide splitting -->
+    <script>
+        // This script enhances the HTML structure for better PowerPoint conversion
+        document.addEventListener('DOMContentLoaded', function() {
+            // Find product images and enhance them
+            const images = document.querySelectorAll('img');
+            images.forEach(img => {
+                const wrapper = document.createElement('div');
+                wrapper.className = 'product-image';
+                img.parentNode.insertBefore(wrapper, img);
+                wrapper.appendChild(img);
+            });
+
+            // Enhance specification lists
+            const specSections = document.querySelectorAll('h2, h3');
+            specSections.forEach(heading => {
+                if (heading.textContent.toLowerCase().includes('specification')) {
+                    const nextElement = heading.nextElementSibling;
+                    if (nextElement && nextElement.tagName === 'UL') {
+                        nextElement.className = 'specs-list';
+                    }
+                }
+            });
+
+            // Add rating display for review information
+            const content = document.body.innerHTML;
+            const ratingRegex = /Reviews Average:\s*(\d+\.?\d*)/g;
+            document.body.innerHTML = content.replace(ratingRegex,
+                'Reviews Average: <span class="rating">$1 ⭐</span>');
+        });
+    </script>
+</body>
+</html>

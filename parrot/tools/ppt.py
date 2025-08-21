@@ -3,11 +3,13 @@ PowerPoint Tool migrated to use AbstractDocumentTool framework.
 """
 import re
 from pathlib import Path
+import tempfile
 from typing import Dict, List, Optional, Any, Union
 import io
 import traceback
+import requests
 from pptx import Presentation
-from pptx.util import Pt
+from pptx.util import Pt, Inches, Cm
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN
 from pptx.enum.shapes import MSO_SHAPE_TYPE
@@ -59,6 +61,30 @@ class PowerPointArgs(DocumentGenerationArgs):
         True,
         description="Whether to split content into slides based on headings (H1, H2, etc.)"
     )
+    enable_images: bool = Field(
+        True,
+        description="Whether to download and include images from URLs in markdown"
+    )
+    image_width: Optional[float] = Field(
+        None,
+        description="Default image width in inches (None for auto-sizing)"
+    )
+    image_height: Optional[float] = Field(
+        None,
+        description="Default image height in inches (None for auto-sizing)"
+    )
+    max_image_size: float = Field(
+        6.0,
+        description="Maximum image size in inches (width or height)"
+    )
+    image_quality: str = Field(
+        "high",
+        description="Image quality: 'high', 'medium', 'low'"
+    )
+    image_timeout: int = Field(
+        30,
+        description="Timeout for image downloads in seconds"
+    )
 
     @field_validator('template_name')
     @classmethod
@@ -66,7 +92,6 @@ class PowerPointArgs(DocumentGenerationArgs):
         if v and not v.endswith('.html'):
             v = f"{v}.html"
         return v
-
 
 class PowerPointTool(AbstractDocumentTool):
     """
@@ -226,73 +251,92 @@ class PowerPointTool(AbstractDocumentTool):
                 'title': 'Presentation',
                 'content': self._extract_content_elements(soup),
                 'level': 1,
-                'layout': 0  # Title slide for single content
+                'layout': None
             })
             return slides
 
         # Get all elements in the document to process sequentially
-        all_elements = soup.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'ul', 'ol', 'table', 'blockquote', 'div'])
+        all_elements = soup.find_all(
+            ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'ul', 'ol', 'table', 'blockquote', 'div', 'img']
+        )
 
         current_slide = None
 
         for element in all_elements:
             if len(slides) >= max_slides:
-                self.logger.warning(f"Reached maximum slides limit ({max_slides}), stopping slide creation")
+                self.logger.warning(
+                    f"Reached maximum slides limit ({max_slides})"
+                )
                 break
 
             # If this is a heading, start a new slide
             if element.name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']:
-                # Save the previous slide if it exists
-                if current_slide is not None:
+                if current_slide is not None and current_slide['content']:
                     slides.append(current_slide)
 
-                # Start new slide
                 heading_level = int(element.name[1])
                 heading_text = self._get_text_content(element)
+                heading_text = heading_text.strip()
+
+                if not heading_text:
+                    continue
 
                 current_slide = {
                     'title': heading_text,
                     'level': heading_level,
                     'content': [],
-                    'layout': 0 if (len(slides) == 0 and heading_level == 1) else 1
+                    # 'layout': 0 if (len(slides) == 0 and heading_level == 1) else None
+                    'layout': None
                 }
-
-                self.logger.debug(f"Starting new slide: {heading_text}")
-
             # If this is content and we have a current slide, add it
-            elif element.name in ['p', 'ul', 'ol', 'table', 'blockquote', 'div'] and current_slide is not None:
-                # Skip empty paragraphs
-                content_text = self._get_text_content(element).strip()
-                if content_text:
+            elif element.name in ['p', 'ul', 'ol', 'table', 'blockquote', 'div', 'img'] and current_slide is not None:
+                if element.name == 'img':
+                    # Always add images
                     current_slide['content'].append(element)
-                    self.logger.debug(f"Added content to slide '{current_slide['title']}': {content_text[:50]}...")
+                    img_alt = element.get('alt', 'Image')
+                    self.logger.debug(f"Added image to slide '{current_slide['title']}': {img_alt}")
+                else:
+                    # Add other content if not empty
+                    content_text = self._get_text_content(element).strip()
+                    if content_text:
+                        current_slide['content'].append(element)
 
         # Don't forget the last slide
-        if current_slide is not None:
+        if current_slide is not None and current_slide['content']:
             slides.append(current_slide)
 
-        self.logger.info(f"Extracted {len(slides)} slides from HTML content")
-
-        # Debug: Log slide information
-        for i, slide in enumerate(slides):
-            self.logger.debug(f"Slide {i+1}: '{slide['title']}' with {len(slide['content'])} content elements")
-
+        self.logger.info(
+            f"Extracted {len(slides)} slides from HTML content"
+        )
         return slides
 
     def _extract_content_elements(self, soup) -> List:
         """Extract content elements from soup."""
         content_elements = []
-
-        # Get all content elements, but exclude headings since they become slide titles
-        for element in soup.find_all(['p', 'ul', 'ol', 'table', 'blockquote', 'div']):
+        # Get all content elements, including images
+        for element in soup.find_all(['p', 'ul', 'ol', 'table', 'blockquote', 'div', 'img']):
             # Skip if this div only contains headings
             if element.name == 'div':
-                # Check if div contains only headings or is empty
                 child_tags = [child.name for child in element.find_all() if hasattr(child, 'name')]
                 if all(tag in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'] for tag in child_tags):
                     continue
 
-            content_elements.append(element)
+            # Special handling for paragraphs that contain images
+            if element.name == 'p':
+                # Check if paragraph contains images
+                images = element.find_all('img')
+                if images:
+                    # Add text content if any
+                    text_content = self._get_text_content(element).strip()
+                    if text_content:
+                        content_elements.append(element)
+                    # Add images separately
+                    for img in images:
+                        content_elements.append(img)
+                else:
+                    content_elements.append(element)
+            else:
+                content_elements.append(element)
 
         return content_elements
 
@@ -313,87 +357,433 @@ class PowerPointTool(AbstractDocumentTool):
         slides_data: List[Dict[str, Any]],
         slide_layout: int,
         title_styles: Optional[Dict[str, Any]],
-        content_styles: Optional[Dict[str, Any]]
+        content_styles: Optional[Dict[str, Any]],
+        **kwargs: Any
     ) -> None:
-        """Create slides from extracted data."""
-        for slide_data in slides_data:
-            try:
-                # Determine layout: use slide_data layout or default
-                layout_idx = slide_data.get('layout', slide_layout)
+        """Create slides from extracted data with dynamic layout detection."""
 
-                # Ensure layout index is valid
+        # Debug available layouts
+        self.logger.info(
+            f"Available slide layouts: {len(prs.slide_layouts)}"
+        )
+        for i, layout in enumerate(prs.slide_layouts):
+            self.logger.debug(
+                f"Layout {i}: {layout.name}"
+            )
+        if len(prs.slides) > 0:
+            # Remove the empty slide if it exists
+            slide_to_remove = prs.slides[0]
+            slide_id = slide_to_remove.slide_id
+            prs.part.drop_rel(prs.slides._sldIdLst[0].rId)
+            del prs.slides._sldIdLst[0]
+
+        for i, slide_data in enumerate(slides_data):
+            try:
+                if len(prs.slide_layouts) == 1:
+                    # Template has only one layout - use it for everything
+                    layout_idx = 0
+                elif len(prs.slide_layouts) >= 2:
+                    # Template has multiple layouts - use layout 1 for content, 0 for title-only
+                    if slide_data['content']:
+                        layout_idx = 1  # Content slide
+                    else:
+                        layout_idx = 0  # Title-only slide
+                    self.logger.debug(
+                        f"Using layout {layout_idx} for slide with content: {bool(slide_data['content'])}"
+                    )
+                else:
+                    # Fallback - shouldn't happen but just in case
+                    layout_idx = 0
+                # Additional safety check
                 if layout_idx >= len(prs.slide_layouts):
-                    layout_idx = min(slide_layout, len(prs.slide_layouts) - 1)
+                    layout_idx = 0
+                    self.logger.warning(
+                        f"Layout index {layout_idx} out of range, using layout 0"
+                    )
 
                 # Add slide
                 slide_layout_obj = prs.slide_layouts[layout_idx]
                 slide = prs.slides.add_slide(slide_layout_obj)
 
-                # Add title
+                # FIXED: Better title cleaning
                 if slide.shapes.title and slide_data['title']:
-                    # first, remove any "#" at beginning of the title:
-                    _title = slide_data['title'].lstrip('#').strip()
+                    # Remove markdown symbols more thoroughly
+                    _title = slide_data['title']
+                    _title = re.sub(r'^#+\s*', '', _title)  # Remove leading # symbols
+                    _title = _title.lstrip('#').strip()    # Remove any remaining # symbols
+                    _title = _title.strip()                # Final cleanup
+
                     slide.shapes.title.text = _title
+                    self.logger.debug(f"Set slide title: '{_title}'")
+
                     if title_styles:
                         self._apply_text_styles(slide.shapes.title, title_styles)
 
-                # Add content (if there's a content placeholder and content exists)
-                if slide_data['content'] and len(slide.shapes.placeholders) > 1:
-                    content_placeholder = slide.shapes.placeholders[1]
-                    self._add_slide_content(content_placeholder, slide_data['content'], content_styles)
+                # Add content only if there is content
+                if slide_data['content']:
+                    self._add_slide_content(
+                        slide, slide_data['content'], content_styles, **kwargs
+                    )
 
                 self.logger.debug(
-                    f"Created slide: {slide_data['title']}"
+                    f"Created slide: '{_title}' using layout {layout_idx}"
                 )
 
             except Exception as e:
-                self.logger.error(f"Error creating slide '{slide_data.get('title', 'Unknown')}': {e}")
+                self.logger.error(
+                    f"Error creating slide '{slide_data.get('title', 'Unknown')}': {e}"
+                )
+                # Continue to next slide instead of failing completely
                 continue
 
-    def _add_slide_content(self, placeholder, content_elements: List, content_styles: Optional[Dict[str, Any]]) -> None:
-        """Add content to a slide placeholder."""
+    def _find_content_placeholder(self, slide):
+        """Find the appropriate content placeholder on a slide."""
         try:
-            text_frame = placeholder.text_frame
-            text_frame.clear()
+            # Debug: Log all available placeholders
+            self.logger.debug(
+                f"Available placeholders: {len(slide.shapes.placeholders)}"
+            )
+            for i, placeholder in enumerate(slide.shapes.placeholders):
+                self.logger.debug(
+                    f"Placeholder {i}: {placeholder.placeholder_format.type}"
+                )
 
+            # Try to find content placeholder
+            # Common content placeholder types: BODY (2), OBJECT (7), CONTENT (13)
+            content_placeholder_types = [2, 7, 13, 14, 15, 16, 17, 18]
+
+            for placeholder in slide.shapes.placeholders:
+                try:
+                    if hasattr(placeholder.placeholder_format, 'type'):
+                        if placeholder.placeholder_format.type in content_placeholder_types:
+                            if hasattr(placeholder, 'text_frame'):
+                                self.logger.debug(
+                                    f"Found content placeholder: {placeholder.placeholder_format.type}"
+                                )
+                                return placeholder
+                except Exception as e:
+                    self.logger.error(
+                        f"Error finding content placeholder: {e}"
+                    )
+                    continue
+
+            # Fallback: Try to find any placeholder that's not the title (idx 0)
+            if len(slide.shapes.placeholders) > 1:
+                # Skip title placeholder (usually index 0) and try others
+                for i in range(1, len(slide.shapes.placeholders)):
+                    placeholder = slide.shapes.placeholders[i]
+                    if hasattr(placeholder, 'text_frame'):
+                        self.logger.debug(f"Using placeholder at index {i} as content placeholder")
+                        return placeholder
+
+            self.logger.warning(
+                "No suitable content placeholder found"
+            )
+            return None
+
+        except Exception as e:
+            self.logger.error(f"Error finding content placeholder: {e}")
+            return None
+
+    def _add_text_as_textbox(self, slide, content_elements, content_styles):
+        """Add text content as a text box when no content placeholder is available."""
+        try:
+            # FIXED: Better positioning that allows movement
+            left = Inches(0.5)
+            top = Inches(1.8)    # Start below title area
+            width = Inches(9)    # Full width minus margins
+            height = Inches(5)   # Reasonable height
+
+            textbox = slide.shapes.add_textbox(left, top, width, height)
+            text_frame = textbox.text_frame
+
+            # FIXED: Better text frame settings
+            text_frame.clear()
+            text_frame.margin_left = Inches(0.1)
+            text_frame.margin_right = Inches(0.1)
+            text_frame.margin_top = Inches(0.1)
+            text_frame.margin_bottom = Inches(0.1)
+            text_frame.word_wrap = True
+
+            # Add content to text box with better formatting
+            first_paragraph = True
             for element in content_elements:
                 if element.name == 'p':
-                    # Add paragraph
-                    if len(text_frame.paragraphs) == 1 and not text_frame.paragraphs[0].text:
-                        p = text_frame.paragraphs[0]
-                    else:
-                        p = text_frame.add_paragraph()
+                    paragraph_text = self._get_text_content(element)
 
-                    p.text = self._get_text_content(element)
-                    if content_styles:
-                        self._apply_paragraph_styles(p, content_styles)
+                    # Split by line breaks for better formatting
+                    lines = [line.strip() for line in paragraph_text.split('\n') if line.strip()]
+
+                    for line in lines:
+                        if first_paragraph and not text_frame.paragraphs[0].text:
+                            p = text_frame.paragraphs[0]
+                            first_paragraph = False
+                        else:
+                            p = text_frame.add_paragraph()
+
+                        p.text = line
+                        p.space_after = Pt(6)  # Add some spacing between lines
+
+                        if content_styles:
+                            self._apply_paragraph_styles(p, content_styles)
 
                 elif element.name in ['ul', 'ol']:
-                    # Add list items
                     for li in element.find_all('li', recursive=False):
-                        p = text_frame.add_paragraph()
-                        p.text = self._get_text_content(li)
-                        p.level = 1  # Bullet point level
+                        if first_paragraph and not text_frame.paragraphs[0].text:
+                            p = text_frame.paragraphs[0]
+                            first_paragraph = False
+                        else:
+                            p = text_frame.add_paragraph()
+
+                        p.text = f"• {self._get_text_content(li)}"
+                        p.space_after = Pt(3)
+
                         if content_styles:
                             self._apply_paragraph_styles(p, content_styles)
 
                 elif element.name == 'table':
-                    # Add table as formatted text
                     table_text = self._extract_table_text(element)
-                    p = text_frame.add_paragraph()
+                    if first_paragraph and not text_frame.paragraphs[0].text:
+                        p = text_frame.paragraphs[0]
+                        first_paragraph = False
+                    else:
+                        p = text_frame.add_paragraph()
+
                     p.text = table_text
+                    p.space_after = Pt(6)
+
                     if content_styles:
                         self._apply_paragraph_styles(p, content_styles)
 
                 elif element.name == 'blockquote':
-                    # Add blockquote
-                    p = text_frame.add_paragraph()
+                    if first_paragraph and not text_frame.paragraphs[0].text:
+                        p = text_frame.paragraphs[0]
+                        first_paragraph = False
+                    else:
+                        p = text_frame.add_paragraph()
+
                     p.text = f'"{self._get_text_content(element)}"'
+                    p.space_after = Pt(6)
+
                     if content_styles:
                         self._apply_paragraph_styles(p, content_styles)
 
+            self.logger.debug("Added content as movable textbox")
+
         except Exception as e:
-            self.logger.error(f"Error adding slide content: {e}")
+            self.logger.error(f"Error adding text as textbox: {e}")
+
+    def _add_slide_content(
+        self,
+        slide: Any,
+        content_elements: List,
+        content_styles: Optional[Dict[str, Any]],
+        **kwargs
+    ) -> None:
+        """Add content to a slide placeholder."""
+
+        enable_images = kwargs.get('enable_images', True)
+        image_width = kwargs.get('image_width')
+        image_height = kwargs.get('image_height')
+        max_image_size = kwargs.get('max_image_size', 6.0)
+
+        # Separate images from other content
+        images = [elem for elem in content_elements if elem.name == 'img']
+        other_content = [elem for elem in content_elements if elem.name != 'img']
+
+        # Handle text content first
+        if other_content:
+            content_placeholder = self._find_content_placeholder(slide)
+            if content_placeholder:
+                try:
+                    text_frame = content_placeholder.text_frame
+                    text_frame.clear()
+
+                    for element in other_content:
+                        if element.name == 'p':
+                            if len(text_frame.paragraphs) == 1 and not text_frame.paragraphs[0].text:
+                                p = text_frame.paragraphs[0]
+                            else:
+                                p = text_frame.add_paragraph()
+                            p.text = self._get_text_content(element)
+                            if content_styles:
+                                self._apply_paragraph_styles(p, content_styles)
+
+                        elif element.name in ['ul', 'ol']:
+                            for li in element.find_all('li', recursive=False):
+                                p = text_frame.add_paragraph()
+                                p.text = self._get_text_content(li)
+                                p.level = 1
+                                if content_styles:
+                                    self._apply_paragraph_styles(p, content_styles)
+
+                        elif element.name == 'table':
+                            table_text = self._extract_table_text(element)
+                            p = text_frame.add_paragraph()
+                            p.text = table_text
+                            if content_styles:
+                                self._apply_paragraph_styles(p, content_styles)
+
+                        elif element.name == 'blockquote':
+                            p = text_frame.add_paragraph()
+                            p.text = f'"{self._get_text_content(element)}"'
+                            if content_styles:
+                                self._apply_paragraph_styles(p, content_styles)
+
+                except Exception as e:
+                    self.logger.error(f"Error adding text content to placeholder: {e}")
+                    # Fallback: Add text as a text box
+                    self._add_text_as_textbox(slide, other_content, content_styles)
+            else:
+                # No content placeholder found, add text as a text box
+                self.logger.info("No content placeholder found, adding text as textbox")
+                self._add_text_as_textbox(slide, other_content, content_styles)
+
+        # Handle images
+        if images and enable_images:
+            self._add_images_to_slide(
+                slide,
+                images,
+                image_width,
+                image_height,
+                max_image_size
+            )
+
+    def _download_image(self, img_url: str, timeout: int = 30) -> Optional[bytes]:
+        """Download image from URL."""
+        try:
+            self.logger.debug(f"Downloading image: {img_url}")
+
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+
+            response = requests.get(img_url, headers=headers, timeout=timeout, stream=True)
+            response.raise_for_status()
+
+            # Check content type
+            content_type = response.headers.get('content-type', '').lower()
+            if not any(img_type in content_type for img_type in ['image/', 'jpeg', 'jpg', 'png', 'gif', 'bmp']):
+                self.logger.warning(f"URL does not appear to be an image: {content_type}")
+
+            # Read image data
+            image_data = response.content
+
+            if len(image_data) == 0:
+                self.logger.error(f"Downloaded image is empty: {img_url}")
+                return None
+
+            self.logger.debug(f"Successfully downloaded image: {len(image_data)} bytes")
+            return image_data
+
+        except requests.exceptions.RequestException as e:
+            self.logger.error(f"Failed to download image {img_url}: {e}")
+            return None
+        except Exception as e:
+            self.logger.error(f"Unexpected error downloading image {img_url}: {e}")
+            return None
+
+    def _calculate_image_position(
+        self,
+        image_index: int,
+        total_images: int,
+        image_width: Optional[float],
+        image_height: Optional[float],
+        max_image_size: float
+    ) -> tuple:
+        """Calculate position and size for image on slide."""
+
+        # Default dimensions
+        slide_width = Inches(10)  # Standard slide width
+        slide_height = Inches(7.5)  # Standard slide height
+
+        # Calculate default size
+        if image_width and image_height:
+            width = Inches(image_width)
+            height = Inches(image_height)
+        else:
+            # Auto-size with max constraints
+            max_width = Inches(max_image_size)
+            max_height = Inches(max_image_size * 0.75)  # Maintain aspect ratio
+
+            # For multiple images, make them smaller
+            if total_images > 1:
+                max_width = Inches(max_image_size * 0.7)
+                max_height = Inches(max_image_size * 0.5)
+
+            width = max_width
+            height = max_height
+
+        # Calculate position
+        if total_images == 1:
+            # Center single image
+            left = (slide_width - width) / 2
+            top = Inches(2)  # Below title
+        else:
+            # Arrange multiple images
+            images_per_row = 2 if total_images <= 4 else 3
+            row = image_index // images_per_row
+            col = image_index % images_per_row
+
+            margin = Inches(0.5)
+            available_width = slide_width - (2 * margin)
+            available_height = slide_height - Inches(3)  # Account for title
+
+            img_width = (available_width - (images_per_row - 1) * Inches(0.2)) / images_per_row
+            img_height = min(height, available_height / ((total_images - 1) // images_per_row + 1))
+
+            left = margin + col * (img_width + Inches(0.2))
+            top = Inches(2) + row * (img_height + Inches(0.2))
+
+            width = img_width
+            height = img_height
+
+        return left, top, width, height
+
+    def _add_images_to_slide(
+        self,
+        slide,
+        images: List,
+        image_width: Optional[float],
+        image_height: Optional[float],
+        max_image_size: float
+    ) -> None:
+        """Add images to a PowerPoint slide."""
+
+        for i, img_element in enumerate(images):
+            try:
+                img_src = img_element.get('src')
+                img_alt = img_element.get('alt', f'Image {i+1}')
+
+                if not img_src:
+                    self.logger.warning(f"Image has no src attribute: {img_alt}")
+                    continue
+
+                # Download image
+                image_data = self._download_image(img_src)
+                if not image_data:
+                    self.logger.error(f"Failed to download image: {img_src}")
+                    continue
+
+                # Calculate position and size
+                left, top, width, height = self._calculate_image_position(
+                    i, len(images), image_width, image_height, max_image_size
+                )
+
+                # Add image to slide
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as tmp_file:
+                    tmp_file.write(image_data)
+                    tmp_file_path = tmp_file.name
+
+                try:
+                    picture = slide.shapes.add_picture(tmp_file_path, left, top, width, height)
+                    self.logger.debug(f"Added image to slide: {img_alt}")
+                finally:
+                    # Clean up temporary file
+                    Path(tmp_file_path).unlink(missing_ok=True)
+
+            except Exception as e:
+                self.logger.error(f"Error adding image '{img_alt}': {e}")
 
     def _extract_table_text(self, table_element) -> str:
         """Extract text from table element."""
@@ -408,14 +798,23 @@ class PowerPointTool(AbstractDocumentTool):
         return '\n'.join(table_lines)
 
     def _get_text_content(self, element) -> str:
-        """Extract clean text content from HTML element."""
+        """Extract clean text content from HTML element with preserved line breaks."""
         if isinstance(element, NavigableString):
             return str(element).strip()
 
-        # For HTML elements, get the text content
+        # For HTML elements, get the text content with line break preservation
         if hasattr(element, 'get_text'):
-            # BeautifulSoup's get_text() method extracts clean text without HTML tags
-            text = element.get_text(strip=True)
+            # Use separator to preserve line breaks between elements
+            text = element.get_text(separator='\n', strip=True)
+
+            # Clean up excessive newlines but preserve intentional line breaks
+            # Replace multiple consecutive newlines with single newlines
+            text = re.sub(r'\n{3,}', '\n\n', text)
+
+            # Handle specific markdown formatting that should have line breaks
+            # Convert patterns like "**Key:** value" to have proper line breaks
+            text = re.sub(r'(\*\*[^*]+\*\*[^*\n]*?)(\*\*[^*]+\*\*)', r'\1\n\2', text)
+
             return text
 
         # Fallback method for manual text extraction
@@ -426,11 +825,9 @@ class PowerPointTool(AbstractDocumentTool):
             else:
                 text_parts.append(self._get_text_content(content))
 
-        result = ''.join(text_parts).strip()
+        result = '\n'.join([part for part in text_parts if part.strip()])
 
         # Additional cleanup: remove any remaining markdown symbols
-        # This shouldn't be necessary if markdown conversion worked correctly,
-        # but it's a safety net
         result = re.sub(r'^#+\s*', '', result)  # Remove leading hashtags
         result = re.sub(r'\*\*([^*]+)\*\*', r'\1', result)  # Remove bold markers
         result = re.sub(r'\*([^*]+)\*', r'\1', result)  # Remove italic markers
@@ -558,11 +955,11 @@ class PowerPointTool(AbstractDocumentTool):
             template_name = kwargs.get('template_name')
             template_vars = kwargs.get('template_vars')
             pptx_template = kwargs.get('pptx_template')
-            slide_layout = kwargs.get('slide_layout', 1)
-            title_styles = kwargs.get('title_styles')
-            content_styles = kwargs.get('content_styles')
-            max_slides = kwargs.get('max_slides', 50)
-            split_by_headings = kwargs.get('split_by_headings', True)
+            slide_layout = kwargs.pop('slide_layout', 1)
+            title_styles = kwargs.pop('title_styles', None)
+            content_styles = kwargs.pop('content_styles', None)
+            max_slides = kwargs.pop('max_slides', 50)
+            split_by_headings = kwargs.pop('split_by_headings', True)
 
             # Process content through HTML template if provided
             processed_content = self._render_html_template(content, template_name, template_vars)
@@ -575,7 +972,10 @@ class PowerPointTool(AbstractDocumentTool):
 
             # Extract slides from HTML
             if split_by_headings:
-                slides_data = self._extract_slides_from_html(html_content, max_slides)
+                slides_data = self._extract_slides_from_html(
+                    html_content,
+                    max_slides
+                )
             else:
                 # Create single slide with all content
                 soup = BeautifulSoup(html_content, 'html.parser')
@@ -586,13 +986,30 @@ class PowerPointTool(AbstractDocumentTool):
                     'layout': 0
                 }]
 
-            self.logger.info(f"Generated {len(slides_data)} slides from content")
+            self.logger.info(
+                f"Generated {len(slides_data)} slides from content"
+            )
 
             # Create PowerPoint presentation
             prs = self._create_presentation(pptx_template)
 
             # Create slides
-            self._create_slides(prs, slides_data, slide_layout, title_styles, content_styles)
+            create_slides_kwargs = {
+                k: v for k, v in kwargs.items()
+                if k not in [
+                    'template_name', 'template_vars', 'pptx_template',
+                    'slide_layout', 'title_styles', 'content_styles',
+                    'max_slides', 'split_by_headings'
+                ]
+            }
+            self._create_slides(
+                prs=prs,
+                slides_data=slides_data,
+                slide_layout=slide_layout,
+                title_styles=title_styles,
+                content_styles=content_styles,
+                **create_slides_kwargs
+            )
 
             # Save presentation to bytes
             ppt_bytes = io.BytesIO()
