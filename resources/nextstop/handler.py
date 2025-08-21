@@ -585,7 +585,6 @@ where e.corporate_email = '{email!s}'
         response.employee_id = employee_id
         return await self._generate_report(response)
 
-
     async def _nextstop_manager(
         self,
         manager_id: str,
@@ -593,10 +592,12 @@ where e.corporate_email = '{email!s}'
         **kwargs
     ) -> NextStopResponse:
         """Generate a report for the NextStop agent."""
+        program_slug = kwargs.get('program_slug', 'hisense')  # fallback to hisense
         query = await self.open_prompt('employee_comparison.txt')
         question = query.format(
             manager_id=manager_id,
-            employee_id=employee_id
+            employee_id=employee_id,
+            program_slug=program_slug
         )
         try:
             # Invoke the agent with the formatted question
@@ -605,11 +606,10 @@ where e.corporate_email = '{email!s}'
             print(f"Error invoking agent: {e}")
             raise RuntimeError(
                 f"Failed to generate report due to an error in the agent invocation: {e}"
-            )
+            ) from e
         response.manager_id = manager_id
-        response.employee_id = employee_id
+        response.employee_id = manager_id
         return await self._generate_report(response)
-
 
     async def _team_performance(
         self,
@@ -618,10 +618,12 @@ where e.corporate_email = '{email!s}'
         **kwargs
     ) -> NextStopResponse:
         """Generate a report for the NextStop agent."""
+        program_slug = kwargs.get('program_slug', 'hisense')  # fallback to hisense
         query = await self.open_prompt('team_performance.txt')
         question = query.format(
             manager_id=manager_id,
-            project=project
+            project=project,
+            program_slug=program_slug
         )
         try:
             response, _ = await self.ask_agent(question)
@@ -629,11 +631,10 @@ where e.corporate_email = '{email!s}'
             print(f"Error invoking agent: {e}")
             raise RuntimeError(
                 f"Failed to generate report due to an error in the agent invocation: {e}"
-            )
+            ) from e
         response.manager_id = manager_id
         response.employee_id = manager_id
         return await self._generate_report(response)
-
 
     async def _query(self, query: str, **kwargs) -> NextStopResponse:
         """Generate a report for the NextStop agent."""

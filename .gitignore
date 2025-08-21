@@ -183,3 +183,26 @@ documents/*
 # start db
 start_milvus.sh
 model_cache/
+
+# Models:
+yolo*
+#   YOLOv8 and 9 models
+yolov8*
+yolov9*
+yolov11
+
+# Output Folder:
+output/*
+
+# Temporary files
+*.tmp
+
+# generated presentations:
+presentations/*
+meetings/*
+
+# compiled templates:
+templates/.compiled
+
+# uv's version file:
+parrot/_version.py

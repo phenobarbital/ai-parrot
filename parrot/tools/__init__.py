@@ -5,6 +5,7 @@ from .pythonrepl import PythonREPLTool
 from .abstract import AbstractTool
 from .math import MathTool
 from .toolkit import AbstractToolkit, ToolkitTool, tool_schema
+from .querytoolkit import QueryToolkit
 from .qsource import QuerySourceTool
 from .ddgo import DuckDuckGoToolkit
 
@@ -18,4 +19,5 @@ __all__ = (
     "ToolkitTool",
     "tool_schema",
     "DuckDuckGoToolkit",
+    "QueryToolkit",
 )

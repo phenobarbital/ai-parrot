@@ -1,8 +1,9 @@
 Employee ID: {employee_id}
 Manager ID: {manager_id}
+Program: {program_slug}
 
 **Available Tools:**
-- `get_employee_sales('{manager_id}')` - Returns structured sales data with rankings (List of EmployeeSales)
+- `get_manager_sales('{manager_id}')` - Returns structured sales data with rankings (List of EmployeeSales)
 - `get_visits_by_manager('{manager_id}')` - Returns structured visit performance data (List of VisitsByManager)
 - `get_by_employee_visits('{employee_id}')` - Returns the visit information.
 

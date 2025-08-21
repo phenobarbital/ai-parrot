@@ -22,6 +22,7 @@ cdef class ParrotError(Exception):
         return f"{self.message}"
 
     def get(self):
+        """Return the message of the exception."""
         return self.message
 
 

@@ -1,5 +1,5 @@
 import textwrap
-from typing import Dict, List, Tuple, Any
+from typing import Dict, List, Tuple, Any, Optional
 from datetime import datetime
 import aiofiles
 from navconfig import BASE_DIR
@@ -36,7 +36,8 @@ class BasicAgent(Chatbot):
     speech_context: str = ""
     speech_system_prompt: str = ""
     podcast_system_instruction: str = None
-    speech_length: int = 10  # Default length for the speech report
+    speech_length: int = 20  # Default length for the speech report
+    num_speakers: int = 1  # Default number of speakers for the podcast
     speakers: Dict[str, str] = {
         "interviewer": {
             "name": "Lydia",
@@ -51,6 +52,7 @@ class BasicAgent(Chatbot):
             "gender": "male"
         }
     }
+    report_template: str = "report_template.html"
 
     def __init__(
         self,
@@ -219,7 +221,13 @@ class BasicAgent(Chatbot):
             self.logger.error(f"Error saving transcript: {e}")
             raise RuntimeError(f"Failed to save transcript: {e}")
 
-    async def pdf_report(self, content: str, **kwargs) -> str:
+    async def pdf_report(
+        self,
+        content: str,
+        filename_prefix: str = 'report',
+        title: str = None,
+        **kwargs
+    ) -> str:
         """Generate a report based on the provided prompt."""
         # Create a unique filename for the report
         pdf_tool = PDFPrintTool(
@@ -228,13 +236,20 @@ class BasicAgent(Chatbot):
         )
         result = await pdf_tool.execute(
             text=content,
-            template_name="report_template.html",
-            file_prefix="nextstop_report",
+            template_vars={"title": title},
+            template_name=self.report_template,
+            file_prefix=filename_prefix,
         )
         return result
 
-    async def speech_report(self, report: str, max_lines: int = 15, num_speakers: int = 2, **kwargs) -> Dict[str, Any]:
-        """Generate a PDF Report and a Podcast based on findings."""
+    async def speech_report(
+        self,
+        report: str,
+        max_lines: int = 15,
+        num_speakers: int = 2,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """Generate a Transcript Report and a Podcast based on findings."""
         output_directory = STATIC_DIR.joinpath(self.agent_id, 'generated_scripts')
         output_directory.mkdir(parents=True, exist_ok=True)
         script_name = self._create_filename(prefix='script', extension='txt')
@@ -291,3 +306,122 @@ class BasicAgent(Chatbot):
                 'script_path': script_output_path,
                 'podcast_path': speech_result.files[0] if speech_result.files else None
             }
+
+    async def report(self, prompt_file: str, **kwargs) -> AgentResponse:
+        """Generate a report based on the provided prompt."""
+        query = await self.open_prompt(prompt_file)
+        question = query.format(
+            **kwargs
+        )
+        try:
+            response = await self.conversation(
+                question=question,
+                max_tokens=8192
+            )
+            if isinstance(response, Exception):
+                raise response
+        except Exception as e:
+            print(f"Error invoking agent: {e}")
+            raise RuntimeError(
+                f"Failed to generate report due to an error in the agent invocation: {e}"
+            )
+        # Prepare the response object:
+        final_report = response.output.strip()
+        for key, value in kwargs.items():
+            if hasattr(response, key):
+                setattr(response, key, value)
+        response = self._agent_response(
+            user_id=str(kwargs.get('user_id', 1)),
+            agent_name=self.name,
+            attributes=kwargs.pop('attributes', {}),
+            data=final_report,
+            status="success",
+            created_at=datetime.now(),
+            output=response.output,
+            **kwargs
+        )
+        return await self._generate_report(response)
+
+    async def _generate_report(self, response: AgentResponse) -> AgentResponse:
+        """Generate a report from the response data."""
+        final_report = response.output.strip()
+        # print(f"Final report generated: {final_report}")
+        if not final_report:
+            response.output = "No report generated."
+            response.status = "error"
+            return response
+        response.transcript = final_report
+        try:
+            _path = await self.save_transcript(
+                transcript=final_report,
+            )
+            response.document_path = str(_path)
+            response.documents.append(response.document_path)
+        except Exception as e:
+            self.logger.error(f"Error generating transcript: {e}")
+        # generate the PDF file:
+        try:
+            pdf_output = await self.pdf_report(
+                content=final_report
+            )
+            response.pdf_path = str(pdf_output.result.get('file_path', None))
+            response.documents.append(response.pdf_path)
+        except Exception as e:
+            self.logger.error(f"Error generating PDF: {e}")
+        # generate the podcast file:
+        try:
+            podcast_output = await self.speech_report(
+                report=final_report,
+                max_lines=self.speech_length,
+                num_speakers=self.num_speakers
+            )
+            response.podcast_path = str(podcast_output.get('podcast_path', None))
+            response.script_path = str(podcast_output.get('script_path', None))
+            response.documents.append(response.podcast_path)
+            response.documents.append(response.script_path)
+        except Exception as e:
+            self.logger.error(
+                f"Error generating podcast: {e}"
+            )
+        # Save the final report to the response
+        response.output = textwrap.fill(final_report, width=80)
+        response.status = "success"
+        return response
+
+    async def generate_presentation(
+        self,
+        content: str,
+        filename_prefix: str = 'report',
+        template_name: Optional[str] = None,
+        pptx_template: str = "corporate_template.pptx",
+        title: str = None,
+        **kwargs
+    ):
+        """Generate a PowerPoint presentation using the provided tool."""
+        tool = PowerPointTool(
+            templates_dir=BASE_DIR.joinpath('templates'),
+            output_dir=STATIC_DIR.joinpath(self.agent_id, 'documents')
+        )
+        result = await tool.execute(
+            content=content,
+            template_name=None,  # Explicitly disable HTML template
+            template_vars=None,  # No template variables
+            split_by_headings=True,  # Ensure heading-based splitting is enabled
+            pptx_template=pptx_template,
+            slide_layout=1,
+            title_styles={
+                "font_name": "Segoe UI",
+                "font_size": 24,
+                "bold": True,
+                "font_color": "#1f497d"
+            },
+            content_styles={
+                "font_name": "Segoe UI",
+                "font_size": 14,
+                "alignment": "left",
+                "font_color": "#333333"
+            },
+            max_slides=20,
+            file_prefix=filename_prefix,
+        )
+        return result
