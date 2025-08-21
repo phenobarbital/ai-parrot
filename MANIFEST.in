@@ -2,6 +2,7 @@ include LICENSE
 include README.md
 global-include *.typed
 recursive-include parrot *
+recursive-include parrot *.pyi
 # Exclude directories
 prune videos
 prune examples
