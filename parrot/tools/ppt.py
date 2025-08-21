@@ -372,8 +372,8 @@ class PowerPointTool(AbstractDocumentTool):
             )
         if len(prs.slides) > 0:
             # Remove the empty slide if it exists
-            slide_to_remove = prs.slides[0]
-            slide_id = slide_to_remove.slide_id
+            # slide_to_remove = prs.slides[0]
+            # slide_id = slide_to_remove.slide_id
             prs.part.drop_rel(prs.slides._sldIdLst[0].rId)
             del prs.slides._sldIdLst[0]
 
