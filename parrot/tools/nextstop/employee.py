@@ -492,11 +492,13 @@ class EmployeeToolkit(BaseNextStop):
     """
 
     @tool_schema(ManagerInput)
-    async def get_visits_by_manager(self, manager_id: str, **kwargs) -> List[VisitsByManager]:
+    async def get_visits_by_manager(self, manager_id: str, program: str, **kwargs) -> List[VisitsByManager]:
         """Get Employee Visits data for a specific Manager, requires the associated_oid of the manager.
         including total visits, average visit duration, and most frequent visit hours.
         Useful for analyzing employee performance and visit patterns.
         """
+        if program:
+            self.program = program
         sql = await self._get_query("visits_by_manager")
         sql = sql.format(manager_id=manager_id)
         try:
@@ -518,12 +520,15 @@ class EmployeeToolkit(BaseNextStop):
     async def get_manager_sales(
         self,
         manager_id: str,
+        program: str,
         **kwargs
     ) -> List[ManagerSales]:
         """Get Sales and goals for all employees related to a Manager.
         Returns a ranked list of employees based on their sales performance.
         Useful for understanding employee performance and sales distribution.
         """
+        if program:
+            self.program = program
         sql = await self._get_query("manager_sales")
         if not manager_id:
             manager_id = kwargs.get('email')
