@@ -1,0 +1,313 @@
+/* CSS for PowerPoint HTML Template - save as templates/css/powerpoint.css */
+
+/* Base styling optimized for PowerPoint conversion */
+body {
+    font-family: 'Segoe UI', 'Arial', sans-serif;
+    line-height: 1.5;
+    color: #333;
+    background-color: #ffffff;
+    margin: 0;
+    padding: 20px;
+}
+
+/* Slide-level styling */
+.slide-content {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+/* Headers optimized for slide titles */
+h1 {
+    font-size: 2.5em;
+    color: #2c3e50;
+    text-align: center;
+    margin: 0.5em 0 1em 0;
+    font-weight: 600;
+    border-bottom: 3px solid #3498db;
+    padding-bottom: 10px;
+}
+
+h2 {
+    font-size: 2em;
+    color: #34495e;
+    margin: 1.5em 0 0.8em 0;
+    font-weight: 600;
+    border-left: 4px solid #3498db;
+    padding-left: 15px;
+}
+
+h3 {
+    font-size: 1.5em;
+    color: #7f8c8d;
+    margin: 1.2em 0 0.6em 0;
+    font-weight: 500;
+}
+
+/* Product information styling */
+.product-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 30px;
+    border-radius: 12px;
+    text-align: center;
+    margin: 20px 0;
+    box-shadow: 0 8px 16px rgba(0,0,0,0.1);
+}
+
+.product-header h2 {
+    color: white;
+    border: none;
+    padding: 0;
+    margin: 0 0 10px 0;
+}
+
+/* Image styling for product photos */
+.product-image {
+    text-align: center;
+    margin: 30px 0;
+    padding: 20px;
+    background: #f8f9fa;
+    border-radius: 8px;
+}
+
+.product-image img {
+    max-width: 450px;
+    height: auto;
+    border-radius: 8px;
+    box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+    border: 2px solid #fff;
+}
+
+/* Information boxes for key data */
+.info-section {
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    padding: 20px;
+    margin: 20px 0;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.info-section h3 {
+    color: #2c3e50;
+    margin-top: 0;
+    border-bottom: 2px solid #3498db;
+    padding-bottom: 8px;
+}
+
+/* Pricing and rating display */
+.pricing-info {
+    display: inline-block;
+    background: #28a745;
+    color: white;
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-weight: bold;
+    font-size: 1.1em;
+}
+
+.rating-display {
+    display: inline-block;
+    background: #ffc107;
+    color: #333;
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-weight: bold;
+    margin-left: 10px;
+}
+
+/* List styling for specifications */
+ul {
+    margin: 15px 0;
+    padding-left: 0;
+    list-style: none;
+}
+
+ul li {
+    position: relative;
+    padding: 8px 0 8px 25px;
+    margin: 6px 0;
+    line-height: 1.4;
+}
+
+ul li:before {
+    content: "▶";
+    color: #3498db;
+    font-weight: bold;
+    position: absolute;
+    left: 0;
+    top: 8px;
+}
+
+/* Specifications grid */
+.specs-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 15px;
+    margin: 20px 0;
+}
+
+.spec-item {
+    background: #ffffff;
+    border: 1px solid #e9ecef;
+    border-radius: 6px;
+    padding: 12px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+/* Positive/Negative sections */
+.positive-section {
+    background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
+    border: 1px solid #c3e6cb;
+    border-radius: 8px;
+    padding: 20px;
+    margin: 20px 0;
+}
+
+.positive-section h3 {
+    color: #155724;
+    margin-top: 0;
+}
+
+.negative-section {
+    background: linear-gradient(135deg, #f8d7da 0%, #f5c6cb 100%);
+    border: 1px solid #f5c6cb;
+    border-radius: 8px;
+    padding: 20px;
+    margin: 20px 0;
+}
+
+.negative-section h3 {
+    color: #721c24;
+    margin-top: 0;
+}
+
+/* Complaint themes styling */
+.complaint-themes {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 15px;
+    margin: 20px 0;
+}
+
+.theme-box {
+    background: #fff3cd;
+    border: 1px solid #ffeaa7;
+    border-radius: 6px;
+    padding: 15px;
+    text-align: center;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.theme-box h4 {
+    margin: 0 0 8px 0;
+    color: #856404;
+    font-size: 1em;
+}
+
+/* Analysis summary box */
+.summary-box {
+    background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+    border: 1px solid #90caf9;
+    border-radius: 10px;
+    padding: 25px;
+    margin: 25px 0;
+    text-align: center;
+}
+
+.summary-box h3 {
+    color: #1565c0;
+    margin-top: 0;
+}
+
+/* Strong text emphasis */
+strong {
+    color: #2c3e50;
+    font-weight: 600;
+}
+
+/* Tables for structured data */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 20px 0;
+    background: white;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+th, td {
+    padding: 12px 15px;
+    text-align: left;
+    border-bottom: 1px solid #ddd;
+}
+
+th {
+    background: #f8f9fa;
+    font-weight: 600;
+    color: #2c3e50;
+}
+
+tr:nth-child(even) {
+    background: #f8f9fa;
+}
+
+/* Responsive adjustments */
+@media screen and (max-width: 768px) {
+    .specs-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .complaint-themes {
+        grid-template-columns: 1fr;
+    }
+
+    .product-image img {
+        max-width: 100%;
+    }
+}
+
+/* Print optimizations for PDF conversion */
+@media print {
+    body {
+        font-size: 12pt;
+        line-height: 1.4;
+    }
+
+    .slide-content {
+        page-break-inside: avoid;
+    }
+
+    h2 {
+        page-break-before: always;
+        page-break-after: avoid;
+    }
+
+    .product-image {
+        page-break-inside: avoid;
+    }
+}
+
+/* Utility classes */
+.text-center { text-align: center; }
+.text-left { text-align: left; }
+.text-right { text-align: right; }
+.mt-20 { margin-top: 20px; }
+.mb-20 { margin-bottom: 20px; }
+.p-20 { padding: 20px; }
+
+/* Color utilities */
+.text-primary { color: #3498db; }
+.text-success { color: #28a745; }
+.text-warning { color: #ffc107; }
+.text-danger { color: #dc3545; }
+.text-info { color: #17a2b8; }
+
+/* Background utilities */
+.bg-light { background-color: #f8f9fa; }
+.bg-primary { background-color: #3498db; color: white; }
+.bg-success { background-color: #28a745; color: white; }
+.bg-warning { background-color: #ffc107; color: #333; }
+.bg-danger { background-color: #dc3545; color: white; }
