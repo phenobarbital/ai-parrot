@@ -17,6 +17,7 @@ from jinja2 import Environment, FileSystemLoader
 from pydantic import Field, field_validator
 import markdown
 from bs4 import BeautifulSoup, NavigableString
+from navconfig import BASE_DIR
 from .document import (
     AbstractDocumentTool,
     DocumentGenerationArgs
@@ -35,7 +36,11 @@ class PowerPointArgs(DocumentGenerationArgs):
     )
     pptx_template: Optional[str] = Field(
         None,
-        description="Path to a PowerPoint template file (.pptx or .potx) to use as base"
+        description="Filename of PowerPoint template file (.pptx or .potx) to use as base"
+    )
+    pptx_template_path: Optional[Path] = Field(
+        None,
+        description="Path where the PowerPoint template file is located"
     )
     slide_layout: int = Field(
         1,
@@ -135,6 +140,7 @@ class PowerPointTool(AbstractDocumentTool):
         self,
         templates_dir: Optional[Path] = None,
         output_dir: Optional[Union[str, Path]] = None,
+        pptx_template_path: Optional[Path] = None,
         default_html_template: Optional[str] = None,
         **kwargs
     ):
@@ -154,6 +160,7 @@ class PowerPointTool(AbstractDocumentTool):
         super().__init__(templates_dir=templates_dir, **kwargs)
 
         self.default_html_template = default_html_template
+        self.pptx_template_path = pptx_template_path or BASE_DIR.joinpath('presentations')
 
         # Initialize Jinja2 environment for HTML templates
         if self.templates_dir:
@@ -964,6 +971,9 @@ class PowerPointTool(AbstractDocumentTool):
             # Process content through HTML template if provided
             processed_content = self._render_html_template(content, template_name, template_vars)
 
+            if pptx_template:
+                pptx_template = self.pptx_template_path.joinpath(pptx_template)
+
             # Preprocess markdown
             cleaned_content = self._preprocess_markdown(processed_content)
 
@@ -991,7 +1001,9 @@ class PowerPointTool(AbstractDocumentTool):
             )
 
             # Create PowerPoint presentation
-            prs = self._create_presentation(pptx_template)
+            prs = self._create_presentation(
+                pptx_template
+            )
 
             # Create slides
             create_slides_kwargs = {

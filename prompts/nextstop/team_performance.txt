@@ -1,8 +1,9 @@
 # Manager Report:
 - Manager ID: {manager_id}
+- Program: {program_slug}
 
 ## Tools to call (in this order)
-1.- get_employee_sales("{manager_id}") - Returns structured sales data with rankings (List of EmployeeSales)
+1.- get_manager_sales("{manager_id}") - Returns structured sales data with rankings (List of EmployeeSales)
 2.- get_visits_by_manager("{manager_id}") - Returns structured visit performance data (List of VisitsByManager)
 
 Wait for both results before writing the report.
