@@ -1,5 +1,8 @@
-from typing import List
+from typing import List, Optional, Any, Dict, List
 import asyncio
+from datetime import datetime
+from asyncdb import AsyncDB
+from asyncdb.models import Model, Field
 from querysource.conf import default_dsn
 from parrot.bots.agent import BasicAgent
 from parrot.models.responses import AIMessage, AgentResponse
@@ -8,6 +11,7 @@ from parrot.tools.epson import EpsonProductToolkit
 from parrot.tools.abstract import AbstractTool
 from parrot.tools.ppt import PowerPointTool
 from parrot.tools.pythonpandas import PythonPandasTool
+
 
 EPSON_PROMPT = """
 Your name is $name, an IA Copilot specialized in providing detailed information about Epson products.
@@ -30,6 +34,79 @@ Given the above context, available tools, and conversation history, please provi
 $rationale
 
 """
+
+EPSON_PRODUCTS = """
+SELECT COALESCE(NULLIF(p.material, ''), c.modelnumber) AS model from epson.products p
+JOIN epson.products_with_attr c ON p.material = c.modelnumber
+JOIN epson.customer_satisfaction cs USING (material)
+JOIN epson.products_evaluation pe  USING (material )
+JOIN epson.products_compliant pc USING (material)
+WHERE p.brand = 'Epson' and c.specifications is not null and cs.customer_satisfaction is not null
+GROUP BY p.material, c.modelnumber
+"""
+
+
+class EpsonResponse(Model):
+    """
+    EpsonResponse is a model that defines the structure of the response for Epson agents.
+    """
+    model: Optional[str] = Field(
+        default=None,
+        description="Model of the Epson product"
+    )
+    agent_id: Optional[str] = Field(
+        default=None,
+        description="Unique identifier for the agent that processed the request"
+    )
+    agent_name: Optional[str] = Field(
+        default="Agentic",
+        description="Name of the agent that processed the request"
+    )
+    status: str = Field(default="success", description="Status of the response")
+    data: Optional[str] = Field(
+        default=None,
+        description="Data returned by the agent, can be text, JSON, etc."
+    )
+    # Optional output field for structured data
+    output: Optional[Any] = Field(
+        default=None,
+        description="Output of the agent's processing"
+    )
+    attributes: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Attributes associated with the response"
+    )
+    # Timestamp
+    created_at: datetime = Field(
+        default_factory=datetime.now, description="Timestamp when response was created"
+    )
+    # Optional file paths
+    transcript: Optional[str] = Field(
+        default=None, description="Transcript of the conversation with the agent"
+    )
+    script_path: Optional[str] = Field(
+        default=None, description="Path to the conversational script associated with the session"
+    )
+    podcast_path: Optional[str] = Field(
+        default=None, description="Path to the podcast associated with the session"
+    )
+    pdf_path: Optional[str] = Field(
+        default=None, description="Path to the PDF associated with the session"
+    )
+    document_path: Optional[str] = Field(
+        default=None, description="Path to any document generated during session"
+    )
+    # complete list of generated files:
+    files: List[str] = Field(
+        default_factory=list, description="List of documents generated during the session")
+
+
+    class Meta:
+        """Meta class for EpsonResponse."""
+        name = "products_informations"
+        schema = "epson"
+        strict = True
+        frozen = False
 
 class EpsonConcierge(BasicAgent):
     """EpsonConcierge in Navigator.
@@ -124,36 +201,67 @@ async def create_report():
     """Create a report for the agent."""
     # This method can be implemented to generate a report based on the agent's interactions or data.
     agent = await get_agent()
-    async with agent:
-        message, response = await agent.generate_report(
-            prompt_file="product_info.txt",
-            save=True,
-            model="C11CJ29201"
-        )
-        final_output = response.output
-        pdf = await agent.pdf_report(
-            title='AI-Generated Express Training Report',
-            content=final_output,
-            filename_prefix='epson_report'
-        )
-        print(f"Report generated: {pdf}")
-        # Generate a PowerPoint presentation
-        ppt = await agent.generate_presentation(
-            content=final_output,
-            filename_prefix='epson_presentation',
-            pptx_template="template-epson.pptx",
-            title='Epson Product Report',
-            company='Epson',
-            presenter='AI Assistant'
-        )
-        print(f"PowerPoint presentation generated: {ppt}")
-        # -- Generate a podcast script
-        podcast = await agent.speech_report(
-            report=final_output,
-            num_speakers=1
-        )
-        print(f"Podcast generated: {podcast}")
+    # getting all products:
+    db = AsyncDB('pg', dsn=default_dsn)
+    async with await db.connection() as conn:
+        products, error = await conn.query(EPSON_PRODUCTS)
 
+        async with agent:
+            for product in products:
+                print(f"Product: {product['model']}")
+                model = product['model']
+
+                _, response = await agent.generate_report(
+                    prompt_file="product_info.txt",
+                    save=True,
+                    model=model
+                )
+                final_output = response.output
+                pdf = await agent.pdf_report(
+                    title='AI-Generated Express Training Report',
+                    content=final_output,
+                    filename_prefix='epson_report'
+                )
+                print(
+                    f"Report generated: {pdf}"
+                )
+                # Generate a PowerPoint presentation
+                ppt = await agent.generate_presentation(
+                    content=final_output,
+                    filename_prefix='epson_presentation',
+                    pptx_template="template-epson.pptx",
+                    title='Epson Product Report',
+                    company='Epson',
+                    presenter='AI Assistant'
+                )
+                print(f"PowerPoint presentation generated: {ppt}")
+                # -- Generate a podcast script
+                podcast = await agent.speech_report(
+                    report=final_output,
+                    num_speakers=1
+                )
+                # saving the values to response:
+                response.transcript = final_output
+                response.podcast_path = str(podcast.get('podcast_path'))
+                response.document_path = str(ppt.result.get('file_path'))
+                response.pdf_path = str(pdf.result.get('file_path'))
+                response.script_path = str(podcast.get('script_path'))
+                # Converting AgentResponse to Dict:
+                response_dict = response.model_dump()
+                del response_dict['session_id']
+                del response_dict['user_id']
+                del response_dict['turn_id']
+                del response_dict['images']
+                del response_dict['response']
+                try:
+                    EpsonResponse.Meta.connection = conn
+                    epson_response = EpsonResponse(**response_dict)
+                    epson_response.model = model
+                    print(epson_response)
+                    # saving to the database:
+                    await epson_response.save()
+                except Exception as e:
+                    print(f"Error saving EpsonResponse: {e}")
 
 
 if __name__ == "__main__":
