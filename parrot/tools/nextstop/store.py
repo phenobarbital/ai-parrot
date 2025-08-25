@@ -95,6 +95,10 @@ class FootTrafficInput(BaseModel):
 class VisitInfoInput(BaseModel):
     """Input schema for visit information queries."""
     store_id: str = Field(description="The unique identifier of the store")
+    program_slug: Optional[str] = Field(
+        default=None,
+        description="Program slug for the store (e.g., 'hisense', 'epson')"
+    )
     limit: int = Field(default=10, description="Maximum number of visits to retrieve")
     output_format: Literal["pandas", "structured"] = Field(
         default="structured",
@@ -104,6 +108,10 @@ class VisitInfoInput(BaseModel):
 class VisitQuestionInput(BaseModel):
     """Input schema for visit question queries."""
     store_id: str = Field(description="The unique identifier of the store")
+    program_slug: Optional[str] = Field(
+        default=None,
+        description="Program slug for the store (e.g., 'hisense', 'epson')"
+    )
     limit: int = Field(default=5, description="Maximum number of visits to retrieve")
 
 class StoreSearchInput(BaseModel):
@@ -204,9 +212,11 @@ class StoreInfo(BaseNextStop):
         Returns:
             List[VisitInfo]: List of visit information objects
         """
+
         sql = await self._get_query("store_visits")
         store_id = self._pad_storeid(store_id)
-        sql = sql.format(store_id=store_id, limit=limit)
+        sql = sql.format(store_id=store_id, program_slug=self.program, limit=limit)
+        print('STORE QUERY > ', sql)
         try:
             return await self._get_dataset(
                 sql,
@@ -224,7 +234,7 @@ class StoreInfo(BaseNextStop):
         store_id: str,
         limit: int = 3,
         output_format: str = "structured",
-        program: Optional[str] = None
+        program_slug: Optional[str] = None
     ) -> Union[pd.DataFrame, List[VisitInfo]]:
         """Get visit information for a specific store.
 
@@ -233,8 +243,8 @@ class StoreInfo(BaseNextStop):
         """
         try:
             # Ensure the program is set correctly
-            if program:
-                self.program = program
+            if program_slug:
+                self.program = program_slug
             visits = await self._get_visits(store_id, limit, output_format)
             if isinstance(visits, str):  # If an error message was returned
                 return visits
@@ -249,11 +259,14 @@ class StoreInfo(BaseNextStop):
     async def get_visit_questions(
         self,
         store_id: str,
+        program_slug: Optional[str] = None,
         limit: int = 3
     ) -> Dict[str, List[Dict[str, Any]]]:
         """
         Get visit information for a specific store, focusing on questions and answers.
         """
+        if program_slug:
+            self.program = program_slug
         visits = await self._get_visits(
             store_id,
             limit,

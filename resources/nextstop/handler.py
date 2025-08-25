@@ -515,7 +515,8 @@ where e.corporate_email = '{email!s}'
         # generate the PDF file:
         try:
             pdf_output = await agent.pdf_report(
-                content=final_report
+                content=final_report,
+                title="NextStop Report",
             )
             response.pdf_path = str(pdf_output.result.get('file_path', None))
             response.documents.append(response.pdf_path)
