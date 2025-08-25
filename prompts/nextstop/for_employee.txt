@@ -4,8 +4,8 @@ Employee ID: {employee_id}
 Program: {program_slug}
 
 Using data returned by:
-`get_by_employee_visits('{employee_id}')`
-`get_employee_sales('{employee_id}')`
+`get_by_employee_visits('{employee_id}', '{program_slug}')`
+`get_employee_sales('{employee_id}', '{program_slug}')`
 
 to generate a detailed, comprehensive employee visit performance report using the pre-calculated metrics.
 

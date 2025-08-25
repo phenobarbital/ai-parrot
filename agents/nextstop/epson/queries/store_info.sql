@@ -7,7 +7,7 @@ WITH last_visits AS (
 SELECT st.store_id, store_name, street_address, city, latitude, longitude, zipcode,
 state_code, market_name, region_name, account_name, vs.*
 FROM epson.stores st
-INNER JOIN (
+LEFT JOIN (
     SELECT
         store_id,
         avg(visit_length) as avg_visit_length,

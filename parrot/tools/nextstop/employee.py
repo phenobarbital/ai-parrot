@@ -128,18 +128,18 @@ class VisitsByManager(BaseModel):
     """Individual record for visits by manager data"""
     visitor_name: str = Field(..., description="Name of the visitor/manager")
     visitor_email: str = Field(..., description="Email address of the visitor")
-    assigned_stores: int = Field(..., description="Number of stores assigned to the manager")
-    total_visits: int = Field(..., description="Total number of visits made")
+    assigned_stores: Optional[int] = Field(default=0, description="Number of stores assigned to the manager")
+    total_visits: Optional[int] = Field(default=0, description="Total number of visits made")
     visited_stores: int = Field(..., description="Number of stores actually visited")
     visit_duration: float = Field(..., description="Total visit duration in minutes")
     average_visit_duration: Optional[float] = Field(..., description="Average visit duration in minutes")
     hour_of_visit: float = Field(..., description="Average hour of visit (24-hour format)")
     current_visits: int = Field(..., description="Number of visits in current month")
-    previous_week_visits: int = Field(..., description="Number of visits in previous week")
-    previous_month_visits: int = Field(..., description="Number of visits in previous month's week")
-    most_frequent_day_of_week: int = Field(..., description="Most frequent day of week (0=Monday, 6=Sunday)")
-    most_frequent_store: str = Field(..., description="Most frequently visited store")
-    most_frequent_store_visits: int = Field(..., description="Number of visits to the most frequent store")
+    previous_week_visits: Optional[int] = Field(default=0, description="Number of visits in previous week")
+    previous_month_visits: Optional[int] = Field(default=0, description="Number of visits in previous month's week")
+    most_frequent_day_of_week: int = Field(default=None, description="Most frequent day of week (0=Monday, 6=Sunday)")
+    most_frequent_store: str = Field(default=None, description="Most frequently visited store")
+    most_frequent_store_visits: Optional[float] = Field(default=None, description="Number of visits to the most frequent store")
     visit_ratio: str = Field(..., description="Ratio of visited stores to assigned stores")
     day_of_week: str = Field(..., description="Most frequent day name")
     ranking_visits: int = Field(..., description="Current ranking by visits")
@@ -492,7 +492,12 @@ class EmployeeToolkit(BaseNextStop):
     """
 
     @tool_schema(ManagerInput)
-    async def get_visits_by_manager(self, manager_id: str, program: str, **kwargs) -> List[VisitsByManager]:
+    async def get_visits_by_manager(
+        self,
+        manager_id: str,
+        program: str,
+        **kwargs
+    ) -> List[VisitsByManager]:
         """Get Employee Visits data for a specific Manager, requires the associated_oid of the manager.
         including total visits, average visit duration, and most frequent visit hours.
         Useful for analyzing employee performance and visit patterns.

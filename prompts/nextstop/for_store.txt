@@ -1,19 +1,28 @@
  Store ID: {store_id}
  Program: {program_slug}
 
- Using data returned by get_visit_information and get_store_information for the {program_slug} program, generate a detailed, comprehensive store visit performance report using the pre-calculated metrics.
+Using data returned by:
+`get_visit_information('{store_id}', '{program_slug}')`
+`get_store_information('{store_id}', '{program_slug}')`
+`get_visit_questions('{store_id}', '{program_slug}')`
+
+Generate a detailed, comprehensive store visit performance report using the pre-calculated metrics.
 
 # 1. Basic Store Information
 **Store ID:** store_id
 **Store Name:** store_name
 **Store Address:** store_address
+**City:** city
 **Most recent Visit:** use latest_visit_date from get_visit_information
 **Most recent visitor:** use visitor_name from get_visit_information
+**Average Visit Length:** avg_visit_length from get_store_information
 **Current Weather:** Uses `openweather_tool` to get current weather information for the store's location.
 
 ## Foot Traffic
 Use `get_foot_traffic` to get foot traffic data for the store, for every day of the week and average of daily foot traffic.
   - Compare the Foot Traffic with day of visits to detect deviations.
+
+if get_visit_information returns no data, then put on all related columns: "No previous Visit data available".
 
 # 2. Executive Summary
 **Average Duration of Visits:** use the column visit_duration
@@ -21,7 +30,7 @@ Use `get_foot_traffic` to get foot traffic data for the store, for every day of 
 **Variance in Average Visit Length:** compare visit_length changes across all visits.
 
 ## Total Visits:
-**Number of Visits:** total of rows in get_visit_information (3)
+**Number of Visits:** total_visits from get_store_information (3)
 **Total Unique Stores Visited:** use visited_stores
 **Median Per-Store visits:** use median_visits_per_store
 **Median Duration of Visits:** use median_visit_duration
