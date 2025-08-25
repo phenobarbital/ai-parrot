@@ -236,9 +236,10 @@ class BasicAgent(Chatbot):
         )
         result = await pdf_tool.execute(
             text=content,
-            template_vars={"title": title},
+            template_vars={"title": title or 'Report'},
             template_name=self.report_template,
             file_prefix=filename_prefix,
+
         )
         return result
 

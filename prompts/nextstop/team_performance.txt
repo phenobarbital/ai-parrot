@@ -27,7 +27,7 @@ Wait for both results before writing the report.
 # 1. Executive Summary
 
 ## Manager Name
-### {project}, ({manager_id})
+### {program_slug}, ({manager_id})
 
 ## Sales Ranking
 - Rank all employees by total_sales descending.
