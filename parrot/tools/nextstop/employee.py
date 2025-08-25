@@ -492,7 +492,12 @@ class EmployeeToolkit(BaseNextStop):
     """
 
     @tool_schema(ManagerInput)
-    async def get_visits_by_manager(self, manager_id: str, program: str, **kwargs) -> List[VisitsByManager]:
+    async def get_visits_by_manager(
+        self,
+        manager_id: str,
+        program: str,
+        **kwargs
+    ) -> List[VisitsByManager]:
         """Get Employee Visits data for a specific Manager, requires the associated_oid of the manager.
         including total visits, average visit duration, and most frequent visit hours.
         Useful for analyzing employee performance and visit patterns.
