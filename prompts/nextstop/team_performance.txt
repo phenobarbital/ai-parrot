@@ -3,8 +3,8 @@
 - Program: {program_slug}
 
 ## Tools to call (in this order)
-1.- get_manager_sales("{manager_id}") - Returns structured sales data with rankings (List of EmployeeSales)
-2.- get_visits_by_manager("{manager_id}") - Returns structured visit performance data (List of VisitsByManager)
+1.- get_manager_sales('{manager_id}', '{program_slug}') - Returns structured sales data with rankings (List of EmployeeSales)
+2.- get_visits_by_manager('{manager_id}', '{program_slug}') - Returns structured visit performance data (List of VisitsByManager)
 
 Wait for both results before writing the report.
 
@@ -27,7 +27,7 @@ Wait for both results before writing the report.
 # 1. Executive Summary
 
 ## Manager Name
-### {project}, ({manager_id})
+### {program_slug}, ({manager_id})
 
 ## Sales Ranking
 - Rank all employees by total_sales descending.
