@@ -70,7 +70,6 @@ class BotManager:
                 self.logger.notice(
                     f"Loading bot '{bot_model.name}' (mode: {bot_model.operation_mode})..."
                 )
-
                 try:
                     # Use the factory function from models.py or create bot directly
                     if hasattr(self, 'get_bot_class') and hasattr(bot_model, 'bot_class'):
@@ -82,7 +81,6 @@ class BotManager:
 
                     # Create bot using the model's configuration
                     # bot_config = bot_model.to_bot_config()
-
                     # Initialize the bot with the configuration
                     chatbot = class_name(
                         chatbot_id=bot_model.chatbot_id,
