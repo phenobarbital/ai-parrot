@@ -36,7 +36,7 @@ Display if possible as an inline image.
 **Top 5 Positive Aspects:**
 **Frequent Positive Words:**
 
-## 5. Compliants
+## 5. Complaints
     * extract from 'product_compliant'
 **Summary:** use 'Product Summary' from 'product_compliant'
 **Overall Complaint Sentiment:**

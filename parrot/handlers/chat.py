@@ -68,11 +68,13 @@ class ChatHandler(BaseView):
                 },
                 status=400
             )
-        if 'use_llm' in qs:
+        if 'llm' in qs:
             # passing another LLM to the Chatbot:
-            llm = qs.get('use_llm')
+            llm = data.pop('llm')
+            model = data.pop('model', None)
         else:
             llm = None
+            model = None
         try:
             manager = app['bot_manager']
         except KeyError:
@@ -97,6 +99,7 @@ class ChatHandler(BaseView):
             )
         # getting the question:
         question = data.pop('query')
+        search_type = data.pop('search_type', 'similarity')
         try:
             session = self.request.session
         except AttributeError:
@@ -118,8 +121,9 @@ class ChatHandler(BaseView):
                     question=question,
                     session_id=session_id,
                     user_id=user_id,
-                    search_type='ensemble',
+                    search_type=search_type,
                     llm=llm,
+                    model=model,
                     **data
                 )
                 return self.json_response(

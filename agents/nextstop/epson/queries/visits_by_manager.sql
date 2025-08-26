@@ -62,7 +62,7 @@ WITH employee_info AS (
       SELECT
       f2.store_id,
       COUNT(*) AS visits_cnt
-      FROM hisense.form_information f2
+      FROM epson.form_information f2
       WHERE f2.visitor_email = e.visitor_email
       AND f2.visit_date >= e.week_prev_month_start
       GROUP BY f2.store_id
