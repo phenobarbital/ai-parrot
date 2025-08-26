@@ -1,4 +1,4 @@
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Literal, Any
 from pydantic import BaseModel, Field
 
 class DetectionBox(BaseModel):
@@ -37,66 +37,350 @@ class IdentifiedProduct(BaseModel):
     position_on_shelf: str = Field(description="Position on shelf")
     detection_id: Optional[int] = Field(None, description="Detection ID from annotated image")
 
+# Enhanced models for pipeline planogram description
+class BrandDetectionConfig(BaseModel):
+    """Configuration for brand detection parameters"""
+    enabled: bool = Field(default=True, description="Enable brand detection")
+    target_brands: List[str] = Field(default_factory=list, description="List of brands to detect")
+    confidence_threshold: float = Field(default=0.7, description="Minimum confidence for brand detection")
+    ocr_enabled: bool = Field(default=True, description="Use OCR for brand text detection")
+    case_sensitive: bool = Field(default=False, description="Case-sensitive brand matching")
 
-# Enhanced models for text-aware compliance
+class CategoryDetectionConfig(BaseModel):
+    """Configuration for product category detection"""
+    enabled: bool = Field(default=True, description="Enable category detection")
+    target_categories: List[str] = Field(default_factory=list, description="Categories to detect (printers, boxes, etc.)")
+    size_based_classification: bool = Field(default=True, description="Use size for category classification")
+    visual_features_weight: float = Field(default=0.6, description="Weight of visual features in classification")
+    confidence_threshold: float = Field(default=0.6, description="Minimum confidence for category detection")
+
+class ShelfProduct(BaseModel):
+    """Configuration for products expected on a shelf"""
+    name: str = Field(description="Product name/model")
+    product_type: str = Field(description="Type: printer, product_box, promotional_graphic, etc.")
+    quantity_range: tuple[int, int] = Field(default=(1, 1), description="Min and max quantity expected")
+    position_preference: Optional[Literal["left", "center", "right"]] = Field(default=None, description="Preferred position on shelf")
+    mandatory: bool = Field(default=True, description="Whether this product is required")
+
+class ShelfConfig(BaseModel):
+    """Configuration for a single shelf"""
+    level: str = Field(description="Shelf level: header, top, middle, bottom")
+    products: List[ShelfProduct] = Field(description="Expected products on this shelf")
+    compliance_threshold: float = Field(default=0.8, description="Compliance threshold for this shelf")
+    allow_extra_products: bool = Field(default=False, description="Allow products not in the specification")
+    position_strict: bool = Field(default=False, description="Enforce strict positioning")
+
 class TextRequirement(BaseModel):
-    """Text requirement for promotional graphics"""
-    required_text: str = Field(description="Required text that must be present")
-    match_type: str = Field(
-        default="contains",
-        description="Type of matching: 'exact', 'contains', 'regex', 'fuzzy'"
-    )
-    case_sensitive: bool = Field(default=False, description="Whether matching is case sensitive")
-    confidence_threshold: float = Field(default=0.8, description="Minimum confidence for fuzzy matching")
+    """Text requirement for promotional materials"""
+    required_text: str = Field(description="Text that must be present")
+    match_type: Literal["exact", "contains", "regex"] = Field(default="contains", description="Type of text matching")
+    case_sensitive: bool = Field(default=False, description="Case-sensitive matching")
+    confidence_threshold: float = Field(default=0.7, description="OCR confidence threshold")
+    mandatory: bool = Field(default=True, description="Whether this text is required")
 
-class PromotionalRequirement(BaseModel):
-    """Requirements for promotional graphics including text"""
-    product_type: str = Field(default="promotional_graphic")
-    brand: Optional[str] = Field(None, description="Expected brand (e.g., 'Epson')")
-    advertisement_type: Optional[str] = Field(None, description="Expected ad type")
-    required_texts: List[TextRequirement] = Field(
-        default_factory=list,
-        description="List of required text elements"
+
+class AdvertisementEndcap(BaseModel):
+    """Configuration for advertisement endcap"""
+    enabled: bool = Field(default=False, description="Whether endcap advertisement is present")
+    promotional_type: Literal["backlit_graphic", "endcap_poster", "shelf_talker", "banner", "digital_display"] = Field(
+        default="backlit_graphic", description="Type of promotional display"
     )
-    allow_additional_text: bool = Field(
-        default=True,
-        description="Whether additional text beyond requirements is allowed"
-    )
+    position: Literal["header", "top", "middle", "bottom", "side"] = Field(default="header", description="Position of endcap")
+    brand_requirements: List[str] = Field(default_factory=list, description="Required brand elements")
+    text_requirements: List[TextRequirement] = Field(default_factory=list, description="Required text elements")
+    reference_image_path: Optional[str] = Field(default=None, description="Path to reference image for comparison")
+    allow_additional_text: bool = Field(default=True, description="Allow additional text beyond requirements")
+    size_constraints: Optional[Dict[str, float]] = Field(default=None, description="Size constraints for the advertisement")
+
+
+class AisleConfig(BaseModel):
+    """Configuration for aisle-specific settings"""
+    name: str = Field(description="Aisle name (electronics, furniture, etc.)")
+    category_hints: List[str] = Field(default_factory=list, description="Product category hints for this aisle")
+    lighting_conditions: Literal["bright", "normal", "dim"] = Field(default="normal", description="Expected lighting")
+    shelf_spacing: Optional[float] = Field(default=None, description="Expected spacing between shelves")
+
 
 class PlanogramDescription(BaseModel):
-    """Expected planogram layout
-
-    Example structure:
-    {
-        "top": ["ET-2980 demo", "ET-3950 demo", "ET-4950 demo"],
-        "middle": ["fact_tag_2980", "fact_tag_3950", "fact_tag_4950"],
-        "bottom": ["ET-2980 box", "ET-3950 box", "ET-4950 box"],
-        "header": ["backlit_graphic"]
-    }
     """
-    shelves: Dict[str, List[str]] = Field(description="Expected products per shelf level")
-    brand: Optional[str] = Field(
-        description="Brand name for compliance checks (e.g., 'Epson')",
-        default=None
+    Comprehensive, configurable planogram description
+    """
+    # Basic identification
+    brand: str = Field(description="Primary brand for this planogram")
+    category: str = Field(description="Product category")
+    aisle: AisleConfig = Field(description="Aisle configuration")
+
+    # Detection configuration
+    brand_detection: BrandDetectionConfig = Field(default_factory=BrandDetectionConfig, description="Brand detection settings")
+    category_detection: CategoryDetectionConfig = Field(default_factory=CategoryDetectionConfig, description="Category detection settings")
+
+    # Shelf layout
+    shelves: List[ShelfConfig] = Field(description="Configuration for each shelf level")
+
+    # Advertisement configuration
+    advertisement_endcap: Optional[AdvertisementEndcap] = Field(default=None, description="Advertisement endcap configuration")
+
+    # Global compliance settings
+    global_compliance_threshold: float = Field(default=0.8, description="Default compliance threshold")
+    weighted_scoring: Dict[str, float] = Field(
+        default_factory=lambda: {"product_compliance": 0.7, "text_compliance": 0.3},
+        description="Weights for different compliance aspects"
     )
-    category: Optional[str] = Field(
-        description="Product category (e.g., 'Printers')",
-        default=None
-    )
-    aisle: Optional[str] = Field(
-        description="Aisle location in the store",
-        default=None
-    )
-    promotional_requirements: Dict[str, List[PromotionalRequirement]] = Field(
-        default_factory=dict,
-        description="Text requirements for promotional graphics per shelf"
-    )
-    compliance_thresholds: Dict[str, float] = Field(
-        description="Custom compliance thresholds per shelf",
-        default_factory=lambda: {
-            "header": 0.9,
-            "top": 0.8,
-            "middle": 0.8,
-            "bottom": 0.8
+
+    # Additional metadata
+    planogram_id: Optional[str] = Field(default=None, description="Unique identifier for this planogram")
+    created_date: Optional[str] = Field(default=None, description="Creation date")
+    version: str = Field(default="1.0", description="Planogram version")
+    notes: Optional[str] = Field(default=None, description="Additional notes or instructions")
+
+
+class PlanogramDescriptionFactory:
+    """Factory class for creating PlanogramDescription objects from dictionaries"""
+
+    @staticmethod
+    def create_planogram_description(config_dict: Dict[str, Any]) -> PlanogramDescription:
+        """
+        Create a PlanogramDescription object from a dictionary configuration.
+
+        Args:
+            config_dict: Dictionary containing all planogram configuration
+
+        Returns:
+            PlanogramDescription object ready for compliance checking
+
+        Example config_dict structure:
+        {
+            "brand": "Epson",
+            "category": "Printers",
+            "aisle": {
+                "name": "Electronics",
+                "category_hints": ["printers", "ink", "paper"],
+                "lighting_conditions": "normal"
+            },
+            "brand_detection": {
+                "enabled": True,
+                "target_brands": ["Epson", "Canon", "HP"],
+                "confidence_threshold": 0.8
+            },
+            "category_detection": {
+                "enabled": True,
+                "target_categories": ["printer", "product_box", "promotional_graphic"],
+                "confidence_threshold": 0.7
+            },
+            "shelves": [
+                {
+                    "level": "header",
+                    "products": [
+                        {
+                            "name": "Epson EcoTank Advertisement",
+                            "product_type": "promotional_graphic",
+                            "mandatory": True
+                        }
+                    ],
+                    "compliance_threshold": 0.9
+                },
+                {
+                    "level": "top",
+                    "products": [
+                        {
+                            "name": "ET-2980",
+                            "product_type": "printer",
+                            "quantity_range": [1, 2],
+                            "position_preference": "left"
+                        },
+                        {
+                            "name": "ET-3950",
+                            "product_type": "printer",
+                            "quantity_range": [1, 1],
+                            "position_preference": "center"
+                        }
+                    ],
+                    "compliance_threshold": 0.8
+                }
+            ],
+            "advertisement_endcap": {
+                "enabled": True,
+                "promotional_type": "backlit_graphic",
+                "position": "header",
+                "brand_requirements": ["Epson"],
+                "text_requirements": [
+                    {
+                        "required_text": "Goodbye Cartridges",
+                        "match_type": "contains",
+                        "mandatory": True
+                    },
+                    {
+                        "required_text": "Hello Savings",
+                        "match_type": "contains",
+                        "mandatory": True
+                    }
+                ]
+            }
         }
-    )
+        """
+
+        # Process aisle configuration
+        aisle_data = config_dict.get("aisle", {})
+        if isinstance(aisle_data, str):
+            # Simple string aisle name
+            aisle_config = AisleConfig(name=aisle_data)
+        else:
+            # Full aisle configuration
+            aisle_config = AisleConfig(**aisle_data)
+
+        # Process brand detection configuration
+        brand_detection_data = config_dict.get("brand_detection", {})
+        brand_detection_config = BrandDetectionConfig(**brand_detection_data)
+
+        # Process category detection configuration
+        category_detection_data = config_dict.get("category_detection", {})
+        category_detection_config = CategoryDetectionConfig(**category_detection_data)
+
+        # Process shelves configuration
+        shelves_data = config_dict.get("shelves", [])
+        shelf_configs = []
+
+        for shelf_data in shelves_data:
+            # Process products for this shelf
+            products_data = shelf_data.get("products", [])
+            shelf_products = []
+
+            for product_data in products_data:
+                shelf_product = ShelfProduct(**product_data)
+                shelf_products.append(shelf_product)
+
+            # Create shelf config
+            shelf_config = ShelfConfig(
+                level=shelf_data["level"],
+                products=shelf_products,
+                compliance_threshold=shelf_data.get("compliance_threshold", 0.8),
+                allow_extra_products=shelf_data.get("allow_extra_products", False),
+                position_strict=shelf_data.get("position_strict", False)
+            )
+            shelf_configs.append(shelf_config)
+
+        # Process advertisement endcap configuration
+        advertisement_endcap = None
+        endcap_data = config_dict.get("advertisement_endcap")
+        if endcap_data:
+            # Process text requirements
+            text_requirements = []
+            for text_req_data in endcap_data.get("text_requirements", []):
+                text_req = TextRequirement(**text_req_data)
+                text_requirements.append(text_req)
+
+            # Update endcap data with processed text requirements
+            endcap_data = endcap_data.copy()
+            endcap_data["text_requirements"] = text_requirements
+
+            advertisement_endcap = AdvertisementEndcap(**endcap_data)
+
+        # Create the main PlanogramDescription object
+        planogram_description = PlanogramDescription(
+            brand=config_dict["brand"],
+            category=config_dict["category"],
+            aisle=aisle_config,
+            brand_detection=brand_detection_config,
+            category_detection=category_detection_config,
+            shelves=shelf_configs,
+            advertisement_endcap=advertisement_endcap,
+            global_compliance_threshold=config_dict.get("global_compliance_threshold", 0.8),
+            weighted_scoring=config_dict.get("weighted_scoring", {"product_compliance": 0.7, "text_compliance": 0.3}),
+            planogram_id=config_dict.get("planogram_id"),
+            created_date=config_dict.get("created_date"),
+            version=config_dict.get("version", "1.0"),
+            notes=config_dict.get("notes")
+        )
+
+        return planogram_description
+
+class PlanogramConfigBuilder:
+    """Builder class for easier construction of planogram configurations"""
+
+    def __init__(self):
+        self.config = {
+            "brand": "",
+            "category": "",
+            "aisle": {},
+            "shelves": [],
+            "global_compliance_threshold": 0.8
+        }
+
+    def set_basic_info(self, brand: str, category: str, aisle: str) -> "PlanogramConfigBuilder":
+        """Set basic planogram information"""
+        self.config["brand"] = brand
+        self.config["category"] = category
+        self.config["aisle"] = {"name": aisle}
+        return self
+
+    def add_shelf(
+        self,
+        level: str,
+        products: List[Dict[str, Any]],
+        compliance_threshold: float = 0.8
+    ) -> "PlanogramConfigBuilder":
+        """Add a shelf configuration"""
+        shelf_config = {
+            "level": level,
+            "products": products,
+            "compliance_threshold": compliance_threshold
+        }
+        self.config["shelves"].append(shelf_config)
+        return self
+
+    def add_product_to_shelf(
+        self,
+        shelf_level: str,
+        name: str,
+        product_type: str,
+        quantity_range: tuple = (1, 1),
+        mandatory: bool = True
+    ) -> "PlanogramConfigBuilder":
+        """Add a product to an existing shelf"""
+        # Find the shelf
+        for shelf in self.config["shelves"]:
+            if shelf["level"] == shelf_level:
+                product = {
+                    "name": name,
+                    "product_type": product_type,
+                    "quantity_range": quantity_range,
+                    "mandatory": mandatory
+                }
+                shelf["products"].append(product)
+                break
+        return self
+
+    def set_advertisement_endcap(
+        self,
+        promotional_type: str,
+        position: str = "header",
+        brand_requirements: List[str] = None,
+        text_requirements: List[Dict[str, Any]] = None
+    ) -> "PlanogramConfigBuilder":
+        """Configure advertisement endcap"""
+        endcap_config = {
+            "enabled": True,
+            "promotional_type": promotional_type,
+            "position": position,
+            "brand_requirements": brand_requirements or [],
+            "text_requirements": text_requirements or []
+        }
+        self.config["advertisement_endcap"] = endcap_config
+        return self
+
+    def set_brand_detection(
+        self,
+        target_brands: List[str],
+        confidence_threshold: float = 0.7
+    ) -> "PlanogramConfigBuilder":
+        """Configure brand detection"""
+        self.config["brand_detection"] = {
+            "enabled": True,
+            "target_brands": target_brands,
+            "confidence_threshold": confidence_threshold
+        }
+        return self
+
+    def build(self) -> Dict[str, Any]:
+        """Build the final configuration dictionary"""
+        return self.config

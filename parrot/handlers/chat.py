@@ -100,6 +100,7 @@ class ChatHandler(BaseView):
         # getting the question:
         question = data.pop('query')
         search_type = data.pop('search_type', 'similarity')
+        return_sources = data.pop('return_sources', True)
         try:
             session = self.request.session
         except AttributeError:
@@ -124,6 +125,7 @@ class ChatHandler(BaseView):
                     search_type=search_type,
                     llm=llm,
                     model=model,
+                    return_sources=return_sources,
                     **data
                 )
                 return self.json_response(
