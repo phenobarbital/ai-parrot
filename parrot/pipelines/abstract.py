@@ -7,6 +7,7 @@ from ..clients import SUPPORTED_CLIENTS
 
 
 class AbstractPipeline(ABC):
+    """Abstract base class for all pipelines."""
     def __init__(
         self,
         llm: Any = None,

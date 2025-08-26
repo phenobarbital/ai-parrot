@@ -3,16 +3,36 @@ from navconfig import BASE_DIR
 from parrot.pipelines.planogram import PlanogramCompliancePipeline
 from parrot.models.detections import PlanogramConfigBuilder
 from parrot.clients.gpt import OpenAIClient, OpenAIModel
-from parrot.clients.claude import (
-    ClaudeClient,
-    ClaudeModel
-)
+
 
 async def main():
     """Example usage of the 3-step pipeline"""
     llm = OpenAIClient(model=OpenAIModel.GPT_4_1_MINI)
-    # llm = ClaudeClient(model=ClaudeModel.SONNET_4)  # Uncomment to use Claude
 
+    builder = (PlanogramConfigBuilder()
+    .set_basic_info("Pokemon", "TCG Vending", "Vending Unit")
+    .set_brand_detection(target_brands=["Pokemon", "Pokémon"], confidence_threshold=0.65)
+    )
+    # Define shelves with slot-by-slot expectations (left→right)
+    shelf_specs = {
+        "s1": ["elite_trainer_box","booster_pack","booster_pack","booster_pack","booster_pack","booster_pack","booster_pack","booster_pack"],
+        "s2": ["elite_trainer_box","EMPTY","EMPTY","booster_pack","booster_pack","booster_pack","booster_pack","booster_pack"],
+        "s3": ["booster_display","EMPTY","EMPTY","EMPTY","booster_pack","booster_pack","booster_pack","booster_pack"],
+        "s4": ["booster_pack","booster_pack","booster_pack","booster_pack","booster_pack","booster_pack","booster_pack","booster_pack"],
+        "s5": ["mini_tin","mini_tin","booster_pack","booster_pack","booster_pack","booster_pack","booster_pack","booster_pack"],
+        "s6": ["booster_pack","EMPTY","EMPTY","EMPTY","EMPTY","EMPTY","EMPTY","EMPTY"],
+    }
+    for level, slots in shelf_specs.items():
+        builder.add_shelf(
+            level=level,
+            products=[  # repeat products to represent chutes in order
+                {"name": p, "product_type": p if p!="EMPTY" else "empty_slot", "quantity_range": (0,1), "mandatory": (p!="EMPTY")}
+                for p in slots
+            ],
+            compliance_threshold=0.8  # shelf pass bar
+        )
+
+    vending_cfg = builder.build()
     # Initialize pipeline
     pipeline = PlanogramCompliancePipeline(
         llm=llm,

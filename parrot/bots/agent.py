@@ -248,6 +248,7 @@ class BasicAgent(Chatbot):
         report: str,
         max_lines: int = 15,
         num_speakers: int = 2,
+        podcast_instructions: Optional[str] = 'for_podcast.txt',
         **kwargs
     ) -> Dict[str, Any]:
         """Generate a Transcript Report and a Podcast based on findings."""
@@ -267,7 +268,7 @@ class BasicAgent(Chatbot):
 
         # 1. Define the script configuration
         podcast_instruction = await self.open_prompt(
-            'for_podcast.txt'
+            podcast_instructions or 'for_podcast.txt'
         )
         podcast_instruction.format(
             report_text=report,
