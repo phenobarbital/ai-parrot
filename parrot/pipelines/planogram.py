@@ -5,6 +5,8 @@ Step 2: LLM Object Identification with Reference Images
 Step 3: Planogram Comparison and Compliance Verification
 """
 from typing import List, Dict, Any, Optional, Union, Tuple
+from collections import defaultdict
+import itertools
 import re
 import traceback
 from pathlib import Path
@@ -20,8 +22,7 @@ from ..models.detections import (
     ShelfRegion,
     IdentifiedProduct,
     PlanogramDescription,
-    TextRequirement,
-    PromotionalRequirement,
+    PlanogramDescriptionFactory,
 )
 from ..models.compliance import (
     ComplianceResult,
@@ -29,6 +30,95 @@ from ..models.compliance import (
     TextComplianceResult,
     TextMatcher,
 )
+
+def _iou(a, b):
+    ax1, ay1, ax2, ay2 = a
+    bx1, by1, bx2, by2 = b
+    ix1, iy1 = max(ax1, bx1), max(ay1, by1)
+    ix2, iy2 = min(ax2, bx2), min(ay2, by2)
+    iw, ih = max(0, ix2 - ix1), max(0, iy2 - iy1)
+    inter = iw * ih
+    if inter == 0:
+        return 0.0
+    a_area = (ax2 - ax1) * (ay2 - ay1)
+    b_area = (bx2 - bx1) * (by2 - by1)
+    return inter / (a_area + b_area - inter + 1e-9)
+
+def _pad_tuple(box_t, pad):
+    x1, y1, x2, y2 = box_t
+    return (x1 - pad, y1 - pad, x2 + pad, y2 + pad)
+
+def _to_tuple(db: DetectionBox):
+    return (db.x1, db.y1, db.x2, db.y2)
+
+def _union_tuple(group_tuples):
+    xs1 = [t[0] for t in group_tuples]
+    ys1 = [t[1] for t in group_tuples]
+    xs2 = [t[2] for t in group_tuples]
+    ys2 = [t[3] for t in group_tuples]
+    return (min(xs1), min(ys1), max(xs2), max(ys2))
+
+def merge_promotional_graphics(
+    identified_products: List[IdentifiedProduct],
+    pad_px: int = 60,
+    overlap_iou_after_pad: float = 0.0
+) -> List[IdentifiedProduct]:
+    """Merge multiple promo boxes (text/portrait) into one backlit graphic per shelf."""
+    promos = [p for p in identified_products
+              if p.product_type == "promotional_graphic" and p.detection_box is not None]
+    others = [p for p in identified_products if p.product_type != "promotional_graphic" or p.detection_box is None]
+
+    by_shelf = defaultdict(list)
+    for p in promos:
+        by_shelf[p.shelf_location].append(p)
+
+    merged_promos: List[IdentifiedProduct] = []
+
+    for shelf, items in by_shelf.items():
+        items = sorted(items, key=lambda x: (x.confidence or 0.0), reverse=True)
+        used = set()
+        for i, base in enumerate(items):
+            if i in used:
+                continue
+            group_idx = [i]
+            group_boxes = [_to_tuple(base.detection_box)]
+            pad_ref = _pad_tuple(group_boxes[0], pad_px)
+
+            for j in range(i + 1, len(items)):
+                if j in used:
+                    continue
+                cand_t = _to_tuple(items[j].detection_box)
+                if _iou(pad_ref, _pad_tuple(cand_t, pad_px)) > overlap_iou_after_pad:
+                    group_idx.append(j)
+                    group_boxes.append(cand_t)
+                    # grow the padded reference as the union grows
+                    pad_ref = _pad_tuple(_union_tuple(group_boxes), pad_px)
+
+            for g in group_idx:
+                used.add(g)
+
+            # union bbox + merge features
+            ux1, uy1, ux2, uy2 = _union_tuple(group_boxes)
+            best = items[group_idx[0]]  # highest-confidence as representative
+            new_box = DetectionBox(
+                x1=int(ux1), y1=int(uy1), x2=int(ux2), y2=int(uy2),
+                confidence=max(items[k].detection_box.confidence for k in group_idx),
+                class_id=best.detection_box.class_id,
+                class_name=best.detection_box.class_name,
+                area=int((ux2 - ux1) * (uy2 - uy1))
+            )
+            merged_features = list(dict.fromkeys(itertools.chain.from_iterable(
+                (items[k].visual_features or []) for k in group_idx
+            )))
+
+            merged_promos.append(
+                best.copy(update={
+                    "detection_box": new_box,
+                    "visual_features": merged_features
+                })
+            )
+
+    return others + merged_promos
 
 class IdentificationResponse(BaseModel):
     """Response model for product identification"""
@@ -70,7 +160,7 @@ class RetailDetector:
     def _load_detection_model(self):
         """Load YOLO model with enhanced error handling"""
         try:
-            from ultralytics import YOLO
+            from ultralytics import YOLO  # pylint: disable=E0611,C0415 # noqa
 
             model_name = self.detection_model_name.lower()
             if not model_name.endswith('.pt'):
@@ -222,7 +312,7 @@ class RetailDetector:
         Returns: (has_price_pattern, confidence)
         """
         try:
-            import pytesseract
+            import pytesseract   # pylint: disable=E0611,C0415 # noqa
 
             # Convert to grayscale if needed
             if len(tag_region.shape) == 3:
@@ -1001,6 +1091,7 @@ class PlanogramCompliancePipeline(AbstractPipeline):
             detection_model: Object detection model to use
         """
         self.detection_model_name = detection_model
+        self.factory = PlanogramDescriptionFactory()
         super().__init__(
             llm=llm,
             llm_provider=llm_provider,
@@ -1541,156 +1632,90 @@ Respond with the structured data for all {len(detections)} objects.
         identified_products: List[IdentifiedProduct],
         planogram_description: PlanogramDescription
     ) -> List[ComplianceResult]:
-        """
-        FIXED: Step 3: Compare identified products against expected planogram
-        """
-        results = []
+        results: List[ComplianceResult] = []
 
-        # Group identified products by shelf level
-        products_by_shelf = {}
-        for product in identified_products:
-            shelf = product.shelf_location
-            if shelf not in products_by_shelf:
-                products_by_shelf[shelf] = []
-            products_by_shelf[shelf].append(product)
+        # Group found products by shelf level
+        by_shelf = defaultdict(list)
+        for p in identified_products:
+            by_shelf[p.shelf_location].append(p)
 
-        # Check each shelf level
-        for shelf_level, expected_products in planogram_description.shelves.items():
-            found_products = []
-            promotional_products = []
+        # Iterate shelves (list) from the planogram
+        for shelf_cfg in planogram_description.shelves:
+            shelf_level = shelf_cfg.level
 
-            # FIX: Process products in the current shelf level correctly
-            if shelf_level in products_by_shelf:
-                for product in products_by_shelf[shelf_level]:
-                    if product.product_type == "promotional_graphic":
-                        promotional_products.append(product)
-                        # FIX: Also add promotional products to found_products for counting
-                        found_products.append(
-                            self._normalize_product_name(product.product_model or "promotional_graphic")
-                        )
-                    elif product.product_type not in ['fact_tag', 'price_tag']:
-                        # Only count non-tag products
-                        product_name = self._normalize_product_name(
-                            product.product_model or product.product_type
-                        )
-                        found_products.append(product_name)
+            # Build expected set from ShelfProduct entries (ignore tags)
+            expected = []
+            for sp in shelf_cfg.products:
+                if sp.product_type in ("fact_tag", "price_tag"):
+                    continue
+                nm = self._normalize_product_name((sp.name or sp.product_type) or "unknown")
+                expected.append(nm)
 
-            # Normalize expected product names
-            expected_normalized = [
-                self._normalize_product_name(p) for p in expected_products
-            ]
+            # Gather found on this shelf (ignore tags), track promos for text checks
+            found, promos = [], []
+            for p in by_shelf.get(shelf_level, []):
+                if p.product_type in ("fact_tag", "price_tag"):
+                    continue
+                nm = self._normalize_product_name(p.product_model or p.product_type)
+                found.append(nm)
+                if p.product_type == "promotional_graphic":
+                    promos.append(p)
 
-            # Debug logging
-            print(f"\nShelf Level: {shelf_level}")
-            print(f"Expected (raw): {expected_products}")
-            print(f"Expected (normalized): {expected_normalized}")
-            print(f"Found products: {[p.product_model or p.product_type for p in products_by_shelf.get(shelf_level, []) if p.product_type not in ['fact_tag', 'price_tag']]}")
-            print(f"Found (normalized): {found_products}")
-            print(f"Promotional products found: {len(promotional_products)}")
+            # Basic product compliance
+            missing = [e for e in expected if e not in found]
+            unexpected = [] if shelf_cfg.allow_extra_products else [f for f in found if f not in expected]
+            basic_score = (sum(1 for e in expected if e in found) / (len(expected) or 1))
 
-            # Calculate compliance
-            missing = [p for p in expected_normalized if p not in found_products]
-            unexpected = [p for p in found_products if p not in expected_normalized]
+            # Text compliance for advertisement endcap (if positioned on this shelf)
+            text_results, text_score, overall_text_ok = [], 1.0, True
+            endcap = planogram_description.advertisement_endcap
+            if endcap and endcap.enabled and endcap.position == shelf_level and endcap.text_requirements:
+                # Combine OCR/visual hints from promo items on this shelf
+                features = []
+                for pr in promos:
+                    features.extend(pr.visual_features or [])
+                if not features:
+                    overall_text_ok = False
 
-            basic_compliance_score = (
-                len([p for p in expected_normalized if p in found_products]) / len(expected_normalized)
-                if expected_normalized else 1.0
-            )
+                for tr in endcap.text_requirements:
+                    r = TextMatcher.check_text_match(
+                        required_text=tr.required_text,
+                        visual_features=features,
+                        match_type=tr.match_type,
+                        case_sensitive=tr.case_sensitive,
+                        confidence_threshold=tr.confidence_threshold
+                    )
+                    text_results.append(r)
+                    if not r.found and tr.mandatory:
+                        overall_text_ok = False
 
-            # Initialize text compliance variables with defaults
-            text_compliance_results = []
-            text_compliance_score = 1.0
-            overall_text_compliant = True
+                if text_results:
+                    text_score = sum(r.confidence for r in text_results if r.found) / len(text_results)
 
-            # FIX: Check if promotional_requirements exists and has the shelf_level
-            if (hasattr(planogram_description, 'promotional_requirements') and
-                planogram_description.promotional_requirements and
-                shelf_level in planogram_description.promotional_requirements):
-
-                promo_requirements = planogram_description.promotional_requirements[shelf_level]
-
-                for requirement in promo_requirements:
-                    # Find matching promotional products
-                    matching_promos = [
-                        p for p in promotional_products
-                        if (not requirement.brand or p.brand == requirement.brand) and
-                        (not requirement.advertisement_type or p.advertisement_type == requirement.advertisement_type)
-                    ]
-
-                    if not matching_promos:
-                        # No promotional graphic found
-                        for text_req in requirement.required_texts:
-                            text_compliance_results.append(
-                                TextComplianceResult(
-                                    required_text=text_req.required_text,
-                                    found=False,
-                                    matched_features=[],
-                                    confidence=0.0,
-                                    match_type=text_req.match_type
-                                )
-                            )
-                        overall_text_compliant = False
-                        continue
-
-                    # Check text requirements for each matching promotional product
-                    for text_req in requirement.required_texts:
-                        # Combine visual features from all matching promotional products
-                        all_visual_features = []
-                        for promo in matching_promos:
-                            if promo.visual_features:
-                                all_visual_features.extend(promo.visual_features)
-
-                        # Check against combined features
-                        result = TextMatcher.check_text_match(
-                            required_text=text_req.required_text,
-                            visual_features=all_visual_features,
-                            match_type=text_req.match_type,
-                            case_sensitive=text_req.case_sensitive,
-                            confidence_threshold=text_req.confidence_threshold
-                        )
-                        text_compliance_results.append(result)
-
-                        if not result.found:
-                            overall_text_compliant = False
-
-            # Calculate overall text compliance score
-            if text_compliance_results:
-                text_compliance_score = sum(
-                    r.confidence for r in text_compliance_results if r.found
-                ) / len(text_compliance_results)
-
-            # Get compliance threshold for this shelf
-            compliance_threshold = 0.8
-            if hasattr(planogram_description, 'compliance_thresholds'):
-                compliance_threshold = planogram_description.compliance_thresholds.get(shelf_level, 0.8)
-
-            # Determine overall compliance status using string values (FIX for enum issue)
-            if basic_compliance_score >= compliance_threshold and not unexpected and overall_text_compliant:
+            # Thresholds + final status
+            threshold = getattr(shelf_cfg, "compliance_threshold", planogram_description.global_compliance_threshold)
+            if basic_score >= threshold and not unexpected and overall_text_ok:
                 status = ComplianceStatus.COMPLIANT
-            elif basic_compliance_score == 0.0:
+            elif basic_score == 0.0:
                 status = ComplianceStatus.MISSING
             else:
                 status = ComplianceStatus.NON_COMPLIANT
 
-            # Combine scores (weighted: 70% product compliance, 30% text compliance)
-            combined_score = (basic_compliance_score * 0.7) + (text_compliance_score * 0.3)
+            weights = planogram_description.weighted_scoring or {"product_compliance": 0.7, "text_compliance": 0.3}
+            combined = basic_score * weights.get("product_compliance", 0.7) + text_score * weights.get("text_compliance", 0.3)
 
-            # FIX: Always provide valid values instead of None
-            result = ComplianceResult(
+            results.append(ComplianceResult(
                 shelf_level=shelf_level,
-                expected_products=expected_products,
-                found_products=found_products,
+                expected_products=expected,
+                found_products=found,
                 missing_products=missing,
                 unexpected_products=unexpected,
-                compliance_status=status,  # Use string value to avoid enum error
-                compliance_score=combined_score,
-                text_compliance_results=text_compliance_results,  # Always provide list (never None)
-                text_compliance_score=text_compliance_score,      # Always provide float (never None)
-                overall_text_compliant=overall_text_compliant     # Always provide bool (never None)
-            )
-
-            results.append(result)
-
+                compliance_status=status,
+                compliance_score=combined,
+                text_compliance_results=text_results,
+                text_compliance_score=text_score,
+                overall_text_compliant=overall_text_ok
+            ))
         return results
 
     def _normalize_product_name(self, product_name: str) -> str:
@@ -1814,10 +1839,16 @@ Respond with the structured data for all {len(detections)} objects.
 
         print('==== ')
         print(identified_products)
-
+        # Merge nearby promotional graphics to avoid double-counting
+        identified_products = merge_promotional_graphics(
+            identified_products,
+            pad_px=60
+        )
         self.logger.debug(f"Identified {len(identified_products)} products")
 
         self.logger.info("Step 3: Checking planogram compliance...")
+
+
         compliance_results = self.check_planogram_compliance(
             identified_products, planogram_description
         )
@@ -1966,85 +1997,16 @@ Respond with the structured data for all {len(detections)} objects.
 
     def create_planogram_description(
         self,
-        brand: str = "Epson",
-        category: str = "Printers",
-        aisle: str = "Electronics",
-        shelves: Optional[Dict[str, List[str]]] = None,
-        add_text_requirements: bool = True,
-        compliance_thresholds: Optional[Dict[str, float]] = None
+        config: Dict[str, Any]
     ) -> PlanogramDescription:
         """
-        Create a planogram description with optional text requirements
+        Create a planogram description from a dictionary configuration.
+        This replaces the hardcoded method with a fully configurable approach.
 
         Args:
-            brand: Brand name (e.g., "Epson")
-            category: Product category (e.g., "Printers")
-            aisle: Store aisle location
-            shelves: Dict of shelf_level -> list of expected products
-            add_text_requirements: Whether to add promotional text requirements
-            compliance_thresholds: Custom compliance thresholds per shelf
+            config: Complete planogram configuration dictionary
 
         Returns:
             PlanogramDescription object ready for compliance checking
         """
-
-        # Default shelves if not provided
-        if shelves is None:
-            shelves = {
-                "header": ["Epson EcoTank Advertisement"],
-                "top": ["ET-2980", "ET-3950", "ET-4950"],
-                "middle": ["ET-2980 box", "ET-3950 box", "ET-4950 box"]
-            }
-
-        # Default compliance thresholds
-        if compliance_thresholds is None:
-            compliance_thresholds = {
-                "header": 0.9,
-                "top": 0.8,
-                "middle": 0.8,
-                "bottom": 0.8
-            }
-
-        promotional_requirements = {}
-
-        if add_text_requirements:
-            # Text requirements for promotional graphics
-            goodbye_cartridges_req = TextRequirement(
-                required_text="Goodbye Cartridges",
-                match_type="contains",
-                case_sensitive=False
-            )
-
-            hello_savings_req = TextRequirement(
-                required_text="Hello Savings",
-                match_type="contains",
-                case_sensitive=False
-            )
-
-            epson_logo_req = TextRequirement(
-                required_text="Epson",
-                match_type="contains",
-                case_sensitive=False
-            )
-
-            # Promotional requirement for header
-            header_promo_req = PromotionalRequirement(
-                product_type="promotional_graphic",
-                brand=brand,
-                advertisement_type="backlit_graphic",
-                required_texts=[goodbye_cartridges_req, hello_savings_req, epson_logo_req],
-                allow_additional_text=True
-            )
-
-            # Add promotional requirements for header if it exists
-            if "header" in shelves:
-                promotional_requirements["header"] = [header_promo_req]
-
-        return PlanogramDescription(
-            shelves=shelves,
-            brand=brand,
-            category=category,
-            aisle=aisle,
-            promotional_requirements=promotional_requirements,
-            compliance_thresholds=compliance_thresholds
-        )
+        return self.factory.create_planogram_description(config)

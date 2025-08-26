@@ -32,6 +32,7 @@ from .prompts import (
 from ..clients import LLM_PRESETS, SUPPORTED_CLIENTS, AbstractClient
 from ..models import (
     AIMessage,
+    SourceDocument
 )
 from ..stores import AbstractStore, supported_stores
 from ..stores.models import Document
@@ -669,6 +670,69 @@ class AbstractBot(DBInterface, ABC):
             self.logger.error(f"Error listing conversations for user {user_id}: {e}")
             return []
 
+    def _extract_sources_documents(self, search_results: List[Any]) -> List[SourceDocument]:
+        """
+        Extract enhanced source information from search results.
+
+        Args:
+            search_results: List of SearchResult objects from vector store
+
+        Returns:
+            List of SourceDocument objects with full metadata
+        """
+        enhanced_sources = []
+        seen_sources = set()  # To avoid duplicates
+
+        for result in search_results:
+            if not hasattr(result, 'metadata') or not result.metadata:
+                continue
+
+            metadata = result.metadata
+
+            # Extract primary source identifier
+            source = metadata.get('source')
+            source_name = metadata.get('source_name', source)
+            filename = metadata.get('filename', source_name)
+
+            # Create unique identifier for deduplication
+            # Use filename + chunk_index for chunked documents, or just filename for others
+            chunk_index = metadata.get('chunk_index')
+            if chunk_index is not None:
+                unique_id = f"{filename}#{chunk_index}"
+            else:
+                unique_id = filename
+
+            if unique_id in seen_sources:
+                continue
+
+            seen_sources.add(unique_id)
+
+            # Extract document_meta if available
+            document_meta = metadata.get('document_meta', {})
+
+            # Build enhanced source document
+            source_doc = SourceDocument(
+                source=source or filename,
+                filename=filename,
+                file_path=document_meta.get('file_path') or metadata.get('source_path'),
+                source_path=metadata.get('source_path') or document_meta.get('file_path'),
+                url=metadata.get('url'),
+                content_type=document_meta.get('content_type') or metadata.get('content_type'),
+                category=metadata.get('category'),
+                source_type=metadata.get('source_type'),
+                source_ext=metadata.get('source_ext'),
+                page_number=metadata.get('page_number'),
+                chunk_id=metadata.get('chunk_id'),
+                parent_document_id=metadata.get('parent_document_id'),
+                chunk_index=chunk_index,
+                score=getattr(result, 'score', None),
+                metadata=metadata
+            )
+
+            enhanced_sources.append(source_doc)
+
+        return enhanced_sources
+
     async def get_vector_context(
         self,
         question: str,
@@ -677,7 +741,8 @@ class AbstractBot(DBInterface, ABC):
         metric_type: str = 'COSINE',
         limit: int = 10,
         score_threshold: float = None,
-        ensemble_config: dict = None
+        ensemble_config: dict = None,
+        return_sources: bool = False,
     ) -> str:
         """Get relevant context from vector store.
         Args:
@@ -688,6 +753,7 @@ class AbstractBot(DBInterface, ABC):
             limit (int): Maximum number of context items to retrieve.
             score_threshold (float): Minimum score for context relevance.
             ensemble_config (dict): Configuration for ensemble search.
+            return_sources (bool): Whether to extract enhanced source information
         Returns:
             tuple: (context_string, metadata_dict)
         """
@@ -761,6 +827,8 @@ class AbstractBot(DBInterface, ABC):
 
             if not search_results:
                 metadata['search_results_count'] = 0
+                if return_sources:
+                    metadata['enhanced_sources'] = []
                 return "", metadata
 
             # Format the context from search results
@@ -775,6 +843,18 @@ class AbstractBot(DBInterface, ABC):
                     sources.append(source_id)
 
             context = "\n\n".join(context_parts)
+
+            if return_sources:
+                source_documents = self._extract_sources_documents(search_results)
+                metadata['source_documents'] = [source.to_dict() for source in source_documents]
+                metadata['context_sources'] = [source.filename for source in source_documents]
+            else:
+                # Keep original behavior for backward compatibility
+                metadata['context_sources'] = sources
+                metadata.update({
+                    'search_results_count': len(search_results),
+                    'sources': sources
+                })
 
             metadata.update({
                 'search_results_count': len(search_results),
@@ -1090,6 +1170,7 @@ class AbstractBot(DBInterface, ABC):
                     limit=limit,
                     score_threshold=score_threshold,
                     ensemble_config=ensemble_config,
+                    return_sources=return_sources
                 )
 
             # Determine if tools should be used
@@ -1142,17 +1223,23 @@ class AbstractBot(DBInterface, ABC):
                     search_results_count=vector_metadata.get('search_results_count', 0),
                     search_type=search_type if vector_context else None,
                     score_threshold=score_threshold,
-                    sources=vector_metadata.get('sources', [])
+                    sources=vector_metadata.get('sources', []),
+                    source_documents=vector_metadata.get('source_documents', [])
                 )
 
                 response.set_conversation_context_info(
                     used=bool(conversation_context),
                     context_length=len(conversation_context) if conversation_context else 0
                 )
+                if return_sources and vector_metadata.get('source_documents'):
+                    response.source_documents = vector_metadata['source_documents']
+                    response.context_sources = vector_metadata.get('context_sources', [])
 
                 # Set additional metadata
                 response.session_id = session_id
                 response.turn_id = turn_id
+
+                print('RESPONSE > ', response, type(response))
 
                 # return the response Object:
                 return self.get_response(response, return_sources, return_context)
@@ -1195,8 +1282,8 @@ class AbstractBot(DBInterface, ABC):
             markdown_output += f"\n**Tools Used**: {', '.join(tool_names)}  \n"
 
         # Handle sources as before
-        if return_sources and response.documents:
-            source_documents = response.documents
+        if return_sources and response.source_documents:
+            source_documents = response.source_documents
             current_sources = []
             block_sources = []
             count = 0
