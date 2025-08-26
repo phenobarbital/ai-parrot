@@ -1,5 +1,5 @@
+from typing import Dict, List, Optional, Any, TypedDict, Union
 from pathlib import Path
-from typing import Dict, List, Optional, Any, TypedDict
 from datetime import datetime
 from pydantic import BaseModel, Field
 from .basic import CompletionUsage, ToolCall
@@ -85,7 +85,7 @@ class AIMessage(BaseModel):
     )
 
     # Conversation context
-    user_id: Optional[str] = Field(
+    user_id: Optional[Union[str, int]] = Field(
         default=None, description="User ID for conversation tracking"
     )
     session_id: Optional[str] = Field(
