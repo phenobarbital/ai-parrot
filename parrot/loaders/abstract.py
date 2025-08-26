@@ -2,9 +2,10 @@ from typing import Generator, Union, List, Any, Optional, TypeVar
 from collections.abc import Callable
 from abc import ABC, abstractmethod
 from datetime import datetime
+import uuid
 from pathlib import Path, PosixPath, PurePath
 import asyncio
-import uuid
+import pandas as pd
 import torch
 from transformers import (
     AutoModelForSeq2SeqLM,
@@ -412,7 +413,7 @@ class AbstractLoader(ABC):
         **kwargs
     ) -> List[asyncio.Task]:
         """
-        Load data from a path. This method should be overridden by subclasses.
+        Load data from a path.
         """
         tasks = []
         if isinstance(path, str):
@@ -445,7 +446,7 @@ class AbstractLoader(ABC):
         **kwargs
     ) -> List[asyncio.Task]:
         """
-        Load data from a URL. This method should be overridden by subclasses.
+        Load data from a URL.
         """
         tasks = []
         if isinstance(url, str):
@@ -453,6 +454,25 @@ class AbstractLoader(ABC):
         for item in url:
             tasks.append(
                 asyncio.create_task(self._load(item, **kwargs))
+            )
+        return tasks
+
+    async def from_dataframe(
+        self,
+        source: pd.DataFrame,
+        **kwargs
+    ) -> List[asyncio.Task]:
+        """
+        Load data from a pandas DataFrame.
+        """
+        tasks = []
+        if isinstance(source, pd.DataFrame):
+            tasks.append(
+                asyncio.create_task(self._load(source, **kwargs))
+            )
+        else:
+            self.logger.warning(
+                f"Source {source} is not a valid pandas DataFrame."
             )
         return tasks
 
@@ -582,6 +602,8 @@ class AbstractLoader(ABC):
                         await self.from_path(path, recursive=self._recursive, **kwargs)
                     )
                 tasks = path_tasks
+        elif isinstance(source, pd.DataFrame):
+            tasks = await self.from_dataframe(source, **kwargs)
         else:
             raise ValueError(
                 f"Unsupported source type: {type(source)}"
