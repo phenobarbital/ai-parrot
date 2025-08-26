@@ -326,7 +326,7 @@ class AbstractLoader(ABC):
         # File extension based detection
         if filename.endswith(('.md', '.markdown')):
             return 'markdown'
-        elif filename.endswith(('.py', '.js', '.java', '.cpp', '.c', '.go', '.rs')):
+        elif filename.endswith(('.py', '.pyx', '.js', '.java', '.cpp', '.c', '.go', '.rs')):
             return 'code'
         elif filename.endswith(('.html', '.htm', '.xml')):
             return 'html'

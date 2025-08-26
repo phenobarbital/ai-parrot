@@ -1,34 +1,42 @@
 from abc import abstractmethod
-from typing import List, Union, Any, Callable
-from pathlib import Path, PurePath
-from langchain.docstore.document import Document
+from typing import List, Union, Callable, Optional
+from pathlib import Path
+from pathlib import PurePath
 from .abstract import AbstractLoader
+from ..stores.models import Document
 
 
 class BasePDF(AbstractLoader):
     """
     Base Abstract loader for all PDF-file Loaders.
     """
-    extensions: List[str] = ['.pdf']
+    extensions: set[str] = {'.pdf'}
 
     def __init__(
         self,
-        path: PurePath,
-        tokenizer: Callable[..., Any] = None,
-        text_splitter: Callable[..., Any] = None,
-        source_type: str = 'pdf',
-        language: str = "eng",
+        source: Optional[Union[str, Path, List[Union[str, Path]]]] = None,
+        *,
+        tokenizer: Union[str, Callable] = None,
+        text_splitter: Union[str, Callable] = None,
+        source_type: str = 'file',
+        as_markdown: bool = False,
+        use_chapters: bool = False,
+        use_pages: bool = False,
         **kwargs
     ):
         super().__init__(
-            path=path,
+            source,
             tokenizer=tokenizer,
             text_splitter=text_splitter,
             source_type=source_type,
-            language=language,
             **kwargs
         )
         self._lang = 'eng'
+        self.doctype = 'pdf'
+        self._source_type = source_type
+        self.as_markdown = as_markdown
+        self.use_chapters = use_chapters
+        self.use_pages = use_pages
 
     @abstractmethod
     async def _load(self, path: Union[str, PurePath, List[PurePath]], **kwargs) -> List[Document]:

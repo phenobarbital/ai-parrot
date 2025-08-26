@@ -7,6 +7,7 @@ such as responses, outputs, and configurations.
 from .basic import OutputFormat, ToolCall, CompletionUsage
 from .responses import (
     AIMessage,
+    SourceDocument,
     AIMessageFactory,
     MessageResponse,
     StreamChunk,
