@@ -1,16 +1,15 @@
 from typing import Union, List, Callable, Any
 from datetime import datetime
-from pathlib import Path, PurePath
-from bs4 import BeautifulSoup
+from pathlib import PurePath
 from markdownify import markdownify as md
-from langchain.docstore.document import Document
+from ..stores.models import Document
 from .abstract import AbstractLoader
 from .files.html import HTMLFile
 
 
 class HTMLLoader(AbstractLoader):
     """
-    Loader for HTML files to convert into Langchain Documents.
+    Loader for HTML files to convert into Parrot Documents.
 
     Processes HTML files, extracts relevant content, converts to Markdown,
     and associates metadata with each document.
@@ -25,6 +24,8 @@ class HTMLLoader(AbstractLoader):
         text_splitter: Callable[..., Any] = None,
         source_type: str = 'html',
         language: str = "eng",
+        chunk_size: int = 1024,
+        chunk_overlap: int = 10,
         **kwargs
     ):
         """Initialize the HTMLLoader."""
@@ -37,6 +38,11 @@ class HTMLLoader(AbstractLoader):
             language=language,
             **kwargs
         )
+        # Initialize markdown splitter
+        self._splitter = self._get_markdown_splitter(
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap
+        )
 
     async def _load(self, path: Union[str, PurePath, List[PurePath]], **kwargs) -> List[Document]:
         """
@@ -46,7 +52,7 @@ class HTMLLoader(AbstractLoader):
             path (Path): The path to the TXT file.
 
         Returns:
-            list: A list of Langchain Documents.
+            list: A list of Parrot Documents.
         """
         docs = []
         async with HTMLFile(path) as file:
@@ -64,7 +70,9 @@ class HTMLLoader(AbstractLoader):
                 # Extract content from specific elements
                 for element in self.elements:
                     for tag, selector in element.items():
-                        extracted_elements.extend(top_element.find_all(tag, class_=selector.lstrip('.')))
+                        extracted_elements.extend(
+                            top_element.find_all(tag, class_=selector.lstrip('.'))
+                        )
             if not extracted_elements:
                 extracted_elements = [top_element]
 
@@ -121,7 +129,16 @@ class HTMLLoader(AbstractLoader):
                 docs.append(document)
 
             # splitting the content:
-            for chunk in self.markdown_splitter.split_text(text):
+            try:
+                chunks = self._splitter.split_text(text)
+                self.logger.info(f"Split document into {len(chunks)} chunks")
+            except Exception as e:
+                self.logger.error(
+                    f"Failed to split text: {e}"
+                )
+                # Fallback: use the entire text as one chunk
+                chunks = [text]
+            for chunk in chunks:
                 _idx = {
                     **document_meta
                 }
