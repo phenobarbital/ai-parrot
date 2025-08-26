@@ -186,7 +186,7 @@ class AbstractBot(DBInterface, ABC):
         # Vector information:
         self._use_vector: bool = kwargs.get('use_vectorstore', False)
         self._vector_info_: dict = kwargs.get('vector_info', {})
-        self._vector_store: dict = kwargs.get('vector_store', None)
+        self._vector_store: dict = kwargs.get('vector_store_config', None)
         self.chunk_size: int = int(kwargs.get('chunk_size', 2048))
         self.dimension: int = int(kwargs.get('dimension', 384))
         self._metric_type: str = kwargs.get('metric_type', 'COSINE')
@@ -455,11 +455,19 @@ class AbstractBot(DBInterface, ABC):
                 store['embedding_model'] = self.embedding_model
             if not 'embedding' in store:
                 store['embedding'] = self.embeddings
-            return store_cls(
-                **store
-            )
+            try:
+                return store_cls(
+                    **store
+                )
+            except Exception as err:
+                self.logger.error(
+                    f"Error configuring VectorStore: {err}"
+                )
+                raise
         except (ModuleNotFoundError, ImportError) as e:
             self.logger.error(f"Error importing VectorStore: {e}")
+            raise
+        except Exception:
             raise
 
     def configure_conversation_memory(self) -> None:
