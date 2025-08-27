@@ -15,7 +15,7 @@ from querysource.queries.qs import QS
 from querysource.queries.multi import MultiQS
 from ...bots.abstract import AbstractBot
 from ...bots.agent import BasicAgent
-from .abstract import AbstractAgentHandler
+from .abstract import AgentHandler
 
 
 @is_authenticated()

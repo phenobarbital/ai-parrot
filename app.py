@@ -10,8 +10,12 @@ from parrot.handlers.bots import (
     ChatbotFeedbackHandler,
     PromptLibraryManagement,
     ChatbotUsageHandler,
-    ChatbotSharingQuestion
+    ChatbotSharingQuestion,
 )
+from parrot.handlers.chat import (
+    BotManagement
+)
+
 # new resources:
 from resources.nextstop import NextStopAgent
 
@@ -63,6 +67,8 @@ class Main(AppHandler):
         # NextStop:
         nextstop = NextStopAgent(app=self.app)
         nextstop.setup(self.app, '/api/v1/agents/nextstop')
+        # Install Bot Management
+        BotManagement.setup(self.app, r'/api/v1/bot_management{slash:/?}{bot:[^/]*}')
 
     async def on_prepare(self, request, response):
         """

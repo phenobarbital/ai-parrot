@@ -8,18 +8,42 @@
 from ..stores.models import Document
 from .abstract import AbstractLoader
 from .pdf import PDFLoader
-# from .txt import TextLoader
-# from .docx import MSWordLoader
-# from .qa import QAFileLoader
-# from .html import HTMLLoader
-# from .pdfmark import PDFMarkdownLoader
-# from .pdftables import PDFTables
-# from .pdfblock import PDFBlock
-# from .csv import CSVLoader
+from .txt import TextLoader
+from .docx import MSWordLoader
+from .qa import QAFileLoader
+from .html import HTMLLoader
+from .pdfmark import PDFMarkdownLoader
+from .pdftables import PDFTablesLoader
+from .csv import CSVLoader
+from .youtube import YoutubeLoader
+from .web import WebLoader
+from .ppt import PowerPointLoader
+from .markdown import MarkdownLoader
+from .epubloader import EpubLoader
+from .excel import ExcelLoader
 # from .video import VideoLoader
 # from .videolocal import VideoLocalLoader
-# from .youtube import YoutubeLoader
 # from .vimeo import VimeoLoader
-# from .web import WebLoader
 # from .audio import AudioLoader
-# from .ppt import PowerPointLoader
+
+AVAILABLE_LOADERS = {
+    '.pdf': PDFLoader,
+    '.txt': TextLoader,
+    '.docx': MSWordLoader,
+    '.qa': QAFileLoader,
+    '.xlsx': ExcelLoader,
+    '.xlsm': ExcelLoader,
+    '.xls': ExcelLoader,
+    '.html': HTMLLoader,
+    '.pdfmd': PDFMarkdownLoader,
+    '.pdftables': PDFTablesLoader,
+    '.csv': CSVLoader,
+    '.youtube': YoutubeLoader,
+    '.web': WebLoader,
+    '.ppt': PowerPointLoader,
+    '.pptx': PowerPointLoader,
+    '.md': MarkdownLoader,
+    '.json': MarkdownLoader,
+    '.xml': MarkdownLoader,
+    '.epub': EpubLoader,
+}

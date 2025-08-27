@@ -200,9 +200,11 @@ output/*
 # generated presentations:
 presentations/*
 meetings/*
+videos/*
 
 # compiled templates:
 templates/.compiled
 
 # uv's version file:
+uv.lock
 parrot/_version.py
