@@ -19,6 +19,9 @@ from ...tools.abstract import (
     ToolResult,
     AbstractToolArgsSchema
 )
+from ...tools.manager import (
+    ToolManager,
+)
 from ...stores.abstract import AbstractStore
 
 
@@ -119,15 +122,28 @@ class AbstractDBAgent(AbstractBot):
         self.engine: Optional[AsyncEngine] = None
         self.schema_metadata: Optional[DatabaseSchema] = None
 
+        # Initialize tool manager
+        self.tool_manager = ToolManager(
+            logger=self.logger,
+            debug=self._debug
+        )
+
         # Add database-specific tools
         self._setup_database_tools()
+        try:
+            self.loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self.loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(self.loop)
 
-        if self.auto_analyze_schema and self.connection_string:
-            asyncio.create_task(self.initialize_schema())
+        # if self.auto_analyze_schema and self.connection_string:
+        #    asyncio.create_task(self.initialize_schema())
 
     async def initialize_schema(self):
         """Initialize database connection and analyze schema."""
         try:
+            # first: configure the agent:
+            await self.configure()
             await self.connect_database()
             self.schema_metadata = await self.extract_schema_metadata()
 
@@ -402,9 +418,9 @@ class QueryGenerationTool(AbstractTool):
                 Provide a clear explanation of what this query does.
                 """
 
-                explanation_response = await self.agent.llm_client.generate_response(
+                explanation_response = await self.agent.llm.ask(
                     prompt=explanation_prompt,
-                    model=self.agent.model_name
+                    model=self.agent.llm.model
                 )
 
                 result['explanation'] = explanation_response.output

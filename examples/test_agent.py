@@ -1,6 +1,6 @@
 import asyncio
 from parrot.bots.agent import BasicAgent
-from parrot.tools.bby import BestBuyToolkit
+from parrot.tools.retail.bby import BestBuyToolkit
 from parrot.tools.zipcode import ZipcodeAPIToolkit
 
 

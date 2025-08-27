@@ -1,6 +1,9 @@
 """
 Abstract Tool base class and MathTool implementation.
 """
+import importlib
+import inspect
+import os
 from typing import Dict, Any, Union, Optional, Type
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -8,6 +11,7 @@ from datetime import datetime
 import traceback
 import asyncio
 import logging
+from dataclasses import dataclass
 from urllib.parse import urlparse, urlunparse
 from pydantic import BaseModel, Field
 from datamodel.parsers.json import json_decoder, json_encoder, JSONContent  # noqa  pylint: disable=E0611
@@ -367,6 +371,16 @@ class AbstractTool(ABC):
         return f"<{self.__class__.__name__}(name='{self.name}')>"
 
 
+@dataclass
+class ToolInfo:
+    """Information about a discovered tool."""
+    class_name: str
+    module_name: str
+    description: str
+    tool_name: str
+    file_path: str
+    args_schema: Optional[Dict[str, Any]] = None
+
 
 # Tool Registry for easy tool management
 class ToolRegistry:
@@ -374,6 +388,116 @@ class ToolRegistry:
 
     def __init__(self):
         self._tools = {}
+        self.tools_package_path = 'parrot/tools'
+        self.discovered_tools: Dict[str, ToolInfo] = {}
+        self.loaded_classes: Dict[str, Type[AbstractTool]] = {}
+
+    def _create_tool_info(
+        self,
+        cls: Type[AbstractTool],
+        class_name: str,
+        module_name: str,
+        file_path: str
+    ) -> ToolInfo:
+        """Create ToolInfo object from a tool class."""
+        try:
+            # Get tool description
+            description = getattr(cls, 'description', cls.__doc__ or 'No description available')
+
+            # Get tool name
+            tool_name = getattr(cls, 'name', class_name)
+
+            # Get args schema if available
+            args_schema = None
+            if hasattr(cls, 'args_schema') and cls.args_schema:
+                try:
+                    args_schema = cls.args_schema.model_json_schema()
+                except Exception as e:
+                    logging.debug(f"Could not get schema for {class_name}: {e}")
+
+            return ToolInfo(
+                class_name=class_name,
+                module_name=module_name,
+                description=description,
+                tool_name=tool_name,
+                file_path=file_path,
+                args_schema=args_schema
+            )
+
+        except Exception as e:
+            logging.error(f"Error creating tool info for {class_name}: {e}")
+            return ToolInfo(
+                class_name=class_name,
+                module_name=module_name,
+                description="Error loading description",
+                tool_name=class_name,
+                file_path=file_path
+            )
+
+    def _process_python_file(self, file_path: Path, tools_dir: Path) -> None:
+        """Process a single Python file to find tool classes."""
+        try:
+            # Get relative path from tools directory
+            relative_to_tools = file_path.relative_to(tools_dir)
+            # Build module name using the configured tools_package_path
+            base_package = self.tools_package_path.replace('/', '.')  # 'parrot.tools'
+
+            # Add any subdirectories and filename
+            if relative_to_tools.parent != Path('.'):
+                # Handle subdirectories: e.g., 'analysis/correlation.py' -> 'parrot.tools.analysis.correlation'
+                subpath = str(relative_to_tools.parent).replace(os.sep, '.')
+                module_name = f"{base_package}.{subpath}.{relative_to_tools.stem}"
+            else:
+                # Direct file in tools directory: 'google.py' -> 'parrot.tools.google'
+                module_name = f"{base_package}.{relative_to_tools.stem}"
+
+            logging.debug(f"Processing module: {module_name}")
+
+            # Import the module
+            module = importlib.import_module(module_name)
+
+            # Find tool classes in the module
+            for name, obj in inspect.getmembers(module, inspect.isclass):
+                if issubclass(obj, AbstractTool):
+                    if name == 'AbstractTool':
+                        continue
+                    tool_info = self._create_tool_info(
+                        obj,
+                        name,
+                        module_name,
+                        str(file_path)
+                    )
+                    self.discovered_tools[name] = tool_info
+                    self.loaded_classes[name] = obj
+                    logging.debug(f"Found tool: {name}")
+
+        except Exception as e:
+            logging.error(f"Error processing {file_path}: {e}")
+
+    def discover_tools(self) -> Dict[str, ToolInfo]:
+        """
+        Discover all tool classes in the tools package.
+
+        Returns:
+            Dict mapping class names to ToolInfo objects
+        """
+        tools_dir = Path(self.tools_package_path).resolve()
+        if not tools_dir.exists():
+            logging.warning(f"Tools directory '{tools_dir}' does not exist")
+            return {}
+
+        # Clear previous discoveries
+        self.discovered_tools.clear()
+        self.loaded_classes.clear()
+
+        # walk through the tools directory and find all .py files
+        for file_path in tools_dir.rglob('*.py'):
+            if file_path.name.startswith('_'):
+                continue
+            self._process_python_file(file_path, tools_dir)
+
+        logging.info(f"Discovered {len(self.discovered_tools)} tools")
+        return self.discovered_tools
 
     def register_toolkit(self, toolkit: Type[AbstractTool], prefix: str = ""):
         """
