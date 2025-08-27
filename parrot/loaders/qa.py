@@ -1,17 +1,17 @@
 
 from pathlib import PurePath
-from typing import List, Union, Callable
+from typing import List
 import pandas as pd
-from langchain.docstore.document import Document
+from ..stores.models import Document
 from .abstract import AbstractLoader
 
 
 class QAFileLoader(AbstractLoader):
     """
-    Question and Answers File based on Excel, coverted to Langchain Documents.
+    Question and Answers File based on Excel, coverted to Parrot Documents.
     """
     extensions: List[str] = ['.xlsx']
-    chunk_size = 768
+    chunk_size = 1024
     _source_type = 'QA-File'
 
     def __init__(
@@ -19,11 +19,12 @@ class QAFileLoader(AbstractLoader):
         *args,
         **kwargs
     ):
-        super().__init__(*args, **kwargs)
         self._columns = kwargs.pop('columns', ['Question', 'Answer'])
         self._question_col = kwargs.pop('question_column', 'Question')
         self._answer_col = kwargs.pop('answer_column', 'Answer')
         self.doctype = kwargs.pop('doctype', 'qa')
+        super().__init__(*args, **kwargs)
+
 
     async def _load(self, path: PurePath, **kwargs) -> List[Document]:
         df = pd.read_excel(path, header=0, engine='openpyxl')

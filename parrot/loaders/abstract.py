@@ -2,9 +2,10 @@ from typing import Generator, Union, List, Any, Optional, TypeVar
 from collections.abc import Callable
 from abc import ABC, abstractmethod
 from datetime import datetime
+import uuid
 from pathlib import Path, PosixPath, PurePath
 import asyncio
-import uuid
+import pandas as pd
 import torch
 from transformers import (
     AutoModelForSeq2SeqLM,
@@ -264,29 +265,44 @@ class AbstractLoader(ABC):
         """Get Default device for Torch and transformers.
 
         """
+        dev = torch.device("cpu")
+        pipe_dev = -1
+        dtype = torch.float32
         if device_type == 'cpu':
-            return torch.device('cpu')
-        if device_type == 'cuda':
-            return torch.device(f'cuda:{cuda_number}')
+            pipe_dev = torch.device('cpu')
         if CUDA_DEFAULT_DEVICE == 'cpu':
-            # Use CPU if CUDA is not available
-            return torch.device('cpu')
+            # Use CPU forced
+            pipe_dev = torch.device('cpu')
         if torch.cuda.is_available():
-            # Use CUDA GPU if available
-            return torch.device(f'cuda:{cuda_number}')
+            dev = torch.device("cuda")
+            pipe_dev = 0  # first GPU
+            # prefer bf16 if supported; else fp16
+            if torch.cuda.is_bf16_supported():
+                dtype = torch.bfloat16
+            else:
+                dtype = torch.float16
+            pipe_dev = torch.device(f'cuda:{cuda_number}')
+        if device_type == 'cuda':
+            if torch.cuda.is_bf16_supported():
+                dtype = torch.bfloat16
+            else:
+                dtype = torch.float16
+            pipe_dev = torch.device(f'cuda:{cuda_number}')
         if torch.backends.mps.is_available():
             # Use CUDA Multi-Processing Service if available
-            return torch.device("mps")
-        if CUDA_DEFAULT_DEVICE == 'cuda':
-            return torch.device(f'cuda:{cuda_number}')
-        else:
-            return torch.device(CUDA_DEFAULT_DEVICE)
+            dev = torch.device("mps")
+            pipe_dev = torch.device("mps")
+            dtype = torch.float32  # fp16 on MPS is still flaky
+        return pipe_dev, dev, dtype
 
     def clear_cuda(self):
         self.tokenizer = None  # Reset the tokenizer
         self.text_splitter = None  # Reset the text splitter
-        torch.cuda.synchronize()  # Wait for all kernels to finish
-        torch.cuda.empty_cache()  # Clear unused memory
+        try:
+            torch.cuda.synchronize()  # Wait for all kernels to finish
+            torch.cuda.empty_cache()  # Clear unused memory
+        except Exception as e:
+            self.logger.warning(f"Error clearing CUDA memory: {e}")
 
     async def __aenter__(self):
         """Open the loader if it has an open method."""
@@ -326,7 +342,7 @@ class AbstractLoader(ABC):
         # File extension based detection
         if filename.endswith(('.md', '.markdown')):
             return 'markdown'
-        elif filename.endswith(('.py', '.js', '.java', '.cpp', '.c', '.go', '.rs')):
+        elif filename.endswith(('.py', '.pyx', '.js', '.java', '.cpp', '.c', '.go', '.rs')):
             return 'code'
         elif filename.endswith(('.html', '.htm', '.xml')):
             return 'html'
@@ -412,7 +428,7 @@ class AbstractLoader(ABC):
         **kwargs
     ) -> List[asyncio.Task]:
         """
-        Load data from a path. This method should be overridden by subclasses.
+        Load data from a path.
         """
         tasks = []
         if isinstance(path, str):
@@ -445,7 +461,7 @@ class AbstractLoader(ABC):
         **kwargs
     ) -> List[asyncio.Task]:
         """
-        Load data from a URL. This method should be overridden by subclasses.
+        Load data from a URL.
         """
         tasks = []
         if isinstance(url, str):
@@ -453,6 +469,25 @@ class AbstractLoader(ABC):
         for item in url:
             tasks.append(
                 asyncio.create_task(self._load(item, **kwargs))
+            )
+        return tasks
+
+    async def from_dataframe(
+        self,
+        source: pd.DataFrame,
+        **kwargs
+    ) -> List[asyncio.Task]:
+        """
+        Load data from a pandas DataFrame.
+        """
+        tasks = []
+        if isinstance(source, pd.DataFrame):
+            tasks.append(
+                asyncio.create_task(self._load(source, **kwargs))
+            )
+        else:
+            self.logger.warning(
+                f"Source {source} is not a valid pandas DataFrame."
             )
         return tasks
 
@@ -582,6 +617,8 @@ class AbstractLoader(ABC):
                         await self.from_path(path, recursive=self._recursive, **kwargs)
                     )
                 tasks = path_tasks
+        elif isinstance(source, pd.DataFrame):
+            tasks = await self.from_dataframe(source, **kwargs)
         else:
             raise ValueError(
                 f"Unsupported source type: {type(source)}"
@@ -728,6 +765,7 @@ Your job is to produce a final summary from the following text and identify the 
     ):
         if not self._summary_model:
             if self._use_summary_pipeline:
+                _, pipe_dev, torch_dtype = self._get_device()
                 summarize_model = AutoModelForSeq2SeqLM.from_pretrained(
                     model_name,
                 )
@@ -738,7 +776,9 @@ Your job is to produce a final summary from the following text and identify the 
                 self._summary_model = pipeline(
                     "summarization",
                     model=summarize_model,
-                    tokenizer=summarize_tokenizer
+                    tokenizer=summarize_tokenizer,
+                    device=pipe_dev,             # 0 for CUDA, mps device, or -1
+                    torch_dtype=torch_dtype if pipe_dev != -1 else None,
                 )
             else:
                 # Use Groq for Summarization:
@@ -950,7 +990,7 @@ Your job is to produce a final summary from the following text and identify the 
                 if detect_content:
                     content_type = self._detect_content_type(doc)
                     splitter = self._select_splitter_for_content(content_type)
-                    self.logger.debug(f"Detected content type: {content_type} for document")
+                    # self.logger.debug(f"Detected content type: {content_type} for document")
                 else:
                     content_type = 'text'
                     splitter = self.text_splitter
