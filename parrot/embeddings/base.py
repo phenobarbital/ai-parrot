@@ -5,7 +5,10 @@ from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import torch
 from navconfig.logging import logging
-from ..conf import EMBEDDING_DEVICE
+from ..conf import (
+    EMBEDDING_DEVICE,
+    CUDA_DEFAULT_DEVICE
+)
 
 
 class EmbeddingModel(ABC):
@@ -16,7 +19,7 @@ class EmbeddingModel(ABC):
     def __init__(self, model_name: str, **kwargs):
         self.model_name = model_name
         self.logger = logging.getLogger(f"parrot.{self.__class__.__name__}")
-        self.device = self._get_device()
+        self.device, _, self._dtype = self._get_device()
         self.executor = ThreadPoolExecutor(max_workers=4)
         self._model_lock = asyncio.Lock()
         self._dimension = None
@@ -25,13 +28,45 @@ class EmbeddingModel(ABC):
             **kwargs
         )
 
-    def _get_device(self) -> str:
-        """Determines the optimal device for torch operations."""
+    def _get_device(
+        self,
+        device_type: str = None,
+        cuda_number: int = 0
+    ):
+        """Get Default device for Torch and transformers.
+
+        """
+        dev = torch.device("cpu")
+        pipe_dev = -1
+        dtype = torch.float32
+        if device_type == 'cpu':
+            pipe_dev = torch.device('cpu')
+        if CUDA_DEFAULT_DEVICE == 'cpu':
+            # Use CPU forced
+            pipe_dev = torch.device('cpu')
         if torch.cuda.is_available():
-            return "cuda"
+            dev = torch.device("cuda")
+            pipe_dev = 0  # first GPU
+            # prefer bf16 if supported; else fp16
+            if torch.cuda.is_bf16_supported():
+                dtype = torch.bfloat16
+            else:
+                dtype = torch.float16
+            pipe_dev = torch.device(f'cuda:{cuda_number}')
+        if device_type == 'cuda':
+            if torch.cuda.is_bf16_supported():
+                dtype = torch.bfloat16
+            else:
+                dtype = torch.float16
+            pipe_dev = torch.device(f'cuda:{cuda_number}')
         if torch.backends.mps.is_available():
-            return "mps"
-        return EMBEDDING_DEVICE
+            # Use CUDA Multi-Processing Service if available
+            dev = torch.device("mps")
+            pipe_dev = torch.device("mps")
+            dtype = torch.float32  # fp16 on MPS is still flaky
+        else:
+            pipe_dev = torch.device(EMBEDDING_DEVICE)
+        return pipe_dev, dev, dtype
 
     def get_embedding_dimension(self) -> int:
         return self._dimension
@@ -54,7 +89,11 @@ class EmbeddingModel(ABC):
         """
         pass
 
-    def embed_documents(self, texts: List[str], batch_size: Optional[int] = None) -> List[List[float]]:
+    def embed_documents(
+        self,
+        texts: List[str],
+        batch_size: Optional[int] = None
+    ) -> List[List[float]]:
         """
         Generates embeddings for a list of documents.
 
@@ -66,7 +105,11 @@ class EmbeddingModel(ABC):
         """
         return self.model.encode(texts, convert_to_tensor=False).tolist()
 
-    def embed_query(self, text: str, as_nparray: bool = False) -> Union[List[float], List[np.ndarray]]:
+    def embed_query(
+        self,
+        text: str,
+        as_nparray: bool = False
+    ) -> Union[List[float], List[np.ndarray]]:
         """
         Generates an embedding for a single query string.
 

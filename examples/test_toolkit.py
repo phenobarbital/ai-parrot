@@ -1,4 +1,4 @@
-from parrot.tools.bby import BestBuyToolkit, BestBuyProductAvailabilityInput
+from parrot.tools.retail.bby import BestBuyToolkit, BestBuyProductAvailabilityInput
 
 toolkit = BestBuyToolkit()
 sample_tool = toolkit._get_availability_tool()

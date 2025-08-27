@@ -11,6 +11,7 @@ from parrot.handlers.bots import (
     PromptLibraryManagement,
     ChatbotUsageHandler,
     ChatbotSharingQuestion,
+    ToolList
 )
 from parrot.handlers.chat import (
     BotManagement
@@ -69,6 +70,12 @@ class Main(AppHandler):
         nextstop.setup(self.app, '/api/v1/agents/nextstop')
         # Install Bot Management
         BotManagement.setup(self.app, r'/api/v1/bot_management{slash:/?}{bot:[^/]*}')
+        # Tools List
+        self.app.router.add_view(
+            '/api/v1/tools',
+            ToolList,
+            name='tools_list'
+        )
 
     async def on_prepare(self, request, response):
         """

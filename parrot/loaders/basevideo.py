@@ -58,6 +58,7 @@ class BaseVideoLoader(AbstractLoader):
         self._model_size: str = kwargs.get('model_size', 'medium')
         self.summarization_model = "facebook/bart-large-cnn"
         self._model_name: str = kwargs.get('model_name', 'whisper')
+        device, _, dtype = self._get_device()
         self.summarizer = pipeline(
             "summarization",
             tokenizer=AutoTokenizer.from_pretrained(
@@ -66,7 +67,8 @@ class BaseVideoLoader(AbstractLoader):
             model=AutoModelForSeq2SeqLM.from_pretrained(
                 self.summarization_model
             ),
-            device=self._get_device()
+            device=device,
+            torch_dtype=dtype,
         )
         # language:
         self._language = language

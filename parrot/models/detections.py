@@ -1,4 +1,4 @@
-from typing import List, Dict, Optional, Literal, Any
+from typing import List, Dict, Optional, Literal, Any, Mapping
 from pydantic import BaseModel, Field
 
 class DetectionBox(BaseModel):
@@ -384,3 +384,138 @@ class PlanogramConfigBuilder:
     def build(self) -> Dict[str, Any]:
         """Build the final configuration dictionary"""
         return self.config
+
+
+def _dump(obj) -> Dict[str, Any]:
+    """Works with Pydantic v1/v2 or plain dicts."""
+    if obj is None:
+        return {}
+    if hasattr(obj, "model_dump"):
+        return obj.model_dump(exclude_none=True)
+    if hasattr(obj, "dict"):
+        return obj.dict(exclude_none=True)
+    if isinstance(obj, dict):
+        return obj
+    # Fallback: shallow attr dump
+    return {
+        k: getattr(obj, k) for k in dir(obj) if not k.startswith("_") and not callable(getattr(obj, k))
+    }
+
+def _product_label(p) -> str:
+    # ShelfProduct may be a pydantic model or dict
+    if p is None:
+        return "UNKNOWN"
+    if isinstance(p, dict):
+        name = p.get("name") or p.get("product_type") or "UNKNOWN"
+        return str(name)
+    name = getattr(p, "name", None) or getattr(p, "product_type", None) or "UNKNOWN"
+    return str(name)
+
+def build_planogram_json_diagram(planogram) -> Dict[str, Any]:
+    """
+    Produce a compact, human-friendly JSON 'diagram' of a PlanogramDescription.
+    Keys/shape kept simple for rendering and reporting.
+    """
+    shelves: List[Dict[str, Any]] = []
+    for s in getattr(planogram, "shelves", []):
+        # Accept model or dict
+        s_d = _dump(s)
+        level = s_d.get("level") or s_d.get("name") or s_d.get("label") or "unknown"
+        products = s_d.get("products", [])
+        expected = [_product_label(p) for p in products]
+        shelves.append({
+            "shelf": str(level),
+            "slots": len(products),
+            "expected_left_to_right": expected,
+            "compliance_threshold": s_d.get(
+                "compliance_threshold", getattr(planogram, "global_compliance_threshold", 0.8)
+            ),
+            "allow_extra_products": s_d.get("allow_extra_products", False),
+            "position_strict": s_d.get("position_strict", False),
+            "notes": s_d.get("notes"),
+        })
+
+    ad = _dump(getattr(planogram, "advertisement_endcap", None)) or None
+    aisle = _dump(getattr(planogram, "aisle", None))
+
+    diagram: Dict[str, Any] = {
+        "brand": getattr(planogram, "brand", ""),
+        "category": getattr(planogram, "category", ""),
+        "aisle": aisle,
+        "advertisement_endcap": ad,  # will be None if not configured
+        "shelves": shelves,
+        "global_compliance_threshold": getattr(planogram, "global_compliance_threshold", 0.8),
+        "weighted_scoring": dict(getattr(planogram, "weighted_scoring", {"product_compliance": 0.7, "text_compliance": 0.3})),
+        "metadata": {
+            "planogram_id": getattr(planogram, "planogram_id", None),
+            "created_date": getattr(planogram, "created_date", None),
+            "version": getattr(planogram, "version", "1.0"),
+            "notes": getattr(planogram, "notes", None),
+        },
+    }
+    return diagram
+
+def planogram_diagram_to_markdown(diagram: Mapping[str, Any]) -> str:
+    """Render the JSON diagram as Markdown ready for reports."""
+    brand = diagram.get("brand", "")
+    category = diagram.get("category", "")
+    gthr = diagram.get("global_compliance_threshold", "")
+    weights = diagram.get("weighted_scoring", {})
+    meta = diagram.get("metadata", {})
+    aisle = diagram.get("aisle", {})
+    ad = diagram.get("advertisement_endcap", None)
+    shelves = diagram.get("shelves", [])
+
+    def _fmt_dict(d: Mapping[str, Any]) -> str:
+        if not d:
+            return "-"
+        # compact key: value list
+        parts = []
+        for k, v in d.items():
+            if isinstance(v, (list, dict)):
+                parts.append(f"**{k}**: `{str(v)}`")
+            else:
+                parts.append(f"**{k}**: {v}")
+        return "<br>".join(parts)
+
+    # Header table
+    md = []
+    md.append("| Field | Value |")
+    md.append("|---|---|")
+    md.append(f"| **Brand** | {brand} |")
+    md.append(f"| **Category** | {category} |")
+    md.append(f"| **Global Threshold** | {gthr} |")
+    md.append(f"| **Weighted Scoring** | product: {weights.get('product_compliance', '-')}, text: {weights.get('text_compliance', '-')} |")
+    md.append(f"| **Planogram ID** | {meta.get('planogram_id','-')} |")
+    md.append(f"| **Version** | {meta.get('version','-')} |")
+    md.append(f"| **Created** | {meta.get('created_date','-')} |")
+    md.append(f"| **Notes** | {meta.get('notes','-')} |")
+    md.append("")
+    # Aisle block
+    md.append("**Aisle**")
+    md.append("")
+    md.append(_fmt_dict(aisle))
+    md.append("")
+    # Advertisement block
+    md.append("**Advertisement Endcap**")
+    md.append("")
+    if ad:
+        md.append(_fmt_dict(ad))
+    else:
+        md.append("_None_")
+    md.append("")
+    # Shelves table
+    if shelves:
+        md.append("**Shelves**")
+        md.append("")
+        md.append("| Shelf | Slots | Expected (L→R) | Threshold | Allow Extra | Position Strict | Notes |")
+        md.append("|---:|---:|---|---:|:---:|:---:|---|")
+        for s in shelves:
+            exp = ", ".join(str(x) for x in s.get("expected_left_to_right", []))
+            md.append(
+                f"| {s.get('shelf','-')} | {s.get('slots','-')} | `{exp}` | "
+                f"{s.get('compliance_threshold','-')} | {s.get('allow_extra_products', False)} | "
+                f"{s.get('position_strict', False)} | {s.get('notes','-')} |"
+            )
+        md.append("")
+    return "\n".join(md)

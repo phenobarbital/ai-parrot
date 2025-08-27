@@ -6,7 +6,8 @@ from pprint import pprint
 from pathlib import Path
 from parrot.bots.basic import BasicBot
 from parrot.loaders import (
-    PDFLoader
+    PDFLoader,
+    TXTLoader
 )
 
 async def get_agent():

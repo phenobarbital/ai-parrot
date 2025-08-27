@@ -45,7 +45,7 @@ class SentenceTransformerModel(EmbeddingModel):
         Returns:
             An instance of SentenceTransformer.
         """
-        device = self._get_device()
+        device, _, _ = self._get_device()
         model_name = model_name or self.model_name
         self.logger.info(
             f"Loading embedding model '{model_name}' on device '{device}'"
