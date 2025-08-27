@@ -228,6 +228,9 @@ class AbstractBot(DBInterface, ABC):
         """Set the program slug for the bot."""
         self._program_slug = program_slug
 
+    def get_vector_store(self):
+        return self._vector_store
+
     def default_permissions(self) -> dict:
         """
         Returns the default permissions for the bot.
@@ -1238,8 +1241,6 @@ class AbstractBot(DBInterface, ABC):
                 # Set additional metadata
                 response.session_id = session_id
                 response.turn_id = turn_id
-
-                print('RESPONSE > ', response, type(response))
 
                 # return the response Object:
                 return self.get_response(response, return_sources, return_context)

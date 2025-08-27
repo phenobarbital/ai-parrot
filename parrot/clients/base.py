@@ -209,6 +209,9 @@ class AbstractClient(ABC):
         if self.session:
             await self.session.close()
 
+    def __repr__(self):
+        return f'<{self.__name__} model={self.model} client_type={self.client_type}>'
+
     def set_program(self, program_slug: str) -> None:
         """Set the program slug for the client."""
         self._program = program_slug
