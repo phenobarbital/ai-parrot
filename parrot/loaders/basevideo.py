@@ -4,23 +4,15 @@ from abc import abstractmethod
 from pathlib import Path
 from moviepy.editor import VideoFileClip
 from pydub import AudioSegment
+import torch
 from transformers import (
     pipeline,
+    AutoModelForSpeechSeq2Seq,
+    AutoProcessor,
     AutoModelForSeq2SeqLM,
     AutoTokenizer,
-    GenerationConfig
 )
-from transformers import (
-    WhisperForConditionalGeneration,
-    WhisperProcessor,
-    WhisperTimeStampLogitsProcessor
-)
-
-from langchain.chains.summarize import load_summarize_chain
-from langchain.docstore.document import Document
-from langchain.text_splitter import (
-    TokenTextSplitter,
-)
+from ..stores.models import Document
 from .abstract import AbstractLoader
 
 
@@ -39,19 +31,27 @@ class BaseVideoLoader(AbstractLoader):
 
     def __init__(
         self,
-        urls: Union[List[str], str],
+        source: Optional[Union[str, Path, List[Union[str, Path]]]] = None,
         tokenizer: Callable[..., Any] = None,
         text_splitter: Callable[..., Any] = None,
         source_type: str = 'video',
         language: str = "en",
         video_path: Union[str, Path] = None,
+        download_video: bool = True,
         **kwargs
     ):
-        super().__init__(tokenizer, text_splitter, source_type, **kwargs)
-        if isinstance(urls, str):
-            self.urls = [urls]
+        self._download_video: bool = download_video
+        super().__init__(
+            source,
+            tokenizer=tokenizer,
+            text_splitter=text_splitter,
+            source_type=source_type,
+            **kwargs
+        )
+        if isinstance(source, str):
+            self.urls = [source]
         else:
-            self.urls = urls
+            self.urls = source
         self._task = kwargs.get('task', "automatic-speech-recognition")
         # Topics:
         self.topics: list = kwargs.get('topics', [])
@@ -89,8 +89,8 @@ class BaseVideoLoader(AbstractLoader):
                 continue
 
             # Convert timestamps to WebVTT format (HH:MM:SS.MMM)
-            start_vtt = f"{int(start // 3600):02}:{int(start % 3600 // 60):02}:{int(start % 60):02}.{int(start * 1000 % 1000):03}"
-            end_vtt = f"{int(end // 3600):02}:{int(end % 3600 // 60):02}:{int(end % 60):02}.{int(end * 1000 % 1000):03}"
+            start_vtt = f"{int(start // 3600):02}:{int(start % 3600 // 60):02}:{int(start % 60):02}.{int(start * 1000 % 1000):03}"  # noqa
+            end_vtt = f"{int(end // 3600):02}:{int(end % 3600 // 60):02}:{int(end % 60):02}.{int(end * 1000 % 1000):03}"  # noqa
 
             vtt += f"{i}\n{start_vtt} --> {end_vtt}\n{text}\n\n"
         # Save the VTT file
@@ -156,47 +156,6 @@ class BaseVideoLoader(AbstractLoader):
                 tokens[i:i+chunk_size]
             )
 
-    def get_summary(self, documents: list) -> str:
-        """
-        Get a summary of a text.
-        """
-        try:
-            splitter = TokenTextSplitter(
-                chunk_size=5000,
-                chunk_overlap=100,
-            )
-            summarize_chain = load_summarize_chain(
-                llm=self._llm,
-                chain_type="refine"
-            )
-            chunks = splitter.split_documents(documents)
-            summary = summarize_chain.invoke(chunks)
-            return summary
-        except Exception as e:
-            print('ERROR in get_summary:', e)
-            return ""
-
-    def summarization(self, text: str) -> str:
-        """
-        Get a summary of a text considering token limits.
-        """
-        try:
-            tokenizer = self.summarizer.tokenizer
-            # to be safe under the limit
-            max_length = tokenizer.model_max_length - 10
-            summaries = []
-            for text_chunk in self.chunk_text(text, max_length, tokenizer):
-                chunk_summary = self.summarizer(
-                    text_chunk,
-                    max_length=150,
-                    min_length=30,
-                    do_sample=False)[0]['summary_text']
-                summaries.append(chunk_summary)
-            return " ".join(summaries)
-        except Exception as e:
-            print('ERROR in summarization:', e)
-            return ""
-
     def extract_audio(
         self,
         video_path: Path,
@@ -206,120 +165,140 @@ class BaseVideoLoader(AbstractLoader):
         speed_factor: float = 1.5
     ):
         """
-        Extracts the audio from a video file and optionally compresses the audio speed.
-
-        Args:
-            video_path (str): Path to the video file.
-            audio_path (str): Path where the extracted audio file will be saved.
-            compress_speed (bool): Whether to compress the audio speed.
-            speed_factor (float): The factor by which to speed up the audio.
+        Extract audio from video. Prefer WAV 16k mono for Whisper.
         """
-        # Ensure that the paths are valid Path objects
         video_path = Path(video_path)
         audio_path = Path(audio_path)
 
-        # Check if the audio file already exists
         if audio_path.exists():
             print(f"Audio already extracted: {audio_path}")
             return
 
-        # Load the video and extract the audio
-        video_clip = VideoFileClip(str(video_path))
-        audio_clip = video_clip.audio
-        if not audio_clip:
+        # Extract as WAV 16k mono PCM
+        print(f"Extracting audio (16k mono WAV) to: {audio_path}")
+        clip = VideoFileClip(str(video_path))
+        if not clip.audio:
             print("No audio found in video.")
+            clip.close()
             return
 
-        # Write the extracted audio to the specified path
-        print(f"Extracting audio to: {audio_path}")
-        audio_clip.write_audiofile(str(audio_path))
-        audio_clip.close()
-        video_clip.close()
+        # moviepy/ffmpeg: pcm_s16le, 16k, mono
+        # Ensure audio_path has .wav
+        if audio_path.suffix.lower() != ".wav":
+            audio_path = audio_path.with_suffix(".wav")
 
-        # Optionally compress the audio speed
+        clip.audio.write_audiofile(
+            str(audio_path),
+            fps=16000,
+            nbytes=2,
+            codec="pcm_s16le",
+            ffmpeg_params=["-ac", "1"]
+        )
+        clip.audio.close()
+        clip.close()
+
+        # Optional speed compression (still output WAV @16k mono)
         if compress_speed:
             print(f"Compressing audio speed by factor: {speed_factor}")
-
-            # Load the audio file with pydub
             audio = AudioSegment.from_file(audio_path)
-
-            # Adjust the playback speed by modifying the frame rate
-            sped_up_audio = audio._spawn(audio.raw_data, overrides={
-                "frame_rate": int(audio.frame_rate * speed_factor)
-            })
-
-            # Restore the original frame rate to maintain proper playback speed
-            sped_up_audio = sped_up_audio.set_frame_rate(audio.frame_rate)
-
-            # Overwrite the original file with the sped-up version
-            if not output_path:
-                output_path = audio_path
-            sped_up_audio.export(output_path, format="mp3")
-            print(f"Compressed audio saved to: {audio_path}")
+            sped = audio._spawn(audio.raw_data, overrides={"frame_rate": int(audio.frame_rate * speed_factor)})
+            sped = sped.set_frame_rate(16000).set_channels(1).set_sample_width(2)
+            sped.export(str(output_path or audio_path), format="wav")
+            print(f"Compressed audio saved to: {output_path or audio_path}")
         else:
             print(f"Audio extracted: {audio_path}")
 
+    def get_whisper_transcript(
+        self,
+        audio_path: Path,
+        chunk_length: int = 30,
+        word_timestamps: bool = False
+    ):
+        """
+        Transcribe `audio_path` with Hugging Face Transformers Whisper pipeline, returning
+        chunk timestamps (and optionally word-level timestamps).
 
-    def get_whisper_transcript(self, audio_path: Path, chunk_length: int = 30):
-        # Initialize the Whisper parser
-        if self._model_name == 'whisper':
-            if self._language == 'en':
-                model_name = f"openai/whisper-{self._model_size}.en"
-            elif self._language == 'es':
-                model_name = f"juancopi81/whisper-{self._model_size}-es"
+        Returns a dict like:
+        {
+            "text": "...",
+            "chunks": [{"text": "...", "timestamp": (start, end)}, ...]
+        }
+        so your existing transcript_to_vtt/SRT functions keep working.
+        """
+        # 1) Resolve model id
+        # Default to multilingual Large v3 if nothing explicit is provided.
+        # Use English-only checkpoints when asked for EN and <= medium size.
+        lang = (self._language or "en").lower()
+
+        if self._model_name in (None, "", "whisper", "openai/whisper"):
+            size = (self._model_size or "medium").lower()
+            if lang == "en" and size in {"tiny", "base", "small", "medium"}:
+                model_id = f"openai/whisper-{size}.en"
+            elif size == 'turbo':
+                model_id = "openai/whisper-large-v3-turbo"
             else:
-                model_name = "openai/whisper-large-v3"
+                # Large-v3 (or turbo) are multilingual and strong defaults.
+                # If you want maximum speed, switch to "-v3-turbo".
+                model_id = "openai/whisper-large-v3"
         else:
-            model_name = self._model_name
+            model_id = self._model_name
 
-        # Load the model and processor
-        model = WhisperForConditionalGeneration.from_pretrained(model_name)
-        processor = WhisperProcessor.from_pretrained(model_name)
+        # 2) Safety checks
+        audio_path = Path(audio_path)
+        if not (audio_path.exists() and audio_path.stat().st_size > 0):
+            return None
 
-        # Try to load the generation config, fallback to default if it doesn't exist
+        # 3) Device + dtype
         try:
-            generation_config = GenerationConfig.from_pretrained(model_name)
-        except EnvironmentError:
-            print(
-                f"Warning: No generation_config.json found for model {model_name}. Using default configuration."
-            )
-            generation_config = model.generation_config
-
-        # Check and set the no_timestamps_token_id if it doesn't exist
-        if not hasattr(model.config, 'no_timestamps_token_id'):
-            model.config.no_timestamps_token_id = processor.tokenizer.convert_tokens_to_ids('<|notimestamps|>')
-
-        # Define the generation configuration with WhisperTimeStampLogitsProcessor
-        try:
-            model.config.logits_processor = [
-                WhisperTimeStampLogitsProcessor(generation_config)
-            ]
+            device_idx = self._get_device()  # expect -1 (CPU) or 0/1/...
         except Exception:
-            model.config.logits_processor = [
-                WhisperTimeStampLogitsProcessor(model.config)
-            ]
+            device_idx = 0 if torch.cuda.is_available() else -1
 
-        whisper_pipe = pipeline(
-            task=self._task,
+        torch_dtype = torch.float16 if (device_idx != -1 and torch.cuda.is_available()) else torch.float32
+
+        # 4) Load model & processor
+        model = AutoModelForSpeechSeq2Seq.from_pretrained(
+            model_id,
+            torch_dtype=torch_dtype,
+            low_cpu_mem_usage=True,
+            use_safetensors=True
+        )
+        if device_idx != -1:
+            model.to(torch.device(f"cuda:{device_idx}" if isinstance(device_idx, int) else "cuda"))
+
+        processor = AutoProcessor.from_pretrained(model_id)
+
+        # 5) Properly set language/task via forced decoder prompt ids
+        generate_kwargs = {}
+        try:
+            forced_ids = processor.get_decoder_prompt_ids(language=lang, task="transcribe")
+            if forced_ids:
+                generate_kwargs["forced_decoder_ids"] = forced_ids
+        except Exception:
+            # Some community checkpoints might not expose this utility; it's fine to skip.
+            pass
+
+        # 6) Build the pipeline
+        asr = pipeline(
+            task="automatic-speech-recognition",
             model=model,
             tokenizer=processor.tokenizer,
             feature_extractor=processor.feature_extractor,
-            device=self._get_device(),
-            chunk_length_s=chunk_length,
-            use_fast=True
+            torch_dtype=torch_dtype,
+            device=device_idx,
+            chunk_length_s=chunk_length,  # long-form chunking
+            batch_size=8,                 # adjust for your VRAM
         )
-        if audio_path.exists() and audio_path.stat().st_size > 0:
-            # Use the parser to extract transcript
-            return whisper_pipe(
-                str(audio_path),
-                return_timestamps=True
-            )
-        return None
+
+        # 7) Run — choose chunk timestamps (default) or word-level timestamps
+        ts_param = "word" if word_timestamps else True  # returns `chunks` either way
+        return asr(str(audio_path), return_timestamps=ts_param, generate_kwargs=generate_kwargs)
+
 
     @abstractmethod
     async def _load(self, source: str, **kwargs) -> List[Document]:
         pass
 
     @abstractmethod
-    def load_video(self, url: str, video_title: str, transcript: str) -> list:
+    async def load_video(self, url: str, video_title: str, transcript: str) -> list:
         pass

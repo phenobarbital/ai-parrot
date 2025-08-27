@@ -92,6 +92,7 @@ loaders = [
     "pytube==15.0.0",
     "youtube_transcript_api==1.0.3",
     "python-pptx==1.0.2",
+    "yt-dlp==2025.8.22",
 ]
 
 images = [
@@ -130,8 +131,8 @@ vectors = [
     "transformers>=4.51.1,<=4.51.3",
     "sentence-transformers>=5.0.0",
     "tokenizers>=0.20.0,<=0.21.1",
-    "tensorflow==2.18.0",
-    "tf-keras==2.18.0",
+    "tensorflow>=2.19.1",
+    "tf-keras==2.19.0",
     "simsimd>=4.3.1",
     "opencv-python==4.10.0.84",
     "chromadb==0.6.3",

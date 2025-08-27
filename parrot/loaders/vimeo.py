@@ -1,7 +1,5 @@
 from typing import Optional, Union
-from transformers import pipeline
-import torch
-from langchain.docstore.document import Document
+from ..stores.models import Document
 from .youtube import YoutubeLoader
 
 
@@ -9,7 +7,12 @@ class VimeoLoader(YoutubeLoader):
     """
     Loader for Vimeo videos.
     """
-    def load_video(self, url: str, video_title: str, transcript: Optional[Union[str, None]] = None) -> list:
+    async def load_video(
+        self,
+        url: str,
+        video_title: str,
+        transcript: Optional[Union[str, None]] = None
+    ) -> list:
         metadata = {
             "source": url,
             "url": url,
