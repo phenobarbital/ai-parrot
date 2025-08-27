@@ -1,17 +1,20 @@
-from typing import Union, List
-from bs4 import BeautifulSoup
+from typing import Union, List, Optional, Tuple, Dict, Any
+import time
+from bs4 import BeautifulSoup, NavigableString
 from markdownify import MarkdownConverter
 from webdriver_manager.chrome import ChromeDriverManager
+from webdriver_manager.firefox import GeckoDriverManager
 from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service as ChromeService
+from selenium.webdriver.firefox.service import Service as FirefoxService
+from selenium.webdriver.chrome.options import Options as ChromeOptions
+from selenium.webdriver.firefox.options import Options as FirefoxOptions
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from langchain.docstore.document import Document
-from langchain.text_splitter import MarkdownTextSplitter
 from navconfig.logging import logging
 from .abstract import AbstractLoader
+from ..stores.models import Document
 
 
 logging.getLogger(name='selenium.webdriver').setLevel(logging.WARNING)
@@ -19,10 +22,18 @@ logging.getLogger(name='WDM').setLevel(logging.WARNING)
 logging.getLogger(name='matplotlib').setLevel(logging.WARNING)
 
 
+DEFAULT_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/122.0.0.0 Safari/537.36"
+)
+
+
 class WebLoader(AbstractLoader):
-    """Class to load web pages and extract text."""
-    chrome_options = [
-        "--headless",
+    """Load web pages and extract HTML + Markdown + structured bits (videos/nav/tables)."""
+
+    chrome_args = [
+        "--headless=new",
         "--enable-automation",
         "--lang=en",
         "--disable-extensions",
@@ -30,40 +41,318 @@ class WebLoader(AbstractLoader):
         "--no-sandbox",
         "--disable-features=NetworkService",
         "--disable-dev-shm-usage",
-        "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36"
     ]
-    def __init__(self, source_type: str = 'website', **kwargs):
+
+    firefox_args = [
+        "-headless",
+    ]
+
+    def __init__(
+        self,
+        source_type: str = 'website',
+        *,
+        browser: str = "chrome",              # "chrome" | "firefox"
+        timeout: int = 60,
+        page_load_strategy: str = "normal",   # "normal" | "eager" | "none"
+        user_agent: Optional[str] = DEFAULT_UA,
+        chrome_extra_args: Optional[List[str]] = None,
+        firefox_extra_args: Optional[List[str]] = None,
+        **kwargs
+    ):
         self._source_type = source_type
-        self._options = Options()
-        self.timeout: int = kwargs.pop('timeout', 60)
-        for option in self.chrome_options:
-            self._options.add_argument(option)
-        self.driver = webdriver.Chrome(
-            service=Service(ChromeDriverManager().install()),
-            options=self._options
+        self.timeout = timeout
+        self.browser = browser.lower()
+        self.page_load_strategy = page_load_strategy
+        self.user_agent = user_agent
+
+        # Build driver
+        self.driver = self._build_driver(
+            chrome_extra_args=chrome_extra_args or [],
+            firefox_extra_args=firefox_extra_args or []
         )
+
         super().__init__(source_type=source_type, **kwargs)
 
-    def md(self, soup, **options):
+    # ------------------
+    # Driver management
+    # ------------------
+    def _build_driver(
+        self,
+        chrome_extra_args: List[str],
+        firefox_extra_args: List[str]
+    ) -> webdriver:
+
+        if self.browser == "firefox":
+            options = FirefoxOptions()
+            for arg in self.firefox_args + firefox_extra_args:
+                options.add_argument(arg)
+            if self.user_agent:
+                # Firefox uses a pref for UA override
+                options.set_preference("general.useragent.override", self.user_agent)
+            # Page load strategy via capability
+            caps = webdriver.DesiredCapabilities.FIREFOX.copy()
+            caps["pageLoadStrategy"] = self.page_load_strategy
+
+            service = FirefoxService(GeckoDriverManager().install())
+            driver = webdriver.Firefox(
+                service=service, options=options
+            )
+            return driver
+
+        # default: Chrome
+        options = ChromeOptions()
+        for arg in self.chrome_args + chrome_extra_args:
+            options.add_argument(arg)
+        if self.user_agent:
+            options.add_argument(f"user-agent={self.user_agent}")
+        options.page_load_strategy = self.page_load_strategy
+
+        service = ChromeService(ChromeDriverManager().install())
+        driver = webdriver.Chrome(service=service, options=options)
+        return driver
+
+    def __del__(self):
+        try:
+            if getattr(self, "driver", None):
+                self.driver.quit()
+        except Exception:
+            pass
+
+    # ------------------
+    # Markdown helper
+    # ------------------
+    def md(self, soup: BeautifulSoup, **options) -> str:
         return MarkdownConverter(**options).convert_soup(soup)
 
-    def clean_html(self, html, tags, objects=[]):
+    # ------------------
+    # Structured parsers
+    # ------------------
+    def _text(self, node: Any) -> str:
+        if node is None:
+            return ""
+        if isinstance(node, NavigableString):
+            return str(node).strip()
+        return node.get_text(" ", strip=True)
+
+    def _collect_video_links(self, soup: BeautifulSoup) -> List[str]:
+        items: List[str] = []
+
+        # iframes (YouTube/Vimeo/etc.)
+        for iframe in soup.find_all("iframe"):
+            src = iframe.get("src")
+            if not src:
+                continue
+            items.append(f"Video Link: {src}")
+
+        # <video> and <source>
+        for video in soup.find_all("video"):
+            src = video.get("src")
+            if src:
+                items.append(f"Video Link: {src}")
+            for source in video.find_all("source"):
+                s = source.get("src")
+                if s:
+                    items.append(f"Video Source: {s}")
+
+        # Deduplicate while preserving order
+        seen = set()
+        result = []
+        for x in items:
+            if x not in seen:
+                result.append(x)
+                seen.add(x)
+        return result
+
+    def _collect_navbars(self, soup: BeautifulSoup) -> List[str]:
+        """
+        Extract navigation menus from <nav> (and common menu containers) as Markdown lists.
+        """
+        nav_texts: List[str] = []
+
+        def nav_to_markdown(nav) -> str:
+            # Gather all links in order; keep nesting if possible using lists inside lists
+            # For simplicity, flatten to a simple list grouped by sections (ul/ol)
+            lines = []
+            # Try recognizable menu blocks:
+            blocks = nav.find_all(["ul", "ol"], recursive=True)
+            if not blocks:
+                # Fallback: just collect links directly under nav
+                for a in nav.find_all("a", href=True):
+                    txt = self._text(a)
+                    href = a.get("href", "")
+                    if txt or href:
+                        lines.append(f"- {txt} (Link: {href})" if href else f"- {txt}")
+            else:
+                for block in blocks:
+                    for li in block.find_all("li", recursive=False):
+                        # top-level item
+                        a = li.find("a", href=True)
+                        if a:
+                            txt = self._text(a)
+                            href = a.get("href", "")
+                            lines.append(f"- {txt} (Link: {href})" if href else f"- {txt}")
+                        else:
+                            # non-link li text
+                            t = self._text(li)
+                            if t:
+                                lines.append(f"- {t}")
+                        # nested lists
+                        for sub in li.find_all(["ul", "ol"], recursive=False):
+                            for sub_li in sub.find_all("li", recursive=False):
+                                a2 = sub_li.find("a", href=True)
+                                if a2:
+                                    txt2 = self._text(a2)
+                                    href2 = a2.get("href", "")
+                                    lines.append(f"  - {txt2} (Link: {href2})" if href2 else f"  - {txt2}")
+                                else:
+                                    t2 = self._text(sub_li)
+                                    if t2:
+                                        lines.append(f"  - {t2}")
+            return "\n".join(lines)
+
+        # <nav> regions
+        for nav in soup.find_all("nav"):
+            md_list = nav_to_markdown(nav)
+            if md_list.strip():
+                nav_texts.append("Navigation:\n" + md_list)
+
+        # Also try common menu containers if no <nav>
+        if not nav_texts:
+            candidates = soup.select("[role='navigation'], .navbar, .menu, .nav")
+            for nav in candidates:
+                md_list = nav_to_markdown(nav)
+                if md_list.strip():
+                    nav_texts.append("Navigation:\n" + md_list)
+
+        return nav_texts
+
+    def _table_to_markdown(self, table) -> str:
+        """
+        Convert a <table> to GitHub-flavored Markdown.
+        """
+        # caption (if any)
+        caption_el = table.find("caption")
+        caption = self._text(caption_el) if caption_el else ""
+
+        # headers
+        headers = []
+        thead = table.find("thead")
+        if thead:
+            ths = thead.find_all("th")
+            if ths:
+                headers = [self._text(th) for th in ths]
+
+        # if no thead, try first row as headers
+        if not headers:
+            first_row = table.find("tr")
+            if first_row:
+                cells = first_row.find_all(["th", "td"])
+                headers = [self._text(c) for c in cells]
+
+        # rows
+        rows = []
+        for tr in table.find_all("tr"):
+            cells = tr.find_all(["td"])
+            if not cells:
+                # skip header rows here
+                continue
+            rows.append([self._text(td) for td in cells])
+
+        if not headers and rows:
+            # make generic headers
+            headers = [f"Col {i+1}" for i in range(len(rows[0]))]
+
+        # Normalize column count
+        ncol = len(headers)
+        norm_rows = []
+        for r in rows:
+            if len(r) < ncol:
+                r = r + [""] * (ncol - len(r))
+            elif len(r) > ncol:
+                r = r[:ncol]
+            norm_rows.append(r)
+
+        def esc(cell: str) -> str:
+            # Escape pipes in markdown tables
+            return (cell or "").replace("|", "\\|").strip()
+
+        md = []
+        if caption:
+            md.append(f"Table: {caption}\n")
+        if headers:
+            md.append("| " + " | ".join(esc(h) for h in headers) + " |")
+            md.append("| " + " | ".join("---" for _ in headers) + " |")
+        for r in norm_rows:
+            md.append("| " + " | ".join(esc(c) for c in r) + " |")
+        return "\n".join(md).strip()
+
+    def _collect_tables(self, soup: BeautifulSoup, max_tables: int = 25) -> List[str]:
+        out = []
+        for i, table in enumerate(soup.find_all("table")):
+            if i >= max_tables:
+                break
+            try:
+                out.append(self._table_to_markdown(table))
+            except Exception:
+                # Skip malformed tables, continue
+                continue
+        return out
+
+    # ------------------
+    # Cleaning & extract
+    # ------------------
+    def clean_html(
+        self,
+        html: str,
+        tags: List[str],
+        objects: List[Dict[str, Dict[str, Any]]] = [],
+        *,
+        parse_videos: bool = True,
+        parse_navs: bool = True,
+        parse_tables: bool = True
+    ) -> Tuple[List[str], str, str]:
         soup = BeautifulSoup(html, 'html.parser')
-        page_title = soup.title.string
+
+        # Remove script/style/link early
+        for el in soup(["script", "style", "link", "noscript"]):
+            el.decompose()
+
+        # Title (robust)
+        page_title = ""
+        try:
+            if soup.title and soup.title.string:
+                page_title = soup.title.string.strip()
+            if not page_title:
+                og = soup.find("meta", property="og:title")
+                if og and og.get("content"):
+                    page_title = og["content"].strip()
+        except Exception:
+            page_title = ""
+
+        # Full-page Markdown (after cleanup)
         md_text = self.md(soup)
-        # Remove script and style elements
-        for script_or_style in soup(["script", "style", "link"]):
-            script_or_style.decompose()
-        # Extract Content
-        content = []
-        paragraphs = [' '.join(p.get_text().split()) for p in soup.find_all(tags)]
-        # Look for iframe elements and format their src attributes into readable strings
-        iframes = soup.find_all('iframe')
-        for iframe in iframes:
-            video_src = iframe.get('src', '')
-            # You might want to customize the formatting of this string
-            formatted_video = f"Video Link: {video_src}" if video_src else ""
-            content.append(formatted_video)
+
+        content: List[str] = []
+
+        # Paragraphs/headers/sections requested by tags
+        for p in soup.find_all(tags):
+            text = ' '.join(p.get_text(" ", strip=True).split())
+            if text:
+                content.append(text)
+
+        # Videos
+        if parse_videos:
+            content.extend(self._collect_video_links(soup))
+
+        # Navbars / menus
+        if parse_navs:
+            content.extend(self._collect_navbars(soup))
+
+        # Tables (as Markdown)
+        if parse_tables:
+            content.extend(self._collect_tables(soup))
+
+        # Custom objects support (keeps your existing behavior)
         if objects:
             for obj in objects:
                 (element, args), = obj.items()
@@ -71,128 +360,150 @@ class WebLoader(AbstractLoader):
                     parse_list = args.pop('parse_list')
                     # Find the element container:
                     container = soup.find(element, attrs=args)
-                    # Parse list of objects (UL, LI)
-                    name_type = parse_list.pop('type')
-                    params = parse_list.get('find')
-                    el = params.pop(0)
-                    try:
-                        attrs = params.pop(0)
-                    except IndexError:
-                        attrs = {}
+                    if not container:
+                        continue
+                    name_type = parse_list.pop('type', 'List')
+                    params = parse_list.get('find', [])
+                    el = params[0] if params else 'ul'
+                    attrs = params[1] if len(params) > 1 else {}
                     elements = container.find_all(el, attrs=attrs)
                     structured_text = ''
                     for element in elements:
-                        title = element.find('span', class_='title').get_text(strip=True)
+                        title_el = element.find('span', class_='title')
+                        title = title_el.get_text(strip=True) if title_el else ''
                         lists = element.find_all('ul')
                         if lists:
-                            structured_text += f"\nCategory: {title}\n{name_type}:\n"
-                        for ul in lists:
-                            items = [f"- {li.get_text(strip=True)}" for li in ul.select('li')]
-                            formatted_list = '\n'.join(items)
-                            structured_text += formatted_list
-                        structured_text += "\n"
-                    content.append(structured_text)
+                            if title:
+                                structured_text += f"\nCategory: {title}\n{name_type}:\n"
+                            for ul in lists:
+                                items = [f"- {li.get_text(strip=True)}" for li in ul.select('li')]
+                                structured_text += '\n'.join(items)
+                            structured_text += "\n"
+                    if structured_text.strip():
+                        content.append(structured_text.strip())
                 else:
                     elements = soup.find_all(element, attrs=args)
                     for element in elements:
-                        # Handle <a> tags within the current element
-                        links = element.find_all('a')
-                        for link in links:
-                            # Extract link text and href, format them into a readable string
+                        # Normalize links: "Text (Link: URL)"
+                        for link in element.find_all('a'):
                             link_text = link.get_text(strip=True)
                             href = link.get('href', '')
-                            formatted_link = (
-                                f"{link_text} (Link: {href})"
-                                if href
-                                else link_text
-                            )
-                            # Replace the original link text in the element
-                            # with the formatted version
-                            link.replace_with(formatted_link)
-                        # work with UL lists:
-                        lists = element.find_all('ul')
-                        for ul in lists:
+                            formatted = f"{link_text} (Link: {href})" if href else link_text
+                            link.replace_with(formatted)
+                        # UL lists
+                        for ul in element.find_all('ul'):
                             items = [li.get_text(strip=True) for li in ul.select('li')]
-                            formatted_list = '\n'.join(items)
-                            content.append(formatted_list)
+                            if items:
+                                content.append('\n'.join(items))
                         cleaned_text = ' '.join(element.get_text().split())
-                        content.append(cleaned_text)
-        return (content + paragraphs, md_text, page_title)
+                        if cleaned_text:
+                            content.append(cleaned_text)
 
-    async def _load(self, address: dict, **kwargs) -> List[Document]:
-        (url, args), = address.items()
-        self.logger.info(
-            f'Downloading URL {url} with args {args}'
-        )
+        return (content, md_text, page_title)
+
+    def _normalize_url_args(self, address, kwargs):
+        """
+        Accept either:
+        - address: "https://example.com"  (kwargs hold options)
+        - address: {"https://example.com": {...}}  (options in the value)
+        Merge kwargs on top so explicit call-time args win.
+        """
+        if isinstance(address, str):
+            url = address
+            args = dict(kwargs) if kwargs else {}
+            return url, args
+
+        if isinstance(address, dict):
+            (url, args), = address.items()
+            args = dict(args or {})
+            # allow kwargs to override dict-provided args
+            if kwargs:
+                args.update(kwargs)
+            return url, args
+
+        raise TypeError(f"Unsupported address type for WebLoader: {type(address)}")
+
+    async def _load(self, address: Union[str, dict], **kwargs) -> List[Document]:
+        url, args = self._normalize_url_args(address, kwargs)
+        self.logger.info(f'Downloading URL {url} with args {args}')
+
+        # Waiting / cookie handling
         locator = args.get('locator', (By.TAG_NAME, 'body'))
         wait = WebDriverWait(self.driver, self.timeout)
-        acookies = args.get('accept_cookies', False)
+        acookies = args.get('accept_cookies', False)  # e.g., (By.ID, "accept-all")
+
+        # Optional waits
+        sleep_after = args.get('sleep_after', 0)  # seconds
+        parse_videos = args.get('parse_videos', True)
+        parse_navs = args.get('parse_navs', True)
+        parse_tables = args.get('parse_tables', True)
+        extract_tags = args.get('tags', ['p', 'title', 'h1', 'h2', 'section', 'article'])
+        objects = args.get('objects', [])
+        source_type = args.get('source_type', self._source_type)
+
         try:
             self.driver.get(url)
-            # After loading page, accept cookies
-            wait.until(
-                EC.presence_of_element_located(
-                    locator
-                )
-            )
+            wait.until(EC.presence_of_element_located(locator))
             if acookies:
-                btn = wait.until(
-                    EC.element_to_be_clickable(
-                        acookies
-                    )
-                )
-                btn.click()
+                try:
+                    btn = wait.until(EC.element_to_be_clickable(acookies))
+                    btn.click()
+                except Exception:
+                    pass
         except Exception as exc:
             print(f"Failed to Get {url}: {exc}")
-            self.logger.exception(
-                str(exc), stack_info=True
-            )
+            self.logger.exception(str(exc), stack_info=True)
             raise
+
+        if sleep_after:
+            time.sleep(float(sleep_after))
+
         try:
-            extract = args.get('tags', ['p', 'title', 'h1', 'h2', 'section', 'article'])
-            objects = args.get('objects', [])
-            source_type = args.get('source_type', self._source_type)
             html_content = self.driver.page_source
             content, md_text, page_title = self.clean_html(
                 html_content,
-                extract,
-                objects
+                extract_tags,
+                objects,
+                parse_videos=parse_videos,
+                parse_navs=parse_navs,
+                parse_tables=parse_tables
             )
+            if not page_title:
+                page_title = url
+
             metadata = {
                 "source": url,
-                # "index": page_title,
                 "url": url,
                 "filename": page_title,
                 "source_type": source_type,
-                'type': 'webpage',
+                "type": "webpage",
                 "document_meta": {
                     "language": "en",
                     "title": page_title,
                 },
             }
-            docs = []
-            site_content = []
+
+            docs: List[Document] = []
             if md_text:
                 docs.append(
                     Document(
                         page_content=md_text,
-                        metadata=metadata
+                        metadata={**metadata, "content_kind": "markdown_full"}
                     )
                 )
-                # for chunk in self._mark_splitter.split_text(md_text):
-                #     docs.append(
-                #         Document(
-                #             page_content=chunk,
-                #             metadata=metadata
-                #         )
-                #     )
-            if content:
-                site_content = [
-                    Document(
-                        page_content=paragraph,
-                        metadata=metadata
-                    ) for paragraph in content
-                ]
-            return docs + site_content
+
+            for chunk in content:
+                if chunk and isinstance(chunk, str):
+                    docs.append(
+                        Document(
+                            page_content=chunk,
+                            metadata={**metadata, "content_kind": "fragment"}
+                        )
+                )
+
+            return docs
+
         except Exception as exc:
             print(f"Failed to load {url}: {exc}")
+            self.logger.exception(str(exc), stack_info=True)
+            return []

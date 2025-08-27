@@ -32,6 +32,8 @@ class PDFMarkdownLoader(BasePDF):
     3. Fallback manual conversion using PyMuPDF
     """
 
+    extensions: List[str] = {'.pdf'}
+
     def __init__(
         self,
         source: Union[str, PurePath, List[PurePath]],
