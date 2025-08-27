@@ -118,6 +118,40 @@ class QuerySourceTool(AbstractTool):
             date_field: [date_range["start_date"], date_range["end_date"]]
         }
 
+    def _is_empty(self, result: Union[List[Dict[str, Any]], pd.DataFrame, None]) -> bool:
+        """
+        Safely check if a query result is empty.
+        Handles DataFrames, lists, dicts, and None values properly.
+        """
+        if result is None:
+            return True
+        elif isinstance(result, (list, dict, tuple)):
+            return len(result) == 0
+        elif isinstance(result, pd.DataFrame):
+            return result.empty
+        else:
+            try:
+                return not bool(result)
+            except ValueError:
+                # Handle any other "truth value is ambiguous" errors
+                return hasattr(result, '__len__') and len(result) == 0
+
+    def _get_row_count(self, result):
+        """Safely get row count from any result type."""
+        if result is None:
+            return 0
+        elif isinstance(result, pd.DataFrame):
+            return len(result)
+        elif isinstance(result, (list, tuple)):
+            return len(result)
+        elif isinstance(result, dict):
+            return 1
+        else:
+            try:
+                return len(result)
+            except (TypeError, AttributeError):
+                return 1
+
     async def _execute(
         self,
         query_slug: Optional[str] = None,
@@ -125,7 +159,7 @@ class QuerySourceTool(AbstractTool):
         conditions: Optional[Dict[str, Any]] = None,
         additional_filters: Optional[Dict[str, Any]] = None,
         driver: Optional[str] = None,
-        return_format: str = "pandas",
+        return_format: str = "json",
         structured_output_class: Optional[str] = None,
         lazy: bool = True,
         limit: Optional[int] = None,
@@ -226,7 +260,7 @@ class QuerySourceTool(AbstractTool):
                 )
 
 
-            if not result:
+            if self._is_empty(result):
                 return ToolResult(
                     status="empty",
                     result=None,
@@ -252,7 +286,7 @@ class QuerySourceTool(AbstractTool):
                 "query_slug": query_slug,
                 "raw_query": query if not query_slug else None,
                 "driver": driver,
-                "row_count": len(result) if isinstance(result, list) else 1,
+                "row_count": self._get_row_count(result),
                 "return_format": return_format,
                 "conditions": conditions
             }
