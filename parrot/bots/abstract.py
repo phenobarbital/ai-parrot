@@ -1242,8 +1242,6 @@ class AbstractBot(DBInterface, ABC):
                 response.session_id = session_id
                 response.turn_id = turn_id
 
-                print('RESPONSE > ', response, type(response))
-
                 # return the response Object:
                 return self.get_response(response, return_sources, return_context)
 
