@@ -1,9 +1,8 @@
-from typing import Any, Union, List
+from typing import Union, List
 from collections.abc import Callable
 import re
-import math
 from pathlib import PurePath
-from langchain.docstore.document import Document
+from ..stores.models import Document
 from .basevideo import BaseVideoLoader
 
 
@@ -45,7 +44,7 @@ class VideoLocalLoader(BaseVideoLoader):
     """
     Generating Video transcripts from local Videos.
     """
-    _extension = ['.mp4', '.webm']
+    extensions: List[str] = ['.mp4', '.webm']
 
     def __init__(
         self,

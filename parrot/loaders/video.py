@@ -2,7 +2,7 @@ from typing import List
 from abc import abstractmethod
 from pathlib import Path
 import subprocess
-from langchain.docstore.document import Document
+from ..stores.models import Document
 from .basevideo import BaseVideoLoader
 
 
@@ -77,13 +77,13 @@ class VideoLoader(BaseVideoLoader):
                 video_title = parts
             elif isinstance(parts, dict):
                 video_title = parts['title']
-        docs = self.load_video(source, video_title, transcript)
+        docs = await self.load_video(source, video_title, transcript)
         documents.extend(docs)
         # return documents
         return documents
 
     @abstractmethod
-    def load_video(self, url: str, video_title: str, transcript: str) -> list:
+    async def load_video(self, url: str, video_title: str, transcript: str) -> list:
         pass
 
     def parse(self, source):
