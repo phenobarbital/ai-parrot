@@ -498,9 +498,9 @@ class SQLDbAgent(AbstractDBAgent):
             )
 
             # Generate query using LLM
-            response = await self.llm_client.generate_response(
+            response = await self.llm.ask(
                 prompt=prompt,
-                model=self.model_name,
+                model=self.llm.model,
                 temperature=0.1  # Low temperature for more deterministic results
             )
 

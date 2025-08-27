@@ -1,5 +1,6 @@
 from asyncdb import AsyncDB
 from navigator.views import (
+    BaseHandler,
     ModelView,
     BaseView,
     FormModel
@@ -15,6 +16,7 @@ from .models import (
     ChatbotFeedback,
     FeedbackType
 )
+from ..tools.abstract import ToolRegistry
 
 
 class PromptLibraryManagement(ModelView):
@@ -194,3 +196,23 @@ class ChatbotHandler(ModelView):
 
     async def _set_created_by(self, value, column, data):
         return await self.get_userid(session=self._session)
+
+class ToolList(BaseView):
+    """
+    ToolList.
+    description: ToolList for Parrot Application.
+    """
+    async def get(self):
+        registry = ToolRegistry()
+        try:
+            tools = registry.discover_tools()
+            return self.json_response({
+                "tools": tools
+            })
+        except Exception as e:
+            return self.error(
+                response={
+                    "message": f"Error on Tool List: {e}"
+                },
+                status=400
+            )

@@ -7,7 +7,7 @@ from langchain_core.tools import BaseTool, BaseToolkit, StructuredTool, ToolExce
 from datamodel.parsers.json import json_decoder, json_encoder  # pylint: disable=E0611
 from datamodel.exceptions import ParserError  # pylint: disable=E0611
 from navconfig import config
-from ..interfaces.http import HTTPService, ua
+from ...interfaces.http import HTTPService, ua
 
 
 ctt_list: list = [
