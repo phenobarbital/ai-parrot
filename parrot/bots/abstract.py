@@ -228,6 +228,9 @@ class AbstractBot(DBInterface, ABC):
         """Set the program slug for the bot."""
         self._program_slug = program_slug
 
+    def get_vector_store(self):
+        return self._vector_store
+
     def default_permissions(self) -> dict:
         """
         Returns the default permissions for the bot.

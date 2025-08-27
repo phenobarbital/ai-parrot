@@ -277,7 +277,6 @@ class BaseVideoLoader(AbstractLoader):
             model=model,
             tokenizer=processor.tokenizer,
             feature_extractor=processor.feature_extractor,
-            torch_dtype=torch_dtype,
             device=device_idx,
             chunk_length_s=chunk_length,  # long-form chunking
             torch_dtype=torch_dtype,      # <-- fp16/bf16 on CUDA
