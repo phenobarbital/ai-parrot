@@ -1,7 +1,7 @@
-from aiohttp import web
 import uuid
-from asyncdb.exceptions.exceptions import NoDataFound  # noqa: E0611
-from datamodel.exceptions import ValidationError  # noqa: E0611
+from aiohttp import web
+from asyncdb.exceptions.exceptions import NoDataFound  # pylint: disable=E0611  # noqa
+from datamodel.exceptions import ValidationError  # pylint: disable=E0611  # noqa
 from navigator_auth.decorators import (
     is_authenticated,
     user_session,
@@ -9,6 +9,7 @@ from navigator_auth.decorators import (
 )
 from navigator.views import BaseView
 from ..bots.abstract import AbstractBot
+from ..loaders import AVAILABLE_LOADERS
 from .models import BotModel
 
 
@@ -259,3 +260,115 @@ class BotHandler(BaseView):
                 exception=exc,
                 status=400
             )
+
+
+@is_authenticated()
+@user_session()
+class BotManagement(BaseView):
+    """BotManagement.
+    description: Bot Management Handler for Parrot Application.
+    Use this handler to list all available chatbots, upload files, and delete chatbots.
+    """
+    async def get(self):
+        """List all available chatbots.
+        """
+        try:
+            manager = self.request.app['bot_manager']
+        except KeyError:
+            return self.json_response(
+                {
+                "message": "Chatbot Manager is not installed."
+                },
+                status=404
+            )
+        try:
+            all_bots = manager.get_bots()
+            bots = []
+            for bot_name, bot in all_bots.items():
+                bots.append({
+                    "name": bot_name,
+                    "bot_id": bot.chatbot_id,
+                    "bot_class": str(bot.__class__.__name__),
+                    "description": bot.description,
+                    "backstory": bot.backstory,
+                    "role": bot.role,
+                    "embedding_model": bot.embedding_model,
+                    "llm": f"{bot.llm!r}",
+                    "temperature": bot.llm.temperature,
+                    "documents": bot.get_vector_store()
+                })
+        except Exception as exc:
+            return self.error(
+                response={
+                    "message": f"Error retrieving chatbots.",
+                    "exception": str(exc),
+                    "stacktrace": str(exc.__traceback__)
+                },
+                exception=exc,
+                status=400
+            )
+        return self.json_response(
+            {
+                "bots": bots
+            }
+        )
+
+    async def put(self):
+        """Upload a file to a chatbot.
+        """
+        attachments, form_data = await self.handle_upload()
+        try:
+            manager = self.request.app['bot_manager']
+        except KeyError:
+            return self.json_response(
+                {
+                "message": "Chatbot Manager is not installed."
+                },
+                status=404
+            )
+        qs = self.query_parameters(self.request)
+        chatbot_name = qs.get('chatbot', None)
+        if not chatbot_name:
+            return self.json_response(
+                {
+                    "message": "Chatbot name is required."
+                },
+                status=400
+            )
+        try:
+            manager = self.request.app['bot_manager']
+        except KeyError:
+            return self.json_response(
+                {
+                "message": "Chatbot Manager is not installed."
+                },
+                status=404
+            )
+        try:
+            chatbot: AbstractBot = manager.get_bot(chatbot_name)
+            if not chatbot:
+                raise KeyError(
+                    f"Chatbot {chatbot_name} not found."
+                )
+        except (TypeError, KeyError):
+            return self.json_response(
+                {
+                "message": f"Chatbot {chatbot_name} not found."
+                },
+                status=404
+            )
+        # get the file extension:
+        ext = filename.split('.')[-1].lower()
+        if ext not in AVAILABLE_LOADERS:
+            return self.json_response(
+                {
+                    "message": f"File extension {ext} is not supported."
+                },
+                status=400
+            )
+        # Create a temp file to store the uploaded file:
+        import tempfile
+        with tempfile.NamedTemporaryFile(delete=True) as tmp:
+            # write the file to the temp file:
+            while True:
+                chunk = await field.read_chunk()
