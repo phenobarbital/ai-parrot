@@ -125,7 +125,7 @@ class QuerySourceTool(AbstractTool):
         conditions: Optional[Dict[str, Any]] = None,
         additional_filters: Optional[Dict[str, Any]] = None,
         driver: Optional[str] = None,
-        return_format: str = "pandas",
+        return_format: str = "json",
         structured_output_class: Optional[str] = None,
         lazy: bool = True,
         limit: Optional[int] = None,
