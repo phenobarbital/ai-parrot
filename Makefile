@@ -43,7 +43,7 @@ develop:
 
 # Alternative: install without lock file (faster for development)
 develop-fast:
-	uv pip install -e .[all,dev]
+	uv pip install -e .[all,dev,vectors,images,loaders,openai,anthropic,groq,google,agents]
 
 # Setup development environment from requirements file (if you still have one)
 setup:
