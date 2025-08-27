@@ -249,12 +249,7 @@ class BaseVideoLoader(AbstractLoader):
             return None
 
         # 3) Device + dtype
-        try:
-            device_idx = self._get_device()  # expect -1 (CPU) or 0/1/...
-        except Exception:
-            device_idx = 0 if torch.cuda.is_available() else -1
-
-        torch_dtype = torch.float16 if (device_idx != -1 and torch.cuda.is_available()) else torch.float32
+        device_idx, dev, torch_dtype = self._get_device()  # expect -1 (CPU) or 0/1/...
 
         # 4) Load model & processor
         model = AutoModelForSpeechSeq2Seq.from_pretrained(
@@ -262,9 +257,7 @@ class BaseVideoLoader(AbstractLoader):
             torch_dtype=torch_dtype,
             low_cpu_mem_usage=True,
             use_safetensors=True
-        )
-        if device_idx != -1:
-            model.to(torch.device(f"cuda:{device_idx}" if isinstance(device_idx, int) else "cuda"))
+        ).to(dev)
 
         processor = AutoProcessor.from_pretrained(model_id)
 
@@ -287,6 +280,7 @@ class BaseVideoLoader(AbstractLoader):
             torch_dtype=torch_dtype,
             device=device_idx,
             chunk_length_s=chunk_length,  # long-form chunking
+            torch_dtype=torch_dtype,      # <-- fp16/bf16 on CUDA
             batch_size=8,                 # adjust for your VRAM
         )
 

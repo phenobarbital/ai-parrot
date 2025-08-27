@@ -1,5 +1,6 @@
-from typing import Union, List, Optional, Tuple, Dict, Any
+import asyncio
 import time
+from typing import Union, List, Optional, Tuple, Dict, Any
 from bs4 import BeautifulSoup, NavigableString
 from markdownify import MarkdownConverter
 from webdriver_manager.chrome import ChromeDriverManager
@@ -29,105 +30,198 @@ DEFAULT_UA = (
 )
 
 
+class WebDriverPool:
+    """Async WebDriver pool for efficient browser management."""
+
+    def __init__(self, max_drivers: int = 3, browser: str = "chrome", **driver_kwargs):
+        self.max_drivers = max_drivers
+        self.browser = browser.lower()
+        self.driver_kwargs = driver_kwargs
+        self.pool = asyncio.Queue(maxsize=max_drivers)
+        self.active_drivers = set()
+        self.lock = asyncio.Lock()
+        self.logger = logging.getLogger(self.__class__.__name__)
+
+    async def get_driver(self) -> webdriver:
+        """Get a driver from the pool or create a new one."""
+        try:
+            # Try to get an existing driver from the pool
+            driver = self.pool.get_nowait()
+            self.logger.debug("Reusing driver from pool")
+            return driver
+        except asyncio.QueueEmpty:
+            # Pool is empty, create new driver if under limit
+            async with self.lock:
+                if len(self.active_drivers) < self.max_drivers:
+                    driver = await asyncio.get_event_loop().run_in_executor(
+                        None, self._create_driver
+                    )
+                    self.active_drivers.add(driver)
+                    self.logger.debug(f"Created new driver. Active: {len(self.active_drivers)}")
+                    return driver
+                else:
+                    # Wait for a driver to become available
+                    self.logger.debug("Waiting for available driver")
+                    return await self.pool.get()
+
+    def _create_driver(self) -> webdriver:
+        """Create a new WebDriver instance synchronously."""
+        chrome_args = [
+            "--headless=new",
+            "--enable-automation",
+            "--lang=en",
+            "--disable-extensions",
+            "--disable-gpu",
+            "--no-sandbox",
+            "--disable-dev-shm-usage",
+        ]
+
+        firefox_args = [
+            "-headless",
+        ]
+
+        if self.browser == "firefox":
+            options = FirefoxOptions()
+            for arg in firefox_args:
+                options.add_argument(arg)
+
+            user_agent = self.driver_kwargs.get('user_agent')
+            if user_agent:
+                options.set_preference("general.useragent.override", user_agent)
+
+            page_load_strategy = self.driver_kwargs.get('page_load_strategy', 'normal')
+            caps = webdriver.DesiredCapabilities.FIREFOX.copy()
+            caps["pageLoadStrategy"] = page_load_strategy
+
+            service = FirefoxService(GeckoDriverManager().install())
+            return webdriver.Firefox(service=service, options=options)
+
+        else:  # Chrome
+            options = ChromeOptions()
+            for arg in chrome_args:
+                options.add_argument(arg)
+
+            user_agent = self.driver_kwargs.get('user_agent', DEFAULT_UA)
+            if user_agent:
+                options.add_argument(f"user-agent={user_agent}")
+
+            page_load_strategy = self.driver_kwargs.get('page_load_strategy', 'normal')
+            options.page_load_strategy = page_load_strategy
+
+            service = ChromeService(ChromeDriverManager().install())
+            return webdriver.Chrome(service=service, options=options)
+
+    async def return_driver(self, driver: webdriver):
+        """Return a driver to the pool after cleaning it."""
+        try:
+            # Clean the driver (clear cookies, navigate to blank page, etc.)
+            await asyncio.get_event_loop().run_in_executor(
+                None, self._clean_driver, driver
+            )
+
+            # Return to pool
+            await self.pool.put(driver)
+            self.logger.debug("Returned cleaned driver to pool")
+        except Exception as e:
+            self.logger.error(f"Error returning driver to pool: {e}")
+            await self._destroy_driver(driver)
+
+    def _clean_driver(self, driver: webdriver):
+        """Clean driver state synchronously."""
+        try:
+            driver.delete_all_cookies()
+            driver.execute_script("window.localStorage.clear();")
+            driver.execute_script("window.sessionStorage.clear();")
+            driver.get("about:blank")
+        except Exception as e:
+            self.logger.warning(f"Error cleaning driver: {e}")
+
+    async def _destroy_driver(self, driver: webdriver):
+        """Destroy a driver and remove it from active set."""
+        try:
+            await asyncio.get_event_loop().run_in_executor(None, driver.quit)
+        except Exception as e:
+            self.logger.error(f"Error quitting driver: {e}")
+        finally:
+            async with self.lock:
+                self.active_drivers.discard(driver)
+
+    async def close_all(self):
+        """Close all drivers in the pool."""
+        async with self.lock:
+            # Close drivers in pool
+            while not self.pool.empty():
+                try:
+                    driver = await self.pool.get()
+                    await self._destroy_driver(driver)
+                except:
+                    pass
+
+            # Close active drivers
+            destroy_tasks = [self._destroy_driver(driver) for driver in self.active_drivers.copy()]
+            if destroy_tasks:
+                await asyncio.gather(*destroy_tasks, return_exceptions=True)
+
+            self.active_drivers.clear()
+            self.logger.info("Closed all WebDriver instances")
+
+
 class WebLoader(AbstractLoader):
     """Load web pages and extract HTML + Markdown + structured bits (videos/nav/tables)."""
-
-    chrome_args = [
-        "--headless=new",
-        "--enable-automation",
-        "--lang=en",
-        "--disable-extensions",
-        "--disable-gpu",
-        "--no-sandbox",
-        "--disable-features=NetworkService",
-        "--disable-dev-shm-usage",
-    ]
-
-    firefox_args = [
-        "-headless",
-    ]
 
     def __init__(
         self,
         source_type: str = 'website',
         *,
-        browser: str = "chrome",              # "chrome" | "firefox"
+        browser: str = "chrome",
         timeout: int = 60,
-        page_load_strategy: str = "normal",   # "normal" | "eager" | "none"
+        page_load_strategy: str = "normal",
         user_agent: Optional[str] = DEFAULT_UA,
-        chrome_extra_args: Optional[List[str]] = None,
-        firefox_extra_args: Optional[List[str]] = None,
+        max_drivers: int = 3,
+        driver_pool: Optional[WebDriverPool] = None,
         **kwargs
     ):
-        self._source_type = source_type
+        super().__init__(source_type=source_type, **kwargs)
+
         self.timeout = timeout
         self.browser = browser.lower()
         self.page_load_strategy = page_load_strategy
         self.user_agent = user_agent
+        self.max_drivers = max_drivers
 
-        # Build driver
-        self.driver = self._build_driver(
-            chrome_extra_args=chrome_extra_args or [],
-            firefox_extra_args=firefox_extra_args or []
-        )
-
-        super().__init__(source_type=source_type, **kwargs)
-
-    # ------------------
-    # Driver management
-    # ------------------
-    def _build_driver(
-        self,
-        chrome_extra_args: List[str],
-        firefox_extra_args: List[str]
-    ) -> webdriver:
-
-        if self.browser == "firefox":
-            options = FirefoxOptions()
-            for arg in self.firefox_args + firefox_extra_args:
-                options.add_argument(arg)
-            if self.user_agent:
-                # Firefox uses a pref for UA override
-                options.set_preference("general.useragent.override", self.user_agent)
-            # Page load strategy via capability
-            caps = webdriver.DesiredCapabilities.FIREFOX.copy()
-            caps["pageLoadStrategy"] = self.page_load_strategy
-
-            service = FirefoxService(GeckoDriverManager().install())
-            driver = webdriver.Firefox(
-                service=service, options=options
+        # Use provided pool or create our own
+        if driver_pool:
+            self.driver_pool = driver_pool
+            self._own_pool = False
+        else:
+            self.driver_pool = WebDriverPool(
+                max_drivers=max_drivers,
+                browser=browser,
+                page_load_strategy=page_load_strategy,
+                user_agent=user_agent
             )
-            return driver
+            self._own_pool = True
 
-        # default: Chrome
-        options = ChromeOptions()
-        for arg in self.chrome_args + chrome_extra_args:
-            options.add_argument(arg)
-        if self.user_agent:
-            options.add_argument(f"user-agent={self.user_agent}")
-        options.page_load_strategy = self.page_load_strategy
+        self.driver = None
 
-        service = ChromeService(ChromeDriverManager().install())
-        driver = webdriver.Chrome(service=service, options=options)
-        return driver
+    async def open(self):
+        """Initialize resources - called by AbstractLoader's __aenter__."""
+        self.logger.debug("Opening WebLoader")
+        # Driver pool is ready to use, no additional setup needed
+        pass
 
-    def __del__(self):
-        try:
-            if getattr(self, "driver", None):
-                self.driver.quit()
-        except Exception:
-            pass
+    async def close(self):
+        """Clean up resources - called by AbstractLoader's __aexit__."""
+        self.logger.debug("Closing WebLoader")
+        if self._own_pool and self.driver_pool:
+            await self.driver_pool.close_all()
 
-    # ------------------
-    # Markdown helper
-    # ------------------
     def md(self, soup: BeautifulSoup, **options) -> str:
+        """Convert BeautifulSoup to Markdown."""
         return MarkdownConverter(**options).convert_soup(soup)
 
-    # ------------------
-    # Structured parsers
-    # ------------------
     def _text(self, node: Any) -> str:
+        """Extract text content from a node."""
         if node is None:
             return ""
         if isinstance(node, NavigableString):
@@ -135,6 +229,7 @@ class WebLoader(AbstractLoader):
         return node.get_text(" ", strip=True)
 
     def _collect_video_links(self, soup: BeautifulSoup) -> List[str]:
+        """Extract video links from the page."""
         items: List[str] = []
 
         # iframes (YouTube/Vimeo/etc.)
@@ -164,19 +259,14 @@ class WebLoader(AbstractLoader):
         return result
 
     def _collect_navbars(self, soup: BeautifulSoup) -> List[str]:
-        """
-        Extract navigation menus from <nav> (and common menu containers) as Markdown lists.
-        """
+        """Extract navigation menus as Markdown lists."""
         nav_texts: List[str] = []
 
         def nav_to_markdown(nav) -> str:
-            # Gather all links in order; keep nesting if possible using lists inside lists
-            # For simplicity, flatten to a simple list grouped by sections (ul/ol)
             lines = []
-            # Try recognizable menu blocks:
             blocks = nav.find_all(["ul", "ol"], recursive=True)
             if not blocks:
-                # Fallback: just collect links directly under nav
+                # Fallback: collect links directly under nav
                 for a in nav.find_all("a", href=True):
                     txt = self._text(a)
                     href = a.get("href", "")
@@ -185,17 +275,16 @@ class WebLoader(AbstractLoader):
             else:
                 for block in blocks:
                     for li in block.find_all("li", recursive=False):
-                        # top-level item
                         a = li.find("a", href=True)
                         if a:
                             txt = self._text(a)
                             href = a.get("href", "")
                             lines.append(f"- {txt} (Link: {href})" if href else f"- {txt}")
                         else:
-                            # non-link li text
                             t = self._text(li)
                             if t:
                                 lines.append(f"- {t}")
+
                         # nested lists
                         for sub in li.find_all(["ul", "ol"], recursive=False):
                             for sub_li in sub.find_all("li", recursive=False):
@@ -216,7 +305,7 @@ class WebLoader(AbstractLoader):
             if md_list.strip():
                 nav_texts.append("Navigation:\n" + md_list)
 
-        # Also try common menu containers if no <nav>
+        # Common menu containers if no <nav>
         if not nav_texts:
             candidates = soup.select("[role='navigation'], .navbar, .menu, .nav")
             for nav in candidates:
@@ -227,14 +316,12 @@ class WebLoader(AbstractLoader):
         return nav_texts
 
     def _table_to_markdown(self, table) -> str:
-        """
-        Convert a <table> to GitHub-flavored Markdown.
-        """
-        # caption (if any)
+        """Convert a <table> to GitHub-flavored Markdown."""
+        # Caption
         caption_el = table.find("caption")
         caption = self._text(caption_el) if caption_el else ""
 
-        # headers
+        # Headers
         headers = []
         thead = table.find("thead")
         if thead:
@@ -242,24 +329,22 @@ class WebLoader(AbstractLoader):
             if ths:
                 headers = [self._text(th) for th in ths]
 
-        # if no thead, try first row as headers
+        # If no thead, try first row as headers
         if not headers:
             first_row = table.find("tr")
             if first_row:
                 cells = first_row.find_all(["th", "td"])
                 headers = [self._text(c) for c in cells]
 
-        # rows
+        # Rows
         rows = []
         for tr in table.find_all("tr"):
             cells = tr.find_all(["td"])
             if not cells:
-                # skip header rows here
                 continue
             rows.append([self._text(td) for td in cells])
 
         if not headers and rows:
-            # make generic headers
             headers = [f"Col {i+1}" for i in range(len(rows[0]))]
 
         # Normalize column count
@@ -273,7 +358,6 @@ class WebLoader(AbstractLoader):
             norm_rows.append(r)
 
         def esc(cell: str) -> str:
-            # Escape pipes in markdown tables
             return (cell or "").replace("|", "\\|").strip()
 
         md = []
@@ -287,6 +371,7 @@ class WebLoader(AbstractLoader):
         return "\n".join(md).strip()
 
     def _collect_tables(self, soup: BeautifulSoup, max_tables: int = 25) -> List[str]:
+        """Extract tables as Markdown."""
         out = []
         for i, table in enumerate(soup.find_all("table")):
             if i >= max_tables:
@@ -294,13 +379,36 @@ class WebLoader(AbstractLoader):
             try:
                 out.append(self._table_to_markdown(table))
             except Exception:
-                # Skip malformed tables, continue
                 continue
         return out
 
-    # ------------------
-    # Cleaning & extract
-    # ------------------
+    def _fetch_page_sync(self, driver: webdriver, url: str, args: dict) -> str:
+        """Synchronously fetch page content using WebDriver."""
+        # Waiting / cookie handling
+        locator = args.get('locator', (By.TAG_NAME, 'body'))
+        wait = WebDriverWait(driver, self.timeout)
+        acookies = args.get('accept_cookies', False)
+        sleep_after = args.get('sleep_after', 0)
+
+        try:
+            driver.get(url)
+            wait.until(EC.presence_of_element_located(locator))
+
+            if acookies:
+                try:
+                    btn = wait.until(EC.element_to_be_clickable(acookies))
+                    btn.click()
+                except Exception:
+                    pass
+        except Exception as exc:
+            self.logger.error(f"Failed to load {url}: {exc}")
+            raise
+
+        if sleep_after:
+            time.sleep(float(sleep_after))
+
+        return driver.page_source
+
     def clean_html(
         self,
         html: str,
@@ -311,13 +419,14 @@ class WebLoader(AbstractLoader):
         parse_navs: bool = True,
         parse_tables: bool = True
     ) -> Tuple[List[str], str, str]:
+        """Clean and extract content from HTML."""
         soup = BeautifulSoup(html, 'html.parser')
 
         # Remove script/style/link early
         for el in soup(["script", "style", "link", "noscript"]):
             el.decompose()
 
-        # Title (robust)
+        # Title
         page_title = ""
         try:
             if soup.title and soup.title.string:
@@ -329,12 +438,12 @@ class WebLoader(AbstractLoader):
         except Exception:
             page_title = ""
 
-        # Full-page Markdown (after cleanup)
+        # Full-page Markdown
         md_text = self.md(soup)
 
         content: List[str] = []
 
-        # Paragraphs/headers/sections requested by tags
+        # Paragraphs/headers/sections
         for p in soup.find_all(tags):
             text = ' '.join(p.get_text(" ", strip=True).split())
             if text:
@@ -344,21 +453,20 @@ class WebLoader(AbstractLoader):
         if parse_videos:
             content.extend(self._collect_video_links(soup))
 
-        # Navbars / menus
+        # Navbars
         if parse_navs:
             content.extend(self._collect_navbars(soup))
 
-        # Tables (as Markdown)
+        # Tables
         if parse_tables:
             content.extend(self._collect_tables(soup))
 
-        # Custom objects support (keeps your existing behavior)
+        # Custom objects (keeping existing behavior)
         if objects:
             for obj in objects:
                 (element, args), = obj.items()
                 if 'parse_list' in args:
                     parse_list = args.pop('parse_list')
-                    # Find the element container:
                     container = soup.find(element, attrs=args)
                     if not container:
                         continue
@@ -384,17 +492,17 @@ class WebLoader(AbstractLoader):
                 else:
                     elements = soup.find_all(element, attrs=args)
                     for element in elements:
-                        # Normalize links: "Text (Link: URL)"
                         for link in element.find_all('a'):
                             link_text = link.get_text(strip=True)
                             href = link.get('href', '')
                             formatted = f"{link_text} (Link: {href})" if href else link_text
                             link.replace_with(formatted)
-                        # UL lists
+
                         for ul in element.find_all('ul'):
                             items = [li.get_text(strip=True) for li in ul.select('li')]
                             if items:
                                 content.append('\n'.join(items))
+
                         cleaned_text = ' '.join(element.get_text().split())
                         if cleaned_text:
                             content.append(cleaned_text)
@@ -402,12 +510,7 @@ class WebLoader(AbstractLoader):
         return (content, md_text, page_title)
 
     def _normalize_url_args(self, address, kwargs):
-        """
-        Accept either:
-        - address: "https://example.com"  (kwargs hold options)
-        - address: {"https://example.com": {...}}  (options in the value)
-        Merge kwargs on top so explicit call-time args win.
-        """
+        """Normalize URL and arguments from different input formats."""
         if isinstance(address, str):
             url = address
             args = dict(kwargs) if kwargs else {}
@@ -416,7 +519,6 @@ class WebLoader(AbstractLoader):
         if isinstance(address, dict):
             (url, args), = address.items()
             args = dict(args or {})
-            # allow kwargs to override dict-provided args
             if kwargs:
                 args.update(kwargs)
             return url, args
@@ -424,42 +526,27 @@ class WebLoader(AbstractLoader):
         raise TypeError(f"Unsupported address type for WebLoader: {type(address)}")
 
     async def _load(self, address: Union[str, dict], **kwargs) -> List[Document]:
+        """Load a single web page."""
         url, args = self._normalize_url_args(address, kwargs)
-        self.logger.info(f'Downloading URL {url} with args {args}')
+        self.logger.info(f'Loading URL: {url}')
 
-        # Waiting / cookie handling
-        locator = args.get('locator', (By.TAG_NAME, 'body'))
-        wait = WebDriverWait(self.driver, self.timeout)
-        acookies = args.get('accept_cookies', False)  # e.g., (By.ID, "accept-all")
-
-        # Optional waits
-        sleep_after = args.get('sleep_after', 0)  # seconds
-        parse_videos = args.get('parse_videos', True)
-        parse_navs = args.get('parse_navs', True)
-        parse_tables = args.get('parse_tables', True)
-        extract_tags = args.get('tags', ['p', 'title', 'h1', 'h2', 'section', 'article'])
-        objects = args.get('objects', [])
-        source_type = args.get('source_type', self._source_type)
+        # Get driver from pool
+        driver = await self.driver_pool.get_driver()
 
         try:
-            self.driver.get(url)
-            wait.until(EC.presence_of_element_located(locator))
-            if acookies:
-                try:
-                    btn = wait.until(EC.element_to_be_clickable(acookies))
-                    btn.click()
-                except Exception:
-                    pass
-        except Exception as exc:
-            print(f"Failed to Get {url}: {exc}")
-            self.logger.exception(str(exc), stack_info=True)
-            raise
+            # Fetch page content in executor
+            html_content = await asyncio.get_event_loop().run_in_executor(
+                None, self._fetch_page_sync, driver, url, args
+            )
 
-        if sleep_after:
-            time.sleep(float(sleep_after))
+            # Process content
+            extract_tags = args.get('tags', ['p', 'title', 'h1', 'h2', 'section', 'article'])
+            objects = args.get('objects', [])
+            parse_videos = args.get('parse_videos', True)
+            parse_navs = args.get('parse_navs', True)
+            parse_tables = args.get('parse_tables', True)
+            source_type = args.get('source_type', self._source_type)
 
-        try:
-            html_content = self.driver.page_source
             content, md_text, page_title = self.clean_html(
                 html_content,
                 extract_tags,
@@ -468,6 +555,7 @@ class WebLoader(AbstractLoader):
                 parse_navs=parse_navs,
                 parse_tables=parse_tables
             )
+
             if not page_title:
                 page_title = url
 
@@ -499,11 +587,13 @@ class WebLoader(AbstractLoader):
                             page_content=chunk,
                             metadata={**metadata, "content_kind": "fragment"}
                         )
-                )
+                    )
 
             return docs
 
         except Exception as exc:
-            print(f"Failed to load {url}: {exc}")
-            self.logger.exception(str(exc), stack_info=True)
-            return []
+            self.logger.error(f"Failed to load {url}: {exc}")
+            raise
+        finally:
+            # Return driver to pool
+            await self.driver_pool.return_driver(driver)
