@@ -252,6 +252,18 @@ class RetailDetector:
         # 5) classify proposals -> product_candidate / box_candidate / promotional_candidate
         proposals = self._classify_proposals(img_array, yolo_props, bands, header_limit_y, ad_box)
 
+        if "top" in bands:
+            top_y1, top_y2 = bands["top"]
+            top_box = DetectionBox(x1=rx1, y1=top_y1, x2=rx2, y2=top_y2,
+                                confidence=1.0, class_id=190, class_name="shelf_region",
+                                area=(rx2-rx1)*(top_y2-top_y1))
+            already_top = [d for d in proposals
+                        if d.class_name == "product_candidate" and (d.y1 + d.y2) / 2 < top_y2]
+            if len(already_top) < 3:              # only help when YOLO under-detects
+                fallback_devs = self._fallback_top_devices(img_array, top_box)
+                if fallback_devs:
+                    proposals.extend(fallback_devs)
+
         # 6) shrink -> merge -> remove those fully inside the poster
         proposals = self._shrink(img_array, proposals)
         proposals = self._merge(proposals, iou_same=0.45)
@@ -318,47 +330,72 @@ class RetailDetector:
 
     # ---------------------- poster localization -------------------------------
     def _find_poster(self, img: np.ndarray) -> Optional[Tuple[int,int,int,int]]:
-        H,W = img.shape[:2]
-        # 1) OCR to find 'epson'/'hello'/'savings'
+        """
+        Find the entire endcap display area, not just the poster text
+        """
+        H, W = img.shape[:2]
+
+        # 1) Look for the main promotional display using OCR
         data = pytesseract.image_to_data(Image.fromarray(img), output_type=pytesseract.Output.DICT)
         xs, ys, xe, ye = [], [], [], []
+
         for i, word in enumerate(data.get("text", [])):
             if not word:
                 continue
             w = word.lower()
-            if any(k in w for k in ("epson","hello","savings","cartridges")):
+
+            # Target keywords for Epson displays
+            if any(k in w for k in ("epson","hello","savings","cartridges","ecotank","goodbye")):
                 x, y = data["left"][i], data["top"][i]
                 bw, bh = data["width"][i], data["height"][i]
+
+                # FILTER: Ignore text found in the leftmost 15% (Microsoft signage)
+                if x < 0.15 * W:
+                    continue
+
+                # FILTER: Focus on upper portion (promotional graphics)
+                if y > 0.5 * H:  # Skip text too low
+                    continue
+
                 xs.append(x)
                 ys.append(y)
                 xe.append(x+bw)
                 ye.append(y+bh)
 
+        # If we found promotional text, use it as anchor for the full display area
         if xs:
-            x1, y1, x2, y2 = min(xs), min(ys), max(xe), max(ye)
-            # expand generously to cover the whole lightbox
-            pad_x = int(0.10 * W)
-            pad_y_top = int(0.05 * H)
-            pad_y_bot = int(0.18 * H)
-            x1, y1, x2, y2 = _clamp(
-                W, H, x1 - pad_x, y1 - pad_y_top, x2 + pad_x, min(H - 1, y2 + pad_y_bot)
-            )
-            return (x1, y1, x2, y2)
+            text_x1, text_y1, text_x2, text_y2 = min(xs), min(ys), max(xe), max(ye)
 
-        # 2) CLIP sweep (coarse) if OCR failed
+            # STRATEGY: Use the promotional text as center point, but expand to capture full endcap
+            # The endcap display typically spans from edge to edge of the visible product area
+
+            # Find the actual product display boundaries by looking for the white shelf/products
+            display_x1 = int(0.12 * W)  # Start after Microsoft signage
+            display_x2 = int(0.92 * W)  # Go nearly to edge but leave some margin
+
+            # Vertical: Start from promotional area, go to bottom
+            display_y1 = max(0, int(text_y1 - 0.05 * H))  # Slightly above promotional text
+            display_y2 = H - 1  # Go to bottom
+
+            return _clamp(W, H, display_x1, display_y1, display_x2, display_y2)
+
+        # 2) CLIP approach as backup
         if self.ref_ad_feat is not None:
-            # sample 3×2 windows
             windows = []
-            ww, hh = int(0.55 * W), int(0.35 * H)
-            for cx in (int(0.35 * W), int(0.55 * W), int(0.75 * W)):
-                for cy in (int(0.30 * H), int(0.45 * H)):
+            ww, hh = int(0.6 * W), int(0.35 * H)  # Larger windows to capture more
+
+            # Sample wider area to find promotional content
+            for cx in (int(0.35 * W), int(0.5 * W), int(0.65 * W)):
+                for cy in (int(0.25 * H), int(0.35 * H)):
                     x1 = max(0, cx - ww // 2)
                     x2 = min(W - 1, x1 + ww)
                     y1 = max(0, cy - hh // 2)
                     y2 = min(H - 1, y1 + hh)
                     windows.append((x1, y1, x2, y2))
+
             best = None
             best_s = -1.0
+
             for (x1, y1, x2, y2) in windows:
                 crop = Image.fromarray(img[y1:y2, x1:x2])
                 with torch.no_grad():
@@ -369,40 +406,106 @@ class RetailDetector:
                 if s > best_s:
                     best_s = s
                     best = (x1, y1, x2, y2)
-            if best is not None:
-                bx1, by1, bx2, by2 = best
-                pad = int(0.04 * W)
-                return _clamp(W, H, bx1 - pad, by1 - pad, bx2 + pad, by2 + pad)
 
-        # 3) fallback ROI (bias to left/center to avoid Apple stand)
-        return (int(0.08 * W), int(0.18 * H), int(0.78 * W), H - 1)
+            if best is not None and best_s > 0.12:
+                # Use CLIP result as center, but expand to full display width
+                _, by1, _, by2 = best
+                display_x1 = int(0.12 * W)
+                display_x2 = int(0.92 * W)
+                return _clamp(W, H, display_x1, by1, display_x2, H - 1)
+
+        # 3) Fallback: Define the full endcap display area
+        return (
+            int(0.12 * W),  # Start after left-side signage
+            int(0.12 * H),  # Start from upper area
+            int(0.92 * W),  # Go nearly to right edge
+            H - 1           # Go to bottom
+        )
 
     def _roi_from_poster(self, ad_box, h, w):
-        # ad_box is (x1, y1, x2, y2) in full-image coords
-        x1, y1, x2, y2 = ad_box
-        poster_w = max(1, x2 - x1)
+        """
+        Create focused ROI with reduced margins
+        """
+        # Tighter horizontal bounds - reduce by ~5-10% on each side
+        rx1 = int(0.15 * w)   # Move right edge in (was 0.08)
+        rx2 = int(0.88 * w)   # Move left edge in (was 0.95)
 
-        # Expand horizontally by poster width (1.45×) and center on the poster
-        scale = 1.45                     # enlarge to approximate full endcap width
-        right_bias = int(0.06 * w)       # slight bias to the right
-        cx = (x1 + x2) // 2 + right_bias
-        half = int(0.5 * scale * poster_w)
+        # Vertical: Start from promotional area, go to bottom
+        if ad_box is not None:
+            # Use promotional area as top reference
+            _, y1, _, _ = ad_box
+            ry1 = max(0, int(y1 - 0.03 * h))  # Start slightly above promotional area
+        else:
+            # Fallback: start from upper portion
+            ry1 = int(0.08 * h)
 
-        rx1 = max(0, cx - half)
-        rx2 = min(w - 1, cx + half)
-
-        # Ensure we never end up too narrow (≥ 70% of image width)
-        min_roi_w = int(0.70 * w)
-        if (rx2 - rx1) < min_roi_w:
-            pad = (min_roi_w - (rx2 - rx1)) // 2
-            rx1 = max(0, rx1 - pad)
-            rx2 = min(w - 1, rx2 + pad)
-
-        # Vertically: start slightly above the poster, extend to the bottom
-        ry1 = max(0, int(y1 - 0.05 * h))
-        ry2 = h - 1
+        ry2 = h - 1  # Always go to bottom to capture all shelves
 
         return (rx1, ry1, rx2, ry2)
+
+    def _find_shelves(self, roi: np.ndarray, rx1, ry1, rx2, ry2, H):
+        """
+        IMPROVED: More robust shelf line detection
+        """
+        g = cv2.cvtColor(roi, cv2.COLOR_RGB2GRAY)
+
+        # Enhanced edge detection
+        g = cv2.GaussianBlur(g, (3, 3), 0)
+        e = cv2.Canny(g, 40, 120, apertureSize=3)
+
+        # More conservative Hough line detection
+        roi_width = rx2 - rx1
+        min_line_length = int(0.4 * roi_width)  # Shorter minimum
+
+        lines = cv2.HoughLinesP(
+            e, 1, np.pi/180,
+            threshold=max(50, int(0.3 * roi_width)),  # Adaptive threshold
+            minLineLength=min_line_length,
+            maxLineGap=15
+        )
+
+        ys = []
+        if lines is not None:
+            for x1, y1, x2, y2 in lines[:, 0]:
+                # More strict horizontal line filtering
+                if abs(y2 - y1) <= 3 and abs(x2 - x1) >= min_line_length * 0.8:
+                    ys.append(y1 + ry1)
+
+        ys = sorted(set(ys))
+        levels = []
+        for y in ys:
+            if not levels or abs(y - levels[-1]) > 20:  # Increased minimum separation
+                levels.append(y)
+
+        # IMPROVED: More robust fallback shelf positioning
+        roi_height = ry2 - ry1
+        if len(levels) < 2:
+            # Create 3 evenly spaced shelf levels in the ROI
+            shelf_height = roi_height // 3
+            levels = [
+                ry1 + int(0.45 * roi_height),  # Top shelf (below header)
+                ry1 + int(0.7 * roi_height),   # Middle shelf
+                ry1 + int(0.9 * roi_height)    # Bottom shelf
+            ]
+        elif len(levels) == 2:
+            # Add a third level if we only found 2
+            levels.append(min(H - 1, int(levels[1] + 0.25 * roi_height)))
+
+        # Take only the best 3 levels
+        levels = levels[:3]
+
+        # Create bands with appropriate height
+        band_h = max(int(0.05 * H), 25)  # Minimum band height
+        bands = {}
+
+        if len(levels) >= 1:
+            bands["top"] = (max(0, levels[0] - band_h), min(H-1, levels[0] + band_h))
+        if len(levels) >= 2:
+            bands["middle"] = (max(0, levels[1] - band_h), min(H-1, levels[1] + band_h))
+        if len(levels) >= 3:
+            bands["bottom"] = (max(0, levels[2] - band_h), min(H-1, levels[2] + band_h))
+
+        return levels, bands
 
     # --------------------------- shelves -------------------------------------
     def _find_shelves(self, roi: np.ndarray, rx1, ry1, rx2, ry2, H):
@@ -460,20 +563,51 @@ class RetailDetector:
 
     # ---------------------------- YOLO ---------------------------------------
     def _yolo_props(self, roi: np.ndarray, rx1, ry1):
-        r = self.yolo(roi, conf=self.conf, iou=self.iou, verbose=False)[0]
-        xyxy = r.boxes.xyxy.cpu().numpy()
-        confs = r.boxes.conf.cpu().numpy()
-        names = r.names
-        props=[]
-        H,W = roi.shape[:2]
-        for (x1,y1,x2,y2),c,cl in zip(xyxy, confs, r.boxes.cls.cpu().numpy().astype(int)):
-            gx1, gy1, gx2, gy2 = int(x1)+rx1, int(y1)+ry1, int(x2)+rx1, int(y2)+ry1
-            props.append({
-                "yolo_label": names[cl],
-                "yolo_conf": float(c),
-                "box": (gx1, gy1, gx2, gy2)
-            })
-        return props
+        """
+        Multi-scale, multi-pass YOLO detection with retail-specific filtering
+        """
+        H, W = roi.shape[:2]
+        all_props = []
+
+        # Multi-scale detection - different sizes for different object types
+        detection_configs = [
+            # Large objects (printers, promotional graphics)
+            {
+                "imgsz": 640,
+                "conf": max(0.10, self.conf * 0.7),  # Lower confidence for large objects
+                "iou": 0.4,
+                "min_area_ratio": 0.02,  # Minimum 2% of ROI area
+                "max_area_ratio": 0.8,   # Maximum 80% of ROI area
+                "target_types": ["printer", "promotional_graphic", "large_box"]
+            },
+            # Medium objects (product boxes)
+            {
+                "imgsz": 832,  # Higher resolution for better box detection
+                "conf": self.conf,
+                "iou": 0.5,
+                "min_area_ratio": 0.008,  # Minimum 0.8% of ROI area
+                "max_area_ratio": 0.25,   # Maximum 25% of ROI area
+                "target_types": ["product_box", "medium_object"]
+            },
+            # Small objects (price tags, ink bottles)
+            {
+                "imgsz": 1024,  # Highest resolution for small objects
+                "conf": max(0.05, self.conf * 0.5),  # Very low confidence for small objects
+                "iou": 0.3,  # Lower IoU for better small object separation
+                "min_area_ratio": 0.0005,  # Minimum 0.05% of ROI area
+                "max_area_ratio": 0.05,    # Maximum 5% of ROI area
+                "target_types": ["price_tag", "fact_tag", "small_object"]
+            }
+        ]
+
+        for config in detection_configs:
+            props = self._single_yolo_pass(roi, rx1, ry1, config)
+            all_props.extend(props)
+
+        # Remove duplicates and filter by quality
+        filtered_props = self._filter_and_deduplicate_props(all_props, H, W)
+
+        return filtered_props
 
     def _fallback_top_devices(self, img: np.ndarray, shelf_box: DetectionBox) -> list[DetectionBox]:
         """Edge/rect fallback for bright devices on the top shelf."""
@@ -522,86 +656,86 @@ class RetailDetector:
     # ------------------- OCR + CLIP preselection -----------------------------
     def _classify_proposals(self, img, props, bands, header_limit_y, ad_box):
         H, W = img.shape[:2]
-        out=[]
-        # CLIP text prompts (poster, product, box)
+        out = []
         text = self.text_feats
+
+        BOX_LIKE = {"book", "box", "suitcase", "backpack", "handbag", "cardboard box"}  # YOLO names that often hit cartons
+        DEVICE_LIKE = {"microwave", "tv", "monitor"}                   # YOLO mislabels for printers
+
+        def blue_dominant(rgb_crop: np.ndarray) -> bool:
+            # Epson cartons are very blue; check channel dominance
+            b = rgb_crop[..., 2].mean() if rgb_crop.ndim == 3 else 0.0
+            g = rgb_crop[..., 1].mean() if rgb_crop.ndim == 3 else 0.0
+            r = rgb_crop[..., 0].mean() if rgb_crop.ndim == 3 else 0.0
+            return (b > r * 1.12) and (b > g * 1.08)
+
+        # build padded bands for safer membership
+        padded = {k: (max(0, y1 - 12), min(H - 1, y2 + 12)) for k, (y1, y2) in bands.items()}
+
         for p in props:
-            x1,y1,x2,y2 = p["box"]
-            w,h = x2-x1, y2-y1
-            if w * h < 0.0018 * W * H:   # keep small but toss tiny noise
+            x1, y1, x2, y2 = p["box"]
+            w, h = max(1, x2 - x1), max(1, y2 - y1)
+            area = w * h
+            if area < 0.0018 * W * H:
                 continue
 
-            # overlap with poster?
+            # poster overlap — keep printers in front of poster
             if ad_box is not None:
-                ax1,ay1,ax2,ay2 = ad_box
-                iox1, ioy1 = max(x1,ax1), max(y1,ay1)
-                iox2, ioy2 = min(x2,ax2), min(y2,ay2)
-                inter = max(0, iox2-iox1)*max(0, ioy2-ioy1)
-                if inter > 0.80 * (x2-x1)*(y2-y1):   # mostly inside poster → skip
+                ax1, ay1, ax2, ay2 = ad_box
+                ix1, iy1 = max(x1, ax1), max(y1, ay1)
+                ix2, iy2 = min(x2, ax2), min(y2, ay2)
+                inter = max(0, ix2 - ix1) * max(0, iy2 - iy1)
+                if inter > 0.80 * area:
                     continue
 
-            crop = Image.fromarray(img[y1:y2, x1:x2])
-            # OCR hints
+            crop = img[y1:y2, x1:x2]
+            ocr_txt = ""
             try:
-                ocr_txt = pytesseract.image_to_string(crop, config="--psm 6").lower()
+                ocr_txt = pytesseract.image_to_string(Image.fromarray(crop), config="--psm 6").lower()
             except Exception:
-                ocr_txt = ""
+                pass
 
-            # CLIP image->text (backup)
             with torch.no_grad():
-                ip = self.proc(images=crop, return_tensors="pt").to(self.device)
+                ip = self.proc(images=Image.fromarray(crop), return_tensors="pt").to(self.device)
                 f  = self.clip.get_image_features(**ip)
-                f = f/f.norm(dim=-1, keepdim=True)
-                s_text = (f @ text.T).squeeze().tolist()  # [poster, product, box]
-            s_poster, s_prod, s_box = float(s_text[0]), float(s_text[1]), float(s_text[2])
+                f  = f / f.norm(dim=-1, keepdim=True)
+                s = (f @ text.T).squeeze().tolist()
+                s_poster, s_prod, s_box = float(s[0]), float(s[1]), float(s[2])
+                if self.ref_prod_feats:
+                    s_prod = max(s_prod, max(float((f @ rf.T).squeeze()) for rf in self.ref_prod_feats))
 
-            # CLIP image->image vs product refs (if any)
-            if self.ref_prod_feats:
-                sims = [float((f @ ref.T).squeeze()) for ref in self.ref_prod_feats]
-                s_prod = max(s_prod, max(sims))
+            # band membership
+            band_scores = {k: max(0, min(y2, b2) - max(y1, b1)) for k, (b1, b2) in padded.items()}
+            main_band = max(band_scores, key=band_scores.get) if band_scores else "middle"
 
-            # geometry/band
-            aspect = w / max(1.0, float(h))
-            padded_bands = {}
-            overlaps = {}
-            for k, (b1, b2) in bands.items():
-                padded_bands[k] = (max(0, b1 - 12), min(img.shape[0] - 1, b2 + 12))
+            aspect = w / float(h)
+            y_mid  = 0.5 * (y1 + y2)
+            raw_lbl = (p.get("yolo_label") or "").lower()
 
-            overlaps = {k: max(0, min(y2, pb2) - max(y1, pb1)) for k, (pb1, pb2) in padded_bands.items()}
-            main_band = max(overlaps, key=overlaps.get) if overlaps else "middle"
-
-            # simple rules
-            if (y1 + y2) / 2.0 < header_limit_y and aspect > 1.1 and h > 0.10 * img.shape[0]:
-                cname = "promotional_candidate"
-                score = max(0.72, s_poster)
-                out.append(
-                    DetectionBox(
-                        x1=x1,
-                        y1=y1,
-                        x2=x2,
-                        y2=y2,
-                        confidence=float(score),
-                        class_id=CID[cname],
-                        class_name=cname,
-                        area=(x2-x1)*(y2-y1)
-                    )
-                )
-                continue
-            if (y1+y2) / 2.0 < header_limit_y and s_poster >= 0.20 and aspect > 1.1 and h > 0.10*H:
+            # --- Rules ---
+            # A) Anything above header limit + landscape looks like poster
+            if y_mid < header_limit_y and aspect > 1.10 and h > 0.10 * H:
                 cname, score = "promotional_candidate", max(0.72, s_poster)
+            # B) Top band → prefer device (printers) even if YOLO says 'microwave'
             elif main_band == "top":
-                cname = "product_candidate"
-                score = max(0.56, s_prod)  # use CLIP score if available
+                cname, score = "product_candidate", max(0.56, s_prod)
             else:
-                looks_box = (aspect >= 1.10) or ("epson" in ocr_txt) or ("ecotank" in ocr_txt) \
-                or ("et-" in ocr_txt) or ("et " in ocr_txt) \
-                or ("4950" in ocr_txt) or ("3950" in ocr_txt) or ("2980" in ocr_txt)
-                if looks_box:
-                    cname = "box_candidate"
-                    score = max(0.56, s_box)
+                looks_box = (
+                    raw_lbl in BOX_LIKE or
+                    ("epson" in ocr_txt) or ("ecotank" in ocr_txt) or
+                    ("et-" in ocr_txt) or ("et " in ocr_txt) or
+                    any(tok in ocr_txt for tok in ("2980", "3950", "4950")) or
+                    (aspect >= 1.10 and area > 0.01 * W * H) or
+                    blue_dominant(crop)
+                )
+                if looks_box and (s_box >= s_prod - 0.02):
+                    cname, score = "box_candidate", max(0.56, s_box)
                 else:
-                    cname = "product_candidate"
-                    score = max(0.52, s_prod)
+                    # if YOLO thinks 'book' and we’re not sure, still call it a box
+                    if raw_lbl in BOX_LIKE and s_box >= 0.15:
+                        cname, score = "box_candidate", max(0.56, s_box)
+                    else:
+                        cname, score = "product_candidate", max(0.52, s_prod)
 
             out.append(
                 DetectionBox(
@@ -609,9 +743,10 @@ class RetailDetector:
                     confidence=float(score),
                     class_id=CID[cname],
                     class_name=cname,
-                    area=w*h
+                    area=area
                 )
             )
+
         return out
 
     # --------------------- shrink/merge/cleanup ------------------------------
@@ -805,68 +940,90 @@ class PlanogramCompliancePipeline(AbstractPipeline):
 
     def detect_objects_and_shelves(
         self,
-        image: Union[str, Path, Image.Image],
+        image,
         confidence_threshold: float = 0.5
-    ) -> Tuple[List[ShelfRegion], List[DetectionBox]]:
-        """
-        Step 1: Use GenericShapeDetector to find shapes and boundaries
-        """
+    ):
+        self.logger.debug("Step 1: Detecting generic shapes and boundaries...")
 
-        self.logger.debug(
-            "Step 1: Detecting generic shapes and boundaries..."
-        )
-
-        # Convert to PIL image for shelf organization
         pil_image = Image.open(image) if isinstance(image, (str, Path)) else image
 
-        detections = self.shape_detector.detect(
+        det_out = self.shape_detector.detect(
             image=pil_image,
             debug_raw="/tmp/data/yolo_raw_debug.png",
             debug_phase1="/tmp/data/yolo_phase1_debug.png"
         )
 
-        shelf_regions: Dict[str, DetectionBox] = detections["shelves"]
-        proposals: List[DetectionBox] = detections["proposals"]
+        shelves_dict = det_out["shelves"]          # {'top': DetectionBox(...), 'middle': ...}
+        proposals    = det_out["proposals"]        # List[DetectionBox]
 
-        print('PROPOSALS:', proposals)
-        print('SHELVES:', shelf_regions)
+        print("PROPOSALS:", proposals)
+        print("SHELVES:", shelves_dict)
 
-        # ✅ Use this ONLY for drawing/debug (shelves + proposals):
-        debug_detections: List[DetectionBox] = list(shelf_regions.values()) + proposals
+        # --- IMPORTANT: use Phase-1 shelf bands (not %-of-image buckets) ---
+        shelf_regions = self._materialize_shelf_regions(shelves_dict, proposals)
 
-        # ✅ Use this for all subsequent steps (LLM identification, etc.):
-        detections: List[DetectionBox] = proposals
+        detections = list(proposals)
 
-        # (optional) your logs:
         self.logger.debug("Found %d objects in %d shelf regions",
                         len(detections), len(shelf_regions))
 
-        shelf_regions = self._organize_into_shelves(proposals, pil_image.size)
-
+        # Recover price tags and re-map to the same Phase-1 shelves
         try:
             tag_dets = self._recover_price_tags(pil_image, shelf_regions)
             if tag_dets:
-                detections = list(detections) + tag_dets
-                # reuse detector's merge to de-dup
-                if hasattr(self.shape_detector, "_intelligent_merge"):
-                    detections = self.shape_detector._intelligent_merge(
-                        detections,
-                        max(0.25, confidence_threshold * 0.8)
-                    )
-                # shelves might shift slightly with the new boxes
-                shelf_regions = self._organize_into_shelves(detections, pil_image.size)
-                self.logger.debug(
-                    f"Recovered {len(tag_dets)} fact tags on shelf edges"
-                )
+                detections.extend(tag_dets)
+                shelf_regions = self._materialize_shelf_regions(shelves_dict, detections)
+                self.logger.debug("Recovered %d fact tags on shelf edges", len(tag_dets))
         except Exception as e:
-            self.logger.warning(
-                f"Tag recovery failed: {e}"
-            )
+            self.logger.warning(f"Tag recovery failed: {e}")
 
-        self.logger.debug(
-            f"Found {len(detections)} objects in {len(shelf_regions)} shelf regions"
-        )
+        self.logger.debug("Found %d objects in %d shelf regions",
+                        len(detections), len(shelf_regions))
         return shelf_regions, detections
+
+    def _materialize_shelf_regions(
+        self,
+        shelves_dict: Dict[str, DetectionBox],
+        dets: List[DetectionBox]
+    ) -> List[ShelfRegion]:
+        """Turn Phase-1 shelf bands into ShelfRegion objects and assign detections by y-overlap."""
+        def y_overlap(a1, a2, b1, b2) -> int:
+            return max(0, min(a2, b2) - max(a1, b1))
+
+        regions: List[ShelfRegion] = []
+
+        # Header: anything fully above the top shelf band
+        if "top" in shelves_dict:
+            cut_y = shelves_dict["top"].y1
+            header_objs = [d for d in dets if d.y2 <= cut_y]
+            if header_objs:
+                x1 = min(o.x1 for o in header_objs)
+                y1 = min(o.y1 for o in header_objs)
+                x2 = max(o.x2 for o in header_objs)
+                y2 = cut_y
+                bbox = DetectionBox(x1=x1, y1=y1, x2=x2, y2=y2,
+                                    confidence=1.0, class_id=190,
+                                    class_name="shelf_region", area=(x2-x1)*(y2-y1))
+                regions.append(ShelfRegion(shelf_id="header", bbox=bbox, level="header", objects=header_objs))
+
+        for level in ["top", "middle", "bottom"]:
+            if level not in shelves_dict:
+                continue
+            band = shelves_dict[level]
+            objs = [d for d in dets if y_overlap(d.y1, d.y2, band.y1, band.y2) > 0]
+            if not objs:
+                continue
+            x1 = min(o.x1 for o in objs)
+            y1 = band.y1
+            x2 = max(o.x2 for o in objs)
+            y2 = band.y2
+            bbox = DetectionBox(x1=x1, y1=y1, x2=x2, y2=y2,
+                                confidence=1.0, class_id=190,
+                                class_name="shelf_region", area=(x2-x1)*(y2-y1))
+            regions.append(ShelfRegion(shelf_id=f"{level}_shelf", bbox=bbox, level=level, objects=objs))
+
+        return regions
+
 
     def _recover_price_tags(
         self,
