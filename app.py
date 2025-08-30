@@ -72,7 +72,7 @@ class Main(AppHandler):
         BotManagement.setup(self.app, r'/api/v1/bot_management{slash:/?}{bot:[^/]*}')
         # Tools List
         self.app.router.add_view(
-            '/api/v1/tools',
+            '/api/v1/agent_tools',
             ToolList,
             name='tools_list'
         )
