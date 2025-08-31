@@ -254,7 +254,6 @@ class RetailDetector:
 
         # 5) classify YOLO → proposals (works w/ bands={}, header_limit_y above)
         proposals = self._classify_proposals(img_array, yolo_props, bands, header_limit_y, ad_box)
-        print(':: PROPOSALS > ', proposals)
         # 6) shrink -> merge -> remove those fully inside the poster
         proposals = self._shrink(img_array, proposals)
         proposals = self._merge(proposals, iou_same=0.45)
@@ -539,32 +538,40 @@ class RetailDetector:
         try:
             H, W = roi.shape[:2]
             roi_area = H * W
-            high_conf_detections = []
-            aggressive_detections = []
+            all_proposals = []
 
-            print(f"\n🔄 Improved Multi-Phase YOLO Detection on ROI {W}x{H}")
+            print(f"\n🔄 Detection with Your Preferred Settings on ROI {W}x{H}")
             print("   " + "="*70)
 
-            # Phase 1: High confidence detections
-            phase = detection_phases[0]
-            print(f"\n📡 Phase 1: {phase['name']}")
-            print(f"   Config: conf={phase['conf']}, iou={phase['iou']}, weight={phase['weight']}")
+            # Run both phases with your settings
+            for phase_idx, phase in enumerate(detection_phases):
+                phase_name = phase["name"]
+                conf_thresh = phase["conf"]
+                iou_thresh = phase["iou"]
+                weight = phase["weight"]
 
-            r1 = self.yolo(roi, conf=phase['conf'], iou=phase['iou'], verbose=False)[0]
+                print(f"\n📡 Phase {phase_idx + 1}: {phase_name}")
+                print(f"   Config: conf={conf_thresh}, iou={iou_thresh}, weight={weight}")
 
-            if hasattr(r1, 'boxes') and r1.boxes is not None:
-                xyxy = r1.boxes.xyxy.cpu().numpy()
-                confs = r1.boxes.conf.cpu().numpy()
-                classes = r1.boxes.cls.cpu().numpy().astype(int)
-                names = r1.names
+                r = self.yolo(roi, conf=conf_thresh, iou=iou_thresh, verbose=False)[0]
+
+                if not hasattr(r, 'boxes') or r.boxes is None:
+                    print(f"   📊 No boxes detected in {phase_name}")
+                    continue
+
+                xyxy = r.boxes.xyxy.cpu().numpy()
+                confs = r.boxes.conf.cpu().numpy()
+                classes = r.boxes.cls.cpu().numpy().astype(int)
+                names = r.names
 
                 print(f"   📊 Raw YOLO output: {len(xyxy)} detections")
 
+                phase_count = 0
                 for i, ((x1, y1, x2, y2), conf, cls_id) in enumerate(zip(xyxy, confs, classes)):
                     gx1, gy1, gx2, gy2 = int(x1) + rx1, int(y1) + ry1, int(x2) + rx1, int(y2) + ry1
 
                     width, height = x2 - x1, y2 - y1
-                    if width <= 0 or height <= 0 or width < 10 or height < 10:
+                    if width <= 0 or height <= 0 or width < 8 or height < 8:
                         continue
 
                     area = width * height
@@ -572,188 +579,157 @@ class RetailDetector:
                     aspect_ratio = width / max(height, 1)
                     yolo_class = names[cls_id]
 
-                    # HIGH CONFIDENCE: More permissive filtering
-                    if (area_ratio >= 0.005 and area_ratio <= 0.8 and  # Reasonable size range
-                        aspect_ratio >= 0.2 and aspect_ratio <= 8.0 and  # Reasonable aspect ratio
-                        conf >= 0.15):  # Good confidence
+                    # Light filtering - let classification handle the heavy lifting
+                    if (area_ratio >= 0.0008 and area_ratio <= 0.9 and
+                        0.1 <= aspect_ratio <= 10.0 and
+                        conf >= (0.12 if phase_name == "high_confidence" else 0.003)):
 
-                        weighted_conf = float(conf) * phase['weight']
+                        orientation = self._detect_orientation(gx1, gy1, gx2, gy2)
+                        weighted_conf = float(conf) * weight
 
-                        # Add orientation detection
-                        orientation = "horizontal" if aspect_ratio > 1.2 else "vertical" if aspect_ratio < 0.8 else "square"
-
-                        detection_info = {
+                        proposal = {
                             "yolo_label": yolo_class,
                             "yolo_conf": float(conf),
                             "weighted_conf": weighted_conf,
                             "box": (gx1, gy1, gx2, gy2),
                             "area_ratio": area_ratio,
                             "aspect_ratio": aspect_ratio,
-                            "orientation": orientation,  # NEW: Add orientation
-                            "retail_candidates": self._map_yolo_to_retail_with_orientation(yolo_class, area_ratio, aspect_ratio, orientation),
-                            "raw_index": len(high_conf_detections) + 1,
-                            "phase": phase['name'],
-                            "phase_weight": phase['weight']
+                            "orientation": orientation,
+                            "retail_candidates": self._get_retail_candidates(yolo_class),
+                            "raw_index": len(all_proposals) + 1,
+                            "phase": phase_name
                         }
-                        high_conf_detections.append(detection_info)
+                        all_proposals.append(proposal)
+                        phase_count += 1
 
-                print(f"   ✅ Kept {len(high_conf_detections)} high-confidence detections")
+                print(f"   ✅ Kept {phase_count} detections from {phase_name}")
 
-            # Phase 2: Aggressive detection for gaps only
-            if len(detection_phases) > 1:
-                phase = detection_phases[1]
-                print(f"\n📡 Phase 2: {phase['name']}")
-                print(f"   Config: conf={phase['conf']}, iou={phase['iou']}, weight={phase['weight']}")
+            # Light deduplication (let classification handle quality control)
+            deduplicated = self._light_deduplication(all_proposals)
 
-                r2 = self.yolo(roi, conf=phase['conf'], iou=phase['iou'], verbose=False)[0]
+            print(f"\n📊 Detection Summary: {len(deduplicated)} total proposals")
+            print("   Focus: Let classification phase handle object type distinction")
 
-                if hasattr(r2, 'boxes') and r2.boxes is not None:
-                    xyxy = r2.boxes.xyxy.cpu().numpy()
-                    confs = r2.boxes.conf.cpu().numpy()
-                    classes = r2.boxes.cls.cpu().numpy().astype(int)
-                    names = r2.names
-
-                    print(f"   📊 Raw YOLO output: {len(xyxy)} detections")
-
-                    for i, ((x1, y1, x2, y2), conf, cls_id) in enumerate(zip(xyxy, confs, classes)):
-                        gx1, gy1, gx2, gy2 = int(x1) + rx1, int(y1) + ry1, int(x2) + rx1, int(y2) + ry1
-
-                        width, height = x2 - x1, y2 - y1
-                        if width <= 0 or height <= 0 or width < 12 or height < 12:
-                            continue
-
-                        area = width * height
-                        area_ratio = area / roi_area
-                        aspect_ratio = width / max(height, 1)
-                        yolo_class = names[cls_id]
-
-                        # CRITICAL: Check if this detection overlaps significantly with high-confidence ones
-                        overlaps_with_high_conf = False
-                        for hc_det in high_conf_detections:
-                            iou = self._calculate_iou_tuples((gx1, gy1, gx2, gy2), hc_det["box"])
-                            if iou > 0.3:  # If overlaps significantly with high-confidence detection
-                                overlaps_with_high_conf = True
-                                break
-
-                        if overlaps_with_high_conf:
-                            continue  # Skip this detection - already covered by high confidence
-
-                        # AGGRESSIVE: Very strict filtering for gaps only
-                        if (area_ratio >= 0.003 and area_ratio <= 0.4 and  # Stricter size range
-                            aspect_ratio >= 0.3 and aspect_ratio <= 5.0 and  # Stricter aspect ratio
-                            conf >= 0.01 and  # Minimum confidence
-                            yolo_class in {"microwave", "tv", "monitor", "book", "box", "suitcase", "bottle"}):  # Only retail-relevant classes
-
-                            weighted_conf = float(conf) * phase['weight']
-                            orientation = "horizontal" if aspect_ratio > 1.2 else "vertical" if aspect_ratio < 0.8 else "square"
-
-                            detection_info = {
-                                "yolo_label": yolo_class,
-                                "yolo_conf": float(conf),
-                                "weighted_conf": weighted_conf,
-                                "box": (gx1, gy1, gx2, gy2),
-                                "area_ratio": area_ratio,
-                                "aspect_ratio": aspect_ratio,
-                                "orientation": orientation,
-                                "retail_candidates": self._map_yolo_to_retail_with_orientation(yolo_class, area_ratio, aspect_ratio, orientation),
-                                "raw_index": len(high_conf_detections) + len(aggressive_detections) + 1,
-                                "phase": phase['name'],
-                                "phase_weight": phase['weight']
-                            }
-                            aggressive_detections.append(detection_info)
-
-                    print(f"   ✅ Kept {len(aggressive_detections)} non-overlapping aggressive detections")
-
-            # Combine and validate
-            all_detections = high_conf_detections + aggressive_detections
-
-            # Final cross-phase deduplication (lighter since we already filtered overlaps)
-            deduplicated = self._light_deduplication(all_detections)
-
-            # Convert to format for classification
-            formatted_proposals = []
-            for det in deduplicated:
-                gx1, gy1, gx2, gy2 = det["box"]
-
-                if gx2 <= gx1 or gy2 <= gy1:
-                    continue
-
-                formatted_proposal = {
-                    "yolo_label": det["yolo_label"],
-                    "yolo_conf": det["yolo_conf"],
-                    "box": (gx1, gy1, gx2, gy2),
-                    "area_ratio": det["area_ratio"],
-                    "aspect_ratio": det["aspect_ratio"],
-                    "orientation": det["orientation"],  # Pass orientation to classifier
-                    "retail_candidates": det["retail_candidates"],
-                    "raw_index": det["raw_index"],
-                    "phase": det["phase"],
-                    "weighted_conf": det["weighted_conf"]
-                }
-                formatted_proposals.append(formatted_proposal)
-
-            print(f"\n📊 Improved Multi-Phase Final: {len(formatted_proposals)} quality detections")
-            print(f"   High-confidence: {len(high_conf_detections)}, Aggressive (gaps): {len(aggressive_detections)}")
-
-            return formatted_proposals
+            return deduplicated
 
         except Exception as e:
-            print(f"Improved multi-phase YOLO detection failed: {e}")
+            print(f"Detection failed: {e}")
             traceback.print_exc()
             return []
 
-    def _map_yolo_to_retail_with_orientation(self, yolo_class: str, area_ratio: float, aspect_ratio: float, orientation: str) -> List[str]:
+    def _analyze_visual_features(self, crop: Image.Image, area_ratio: float, aspect: float, yolo_class: str) -> Dict[str, Any]:
         """
-        IMPROVED: Map YOLO class to retail candidates considering orientation
+        Enhanced visual feature analysis with skin tone and bottle detection
         """
+        try:
+            crop_array = np.array(crop)
 
-        # Base mapping with orientation consideration
-        retail_mapping = {
-            # Electronics
-            "microwave": ["printer"] if orientation in ["square", "horizontal"] else ["product_box"],
-            "tv": ["promotional_graphic"] if area_ratio > 0.1 else ["printer"],
-            "monitor": ["promotional_graphic"] if area_ratio > 0.1 else ["printer"],
-            "laptop": ["promotional_graphic"] if area_ratio > 0.1 else ["printer"],
+            if crop_array.ndim == 3:
+                r_mean = np.mean(crop_array[:, :, 0])
+                g_mean = np.mean(crop_array[:, :, 1])
+                b_mean = np.mean(crop_array[:, :, 2])
 
-            # Box-like objects - orientation is key here
-            "book": ["product_box"] if orientation == "vertical" or aspect_ratio > 1.5 else ["printer"],
+                # Blue dominance (for Epson boxes)
+                is_blue_dominant = (b_mean > r_mean * 1.2 and b_mean > g_mean * 1.15 and b_mean > 100)
+
+                # White/gray dominance (for printers)
+                color_std = np.std([r_mean, g_mean, b_mean])
+                avg_brightness = (r_mean + g_mean + b_mean) / 3
+                is_white_gray = (color_std < 25 and avg_brightness > 140)
+
+                # Skin tone detection (to avoid human fingers)
+                is_skin_tone = (r_mean > g_mean * 0.9 and g_mean > b_mean * 1.1 and
+                            r_mean > 120 and g_mean > 80 and b_mean < 120)
+
+                # Bottle shape detection (tall and narrow)
+                has_bottle_shape = (aspect < 0.6 and area_ratio < 0.02)
+
+                # Person features (for promotional graphics)
+                has_person_features = yolo_class == "person"
+
+                brightness = avg_brightness / 255.0
+            else:
+                is_blue_dominant = False
+                is_white_gray = False
+                is_skin_tone = False
+                has_bottle_shape = False
+                has_person_features = False
+                brightness = 0.5
+                r_mean = g_mean = b_mean = 0
+
+            # Edge analysis
+            gray = cv2.cvtColor(crop_array, cv2.COLOR_RGB2GRAY) if crop_array.ndim == 3 else crop_array
+            edges = cv2.Canny(gray, 50, 150)
+            edge_density = np.sum(edges > 0) / edges.size
+
+            return {
+                "is_blue_dominant": is_blue_dominant,
+                "is_white_gray": is_white_gray,
+                "is_skin_tone": is_skin_tone,
+                "has_bottle_shape": has_bottle_shape,
+                "has_person_features": has_person_features,
+                "brightness": brightness,
+                "edge_density": edge_density,
+                "r_mean": r_mean, "g_mean": g_mean, "b_mean": b_mean,
+            }
+
+        except Exception:
+            return {
+                "is_blue_dominant": False, "is_white_gray": False, "is_skin_tone": False,
+                "has_bottle_shape": False, "has_person_features": False,
+                "brightness": 0.5, "edge_density": 0.0,
+                "r_mean": 0, "g_mean": 0, "b_mean": 0,
+            }
+
+    def _determine_shelf_level(self, center_y: float, bands: Dict[str, tuple]) -> str:
+        """Enhanced shelf level determination"""
+        if not bands:
+            return "unknown"
+
+        for level, (y1, y2) in bands.items():
+            if y1 <= center_y <= y2:
+                return level
+
+        # If not in any band, find closest
+        min_distance = float('inf')
+        closest_level = "unknown"
+        for level, (y1, y2) in bands.items():
+            band_center = (y1 + y2) / 2
+            distance = abs(center_y - band_center)
+            if distance < min_distance:
+                min_distance = distance
+                closest_level = level
+
+        return closest_level
+
+    def _detect_orientation(self, x1: int, y1: int, x2: int, y2: int) -> str:
+        """Detect orientation from bounding box dimensions"""
+        width = x2 - x1
+        height = y2 - y1
+        aspect_ratio = width / max(height, 1)
+
+        if aspect_ratio < 0.8:
+            return "vertical"
+        elif aspect_ratio > 1.5:
+            return "horizontal"
+        else:
+            return "square"
+
+    def _get_retail_candidates(self, yolo_class: str) -> List[str]:
+        """Light retail candidate mapping - let classification do the heavy work"""
+        mapping = {
+            "microwave": ["printer", "product_box"],
+            "tv": ["printer", "promotional_graphic"],
+            "monitor": ["printer", "promotional_graphic"],
+            "laptop": ["printer", "promotional_graphic"],
+            "book": ["product_box", "printer"],
             "box": ["product_box"],
-            "suitcase": ["product_box"] if orientation == "horizontal" else ["printer"],
-            "backpack": ["product_box"],
-            "handbag": ["product_box"],
-
-            # Small objects
-            "bottle": ["ink_bottle", "small_object"],
-            "cup": ["small_object"],
-            "cell phone": ["small_object"],
-            "clock": ["small_object"],
-
-            # Promotional
+            "suitcase": ["product_box", "printer"],
+            "bottle": ["ink_bottle", "price_tag"],
             "person": ["promotional_graphic"],
-
-            # Generic
-            "cardboard": ["product_box"],
-            "keyboard": ["small_object"],
+            "clock": ["small_object", "price_tag"],
         }
-
-        base_candidates = retail_mapping.get(yolo_class, ["product_candidate"])
-
-        # IMPROVED: Context-based refinement with orientation
-        if area_ratio > 0.15 and aspect_ratio > 2.5:
-            # Large horizontal = promotional
-            return ["promotional_graphic"]
-        elif area_ratio > 0.02:
-            if orientation == "vertical" and aspect_ratio < 0.8:
-                # Tall vertical objects = likely boxes
-                return ["product_box"]
-            elif orientation == "square" or (0.8 <= aspect_ratio <= 1.8):
-                # Square/compact objects = likely printers
-                return ["printer"]
-            elif orientation == "horizontal" and aspect_ratio > 1.5:
-                # Wide horizontal objects = likely boxes
-                return ["product_box"]
-
-        return base_candidates
+        return mapping.get(yolo_class, ["product_candidate"])
 
     def _light_deduplication(self, all_detections: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
@@ -1019,62 +995,77 @@ class RetailDetector:
     # ------------------- OCR + CLIP preselection -----------------------------
     def _classify_proposals(self, img, props, bands, header_limit_y, ad_box):
         """
-        Use CLIP + OCR + rules to classify each proposal box
-        into product_candidate, box_candidate, promotional_candidate
+        classification with better visual analysis for accurate object type detection.
+
+        Focus on distinguishing:
+        - White printers (compact, square-ish) → product_candidate
+        - Blue boxes (tall/wide, colorful) → box_candidate
+        - Large banners (wide, in header) → promotional_candidate
+        - Small tags (very small, specific aspect ratio) → price_tag
         """
-        H, W = img.shape[:2] if hasattr(img, 'shape') else (img.shape[1], img.shape[0])
+        H, W = img.shape[:2]
         out = []
         text_feats = self.text_feats
 
-        print(f"\n🎯 Enhanced CLIP Classification:")
+        print(f"\n🎯 Classification with Visual Analysis:")
         print("   " + "="*60)
 
+        # STEP 1: Find clearly detected high-confidence product boxes for baseline
+        high_confidence_boxes = []
         for p in props:
-            # Extract detection info
+            if (p.get("phase") == "high_confidence" and
+                p.get("weighted_conf", 0) > 0.5 and
+                p.get("area_ratio", 0) > 0.02):
+                high_confidence_boxes.append(p)
+
+        min_box_confidence = min(
+            [p.get("weighted_conf", 0) for p in high_confidence_boxes],
+            default=0.3
+        )
+        print(
+            f"   📊 Found {len(high_confidence_boxes)} high-confidence boxes, min confidence: {min_box_confidence:.3f}"
+        )
+
+        for p in props:
             x1, y1, x2, y2 = p["box"]
             base_conf = p.get("weighted_conf", p.get("yolo_conf", 0.5))
             yolo_class = p["yolo_label"]
             phase = p.get("phase", "unknown")
-            orientation = p.get("orientation", "unknown")  # Get orientation
-            retail_candidates = p.get("retail_candidates", [])
+            orientation = p.get("orientation", self._detect_orientation(x1, y1, x2, y2))
             raw_index = p.get("raw_index", "?")
 
             # Validation
             width, height = x2 - x1, y2 - y1
             if width <= 0 or height <= 0 or width < 8 or height < 8:
-                print(f"   ⚠️  Skipping #{raw_index}: Invalid dimensions {width}x{height}")
                 continue
 
             if x1 < 0 or y1 < 0 or x2 >= W or y2 >= H:
-                print(f"   ⚠️  Skipping #{raw_index}: Coordinates out of bounds")
                 continue
 
             area = width * height
             aspect = width / max(1.0, float(height))
+            area_ratio = area / (W * H)
 
             # Skip tiny detections
-            if area < 0.001 * W * H:  # Increased threshold
+            if area < 0.0008 * W * H:
                 continue
 
             # Safe crop extraction
             try:
                 crop = self._safe_extract_crop(img, x1, y1, x2, y2)
                 if crop is None:
-                    print(f"   ⚠️  Skipping #{raw_index}: Invalid crop")
                     continue
-            except Exception as e:
-                print(f"   ⚠️  Crop failed for #{raw_index}: {e}")
+            except Exception:
                 continue
 
-            # OCR with error handling
-            ocr_txt = ""
-            try:
-                ocr_txt = pytesseract.image_to_string(crop, config="--psm 6").lower()
-            except Exception as e:
-                print(f"   ⚠️  OCR failed for #{raw_index}: {e}")
+            # ENHANCED: Visual analysis for better classification
+            visual_analysis = self._analyze_visual_features(crop, area_ratio, aspect, yolo_class)
 
-            # CLIP processing with comprehensive error handling
-            s_poster, s_printer, s_box = 0.3, 0.3, 0.3  # Default fallback scores
+            # ENHANCED OCR analysis with model number detection
+            ocr_analysis = self._enhanced_ocr_analysis(crop)
+
+            # CLIP processing
+            s_poster, s_printer, s_box = 0.3, 0.3, 0.3
             try:
                 with torch.no_grad():
                     ip = self.proc(images=crop, return_tensors="pt").to(self.device)
@@ -1082,96 +1073,279 @@ class RetailDetector:
                     img_feat = img_feat / img_feat.norm(dim=-1, keepdim=True)
                     text_sims = (img_feat @ text_feats.T).squeeze().tolist()
                     s_poster, s_printer, s_box = float(text_sims[0]), float(text_sims[1]), float(text_sims[2])
-            except Exception as e:
-                print(f"   ⚠️  CLIP failed for #{raw_index}: {e}")
+            except Exception:
+                pass
 
             # Reference matching
+            ref_match_score = 0.0
             if self.ref_prod_feats:
                 try:
                     with torch.no_grad():
                         ref_scores = [float((img_feat @ ref_feat.T).squeeze()) for ref_feat in self.ref_prod_feats]
-                        best_ref_score = max(ref_scores) if ref_scores else 0.0
-                        s_printer = max(s_printer, best_ref_score)
-                except Exception as e:
-                    print(f"   ⚠️  Reference matching failed for #{raw_index}: {e}")
+                        ref_match_score = max(ref_scores) if ref_scores else 0.0
+                        s_printer = max(s_printer, ref_match_score)
+                except Exception:
+                    pass
 
-            # Position analysis
             center_y = (y1 + y2) / 2
 
-            if center_y < header_limit_y:
-                # Header area
-                if aspect > 2.0 and area > 0.05 * W * H:
-                    cname, score = "promotional_candidate", max(0.75, s_poster, base_conf)
-                    decision_reason = f"large horizontal in header ({orientation})"
-                elif yolo_class == "person":
-                    cname, score = "promotional_candidate", max(0.80, s_poster, base_conf)
-                    decision_reason = f"person in promotional area"
+            # OCR analysis
+            ocr_txt = ""
+            has_epson_text = False
+            has_model_number = False
+            try:
+                ocr_txt = pytesseract.image_to_string(crop, config="--psm 6").lower()
+                has_epson_text = any(term in ocr_txt for term in ["epson", "ecotank", "et-"])
+                has_model_number = bool(re.search(r"et[-]?\s?(\d{4})", ocr_txt))
+                print('OCR Detection > ', ocr_txt, has_epson_text, has_model_number)
+            except Exception:
+                pass
+
+            # CLIP processing
+            s_poster, s_printer, s_box = 0.3, 0.3, 0.3
+            try:
+                with torch.no_grad():
+                    ip = self.proc(images=crop, return_tensors="pt").to(self.device)
+                    img_feat = self.clip.get_image_features(**ip)
+                    img_feat = img_feat / img_feat.norm(dim=-1, keepdim=True)
+                    text_sims = (img_feat @ text_feats.T).squeeze().tolist()
+                    s_poster, s_printer, s_box = float(text_sims[0]), float(text_sims[1]), float(text_sims[2])
+            except Exception:
+                pass
+
+            # Reference matching
+            ref_match_score = 0.0
+            if self.ref_prod_feats:
+                try:
+                    with torch.no_grad():
+                        ref_scores = [float((img_feat @ ref_feat.T).squeeze()) for ref_feat in self.ref_prod_feats]
+                        ref_match_score = max(ref_scores) if ref_scores else 0.0
+                        s_printer = max(s_printer, ref_match_score)
+                except Exception:
+                    pass
+
+            # POSITION ANALYSIS
+            center_y = (y1 + y2) / 2
+
+            # If we have shelf bands, use them; otherwise use header_limit_y
+            actual_header_limit = header_limit_y
+            if bands and "top" in bands:
+                # Header is anything above the top shelf band
+                actual_header_limit = bands["top"][0]  # y1 of top band
+
+            # ALSO check for large promotional objects that span multiple areas
+            is_large_promotional = (
+                area_ratio > 0.15 and aspect > 1.8 and (y1 < actual_header_limit or area_ratio > 0.25)
+            )
+
+            if center_y < actual_header_limit or is_large_promotional:
+                # HEADER AREA: Enhanced promotional detection
+                if area_ratio > 0.15 and aspect > 1.5:
+                    cname = "promotional_candidate"
+                    score = max(0.85, s_poster, base_conf)
+                    decision_reason = f"large banner (area={area_ratio:.3f}, aspect={aspect:.1f})"
+                elif yolo_class == "person" or visual_analysis.get("has_person_features", False):
+                    cname = "promotional_candidate"
+                    score = max(0.90, s_poster, base_conf)
+                    decision_reason = "person in promotional area"
+                elif area_ratio > 0.05 or is_large_promotional:
+                    cname = "promotional_candidate"
+                    score = max(0.80, s_poster, base_conf)
+                    decision_reason = f"promotional object in header"
                 else:
-                    cname, score = "product_candidate", max(0.60, s_printer, base_conf)
-                    decision_reason = f"small object in header"
+                    # Very small objects in header - likely noise
+                    print(f"   ⚠️  Skipping #{raw_index}: Too small for header ({area_ratio:.4f})")
+                    continue
+
             else:
-                # IMPROVED: Product classification with orientation
+                # PRODUCT AREAS: Enhanced classification with OCR validation
+
+                # Initialize scores
                 scores = {
-                    "promotional_candidate": s_poster,
+                    "promotional_candidate": s_poster * 0.2,  # Lower for non-header
                     "product_candidate": s_printer,
-                    "box_candidate": s_box
+                    "box_candidate": s_box,
+                    "price_tag": 0.3,
+                    "ink_bottle": 0.3
                 }
 
-                # NEW: Orientation-based score adjustments
-                if orientation == "vertical" and aspect < 0.9:
-                    # Tall vertical objects are likely boxes
-                    scores["box_candidate"] *= 1.4
-                    scores["product_candidate"] *= 0.8
-                elif orientation == "square" and 0.8 <= aspect <= 1.5:
-                    # Square objects are likely printers
-                    scores["product_candidate"] *= 1.4
-                    scores["box_candidate"] *= 0.8
-                elif orientation == "horizontal" and aspect > 1.5:
-                    # Wide horizontal objects are likely boxes
-                    scores["box_candidate"] *= 1.3
+                # CONFIDENCE FILTERING: Remove weak detections near strong ones
+                if base_conf < min_box_confidence * 0.4:  # Much weaker than clear boxes
+                    print(f"   ❌ Filtered #{raw_index}: Too low confidence ({base_conf:.3f} vs {min_box_confidence:.3f})")
+                    continue
 
-                # Phase boost (reduced since aggressive phase has lower weight)
-                if phase == "high_confidence":
-                    for key in scores:
-                        scores[key] *= 1.1  # Reduced from 1.2
-
-                # Retail candidates boost
-                if "printer" in retail_candidates:
-                    scores["product_candidate"] *= 1.2
-                if "product_box" in retail_candidates:
-                    scores["box_candidate"] *= 1.2
-                if "promotional_graphic" in retail_candidates:
-                    scores["promotional_candidate"] *= 1.2
-
-                # OCR hints
-                if any(term in ocr_txt for term in ["epson", "et-", "ecotank"]):
-                    if aspect > 1.3 or orientation == "horizontal":
-                        scores["box_candidate"] *= 1.3
+                # SIZE-BASED CLASSIFICATION with OCR validation
+                if area_ratio > 0.08:
+                    # Large objects
+                    if visual_analysis["is_blue_dominant"]:
+                        # CRITICAL: OCR validation for blue boxes
+                        if ocr_analysis["has_epson_model"]:
+                            scores["box_candidate"] *= 2.5  # Strong boost for verified boxes
+                            decision_reason = f"verified Epson box ({ocr_analysis['model_found']})"
+                        elif ocr_analysis["has_epson_text"]:
+                            scores["box_candidate"] *= 1.8  # Moderate boost for Epson text
+                            decision_reason = "blue box with Epson text"
+                        else:
+                            scores["box_candidate"] *= 0.6  # Reduce if no Epson validation
+                            decision_reason = "blue box without Epson text"
+                    elif visual_analysis["is_white_gray"]:
+                        scores["product_candidate"] *= 1.8
+                        decision_reason = "large white/gray device"
                     else:
-                        scores["product_candidate"] *= 1.3
+                        scores["box_candidate"] *= 1.2
+
+                elif area_ratio > 0.02:
+                    # Medium objects - main product area
+                    if visual_analysis["is_blue_dominant"]:
+                        # OCR validation for medium blue objects
+                        if ocr_analysis["has_epson_model"]:
+                            scores["box_candidate"] *= 2.2
+                            decision_reason = f"verified Epson box ({ocr_analysis['model_found']})"
+                        elif ocr_analysis["has_epson_text"]:
+                            scores["box_candidate"] *= 1.6
+                            decision_reason = "medium blue box with Epson text"
+                        else:
+                            # Blue but no Epson text - be cautious
+                            scores["box_candidate"] *= 0.8
+                            decision_reason = "blue object without Epson validation"
+
+                    elif visual_analysis["is_white_gray"] and 0.8 <= aspect <= 1.5:
+                        scores["product_candidate"] *= 2.0
+                        decision_reason = "white/gray square device"
+
+                elif area_ratio < 0.01:
+                    # Small objects - tags or bottles
+                    if (2.0 < aspect < 8.0 and 0.0015 < area_ratio < 0.008 and
+                        not visual_analysis["is_skin_tone"]):  # Avoid human fingers
+                        scores["price_tag"] *= 2.5
+                        decision_reason = "small tag-like object"
+                    elif (visual_analysis["has_bottle_shape"] and
+                        ocr_analysis["has_numbers"] and
+                        not ocr_analysis["has_epson_text"]):
+                        scores["ink_bottle"] *= 1.5
+                        decision_reason = "bottle-like with numbers"
+                    else:
+                        # Filter out likely false positives
+                        print(
+                            f"   ❌ Filtered #{raw_index}: Likely false positive (area={area_ratio:.4f})"
+                        )
+                        continue
+
+                # ORIENTATION and SHELF POSITION refinements
+                shelf_level = self._determine_shelf_level(center_y, bands)
+
+                if orientation == "vertical" and aspect < 0.9:
+                    scores["box_candidate"] *= 1.3
+                elif orientation == "square" and 0.8 <= aspect <= 1.4:
+                    scores["product_candidate"] *= 1.3
+
+                if shelf_level == "top":
+                    scores["product_candidate"] *= 1.2
+                elif shelf_level in ["middle", "bottom"]:
+                    scores["box_candidate"] *= 1.1
+
+                # FINAL VALIDATION: Additional OCR checks
+                if ocr_analysis["has_unrelated_numbers"] and not ocr_analysis["has_epson_text"]:
+                    # Has numbers but not Epson-related (like "502")
+                    scores["box_candidate"] *= 0.5  # Reduce box likelihood
+                    scores["ink_bottle"] *= 1.5  # Increase ink bottle likelihood
+                    decision_reason += " + unrelated numbers"
 
                 # Final classification
                 cname = max(scores, key=scores.get)
                 score = max(scores[cname], base_conf)
-                decision_reason = f"{yolo_class}({orientation})→{cname} via CLIP+orient ({phase})"
 
-            # IMPORTANT: Clamp confidence to [0.0, 1.0] for Pydantic validation
+                if not hasattr(locals(), 'decision_reason'):
+                    decision_reason = f"{yolo_class}({orientation})→{cname}@{shelf_level}"
+
+            # Clamp confidence
             clamped_confidence = min(1.0, max(0.0, float(score)))
 
-            print(f"   #{raw_index:2}: {yolo_class:12s} {orientation:10s} → {cname:20s} "
+            # Additional validation: Skip very low confidence results
+            if clamped_confidence < 0.35:
+                print(f"   ❌ Filtered #{raw_index}: Final confidence too low ({clamped_confidence:.3f})")
+                continue
+
+            print(f"   #{raw_index:2}: {yolo_class:10s} {orientation:8s} → {cname:18s} "
                 f"conf={clamped_confidence:.3f} ({decision_reason})")
 
-            detection_box = DetectionBox(
-                x1=int(x1), y1=int(y1), x2=int(x2), y2=int(y2),
-                confidence=clamped_confidence,
-                class_id=CID.get(cname, 100),
-                class_name=cname,
-                area=int(area)
+            out.append(
+                DetectionBox(
+                    x1=int(x1), y1=int(y1), x2=int(x2), y2=int(y2),
+                    confidence=clamped_confidence,
+                    class_id=CID.get(cname, 100),
+                    class_name=cname,
+                    area=int(area)
+                )
             )
-            out.append(detection_box)
 
-        print(f"   📊 Improved Final: {len(out)} quality classified detections")
+        print(f"   📊 Enhanced Classification Final: {len(out)} validated detections")
         return out
+
+    def _enhanced_ocr_analysis(self, crop: Image.Image) -> Dict[str, Any]:
+        """
+        Enhanced OCR analysis specifically for Epson product validation
+        """
+        try:
+            # Multiple OCR passes for better accuracy
+            ocr_configs = [
+                "--psm 6 -l eng",  # Standard
+                "--psm 8 -l eng",  # Single word
+                "--psm 7 -l eng",  # Single text line
+            ]
+
+            all_text = ""
+            for config in ocr_configs:
+                try:
+                    text = pytesseract.image_to_string(crop, config=config)
+                    all_text += " " + text.lower()
+                except:
+                    continue
+
+            # Clean up text
+            all_text = all_text.lower().replace("-", " ").replace("_", " ")
+
+            # Check for Epson model numbers (ET-2980, ET-3950, ET-4950)
+            model_patterns = [
+                r"et[-\s]?2980", r"et[-\s]?3950", r"et[-\s]?4950",
+                r"2980", r"3950", r"4950"
+            ]
+
+            found_model = None
+            for pattern in model_patterns:
+                match = re.search(pattern, all_text)
+                if match:
+                    found_model = match.group()
+                    break
+
+            # Check for general Epson indicators
+            epson_indicators = ["epson", "ecotank", "supertank"]
+            has_epson_text = any(indicator in all_text for indicator in epson_indicators)
+
+            # Check for unrelated numbers (like "502" for ink bottles)
+            unrelated_numbers = re.findall(r'\b(?:50[0-9]|60[0-9]|70[0-9]|[0-9]{3,4})\b', all_text)
+            unrelated_numbers = [n for n in unrelated_numbers if n not in ["2980", "3950", "4950"]]
+
+            return {
+                "raw_text": all_text,
+                "has_epson_model": found_model is not None,
+                "model_found": found_model,
+                "has_epson_text": has_epson_text,
+                "has_numbers": bool(re.search(r'\d{3,4}', all_text)),
+                "has_unrelated_numbers": len(unrelated_numbers) > 0,
+                "unrelated_numbers": unrelated_numbers
+            }
+
+        except Exception as e:
+            return {
+                "raw_text": "",
+                "has_epson_model": False,
+                "model_found": None,
+                "has_epson_text": False,
+                "has_numbers": False,
+                "has_unrelated_numbers": False,
+                "unrelated_numbers": []
+            }
 
     # --------------------- shrink/merge/cleanup ------------------------------
     def _shrink(self, img, dets: List[DetectionBox]) -> List[DetectionBox]:

@@ -46,7 +46,7 @@ async def main():
                 "compliance_threshold": 0.95
             },
             {
-                "level": "top",
+                "level": "middle",
                 "products": [
                     {
                         "name": "ET-2980",
@@ -70,7 +70,7 @@ async def main():
                 "compliance_threshold": 0.9
             },
             {
-                "level": "middle",
+                "level": "bottom",
                 "products": [
                     {
                         "name": "ET-2980 box",
