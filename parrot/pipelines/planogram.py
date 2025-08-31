@@ -992,6 +992,18 @@ class RetailDetector:
 
         return filtered
 
+    def _iou_xyxy(self, a, b) -> float:
+        ax1, ay1, ax2, ay2 = a
+        bx1, by1, bx2, by2 = b
+        ix1, iy1 = max(ax1, bx1), max(ay1, by1)
+        ix2, iy2 = min(ax2, bx2), min(ay2, by2)
+        if ix2 <= ix1 or iy2 <= iy1:
+            return 0.0
+        inter = (ix2 - ix1) * (iy2 - iy1)
+        aarea = (ax2 - ax1) * (ay2 - ay1)
+        barea = (bx2 - bx1) * (by2 - by1)
+        return inter / max(1.0, aarea + barea - inter)
+
     # ------------------- OCR + CLIP preselection -----------------------------
     def _classify_proposals(self, img, props, bands, header_limit_y, ad_box):
         """
@@ -1169,10 +1181,19 @@ class RetailDetector:
                     "ink_bottle": 0.3
                 }
 
-                # CONFIDENCE FILTERING: Remove weak detections near strong ones
-                if base_conf < min_box_confidence * 0.4:  # Much weaker than clear boxes
-                    print(f"   ❌ Filtered #{raw_index}: Too low confidence ({base_conf:.3f} vs {min_box_confidence:.3f})")
-                    continue
+                # CONFIDENCE FILTERING:
+                # Only suppress very weak AGGRESSIVE detections that overlap strong boxes.
+                if phase == "aggressive":
+                    overlaps_strong = any(
+                        self._iou_xyxy(p["box"], hb["box"]) >= 0.50
+                        for hb in high_confidence_boxes
+                    )
+                    if overlaps_strong and base_conf < (min_box_confidence * 0.60):
+                        print(
+                            f"   ❌ Filtered #{raw_index}: Aggressive & overlaps strong box, low conf "
+                            f"({base_conf:.3f} vs {min_box_confidence:.3f})"
+                        )
+                        continue
 
                 # SIZE-BASED CLASSIFICATION with OCR validation
                 if area_ratio > 0.08:
@@ -1209,9 +1230,10 @@ class RetailDetector:
                             scores["box_candidate"] *= 0.8
                             decision_reason = "blue object without Epson validation"
 
-                    elif visual_analysis["is_white_gray"] and 0.8 <= aspect <= 1.5:
-                        scores["product_candidate"] *= 2.0
-                        decision_reason = "white/gray square device"
+                    elif visual_analysis["is_white_gray"] and 0.75 <= aspect <= 1.6:
+                        # favor printers even if base_conf is modest
+                        scores["product_candidate"] *= 2.3
+                        decision_reason = "white/gray square device (printer bias)"
 
                 elif area_ratio < 0.01:
                     # Small objects - tags or bottles
@@ -1263,7 +1285,15 @@ class RetailDetector:
 
             # Additional validation: Skip very low confidence results
             if clamped_confidence < 0.35:
-                print(f"   ❌ Filtered #{raw_index}: Final confidence too low ({clamped_confidence:.3f})")
+                if (cname == "product_candidate" and visual_analysis.get("is_white_gray")
+                    and area_ratio > 0.02
+                    and 0.65 <= aspect <= 1.7
+                ):
+                    clamped_confidence = 0.42
+                else:
+                    print(
+                        f"   ❌ Filtered #{raw_index}: Final confidence too low ({clamped_confidence:.3f})"
+                    )
                 continue
 
             print(f"   #{raw_index:2}: {yolo_class:10s} {orientation:8s} → {cname:18s} "
@@ -1637,16 +1667,31 @@ class PlanogramCompliancePipeline(AbstractPipeline):
         # Header: anything fully above the top shelf band
         if "top" in shelves_dict:
             cut_y = shelves_dict["top"].y1
-            header_objs = [d for d in dets if d.y2 <= cut_y]
+            # Anything fully above the top band OR any promotional that touches the header area.
+            header_objs = [
+                d for d in dets
+                if (d.y2 <= cut_y) or (d.class_name == "promotional_candidate" and d.y1 < cut_y + 5)
+            ]
             if header_objs:
                 x1 = min(o.x1 for o in header_objs)
                 y1 = min(o.y1 for o in header_objs)
                 x2 = max(o.x2 for o in header_objs)
                 y2 = cut_y
-                bbox = DetectionBox(x1=x1, y1=y1, x2=x2, y2=y2,
-                                    confidence=1.0, class_id=190,
-                                    class_name="shelf_region", area=(x2-x1)*(y2-y1))
-                regions.append(ShelfRegion(shelf_id="header", bbox=bbox, level="header", objects=header_objs))
+                bbox = DetectionBox(
+                    x1=x1, y1=y1, x2=x2, y2=y2,
+                    confidence=1.0,
+                    class_id=190,
+                    class_name="shelf_region",
+                    area=(x2-x1)*(y2-y1)
+                )
+                regions.append(
+                    ShelfRegion(
+                        shelf_id="header",
+                        bbox=bbox,
+                        level="header",
+                        objects=header_objs
+                    )
+                )
 
         for level in ["top", "middle", "bottom"]:
             if level not in shelves_dict:
@@ -2652,14 +2697,74 @@ Respond with the structured data for all {len(detections)} objects.
                 p for p in identified_products if p.product_type != "promotional_graphic"
             ] + [keep]
 
-        print('==== ')
-        print(identified_products)
-        W, H = (image.width, image.height) if hasattr(image, "width") else Image.open(image).size
+        print('==== BEFORE SHELF REASSIGNMENT ====')
+        for p in identified_products:
+            if p.product_type == "promotional_graphic":
+                print(f"Promotional graphic: shelf_location={p.shelf_location}, box=({p.detection_box.x1}, {p.detection_box.y1}, {p.detection_box.x2}, {p.detection_box.y2})")
+
+        # Get image dimensions safely
+        if isinstance(image, (str, Path)):
+            pil_image = Image.open(image)
+            W, H = pil_image.size
+        elif hasattr(image, "width") and hasattr(image, "height"):
+            W, H = image.width, image.height
+        else:
+            # Fallback - convert to PIL to get dimensions
+            if isinstance(image, (str, Path)):
+                pil_image = Image.open(image)
+            else:
+                pil_image = image
+            W, H = pil_image.size
+
+        print(f"Image dimensions: {W}x{H}")
+
+        # Fix promotional graphic shelf assignment
         for p in identified_products:
             if p.product_type == "promotional_graphic" and p.detection_box:
-                if self._is_promotional_by_size_and_position(p.detection_box, H, W) or \
-                ((p.detection_box.y1 + p.detection_box.y2) / 2.0) < 0.45 * H:
+                box = p.detection_box
+
+                # Calculate key metrics
+                box_area = box.area
+                relative_area = box_area / (W * H)
+                box_width = box.x2 - box.x1
+                horizontal_span = box_width / W
+                y_start_ratio = box.y1 / H
+                y_center_ratio = (box.y1 + box.y2) / (2 * H)
+
+                print(f"Promotional analysis:")
+                print(f"  Area ratio: {relative_area:.3f} (threshold: 0.05)")
+                print(f"  Horizontal span: {horizontal_span:.3f} (threshold: 0.4)")
+                print(f"  Y start ratio: {y_start_ratio:.3f} (threshold: 0.2)")
+                print(f"  Y center ratio: {y_center_ratio:.3f} (threshold: 0.6)")
+
+                # More aggressive criteria - promotional graphics should go to header if they meet ANY of:
+                should_be_header = (
+                    # Large area coverage (more than 5% of image)
+                    relative_area > 0.05 or
+
+                    # Wide horizontal span (more than 40% of width)
+                    horizontal_span > 0.4 or
+
+                    # Starts in upper portion (top 20% of image)
+                    y_start_ratio < 0.2 or
+
+                    # Center in upper portion (top 60% of image)
+                    y_center_ratio < 0.6 or
+
+                    # Force all promotional_graphic types to header (safest approach)
+                    True  # This ensures ALL promotional graphics go to header
+                )
+
+                original_shelf = p.shelf_location
+                if should_be_header:
                     p.shelf_location = "header"
+                    print(f"  -> Reassigned: {original_shelf} -> header")
+                else:
+                    print(f"  -> Kept: {original_shelf}")
+
+        print('==== AFTER SHELF REASSIGNMENT ====')
+        header_promos = [p for p in identified_products if p.product_type == "promotional_graphic" and p.shelf_location == "header"]
+        print(f"Promotional graphics in header: {len(header_promos)}")
 
         self.logger.debug(f"Identified {len(identified_products)} products")
 
