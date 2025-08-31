@@ -210,7 +210,9 @@ class RetailDetector:
             placed = False
             for cl in clusters:
                 if any(self._iou(d, e) >= 0.5 for e in cl):
-                    cl.append(d); placed = True; break
+                    cl.append(d)
+                    placed = True
+                    break
             if not placed:
                 clusters.append([d])
         best_cluster = max(clusters, key=lambda cl: sum(x.area for x in cl))
@@ -223,58 +225,48 @@ class RetailDetector:
         self,
         image: Image.Image,
         debug_raw: Optional[str] = None,
-        debug_phase1: Optional[str] = None,
+        debug_phase1: Optional[str] = None
     ):
         # 0) PIL -> enhanced -> numpy
         pil = image.convert("RGB") if isinstance(image, Image.Image) else Image.open(image).convert("RGB")
         enhanced = self._enhance(pil)
         img_array = np.array(enhanced)  # RGB
+
         h, w = img_array.shape[:2]
 
         # 1) find promo (OCR + CLIP + fallbacks)
         ad_box = self._find_poster(img_array)
 
-        # 2) endcap ROI from promo width (+ margin)
+        # 2) endcap ROI (keep existing)
         roi_box = self._roi_from_poster(ad_box, h, w)
         rx1, ry1, rx2, ry2 = roi_box
         roi = img_array[ry1:ry2, rx1:rx2]
 
-        # 3) shelf lines & 3 bands (top/middle/bottom) in full-image coords
+        # 3) shelf lines & bands (keep existing)
         shelf_lines, bands = self._find_shelves(roi, rx1, ry1, rx2, ry2, h)
         header_limit_y = min(v[0] for v in bands.values()) if bands else int(0.4 * h)
 
-        # 4) YOLO proposals inside ROI (class-agnostic)
+        # 4) YOLO inside ROI
         yolo_props = self._yolo_props(roi, rx1, ry1)
         if debug_raw:
             dbg = self._draw_yolo(img_array.copy(), yolo_props, roi_box, shelf_lines)
             cv2.imwrite(debug_raw, cv2.cvtColor(dbg, cv2.COLOR_RGB2BGR))
 
-        # 5) classify proposals -> product_candidate / box_candidate / promotional_candidate
+        # 5) classify YOLO → proposals (works w/ bands={}, header_limit_y above)
         proposals = self._classify_proposals(img_array, yolo_props, bands, header_limit_y, ad_box)
-
-        if "top" in bands:
-            top_y1, top_y2 = bands["top"]
-            top_box = DetectionBox(x1=rx1, y1=top_y1, x2=rx2, y2=top_y2,
-                                confidence=1.0, class_id=190, class_name="shelf_region",
-                                area=(rx2-rx1)*(top_y2-top_y1))
-            already_top = [d for d in proposals
-                        if d.class_name == "product_candidate" and (d.y1 + d.y2) / 2 < top_y2]
-            if len(already_top) < 3:              # only help when YOLO under-detects
-                fallback_devs = self._fallback_top_devices(img_array, top_box)
-                if fallback_devs:
-                    proposals.extend(fallback_devs)
-
+        print(':: PROPOSALS > ', proposals)
         # 6) shrink -> merge -> remove those fully inside the poster
         proposals = self._shrink(img_array, proposals)
         proposals = self._merge(proposals, iou_same=0.45)
-        proposals = self._suppress_inside_poster(proposals, ad_box)
+        # proposals = self._enhanced_aggressive_filtering(proposals, H, W)
+        # proposals = self._suppress_inside_poster(proposals, ad_box)
 
         # 7) keep exactly ONE promo & align ROI to it
         proposals, promo_roi = self._consolidate_promos(proposals, ad_box)
         if promo_roi is not None:
             ad_box = promo_roi
 
-        # shelves as DetectionBox regions (dict keyed by name)
+        # shelves dict to satisfy callers; in flat mode keep it empty
         shelves = {
             name: DetectionBox(
                 x1=rx1, y1=y1, x2=rx2, y2=y2,
@@ -294,7 +286,7 @@ class RetailDetector:
                 cv2.cvtColor(dbg, cv2.COLOR_RGB2BGR)
             )
 
-        # 8) ensure the promo exists exactly once (don’t re-add if already merged)
+        # 8) ensure the promo exists exactly once
         if ad_box is not None and not any(d.class_name == "promotional_candidate" and self._iou_box_tuple(d, ad_box) > 0.7 for d in proposals):
             x1, y1, x2, y2 = ad_box
             proposals.append(
@@ -443,9 +435,10 @@ class RetailDetector:
 
         return (rx1, ry1, rx2, ry2)
 
+    # --------------------------- shelves -------------------------------------
     def _find_shelves(self, roi: np.ndarray, rx1, ry1, rx2, ry2, H):
         """
-        IMPROVED: More robust shelf line detection
+        Shelf line detection
         """
         g = cv2.cvtColor(roi, cv2.COLOR_RGB2GRAY)
 
@@ -455,11 +448,12 @@ class RetailDetector:
 
         # More conservative Hough line detection
         roi_width = rx2 - rx1
-        min_line_length = int(0.4 * roi_width)  # Shorter minimum
+        roi_height = ry2 - ry1
+        min_line_length = int(0.4 * roi_width)
 
         lines = cv2.HoughLinesP(
             e, 1, np.pi/180,
-            threshold=max(50, int(0.3 * roi_width)),  # Adaptive threshold
+            threshold=max(50, int(0.3 * roi_width)),
             minLineLength=min_line_length,
             maxLineGap=15
         )
@@ -469,7 +463,7 @@ class RetailDetector:
             for x1, y1, x2, y2 in lines[:, 0]:
                 # More strict horizontal line filtering
                 if abs(y2 - y1) <= 3 and abs(x2 - x1) >= min_line_length * 0.8:
-                    ys.append(y1 + ry1)
+                    ys.append(y1 + ry1)  # Convert to full image coordinates
 
         ys = sorted(set(ys))
         levels = []
@@ -477,276 +471,706 @@ class RetailDetector:
             if not levels or abs(y - levels[-1]) > 20:  # Increased minimum separation
                 levels.append(y)
 
-        # IMPROVED: More robust fallback shelf positioning
-        roi_height = ry2 - ry1
         if len(levels) < 2:
-            # Create 3 evenly spaced shelf levels in the ROI
-            shelf_height = roi_height // 3
+            # Create evenly spaced shelf levels based on ROI
             levels = [
-                ry1 + int(0.45 * roi_height),  # Top shelf (below header)
-                ry1 + int(0.7 * roi_height),   # Middle shelf
-                ry1 + int(0.9 * roi_height)    # Bottom shelf
+                ry1 + int(0.45 * roi_height),  # Top shelf line
+                ry1 + int(0.75 * roi_height),  # Bottom shelf line
             ]
         elif len(levels) == 2:
-            # Add a third level if we only found 2
-            levels.append(min(H - 1, int(levels[1] + 0.25 * roi_height)))
-
-        # Take only the best 3 levels
-        levels = levels[:3]
+            # We have 2 lines, ensure they're properly ordered
+            levels = sorted(levels)
+        else:
+            # More than 2 lines, pick the best 2
+            levels = sorted(levels)[:2]
 
         # Create bands with appropriate height
-        band_h = max(int(0.05 * H), 25)  # Minimum band height
         bands = {}
 
-        if len(levels) >= 1:
-            bands["top"] = (max(0, levels[0] - band_h), min(H-1, levels[0] + band_h))
-        if len(levels) >= 2:
-            bands["middle"] = (max(0, levels[1] - band_h), min(H-1, levels[1] + band_h))
-        if len(levels) >= 3:
-            bands["bottom"] = (max(0, levels[2] - band_h), min(H-1, levels[2] + band_h))
+        # Top shelf: from ROI start to first shelf line
+        bands["top"] = (ry1, levels[0])
+
+        # Middle shelf: between the two shelf lines
+        bands["middle"] = (levels[0], levels[1])
+
+        # Bottom shelf: from second shelf line to ROI end
+        bands["bottom"] = (levels[1], ry2)
+
+        # Ensure all bands have positive height
+        for name, (y1, y2) in bands.items():
+            if y2 <= y1:
+                print(f"WARNING: Invalid band {name}: y1={y1}, y2={y2}")
+                # Fix by giving minimum height
+                bands[name] = (y1, y1 + 50)
 
         return levels, bands
 
-    # --------------------------- shelves -------------------------------------
-    def _find_shelves(self, roi: np.ndarray, rx1, ry1, rx2, ry2, H):
-        g = cv2.cvtColor(roi, cv2.COLOR_RGB2GRAY)
-        e = cv2.Canny(g, 50, 150)
-        lines = cv2.HoughLinesP(
-            e, 1, np.pi/180, threshold=70,
-            minLineLength=int(0.45 * (rx2 - rx1)), maxLineGap=10
+    # ---------------------------- YOLO ---------------------------------------
+    def _yolo_props(self, roi: np.ndarray, rx1, ry1, detection_phases: Optional[List[Dict[str, Any]]] = None):
+        """
+        Multi-phase YOLO detection with configurable confidence levels and weighted scoring.
+
+        REPLACES the existing _yolo_props method with enhanced two-phase detection.
+        Returns proposals in the same format expected by existing _classify_proposals method.
+
+        Args:
+            roi: ROI image array
+            rx1, ry1: ROI offset coordinates
+            detection_phases: List of phase configurations. If None, uses default 2-phase approach.
+        """
+        if detection_phases is None:
+            detection_phases = [
+                {
+                    "name": "high_confidence",
+                    "conf": 0.15,
+                    "iou": 0.35,
+                    "weight": 0.75,
+                    "description": "High confidence pass for clear objects"
+                },
+                {
+                    "name": "aggressive",
+                    "conf": 0.005,
+                    "iou": 0.15,
+                    "weight": 0.25,
+                    "description": "Selective aggressive pass for missed objects only"
+                }
+            ]
+
+        try:
+            H, W = roi.shape[:2]
+            roi_area = H * W
+            high_conf_detections = []
+            aggressive_detections = []
+
+            print(f"\n🔄 Improved Multi-Phase YOLO Detection on ROI {W}x{H}")
+            print("   " + "="*70)
+
+            # Phase 1: High confidence detections
+            phase = detection_phases[0]
+            print(f"\n📡 Phase 1: {phase['name']}")
+            print(f"   Config: conf={phase['conf']}, iou={phase['iou']}, weight={phase['weight']}")
+
+            r1 = self.yolo(roi, conf=phase['conf'], iou=phase['iou'], verbose=False)[0]
+
+            if hasattr(r1, 'boxes') and r1.boxes is not None:
+                xyxy = r1.boxes.xyxy.cpu().numpy()
+                confs = r1.boxes.conf.cpu().numpy()
+                classes = r1.boxes.cls.cpu().numpy().astype(int)
+                names = r1.names
+
+                print(f"   📊 Raw YOLO output: {len(xyxy)} detections")
+
+                for i, ((x1, y1, x2, y2), conf, cls_id) in enumerate(zip(xyxy, confs, classes)):
+                    gx1, gy1, gx2, gy2 = int(x1) + rx1, int(y1) + ry1, int(x2) + rx1, int(y2) + ry1
+
+                    width, height = x2 - x1, y2 - y1
+                    if width <= 0 or height <= 0 or width < 10 or height < 10:
+                        continue
+
+                    area = width * height
+                    area_ratio = area / roi_area
+                    aspect_ratio = width / max(height, 1)
+                    yolo_class = names[cls_id]
+
+                    # HIGH CONFIDENCE: More permissive filtering
+                    if (area_ratio >= 0.005 and area_ratio <= 0.8 and  # Reasonable size range
+                        aspect_ratio >= 0.2 and aspect_ratio <= 8.0 and  # Reasonable aspect ratio
+                        conf >= 0.15):  # Good confidence
+
+                        weighted_conf = float(conf) * phase['weight']
+
+                        # Add orientation detection
+                        orientation = "horizontal" if aspect_ratio > 1.2 else "vertical" if aspect_ratio < 0.8 else "square"
+
+                        detection_info = {
+                            "yolo_label": yolo_class,
+                            "yolo_conf": float(conf),
+                            "weighted_conf": weighted_conf,
+                            "box": (gx1, gy1, gx2, gy2),
+                            "area_ratio": area_ratio,
+                            "aspect_ratio": aspect_ratio,
+                            "orientation": orientation,  # NEW: Add orientation
+                            "retail_candidates": self._map_yolo_to_retail_with_orientation(yolo_class, area_ratio, aspect_ratio, orientation),
+                            "raw_index": len(high_conf_detections) + 1,
+                            "phase": phase['name'],
+                            "phase_weight": phase['weight']
+                        }
+                        high_conf_detections.append(detection_info)
+
+                print(f"   ✅ Kept {len(high_conf_detections)} high-confidence detections")
+
+            # Phase 2: Aggressive detection for gaps only
+            if len(detection_phases) > 1:
+                phase = detection_phases[1]
+                print(f"\n📡 Phase 2: {phase['name']}")
+                print(f"   Config: conf={phase['conf']}, iou={phase['iou']}, weight={phase['weight']}")
+
+                r2 = self.yolo(roi, conf=phase['conf'], iou=phase['iou'], verbose=False)[0]
+
+                if hasattr(r2, 'boxes') and r2.boxes is not None:
+                    xyxy = r2.boxes.xyxy.cpu().numpy()
+                    confs = r2.boxes.conf.cpu().numpy()
+                    classes = r2.boxes.cls.cpu().numpy().astype(int)
+                    names = r2.names
+
+                    print(f"   📊 Raw YOLO output: {len(xyxy)} detections")
+
+                    for i, ((x1, y1, x2, y2), conf, cls_id) in enumerate(zip(xyxy, confs, classes)):
+                        gx1, gy1, gx2, gy2 = int(x1) + rx1, int(y1) + ry1, int(x2) + rx1, int(y2) + ry1
+
+                        width, height = x2 - x1, y2 - y1
+                        if width <= 0 or height <= 0 or width < 12 or height < 12:
+                            continue
+
+                        area = width * height
+                        area_ratio = area / roi_area
+                        aspect_ratio = width / max(height, 1)
+                        yolo_class = names[cls_id]
+
+                        # CRITICAL: Check if this detection overlaps significantly with high-confidence ones
+                        overlaps_with_high_conf = False
+                        for hc_det in high_conf_detections:
+                            iou = self._calculate_iou_tuples((gx1, gy1, gx2, gy2), hc_det["box"])
+                            if iou > 0.3:  # If overlaps significantly with high-confidence detection
+                                overlaps_with_high_conf = True
+                                break
+
+                        if overlaps_with_high_conf:
+                            continue  # Skip this detection - already covered by high confidence
+
+                        # AGGRESSIVE: Very strict filtering for gaps only
+                        if (area_ratio >= 0.003 and area_ratio <= 0.4 and  # Stricter size range
+                            aspect_ratio >= 0.3 and aspect_ratio <= 5.0 and  # Stricter aspect ratio
+                            conf >= 0.01 and  # Minimum confidence
+                            yolo_class in {"microwave", "tv", "monitor", "book", "box", "suitcase", "bottle"}):  # Only retail-relevant classes
+
+                            weighted_conf = float(conf) * phase['weight']
+                            orientation = "horizontal" if aspect_ratio > 1.2 else "vertical" if aspect_ratio < 0.8 else "square"
+
+                            detection_info = {
+                                "yolo_label": yolo_class,
+                                "yolo_conf": float(conf),
+                                "weighted_conf": weighted_conf,
+                                "box": (gx1, gy1, gx2, gy2),
+                                "area_ratio": area_ratio,
+                                "aspect_ratio": aspect_ratio,
+                                "orientation": orientation,
+                                "retail_candidates": self._map_yolo_to_retail_with_orientation(yolo_class, area_ratio, aspect_ratio, orientation),
+                                "raw_index": len(high_conf_detections) + len(aggressive_detections) + 1,
+                                "phase": phase['name'],
+                                "phase_weight": phase['weight']
+                            }
+                            aggressive_detections.append(detection_info)
+
+                    print(f"   ✅ Kept {len(aggressive_detections)} non-overlapping aggressive detections")
+
+            # Combine and validate
+            all_detections = high_conf_detections + aggressive_detections
+
+            # Final cross-phase deduplication (lighter since we already filtered overlaps)
+            deduplicated = self._light_deduplication(all_detections)
+
+            # Convert to format for classification
+            formatted_proposals = []
+            for det in deduplicated:
+                gx1, gy1, gx2, gy2 = det["box"]
+
+                if gx2 <= gx1 or gy2 <= gy1:
+                    continue
+
+                formatted_proposal = {
+                    "yolo_label": det["yolo_label"],
+                    "yolo_conf": det["yolo_conf"],
+                    "box": (gx1, gy1, gx2, gy2),
+                    "area_ratio": det["area_ratio"],
+                    "aspect_ratio": det["aspect_ratio"],
+                    "orientation": det["orientation"],  # Pass orientation to classifier
+                    "retail_candidates": det["retail_candidates"],
+                    "raw_index": det["raw_index"],
+                    "phase": det["phase"],
+                    "weighted_conf": det["weighted_conf"]
+                }
+                formatted_proposals.append(formatted_proposal)
+
+            print(f"\n📊 Improved Multi-Phase Final: {len(formatted_proposals)} quality detections")
+            print(f"   High-confidence: {len(high_conf_detections)}, Aggressive (gaps): {len(aggressive_detections)}")
+
+            return formatted_proposals
+
+        except Exception as e:
+            print(f"Improved multi-phase YOLO detection failed: {e}")
+            traceback.print_exc()
+            return []
+
+    def _map_yolo_to_retail_with_orientation(self, yolo_class: str, area_ratio: float, aspect_ratio: float, orientation: str) -> List[str]:
+        """
+        IMPROVED: Map YOLO class to retail candidates considering orientation
+        """
+
+        # Base mapping with orientation consideration
+        retail_mapping = {
+            # Electronics
+            "microwave": ["printer"] if orientation in ["square", "horizontal"] else ["product_box"],
+            "tv": ["promotional_graphic"] if area_ratio > 0.1 else ["printer"],
+            "monitor": ["promotional_graphic"] if area_ratio > 0.1 else ["printer"],
+            "laptop": ["promotional_graphic"] if area_ratio > 0.1 else ["printer"],
+
+            # Box-like objects - orientation is key here
+            "book": ["product_box"] if orientation == "vertical" or aspect_ratio > 1.5 else ["printer"],
+            "box": ["product_box"],
+            "suitcase": ["product_box"] if orientation == "horizontal" else ["printer"],
+            "backpack": ["product_box"],
+            "handbag": ["product_box"],
+
+            # Small objects
+            "bottle": ["ink_bottle", "small_object"],
+            "cup": ["small_object"],
+            "cell phone": ["small_object"],
+            "clock": ["small_object"],
+
+            # Promotional
+            "person": ["promotional_graphic"],
+
+            # Generic
+            "cardboard": ["product_box"],
+            "keyboard": ["small_object"],
+        }
+
+        base_candidates = retail_mapping.get(yolo_class, ["product_candidate"])
+
+        # IMPROVED: Context-based refinement with orientation
+        if area_ratio > 0.15 and aspect_ratio > 2.5:
+            # Large horizontal = promotional
+            return ["promotional_graphic"]
+        elif area_ratio > 0.02:
+            if orientation == "vertical" and aspect_ratio < 0.8:
+                # Tall vertical objects = likely boxes
+                return ["product_box"]
+            elif orientation == "square" or (0.8 <= aspect_ratio <= 1.8):
+                # Square/compact objects = likely printers
+                return ["printer"]
+            elif orientation == "horizontal" and aspect_ratio > 1.5:
+                # Wide horizontal objects = likely boxes
+                return ["product_box"]
+
+        return base_candidates
+
+    def _light_deduplication(self, all_detections: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Light deduplication since we already filtered overlaps in aggressive phase
+        """
+        if not all_detections:
+            return []
+
+        # Sort by weighted confidence (highest first)
+        sorted_detections = sorted(all_detections, key=lambda x: x["weighted_conf"], reverse=True)
+
+        deduplicated = []
+        for detection in sorted_detections:
+            is_duplicate = False
+            detection_box = detection["box"]
+
+            # Only check for very high overlap (0.7+) since we already filtered 0.3+ overlaps
+            for kept in deduplicated:
+                iou = self._calculate_iou_tuples(detection_box, kept["box"])
+                if iou > 0.7:
+                    is_duplicate = True
+                    break
+
+            if not is_duplicate:
+                deduplicated.append(detection)
+
+        return deduplicated
+
+
+    # Additional helper method for phase configuration
+    def set_detection_phases(self, phases: List[Dict[str, Any]]):
+        """
+        Set custom detection phases for the RetailDetector
+
+        Args:
+            phases: List of phase configurations, each containing:
+                - name: Phase identifier
+                - conf: Confidence threshold
+                - iou: IoU threshold
+                - weight: Weight for this phase (should sum to 1.0 across all phases)
+                - description: Optional description
+
+        Example:
+            detector.set_detection_phases([
+                {
+                    "name": "ultra_high_conf",
+                    "conf": 0.5,
+                    "iou": 0.6,
+                    "weight": 0.5,
+                    "description": "Ultra high confidence for definite objects"
+                },
+                {
+                    "name": "medium_conf",
+                    "conf": 0.15,
+                    "iou": 0.4,
+                    "weight": 0.3,
+                    "description": "Medium confidence for likely objects"
+                },
+                {
+                    "name": "aggressive",
+                    "conf": 0.005,
+                    "iou": 0.15,
+                    "weight": 0.2,
+                    "description": "Aggressive pass for missed objects"
+                }
+            ])
+        """
+        # Validate phase configuration
+        total_weight = sum(phase.get("weight", 0) for phase in phases)
+        if abs(total_weight - 1.0) > 0.01:
+            print(f"⚠️  Warning: Phase weights sum to {total_weight:.3f}, not 1.0")
+
+        # Validate required fields
+        for i, phase in enumerate(phases):
+            required_fields = ["name", "conf", "iou", "weight"]
+            missing = [field for field in required_fields if field not in phase]
+            if missing:
+                raise ValueError(f"Phase {i} missing required fields: {missing}")
+
+        self.detection_phases = phases
+        print(f"✅ Configured {len(phases)} detection phases")
+        for i, phase in enumerate(phases):
+            print(f"   Phase {i+1}: {phase['name']} (conf={phase['conf']}, weight={phase['weight']})")
+
+    def _map_yolo_to_retail(self, yolo_class: str, area_ratio: float, aspect_ratio: float) -> List[str]:
+        """Map YOLO class to retail product candidates with context"""
+
+        # Base mapping
+        retail_mapping = {
+            # Electronics often detected as printers
+            "microwave": ["printer", "product_box"],
+            "tv": ["printer", "promotional_graphic"],
+            "monitor": ["printer", "promotional_graphic"],
+            "laptop": ["printer", "promotional_graphic"],
+
+            # Box-like objects
+            "book": ["product_box", "printer"],
+            "box": ["product_box"],
+            "suitcase": ["product_box", "printer"],
+            "backpack": ["product_box"],
+            "handbag": ["product_box"],
+
+            # Small objects
+            "bottle": ["ink_bottle"],
+            "cup": ["small_object"],
+            "cell phone": ["small_object"],
+            "clock": ["small_object"],
+
+            # Promotional
+            "person": ["promotional_graphic"],
+
+            # Generic
+            "cardboard": ["product_box"],
+            "keyboard": ["small_object"],  # Added keyboard mapping
+        }
+
+        base_candidates = retail_mapping.get(yolo_class, ["product_candidate"])
+
+        # Context-based refinement
+        if area_ratio > 0.15 and aspect_ratio > 2.5:
+            # Large horizontal = likely promotional
+            return ["promotional_graphic"] + [c for c in base_candidates if c != "promotional_graphic"]
+        elif area_ratio > 0.02 and 0.7 <= aspect_ratio <= 1.8:
+            # Medium square = likely printer
+            return ["printer"] + [c for c in base_candidates if c != "printer"]
+        elif aspect_ratio > 1.8:
+            # Wide = likely box
+            return ["product_box"] + [c for c in base_candidates if c != "product_box"]
+
+        return base_candidates
+
+    def _deduplicate_phase_proposals(self, all_proposals: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Remove duplicates across phases, keeping higher weighted detections"""
+
+        if not all_proposals:
+            return []
+
+        # Sort by weighted confidence (highest first)
+        sorted_proposals = sorted(
+            all_proposals,
+            key=lambda x: x["weighted_conf"],
+            reverse=True
         )
 
-        # Collect horizontal line y's in full-image coords
-        ys = []
-        if lines is not None:
-            for x1, y1_, x2, y2_ in lines[:, 0]:
-                if abs(y2_ - y1_) <= 4:
-                    ys.append(y1_ + ry1)
-        ys = sorted(set(ys))
+        deduplicated = []
 
-        # De-dup near lines
-        levels = []
-        for y in ys:
-            if not levels or abs(y - levels[-1]) > 12:
-                levels.append(y)
+        for proposal in sorted_proposals:
+            is_duplicate = False
+            proposal_box = proposal["box"]
 
-        # Fallback: estimate two shelf edges at fixed fractions inside the ROI
-        if len(levels) < 2:
-            levels = [int(ry1 + 0.44 * (ry2 - ry1)), int(ry1 + 0.73 * (ry2 - ry1))]
-        elif len(levels) > 3:
-            # Keep three closest to expected positions
-            targets = [0.44, 0.73, 0.90]
-            levels = sorted(
-                levels,
-                key=lambda y: min(abs((y - ry1) / (ry2 - ry1) - t) for t in targets)
-            )[:3]
-            levels = sorted(levels)
+            # Check against already kept proposals
+            for kept in deduplicated:
+                iou = self._calculate_iou_tuples(proposal_box, kept["box"])
 
-        # Partition by midpoints → ensures non-overlapping bands
-        cuts = [ry1]
-        for i in range(len(levels) - 1):
-            cuts.append(int(0.5 * (levels[i] + levels[i + 1])))
-        cuts.append(ry2)
+                # Consider duplicate if significant overlap
+                if iou > 0.5:
+                    is_duplicate = True
+                    break
 
-        # Ensure exactly 3 bands
-        while len(cuts) < 4:
-            cuts.insert(1, int(ry1 + len(cuts) * ((ry2 - ry1) // 4)))
-        cuts = cuts[:4]
+            if not is_duplicate:
+                deduplicated.append(proposal)
 
-        bands = {
-            "top": (cuts[0], cuts[1]),
-            "middle": (cuts[1], cuts[2]),
-            "bottom": (cuts[2], cuts[3]),
-        }
-        return levels[:3], bands
+        return deduplicated
 
+    def _calculate_iou_tuples(self, box1: tuple, box2: tuple) -> float:
+        """Calculate IoU between two bounding boxes in tuple format"""
+        x1_1, y1_1, x2_1, y2_1 = box1
+        x1_2, y1_2, x2_2, y2_2 = box2
 
-    # ---------------------------- YOLO ---------------------------------------
-    def _yolo_props(self, roi: np.ndarray, rx1, ry1):
+        # Calculate intersection
+        ix1, iy1 = max(x1_1, x1_2), max(y1_1, y1_2)
+        ix2, iy2 = min(x2_1, x2_2), min(y2_1, y2_2)
+
+        if ix2 <= ix1 or iy2 <= iy1:
+            return 0.0
+
+        intersection = (ix2 - ix1) * (iy2 - iy1)
+        area1 = (x2_1 - x1_1) * (y2_1 - y1_1)
+        area2 = (x2_2 - x1_2) * (y2_2 - y1_2)
+        union = area1 + area2 - intersection
+
+        return intersection / max(union, 1)
+
+    def _safe_extract_crop(self, img: np.ndarray, x1: int, y1: int, x2: int, y2: int) -> Optional[Image.Image]:
         """
-        Multi-scale, multi-pass YOLO detection with retail-specific filtering
+        Safely extract a crop from an image with full validation
+        Returns None if crop would be invalid
         """
-        H, W = roi.shape[:2]
-        all_props = []
-
-        # Multi-scale detection - different sizes for different object types
-        detection_configs = [
-            # Large objects (printers, promotional graphics)
-            {
-                "imgsz": 640,
-                "conf": max(0.10, self.conf * 0.7),  # Lower confidence for large objects
-                "iou": 0.4,
-                "min_area_ratio": 0.02,  # Minimum 2% of ROI area
-                "max_area_ratio": 0.8,   # Maximum 80% of ROI area
-                "target_types": ["printer", "promotional_graphic", "large_box"]
-            },
-            # Medium objects (product boxes)
-            {
-                "imgsz": 832,  # Higher resolution for better box detection
-                "conf": self.conf,
-                "iou": 0.5,
-                "min_area_ratio": 0.008,  # Minimum 0.8% of ROI area
-                "max_area_ratio": 0.25,   # Maximum 25% of ROI area
-                "target_types": ["product_box", "medium_object"]
-            },
-            # Small objects (price tags, ink bottles)
-            {
-                "imgsz": 1024,  # Highest resolution for small objects
-                "conf": max(0.05, self.conf * 0.5),  # Very low confidence for small objects
-                "iou": 0.3,  # Lower IoU for better small object separation
-                "min_area_ratio": 0.0005,  # Minimum 0.05% of ROI area
-                "max_area_ratio": 0.05,    # Maximum 5% of ROI area
-                "target_types": ["price_tag", "fact_tag", "small_object"]
-            }
-        ]
-
-        for config in detection_configs:
-            props = self._single_yolo_pass(roi, rx1, ry1, config)
-            all_props.extend(props)
-
-        # Remove duplicates and filter by quality
-        filtered_props = self._filter_and_deduplicate_props(all_props, H, W)
-
-        return filtered_props
-
-    def _fallback_top_devices(self, img: np.ndarray, shelf_box: DetectionBox) -> list[DetectionBox]:
-        """Edge/rect fallback for bright devices on the top shelf."""
-        x1, y1, x2, y2 = shelf_box.x1, shelf_box.y1, shelf_box.x2, shelf_box.y2
-        band = img[y1:y2, x1:x2]   # RGB
-
-        gray = cv2.cvtColor(band, cv2.COLOR_RGB2GRAY)
-        # enhance contrast
-        gray = cv2.equalizeHist(gray)
-        # adaptive threshold → edges
-        thr = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-                                    cv2.THRESH_BINARY, 31, -5)
-        edges = cv2.Canny(thr, 60, 160)
-        edges = cv2.dilate(edges, np.ones((5,5), np.uint8), iterations=2)
-
-        cnts, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-        out = []
         H, W = img.shape[:2]
-        min_area = 0.006 * (W * H)     # fairly large boxes only
-        for c in cnts:
-            rx, ry, rw, rh = cv2.boundingRect(c)
-            area = rw * rh
-            if area < min_area:
-                continue
-            ar = rw / float(rh)
-            if not (0.85 <= ar <= 2.7):
-                continue
-            # back to full-image coords
-            bx1, by1 = x1 + rx, y1 + ry
-            bx2, by2 = bx1 + rw, by1 + rh
-            out.append(
-                DetectionBox(
-                    x1=bx1, y1=by1, x2=bx2, y2=by2,
-                    confidence=0.56,
-                    class_id=CID["product_candidate"],
-                    class_name="product_candidate",
-                    area=area
-                )
-            )
 
-        # merge overlapping rects
-        out = self._merge(out, iou_same=0.50)
-        return out
+        # Clamp coordinates to image bounds
+        x1_safe = max(0, min(W-1, int(x1)))
+        x2_safe = max(x1_safe + 8, min(W, int(x2)))
+        y1_safe = max(0, min(H-1, int(y1)))
+        y2_safe = max(y1_safe + 8, min(H, int(y2)))
+
+        # Validate final dimensions
+        crop_width = x2_safe - x1_safe
+        crop_height = y2_safe - y1_safe
+
+        if crop_width <= 0 or crop_height <= 0 or crop_width < 8 or crop_height < 8:
+            return None
+
+        try:
+            crop_array = img[y1_safe:y2_safe, x1_safe:x2_safe]
+            if crop_array.size == 0:
+                return None
+
+            crop = Image.fromarray(crop_array)
+
+            if crop.width == 0 or crop.height == 0:
+                return None
+
+            return crop
+
+        except Exception:
+            return None
+
+    def _enhanced_aggressive_filtering(self, proposals: List[Dict[str, Any]], roi_h: int, roi_w: int) -> List[Dict[str, Any]]:
+        """
+        Apply enhanced filtering specifically for aggressive phase detections
+        """
+        filtered = []
+        roi_area = roi_h * roi_w
+
+        for prop in proposals:
+            if prop["phase"] != "aggressive":
+                # Keep all high confidence detections
+                filtered.append(prop)
+                continue
+
+            # Enhanced filtering for aggressive detections
+            box = prop["box"]
+            x1, y1, x2, y2 = box
+            width, height = x2 - x1, y2 - y1
+            area_ratio = prop["area_ratio"]
+            aspect_ratio = prop["aspect_ratio"]
+
+            # More strict size requirements for aggressive detections
+            keep = True
+            reason = "passed"
+
+            if area_ratio < 0.0015:  # Increased minimum for aggressive
+                keep = False
+                reason = "too small for aggressive phase"
+            elif aspect_ratio > 8.0:  # Prevent extremely elongated objects
+                keep = False
+                reason = "too elongated"
+            elif width < 12 or height < 12:  # Minimum pixel dimensions
+                keep = False
+                reason = "insufficient pixel dimensions"
+            elif prop["yolo_conf"] < 0.004:  # Very low confidence filter
+                keep = False
+                reason = "confidence too low even for aggressive"
+
+            if keep:
+                filtered.append(prop)
+            else:
+                print(f"   🚫 Filtered aggressive detection: {prop['yolo_label']} - {reason}")
+
+        return filtered
 
     # ------------------- OCR + CLIP preselection -----------------------------
     def _classify_proposals(self, img, props, bands, header_limit_y, ad_box):
-        H, W = img.shape[:2]
+        """
+        Use CLIP + OCR + rules to classify each proposal box
+        into product_candidate, box_candidate, promotional_candidate
+        """
+        H, W = img.shape[:2] if hasattr(img, 'shape') else (img.shape[1], img.shape[0])
         out = []
-        text = self.text_feats
+        text_feats = self.text_feats
 
-        BOX_LIKE = {"book", "box", "suitcase", "backpack", "handbag", "cardboard box"}  # YOLO names that often hit cartons
-        DEVICE_LIKE = {"microwave", "tv", "monitor"}                   # YOLO mislabels for printers
-
-        def blue_dominant(rgb_crop: np.ndarray) -> bool:
-            # Epson cartons are very blue; check channel dominance
-            b = rgb_crop[..., 2].mean() if rgb_crop.ndim == 3 else 0.0
-            g = rgb_crop[..., 1].mean() if rgb_crop.ndim == 3 else 0.0
-            r = rgb_crop[..., 0].mean() if rgb_crop.ndim == 3 else 0.0
-            return (b > r * 1.12) and (b > g * 1.08)
-
-        # build padded bands for safer membership
-        padded = {k: (max(0, y1 - 12), min(H - 1, y2 + 12)) for k, (y1, y2) in bands.items()}
+        print(f"\n🎯 Enhanced CLIP Classification:")
+        print("   " + "="*60)
 
         for p in props:
+            # Extract detection info
             x1, y1, x2, y2 = p["box"]
-            w, h = max(1, x2 - x1), max(1, y2 - y1)
-            area = w * h
-            if area < 0.0018 * W * H:
+            base_conf = p.get("weighted_conf", p.get("yolo_conf", 0.5))
+            yolo_class = p["yolo_label"]
+            phase = p.get("phase", "unknown")
+            orientation = p.get("orientation", "unknown")  # Get orientation
+            retail_candidates = p.get("retail_candidates", [])
+            raw_index = p.get("raw_index", "?")
+
+            # Validation
+            width, height = x2 - x1, y2 - y1
+            if width <= 0 or height <= 0 or width < 8 or height < 8:
+                print(f"   ⚠️  Skipping #{raw_index}: Invalid dimensions {width}x{height}")
                 continue
 
-            # poster overlap — keep printers in front of poster
-            if ad_box is not None:
-                ax1, ay1, ax2, ay2 = ad_box
-                ix1, iy1 = max(x1, ax1), max(y1, ay1)
-                ix2, iy2 = min(x2, ax2), min(y2, ay2)
-                inter = max(0, ix2 - ix1) * max(0, iy2 - iy1)
-                if inter > 0.80 * area:
-                    continue
+            if x1 < 0 or y1 < 0 or x2 >= W or y2 >= H:
+                print(f"   ⚠️  Skipping #{raw_index}: Coordinates out of bounds")
+                continue
 
-            crop = img[y1:y2, x1:x2]
+            area = width * height
+            aspect = width / max(1.0, float(height))
+
+            # Skip tiny detections
+            if area < 0.001 * W * H:  # Increased threshold
+                continue
+
+            # Safe crop extraction
+            try:
+                crop = self._safe_extract_crop(img, x1, y1, x2, y2)
+                if crop is None:
+                    print(f"   ⚠️  Skipping #{raw_index}: Invalid crop")
+                    continue
+            except Exception as e:
+                print(f"   ⚠️  Crop failed for #{raw_index}: {e}")
+                continue
+
+            # OCR with error handling
             ocr_txt = ""
             try:
-                ocr_txt = pytesseract.image_to_string(Image.fromarray(crop), config="--psm 6").lower()
-            except Exception:
-                pass
+                ocr_txt = pytesseract.image_to_string(crop, config="--psm 6").lower()
+            except Exception as e:
+                print(f"   ⚠️  OCR failed for #{raw_index}: {e}")
 
-            with torch.no_grad():
-                ip = self.proc(images=Image.fromarray(crop), return_tensors="pt").to(self.device)
-                f  = self.clip.get_image_features(**ip)
-                f  = f / f.norm(dim=-1, keepdim=True)
-                s = (f @ text.T).squeeze().tolist()
-                s_poster, s_prod, s_box = float(s[0]), float(s[1]), float(s[2])
-                if self.ref_prod_feats:
-                    s_prod = max(s_prod, max(float((f @ rf.T).squeeze()) for rf in self.ref_prod_feats))
+            # CLIP processing with comprehensive error handling
+            s_poster, s_printer, s_box = 0.3, 0.3, 0.3  # Default fallback scores
+            try:
+                with torch.no_grad():
+                    ip = self.proc(images=crop, return_tensors="pt").to(self.device)
+                    img_feat = self.clip.get_image_features(**ip)
+                    img_feat = img_feat / img_feat.norm(dim=-1, keepdim=True)
+                    text_sims = (img_feat @ text_feats.T).squeeze().tolist()
+                    s_poster, s_printer, s_box = float(text_sims[0]), float(text_sims[1]), float(text_sims[2])
+            except Exception as e:
+                print(f"   ⚠️  CLIP failed for #{raw_index}: {e}")
 
-            # band membership
-            band_scores = {k: max(0, min(y2, b2) - max(y1, b1)) for k, (b1, b2) in padded.items()}
-            main_band = max(band_scores, key=band_scores.get) if band_scores else "middle"
+            # Reference matching
+            if self.ref_prod_feats:
+                try:
+                    with torch.no_grad():
+                        ref_scores = [float((img_feat @ ref_feat.T).squeeze()) for ref_feat in self.ref_prod_feats]
+                        best_ref_score = max(ref_scores) if ref_scores else 0.0
+                        s_printer = max(s_printer, best_ref_score)
+                except Exception as e:
+                    print(f"   ⚠️  Reference matching failed for #{raw_index}: {e}")
 
-            aspect = w / float(h)
-            y_mid  = 0.5 * (y1 + y2)
-            raw_lbl = (p.get("yolo_label") or "").lower()
+            # Position analysis
+            center_y = (y1 + y2) / 2
 
-            # --- Rules ---
-            # A) Anything above header limit + landscape looks like poster
-            if y_mid < header_limit_y and aspect > 1.10 and h > 0.10 * H:
-                cname, score = "promotional_candidate", max(0.72, s_poster)
-            # B) Top band → prefer device (printers) even if YOLO says 'microwave'
-            elif main_band == "top":
-                cname, score = "product_candidate", max(0.56, s_prod)
-            else:
-                looks_box = (
-                    raw_lbl in BOX_LIKE or
-                    ("epson" in ocr_txt) or ("ecotank" in ocr_txt) or
-                    ("et-" in ocr_txt) or ("et " in ocr_txt) or
-                    any(tok in ocr_txt for tok in ("2980", "3950", "4950")) or
-                    (aspect >= 1.10 and area > 0.01 * W * H) or
-                    blue_dominant(crop)
-                )
-                if looks_box and (s_box >= s_prod - 0.02):
-                    cname, score = "box_candidate", max(0.56, s_box)
+            if center_y < header_limit_y:
+                # Header area
+                if aspect > 2.0 and area > 0.05 * W * H:
+                    cname, score = "promotional_candidate", max(0.75, s_poster, base_conf)
+                    decision_reason = f"large horizontal in header ({orientation})"
+                elif yolo_class == "person":
+                    cname, score = "promotional_candidate", max(0.80, s_poster, base_conf)
+                    decision_reason = f"person in promotional area"
                 else:
-                    # if YOLO thinks 'book' and we’re not sure, still call it a box
-                    if raw_lbl in BOX_LIKE and s_box >= 0.15:
-                        cname, score = "box_candidate", max(0.56, s_box)
+                    cname, score = "product_candidate", max(0.60, s_printer, base_conf)
+                    decision_reason = f"small object in header"
+            else:
+                # IMPROVED: Product classification with orientation
+                scores = {
+                    "promotional_candidate": s_poster,
+                    "product_candidate": s_printer,
+                    "box_candidate": s_box
+                }
+
+                # NEW: Orientation-based score adjustments
+                if orientation == "vertical" and aspect < 0.9:
+                    # Tall vertical objects are likely boxes
+                    scores["box_candidate"] *= 1.4
+                    scores["product_candidate"] *= 0.8
+                elif orientation == "square" and 0.8 <= aspect <= 1.5:
+                    # Square objects are likely printers
+                    scores["product_candidate"] *= 1.4
+                    scores["box_candidate"] *= 0.8
+                elif orientation == "horizontal" and aspect > 1.5:
+                    # Wide horizontal objects are likely boxes
+                    scores["box_candidate"] *= 1.3
+
+                # Phase boost (reduced since aggressive phase has lower weight)
+                if phase == "high_confidence":
+                    for key in scores:
+                        scores[key] *= 1.1  # Reduced from 1.2
+
+                # Retail candidates boost
+                if "printer" in retail_candidates:
+                    scores["product_candidate"] *= 1.2
+                if "product_box" in retail_candidates:
+                    scores["box_candidate"] *= 1.2
+                if "promotional_graphic" in retail_candidates:
+                    scores["promotional_candidate"] *= 1.2
+
+                # OCR hints
+                if any(term in ocr_txt for term in ["epson", "et-", "ecotank"]):
+                    if aspect > 1.3 or orientation == "horizontal":
+                        scores["box_candidate"] *= 1.3
                     else:
-                        cname, score = "product_candidate", max(0.52, s_prod)
+                        scores["product_candidate"] *= 1.3
 
-            out.append(
-                DetectionBox(
-                    x1=x1, y1=y1, x2=x2, y2=y2,
-                    confidence=float(score),
-                    class_id=CID[cname],
-                    class_name=cname,
-                    area=area
-                )
+                # Final classification
+                cname = max(scores, key=scores.get)
+                score = max(scores[cname], base_conf)
+                decision_reason = f"{yolo_class}({orientation})→{cname} via CLIP+orient ({phase})"
+
+            # IMPORTANT: Clamp confidence to [0.0, 1.0] for Pydantic validation
+            clamped_confidence = min(1.0, max(0.0, float(score)))
+
+            print(f"   #{raw_index:2}: {yolo_class:12s} {orientation:10s} → {cname:20s} "
+                f"conf={clamped_confidence:.3f} ({decision_reason})")
+
+            detection_box = DetectionBox(
+                x1=int(x1), y1=int(y1), x2=int(x2), y2=int(y2),
+                confidence=clamped_confidence,
+                class_id=CID.get(cname, 100),
+                class_name=cname,
+                area=int(area)
             )
+            out.append(detection_box)
 
+        print(f"   📊 Improved Final: {len(out)} quality classified detections")
         return out
 
     # --------------------- shrink/merge/cleanup ------------------------------
@@ -778,7 +1202,7 @@ class RetailDetector:
             )
         return out
 
-    def _merge(self, dets: List[DetectionBox], iou_same=0.45)->List[DetectionBox]:
+    def _merge(self, dets: List[DetectionBox], iou_same=0.35)->List[DetectionBox]:
         dets=sorted(dets, key=lambda d:(d.class_name,-d.confidence,-d.area))
         out=[]
         for d in dets:
@@ -827,26 +1251,62 @@ class RetailDetector:
 
     # ------------------------------ debug ------------------------------------
     def _draw_yolo(self, img, props, roi_box, shelf_lines):
+        """
+        Draw raw YOLO detections with detailed labels
+        """
         rx1, ry1, rx2, ry2 = roi_box
-        cv2.rectangle(img, (rx1, ry1), (rx2, ry2), (0, 255, 0), 2)
-        for y in shelf_lines:
+
+        # Draw ROI box
+        cv2.rectangle(img, (rx1, ry1), (rx2, ry2), (0, 255, 0), 3)
+        cv2.putText(img, f"ROI: {rx2-rx1}x{ry2-ry1}", (rx1, ry1-10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+
+        # Draw shelf lines
+        for i, y in enumerate(shelf_lines):
             cv2.line(img, (rx1, y), (rx2, y), (0, 255, 255), 2)
+            cv2.putText(img, f"Shelf{i+1}", (rx1+5, y-5),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 255), 1)
+
+        # Color mapping for retail candidates
+        candidate_colors = {
+            "promotional_graphic": (255, 0, 255),   # Magenta
+            "printer": (255, 140, 0),               # Orange
+            "product_box": (0, 140, 255),           # Blue
+            "small_object": (128, 128, 128),        # Gray
+            "ink_bottle": (160, 0, 200),            # Purple
+        }
+
         for p in props:
             (x1, y1, x2, y2) = p["box"]
-            cv2.rectangle(img, (x1, y1), (x2, y2), (255, 0, 0), 2)
-            cv2.putText(
-                img,
-                f"{p['yolo_label']} {p['yolo_conf']:.2f}",
-                (x1, max(12, y1 - 4)),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.45,
-                (255, 0, 0),
-                1,
-                cv2.LINE_AA,
-            )
+
+            # Choose color based on primary retail candidate
+            candidates = p.get("retail_candidates", ["unknown"])
+            primary_candidate = candidates[0] if candidates else "unknown"
+            color = candidate_colors.get(primary_candidate, (255, 255, 255))
+
+            # Draw detection
+            cv2.rectangle(img, (x1, y1), (x2, y2), color, 2)
+
+            # Enhanced label
+            idx = p["raw_index"]
+            yolo_class = p["yolo_label"]
+            conf = p["yolo_conf"]
+            area_pct = p["area_ratio"] * 100
+
+            label1 = f"#{idx} {yolo_class}→{primary_candidate}"
+            label2 = f"conf:{conf:.3f} area:{area_pct:.1f}%"
+
+            cv2.putText(img, label1, (x1, max(15, y1 - 5)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1, cv2.LINE_AA)
+            cv2.putText(img, label2, (x1, max(30, y1 + 15)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.35, color, 1, cv2.LINE_AA)
+
         return img
 
     def _draw_phase1(self, img, roi_box, shelf_lines, dets, ad_box=None):
+        """
+        FIXED: Phase-1 debug drawing with better info
+        """
         rx1, ry1, rx2, ry2 = roi_box
         cv2.rectangle(img, (rx1, ry1), (rx2, ry2), (0, 255, 0), 2)
 
@@ -857,33 +1317,33 @@ class RetailDetector:
             "promotional_candidate": (0, 200, 0),
             "product_candidate": (255, 140, 0),
             "box_candidate": (0, 140, 255),
+            "price_tag": (255, 0, 255),
         }
 
-        for d in dets:
+        for i, d in enumerate(dets, 1):
             c = colors.get(d.class_name, (200, 200, 200))
             cv2.rectangle(img, (d.x1, d.y1), (d.x2, d.y2), c, 2)
-            cv2.putText(
-                img,
-                f"{d.class_name}:{d.confidence:.2f}",
-                (d.x1, max(12, d.y1 - 4)),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.45,
-                c,
-                1,
-                cv2.LINE_AA,
-            )
+
+            # Enhanced label with detection info
+            w, h = d.x2 - d.x1, d.y2 - d.y1
+            area_pct = (d.area / (img.shape[0] * img.shape[1])) * 100
+            aspect = w / max(h, 1)
+            center_y = (d.y1 + d.y2) / 2
+
+            print(f"   #{i:2d}: {d.class_name:20s} conf={d.confidence:.3f} "
+                f"area={area_pct:.2f}% AR={aspect:.2f} center_y={center_y:.0f}")
+
+            label = f"#{i} {d.class_name} {d.confidence:.2f}"
+            cv2.putText(img, label, (d.x1, max(15, d.y1 - 4)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, c, 1, cv2.LINE_AA)
 
         if ad_box is not None:
             cv2.rectangle(img, (ad_box[0], ad_box[1]), (ad_box[2], ad_box[3]), (0, 255, 128), 2)
             cv2.putText(
-                img,
-                "poster_roi",
+                img, "poster_roi",
                 (ad_box[0], max(12, ad_box[1] - 4)),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                0.45,
-                (0, 255, 128),
-                1,
-                cv2.LINE_AA,
+                0.4, (0, 255, 128), 1, cv2.LINE_AA,
             )
 
         return img
@@ -947,32 +1407,40 @@ class PlanogramCompliancePipeline(AbstractPipeline):
 
         pil_image = Image.open(image) if isinstance(image, (str, Path)) else image
 
+
+        # self.shape_detector.set_detection_phases([
+        #     {"name": "ultra_high", "conf": 0.5, "iou": 0.6, "weight": 0.5},
+        #     {"name": "medium", "conf": 0.15, "iou": 0.4, "weight": 0.3},
+        #     {"name": "aggressive", "conf": 0.005, "iou": 0.15, "weight": 0.2}
+        # ])
+
         det_out = self.shape_detector.detect(
             image=pil_image,
             debug_raw="/tmp/data/yolo_raw_debug.png",
             debug_phase1="/tmp/data/yolo_phase1_debug.png"
         )
 
-        shelves_dict = det_out["shelves"]          # {'top': DetectionBox(...), 'middle': ...}
+        shelves = det_out["shelves"]          # {'top': DetectionBox(...), 'middle': ...}
         proposals    = det_out["proposals"]        # List[DetectionBox]
 
         print("PROPOSALS:", proposals)
-        print("SHELVES:", shelves_dict)
+        print("SHELVES:", shelves)
 
         # --- IMPORTANT: use Phase-1 shelf bands (not %-of-image buckets) ---
-        shelf_regions = self._materialize_shelf_regions(shelves_dict, proposals)
+        shelf_regions = self._materialize_shelf_regions(shelves, proposals)
 
         detections = list(proposals)
 
-        self.logger.debug("Found %d objects in %d shelf regions",
-                        len(detections), len(shelf_regions))
+        self.logger.debug(
+            "Found %d objects in %d shelf regions", len(detections), len(shelf_regions)
+        )
 
         # Recover price tags and re-map to the same Phase-1 shelves
         try:
             tag_dets = self._recover_price_tags(pil_image, shelf_regions)
             if tag_dets:
                 detections.extend(tag_dets)
-                shelf_regions = self._materialize_shelf_regions(shelves_dict, detections)
+                shelf_regions = self._materialize_shelf_regions(shelves, detections)
                 self.logger.debug("Recovered %d fact tags on shelf edges", len(tag_dets))
         except Exception as e:
             self.logger.warning(f"Tag recovery failed: {e}")
@@ -1046,8 +1514,6 @@ class PlanogramCompliancePipeline(AbstractPipeline):
             pil = Image.open(image).convert("RGB")
         else:
             pil = image.convert("RGB")
-
-        import numpy as np, cv2
 
         img = np.array(pil)  # RGB
         H, W = img.shape[:2]
@@ -1176,49 +1642,46 @@ class PlanogramCompliancePipeline(AbstractPipeline):
         image_size: Tuple[int, int]
     ) -> List[ShelfRegion]:
         """
-        Fixed: Organize detections into shelf regions with non-overlapping boundaries
+        Organize detections into shelf regions with non-overlapping boundaries
         """
         width, height = image_size
         shelf_regions = []
 
-        # FIX 1: Use non-overlapping Y boundaries to prevent misassignment
-        header_objects = [d for d in detections if d.y1 < height * 0.25]  # Top 25%
-        top_objects = [d for d in detections if height * 0.25 <= d.y1 < height * 0.55]  # 25%-55%
-        middle_objects = [d for d in detections if height * 0.55 <= d.y1 < height * 0.75]  # 55%-75%
-        bottom_objects = [d for d in detections if d.y1 >= height * 0.75]  # Bottom 25%
+        header_objects = []
+        top_objects = []
+        middle_objects = []
+        bottom_objects = []
 
-        # Additional filtering: Promotional graphics should go to header
-        # Move large promotional graphics from top shelf to header if they're in the upper portion
-        promotional_in_top = [
-            d for d in top_objects if (
-                d.class_name in ['promotional_graphic', 'tv', 'promotional_candidate', 'advertisement', 'poster', 'display']
-                or self._is_promotional_by_size_and_position(d, height, width)
-            )
-        ]
+        for d in detections:
+            center_y = (d.y1 + d.y2) / 2
+            y_ratio = center_y / height
 
-        for promo in promotional_in_top:
-            if promo.y1 < height * 0.35:  # If in upper portion of top shelf, move to header
-                top_objects.remove(promo)
-                header_objects.append(promo)
+            if (d.class_name == "promotional_candidate" or
+                (y_ratio < 0.3 and d.area > 0.1 * width * height)):
+                # Large objects in upper area OR promotional candidates go to header
+                header_objects.append(d)
+            elif y_ratio < 0.5:
+                # Upper area products go to top shelf
+                top_objects.append(d)
+            elif y_ratio < 0.75:
+                # Middle area
+                middle_objects.append(d)
+            else:
+                # Lower area
+                bottom_objects.append(d)
 
         # Create shelf regions
         if header_objects:
-            shelf_regions.append(
-                self._create_shelf_region("header", "header", header_objects)
-            )
+            shelf_regions.append(self._create_shelf_region("header", "header", header_objects))
         if top_objects:
-            shelf_regions.append(
-                self._create_shelf_region("top_shelf", "top", top_objects))
+            shelf_regions.append(self._create_shelf_region("top_shelf", "top", top_objects))
         if middle_objects:
-            shelf_regions.append(
-                self._create_shelf_region("middle_shelf", "middle", middle_objects)
-            )
+            shelf_regions.append(self._create_shelf_region("middle_shelf", "middle", middle_objects))
         if bottom_objects:
-            shelf_regions.append(
-                self._create_shelf_region("bottom_shelf", "bottom", bottom_objects)
-            )
+            shelf_regions.append(self._create_shelf_region("bottom_shelf", "bottom", bottom_objects))
 
         return shelf_regions
+
 
     def _create_shelf_region(self, shelf_id: str, level: str, objects: List[DetectionBox]) -> ShelfRegion:
         """Create a shelf region from objects"""
