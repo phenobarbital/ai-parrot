@@ -6,6 +6,8 @@ from datamodel.parsers.json import JSONContent  # pylint: disable=E0611
 from ..clients import SUPPORTED_CLIENTS
 
 
+logging.getLogger('pytesseract').setLevel(logging.WARNING)
+
 class AbstractPipeline(ABC):
     """Abstract base class for all pipelines."""
     def __init__(
