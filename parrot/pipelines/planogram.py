@@ -1099,20 +1099,6 @@ class RetailDetector:
                 except Exception:
                     pass
 
-            center_y = (y1 + y2) / 2
-
-            # OCR analysis
-            ocr_txt = ""
-            has_epson_text = False
-            has_model_number = False
-            try:
-                ocr_txt = pytesseract.image_to_string(crop, config="--psm 6").lower()
-                has_epson_text = any(term in ocr_txt for term in ["epson", "ecotank", "et-"])
-                has_model_number = bool(re.search(r"et[-]?\s?(\d{4})", ocr_txt))
-                print('OCR Detection > ', ocr_txt, has_epson_text, has_model_number)
-            except Exception:
-                pass
-
             # CLIP processing
             s_poster, s_printer, s_box = 0.3, 0.3, 0.3
             try:
@@ -1140,15 +1126,62 @@ class RetailDetector:
             center_y = (y1 + y2) / 2
 
             # If we have shelf bands, use them; otherwise use header_limit_y
-            actual_header_limit = header_limit_y
             if bands and "top" in bands:
                 # Header is anything above the top shelf band
-                actual_header_limit = bands["top"][0]  # y1 of top band
+                actual_header_limit = bands["top"][1]  # y2 of header band = first shelf line
+                first_line_y = bands["top"][1]  # y2 of the 'top' band
+            else:
+                actual_header_limit = header_limit_y
+                first_line_y = header_limit_y
+
+            in_header = (y2 <= first_line_y + 2)
+
+            ad_iou = 0.0
+            if ad_box is not None:
+                ad_iou = self._iou_xyxy((x1, y1, x2, y2), ad_box)
+
+            if in_header and ad_iou >= 0.65:
+                cname = "promotional_candidate"
+                score = max(0.9, base_conf)
+                out.append(
+                    DetectionBox(
+                        x1=int(x1), y1=int(y1), x2=int(x2), y2=int(y2),
+                        confidence=float(min(1.0, score)),
+                        class_id=CID[cname],
+                        class_name=cname,
+                        area=int(area)
+                    )
+                )
+                print(
+                    f"   #{raw_index:2}: {yolo_class:10s} → {cname} conf={score:.3f} (poster-overlap)"
+                )
+                continue
 
             # ALSO check for large promotional objects that span multiple areas
             is_large_promotional = (
                 area_ratio > 0.15 and aspect > 1.8 and (y1 < actual_header_limit or area_ratio > 0.25)
             )
+
+            # If a detection substantially overlaps the poster, treat as promotional
+            if ad_iou >= 0.50 and (yolo_class == "person" or aspect > 1.6 or area_ratio > 0.15):
+                cname = "promotional_candidate"
+                score = max(0.9, base_conf)
+                decision_reason = "overlaps poster (IoU≥0.5)"
+                clamped_confidence = float(min(1.0, max(0.0, score)))
+                out.append(
+                    DetectionBox(
+                        x1=int(x1), y1=int(y1), x2=int(x2), y2=int(y2),
+                        confidence=clamped_confidence,
+                        class_id=CID[cname], class_name=cname, area=int(area)
+                    )
+                )
+                print(
+                    f"   #{raw_index:2}: {yolo_class:10s} {orientation:8s} → {cname:18s} "
+                    f"conf={clamped_confidence:.3f} (poster-overlap)"
+                )
+                continue
+
+            HEADER_MIN_AREA = 0.02  # 2%
 
             if center_y < actual_header_limit or is_large_promotional:
                 # HEADER AREA: Enhanced promotional detection
@@ -1164,7 +1197,7 @@ class RetailDetector:
                     cname = "promotional_candidate"
                     score = max(0.80, s_poster, base_conf)
                     decision_reason = f"promotional object in header"
-                else:
+                elif area_ratio < HEADER_MIN_AREA and (ad_iou < 0.65):
                     # Very small objects in header - likely noise
                     print(f"   ⚠️  Skipping #{raw_index}: Too small for header ({area_ratio:.4f})")
                     continue
@@ -2829,6 +2862,10 @@ Respond with the structured data for all {len(detections)} objects.
         If `save_to` is provided, the image is saved there.
         Returns a PIL.Image either way.
         """
+        def _norm_box(x1, y1, x2, y2):
+            x1, x2 = (int(x1), int(x2))
+            y1, y2 = (int(y1), int(y2))
+            return min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2)
 
         # --- get base image ---
         if isinstance(image, (str, Path)):
@@ -2874,6 +2911,7 @@ Respond with the structured data for all {len(detections)} objects.
         if show_shelves and shelf_regions:
             for sr in shelf_regions:
                 x1, y1, x2, y2 = _clip(sr.bbox.x1, sr.bbox.y1, sr.bbox.x2, sr.bbox.y2)
+                x1, y1, x2, y2 = _norm_box(x1, y1, x2, y2)
                 draw.rectangle([x1, y1, x2, y2], outline=(255, 255, 0), width=3)
                 _txt(draw, (x1+3, max(0, y1-14)), f"SHELF {sr.level}", fill=(0, 0, 0), bg=(255, 255, 0))
 
@@ -2881,6 +2919,7 @@ Respond with the structured data for all {len(detections)} objects.
         if mode in ("detections", "both") and detections:
             for i, d in enumerate(detections, start=1):
                 x1, y1, x2, y2 = _clip(d.x1, d.y1, d.x2, d.y2)
+                x1, y1, x2, y2 = _norm_box(x1, y1, x2, y2)
                 draw.rectangle([x1, y1, x2, y2], outline=(255, 0, 0), width=2)
                 lbl = f"ID:{i} {d.class_name} {d.confidence:.2f}"
                 _txt(draw, (x1+2, max(0, y1-12)), lbl, fill=(0, 0, 0), bg=(255, 0, 0))
