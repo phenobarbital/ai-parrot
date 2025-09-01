@@ -7,6 +7,7 @@ Step 3: Planogram Comparison and Compliance Verification
 import os
 from typing import List, Dict, Any, Optional, Union, Tuple
 from collections import defaultdict
+import unicodedata
 import re
 import traceback
 from pathlib import Path
@@ -182,6 +183,54 @@ class RetailDetector:
         keep.append(main)
         return keep, (main.x1, main.y1, main.x2, main.y2)
 
+    def dedup_identified_by_model(self, items, iou_thr=0.30, center_thr=0.35):
+        """
+        Collapse duplicates of the same product model within the same shelf.
+        Keeps highest-confidence, largest-area boxes.
+        """
+        from collections import defaultdict
+        def iou(a, b):
+            ax1, ay1, ax2, ay2 = a.detection_box.x1, a.detection_box.y1, a.detection_box.x2, a.detection_box.y2
+            bx1, by1, bx2, by2 = b.detection_box.x1, b.detection_box.y1, b.detection_box.x2, b.detection_box.y2
+            ix1, iy1 = max(ax1, bx1), max(ay1, by1)
+            ix2, iy2 = min(ax2, bx2), min(ay2, by2)
+            if ix2 <= ix1 or iy2 <= iy1: return 0.0
+            inter = (ix2-ix1)*(iy2-iy1)
+            ua = (ax2-ax1)*(ay2-ay1) + (bx2-bx1)*(by2-by1) - inter
+            return inter / max(ua, 1)
+
+        def center_dist(a, b):
+            axc = (a.detection_box.x1 + a.detection_box.x2) / 2.0
+            ayc = (a.detection_box.y1 + a.detection_box.y2) / 2.0
+            bxc = (b.detection_box.x1 + b.detection_box.x2) / 2.0
+            byc = (b.detection_box.y1 + b.detection_box.y2) / 2.0
+            return ((axc-bxc)**2 + (ayc-byc)**2) ** 0.5
+
+        groups = defaultdict(list)
+        for p in items:
+            key = (p.product_model or p.product_type, p.shelf_location)
+            groups[key].append(p)
+
+        keep = []
+        for key, grp in groups.items():
+            grp = sorted(grp, key=lambda x: (x.confidence or 0, x.detection_box.area), reverse=True)
+            accepted = []
+            for cand in grp:
+                too_close = False
+                for acc in accepted:
+                    if iou(cand, acc) >= iou_thr:
+                        too_close = True
+                        break
+                    # distance gate using target width
+                    w = acc.detection_box.x2 - acc.detection_box.x1
+                    if center_dist(cand, acc) < w * center_thr:
+                        too_close = True
+                        break
+                if not too_close:
+                    accepted.append(cand)
+            keep.extend(accepted)
+        return keep
+
     # -------------------------- public entry ---------------------------------
     def detect(
         self,
@@ -239,8 +288,7 @@ class RetailDetector:
             name: DetectionBox(
                 x1=rx1, y1=y1, x2=rx2, y2=y2,
                 confidence=1.0,
-                class_id=190,
-                class_name="shelf_region",
+                class_id=190, class_name="shelf_region",
                 area=(rx2-rx1)*(y2-y1),
             )
             for name, (y1, y2) in bands.items()
@@ -455,13 +503,11 @@ class RetailDetector:
         # Create bands with appropriate height
         bands = {}
 
-        # Top shelf: from ROI start to first shelf line
-        bands["top"] = (ry1, levels[0])
-
-        # Middle shelf: between the two shelf lines
+        # Header band: from ROI start (ry1) down to the first shelf line
+        bands["header"] = (ry1, levels[0])
+        # Top shelf: between the first and second shelf lines
         bands["middle"] = (levels[0], levels[1])
-
-        # Bottom shelf: from second shelf line to ROI end
+        # Middle/BOTTOM area: from second line to ROI end
         bands["bottom"] = (levels[1], ry2)
 
         # Ensure all bands have positive height
@@ -490,7 +536,7 @@ class RetailDetector:
             detection_phases = [
                 {
                     "name": "poster_high",
-                    "conf": 0.60,
+                    "conf": 0.40,
                     "iou": 0.35,
                     "weight": 0.15,
                     "allow": ["person","tv","monitor","screen","display","billboard","poster"],
@@ -500,14 +546,14 @@ class RetailDetector:
                 {
                     "name": "high_confidence",
                     "conf": 0.05,
-                    "iou": 0.25,
+                    "iou": 0.20,
                     "weight": 0.70,
                     "description": "High confidence pass for clear objects"
                 }, # printers + product boxes
                 {
                     "name": "aggressive",
                     "conf": 0.003,
-                    "iou": 0.25,
+                    "iou": 0.15,
                     "weight": 0.15,
                     "description": "Selective aggressive pass for missed objects only"
                 }
@@ -1019,10 +1065,10 @@ class RetailDetector:
             center_y = (y1 + y2) / 2
 
             # If we have shelf bands, use them; otherwise use header_limit_y
-            if bands and "top" in bands:
-                # Header is anything above the top shelf band
-                actual_header_limit = bands["top"][1]  # y2 of header band = first shelf line
-                first_line_y = bands["top"][1]  # y2 of the 'top' band
+            if bands and "header" in bands:
+                # Header is anything above the header band
+                actual_header_limit = bands["header"][1]  # y2 of header band = first shelf line
+                first_line_y = bands["header"][1]  # y2 of the 'header' band
             else:
                 actual_header_limit = header_limit_y
                 first_line_y = header_limit_y
@@ -1281,9 +1327,10 @@ class RetailDetector:
         try:
             # Multiple OCR passes for better accuracy
             ocr_configs = [
-                "--psm 6 -l eng",  # Standard
-                "--psm 8 -l eng",  # Single word
-                "--psm 7 -l eng",  # Single text line
+                "--oem 1 --psm 4 -l eng -c preserve_interword_spaces=1",  # Best for blocks of text
+                "--oem 1 --psm 6 -l eng -c preserve_interword_spaces=1",  # Standard
+                # "--oem 1 --psm 8 -l eng -c preserve_interword_spaces=1",  # Single word
+                # "--oem 1 --psm 7 -l eng -c preserve_interword_spaces=1",  # Single text line
             ]
 
             all_text = ""
@@ -2024,6 +2071,11 @@ class PlanogramCompliancePipeline(AbstractPipeline):
                         image,
                         identified_products
                     )
+                    for product in identified_products:
+                        if product.product_type == "promotional_graphic":
+                            if lines := await self._extract_text_from_region(image, product.detection_box):
+                                snippet = " ".join(lines)[:120]
+                                product.visual_features = (product.visual_features or []) + [f"ocr:{snippet}"]
                     return identified_products
                 else:  # Fallback
                     response = await client.ask_to_image(
@@ -2054,13 +2106,17 @@ class PlanogramCompliancePipeline(AbstractPipeline):
                         # Add detection_box to each product based on detection_id
                         valid_products = []
                         for product in identified_products:
-                            if product.product_type == "promotional_graphic":
-                                product.visual_features = await self._extract_text_from_region(
-                                    image, product.detection_box
-                                )
                             if product.detection_id and 1 <= product.detection_id <= len(effective_dets):
-                                det_idx = product.detection_id - 1  # Convert to 0-based index
+                                det_idx = product.detection_id - 1
                                 product.detection_box = effective_dets[det_idx]
+
+                                # ⬅️ Do OCR *after* we have the box
+                                if product.product_type == "promotional_graphic":
+                                    lines = await self._extract_text_from_region(image, product.detection_box)
+                                    if lines:
+                                        snippet = " ".join(lines)[:120]
+                                        product.visual_features = (product.visual_features or []) + [f"ocr:{snippet}"]
+
                                 valid_products.append(product)
                                 self.logger.debug(
                                     f"Linked {product.product_type} {product.product_model} (ID: {product.detection_id}) to detection box"
@@ -2122,6 +2178,27 @@ class PlanogramCompliancePipeline(AbstractPipeline):
             return "Epson"  # brand inference via line
         return None
 
+    def _normalize_ocr_text(self, s: str) -> str:
+        """
+        Make OCR text match-friendly:
+        - Unicode normalize (NFKC), strip diacritics
+        - Replace fancy dashes/quotes with spaces
+        - Remove non-alnum except spaces, collapse whitespace
+        - Lowercase
+        """
+        if not s:
+            return ""
+        s = unicodedata.normalize("NFKC", s)
+        # strip accents
+        s = "".join(ch for ch in unicodedata.normalize("NFKD", s) if not unicodedata.combining(ch))
+        # unify punctuation to spaces
+        s = re.sub(r"[—–‐-‒–—―…“”\"'·•••·•—–/\\|_=+^°™®©§]", " ", s)
+        # keep letters/digits/spaces
+        s = re.sub(r"[^A-Za-z0-9 ]+", " ", s)
+        # collapse
+        s = re.sub(r"\s+", " ", s).strip().lower()
+        return s
+
     async def _augment_products_with_box_ocr(
         self,
         image: Union[str, Path, Image.Image],
@@ -2168,6 +2245,17 @@ class PlanogramCompliancePipeline(AbstractPipeline):
                             cur = (p.product_model or "").lower()
                             if "et-" in target.lower() and ("et-" not in cur or "box" in target.lower() and "box" not in cur):
                                 p.product_model = target
+            elif p.product_type == "promotional_graphic":
+                if lines := await self._extract_text_from_region(image, p.detection_box):
+                    snippet = " ".join(lines)[:160]
+                    p.visual_features = (p.visual_features or []) + [f"ocr:{snippet}"]
+                    joined = " ".join(lines)
+                    if norm := self._normalize_ocr_text(joined):
+                        p.visual_features.append(norm)
+                        # also feed per-line normals (helps 'contains' on shorter phrases)
+                        for ln in lines:
+                            if ln and (nln := self._normalize_ocr_text(ln)) and nln not in p.visual_features:
+                                p.visual_features.append(nln)
         return products
 
     async def _extract_text_from_region(
@@ -2498,9 +2586,18 @@ Respond with the structured data for all {len(detections)} objects.
                 if endcap.text_requirements:
                     # Combine visual features from all promotional items
                     all_features = []
+                    ocr_blocks = []
                     for promo in promos:
-                        if hasattr(promo, 'visual_features') and promo.visual_features:
+                        if getattr(promo, "visual_features", None):
                             all_features.extend(promo.visual_features)
+                            for feat in promo.visual_features:
+                                if isinstance(feat, str) and feat.startswith("ocr:"):
+                                    ocr_blocks.append(feat[4:].strip())
+
+                    if ocr_blocks:
+                        ocr_norm = self._normalize_ocr_text(" ".join(ocr_blocks))
+                        if ocr_norm:
+                            all_features.append(ocr_norm)
 
                     # If no promotional graphics found but text required, create default failure
                     if not promos and shelf_level == "header":
@@ -2541,8 +2638,11 @@ Respond with the structured data for all {len(detections)} objects.
                 text_score = 1.0
 
             # Determine compliance threshold
-            threshold = getattr(shelf_cfg, "compliance_threshold",
-                            planogram_description.global_compliance_threshold or 0.8)
+            threshold = getattr(
+                shelf_cfg,
+                "compliance_threshold",
+                planogram_description.global_compliance_threshold or 0.8
+            )
 
             # FIX 4: Better status determination logic
             # For product shelves (non-header), focus on product compliance
@@ -2565,7 +2665,11 @@ Respond with the structured data for all {len(detections)} objects.
             # Calculate combined score with appropriate weighting
             if shelf_level == "header":
                 # Header: Balance product and text compliance
-                weights = {"product_compliance": 0.5, "text_compliance": 0.5}
+                endcap = planogram_description.advertisement_endcap
+                weights = {
+                    "product_compliance": endcap.product_weight,
+                    "text_compliance": endcap.text_weight
+                }
             else:
                 # Product shelves: Emphasize product compliance
                 weights = {"product_compliance": 0.9, "text_compliance": 0.1}
@@ -2715,79 +2819,6 @@ Respond with the structured data for all {len(detections)} objects.
                 p for p in identified_products if p.product_type != "promotional_graphic"
             ] + [keep]
 
-        # print('==== BEFORE SHELF REASSIGNMENT ====')
-        # for p in identified_products:
-        #     if p.product_type == "promotional_graphic":
-        #         print(f"Promotional graphic: shelf_location={p.shelf_location}, box=({p.detection_box.x1}, {p.detection_box.y1}, {p.detection_box.x2}, {p.detection_box.y2})")
-
-        # # Get image dimensions safely
-        # if isinstance(image, (str, Path)):
-        #     pil_image = Image.open(image)
-        #     W, H = pil_image.size
-        # elif hasattr(image, "width") and hasattr(image, "height"):
-        #     W, H = image.width, image.height
-        # else:
-        #     # Fallback - convert to PIL to get dimensions
-        #     if isinstance(image, (str, Path)):
-        #         pil_image = Image.open(image)
-        #     else:
-        #         pil_image = image
-        #     W, H = pil_image.size
-
-        # print(f"Image dimensions: {W}x{H}")
-
-        # # Fix promotional graphic shelf assignment
-        # for p in identified_products:
-        #     if p.product_type == "promotional_graphic" and p.detection_box:
-        #         box = p.detection_box
-
-        #         # Calculate key metrics
-        #         box_area = box.area
-        #         relative_area = box_area / (W * H)
-        #         box_width = box.x2 - box.x1
-        #         horizontal_span = box_width / W
-        #         y_start_ratio = box.y1 / H
-        #         y_center_ratio = (box.y1 + box.y2) / (2 * H)
-
-        #         print(f"Promotional analysis:")
-        #         print(f"  Area ratio: {relative_area:.3f} (threshold: 0.05)")
-        #         print(f"  Horizontal span: {horizontal_span:.3f} (threshold: 0.4)")
-        #         print(f"  Y start ratio: {y_start_ratio:.3f} (threshold: 0.2)")
-        #         print(f"  Y center ratio: {y_center_ratio:.3f} (threshold: 0.6)")
-
-        #         # More aggressive criteria - promotional graphics should go to header if they meet ANY of:
-        #         should_be_header = (
-        #             # Large area coverage (more than 5% of image)
-        #             relative_area > 0.05 or
-
-        #             # Wide horizontal span (more than 40% of width)
-        #             horizontal_span > 0.4 or
-
-        #             # Starts in upper portion (top 20% of image)
-        #             y_start_ratio < 0.2 or
-
-        #             # Center in upper portion (top 60% of image)
-        #             y_center_ratio < 0.6 or
-
-        #             # Force all promotional_graphic types to header (safest approach)
-        #             True  # This ensures ALL promotional graphics go to header
-        #         )
-
-        #         original_shelf = p.shelf_location
-        #         if should_be_header:
-        #             p.shelf_location = "header"
-        #             print(f"  -> Reassigned: {original_shelf} -> header")
-        #         else:
-        #             print(f"  -> Kept: {original_shelf}")
-
-        # print('==== AFTER SHELF REASSIGNMENT ====')
-        # header_promos = [p for p in identified_products if p.product_type == "promotional_graphic" and p.shelf_location == "header"]
-        # print(f"Promotional graphics in header: {len(header_promos)}")
-
-        # self.logger.debug(f"Identified {len(identified_products)} products")
-
-        # self.logger.info("Step 3: Checking planogram compliance...")
-
         compliance_results = self.check_planogram_compliance(
             identified_products, planogram_description
         )
@@ -2796,9 +2827,12 @@ Respond with the structured data for all {len(detections)} objects.
         total_score = sum(
             r.compliance_score for r in compliance_results
         ) / len(compliance_results) if compliance_results else 0.0
-        overall_compliant = all(
-            r.compliance_status == ComplianceStatus.COMPLIANT for r in compliance_results
-        )
+        if total_score >= (planogram_description.global_compliance_threshold or 0.8):
+            overall_compliant = True
+        else:
+            overall_compliant = all(
+                r.compliance_status == ComplianceStatus.COMPLIANT for r in compliance_results
+            )
         overlay_image = None
         overlay_path = None
         if return_overlay:
