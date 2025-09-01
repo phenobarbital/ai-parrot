@@ -46,7 +46,7 @@ async def main():
                 "compliance_threshold": 0.95
             },
             {
-                "level": "top",
+                "level": "middle",
                 "products": [
                     {
                         "name": "ET-2980",
@@ -70,7 +70,7 @@ async def main():
                 "compliance_threshold": 0.9
             },
             {
-                "level": "middle",
+                "level": "bottom",
                 "products": [
                     {
                         "name": "ET-2980 box",
@@ -95,6 +95,8 @@ async def main():
             "enabled": True,
             "promotional_type": "backlit_graphic",
             "position": "header",
+            "product_weight": 0.8,
+            "text_weight": 0.2,
             "text_requirements": [
                 {
                     "required_text": "Goodbye Cartridges",
@@ -115,10 +117,10 @@ async def main():
     )
 
     # Endcap photo:
-    # image_path = BASE_DIR / "examples" / "pipelines" / "250714 BBY 501 Kennesaw GA.jpg"
+    image_path = BASE_DIR / "examples" / "pipelines" / "250714 BBY 501 Kennesaw GA.jpg"
     # image_path = BASE_DIR / "examples" / "pipelines" / "original_0.jpg"
     # image_path = BASE_DIR / "examples" / "pipelines" / "06668994-c27e-44d9-8d59-f1f65559c2e1-recap.jpeg"
-    image_path = BASE_DIR / "examples" / "pipelines" / "eb04d624-a180-4e5c-b592-ab0d40b558f9-recap.jpeg"
+    # image_path = BASE_DIR / "examples" / "pipelines" / "eb04d624-a180-4e5c-b592-ab0d40b558f9-recap.jpeg"
 
 
     # Run complete pipeline
