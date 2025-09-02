@@ -24,7 +24,7 @@ from .excel import ExcelLoader
 # from .video import VideoLoader
 # from .videolocal import VideoLocalLoader
 # from .vimeo import VimeoLoader
-# from .audio import AudioLoader
+from .audio import AudioLoader
 
 AVAILABLE_LOADERS = {
     '.pdf': PDFLoader,
@@ -46,4 +46,6 @@ AVAILABLE_LOADERS = {
     '.json': MarkdownLoader,
     '.xml': MarkdownLoader,
     '.epub': EpubLoader,
+    '.mp3': AudioLoader,
+    '.wav': AudioLoader,
 }

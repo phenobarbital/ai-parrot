@@ -4,18 +4,28 @@ Step 1: Object Detection (YOLO/ResNet)
 Step 2: LLM Object Identification with Reference Images
 Step 3: Planogram Comparison and Compliance Verification
 """
+import os
 from typing import List, Dict, Any, Optional, Union, Tuple
 from collections import defaultdict
-import itertools
+import unicodedata
 import re
 import traceback
 from pathlib import Path
 from datetime import datetime
-from PIL import Image, ImageDraw, ImageFont, ImageEnhance, ImageFilter
+from matplotlib.pyplot import box
+import pytesseract
+from PIL import (
+    Image,
+    ImageDraw,
+    ImageFont,
+    ImageEnhance,
+    ImageOps
+)
 import numpy as np
 from pydantic import BaseModel, Field
 import cv2
 import torch
+from transformers import CLIPProcessor, CLIPModel
 from .abstract import AbstractPipeline
 from ..models.detections import (
     DetectionBox,
@@ -30,95 +40,23 @@ from ..models.compliance import (
     TextComplianceResult,
     TextMatcher,
 )
+try:
+    from ultralytics import YOLO  # yolo12m works with this API
+except Exception:
+    YOLO = None
 
-def _iou(a, b):
-    ax1, ay1, ax2, ay2 = a
-    bx1, by1, bx2, by2 = b
-    ix1, iy1 = max(ax1, bx1), max(ay1, by1)
-    ix2, iy2 = min(ax2, bx2), min(ay2, by2)
-    iw, ih = max(0, ix2 - ix1), max(0, iy2 - iy1)
-    inter = iw * ih
-    if inter == 0:
-        return 0.0
-    a_area = (ax2 - ax1) * (ay2 - ay1)
-    b_area = (bx2 - bx1) * (by2 - by1)
-    return inter / (a_area + b_area - inter + 1e-9)
+CID = {
+    "promotional_candidate": 103,
+    "product_candidate":     100,
+    "box_candidate":         101,
+    "shelf_region":          190,
+}
 
-def _pad_tuple(box_t, pad):
-    x1, y1, x2, y2 = box_t
-    return (x1 - pad, y1 - pad, x2 + pad, y2 + pad)
 
-def _to_tuple(db: DetectionBox):
-    return (db.x1, db.y1, db.x2, db.y2)
-
-def _union_tuple(group_tuples):
-    xs1 = [t[0] for t in group_tuples]
-    ys1 = [t[1] for t in group_tuples]
-    xs2 = [t[2] for t in group_tuples]
-    ys2 = [t[3] for t in group_tuples]
-    return (min(xs1), min(ys1), max(xs2), max(ys2))
-
-def merge_promotional_graphics(
-    identified_products: List[IdentifiedProduct],
-    pad_px: int = 60,
-    overlap_iou_after_pad: float = 0.0
-) -> List[IdentifiedProduct]:
-    """Merge multiple promo boxes (text/portrait) into one backlit graphic per shelf."""
-    promos = [p for p in identified_products
-              if p.product_type == "promotional_graphic" and p.detection_box is not None]
-    others = [p for p in identified_products if p.product_type != "promotional_graphic" or p.detection_box is None]
-
-    by_shelf = defaultdict(list)
-    for p in promos:
-        by_shelf[p.shelf_location].append(p)
-
-    merged_promos: List[IdentifiedProduct] = []
-
-    for shelf, items in by_shelf.items():
-        items = sorted(items, key=lambda x: (x.confidence or 0.0), reverse=True)
-        used = set()
-        for i, base in enumerate(items):
-            if i in used:
-                continue
-            group_idx = [i]
-            group_boxes = [_to_tuple(base.detection_box)]
-            pad_ref = _pad_tuple(group_boxes[0], pad_px)
-
-            for j in range(i + 1, len(items)):
-                if j in used:
-                    continue
-                cand_t = _to_tuple(items[j].detection_box)
-                if _iou(pad_ref, _pad_tuple(cand_t, pad_px)) > overlap_iou_after_pad:
-                    group_idx.append(j)
-                    group_boxes.append(cand_t)
-                    # grow the padded reference as the union grows
-                    pad_ref = _pad_tuple(_union_tuple(group_boxes), pad_px)
-
-            for g in group_idx:
-                used.add(g)
-
-            # union bbox + merge features
-            ux1, uy1, ux2, uy2 = _union_tuple(group_boxes)
-            best = items[group_idx[0]]  # highest-confidence as representative
-            new_box = DetectionBox(
-                x1=int(ux1), y1=int(uy1), x2=int(ux2), y2=int(uy2),
-                confidence=max(items[k].detection_box.confidence for k in group_idx),
-                class_id=best.detection_box.class_id,
-                class_name=best.detection_box.class_name,
-                area=int((ux2 - ux1) * (uy2 - uy1))
-            )
-            merged_features = list(dict.fromkeys(itertools.chain.from_iterable(
-                (items[k].visual_features or []) for k in group_idx
-            )))
-
-            merged_promos.append(
-                best.copy(update={
-                    "detection_box": new_box,
-                    "visual_features": merged_features
-                })
-            )
-
-    return others + merged_promos
+def _clamp(W,H,x1,y1,x2,y2):
+    x1,x2 = int(max(0,min(W-1,min(x1,x2)))), int(max(0,min(W-1,max(x1,x2))))
+    y1,y2 = int(max(0,min(H-1,min(y1,y2)))), int(max(0,min(H-1,max(y1,y2))))
+    return x1, y1, x2, y2
 
 class IdentificationResponse(BaseModel):
     """Response model for product identification"""
@@ -127,942 +65,1581 @@ class IdentificationResponse(BaseModel):
         description="List of identified products from the image"
     )
 
+
 class RetailDetector:
     """
-    Enhanced detector with improved price tag detection and reduced false positives
+    Reference-guided Phase-1 detector.
+
+    1) Enhance image (contrast/brightness) to help OCR/YOLO/CLIP.
+    2) Localize the promotional poster using:
+       - OCR ('EPSON', 'Hello', 'Savings', etc.)
+       - CLIP similarity with your FIRST reference image.
+    3) Crop to poster width (+ margin) to form an endcap ROI (remember offsets).
+    4) Detect shelf lines within ROI (Hough) => top/middle/bottom bands.
+    5) YOLO proposals inside ROI (low conf, class-agnostic).
+    6) For each proposal: OCR + CLIP vs remaining reference images
+       => label as promotional/product/box candidate.
+    7) Shrink, merge, suppress items that are inside the poster.
     """
 
-    def __init__(self, detection_model_name: str = "yolov8n"):
-        self.detection_model_name = detection_model_name
-        self.detection_model = None
-        self._load_detection_model()
+    def __init__(
+        self,
+        yolo_model: str = "yolo12l.pt",
+        conf: float = 0.15,
+        iou: float = 0.5,
+        device: str = "cuda" if torch.cuda.is_available() else "cpu",
+        reference_images: Optional[List[str]] = None,  # first is the poster
+    ):
+        if isinstance(yolo_model, str):
+            assert YOLO is not None, "ultralytics is required"
+            self.yolo = YOLO(yolo_model)
+        else:
+            self.yolo = yolo_model
+        self.conf = conf
+        self.iou = iou
+        self.device = device
 
-        # Enhanced filtering parameters for price tags
-        self.price_tag_config = {
-            # More restrictive size constraints
-            "min_width": 40,        # Increased from 34
-            "max_width": 200,       # Decreased from 220
-            "min_height": 18,       # Increased from 12
-            "max_height": 55,       # Decreased from 60
-            "min_aspect_ratio": 1.5, # More restrictive (wider tags)
-            "max_aspect_ratio": 8.0, # Less extreme ratios
+        # CLIP for open-vocab and ref matching
+        self.clip = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").to(device)
+        self.proc = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
 
-            # Content validation thresholds
-            "min_confidence": 0.4,   # Higher minimum confidence
-            "text_score_threshold": 0.3,  # Minimum text likelihood
-            "intensity_threshold": 120,   # Minimum brightness for price tags
+        self.ref_paths = reference_images or []
+        self.ref_ad = self.ref_paths[0] if self.ref_paths else None
+        self.ref_products = self.ref_paths[1:] if len(self.ref_paths) > 1 else []
 
-            # OCR validation
-            "require_price_pattern": True,  # Must contain price-like text
-            "min_ocr_confidence": 0.6,     # Minimum OCR confidence
+        self.ref_ad_feat = self._embed_image(self.ref_ad) if self.ref_ad else None
+        self.ref_prod_feats = [self._embed_image(p) for p in self.ref_products] if self.ref_products else []
+
+        # text prompts (backup if no product refs)
+        self.text_tokens = self.proc(text=[
+            "retail promotional poster lightbox",
+            "Epson EcoTank printer device on shelf",
+            "printer product box carton"
+        ], return_tensors="pt", padding=True).to(self.device)
+        with torch.no_grad():
+            self.text_feats = self.clip.get_text_features(**self.text_tokens)
+            self.text_feats = self.text_feats / self.text_feats.norm(dim=-1, keepdim=True)
+
+    def _iou(self, a: DetectionBox, b: DetectionBox) -> float:
+        ix1, iy1 = max(a.x1, b.x1), max(a.y1, b.y1)
+        ix2, iy2 = min(a.x2, b.x2), min(a.y2, b.y2)
+        iw, ih = max(0, ix2 - ix1), max(0, iy2 - iy1)
+        inter = iw * ih
+        if inter <= 0:
+            return 0.0
+        ua = a.area + b.area - inter
+        return inter / float(max(1, ua))
+
+    def _iou_box_tuple(self, d: "DetectionBox", box: tuple[int,int,int,int]) -> float:
+        ax1, ay1, ax2, ay2 = box
+        ix1, iy1 = max(d.x1, ax1), max(d.y1, ay1)
+        ix2, iy2 = min(d.x2, ax2), min(d.y2, ay2)
+        if ix2 <= ix1 or iy2 <= iy1:
+            return 0.0
+        inter = (ix2 - ix1) * (iy2 - iy1)
+        return inter / float(d.area + (ax2-ax1)*(ay2-ay1) - inter + 1e-6)
+
+    def _consolidate_promos(
+        self,
+        dets: List["DetectionBox"],
+        ad_box: Optional[tuple[int,int,int,int]],
+    ) -> tuple[List["DetectionBox"], Optional[tuple[int,int,int,int]]]:
+        """Keep a single promotional candidate, remove the rest.
+        If none, synthesize one from ad_box.
+        """
+        promos = [d for d in dets if d.class_name == "promotional_candidate"]
+        keep = [d for d in dets if d.class_name != "promotional_candidate"]
+
+        # if YOLO didn’t produce a promo, synthesize one from ad_box
+        if not promos and ad_box:
+            x1, y1, x2, y2 = ad_box
+            promos = [
+                DetectionBox(
+                    x1=x1, y1=y1, x2=x2, y2=y2,
+                    confidence=0.95,
+                    class_id=103,
+                    class_name="promotional_candidate",
+                    area=(x2-x1)*(y2-y1)
+                )
+            ]
+
+        if not promos:
+            return keep, ad_box
+
+        # cluster by IoU and keep the biggest in the biggest cluster
+        promos = sorted(promos, key=lambda d: d.area, reverse=True)
+        clusters: list[list["DetectionBox"]] = []
+        for d in promos:
+            placed = False
+            for cl in clusters:
+                if any(self._iou(d, e) >= 0.5 for e in cl):
+                    cl.append(d)
+                    placed = True
+                    break
+            if not placed:
+                clusters.append([d])
+        best_cluster = max(clusters, key=lambda cl: sum(x.area for x in cl))
+        main = max(best_cluster, key=lambda d: d.area)
+        keep.append(main)
+        return keep, (main.x1, main.y1, main.x2, main.y2)
+
+    def dedup_identified_by_model(self, items, iou_thr=0.30, center_thr=0.35):
+        """
+        Collapse duplicates of the same product model within the same shelf.
+        Keeps highest-confidence, largest-area boxes.
+        """
+        from collections import defaultdict
+        def iou(a, b):
+            ax1, ay1, ax2, ay2 = a.detection_box.x1, a.detection_box.y1, a.detection_box.x2, a.detection_box.y2
+            bx1, by1, bx2, by2 = b.detection_box.x1, b.detection_box.y1, b.detection_box.x2, b.detection_box.y2
+            ix1, iy1 = max(ax1, bx1), max(ay1, by1)
+            ix2, iy2 = min(ax2, bx2), min(ay2, by2)
+            if ix2 <= ix1 or iy2 <= iy1: return 0.0
+            inter = (ix2-ix1)*(iy2-iy1)
+            ua = (ax2-ax1)*(ay2-ay1) + (bx2-bx1)*(by2-by1) - inter
+            return inter / max(ua, 1)
+
+        def center_dist(a, b):
+            axc = (a.detection_box.x1 + a.detection_box.x2) / 2.0
+            ayc = (a.detection_box.y1 + a.detection_box.y2) / 2.0
+            bxc = (b.detection_box.x1 + b.detection_box.x2) / 2.0
+            byc = (b.detection_box.y1 + b.detection_box.y2) / 2.0
+            return ((axc-bxc)**2 + (ayc-byc)**2) ** 0.5
+
+        groups = defaultdict(list)
+        for p in items:
+            key = (p.product_model or p.product_type, p.shelf_location)
+            groups[key].append(p)
+
+        keep = []
+        for key, grp in groups.items():
+            grp = sorted(grp, key=lambda x: (x.confidence or 0, x.detection_box.area), reverse=True)
+            accepted = []
+            for cand in grp:
+                too_close = False
+                for acc in accepted:
+                    if iou(cand, acc) >= iou_thr:
+                        too_close = True
+                        break
+                    # distance gate using target width
+                    w = acc.detection_box.x2 - acc.detection_box.x1
+                    if center_dist(cand, acc) < w * center_thr:
+                        too_close = True
+                        break
+                if not too_close:
+                    accepted.append(cand)
+            keep.extend(accepted)
+        return keep
+
+    # -------------------------- public entry ---------------------------------
+    def detect(
+        self,
+        image: Image.Image,
+        debug_raw: Optional[str] = None,
+        debug_phase1: Optional[str] = None,
+        debug_phases: Optional[str] = None,
+    ):
+        # 0) PIL -> enhanced -> numpy
+        pil = image.convert("RGB") if isinstance(image, Image.Image) else Image.open(image).convert("RGB")
+        enhanced = self._enhance(pil)
+        img_array = np.array(enhanced)  # RGB
+
+        h, w = img_array.shape[:2]
+
+        # 1) find promo (OCR + CLIP + fallbacks)
+        ad_box = self._find_poster(img_array)
+
+        # 2) endcap ROI (keep existing)
+        roi_box = self._roi_from_poster(ad_box, h, w)
+        rx1, ry1, rx2, ry2 = roi_box
+        roi = img_array[ry1:ry2, rx1:rx2]
+
+        # 3) shelf lines & bands (keep existing)
+        shelf_lines, bands = self._find_shelves(roi, rx1, ry1, rx2, ry2, h)
+        header_limit_y = min(v[0] for v in bands.values()) if bands else int(0.4 * h)
+
+        # 4) YOLO inside ROI
+        yolo_props = self._yolo_props(roi, rx1, ry1)
+        if debug_raw:
+            dbg = self._draw_phase_areas(img_array.copy(), yolo_props, roi_box)
+            cv2.imwrite(
+                debug_phases,
+                cv2.cvtColor(dbg, cv2.COLOR_RGB2BGR)
+            )
+            dbg = self._draw_yolo(img_array.copy(), yolo_props, roi_box, shelf_lines)
+            cv2.imwrite(
+                debug_raw,
+                cv2.cvtColor(dbg, cv2.COLOR_RGB2BGR)
+            )
+
+        # 5) classify YOLO → proposals (works w/ bands={}, header_limit_y above)
+        proposals = self._classify_proposals(img_array, yolo_props, bands, header_limit_y, ad_box)
+        # 6) shrink -> merge -> remove those fully inside the poster
+        proposals = self._shrink(img_array, proposals)
+        proposals = self._merge(proposals, iou_same=0.45)
+
+        # 7) keep exactly ONE promo & align ROI to it
+        proposals, promo_roi = self._consolidate_promos(proposals, ad_box)
+        if promo_roi is not None:
+            ad_box = promo_roi
+
+        # shelves dict to satisfy callers; in flat mode keep it empty
+        shelves = {
+            name: DetectionBox(
+                x1=rx1, y1=y1, x2=rx2, y2=y2,
+                confidence=1.0,
+                class_id=190, class_name="shelf_region",
+                area=(rx2-rx1)*(y2-y1),
+            )
+            for name, (y1, y2) in bands.items()
         }
 
-    def _load_detection_model(self):
-        """Load YOLO model with enhanced error handling"""
-        try:
-            from ultralytics import YOLO  # pylint: disable=E0611,C0415 # noqa
+        # (OPTIONAL) draw Phase-1 debug
+        if debug_phase1:
+            dbg = self._draw_phase1(img_array.copy(), roi_box, shelf_lines, proposals, ad_box)
+            cv2.imwrite(
+                debug_phase1,
+                cv2.cvtColor(dbg, cv2.COLOR_RGB2BGR)
+            )
 
-            model_name = self.detection_model_name.lower()
-            if not model_name.endswith('.pt'):
-                model_name = f"{model_name}.pt"
-            self.detection_model = YOLO(model_name)
-            print(f"Loaded {model_name} for enhanced detection")
-        except ImportError:
-            print("ultralytics not installed")
-            self.detection_model = None
-        except Exception as e:
-            print(f"Failed to load YOLO model: {e}")
-            self.detection_model = None
+        # 8) ensure the promo exists exactly once
+        if ad_box is not None and not any(d.class_name == "promotional_candidate" and self._iou_box_tuple(d, ad_box) > 0.7 for d in proposals):
+            x1, y1, x2, y2 = ad_box
+            proposals.append(
+                DetectionBox(
+                    x1=x1, y1=y1, x2=x2, y2=y2,
+                    confidence=0.95,
+                    class_id=103,
+                    class_name="promotional_candidate",
+                    area=(x2-x1)*(y2-y1)
+                )
+            )
 
-    def preprocess_image_for_detection(
-        self, image: Union[str, Path, Image.Image]
-    ) -> Tuple[Image.Image, np.ndarray]:
-        """Enhance image for better object detection"""
-        if isinstance(image, (str, Path)):
-            pil_image = Image.open(image)
-        else:
-            pil_image = image
+        return {"shelves": shelves, "proposals": proposals}
 
-        if pil_image.mode != 'RGB':
-            pil_image = pil_image.convert('RGB')
+    # ----------------------- enhancement & CLIP -------------------------------
+    def _enhance(self, pil_img: "Image.Image") -> "Image.Image":
+        """Enhance a PIL image and return PIL."""
+        # Brightness/contrast + autocontrast; tweak if needed
+        pil = ImageEnhance.Brightness(pil_img).enhance(1.10)
+        pil = ImageEnhance.Contrast(pil).enhance(1.20)
+        pil = ImageOps.autocontrast(pil)
+        return pil
 
-        # 1. Increase contrast to make objects stand out
-        enhancer = ImageEnhance.Contrast(pil_image)
-        enhanced = enhancer.enhance(1.4)
+    def _embed_image(self, path: Optional[str]):
+        if not path:
+            return None
+        im = Image.open(path).convert("RGB")
+        with torch.no_grad():
+            inputs = self.proc(images=im, return_tensors="pt").to(self.device)
+            feat = self.clip.get_image_features(**inputs)
+            feat = feat / feat.norm(dim=-1, keepdim=True)
+        return feat
 
-        # 2. Increase brightness to handle dim lighting
-        enhancer = ImageEnhance.Brightness(enhanced)
-        enhanced = enhancer.enhance(1.2)
-
-        # 3. Increase sharpness to make edges clearer
-        enhancer = ImageEnhance.Sharpness(enhanced)
-        enhanced = enhancer.enhance(1.5)
-
-        # 4. Apply slight color saturation to distinguish products
-        enhancer = ImageEnhance.Color(enhanced)
-        enhanced = enhancer.enhance(1.1)
-
-        # 5. Apply edge enhancement filter
-        enhanced = enhanced.filter(ImageFilter.EDGE_ENHANCE)
-
-        # Convert to numpy for YOLO
-        img_array = np.array(enhanced)
-
-        return enhanced, img_array
-
-    def _is_valid_price_tag_size(self, w: int, h: int) -> bool:
-        """Enhanced size validation for price tags with stricter constraints"""
-        config = self.price_tag_config
-
-        # Basic size constraints
-        if not (config["min_width"] <= w <= config["max_width"]):
-            return False
-        if not (config["min_height"] <= h <= config["max_height"]):
-            return False
-
-        # Aspect ratio constraint (price tags are typically wide)
-        aspect_ratio = w / h
-        if not (config["min_aspect_ratio"] <= aspect_ratio <= config["max_aspect_ratio"]):
-            return False
-
-        return True
-
-    def _validate_price_tag_content_enhanced(self, tag_region: np.ndarray) -> Tuple[bool, float]:
+    # ---------------------- poster localization -------------------------------
+    def _find_poster(self, img: np.ndarray) -> Optional[Tuple[int,int,int,int]]:
         """
-        Enhanced content validation with stricter criteria
-        Returns: (is_valid, confidence_score)
+        Find the entire endcap display area, not just the poster text
         """
-        if tag_region.size == 0:
-            return False, 0.0
+        H, W = img.shape[:2]
 
-        config = self.price_tag_config
+        # 1) Look for the main promotional display using OCR
+        data = pytesseract.image_to_data(Image.fromarray(img), output_type=pytesseract.Output.DICT)
+        xs, ys, xe, ye = [], [], [], []
 
-        # Convert to grayscale if needed
-        if len(tag_region.shape) == 3:
-            gray_tag = cv2.cvtColor(tag_region, cv2.COLOR_RGB2GRAY)
-        else:
-            gray_tag = tag_region
+        for i, word in enumerate(data.get("text", [])):
+            if not word:
+                continue
+            w = word.lower()
 
-        # 1. Brightness check - price tags are typically light colored
-        mean_intensity = np.mean(gray_tag)
-        if mean_intensity < config["intensity_threshold"]:
-            return False, 0.0
+            # Target keywords for Epson displays
+            if any(k in w for k in ("epson","hello","savings","cartridges","ecotank","goodbye")):
+                x, y = data["left"][i], data["top"][i]
+                bw, bh = data["width"][i], data["height"][i]
 
-        # 2. Text likelihood check
-        text_score = self._calculate_text_likelihood_enhanced(gray_tag)
-        if text_score < config["text_score_threshold"]:
-            return False, 0.0
+                # FILTER: Ignore text found in the leftmost 15% (Microsoft signage)
+                if x < 0.15 * W:
+                    continue
 
-        # 3. OCR validation for price patterns
-        ocr_confidence = 0.0
-        if config["require_price_pattern"]:
-            has_price, ocr_confidence = self._validate_price_content_ocr(tag_region)
-            if not has_price or ocr_confidence < config["min_ocr_confidence"]:
-                return False, 0.0
+                # FILTER: Focus on upper portion (promotional graphics)
+                if y > 0.5 * H:  # Skip text too low
+                    continue
 
-        # Calculate overall confidence
-        intensity_score = min(1.0, mean_intensity / 255.0)
-        overall_confidence = (text_score * 0.4 + intensity_score * 0.3 + ocr_confidence * 0.3)
+                xs.append(x)
+                ys.append(y)
+                xe.append(x+bw)
+                ye.append(y+bh)
 
-        return True, overall_confidence
+        # If we found promotional text, use it as anchor for the full display area
+        if xs:
+            text_x1, text_y1, text_x2, text_y2 = min(xs), min(ys), max(xe), max(ye)
 
-    def _calculate_text_likelihood_enhanced(self, gray_region: np.ndarray) -> float:
-        """Enhanced text likelihood calculation with better edge detection"""
-        if gray_region.size == 0:
-            return 0.0
+            # STRATEGY: Use the promotional text as center point, but expand to capture full endcap
+            # The endcap display typically spans from edge to edge of the visible product area
 
-        # 1. Edge density analysis
-        edges = cv2.Canny(gray_region, 30, 100)
-        edge_density = np.sum(edges > 0) / edges.size
+            # Find the actual product display boundaries by looking for the white shelf/products
+            display_x1 = int(0.12 * W)  # Start after Microsoft signage
+            display_x2 = int(0.92 * W)  # Go nearly to edge but leave some margin
 
-        # 2. Horizontal vs vertical edge analysis (text has more horizontal edges)
-        sobelx = cv2.Sobel(gray_region, cv2.CV_64F, 1, 0, ksize=3)
-        sobely = cv2.Sobel(gray_region, cv2.CV_64F, 0, 1, ksize=3)
+            # Vertical: Start from promotional area, go to bottom
+            display_y1 = max(0, int(text_y1 - 0.05 * H))  # Slightly above promotional text
+            display_y2 = H - 1  # Go to bottom
 
-        h_edges = np.sum(np.abs(sobelx))
-        v_edges = np.sum(np.abs(sobely))
+            return _clamp(W, H, display_x1, display_y1, display_x2, display_y2)
 
-        if h_edges + v_edges > 0:
-            horizontal_ratio = h_edges / (h_edges + v_edges)
-        else:
-            horizontal_ratio = 0.0
+        # 2) CLIP approach as backup
+        if self.ref_ad_feat is not None:
+            windows = []
+            ww, hh = int(0.6 * W), int(0.35 * H)  # Larger windows to capture more
 
-        # 3. Texture analysis
-        variance = np.var(gray_region)
-        texture_score = min(1.0, variance / 800)
+            # Sample wider area to find promotional content
+            for cx in (int(0.35 * W), int(0.5 * W), int(0.65 * W)):
+                for cy in (int(0.25 * H), int(0.35 * H)):
+                    x1 = max(0, cx - ww // 2)
+                    x2 = min(W - 1, x1 + ww)
+                    y1 = max(0, cy - hh // 2)
+                    y2 = min(H - 1, y1 + hh)
+                    windows.append((x1, y1, x2, y2))
 
-        # 4. Line structure analysis (look for horizontal text lines)
-        horizontal_profile = np.mean(gray_region, axis=1)
-        profile_variance = np.var(horizontal_profile)
-        line_score = min(1.0, profile_variance / 300)
+            best = None
+            best_s = -1.0
 
-        # Combine scores with emphasis on horizontal structure
-        text_likelihood = (
-            edge_density * 0.3 +
-            horizontal_ratio * 0.4 +
-            texture_score * 0.2 +
-            line_score * 0.1
+            for (x1, y1, x2, y2) in windows:
+                crop = Image.fromarray(img[y1:y2, x1:x2])
+                with torch.no_grad():
+                    ip = self.proc(images=crop, return_tensors="pt").to(self.device)
+                    f = self.clip.get_image_features(**ip)
+                    f = f / f.norm(dim=-1, keepdim=True)
+                    s = float((f @ self.ref_ad_feat.T).squeeze())
+                if s > best_s:
+                    best_s = s
+                    best = (x1, y1, x2, y2)
+
+            if best is not None and best_s > 0.12:
+                # Use CLIP result as center, but expand to full display width
+                _, by1, _, by2 = best
+                display_x1 = int(0.12 * W)
+                display_x2 = int(0.92 * W)
+                return _clamp(W, H, display_x1, by1, display_x2, H - 1)
+
+        # 3) Fallback: Define the full endcap display area
+        return (
+            int(0.12 * W),  # Start after left-side signage
+            int(0.12 * H),  # Start from upper area
+            int(0.92 * W),  # Go nearly to right edge
+            H - 1           # Go to bottom
         )
 
-        return min(1.0, text_likelihood)
-
-    def _validate_price_content_ocr(self, tag_region: np.ndarray) -> Tuple[bool, float]:
+    def _roi_from_poster(self, ad_box, h, w):
         """
-        Enhanced OCR validation specifically for price content
-        Returns: (has_price_pattern, confidence)
+        Create focused ROI with reduced margins
         """
-        try:
-            import pytesseract   # pylint: disable=E0611,C0415 # noqa
+        # Tighter horizontal bounds - reduce by ~5-10% on each side
+        rx1 = int(0.15 * w)   # Move right edge in (was 0.08)
+        rx2 = int(0.88 * w)   # Move left edge in (was 0.95)
 
-            # Convert to grayscale if needed
-            if len(tag_region.shape) == 3:
-                gray = cv2.cvtColor(tag_region, cv2.COLOR_RGB2GRAY)
-            else:
-                gray = tag_region
-
-            # Enhance for OCR
-            # Resize for better OCR
-            height, width = gray.shape
-            if height < 40 or width < 100:
-                scale_factor = max(40/height, 100/width, 2.0)
-                new_height = int(height * scale_factor)
-                new_width = int(width * scale_factor)
-                gray = cv2.resize(gray, (new_width, new_height), interpolation=cv2.INTER_CUBIC)
-
-            # Apply CLAHE for better contrast
-            clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8,8))
-            enhanced = clahe.apply(gray)
-
-            # Threshold for better text detection
-            _, thresh = cv2.threshold(enhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-
-            # OCR with configuration optimized for price tags
-            custom_config = r'--oem 3 --psm 8 -c tessedit_char_whitelist=0123456789.$€£¢¥₹₽'
-            ocr_result = pytesseract.image_to_data(
-                thresh,
-                config=custom_config,
-                output_type=pytesseract.Output.DICT
-            )
-
-            # Extract text and confidence
-            text_parts = []
-            confidences = []
-
-            for i, conf in enumerate(ocr_result['conf']):
-                if int(conf) > 30:  # Only consider high-confidence text
-                    text = ocr_result['text'][i].strip()
-                    if text:
-                        text_parts.append(text)
-                        confidences.append(int(conf))
-
-            full_text = ' '.join(text_parts)
-            avg_confidence = np.mean(confidences) / 100.0 if confidences else 0.0
-
-            # Look for price patterns
-            price_patterns = [
-                r'\$\s*\d{1,4}(?:[.,]\d{2})?',  # $XX.XX
-                r'€\s*\d{1,4}(?:[.,]\d{2})?',   # €XX.XX
-                r'£\s*\d{1,4}(?:[.,]\d{2})?',   # £XX.XX
-                r'\d{1,4}(?:[.,]\d{2})?\s*\$',  # XX.XX$
-                r'\d{1,4}(?:[.,]\d{2})?',       # Just numbers
-            ]
-
-            has_price = any(re.search(pattern, full_text) for pattern in price_patterns)
-
-            # Additional validation - check for minimum number of digits
-            digit_count = sum(c.isdigit() for c in full_text)
-            has_sufficient_digits = digit_count >= 2
-
-            return has_price and has_sufficient_digits, avg_confidence
-
-        except ImportError:
-            # Fallback without OCR - use pattern matching on image features
-            return self._fallback_price_detection(tag_region)
-        except Exception as e:
-            print(f"OCR validation failed: {e}")
-            return False, 0.0
-
-    def _fallback_price_detection(self, tag_region: np.ndarray) -> Tuple[bool, float]:
-        """Fallback price detection without OCR"""
-        if len(tag_region.shape) == 3:
-            gray = cv2.cvtColor(tag_region, cv2.COLOR_RGB2GRAY)
+        # Vertical: Start from promotional area, go to bottom
+        if ad_box is not None:
+            # Use promotional area as top reference
+            _, y1, _, _ = ad_box
+            ry1 = max(0, int(y1 - 0.03 * h))  # Start slightly above promotional area
         else:
-            gray = tag_region
+            # Fallback: start from upper portion
+            ry1 = int(0.08 * h)
 
-        # Look for digit-like patterns using template matching or contour analysis
-        # This is a simplified fallback
-        text_score = self._calculate_text_likelihood_enhanced(gray)
-        intensity_ok = np.mean(gray) > 140
+        ry2 = h - 1  # Always go to bottom to capture all shelves
 
-        return text_score > 0.5 and intensity_ok, text_score * 0.7
+        return (rx1, ry1, rx2, ry2)
 
-    def _has_price_amount(self, roi_rgb: np.ndarray, min_score_noocr: float = 0.7) -> bool:
+    # --------------------------- shelves -------------------------------------
+    def _find_shelves(self, roi: np.ndarray, rx1, ry1, rx2, ry2, H):
         """
-        Enhanced price amount detection with stricter validation
+        Shelf line detection
         """
-        try:
-            import pytesseract
+        g = cv2.cvtColor(roi, cv2.COLOR_RGB2GRAY)
 
-            # Convert and enhance
-            gray = cv2.cvtColor(roi_rgb, cv2.COLOR_RGB2GRAY)
+        # Enhanced edge detection
+        g = cv2.GaussianBlur(g, (3, 3), 0)
+        e = cv2.Canny(g, 40, 120, apertureSize=3)
 
-            # More aggressive enhancement for small price tags
-            gray = cv2.resize(gray, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
+        # More conservative Hough line detection
+        roi_width = rx2 - rx1
+        roi_height = ry2 - ry1
+        min_line_length = int(0.4 * roi_width)
 
-            # Apply CLAHE for better contrast
-            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
-            enhanced = clahe.apply(gray)
+        lines = cv2.HoughLinesP(
+            e, 1, np.pi/180,
+            threshold=max(50, int(0.3 * roi_width)),
+            minLineLength=min_line_length,
+            maxLineGap=15
+        )
 
-            # Threshold
-            _, thresh = cv2.threshold(enhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        ys = []
+        if lines is not None:
+            for x1, y1, x2, y2 in lines[:, 0]:
+                # More strict horizontal line filtering
+                if abs(y2 - y1) <= 3 and abs(x2 - x1) >= min_line_length * 0.8:
+                    ys.append(y1 + ry1)  # Convert to full image coordinates
 
-            # OCR with strict whitelist
-            config = "--oem 3 --psm 8 -c tessedit_char_whitelist=$€£¢¥₹₽0123456789.,"
-            text = pytesseract.image_to_string(thresh, config=config).strip()
+        ys = sorted(set(ys))
+        levels = []
+        for y in ys:
+            if not levels or abs(y - levels[-1]) > 20:  # Increased minimum separation
+                levels.append(y)
 
-            # More strict price pattern matching
-            price_patterns = [
-                r'[\$€£¢¥₹₽]\s*\d{1,4}(?:[.,]\d{2})?',
-                r'\d{1,4}(?:[.,]\d{2})?\s*[\$€£¢¥₹₽]',
-                r'\d{2,4}(?:[.,]\d{2})?'  # At least 2 digits for price
+        if len(levels) < 2:
+            # Create evenly spaced shelf levels based on ROI
+            levels = [
+                ry1 + int(0.45 * roi_height),  # Top shelf line
+                ry1 + int(0.75 * roi_height),  # Bottom shelf line
+            ]
+        elif len(levels) == 2:
+            # We have 2 lines, ensure they're properly ordered
+            levels = sorted(levels)
+        else:
+            # More than 2 lines, pick the best 2
+            levels = sorted(levels)[:2]
+
+        # Create bands with appropriate height
+        bands = {}
+
+        # Header band: from ROI start (ry1) down to the first shelf line
+        bands["header"] = (ry1, levels[0])
+        # Top shelf: between the first and second shelf lines
+        bands["middle"] = (levels[0], levels[1])
+        # Middle/BOTTOM area: from second line to ROI end
+        bands["bottom"] = (levels[1], ry2)
+
+        # Ensure all bands have positive height
+        for name, (y1, y2) in bands.items():
+            if y2 <= y1:
+                print(f"WARNING: Invalid band {name}: y1={y1}, y2={y2}")
+                # Fix by giving minimum height
+                bands[name] = (y1, y1 + 50)
+
+        return levels, bands
+
+    # ---------------------------- YOLO ---------------------------------------
+    def _yolo_props(self, roi: np.ndarray, rx1, ry1, detection_phases: Optional[List[Dict[str, Any]]] = None):
+        """
+        Multi-phase YOLO detection with configurable confidence levels and weighted scoring.
+
+        REPLACES the existing _yolo_props method with enhanced two-phase detection.
+        Returns proposals in the same format expected by existing _classify_proposals method.
+
+        Args:
+            roi: ROI image array
+            rx1, ry1: ROI offset coordinates
+            detection_phases: List of phase configurations. If None, uses default 2-phase approach.
+        """
+        if detection_phases is None:
+            detection_phases = [
+                {
+                    "name": "poster_high",
+                    "conf": 0.40,
+                    "iou": 0.35,
+                    "weight": 0.15,
+                    "allow": ["person","tv","monitor","screen","display","billboard","poster"],
+                    "min_area": 0.06,      # >= 6% of ROI
+                    "region": "top40"      # only top 40% of ROI
+                },  # backlit/TV/person near header
+                {
+                    "name": "high_confidence",
+                    "conf": 0.05,
+                    "iou": 0.20,
+                    "weight": 0.70,
+                    "description": "High confidence pass for clear objects"
+                }, # printers + product boxes
+                {
+                    "name": "aggressive",
+                    "conf": 0.003,
+                    "iou": 0.15,
+                    "weight": 0.15,
+                    "description": "Selective aggressive pass for missed objects only"
+                }
             ]
 
-            has_price = any(re.search(pattern, text) for pattern in price_patterns)
-            digit_count = sum(c.isdigit() for c in text)
-
-            return has_price and digit_count >= 2
-
-        except ImportError:
-            # Fallback without OCR - much stricter requirements
-            score = self._calculate_text_likelihood_enhanced(
-                cv2.cvtColor(roi_rgb, cv2.COLOR_RGB2GRAY)
-            )
-            return score >= min_score_noocr
-
-    def detect_retail_products(
-        self,
-        image: Union[str, Path, Image.Image],
-        confidence_threshold: float = 0.5
-    ) -> List[DetectionBox]:
-        """Enhanced retail product detection with improved price tag filtering"""
-
-        # Preprocess image
-        enhanced_pil, img_array = self.preprocess_image_for_detection(image)
-
-        all_detections: List[DetectionBox] = []
-
-        # 1) Main YOLO detection (for larger objects)
-        yolo_detections = self._enhanced_yolo_detection(img_array, confidence_threshold)
-        all_detections.extend(yolo_detections)
-
-        # 2) Retail regions (rule-based anchors)
-        retail_detections = self._detect_retail_regions(img_array, confidence_threshold)
-        all_detections.extend(retail_detections)
-
-        # 3) Large rectangular products
-        product_detections = self._detect_large_products(img_array, confidence_threshold)
-        all_detections.extend(product_detections)
-
-        # 4) IMPROVED: Enhanced price tag detection with stricter validation
-        price_tags = self._detect_price_tags_enhanced_strict(img_array)
-        all_detections.extend(price_tags)
-
-        # 5) Second YOLO pass for small tags (with enhanced filtering)
-        small_tags = self._yolo_small_tag_detection_enhanced(img_array)
-        all_detections.extend(small_tags)
-
-        # 6) Enhanced merging with better NMS
-        final_detections = self._intelligent_merge_enhanced(all_detections, confidence_threshold)
-        final_detections = self._shrink_detections(final_detections)
-
-        print(f"Enhanced detection found {len(final_detections)} retail products")
-        for i, det in enumerate(final_detections):
-            w, h = det.x2 - det.x1, det.y2 - det.y1
-            print(f"  {i+1}: {det.class_name} at ({det.x1},{det.y1},{det.x2},{det.y2}) "
-                  f"size=({w}x{h}) conf={det.confidence:.2f}")
-
-        return final_detections
-
-    def _detect_price_tags_enhanced_strict(self, img_array: np.ndarray) -> List[DetectionBox]:
-        """
-        Enhanced price tag detection with much stricter validation
-        """
-        height, width = img_array.shape[:2]
-        detections = []
-
-        # Focus on specific shelf edge regions only
-        shelf_edges = [
-            {"y1": int(0.50 * height), "y2": int(0.65 * height), "name": "top_shelf_edge"},
-            {"y1": int(0.70 * height), "y2": int(0.82 * height), "name": "middle_shelf_edge"},
-            {"y1": int(0.87 * height), "y2": int(0.97 * height), "name": "bottom_shelf_edge"},
-        ]
-
-        for edge in shelf_edges:
-            y1, y2 = edge["y1"], edge["y2"]
-            if y2 <= y1:
-                continue
-
-            # Extract shelf edge strip
-            edge_strip = img_array[y1:y2, :]
-            gray_strip = cv2.cvtColor(edge_strip, cv2.COLOR_RGB2GRAY)
-
-            # Enhanced preprocessing for price tag detection
-            # 1. CLAHE for better local contrast
-            clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8,8))
-            enhanced = clahe.apply(gray_strip)
-
-            # 2. Focus on light regions (price tags are typically white/light)
-            # Use a higher threshold to focus on lighter regions
-            _, light_regions = cv2.threshold(enhanced, 160, 255, cv2.THRESH_BINARY)
-
-            # 3. Morphological operations to connect text regions
-            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (7, 3))
-            connected = cv2.morphologyEx(light_regions, cv2.MORPH_CLOSE, kernel)
-
-            # 4. Find contours
-            contours, _ = cv2.findContours(connected, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-            for contour in contours:
-                x, y, w, h = cv2.boundingRect(contour)
-
-                # Apply strict size filtering
-                if not self._is_valid_price_tag_size(w, h):
-                    continue
-
-                # Extract tag region for validation
-                tag_region = edge_strip[y:y+h, x:x+w]
-
-                # Enhanced content validation
-                is_valid, confidence = self._validate_price_tag_content_enhanced(tag_region)
-
-                if not is_valid:
-                    continue
-
-                # Additional geometric validation
-                contour_area = cv2.contourArea(contour)
-                bbox_area = w * h
-                rectangularity = contour_area / bbox_area if bbox_area > 0 else 0
-
-                if rectangularity < 0.6:  # Must be reasonably rectangular
-                    continue
-
-                # Adjust confidence based on rectangularity and position
-                position_bonus = 0.1 if edge["name"] in ["top_shelf_edge", "bottom_shelf_edge"] else 0
-                final_confidence = min(0.95, confidence + position_bonus * rectangularity)
-
-                if final_confidence >= self.price_tag_config["min_confidence"]:
-                    detection = DetectionBox(
-                        x1=x, y1=y1+y, x2=x+w, y2=y1+y+h,
-                        confidence=final_confidence,
-                        class_id=self._get_retail_class_id("price_tag"),
-                        class_name="price_tag",
-                        area=w*h
-                    )
-                    detections.append(detection)
-
-        print(f"Strict price tag detection found {len(detections)} price tags")
-        return detections
-
-    def _yolo_small_tag_detection_enhanced(self, img_array: np.ndarray) -> List[DetectionBox]:
-        """
-        Enhanced YOLO small tag detection with stricter filtering
-        """
-        dets: List[DetectionBox] = []
-        if self.detection_model is None:
-            return dets
-
         try:
-            results = self.detection_model(
-                img_array,
-                conf=0.02,  # Very low to catch small objects
-                iou=0.15,   # Lower IoU for small objects
-                imgsz=1280,  # Higher resolution for small objects
-                max_det=300,  # Fewer detections to focus on quality
-                verbose=False
-            )[0]
+            H, W = roi.shape[:2]
+            roi_area = H * W
+            all_proposals = []
 
-            if not hasattr(results, "boxes") or results.boxes is None:
-                return dets
+            print(f"\n🔄 Detection with Your Preferred Settings on ROI {W}x{H}")
+            print("   " + "="*70)
 
-            boxes = results.boxes.xyxy.cpu().numpy()
-            base_confs = results.boxes.conf.cpu().numpy()
-            H, W = img_array.shape[:2]
-            img_area = float(W * H)
+            # Run both phases with your settings
+            for phase_idx, phase in enumerate(detection_phases):
+                phase_name = phase["name"]
+                conf_thresh = phase["conf"]
+                iou_thresh = phase["iou"]
+                weight = phase["weight"]
 
-            # More focused band for price tags
-            y1_band, y2_band = (int(0.45*H), int(0.98*H))
+                print(f"\n📡 Phase {phase_idx + 1}: {phase_name}")
+                print(f"   Config: conf={conf_thresh}, iou={iou_thresh}, weight={weight}")
 
-            for (x1, y1, x2, y2), bconf in zip(boxes, base_confs):
-                w = max(1.0, x2 - x1)
-                h = max(1.0, y2 - y1)
-                area = w * h
-                rel_area = area / img_area
-                aspect_ratio = w / h
-                y_center = 0.5 * (y1 + y2)
+                r = self.yolo(roi, conf=conf_thresh, iou=iou_thresh, verbose=False)[0]
 
-                # Stricter geometric constraints
-                if not (y1_band <= y_center <= y2_band):
-                    continue
-                if not (0.0002 <= rel_area <= 0.006):  # Tighter area range
-                    continue
-                if not (2.0 <= aspect_ratio <= 6.0):   # Tighter aspect ratio
+                if not hasattr(r, 'boxes') or r.boxes is None:
+                    print(f"   📊 No boxes detected in {phase_name}")
                     continue
 
-                # Additional size validation
-                if not self._is_valid_price_tag_size(int(w), int(h)):
-                    continue
+                xyxy = r.boxes.xyxy.cpu().numpy()
+                confs = r.boxes.conf.cpu().numpy()
+                classes = r.boxes.cls.cpu().numpy().astype(int)
+                names = r.names
 
-                # Content validation for small YOLO detections
-                roi = img_array[int(y1):int(y2), int(x1):int(x2)]
-                if roi.size > 0:
-                    is_valid, content_conf = self._validate_price_tag_content_enhanced(roi)
-                    if not is_valid:
+                print(f"   📊 Raw YOLO output: {len(xyxy)} detections")
+
+                phase_count = 0
+                for i, ((x1, y1, x2, y2), conf, cls_id) in enumerate(zip(xyxy, confs, classes)):
+                    gx1, gy1, gx2, gy2 = int(x1) + rx1, int(y1) + ry1, int(x2) + rx1, int(y2) + ry1
+
+                    width, height = x2 - x1, y2 - y1
+                    if width <= 0 or height <= 0 or width < 8 or height < 8:
                         continue
 
-                    # Use content confidence instead of just geometric score
-                    final_confidence = max(bconf, content_conf * 0.8)
-                else:
-                    final_confidence = bconf
+                    if conf < conf_thresh:
+                        continue
 
-                if final_confidence >= 0.4:
-                    dets.append(
-                        DetectionBox(
-                            x1=int(x1), y1=int(y1), x2=int(x2), y2=int(y2),
-                            confidence=float(final_confidence),
-                            class_id=self._get_retail_class_id("price_tag"),
-                            class_name="price_tag",
-                            area=int(area),
-                        )
-                    )
+                    area = width * height
+                    area_ratio = area / roi_area
+                    aspect_ratio = width / max(height, 1)
+                    yolo_class = names[cls_id]
+                    min_area = phase.get("min_area")
+                    if min_area and area_ratio < float(min_area):
+                        continue
+
+                    # allow-list
+                    allow = phase.get("allow")
+                    if allow and yolo_class not in allow:
+                        continue
+
+                    # Light filtering - let classification handle the heavy lifting
+                    if (area_ratio >= 0.0008 and area_ratio <= 0.9 and
+                        0.1 <= aspect_ratio <= 10.0 and conf >= conf_thresh):
+                        # conf >= (0.12 if phase_name == "high_confidence" else 0.003)):
+
+                        orientation = self._detect_orientation(gx1, gy1, gx2, gy2)
+                        weighted_conf = float(conf) * weight
+
+                        proposal = {
+                            "yolo_label": yolo_class,
+                            "yolo_conf": float(conf),
+                            "weighted_conf": weighted_conf,
+                            "box": (gx1, gy1, gx2, gy2),
+                            "area_ratio": area_ratio,
+                            "aspect_ratio": aspect_ratio,
+                            "orientation": orientation,
+                            "retail_candidates": self._get_retail_candidates(yolo_class),
+                            "raw_index": len(all_proposals) + 1,
+                            "phase": phase_name
+                        }
+                        all_proposals.append(proposal)
+                        phase_count += 1
+
+                print(f"   ✅ Kept {phase_count} detections from {phase_name}")
+
+            # Light deduplication (let classification handle quality control)
+            deduplicated = self._object_deduplication(all_proposals)
+
+            print(f"\n📊 Detection Summary: {len(deduplicated)} total proposals")
+            print("   Focus: Let classification phase handle object type distinction")
+
+            return deduplicated
+
         except Exception as e:
-            print(f"Enhanced YOLO small-tag detection failed: {e}")
-
-        return dets
-
-    def _intelligent_merge_enhanced(self, detections: List[DetectionBox], confidence_threshold: float) -> List[DetectionBox]:
-        """
-        Enhanced merging with better price tag handling and false positive reduction
-        """
-        if not detections:
+            print(f"Detection failed: {e}")
+            traceback.print_exc()
             return []
 
-        # Enhanced per-class confidence thresholds
-        per_conf = {
-            "printer": max(0.45, confidence_threshold),
-            "product_box": max(0.45, confidence_threshold),
-            "promotional_graphic": 0.35,
-            "price_tag": 0.5,  # Significantly higher threshold for price tags
-            "ink_bottle": 0.30,
-            "unknown": 0.40,
-        }
+    def _analyze_visual_features(self, crop: Image.Image, area_ratio: float, aspect: float, yolo_class: str) -> Dict[str, Any]:
+        """
+        Enhanced visual feature analysis with skin tone and bottle detection
+        """
+        try:
+            crop_array = np.array(crop)
 
-        # Filter by enhanced confidence thresholds
-        filtered = [d for d in detections if d.confidence >= per_conf.get(d.class_name, confidence_threshold)]
+            if crop_array.ndim == 3:
+                r_mean = np.mean(crop_array[:, :, 0])
+                g_mean = np.mean(crop_array[:, :, 1])
+                b_mean = np.mean(crop_array[:, :, 2])
 
-        if not filtered:
-            return []
+                # Blue dominance (for Epson boxes)
+                is_blue_dominant = (b_mean > r_mean * 1.2 and b_mean > g_mean * 1.15 and b_mean > 100)
 
-        # Sort by confidence and area
-        sorted_dets = sorted(filtered, key=lambda x: (x.confidence, x.area), reverse=True)
+                # White/gray dominance (for printers)
+                color_std = np.std([r_mean, g_mean, b_mean])
+                avg_brightness = (r_mean + g_mean + b_mean) / 3
+                is_white_gray = (color_std < 25 and avg_brightness > 140)
 
-        # Enhanced IoU thresholds with stricter price tag merging
-        per_iou = {
-            "printer": 0.3,
-            "product_box": 0.3,
-            "promotional_graphic": 0.4,
-            "price_tag": 0.2,  # Higher IoU threshold to prevent overlapping tags
-            "ink_bottle": 0.25,
-            "unknown": 0.3,
-        }
+                # Skin tone detection (to avoid human fingers)
+                is_skin_tone = (r_mean > g_mean * 0.9 and g_mean > b_mean * 1.1 and
+                            r_mean > 120 and g_mean > 80 and b_mean < 120)
 
-        merged = []
-        for d in sorted_dets:
-            keep = True
-            for m in merged:
-                iou_thresh = per_iou.get(d.class_name, 0.3)
+                # Bottle shape detection (tall and narrow)
+                has_bottle_shape = (aspect < 0.6 and area_ratio < 0.02)
 
-                # Special handling for price tags vs other objects
-                if d.class_name == "price_tag" and m.class_name != "price_tag":
-                    # Check if price tag overlaps significantly with larger objects
-                    if self._calculate_iou(d, m) > 0.15:
-                        keep = False
-                        break
-                elif m.class_name == "price_tag" and d.class_name != "price_tag":
-                    # Larger objects take precedence over price tags if they overlap
-                    if self._calculate_iou(d, m) > 0.15:
-                        # Remove the existing price tag and add the larger object
-                        merged = [x for x in merged if x != m]
-                elif d.class_name == m.class_name:
-                    # Same class merging
-                    if self._calculate_iou(d, m) > iou_thresh:
-                        keep = False
-                        break
+                # Person features (for promotional graphics)
+                has_person_features = yolo_class == "person"
 
-            if keep:
-                merged.append(d)
-
-        # Final validation pass for price tags
-        validated_merged = []
-        for detection in merged:
-            if detection.class_name == "price_tag":
-                # Double-check price tag validity
-                w, h = detection.x2 - detection.x1, detection.y2 - detection.y1
-                if self._is_valid_price_tag_size(w, h) and detection.confidence >= 0.5:
-                    validated_merged.append(detection)
+                brightness = avg_brightness / 255.0
             else:
-                validated_merged.append(detection)
+                is_blue_dominant = False
+                is_white_gray = False
+                is_skin_tone = False
+                has_bottle_shape = False
+                has_person_features = False
+                brightness = 0.5
+                r_mean = g_mean = b_mean = 0
 
-        return validated_merged
+            # Edge analysis
+            gray = cv2.cvtColor(crop_array, cv2.COLOR_RGB2GRAY) if crop_array.ndim == 3 else crop_array
+            edges = cv2.Canny(gray, 50, 150)
+            edge_density = np.sum(edges > 0) / edges.size
 
-    # Keep all existing methods that are working well
-    def _enhanced_yolo_detection(self, img_array: np.ndarray, confidence_threshold: float) -> List[DetectionBox]:
-        """Enhanced YOLO detection focused on larger objects"""
-        detections = []
+            return {
+                "is_blue_dominant": is_blue_dominant,
+                "is_white_gray": is_white_gray,
+                "is_skin_tone": is_skin_tone,
+                "has_bottle_shape": has_bottle_shape,
+                "has_person_features": has_person_features,
+                "brightness": brightness,
+                "edge_density": edge_density,
+                "r_mean": r_mean, "g_mean": g_mean, "b_mean": b_mean,
+            }
 
-        if self.detection_model is None:
-            return detections
+        except Exception:
+            return {
+                "is_blue_dominant": False, "is_white_gray": False, "is_skin_tone": False,
+                "has_bottle_shape": False, "has_person_features": False,
+                "brightness": 0.5, "edge_density": 0.0,
+                "r_mean": 0, "g_mean": 0, "b_mean": 0,
+            }
 
-        try:
-            # Run YOLO with adjusted parameters
-            results = self.detection_model(
-                img_array,
-                conf=0.05,  # Very low confidence to catch everything
-                iou=0.3,    # Lower IoU for better separation
-                imgsz=640   # Standard size
-            )
+    def _determine_shelf_level(self, center_y: float, bands: Dict[str, tuple]) -> str:
+        """Enhanced shelf level determination"""
+        if not bands:
+            return "unknown"
 
-            if hasattr(results[0], 'boxes') and results[0].boxes is not None:
-                boxes = results[0].boxes.xyxy.cpu().numpy()
-                confidences = results[0].boxes.conf.cpu().numpy()
+        for level, (y1, y2) in bands.items():
+            if y1 <= center_y <= y2:
+                return level
 
-                height, width = img_array.shape[:2]
-                min_area = width * height * 0.005  # Minimum 0.5% of image area
+        # If not in any band, find closest
+        min_distance = float('inf')
+        closest_level = "unknown"
+        for level, (y1, y2) in bands.items():
+            band_center = (y1 + y2) / 2
+            distance = abs(center_y - band_center)
+            if distance < min_distance:
+                min_distance = distance
+                closest_level = level
 
-                for i in range(len(boxes)):
-                    x1, y1, x2, y2 = boxes[i]
-                    conf = float(confidences[i])
-                    area = (x2-x1) * (y2-y1)
+        return closest_level
 
-                    # Focus on larger objects (likely products, not small tags)
-                    if area >= min_area:
-                        # Classify based on size and position
-                        product_class = self._classify_retail_object(x1, y1, x2, y2, area, img_array.shape)
+    def _detect_orientation(self, x1: int, y1: int, x2: int, y2: int) -> str:
+        """Detect orientation from bounding box dimensions"""
+        width = x2 - x1
+        height = y2 - y1
+        aspect_ratio = width / max(height, 1)
 
-                        detection = DetectionBox(
-                            x1=int(x1), y1=int(y1), x2=int(x2), y2=int(y2),
-                            confidence=conf,
-                            class_id=self._get_retail_class_id(product_class),
-                            class_name=product_class,
-                            area=int(area)
-                        )
-                        detections.append(detection)
+        if aspect_ratio < 0.8:
+            return "vertical"
+        elif aspect_ratio > 1.5:
+            return "horizontal"
+        else:
+            return "square"
 
-            print(f"Enhanced YOLO found {len(detections)} significant objects")
+    def _get_retail_candidates(self, yolo_class: str) -> List[str]:
+        """Light retail candidate mapping - let classification do the heavy work"""
+        mapping = {
+            "microwave": ["printer", "product_box"],
+            "tv": ["printer", "promotional_graphic"],
+            "monitor": ["printer", "promotional_graphic"],
+            "laptop": ["printer", "promotional_graphic"],
+            "book": ["product_box", "printer"],
+            "box": ["product_box"],
+            "suitcase": ["product_box", "printer"],
+            "bottle": ["ink_bottle", "price_tag"],
+            "person": ["promotional_graphic"],
+            "clock": ["small_object", "price_tag"],
+        }
+        return mapping.get(yolo_class, ["product_candidate"])
 
-        except Exception as e:
-            print(f"Enhanced YOLO detection failed: {e}")
+    def _object_deduplication(self, all_detections: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Enhanced deduplication with container/contained logic and better IoU thresholds
+        """
+        if not all_detections:
+            return []
 
-        return detections
+        # Sort by weighted confidence (highest first)
+        sorted_detections = sorted(all_detections, key=lambda x: x["weighted_conf"], reverse=True)
 
-    # Keep existing methods that work well
-    def _detect_retail_regions(self, img_array: np.ndarray, confidence_threshold: float) -> List[DetectionBox]:
-        """Detect specific retail product regions"""
-        height, width = img_array.shape[:2]
-        detections = []
+        deduplicated = []
+        for detection in sorted_detections:
+            detection_box = detection["box"]
+            x1, y1, x2, y2 = detection_box
+            detection_area = (x2 - x1) * (y2 - y1)
 
-        # Define expected product regions based on typical endcap layout
-        product_regions = [
-            # Top shelf - 3 printer positions
-            {"x1": 0.05, "y1": 0.25, "x2": 0.35, "y2": 0.6, "type": "printer", "priority": "high"},
-            {"x1": 0.35, "y1": 0.25, "x2": 0.65, "y2": 0.6, "type": "printer", "priority": "high"},
-            {"x1": 0.65, "y1": 0.25, "x2": 0.95, "y2": 0.6, "type": "printer", "priority": "high"},
+            is_duplicate = False
+            is_contained = False
 
-            # Bottom shelf - 3 box positions
-            {"x1": 0.05, "y1": 0.65, "x2": 0.35, "y2": 0.95, "type": "product_box", "priority": "high"},
-            {"x1": 0.35, "y1": 0.65, "x2": 0.65, "y2": 0.95, "type": "product_box", "priority": "high"},
-            {"x1": 0.65, "y1": 0.65, "x2": 0.95, "y2": 0.95, "type": "product_box", "priority": "high"},
+            for kept in deduplicated:
+                kept_box = kept["box"]
+                kx1, ky1, kx2, ky2 = kept_box
+                kept_area = (kx2 - kx1) * (ky2 - ky1)
 
-            # Header region
-            {"x1": 0.1, "y1": 0.02, "x2": 0.9, "y2": 0.2, "type": "promotional_graphic", "priority": "medium"},
-        ]
+                iou = self._calculate_iou_tuples(detection_box, kept_box)
 
-        for region in product_regions:
-            x1 = int(width * region["x1"])
-            y1 = int(height * region["y1"])
-            x2 = int(width * region["x2"])
-            y2 = int(height * region["y2"])
+                # Standard IoU-based deduplication (lowered threshold)
+                if iou > 0.5:  # Reduced from 0.7 to 0.5
+                    is_duplicate = True
+                    break
 
-            # Extract region and analyze content
-            if y2 > y1 and x2 > x1:
-                region_img = img_array[y1:y2, x1:x2]
+                # Check if current detection is contained within a much larger kept detection
+                # (e.g., individual box vs. entire shelf detection)
+                if kept_area > detection_area * 3:  # Kept is 3x larger
+                    # Check if detection is substantially contained within kept
+                    overlap_area = max(0, min(x2, kx2) - max(x1, kx1)) * max(0, min(y2, ky2) - max(y1, ky1))
+                    contained_ratio = overlap_area / detection_area
+                    if contained_ratio > 0.8:  # 80% of detection is inside kept
+                        is_contained = True
+                        break
 
-                # Check for significant content using multiple methods
-                has_content = self._analyze_region_content(region_img)
+                # Check if kept detection is contained within current (much larger) detection
+                elif detection_area > kept_area * 3:  # Current is 3x larger
+                    overlap_area = max(0, min(x2, kx2) - max(x1, kx1)) * max(0, min(y2, ky2) - max(y1, ky1))
+                    contained_ratio = overlap_area / kept_area
+                    if contained_ratio > 0.8:  # 80% of kept is inside current
+                        # Remove the contained detection and replace with current
+                        deduplicated.remove(kept)
+                        break
 
-                if has_content:
-                    # Adjust confidence based on priority and content quality
-                    base_confidence = 0.8 if region["priority"] == "high" else 0.6
-                    confidence = base_confidence * has_content
+            if not is_duplicate and not is_contained:
+                deduplicated.append(detection)
 
-                    if confidence >= confidence_threshold:
-                        detection = DetectionBox(
-                            x1=x1, y1=y1, x2=x2, y2=y2,
-                            confidence=confidence,
-                            class_id=self._get_retail_class_id(region["type"]),
-                            class_name=region["type"],
-                            area=(x2-x1) * (y2-y1)
-                        )
-                        detections.append(detection)
+        print(f"   🔄 Deduplication: {len(sorted_detections)} → {len(deduplicated)} detections")
+        return deduplicated
 
-        print(f"Retail region detection found {len(detections)} expected product areas")
-        return detections
+    # Additional helper method for phase configuration
+    def set_detection_phases(self, phases: List[Dict[str, Any]]):
+        """
+        Set custom detection phases for the RetailDetector
 
-    def _detect_large_products(self, img_array: np.ndarray, confidence_threshold: float) -> List[DetectionBox]:
-        """Detect large rectangular objects that could be printers or boxes"""
-        detections = []
+        Args:
+            phases: List of phase configurations, each containing:
+                - name: Phase identifier
+                - conf: Confidence threshold
+                - iou: IoU threshold
+                - weight: Weight for this phase (should sum to 1.0 across all phases)
+                - description: Optional description
 
-        try:
-            # Convert to grayscale for contour detection
-            gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
-            bilat = cv2.bilateralFilter(gray, 7, 50, 50)
-            edges = cv2.Canny(bilat, 40, 120)
-            closed = cv2.morphologyEx(
-                edges,
-                cv2.MORPH_CLOSE,
-                cv2.getStructuringElement(cv2.MORPH_RECT, (9, 7)),
-                iterations=2
-            )
-            contours, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        Example:
+            detector.set_detection_phases([
+                {
+                    "name": "ultra_high_conf",
+                    "conf": 0.5,
+                    "iou": 0.6,
+                    "weight": 0.5,
+                    "description": "Ultra high confidence for definite objects"
+                },
+                {
+                    "name": "medium_conf",
+                    "conf": 0.15,
+                    "iou": 0.4,
+                    "weight": 0.3,
+                    "description": "Medium confidence for likely objects"
+                },
+                {
+                    "name": "aggressive",
+                    "conf": 0.005,
+                    "iou": 0.15,
+                    "weight": 0.2,
+                    "description": "Aggressive pass for missed objects"
+                }
+            ])
+        """
+        # Validate phase configuration
+        total_weight = sum(phase.get("weight", 0) for phase in phases)
+        if abs(total_weight - 1.0) > 0.01:
+            print(f"⚠️  Warning: Phase weights sum to {total_weight:.3f}, not 1.0")
 
-            height, width = img_array.shape[:2]
-            min_area = width * height * 0.005  # Minimum 0.5% of image
-            max_area = width * height * 0.35   # Maximum 35% of image
+        # Validate required fields
+        for i, phase in enumerate(phases):
+            required_fields = ["name", "conf", "iou", "weight"]
+            missing = [field for field in required_fields if field not in phase]
+            if missing:
+                raise ValueError(f"Phase {i} missing required fields: {missing}")
 
-            for contour in contours:
-                # Get bounding rectangle
-                x, y, w, h = cv2.boundingRect(contour)
-                area = w * h
+        self.detection_phases = phases
+        print(f"✅ Configured {len(phases)} detection phases")
+        for i, phase in enumerate(phases):
+            print(f"   Phase {i+1}: {phase['name']} (conf={phase['conf']}, weight={phase['weight']})")
 
-                # Filter by size and aspect ratio
-                aspect_ratio = w / h if h > 0 else 0
+    def _calculate_iou_tuples(self, box1: tuple, box2: tuple) -> float:
+        """Calculate IoU between two bounding boxes in tuple format"""
+        x1_1, y1_1, x2_1, y2_1 = box1
+        x1_2, y1_2, x2_2, y2_2 = box2
 
-                if (min_area <= area <= max_area and
-                    0.3 <= aspect_ratio <= 3.0 and  # Reasonable aspect ratios
-                    w > 80 and h > 60):  # Minimum dimensions
+        # Calculate intersection
+        ix1, iy1 = max(x1_1, x1_2), max(y1_1, y1_2)
+        ix2, iy2 = min(x2_1, x2_2), min(y2_1, y2_2)
 
-                    # Calculate confidence based on shape quality
-                    contour_area = cv2.contourArea(contour)
-                    rect_area = w * h
-                    shape_quality = contour_area / rect_area if rect_area > 0 else 0
-
-                    confidence = min(0.7, shape_quality)
-
-                    if confidence >= confidence_threshold:
-                        # Classify based on position and size
-                        product_type = self._classify_by_position_and_size(
-                            x, y, x+w, y+h, area, img_array.shape
-                        )
-
-                        detection = DetectionBox(
-                            x1=x, y1=y, x2=x+w, y2=y+h,
-                            confidence=confidence,
-                            class_id=self._get_retail_class_id(product_type),
-                            class_name=product_type,
-                            area=area
-                        )
-                        detections.append(detection)
-
-            print(f"Large object detection found {len(detections)} potential products")
-
-        except Exception as e:
-            print(f"Large product detection failed: {e}")
-
-        return detections
-
-    def _analyze_region_content(self, region_img: np.ndarray) -> float:
-        """Analyze if a region contains significant content (0.0 to 1.0)"""
-        if region_img.size == 0:
+        if ix2 <= ix1 or iy2 <= iy1:
             return 0.0
 
-        # Convert to grayscale
-        gray = np.mean(region_img, axis=2) if len(region_img.shape) == 3 else region_img
+        intersection = (ix2 - ix1) * (iy2 - iy1)
+        area1 = (x2_1 - x1_1) * (y2_1 - y1_1)
+        area2 = (x2_2 - x1_2) * (y2_2 - y1_2)
+        union = area1 + area2 - intersection
 
-        # Calculate variance (higher variance = more content)
-        variance = np.var(gray)
-        variance_score = min(1.0, variance / 2000)
+        return intersection / max(union, 1)
 
-        # Calculate edge density
+    def _safe_extract_crop(self, img: np.ndarray, x1: int, y1: int, x2: int, y2: int) -> Optional[Image.Image]:
+        """
+        Safely extract a crop from an image with full validation
+        Returns None if crop would be invalid
+        """
+        H, W = img.shape[:2]
+
+        # Clamp coordinates to image bounds
+        x1_safe = max(0, min(W-1, int(x1)))
+        x2_safe = max(x1_safe + 8, min(W, int(x2)))
+        y1_safe = max(0, min(H-1, int(y1)))
+        y2_safe = max(y1_safe + 8, min(H, int(y2)))
+
+        # Validate final dimensions
+        crop_width = x2_safe - x1_safe
+        crop_height = y2_safe - y1_safe
+
+        if crop_width <= 0 or crop_height <= 0 or crop_width < 8 or crop_height < 8:
+            return None
+
         try:
-            edges = cv2.Canny(gray.astype(np.uint8), 50, 150)
-            edge_density = np.sum(edges > 0) / edges.size
-            edge_score = min(1.0, edge_density * 10)
-        except:
-            edge_score = variance_score
+            crop_array = img[y1_safe:y2_safe, x1_safe:x2_safe]
+            if crop_array.size == 0:
+                return None
 
-        # Calculate color variation
-        if len(region_img.shape) == 3:
-            color_std = np.std(region_img, axis=(0, 1))
-            color_score = min(1.0, np.mean(color_std) / 50)
-        else:
-            color_score = variance_score
+            crop = Image.fromarray(crop_array)
 
-        # Combined score
-        content_score = (variance_score * 0.4 + edge_score * 0.4 + color_score * 0.2)
-        return content_score
+            if crop.width == 0 or crop.height == 0:
+                return None
 
-    def _classify_retail_object(
-        self, x1: float, y1: float, x2: float, y2: float,
-        area: float, img_shape: Tuple[int, int]
-    ) -> str:
-        """Classify object based on position and size in retail context"""
+            return crop
 
-        height, width = img_shape[:2]
-        y_center = (y1 + y2) * 0.5
-        y_ratio = y_center / height
-        relative_area = area / (width * height)
-        aspect_ratio = (x2 - x1) / max(1.0, (y2 - y1))
+        except Exception:
+            return None
 
-        # Header (promo)
-        if y_ratio < 0.22:
-            return "promotional_graphic"
+    def _iou_xyxy(self, a, b) -> float:
+        ax1, ay1, ax2, ay2 = a
+        bx1, by1, bx2, by2 = b
+        ix1, iy1 = max(ax1, bx1), max(ay1, by1)
+        ix2, iy2 = min(ax2, bx2), min(ay2, by2)
+        if ix2 <= ix1 or iy2 <= iy1:
+            return 0.0
+        inter = (ix2 - ix1) * (iy2 - iy1)
+        aarea = (ax2 - ax1) * (ay2 - ay1)
+        barea = (bx2 - bx1) * (by2 - by1)
+        return inter / max(1.0, aarea + barea - inter)
 
-        # Top shelf (printers)
-        elif y_ratio < 0.58:
-            return "printer" if relative_area > 0.015 else "price_tag"
-
-        # Middle/Bottom shelves (boxes)
-        else:
-            return "product_box" if relative_area > 0.008 else "price_tag"
-
-    def _classify_by_position_and_size(
-        self, x1: float, y1: float, x2: float, y2: float,
-        area: float, img_shape: Tuple[int, int]
-    ) -> str:
-        """Alternative classification method"""
-        height, width = img_shape[:2]
-        y_center = (y1 + y2) / 2
-        y_ratio = y_center / height
-
-        if y_ratio < 0.3:
-            return "promotional_graphic"
-        elif y_ratio < 0.58:
-            return "printer"
-        else:
-            return "product_box"
-
-    def _get_retail_class_id(self, class_name: str) -> int:
-        """Get class ID for retail products"""
-        mapping = {
-            "printer": 100,
-            "product_box": 101,
-            "fact_tag": 102,      # Keep for backward compatibility
-            "price_tag": 102,     # Same ID as fact_tag
-            "promotional_graphic": 103,
-            "ink_bottle": 104,
-            "unknown": 199
-        }
-        return mapping.get(class_name, 199)
-
-    def _shrink_detections(self, dets: List[DetectionBox]) -> List[DetectionBox]:
+    # ------------------- OCR + CLIP preselection -----------------------------
+    def _classify_proposals(self, img, props, bands, header_limit_y, ad_box):
         """
-        Per-class shrink to avoid cross-shelf bleeding
+        classification with better visual analysis for accurate object type detection.
+
+        Focus on distinguishing:
+        - White printers (compact, square-ish) → product_candidate
+        - Blue boxes (tall/wide, colorful) → box_candidate
+        - Large banners (wide, in header) → promotional_candidate
+        - Small tags (very small, specific aspect ratio) → price_tag
         """
-        per_class = {
-            "printer": 0.08,
-            "product_box": 0.08,
-            "promotional_graphic": 0.04,
-            "fact_tag": 0.00,     # Keep for backward compatibility
-            "price_tag": 0.00,    # Don't shrink price tags (they're already small)
-            "ink_bottle": 0.06,
-            "unknown": 0.06,
-        }
+        H, W = img.shape[:2]
         out = []
-        for d in dets:
-            pct = per_class.get(d.class_name, 0.06)
-            out.append(self._shrink_box(d, pct) if pct > 0 else d)
-        return out
+        text_feats = self.text_feats
 
-    def _shrink_box(self, d: DetectionBox, pct: float = 0.06) -> DetectionBox:
-        """Shrink a box by pct around its center to reduce shelf overlap."""
-        cx = (d.x1 + d.x2) * 0.5
-        cy = (d.y1 + d.y2) * 0.5
-        w  = max(1.0, (d.x2 - d.x1) * (1.0 - pct))
-        h  = max(1.0, (d.y2 - d.y1) * (1.0 - pct))
-        x1 = int(cx - w * 0.5)
-        y1 = int(cy - h * 0.5)
-        x2 = int(cx + w * 0.5)
-        y2 = int(cy + h * 0.5)
-        # Ensure valid box
-        if x2 <= x1: x2 = x1 + 1
-        if y2 <= y1: y2 = y1 + 1
-        area = int((x2 - x1) * (y2 - y1))
+        print(f"\n🎯 Classification with Visual Analysis:")
+        print("   " + "="*60)
 
-        return d.model_copy(
-            update={"x1": x1, "y1": y1, "x2": x2, "y2": y2, "area": area}
+        # STEP 1: Find clearly detected high-confidence product boxes for baseline
+        high_confidence_boxes = []
+        for p in props:
+            if (p.get("phase") == "high_confidence" and
+                p.get("weighted_conf", 0) > 0.5 and
+                p.get("area_ratio", 0) > 0.02):
+                high_confidence_boxes.append(p)
+
+        min_box_confidence = min(
+            [p.get("weighted_conf", 0) for p in high_confidence_boxes],
+            default=0.3
+        )
+        print(
+            f"   📊 Found {len(high_confidence_boxes)} high-confidence boxes, min confidence: {min_box_confidence:.3f}"
         )
 
-    def _calculate_iou(self, box1: DetectionBox, box2: DetectionBox) -> float:
-        """Calculate IoU between two boxes"""
-        x1 = max(box1.x1, box2.x1)
-        y1 = max(box1.y1, box2.y1)
-        x2 = min(box1.x2, box2.x2)
-        y2 = min(box1.y2, box2.y2)
+        for p in props:
+            x1, y1, x2, y2 = p["box"]
+            base_conf = p.get("weighted_conf", p.get("yolo_conf", 0.5))
+            yolo_class = p["yolo_label"]
+            phase = p.get("phase", "unknown")
+            orientation = p.get("orientation", self._detect_orientation(x1, y1, x2, y2))
+            raw_index = p.get("raw_index", "?")
 
-        if x2 <= x1 or y2 <= y1:
-            return 0.0
+            # Validation
+            width, height = x2 - x1, y2 - y1
+            if width <= 0 or height <= 0 or width < 8 or height < 8:
+                continue
 
-        intersection = (x2 - x1) * (y2 - y1)
-        union = box1.area + box2.area - intersection
+            if x1 < 0 or y1 < 0 or x2 >= W or y2 >= H:
+                continue
 
-        return intersection / union if union > 0 else 0.0
+            area = width * height
+            aspect = width / max(1.0, float(height))
+            area_ratio = area / (W * H)
 
-    # Additional helper methods for compatibility
-    def create_mser(self, delta=5, min_area=200, max_area=5000):
-        """OpenCV-version-safe MSER factory."""
-        try:
-            # Some builds accept only _delta as kwarg
-            mser = cv2.MSER_create(_delta=delta)
-            if hasattr(mser, "setMinArea"): mser.setMinArea(int(min_area))
-            if hasattr(mser, "setMaxArea"): mser.setMaxArea(int(max_area))
-            return mser
-        except TypeError:
-            # Older builds: positionals
+            # Skip tiny detections
+            if area < 0.0008 * W * H:
+                continue
+
+            # Safe crop extraction
             try:
-                return cv2.MSER_create(int(delta), int(min_area), int(max_area))
-            except TypeError:
-                # Fallback: create default and set via setters
-                mser = cv2.MSER_create()
-                if hasattr(mser, "setDelta"):    mser.setDelta(int(delta))
-                if hasattr(mser, "setMinArea"):  mser.setMinArea(int(min_area))
-                if hasattr(mser, "setMaxArea"):  mser.setMaxArea(int(max_area))
-                return mser
+                crop = self._safe_extract_crop(img, x1, y1, x2, y2)
+                if crop is None:
+                    continue
+            except Exception:
+                continue
 
-    def _calculate_text_likelihood(self, region: np.ndarray) -> float:
-        """Legacy method for backward compatibility"""
-        return self._calculate_text_likelihood_enhanced(region)
+            # ENHANCED: Visual analysis for better classification
+            visual_analysis = self._analyze_visual_features(crop, area_ratio, aspect, yolo_class)
 
-    def _detect_price_tags_enhanced(self, img_array: np.ndarray) -> List[DetectionBox]:
-        """Legacy method name for backward compatibility"""
-        return self._detect_price_tags_enhanced_strict(img_array)
+            # ENHANCED OCR analysis with model number detection
+            ocr_analysis = self._enhanced_ocr_analysis(crop)
 
-    def _yolo_small_tag_detection(
-        self,
-        img_array: np.ndarray,
-        price_band: Optional[Tuple[int, int]] = None,
-        conf: float = 0.03,
-        iou: float = 0.20,
-        imgsz: int = 1280
-    ) -> List[DetectionBox]:
-        """Legacy method for backward compatibility"""
-        return self._yolo_small_tag_detection_enhanced(img_array)
+            # CLIP processing
+            s_poster, s_printer, s_box = 0.3, 0.3, 0.3
+            try:
+                with torch.no_grad():
+                    ip = self.proc(images=crop, return_tensors="pt").to(self.device)
+                    img_feat = self.clip.get_image_features(**ip)
+                    img_feat = img_feat / img_feat.norm(dim=-1, keepdim=True)
+                    text_sims = (img_feat @ text_feats.T).squeeze().tolist()
+                    s_poster, s_printer, s_box = float(text_sims[0]), float(text_sims[1]), float(text_sims[2])
+            except Exception:
+                pass
 
-    def _intelligent_merge(
-        self,
-        detections: List[DetectionBox],
-        confidence_threshold: float
-    ) -> List[DetectionBox]:
-        """Legacy method for backward compatibility"""
-        return self._intelligent_merge_enhanced(detections, confidence_threshold)
+            # Reference matching
+            ref_match_score = 0.0
+            if self.ref_prod_feats:
+                try:
+                    with torch.no_grad():
+                        ref_scores = [float((img_feat @ ref_feat.T).squeeze()) for ref_feat in self.ref_prod_feats]
+                        ref_match_score = max(ref_scores) if ref_scores else 0.0
+                        s_printer = max(s_printer, ref_match_score)
+                except Exception:
+                    pass
+
+            # CLIP processing
+            s_poster, s_printer, s_box = 0.3, 0.3, 0.3
+            try:
+                with torch.no_grad():
+                    ip = self.proc(images=crop, return_tensors="pt").to(self.device)
+                    img_feat = self.clip.get_image_features(**ip)
+                    img_feat = img_feat / img_feat.norm(dim=-1, keepdim=True)
+                    text_sims = (img_feat @ text_feats.T).squeeze().tolist()
+                    s_poster, s_printer, s_box = float(text_sims[0]), float(text_sims[1]), float(text_sims[2])
+            except Exception:
+                pass
+
+            # Reference matching
+            ref_match_score = 0.0
+            if self.ref_prod_feats:
+                try:
+                    with torch.no_grad():
+                        ref_scores = [float((img_feat @ ref_feat.T).squeeze()) for ref_feat in self.ref_prod_feats]
+                        ref_match_score = max(ref_scores) if ref_scores else 0.0
+                        s_printer = max(s_printer, ref_match_score)
+                except Exception:
+                    pass
+
+            # POSITION ANALYSIS
+            center_y = (y1 + y2) / 2
+
+            # If we have shelf bands, use them; otherwise use header_limit_y
+            if bands and "header" in bands:
+                # Header is anything above the header band
+                actual_header_limit = bands["header"][1]  # y2 of header band = first shelf line
+                first_line_y = bands["header"][1]  # y2 of the 'header' band
+            else:
+                actual_header_limit = header_limit_y
+                first_line_y = header_limit_y
+
+            in_header = (y2 <= first_line_y + 2)
+
+            ad_iou = 0.0
+            if ad_box is not None:
+                ad_iou = self._iou_xyxy((x1, y1, x2, y2), ad_box)
+
+            if in_header and ad_iou >= 0.65:
+                cname = "promotional_candidate"
+                score = max(0.9, base_conf)
+                out.append(
+                    DetectionBox(
+                        x1=int(x1), y1=int(y1), x2=int(x2), y2=int(y2),
+                        confidence=float(min(1.0, score)),
+                        class_id=CID[cname],
+                        class_name=cname,
+                        area=int(area)
+                    )
+                )
+                print(
+                    f"   #{raw_index:2}: {yolo_class:10s} → {cname} conf={score:.3f} (poster-overlap)"
+                )
+                continue
+
+            # ALSO check for large promotional objects that span multiple areas
+            is_large_promotional = (
+                area_ratio > 0.15 and aspect > 1.8 and (y1 < actual_header_limit or area_ratio > 0.25)
+            )
+
+            # If a detection substantially overlaps the poster, treat as promotional
+            if ad_iou >= 0.50 and (yolo_class == "person" or aspect > 1.6 or area_ratio > 0.15):
+                cname = "promotional_candidate"
+                score = max(0.9, base_conf)
+                decision_reason = "overlaps poster (IoU≥0.5)"
+                clamped_confidence = float(min(1.0, max(0.0, score)))
+                out.append(
+                    DetectionBox(
+                        x1=int(x1), y1=int(y1), x2=int(x2), y2=int(y2),
+                        confidence=clamped_confidence,
+                        class_id=CID[cname], class_name=cname, area=int(area)
+                    )
+                )
+                print(
+                    f"   #{raw_index:2}: {yolo_class:10s} {orientation:8s} → {cname:18s} "
+                    f"conf={clamped_confidence:.3f} (poster-overlap)"
+                )
+                continue
+
+            HEADER_MIN_AREA = 0.02  # 2%
+
+            if center_y < actual_header_limit or is_large_promotional:
+                # HEADER AREA: Enhanced promotional detection
+                if area_ratio > 0.15 and aspect > 1.5:
+                    cname = "promotional_candidate"
+                    score = max(0.85, s_poster, base_conf)
+                    decision_reason = f"large banner (area={area_ratio:.3f}, aspect={aspect:.1f})"
+                elif yolo_class == "person" or visual_analysis.get("has_person_features", False):
+                    cname = "promotional_candidate"
+                    score = max(0.90, s_poster, base_conf)
+                    decision_reason = "person in promotional area"
+                elif area_ratio > 0.05 or is_large_promotional:
+                    cname = "promotional_candidate"
+                    score = max(0.80, s_poster, base_conf)
+                    decision_reason = f"promotional object in header"
+                elif area_ratio < HEADER_MIN_AREA and (ad_iou < 0.65):
+                    # Very small objects in header - likely noise
+                    print(f"   ⚠️  Skipping #{raw_index}: Too small for header ({area_ratio:.4f})")
+                    continue
+
+            else:
+                # PRODUCT AREAS: Enhanced classification with OCR validation
+
+                # Initialize scores
+                price_tag_blocked = (area_ratio >= 0.012 or height >= 90 or width >= 140)
+                scores = {
+                    "promotional_candidate": s_poster * 0.2,
+                    "product_candidate": s_printer,
+                    "box_candidate": s_box,
+                    "price_tag": 0.0 if price_tag_blocked else 0.3,  # ⟵ hard guard
+                    "ink_bottle": 0.3
+                }
+                yolo_cls     = (yolo_class or "").lower()
+
+                # SHELF POSITION ANALYSIS (move this up before size-based classification)
+                shelf_level = self._determine_shelf_level(center_y, bands)
+
+                # --- YOLO name nudges (weak but useful)
+                if any(k in yolo_cls for k in ("suitcase", "book", "box", "backpack", "handbag", "luggage")):
+                    # Moderate box bias, but consider shelf position
+                    if shelf_level in ["top", "middle", "bottom"]:
+                        scores["box_candidate"] *= 1.5  # Reduced from 2.0
+                        if "book" in yolo_cls:
+                            scores["box_candidate"] *= 1.3  # Reduced from 1.5
+                        decision_reason = f"YOLO box-like class in lower shelf: {yolo_class}"
+                    else:
+                        # Top shelf - could be printers, be more conservative
+                        scores["box_candidate"] *= 1.2
+                        scores["product_candidate"] *= 1.1  # Give printers a chance
+                        decision_reason = f"YOLO box-like class in upper area: {yolo_class}"
+
+                if "microwave" in yolo_cls:  # YOLO-11 quirk for printers
+                    scores["product_candidate"] *= 1.2  # Increased from 1.1
+
+                # CONFIDENCE FILTERING:
+                # Only suppress very weak AGGRESSIVE detections that overlap strong boxes.
+                if phase == "aggressive":
+                    overlaps_strong = any(
+                        self._iou_xyxy(p["box"], hb["box"]) >= 0.50
+                        for hb in high_confidence_boxes
+                    )
+                    if overlaps_strong and base_conf < (min_box_confidence * 0.60):
+                        print(
+                            f"   ❌ Filtered #{raw_index}: Aggressive & overlaps strong box, low conf "
+                            f"({base_conf:.3f} vs {min_box_confidence:.3f})"
+                        )
+                        continue
+
+                # SIZE-BASED CLASSIFICATION with OCR validation and enhanced box detection
+                if area_ratio > 0.08:
+                    # Large objects - shelf position matters most
+                    if shelf_level in ["top", "middle", "bottom"]:
+                        # Lower shelves - likely boxes
+                        if "book" in yolo_cls or any(k in yolo_cls for k in ("box", "suitcase")):
+                            scores["box_candidate"] *= 2.0
+                            decision_reason = f"large box-like object in lower shelf ({yolo_class})"
+                        elif visual_analysis["is_blue_dominant"]:
+                            if ocr_analysis["has_epson_model"]:
+                                scores["box_candidate"] *= 2.5
+                                decision_reason = f"verified Epson box ({ocr_analysis['model_found']})"
+                            elif ocr_analysis["has_epson_text"]:
+                                scores["box_candidate"] *= 1.8
+                                decision_reason = "blue box with Epson text"
+                            else:
+                                scores["box_candidate"] *= 1.3
+                                decision_reason = "blue dominant object in lower shelf"
+                        else:
+                            scores["box_candidate"] *= 1.2
+                    else:
+                        # Top shelf - likely printers
+                        if visual_analysis["is_white_gray"] and 0.8 <= aspect <= 1.5:
+                            scores["product_candidate"] *= 2.0  # Strong printer bias on top shelf
+                            decision_reason = "large white/gray device on top shelf"
+                        elif "book" in yolo_cls and visual_analysis["is_white_gray"]:
+                            # YOLO says "book" but it's white/gray on top shelf - likely printer
+                            scores["product_candidate"] *= 1.8
+                            scores["box_candidate"] *= 0.7  # Reduce box likelihood
+                            decision_reason = f"white/gray 'book' on top shelf - likely printer"
+                        else:
+                            scores["box_candidate"] *= 1.1
+                            decision_reason = "large object on top shelf"
+
+                elif area_ratio > 0.02:
+                    # Medium objects - similar logic but less aggressive
+                    if shelf_level in ["top", "middle", "bottom"]:
+                        if "book" in yolo_cls or any(k in yolo_cls for k in ("box", "suitcase")):
+                            scores["box_candidate"] *= 1.8
+                            decision_reason = f"medium box-like object in lower shelf ({yolo_class})"
+                        elif visual_analysis["is_blue_dominant"]:
+                            if ocr_analysis["has_epson_model"]:
+                                scores["box_candidate"] *= 2.2
+                                decision_reason = f"verified Epson box ({ocr_analysis['model_found']})"
+                            elif ocr_analysis["has_epson_text"]:
+                                scores["box_candidate"] *= 1.6
+                                decision_reason = "medium blue box with Epson text"
+                            else:
+                                scores["box_candidate"] *= 1.1
+                                decision_reason = "blue object in lower shelf"
+                    else:
+                        # Top/header shelf
+                        if visual_analysis["is_white_gray"] and 0.65 <= aspect <= 1.9:
+                            scores["product_candidate"] *= 1.7  # Strong printer bias
+                            decision_reason = "white/gray square device on top shelf (printer bias)"
+                        elif "book" in yolo_cls and visual_analysis["is_white_gray"]:
+                            scores["product_candidate"] *= 1.5
+                            scores["box_candidate"] *= 0.8
+                            decision_reason = "white/gray 'book' on upper shelf - printer bias"
+                        else:
+                            scores["box_candidate"] *= 1.1
+
+                if orientation == "vertical" and aspect < 0.9:
+                    scores["box_candidate"] *= 1.3
+                elif orientation == "square" and 0.8 <= aspect <= 1.4:
+                    scores["product_candidate"] *= 1.3
+
+                if shelf_level == "top":
+                    scores["product_candidate"] *= 1.2
+                elif shelf_level in ["middle", "bottom"]:
+                    scores["box_candidate"] *= 1.1
+
+                # Extra bias: low-edge, medium/large → product (printers are smooth)
+                if visual_analysis["edge_density"] < 0.06 and area_ratio >= 0.02:
+                    scores["product_candidate"] *= 1.2
+                    scores["box_candidate"] *= 0.8
+
+                # FINAL VALIDATION: Additional OCR checks
+                if ocr_analysis["has_unrelated_numbers"] and not ocr_analysis["has_epson_text"]:
+                    # Has numbers but not Epson-related (like "502")
+                    scores["box_candidate"] *= 0.5  # Reduce box likelihood
+                    scores["ink_bottle"] *= 1.5  # Increase ink bottle likelihood
+                    decision_reason += " + unrelated numbers"
+
+                # Final classification
+                cname = max(scores, key=scores.get)
+                score = max(scores[cname], base_conf)
+
+                if not hasattr(locals(), 'decision_reason'):
+                    decision_reason = f"{yolo_class}({orientation})→{cname}@{shelf_level}"
+
+                if "decision_reason" not in locals():
+                    decision_reason = f"{yolo_class}({orientation})→{cname}@{shelf_level}"
+
+            # Clamp confidence
+            clamped_confidence = min(1.0, max(0.0, float(score)))
+
+            # Don’t drop plausible printers detected in aggressive phase:
+            if (cname == "product_candidate" and clamped_confidence < 0.45 and
+                visual_analysis.get("is_white_gray") and area_ratio > 0.02):
+                clamped_confidence = 0.45  # ⟵ keeps your top-left printer
+
+            # Additional validation: Skip very low confidence results
+            if clamped_confidence < 0.35:
+                if (cname == "product_candidate" and visual_analysis.get("is_white_gray")
+                    and area_ratio > 0.02
+                    and 0.65 <= aspect <= 1.7
+                ):
+                    clamped_confidence = 0.42
+                else:
+                    print(
+                        f"   ❌ Filtered #{raw_index}: Final confidence too low ({clamped_confidence:.3f})"
+                    )
+                continue
+
+            print(f"   #{raw_index:2}: {yolo_class:10s} {orientation:8s} → {cname:18s} "
+                f"conf={clamped_confidence:.3f} ({decision_reason})")
+
+            out.append(
+                DetectionBox(
+                    x1=int(x1), y1=int(y1), x2=int(x2), y2=int(y2),
+                    confidence=clamped_confidence,
+                    class_id=CID.get(cname, 100),
+                    class_name=cname,
+                    area=int(area)
+                )
+            )
+
+        print(f"   📊 Enhanced Classification Final: {len(out)} validated detections")
+        return out
+
+    def _enhanced_ocr_analysis(self, crop: Image.Image) -> Dict[str, Any]:
+        """
+        Enhanced OCR analysis specifically for Epson product validation
+        """
+        try:
+            # Multiple OCR passes for better accuracy
+            ocr_configs = [
+                "--oem 1 --psm 4 -l eng -c preserve_interword_spaces=1",  # Best for blocks of text
+                "--oem 1 --psm 6 -l eng -c preserve_interword_spaces=1",  # Standard
+                # "--oem 1 --psm 8 -l eng -c preserve_interword_spaces=1",  # Single word
+                # "--oem 1 --psm 7 -l eng -c preserve_interword_spaces=1",  # Single text line
+            ]
+
+            all_text = ""
+            for config in ocr_configs:
+                try:
+                    text = pytesseract.image_to_string(crop, config=config)
+                    all_text += " " + text.lower()
+                except:
+                    continue
+
+            # Clean up text
+            all_text = all_text.lower().replace("-", " ").replace("_", " ")
+
+            # Check for Epson model numbers (ET-2980, ET-3950, ET-4950)
+            model_patterns = [
+                r"et[-\s]?2980", r"et[-\s]?3950", r"et[-\s]?4950",
+                r"2980", r"3950", r"4950"
+            ]
+
+            found_model = None
+            for pattern in model_patterns:
+                match = re.search(pattern, all_text)
+                if match:
+                    found_model = match.group()
+                    break
+
+            # Check for general Epson indicators
+            epson_indicators = ["epson", "ecotank", "supertank"]
+            has_epson_text = any(indicator in all_text for indicator in epson_indicators)
+
+            # Check for unrelated numbers (like "502" for ink bottles)
+            unrelated_numbers = re.findall(r'\b(?:50[0-9]|60[0-9]|70[0-9]|[0-9]{3,4})\b', all_text)
+            unrelated_numbers = [n for n in unrelated_numbers if n not in ["2980", "3950", "4950"]]
+
+            return {
+                "raw_text": all_text,
+                "has_epson_model": found_model is not None,
+                "model_found": found_model,
+                "has_epson_text": has_epson_text,
+                "has_numbers": bool(re.search(r'\d{3,4}', all_text)),
+                "has_unrelated_numbers": len(unrelated_numbers) > 0,
+                "unrelated_numbers": unrelated_numbers
+            }
+
+        except Exception as e:
+            return {
+                "raw_text": "",
+                "has_epson_model": False,
+                "model_found": None,
+                "has_epson_text": False,
+                "has_numbers": False,
+                "has_unrelated_numbers": False,
+                "unrelated_numbers": []
+            }
+
+    # --------------------- shrink/merge/cleanup ------------------------------
+    def _shrink(self, img, dets: List[DetectionBox]) -> List[DetectionBox]:
+        H,W = img.shape[:2]
+        out=[]
+        for d in dets:
+            roi=img[d.y1:d.y2, d.x1:d.x2]
+            if roi.size==0:
+                continue
+            g=cv2.cvtColor(roi, cv2.COLOR_RGB2GRAY)
+            e=cv2.Canny(g,40,120)
+            e=cv2.morphologyEx(e, cv2.MORPH_CLOSE, np.ones((5,5),np.uint8),1)
+            cnts,_=cv2.findContours(e, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            if not cnts:
+                out.append(d)
+                continue
+            c=max(cnts, key=cv2.contourArea)
+            x,y,w,h=cv2.boundingRect(c)
+            x1,y1,x2,y2=_clamp(W,H,d.x1+x,d.y1+y,d.x1+x+w,d.y1+y+h)
+            out.append(
+                DetectionBox(
+                    x1=x1,y1=y1,x2=x2,y2=y2,
+                    confidence=d.confidence,
+                    class_id=d.class_id,
+                    class_name=d.class_name,
+                    area=(x2-x1)*(y2-y1)
+                )
+            )
+        return out
+
+    def _merge(self, dets: List[DetectionBox], iou_same=0.3) -> List[DetectionBox]:  # Reduced from 0.45 to 0.3
+        """Enhanced merge with size-aware logic"""
+        dets = sorted(dets, key=lambda d: (d.class_name, -d.confidence, -d.area))
+        out = []
+
+        for d in dets:
+            placed = False
+            for m in out:
+                if d.class_name == m.class_name:
+                    iou = self._iou(d, m)
+
+                    # Different merge strategies based on class
+                    if d.class_name == "box_candidate":
+                        # More aggressive merging for boxes (they're often tightly packed)
+                        merge_threshold = 0.25
+                    elif d.class_name == "product_candidate":
+                        # Conservative merging for printers (they're usually separate)
+                        merge_threshold = 0.4
+                    else:
+                        merge_threshold = iou_same
+
+                    if iou > merge_threshold:
+                        # Merge by taking the union
+                        m.x1 = min(m.x1, d.x1)
+                        m.y1 = min(m.y1, d.y1)
+                        m.x2 = max(m.x2, d.x2)
+                        m.y2 = max(m.y2, d.y2)
+                        m.area = (m.x2 - m.x1) * (m.y2 - m.y1)
+                        m.confidence = max(m.confidence, d.confidence)
+                        placed = True
+                        print(f"   🔄 Merged {d.class_name} with IoU={iou:.3f}")
+                        break
+
+            if not placed:
+                out.append(d)
+
+        return out
+
+    # ------------------------------ debug ------------------------------------
+    def _rectangle_dashed(self, img, pt1, pt2, color, thickness=2, gap=9):
+        x1, y1 = pt1
+        x2, y2 = pt2
+        # top
+        for x in range(x1, x2, gap * 2):
+            cv2.line(img, (x, y1), (min(x + gap, x2), y1), color, thickness)
+        # bottom
+        for x in range(x1, x2, gap * 2):
+            cv2.line(img, (x, y2), (min(x + gap, x2), y2), color, thickness)
+        # left
+        for y in range(y1, y2, gap * 2):
+            cv2.line(img, (x1, y), (x1, min(y + gap, y2)), color, thickness)
+        # right
+        for y in range(y1, y2, gap * 2):
+            cv2.line(img, (x2, y), (x2, min(y + gap, y2)), color, thickness)
+
+    def _draw_corners(self, img, pt1, pt2, color, length=12, thickness=2):
+        x1, y1 = pt1
+        x2, y2 = pt2
+        # TL
+        cv2.line(img, (x1, y1), (x1 + length, y1), color, thickness)
+        cv2.line(img, (x1, y1), (x1, y1 + length), color, thickness)
+        # TR
+        cv2.line(img, (x2, y1), (x2 - length, y1), color, thickness)
+        cv2.line(img, (x2, y1), (x2, y1 + length), color, thickness)
+        # BL
+        cv2.line(img, (x1, y2), (x1 + length, y2), color, thickness)
+        cv2.line(img, (x1, y2), (x1, y2 - length), color, thickness)
+        # BR
+        cv2.line(img, (x2, y2), (x2 - length, y2), color, thickness)
+        cv2.line(img, (x2, y2), (x2, y2 - length), color, thickness)
+
+    def _draw_phase_areas(self, img, props, roi_box, show_labels=True):
+        """
+        Draw per-phase borders (no fill). Thickness encodes confidence.
+        poster_high = magenta (solid), high_confidence = green (solid), aggressive = orange (dashed).
+        """
+        import math
+        phase_colors = {
+            "poster_high":     (200, 0, 200),  # BGR
+            "high_confidence": (0, 220, 0),
+            "aggressive":      (0, 165, 255),
+        }
+        dashed = {"poster_high": False, "high_confidence": False, "aggressive": True}
+
+        # --- legend counts
+        from collections import Counter
+        counts = Counter(p.get("phase", "aggressive") for p in props)
+
+        # --- draw ROI
+        rx1, ry1, rx2, ry2 = roi_box
+        cv2.rectangle(img, (rx1, ry1), (rx2, ry2), (0, 255, 0), 2)
+
+        # --- per-proposal borders
+        for p in props:
+            x1, y1, x2, y2 = p["box"]
+            phase = p.get("phase", "aggressive")
+            conf  = float(p.get("confidence", 0.0))
+            color = phase_colors.get(phase, (180, 180, 180))
+
+            # thickness: 1..5 with a gentle curve so small conf doesn't vanish
+            t = max(1, min(5, int(round(1 + 4 * math.sqrt(max(0.0, min(conf, 1.0)))))))
+
+            if dashed.get(phase, False):
+                self._rectangle_dashed(img, (x1, y1), (x2, y2), color, thickness=t, gap=9)
+            else:
+                cv2.rectangle(img, (x1, y1), (x2, y2), color, t)
+
+            # add subtle phase corners to help when borders overlap
+            self._draw_corners(img, (x1, y1), (x2, y2), color, length=10, thickness=max(1, t - 1))
+
+            if show_labels:
+                lbl = f"{phase.split('_')[0][:1].upper()} {conf:.2f}"
+                ty = max(12, y1 - 6)
+                cv2.putText(img, lbl, (x1 + 2, ty), cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1, cv2.LINE_AA)
+
+        # --- legend (top-left of ROI)
+        legend_items = [("poster_high", "Poster"), ("high_confidence", "High"), ("aggressive", "Agg")]
+        lx, ly = rx1 + 6, max(18, ry1 + 16)
+        for key, name in legend_items:
+            col = phase_colors[key]
+            cv2.rectangle(img, (lx, ly - 10), (lx + 18, ly - 2), col, -1)
+            text = f"{name}: {counts.get(key, 0)}"
+            cv2.putText(img, text, (lx + 24, ly - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1, cv2.LINE_AA)
+            ly += 16
+
+        return img
+
+    def _draw_yolo(self, img, props, roi_box, shelf_lines):
+        """
+        Draw raw YOLO detections with detailed labels
+        """
+        rx1, ry1, rx2, ry2 = roi_box
+
+        # Draw ROI box
+        cv2.rectangle(img, (rx1, ry1), (rx2, ry2), (0, 255, 0), 3)
+        cv2.putText(img, f"ROI: {rx2-rx1}x{ry2-ry1}", (rx1, ry1-10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+
+        # Draw shelf lines
+        for i, y in enumerate(shelf_lines):
+            cv2.line(img, (rx1, y), (rx2, y), (0, 255, 255), 2)
+            cv2.putText(img, f"Shelf{i+1}", (rx1+5, y-5),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 255), 1)
+
+        # Color mapping for retail candidates
+        candidate_colors = {
+            "promotional_graphic": (255, 0, 255),   # Magenta
+            "printer": (255, 140, 0),               # Orange
+            "product_box": (0, 140, 255),           # Blue
+            "small_object": (128, 128, 128),        # Gray
+            "ink_bottle": (160, 0, 200),            # Purple
+        }
+
+        for p in props:
+            (x1, y1, x2, y2) = p["box"]
+
+            # Choose color based on primary retail candidate
+            candidates = p.get("retail_candidates", ["unknown"])
+            primary_candidate = candidates[0] if candidates else "unknown"
+            color = candidate_colors.get(primary_candidate, (255, 255, 255))
+
+            # Draw detection
+            cv2.rectangle(img, (x1, y1), (x2, y2), color, 2)
+
+            # Enhanced label
+            idx = p["raw_index"]
+            yolo_class = p["yolo_label"]
+            conf = p["yolo_conf"]
+            area_pct = p["area_ratio"] * 100
+
+            label1 = f"#{idx} {yolo_class}→{primary_candidate}"
+            label2 = f"conf:{conf:.3f} area:{area_pct:.1f}%"
+
+            cv2.putText(img, label1, (x1, max(15, y1 - 5)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1, cv2.LINE_AA)
+            cv2.putText(img, label2, (x1, max(30, y1 + 15)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.35, color, 1, cv2.LINE_AA)
+
+        return img
+
+    def _draw_phase1(self, img, roi_box, shelf_lines, dets, ad_box=None):
+        """
+        FIXED: Phase-1 debug drawing with better info
+        """
+        rx1, ry1, rx2, ry2 = roi_box
+        cv2.rectangle(img, (rx1, ry1), (rx2, ry2), (0, 255, 0), 2)
+
+        for y in shelf_lines:
+            cv2.line(img, (rx1, y), (rx2, y), (0, 255, 255), 2)
+
+        colors = {
+            "promotional_candidate": (0, 200, 0),
+            "product_candidate": (255, 140, 0),
+            "box_candidate": (0, 140, 255),
+            "price_tag": (255, 0, 255),
+        }
+
+        for i, d in enumerate(dets, 1):
+            c = colors.get(d.class_name, (200, 200, 200))
+            cv2.rectangle(img, (d.x1, d.y1), (d.x2, d.y2), c, 2)
+
+            # Enhanced label with detection info
+            w, h = d.x2 - d.x1, d.y2 - d.y1
+            area_pct = (d.area / (img.shape[0] * img.shape[1])) * 100
+            aspect = w / max(h, 1)
+            center_y = (d.y1 + d.y2) / 2
+
+            print(f"   #{i:2d}: {d.class_name:20s} conf={d.confidence:.3f} "
+                f"area={area_pct:.2f}% AR={aspect:.2f} center_y={center_y:.0f}")
+
+            label = f"#{i} {d.class_name} {d.confidence:.2f}"
+            cv2.putText(img, label, (d.x1, max(15, d.y1 - 4)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, c, 1, cv2.LINE_AA)
+
+        if ad_box is not None:
+            cv2.rectangle(img, (ad_box[0], ad_box[1]), (ad_box[2], ad_box[3]), (0, 255, 128), 2)
+            cv2.putText(
+                img, "poster_roi",
+                (ad_box[0], max(12, ad_box[1] - 4)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.4, (0, 255, 128), 1, cv2.LINE_AA,
+            )
+
+        return img
+
 
 class PlanogramCompliancePipeline(AbstractPipeline):
     """
@@ -1079,6 +1656,8 @@ class PlanogramCompliancePipeline(AbstractPipeline):
         llm_provider: str = "claude",
         llm_model: Optional[str] = None,
         detection_model: str = "yolov8n",
+        reference_images: List[Path] = None,
+        confidence_threshold: float = 0.25,
         **kwargs: Any
     ):
         """
@@ -1099,58 +1678,121 @@ class PlanogramCompliancePipeline(AbstractPipeline):
             **kwargs
         )
         # Initialize the generic shape detector
-        self.shape_detector = RetailDetector(detection_model)
+        self.shape_detector = RetailDetector(
+            yolo_model=detection_model,
+            conf=confidence_threshold,
+            device="cuda" if torch.cuda.is_available() else "cpu",
+            reference_images=reference_images
+        )
         self.logger.debug(
             f"Initialized RetailDetector with {detection_model}"
         )
+        self.reference_images = reference_images or []
+        self.confidence_threshold = confidence_threshold
 
     def detect_objects_and_shelves(
         self,
-        image: Union[str, Path, Image.Image],
+        image,
         confidence_threshold: float = 0.5
-    ) -> Tuple[List[ShelfRegion], List[DetectionBox]]:
-        """
-        Step 1: Use GenericShapeDetector to find shapes and boundaries
-        """
+    ):
+        self.logger.debug("Step 1: Detecting generic shapes and boundaries...")
+
+        pil_image = Image.open(image) if isinstance(image, (str, Path)) else image
+
+        det_out = self.shape_detector.detect(
+            image=pil_image,
+            debug_raw="/tmp/data/yolo_raw_debug.png",
+            debug_phase1="/tmp/data/yolo_phase1_debug.png",
+            debug_phases="/tmp/data/yolo_phases_debug.png",
+        )
+
+        shelves = det_out["shelves"]          # {'top': DetectionBox(...), 'middle': ...}
+        proposals    = det_out["proposals"]        # List[DetectionBox]
+
+        print("PROPOSALS:", proposals)
+        print("SHELVES:", shelves)
+
+        # --- IMPORTANT: use Phase-1 shelf bands (not %-of-image buckets) ---
+        shelf_regions = self._materialize_shelf_regions(shelves, proposals)
+
+        detections = list(proposals)
 
         self.logger.debug(
-            "Step 1: Detecting generic shapes and boundaries..."
+            "Found %d objects in %d shelf regions", len(detections), len(shelf_regions)
         )
 
-        # Use the GenericShapeDetector
-        detections = self.shape_detector.detect_retail_products(
-            image,
-            confidence_threshold
-        )
-
-        # Convert to PIL image for shelf organization
-        pil_image = Image.open(image) if isinstance(image, (str, Path)) else image
-        shelf_regions = self._organize_into_shelves(detections, pil_image.size)
-
+        # Recover price tags and re-map to the same Phase-1 shelves
         try:
             tag_dets = self._recover_price_tags(pil_image, shelf_regions)
             if tag_dets:
-                detections = list(detections) + tag_dets
-                # reuse detector's merge to de-dup
-                if hasattr(self.shape_detector, "_intelligent_merge"):
-                    detections = self.shape_detector._intelligent_merge(
-                        detections,
-                        max(0.25, confidence_threshold * 0.8)
-                    )
-                # shelves might shift slightly with the new boxes
-                shelf_regions = self._organize_into_shelves(detections, pil_image.size)
-                self.logger.debug(
-                    f"Recovered {len(tag_dets)} fact tags on shelf edges"
-                )
+                detections.extend(tag_dets)
+                shelf_regions = self._materialize_shelf_regions(shelves, detections)
+                self.logger.debug("Recovered %d fact tags on shelf edges", len(tag_dets))
         except Exception as e:
-            self.logger.warning(
-                f"Tag recovery failed: {e}"
-            )
+            self.logger.warning(f"Tag recovery failed: {e}")
 
-        self.logger.debug(
-            f"Found {len(detections)} objects in {len(shelf_regions)} shelf regions"
-        )
+        self.logger.debug("Found %d objects in %d shelf regions",
+                        len(detections), len(shelf_regions))
         return shelf_regions, detections
+
+    def _materialize_shelf_regions(
+        self,
+        shelves_dict: Dict[str, DetectionBox],
+        dets: List[DetectionBox]
+    ) -> List[ShelfRegion]:
+        """Turn Phase-1 shelf bands into ShelfRegion objects and assign detections by y-overlap."""
+        def y_overlap(a1, a2, b1, b2) -> int:
+            return max(0, min(a2, b2) - max(a1, b1))
+
+        regions: List[ShelfRegion] = []
+
+        # Header: anything fully above the top shelf band
+        if "top" in shelves_dict:
+            cut_y = shelves_dict["top"].y1
+            # Anything fully above the top band OR any promotional that touches the header area.
+            header_objs = [
+                d for d in dets
+                if (d.y2 <= cut_y) or (d.class_name == "promotional_candidate" and d.y1 < cut_y + 5)
+            ]
+            if header_objs:
+                x1 = min(o.x1 for o in header_objs)
+                y1 = min(o.y1 for o in header_objs)
+                x2 = max(o.x2 for o in header_objs)
+                y2 = cut_y
+                bbox = DetectionBox(
+                    x1=x1, y1=y1, x2=x2, y2=y2,
+                    confidence=1.0,
+                    class_id=190,
+                    class_name="shelf_region",
+                    area=(x2-x1)*(y2-y1)
+                )
+                regions.append(
+                    ShelfRegion(
+                        shelf_id="header",
+                        bbox=bbox,
+                        level="header",
+                        objects=header_objs
+                    )
+                )
+
+        for level in ["top", "middle", "bottom"]:
+            if level not in shelves_dict:
+                continue
+            band = shelves_dict[level]
+            objs = [d for d in dets if y_overlap(d.y1, d.y2, band.y1, band.y2) > 0]
+            if not objs:
+                continue
+            x1 = min(o.x1 for o in objs)
+            y1 = band.y1
+            x2 = max(o.x2 for o in objs)
+            y2 = band.y2
+            bbox = DetectionBox(x1=x1, y1=y1, x2=x2, y2=y2,
+                                confidence=1.0, class_id=190,
+                                class_name="shelf_region", area=(x2-x1)*(y2-y1))
+            regions.append(ShelfRegion(shelf_id=f"{level}_shelf", bbox=bbox, level=level, objects=objs))
+
+        return regions
+
 
     def _recover_price_tags(
         self,
@@ -1173,8 +1815,6 @@ class PlanogramCompliancePipeline(AbstractPipeline):
             pil = Image.open(image).convert("RGB")
         else:
             pil = image.convert("RGB")
-
-        import numpy as np, cv2
 
         img = np.array(pil)  # RGB
         H, W = img.shape[:2]
@@ -1256,7 +1896,8 @@ class PlanogramCompliancePipeline(AbstractPipeline):
         def iou(a: DetectionBox, b: DetectionBox) -> float:
             ix1, iy1 = max(a.x1, b.x1), max(a.y1, b.y1)
             ix2, iy2 = min(a.x2, b.x2), min(a.y2, b.y2)
-            if ix2 <= ix1 or iy2 <= iy1: return 0.0
+            if ix2 <= ix1 or iy2 <= iy1:
+                return 0.0
             inter = (ix2 - ix1) * (iy2 - iy1)
             return inter / float(a.area + b.area - inter)
 
@@ -1272,35 +1913,47 @@ class PlanogramCompliancePipeline(AbstractPipeline):
         detections: List[DetectionBox],
         image_size: Tuple[int, int]
     ) -> List[ShelfRegion]:
-        """Organize detections into shelf regions based on Y coordinates only"""
-
+        """
+        Organize detections into shelf regions with non-overlapping boundaries
+        """
         width, height = image_size
         shelf_regions = []
 
-        # Group by Y position - don't assume object types, just position
-        header_objects = [d for d in detections if d.y1 < height * 0.2]
-        top_objects = [d for d in detections if height * 0.15 <= d.y1 < height * 0.55]
-        middle_objects = [d for d in detections if height * 0.45 <= d.y1 < height * 0.7]
-        bottom_objects = [d for d in detections if d.y1 >= height * 0.65]
+        header_objects = []
+        top_objects = []
+        middle_objects = []
+        bottom_objects = []
+
+        for d in detections:
+            center_y = (d.y1 + d.y2) / 2
+            y_ratio = center_y / height
+
+            if (d.class_name == "promotional_candidate" or
+                (y_ratio < 0.3 and d.area > 0.1 * width * height)):
+                # Large objects in upper area OR promotional candidates go to header
+                header_objects.append(d)
+            elif y_ratio < 0.5:
+                # Upper area products go to top shelf
+                top_objects.append(d)
+            elif y_ratio < 0.75:
+                # Middle area
+                middle_objects.append(d)
+            else:
+                # Lower area
+                bottom_objects.append(d)
 
         # Create shelf regions
         if header_objects:
-            shelf_regions.append(
-                self._create_shelf_region("header", "header", header_objects)
-            )
+            shelf_regions.append(self._create_shelf_region("header", "header", header_objects))
         if top_objects:
-            shelf_regions.append(
-                self._create_shelf_region("top_shelf", "top", top_objects))
+            shelf_regions.append(self._create_shelf_region("top_shelf", "top", top_objects))
         if middle_objects:
-            shelf_regions.append(
-                self._create_shelf_region("middle_shelf", "middle", middle_objects)
-            )
+            shelf_regions.append(self._create_shelf_region("middle_shelf", "middle", middle_objects))
         if bottom_objects:
-            shelf_regions.append(
-                self._create_shelf_region("bottom_shelf", "bottom", bottom_objects)
-            )
+            shelf_regions.append(self._create_shelf_region("bottom_shelf", "bottom", bottom_objects))
 
         return shelf_regions
+
 
     def _create_shelf_region(self, shelf_id: str, level: str, objects: List[DetectionBox]) -> ShelfRegion:
         """Create a shelf region from objects"""
@@ -1324,6 +1977,22 @@ class PlanogramCompliancePipeline(AbstractPipeline):
             level=level,
             objects=objects
         )
+
+    def _debug_dump_crops(self, img: Image.Image, dets, tag="step1"):
+        os.makedirs("/tmp/data/debug", exist_ok=True)
+        h, w = img.size[1], img.size[0]
+        img = np.array(img)  # RGB
+        for i, d in enumerate(dets, 1):
+            b = d.detection_box if hasattr(d, "detection_box") else d
+            x1 = max(0, min(w-1, int(min(b.x1, b.x2))))
+            x2 = max(0, min(w-1, int(max(b.x1, b.x2))))
+            y1 = max(0, min(h-1, int(min(b.y1, b.y2))))
+            y2 = max(0, min(h-1, int(max(b.y1, b.y2))))
+            crop = img[y1:y2, x1:x2]
+            cv2.imwrite(
+                f"/tmp/data/debug/{tag}_{i}_{b.class_name}_{x1}_{y1}_{x2}_{y2}.png",
+                cv2.cvtColor(crop, cv2.COLOR_RGB2BGR)
+            )
 
     # STEP 2: LLM Object Identification
     async def identify_objects_with_references(
@@ -1354,11 +2023,19 @@ class PlanogramCompliancePipeline(AbstractPipeline):
             self.logger.warning("No detections to identify")
             return []
 
+
+        pil_image = self._get_image(image)
+
         # Create annotated image showing detection boxes
-        annotated_image = self._create_annotated_image(image, detections)
+        effective_dets = [d for d in detections if d.class_name not in {"slot", "shelf_region"}]
+        self._debug_dump_crops(pil_image, effective_dets, tag="effective")
+        self._debug_dump_crops(pil_image, detections, tag="raw")
+
+        annotated_image = self._create_annotated_image(pil_image, effective_dets)
+        # annotated_image = self._create_annotated_image(image, detections)
 
         # Build identification prompt (without structured output request)
-        prompt = self._build_identification_prompt(detections, shelf_regions)
+        prompt = self._build_identification_prompt(effective_dets, shelf_regions)
 
         async with self.llm as client:
 
@@ -1384,12 +2061,21 @@ class PlanogramCompliancePipeline(AbstractPipeline):
                     identified_products = await client.image_identification(
                         image=image,
                         prompt=prompt,
-                        detections=detections,
+                        detections=effective_dets,
                         shelf_regions=shelf_regions,
                         reference_images=extra_refs,
                         temperature=0.0,
                         ocr_hints=True
                     )
+                    identified_products = await self._augment_products_with_box_ocr(
+                        image,
+                        identified_products
+                    )
+                    for product in identified_products:
+                        if product.product_type == "promotional_graphic":
+                            if lines := await self._extract_text_from_region(image, product.detection_box):
+                                snippet = " ".join(lines)[:120]
+                                product.visual_features = (product.visual_features or []) + [f"ocr:{snippet}"]
                     return identified_products
                 else:  # Fallback
                     response = await client.ask_to_image(
@@ -1420,43 +2106,247 @@ class PlanogramCompliancePipeline(AbstractPipeline):
                         # Add detection_box to each product based on detection_id
                         valid_products = []
                         for product in identified_products:
-                            if product.detection_id and 1 <= product.detection_id <= len(detections):
-                                det_idx = product.detection_id - 1  # Convert to 0-based index
-                                product.detection_box = detections[det_idx]
+                            if product.detection_id and 1 <= product.detection_id <= len(effective_dets):
+                                det_idx = product.detection_id - 1
+                                product.detection_box = effective_dets[det_idx]
+
+                                # ⬅️ Do OCR *after* we have the box
+                                if product.product_type == "promotional_graphic":
+                                    lines = await self._extract_text_from_region(image, product.detection_box)
+                                    if lines:
+                                        snippet = " ".join(lines)[:120]
+                                        product.visual_features = (product.visual_features or []) + [f"ocr:{snippet}"]
+
                                 valid_products.append(product)
-                                self.logger.debug(f"Linked {product.product_type} {product.product_model} (ID: {product.detection_id}) to detection box")
+                                self.logger.debug(
+                                    f"Linked {product.product_type} {product.product_model} (ID: {product.detection_id}) to detection box"
+                                )
                             else:
-                                self.logger.warning(f"Product has invalid detection_id: {product.detection_id}")
+                                self.logger.warning(
+                                    f"Product has invalid detection_id: {product.detection_id}"
+                                )
 
                         self.logger.debug(f"Successfully linked {len(valid_products)} out of {len(identified_products)} products")
                         return valid_products
 
                     else:
-                        self.logger.error(f"Expected IdentificationResponse, got: {type(identification_response)}")
-                        return self._create_simple_fallbacks(detections, shelf_regions)
-
+                        self.logger.error(
+                            f"Expected IdentificationResponse, got: {type(identification_response)}"
+                        )
+                        fallbacks = self._create_simple_fallbacks(effective_dets, shelf_regions)
+                        fallbacks = await self._augment_products_with_box_ocr(image, fallbacks)
+                        return fallbacks
                 else:
                     self.logger.warning("No structured output received")
-                    return self._create_simple_fallbacks(detections, shelf_regions)
+                    fallbacks = self._create_simple_fallbacks(effective_dets, shelf_regions)
+                    fallbacks = await self._augment_products_with_box_ocr(image, fallbacks)
+                    return fallbacks
 
             except Exception as e:
                 self.logger.error(f"Error in structured identification: {e}")
                 traceback.print_exc()
-                return self._create_simple_fallbacks(detections, shelf_regions)
+                fallbacks = self._create_simple_fallbacks(effective_dets, shelf_regions)
+                fallbacks = await self._augment_products_with_box_ocr(image, fallbacks)
+                return fallbacks
 
-    def _create_annotated_image(
+    def _guess_et_model_from_text(self, text: str) -> Optional[str]:
+        """
+        Find Epson EcoTank model tokens in text.
+        Returns normalized like 'et-4950' (device) or 'et-2980', etc.
+        """
+        if not text:
+            return None
+        t = text.lower().replace(" ", "")
+        # common variants: et-4950, et4950, et – 4950, etc.
+        m = re.search(r"et[-]?\s?(\d{4})", t)
+        if not m:
+            return None
+        num = m.group(1)
+        # Accept only models we care about (tighten if needed)
+        if num in {"2980", "3950", "4950"}:
+            return f"et-{num}"
+        return None
+
+
+    def _maybe_brand_from_text(self, text: str) -> Optional[str]:
+        if not text:
+            return None
+        t = text.lower()
+        if "epson" in t:
+            return "Epson"
+        if "ecotank" in t:
+            return "Epson"  # brand inference via line
+        return None
+
+    def _normalize_ocr_text(self, s: str) -> str:
+        """
+        Make OCR text match-friendly:
+        - Unicode normalize (NFKC), strip diacritics
+        - Replace fancy dashes/quotes with spaces
+        - Remove non-alnum except spaces, collapse whitespace
+        - Lowercase
+        """
+        if not s:
+            return ""
+        s = unicodedata.normalize("NFKC", s)
+        # strip accents
+        s = "".join(ch for ch in unicodedata.normalize("NFKD", s) if not unicodedata.combining(ch))
+        # unify punctuation to spaces
+        s = re.sub(r"[—–‐-‒–—―…“”\"'·•••·•—–/\\|_=+^°™®©§]", " ", s)
+        # keep letters/digits/spaces
+        s = re.sub(r"[^A-Za-z0-9 ]+", " ", s)
+        # collapse
+        s = re.sub(r"\s+", " ", s).strip().lower()
+        return s
+
+    async def _augment_products_with_box_ocr(
         self,
         image: Union[str, Path, Image.Image],
-        detections: List[DetectionBox]
+        products: List[IdentifiedProduct]
+    ) -> List[IdentifiedProduct]:
+        """Add OCR-derived evidence to boxes/printers and fix product_model when we see ET-xxxx."""
+        for p in products:
+            if not p.detection_box:
+                continue
+            if p.product_type in {"product_box", "printer"}:
+                lines = await self._extract_text_from_region(image, p.detection_box, mode="model")
+                if lines:
+                    # Keep some OCR as visual evidence (don’t explode the list)
+                    snippet = " ".join(lines)[:120]
+                    if not p.visual_features:
+                        p.visual_features = []
+                    p.visual_features.append(f"ocr:{snippet}")
+
+                    # Brand hint
+                    brand = self._maybe_brand_from_text(snippet)
+                    if brand and not getattr(p, "brand", None):
+                        try:
+                            p.brand = brand  # only if IdentifiedProduct has 'brand'
+                        except Exception:
+                            # If the model doesn’t have brand, keep it as a feature.
+                            p.visual_features.append(f"brand:{brand}")
+
+                    # Model from OCR
+                    model = self._guess_et_model_from_text(snippet)
+                    if model:
+                        # Normalize to your scheme:
+                        #  - printers: "ET-4950"
+                        #  - boxes:    "ET-4950 box"
+                        if p.product_type == "product_box":
+                            target = f"{model.upper()} box"
+                        else:
+                            target = model.upper()
+
+                        # If missing or mismatched, replace
+                        if not p.product_model:
+                            p.product_model = target
+                        else:
+                            # If current looks generic/incorrect, fix it
+                            cur = (p.product_model or "").lower()
+                            if "et-" in target.lower() and ("et-" not in cur or "box" in target.lower() and "box" not in cur):
+                                p.product_model = target
+            elif p.product_type == "promotional_graphic":
+                if lines := await self._extract_text_from_region(image, p.detection_box):
+                    snippet = " ".join(lines)[:160]
+                    p.visual_features = (p.visual_features or []) + [f"ocr:{snippet}"]
+                    joined = " ".join(lines)
+                    if norm := self._normalize_ocr_text(joined):
+                        p.visual_features.append(norm)
+                        # also feed per-line normals (helps 'contains' on shorter phrases)
+                        for ln in lines:
+                            if ln and (nln := self._normalize_ocr_text(ln)) and nln not in p.visual_features:
+                                p.visual_features.append(nln)
+        return products
+
+    async def _extract_text_from_region(
+        self,
+        image: Union[str, Path, Image.Image],
+        detection_box: DetectionBox,
+        mode: str = "generic",          # "generic" | "model"
+    ) -> List[str]:
+        """Extract text from a region with OCR.
+        - generic: multi-pass (psm 6 & 4) + unsharp + binarize
+        - model  : tuned to catch ET-xxxx
+        Returns lines + normalized variants so TextMatcher has more chances.
+        """
+        try:
+            pil_image = Image.open(image) if isinstance(image, (str, Path)) else image
+            pad = 10
+            x1 = max(0, detection_box.x1 - pad)
+            y1 = max(0, detection_box.y1 - pad)
+            x2 = min(pil_image.width - 1, detection_box.x2 + pad)
+            y2 = min(pil_image.height - 1, detection_box.y2 + pad)
+            crop_rgb = pil_image.crop((x1, y1, x2, y2)).convert("RGB")
+
+            def _prep(arr):
+                g = cv2.cvtColor(arr, cv2.COLOR_RGB2GRAY)
+                g = cv2.resize(g, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC)
+                blur = cv2.GaussianBlur(g, (0, 0), sigmaX=1.0)
+                sharp = cv2.addWeighted(g, 1.6, blur, -0.6, 0)
+                _, th = cv2.threshold(sharp, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+                return th
+
+            if mode == "model":
+                th = _prep(np.array(crop_rgb))
+                crop = Image.fromarray(th).convert("L")
+                cfg = "--oem 3 --psm 6 -l eng -c tessedit_char_whitelist=ETet0123456789-ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                raw = pytesseract.image_to_string(crop, config=cfg)
+                lines = [ln.strip() for ln in raw.splitlines() if ln.strip()]
+            else:
+                arr = np.array(crop_rgb)
+                th = _prep(arr)
+                # two passes help for 'Goodbye Cartridges' on light box
+                raw1 = pytesseract.image_to_string(Image.fromarray(th), config="--psm 6 -l eng")
+                raw2 = pytesseract.image_to_string(Image.fromarray(th), config="--psm 4 -l eng")
+                raw  = raw1 + "\n" + raw2
+                lines = [ln.strip() for ln in raw.splitlines() if ln.strip()]
+
+            # Add normalized variants to help TextMatcher:
+            #  - lowercase, punctuation stripped
+            #  - a single combined line
+            import re
+            def norm(s: str) -> str:
+                s = s.lower()
+                s = re.sub(r"[^a-z0-9\s]", " ", s)         # drop punctuation like colons
+                s = re.sub(r"\s+", " ", s).strip()
+                return s
+
+            variants = [norm(ln) for ln in lines if ln]
+            if variants:
+                variants.append(norm(" ".join(lines)))
+
+            # merge unique while preserving originals first
+            out = lines[:]
+            for v in variants:
+                if v and v not in out:
+                    out.append(v)
+
+            return out
+
+        except Exception as e:
+            self.logger.error(f"Text extraction failed: {e}")
+            return []
+
+    def _get_image(
+        self,
+        image: Union[str, Path, Image.Image]
     ) -> Image.Image:
-        """Create an annotated image with detection boxes and IDs"""
+        """Load image from path or return copy if already PIL"""
 
         if isinstance(image, (str, Path)):
             pil_image = Image.open(image).copy()
         else:
             pil_image = image.copy()
+        return pil_image
 
-        draw = ImageDraw.Draw(pil_image)
+    def _create_annotated_image(
+        self,
+        image: Image.Image,
+        detections: List[DetectionBox]
+    ) -> Image.Image:
+        """Create an annotated image with detection boxes and IDs"""
+
+        draw = ImageDraw.Draw(image)
 
         for i, detection in enumerate(detections):
             # Draw bounding box
@@ -1469,7 +2359,7 @@ class PlanogramCompliancePipeline(AbstractPipeline):
             label = f"ID:{i+1} ({detection.confidence:.2f})"
             draw.text((detection.x1, detection.y1 - 20), label, fill="red")
 
-        return pil_image
+        return image
 
     def _build_identification_prompt(
         self,
@@ -1505,10 +2395,28 @@ DETECTED OBJECTS:
 TASK: Identify each detected object using the reference images.
 
 IMPORTANT NAMING RULES:
-1. For printer devices: Use model name only (e.g., "ET-2980", "ET-3950", "ET-4950")
-2. For product boxes: Use model name + " box" (e.g., "ET-2980 box", "ET-3950 box", "ET-4950 box")
-3. For promotional graphics: Use descriptive name (e.g., "Epson EcoTank Advertisement")
-4. For price/fact tags: Use "price tag" or "fact tag"
+1. **PRINTERS (actual devices)**: Use model name only (e.g., "ET-2980", "ET-3950", "ET-4950")
+   - Look for: White/gray color, compact square shape, LCD screens, physical ink tanks, control panels
+   - Typically positioned on shelves, not stacked
+
+2. **PRODUCT BOXES**: Use model name + " box" (e.g., "ET-2980 box", "ET-3950 box", "ET-4950 box")
+   - Look for: Blue packaging, product images on box, stacked arrangement, larger rectangular shape
+   - Contains pictures of the printer device, not the device itself
+
+3. **KEY DISTINCTION**: If you see the actual printer device (white/gray with visible controls/tanks) = "printer"
+   If you see packaging with printer images on it = "product_box"
+
+4. For promotional graphics: Use descriptive name (e.g., "Epson EcoTank Advertisement") and look for promotional text.
+5. For price/fact tags: Use "price tag" or "fact tag"
+6. always set product_type accordingly: printer, product_box, promotional_graphic, fact_tag, no matter if was classified differently.
+7. If two objects overlap, but are the same product_type, ignore the smaller one (likely a duplicate detection).
+
+VISUAL IDENTIFICATION GUIDE:
+- **Blue rectangular objects with product imagery** → product_box
+- **White/gray compact devices with control panels** → printer
+- **Large colorful banners with text/people** → promotional_graphic
+- **Small white rectangular labels** → fact_tag
+
 
 For each detection (ID 1-{len(detections)}), provide:
 - detection_id: The exact ID number from the red bounding box (1-{len(detections)})
@@ -1519,6 +2427,7 @@ For each detection (ID 1-{len(detections)}), provide:
 - reference_match: Which reference image matches (or "none")
 - shelf_location: header, top, middle, or bottom
 - position_on_shelf: left, center, or right
+- Remove any duplicates - only one entry per detection_id
 
 EXAMPLES:
 - If you see a printer device: product_type="printer", product_model="ET-2980"
@@ -1554,6 +2463,7 @@ Example format:
 REFERENCE IMAGES show Epson printer models - compare visual design, control panels, ink systems.
 
 CLASSIFICATION RULES FOR ADS
+- Large horizontal banners/displays with brand logo and/or slogan, should be classified as promotional_graphic.
 - If you detect any poster/graphic/signage, set product_type="promotional_graphic".
 - Always fill:
   brand := the logo or text brand on the asset (e.g., "Epson"). Use OCR hints.
@@ -1618,20 +2528,21 @@ Respond with the structured data for all {len(detections)} objects.
 
         return results
 
-    def _is_promotional_product(self, product_name: str) -> bool:
-        """Check if a product name refers to promotional material"""
-        promotional_keywords = [
-            'advertisement', 'graphic', 'promo', 'banner', 'sign', 'poster', 'display'
-        ]
-        product_lower = product_name.lower()
-        return any(keyword in product_lower for keyword in promotional_keywords)
-
     # STEP 3: Planogram Compliance Check
     def check_planogram_compliance(
         self,
         identified_products: List[IdentifiedProduct],
         planogram_description: PlanogramDescription
     ) -> List[ComplianceResult]:
+        """Check compliance of identified products against the planogram
+
+        Args:
+            identified_products (List[IdentifiedProduct]): The products identified in the image
+            planogram_description (PlanogramDescription): The expected planogram layout
+
+        Returns:
+            List[ComplianceResult]: The compliance results for each shelf
+        """
         results: List[ComplianceResult] = []
 
         # Group found products by shelf level
@@ -1639,70 +2550,132 @@ Respond with the structured data for all {len(detections)} objects.
         for p in identified_products:
             by_shelf[p.shelf_location].append(p)
 
-        # Iterate shelves (list) from the planogram
+        # Iterate through expected shelves
         for shelf_cfg in planogram_description.shelves:
             shelf_level = shelf_cfg.level
 
-            # Build expected set from ShelfProduct entries (ignore tags)
+            # Build expected product list (excluding tags)
             expected = []
             for sp in shelf_cfg.products:
-                if sp.product_type in ("fact_tag", "price_tag"):
+                if sp.product_type in ("fact_tag", "price_tag", "slot"):
                     continue
                 nm = self._normalize_product_name((sp.name or sp.product_type) or "unknown")
                 expected.append(nm)
 
-            # Gather found on this shelf (ignore tags), track promos for text checks
+            # Gather found products on this shelf
             found, promos = [], []
             for p in by_shelf.get(shelf_level, []):
-                if p.product_type in ("fact_tag", "price_tag"):
+                if p.product_type in ("fact_tag", "price_tag", "slot"):
                     continue
                 nm = self._normalize_product_name(p.product_model or p.product_type)
                 found.append(nm)
                 if p.product_type == "promotional_graphic":
                     promos.append(p)
 
-            # Basic product compliance
+            # Calculate basic product compliance
             missing = [e for e in expected if e not in found]
             unexpected = [] if shelf_cfg.allow_extra_products else [f for f in found if f not in expected]
             basic_score = (sum(1 for e in expected if e in found) / (len(expected) or 1))
 
-            # Text compliance for advertisement endcap (if positioned on this shelf)
+            # FIX 3: Enhanced text compliance handling
             text_results, text_score, overall_text_ok = [], 1.0, True
+
+            # Check for advertisement endcap on this shelf
             endcap = planogram_description.advertisement_endcap
-            if endcap and endcap.enabled and endcap.position == shelf_level and endcap.text_requirements:
-                # Combine OCR/visual hints from promo items on this shelf
-                features = []
-                for pr in promos:
-                    features.extend(pr.visual_features or [])
-                if not features:
-                    overall_text_ok = False
+            if endcap and endcap.enabled and endcap.position == shelf_level:
+                if endcap.text_requirements:
+                    # Combine visual features from all promotional items
+                    all_features = []
+                    ocr_blocks = []
+                    for promo in promos:
+                        if getattr(promo, "visual_features", None):
+                            all_features.extend(promo.visual_features)
+                            for feat in promo.visual_features:
+                                if isinstance(feat, str) and feat.startswith("ocr:"):
+                                    ocr_blocks.append(feat[4:].strip())
 
-                for tr in endcap.text_requirements:
-                    r = TextMatcher.check_text_match(
-                        required_text=tr.required_text,
-                        visual_features=features,
-                        match_type=tr.match_type,
-                        case_sensitive=tr.case_sensitive,
-                        confidence_threshold=tr.confidence_threshold
-                    )
-                    text_results.append(r)
-                    if not r.found and tr.mandatory:
+                    if ocr_blocks:
+                        ocr_norm = self._normalize_ocr_text(" ".join(ocr_blocks))
+                        if ocr_norm:
+                            all_features.append(ocr_norm)
+
+                    # If no promotional graphics found but text required, create default failure
+                    if not promos and shelf_level == "header":
+                        self.logger.warning(
+                            f"No promotional graphics found on {shelf_level} shelf but text requirements exist"
+                        )
                         overall_text_ok = False
+                        for text_req in endcap.text_requirements:
+                            text_results.append(TextComplianceResult(
+                                required_text=text_req.required_text,
+                                found=False,
+                                matched_features=[],
+                                confidence=0.0,
+                                match_type=text_req.match_type
+                            ))
+                    else:
+                        # Check text requirements against found features
+                        for text_req in endcap.text_requirements:
+                            result = TextMatcher.check_text_match(
+                                required_text=text_req.required_text,
+                                visual_features=all_features,
+                                match_type=text_req.match_type,
+                                case_sensitive=text_req.case_sensitive,
+                                confidence_threshold=text_req.confidence_threshold
+                            )
+                            text_results.append(result)
 
-                if text_results:
-                    text_score = sum(r.confidence for r in text_results if r.found) / len(text_results)
+                            if not result.found and text_req.mandatory:
+                                overall_text_ok = False
 
-            # Thresholds + final status
-            threshold = getattr(shelf_cfg, "compliance_threshold", planogram_description.global_compliance_threshold)
-            if basic_score >= threshold and not unexpected and overall_text_ok:
-                status = ComplianceStatus.COMPLIANT
-            elif basic_score == 0.0:
-                status = ComplianceStatus.MISSING
+                    # Calculate text compliance score
+                    if text_results:
+                        text_score = sum(r.confidence for r in text_results if r.found) / len(text_results)
+
+            # For non-header shelves without text requirements, don't penalize
+            elif shelf_level != "header":
+                overall_text_ok = True  # Don't require text compliance on product shelves
+                text_score = 1.0
+
+            # Determine compliance threshold
+            threshold = getattr(
+                shelf_cfg,
+                "compliance_threshold",
+                planogram_description.global_compliance_threshold or 0.8
+            )
+
+            # FIX 4: Better status determination logic
+            # For product shelves (non-header), focus on product compliance
+            if shelf_level != "header":
+                if basic_score >= threshold and not unexpected:
+                    status = ComplianceStatus.COMPLIANT
+                elif basic_score == 0.0:
+                    status = ComplianceStatus.MISSING
+                else:
+                    status = ComplianceStatus.NON_COMPLIANT
             else:
-                status = ComplianceStatus.NON_COMPLIANT
+                # For header shelf, require both product and text compliance
+                if basic_score >= threshold and not unexpected and overall_text_ok:
+                    status = ComplianceStatus.COMPLIANT
+                elif basic_score == 0.0:
+                    status = ComplianceStatus.MISSING
+                else:
+                    status = ComplianceStatus.NON_COMPLIANT
 
-            weights = planogram_description.weighted_scoring or {"product_compliance": 0.7, "text_compliance": 0.3}
-            combined = basic_score * weights.get("product_compliance", 0.7) + text_score * weights.get("text_compliance", 0.3)
+            # Calculate combined score with appropriate weighting
+            if shelf_level == "header":
+                # Header: Balance product and text compliance
+                endcap = planogram_description.advertisement_endcap
+                weights = {
+                    "product_compliance": endcap.product_weight,
+                    "text_compliance": endcap.text_weight
+                }
+            else:
+                # Product shelves: Emphasize product compliance
+                weights = {"product_compliance": 0.9, "text_compliance": 0.1}
+
+            combined_score = (basic_score * weights["product_compliance"] +
+                            text_score * weights["text_compliance"])
 
             results.append(ComplianceResult(
                 shelf_level=shelf_level,
@@ -1711,11 +2684,12 @@ Respond with the structured data for all {len(detections)} objects.
                 missing_products=missing,
                 unexpected_products=unexpected,
                 compliance_status=status,
-                compliance_score=combined,
+                compliance_score=combined_score,
                 text_compliance_results=text_results,
                 text_compliance_score=text_score,
                 overall_text_compliant=overall_text_ok
             ))
+
         return results
 
     def _normalize_product_name(self, product_name: str) -> str:
@@ -1810,9 +2784,7 @@ Respond with the structured data for all {len(detections)} objects.
     async def run(
         self,
         image: Union[str, Path, Image.Image],
-        reference_images: List[Union[str, Path, Image.Image]],
         planogram_description: PlanogramDescription,
-        confidence_threshold: float = 0.5,
         return_overlay: Optional[str] = None,  # "identified" | "detections" | "both" | None
         overlay_save_path: Optional[Union[str, Path]] = None,
     ) -> Dict[str, Any]:
@@ -1825,7 +2797,7 @@ Respond with the structured data for all {len(detections)} objects.
 
         self.logger.debug("Step 1: Detecting objects and shelves...")
         shelf_regions, detections = self.detect_objects_and_shelves(
-            image, confidence_threshold
+            image, self.confidence_threshold
         )
 
         self.logger.debug(
@@ -1834,20 +2806,18 @@ Respond with the structured data for all {len(detections)} objects.
 
         self.logger.info("Step 2: Identifying objects with LLM...")
         identified_products = await self.identify_objects_with_references(
-            image, detections, shelf_regions, reference_images
+            image, detections, shelf_regions, self.reference_images
         )
 
-        print('==== ')
         print(identified_products)
-        # Merge nearby promotional graphics to avoid double-counting
-        identified_products = merge_promotional_graphics(
-            identified_products,
-            pad_px=60
-        )
-        self.logger.debug(f"Identified {len(identified_products)} products")
 
-        self.logger.info("Step 3: Checking planogram compliance...")
-
+        # De-duplicate promotional_graphic (keep the largest)
+        promos = [p for p in identified_products if p.product_type == "promotional_graphic" and p.detection_box]
+        if len(promos) > 1:
+            keep = max(promos, key=lambda p: p.detection_box.area)
+            identified_products = [
+                p for p in identified_products if p.product_type != "promotional_graphic"
+            ] + [keep]
 
         compliance_results = self.check_planogram_compliance(
             identified_products, planogram_description
@@ -1857,9 +2827,12 @@ Respond with the structured data for all {len(detections)} objects.
         total_score = sum(
             r.compliance_score for r in compliance_results
         ) / len(compliance_results) if compliance_results else 0.0
-        overall_compliant = all(
-            r.compliance_status == ComplianceStatus.COMPLIANT for r in compliance_results
-        )
+        if total_score >= (planogram_description.global_compliance_threshold or 0.8):
+            overall_compliant = True
+        else:
+            overall_compliant = all(
+                r.compliance_status == ComplianceStatus.COMPLIANT for r in compliance_results
+            )
         overlay_image = None
         overlay_path = None
         if return_overlay:
@@ -1907,6 +2880,10 @@ Respond with the structured data for all {len(detections)} objects.
         If `save_to` is provided, the image is saved there.
         Returns a PIL.Image either way.
         """
+        def _norm_box(x1, y1, x2, y2):
+            x1, x2 = (int(x1), int(x2))
+            y1, y2 = (int(y1), int(y2))
+            return min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2)
 
         # --- get base image ---
         if isinstance(image, (str, Path)):
@@ -1952,6 +2929,7 @@ Respond with the structured data for all {len(detections)} objects.
         if show_shelves and shelf_regions:
             for sr in shelf_regions:
                 x1, y1, x2, y2 = _clip(sr.bbox.x1, sr.bbox.y1, sr.bbox.x2, sr.bbox.y2)
+                x1, y1, x2, y2 = _norm_box(x1, y1, x2, y2)
                 draw.rectangle([x1, y1, x2, y2], outline=(255, 255, 0), width=3)
                 _txt(draw, (x1+3, max(0, y1-14)), f"SHELF {sr.level}", fill=(0, 0, 0), bg=(255, 255, 0))
 
@@ -1959,6 +2937,7 @@ Respond with the structured data for all {len(detections)} objects.
         if mode in ("detections", "both") and detections:
             for i, d in enumerate(detections, start=1):
                 x1, y1, x2, y2 = _clip(d.x1, d.y1, d.x2, d.y2)
+                x1, y1, x2, y2 = _norm_box(x1, y1, x2, y2)
                 draw.rectangle([x1, y1, x2, y2], outline=(255, 0, 0), width=2)
                 lbl = f"ID:{i} {d.class_name} {d.confidence:.2f}"
                 _txt(draw, (x1+2, max(0, y1-12)), lbl, fill=(0, 0, 0), bg=(255, 0, 0))
