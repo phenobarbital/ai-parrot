@@ -5,6 +5,7 @@ from navigator.views import (
     BaseView,
     FormModel
 )
+from navigator_auth.decorators import user_session
 from parrot.conf import (
     BIGQUERY_CREDENTIALS,
     BIGQUERY_PROJECT_ID,
@@ -197,6 +198,8 @@ class ChatbotHandler(ModelView):
     async def _set_created_by(self, value, column, data):
         return await self.get_userid(session=self._session)
 
+
+@user_session()
 class ToolList(BaseView):
     """
     ToolList.

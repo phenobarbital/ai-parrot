@@ -1,6 +1,8 @@
-from typing import List
+from typing import List, Tuple, Iterable, Set
 from enum import Enum
 import re
+import unicodedata
+from difflib import SequenceMatcher
 from pydantic import BaseModel, Field
 
 
@@ -42,198 +44,156 @@ class ComplianceResult(BaseModel):
 
 
 class TextMatcher:
-    """Utility class for text matching operations - FIXED VERSION"""
+    """
+    N-gram + fuzzy text matcher for planogram text compliance.
+
+    Public API:
+        TextMatcher.check_text_match(
+            required_text: str,
+            visual_features: List[str],
+            match_type: str = "contains",      # "contains" | "regex" | "ngram" | "auto"
+            case_sensitive: bool = False,
+            confidence_threshold: float = 0.6, # used for "ngram"/"auto"
+            ngram_range: Tuple[int, int] = (1, 3),
+            min_token_len: int = 2,
+        ) -> TextComplianceResult
+    """
 
     @staticmethod
-    def normalize_text(text: str, case_sensitive: bool = False) -> str:
-        """Normalize text for comparison"""
-        if not text:
+    def _strip_ocr_prefix(s: str) -> str:
+        return s[4:].strip() if isinstance(s, str) and s.lower().startswith("ocr:") else s
+
+    @staticmethod
+    def _normalize(s: str, *, keep_case: bool = False) -> str:
+        if s is None:
             return ""
-
-        normalized = text.strip()
-        if not case_sensitive:
-            normalized = normalized.lower()
-
-        # Remove extra whitespace
-        normalized = re.sub(r'\s+', ' ', normalized)
-        return normalized
-
-    @staticmethod
-    def extract_text_from_features(visual_features: List[str]) -> List[str]:
-        """IMPROVED: Extract text-like features from visual features list"""
-        text_features = []
-
-        for feature in visual_features:
-            if not isinstance(feature, str):
-                continue
-
-            feature_lower = feature.lower()
-
-            # FIX 1: Handle "text [content]" pattern specifically
-            text_match = re.search(r'text\s+(.+)', feature_lower)
-            if text_match:
-                extracted_text = text_match.group(1).strip()
-                text_features.append(extracted_text)
-                continue
-
-            # FIX 2: Direct text patterns (improved)
-            text_patterns = [
-                r'(.+?)\s+text\b',          # "something text"
-                r'(.+?)\s+logo\b',          # "something logo"
-                r'(.+?)\s+branding\b',      # "something branding"
-                r'(.+?)\s+message\b',       # "something message"
-                r'says\s+(.+)',             # "says something"
-                r'reads\s+(.+)',            # "reads something"
-                r'displays?\s+(.+)',        # "display(s) something"
-                r'shows?\s+(.+)',           # "show(s) something"
-            ]
-
-            for pattern in text_patterns:
-                matches = re.findall(pattern, feature_lower)
-                for match in matches:
-                    cleaned = match.strip()
-                    if cleaned and len(cleaned) > 2:  # Avoid single characters
-                        text_features.append(cleaned)
-
-            # FIX 3: Look for quoted text
-            quoted_matches = re.findall(r'["\']([^"\']+)["\']', feature)
-            text_features.extend(quoted_matches)
-
-            # FIX 4: Extract brand names and specific text patterns
-            if any(keyword in feature_lower for keyword in ['epson', 'logo', 'branding']):
-                # Extract the brand name
-                if 'epson' in feature_lower:
-                    text_features.append('epson')
-
-            # FIX 5: Handle comma-separated text content
-            if ',' in feature and any(keyword in feature_lower for keyword in ['text', 'says', 'reads']):
-                # Extract text after keywords and split by comma
-                for keyword in ['text', 'says', 'reads']:
-                    if keyword in feature_lower:
-                        after_keyword = feature_lower.split(keyword, 1)[-1].strip()
-                        # Split by comma and clean up
-                        parts = [part.strip() for part in after_keyword.split(',')]
-                        text_features.extend([part for part in parts if part and len(part) > 2])
-
-        # FIX 6: Clean up and normalize extracted text
-        cleaned_texts = []
-        for text in text_features:
-            normalized = TextMatcher.normalize_text(text)
-            if normalized and len(normalized) > 2:
-                cleaned_texts.append(normalized)
-
-        # Remove duplicates while preserving order
-        seen = set()
-        unique_texts = []
-        for text in cleaned_texts:
-            if text not in seen:
-                seen.add(text)
-                unique_texts.append(text)
-
-        return unique_texts
+        s = TextMatcher._strip_ocr_prefix(s)
+        # de-accent
+        s = unicodedata.normalize("NFKD", s)
+        s = "".join(ch for ch in s if not unicodedata.combining(ch))
+        if not keep_case:
+            s = s.lower()
+        # keep letters/digits/space
+        s = re.sub(r"[^0-9a-zA-Z]+", " ", s)
+        # collapse whitespace
+        s = re.sub(r"\s+", " ", s).strip()
+        return s
 
     @staticmethod
+    def _tokenize(s: str, min_len: int = 2) -> List[str]:
+        return [t for t in s.split() if len(t) >= min_len]
+
+    @staticmethod
+    def _ngrams(tokens: List[str], n_from: int, n_to: int) -> Set[str]:
+        grams: Set[str] = set()
+        for n in range(max(1, n_from), max(n_from, n_to) + 1):
+            for i in range(0, max(0, len(tokens) - n + 1)):
+                grams.add(" ".join(tokens[i:i+n]))
+        return grams
+
+    @staticmethod
+    def _jaccard(a: Set[str], b: Set[str]) -> float:
+        if not a or not b:
+            return 0.0
+        inter = len(a & b)
+        if inter == 0:
+            return 0.0
+        union = len(a | b)
+        return inter / max(1, union)
+
+    @staticmethod
+    def _best_ngram_hits(req_grams: Set[str], feat_grams: Set[str], top_k: int = 5) -> List[str]:
+        hits = list(req_grams & feat_grams)
+        # sort by length desc to surface most informative matches
+        hits.sort(key=lambda x: (-len(x), x))
+        return hits[:top_k]
+
+    @classmethod
     def check_text_match(
+        cls,
         required_text: str,
         visual_features: List[str],
-        match_type: str = "contains",
+        match_type: str = "contains",      # "contains" | "regex" | "ngram" | "auto"
         case_sensitive: bool = False,
-        confidence_threshold: float = 0.8
-    ) -> TextComplianceResult:
-        """Check if required text matches any visual features"""
+        confidence_threshold: float = 0.6, # only used by ngram/auto
+        ngram_range: Tuple[int, int] = (1, 3),
+        min_token_len: int = 2,
+    ):
+        # Normalize the required text for all algorithms except strict case-sensitive contains/regex
+        req_norm = cls._normalize(required_text, keep_case=False)
+        req_norm_cs = cls._normalize(required_text, keep_case=True)
+        req_tokens = cls._tokenize(req_norm, min_len=min_token_len)
+        req_grams = cls._ngrams(req_tokens, ngram_range[0], ngram_range[1])
 
-        required_normalized = TextMatcher.normalize_text(required_text, case_sensitive)
-        extracted_texts = TextMatcher.extract_text_from_features(visual_features)
+        # Normalize all feature strings; keep both raw and normalized for substring/case options
+        norm_features: List[str] = []
+        raw_features: List[str] = []
+        for f in (visual_features or []):
+            if not isinstance(f, str):
+                continue
+            raw_features.append(cls._strip_ocr_prefix(f))
+            norm_features.append(cls._normalize(f, keep_case=False))
 
-        # DEBUG: Print what was extracted
-        print(f"  DEBUG: Looking for '{required_text}'")
-        print(f"  DEBUG: Visual features: {visual_features}")
-        print(f"  DEBUG: Extracted texts: {extracted_texts}")
+        # Helper to build the result
+        def _result(found: bool, confidence: float, match_kind: str, matched_feats: List[str]):
+            # TextComplianceResult(required_text, found, matched_features, confidence, match_type)
+            return TextComplianceResult(
+                required_text=required_text,
+                found=bool(found),
+                matched_features=matched_feats,
+                confidence=float(max(0.0, min(1.0, confidence))),
+                match_type=match_kind
+            )
 
-        matched_features = []
-        best_confidence = 0.0
-        found = False
+        # ----- 1) Regex (if explicitly requested)
+        if match_type == "regex":
+            flags = 0 if case_sensitive else re.IGNORECASE
+            try:
+                pattern = re.compile(required_text, flags)
+            except re.error:
+                # fall back to auto if invalid regex
+                match_type = "auto"
+            else:
+                for raw in raw_features:
+                    if pattern.search(raw):
+                        return _result(True, 1.0, "regex", [raw])
+                return _result(False, 0.0, "regex", [])
 
-        for text in extracted_texts:
-            text_normalized = TextMatcher.normalize_text(text, case_sensitive)
-            confidence = 0.0
+        # ----- 2) Contains (fast path)
+        if match_type == "contains":
+            needle = req_norm_cs if case_sensitive else req_norm
+            for raw, norm in zip(raw_features, norm_features):
+                haystack = raw if case_sensitive else norm
+                if needle and needle in haystack:
+                    return _result(True, 1.0, "contains", [needle])
+            return _result(False, 0.0, "contains", [])
 
-            if match_type == "exact":
-                if text_normalized == required_normalized:
-                    confidence = 1.0
-                    found = True
-                    matched_features.append(text)
+        # ----- 3) N-gram / Auto (n-gram + fuzzy + contains fallback)
+        # quick exact-substring fallback (case-insensitive)
+        for raw, norm in zip(raw_features, norm_features):
+            if req_norm and req_norm in norm:
+                return _result(True, 1.0, "contains", [required_text])
 
-            elif match_type == "contains":
-                # FIX 7: Improved contains matching
-                if required_normalized in text_normalized:
-                    confidence = 0.9
-                    found = True
-                    matched_features.append(text)
-                elif text_normalized in required_normalized:
-                    confidence = 0.8
-                    found = True
-                    matched_features.append(text)
-                # FIX 8: Handle partial word matches for phrases
-                elif len(required_normalized.split()) > 1:
-                    required_words = required_normalized.split()
-                    text_words = text_normalized.split()
-                    matches = sum(1 for word in required_words if word in text_words)
-                    if matches >= len(required_words) * 0.7:  # 70% of words match
-                        confidence = 0.7
-                        found = True
-                        matched_features.append(text)
+        best_conf = 0.0
+        best_hits: List[str] = []
+        best_kind = "ngram"
 
-            elif match_type == "regex":
-                try:
-                    pattern = re.compile(required_text, re.IGNORECASE if not case_sensitive else 0)
-                    if pattern.search(text):
-                        confidence = 0.95
-                        found = True
-                        matched_features.append(text)
-                except re.error:
-                    continue
+        for raw, norm in zip(raw_features, norm_features):
+            # n-gram containment
+            feat_tokens = cls._tokenize(norm, min_len=min_token_len)
+            feat_grams = cls._ngrams(feat_tokens, ngram_range[0], ngram_range[1])
+            jacc = cls._jaccard(req_grams, feat_grams)
 
-            elif match_type == "fuzzy":
-                confidence = TextMatcher._calculate_fuzzy_similarity(required_normalized, text_normalized)
-                if confidence >= confidence_threshold:
-                    found = True
-                    matched_features.append(text)
+            # fuzzy ratio (sequence similarity)
+            fuzzy = SequenceMatcher(None, req_norm, norm).ratio()
 
-            best_confidence = max(best_confidence, confidence)
+            conf = max(jacc, fuzzy)
+            if conf > best_conf:
+                best_conf = conf
+                # collect some concrete n-gram hits for debugging
+                hits = cls._best_ngram_hits(req_grams, feat_grams, top_k=5)
+                best_hits = hits if hits else ([required_text] if conf >= 1.0 else [])
+                best_kind = "ngram" if jacc >= fuzzy else "fuzzy"
 
-        print(f"  DEBUG: Found: {found}, Confidence: {best_confidence}, Matched: {matched_features}")
-
-        return TextComplianceResult(
-            required_text=required_text,
-            found=found,
-            matched_features=matched_features,
-            confidence=best_confidence,
-            match_type=match_type
-        )
-
-    @staticmethod
-    def _calculate_fuzzy_similarity(text1: str, text2: str) -> float:
-        """Calculate fuzzy similarity between two texts"""
-        if not text1 or not text2:
-            return 0.0
-
-        if text1 == text2:
-            return 1.0
-
-        # Simple Levenshtein-like ratio
-        longer = text1 if len(text1) > len(text2) else text2
-        shorter = text2 if len(text1) > len(text2) else text1
-
-        if len(longer) == 0:
-            return 1.0
-
-        # Count matching characters (simple approach)
-        matches = sum(1 for a, b in zip(shorter, longer) if a == b)
-        similarity = matches / len(longer)
-
-        # Bonus for substring matches
-        if shorter in longer:
-            similarity = max(similarity, 0.8)
-
-        return similarity
+        found = best_conf >= confidence_threshold
+        return _result(found, best_conf, best_kind, best_hits)

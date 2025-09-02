@@ -3,21 +3,26 @@ from navconfig import BASE_DIR
 from parrot.pipelines.planogram import PlanogramCompliancePipeline
 from parrot.models.detections import PlanogramConfigBuilder
 from parrot.clients.gpt import OpenAIClient, OpenAIModel
-from parrot.clients.claude import (
-    ClaudeClient,
-    ClaudeModel
-)
 
 async def main():
     """Example usage of the 3-step pipeline"""
     llm = OpenAIClient(model=OpenAIModel.GPT_4_1_MINI)
     # llm = ClaudeClient(model=ClaudeModel.SONNET_4)  # Uncomment to use Claude
 
+    # Reference images for product identification
+    reference_images = [
+        BASE_DIR / "examples" / "pipelines" / "advertisement.png",
+        BASE_DIR / "examples" / "pipelines" / "ET-2980.jpg",
+        BASE_DIR / "examples" / "pipelines" / "ET-3950.jpg",
+        BASE_DIR / "examples" / "pipelines" / "ET-4950.jpg"
+    ]
     # Initialize pipeline
     pipeline = PlanogramCompliancePipeline(
         llm=llm,
         # detection_model="yolov9m.pt"  # or "yolov8s", "yolov8m", etc.
-        detection_model="yolo11m.pt",
+        detection_model="yolo11l.pt",
+        reference_images=reference_images,
+        confidence_threshold=0.15,
     )
 
     planogram_config = {
@@ -41,7 +46,7 @@ async def main():
                 "compliance_threshold": 0.95
             },
             {
-                "level": "top",
+                "level": "middle",
                 "products": [
                     {
                         "name": "ET-2980",
@@ -65,7 +70,7 @@ async def main():
                 "compliance_threshold": 0.9
             },
             {
-                "level": "middle",
+                "level": "bottom",
                 "products": [
                     {
                         "name": "ET-2980 box",
@@ -90,6 +95,8 @@ async def main():
             "enabled": True,
             "promotional_type": "backlit_graphic",
             "position": "header",
+            "product_weight": 0.8,
+            "text_weight": 0.2,
             "text_requirements": [
                 {
                     "required_text": "Goodbye Cartridges",
@@ -109,22 +116,17 @@ async def main():
         config=planogram_config
     )
 
-    # Reference images for product identification
-    reference_images = [
-        BASE_DIR / "examples" / "pipelines" / "ET-2980.jpg",
-        BASE_DIR / "examples" / "pipelines" / "ET-3950.jpg",
-        BASE_DIR / "examples" / "pipelines" / "ET-4950.jpg"
-    ]
-
     # Endcap photo:
     image_path = BASE_DIR / "examples" / "pipelines" / "250714 BBY 501 Kennesaw GA.jpg"
+    # image_path = BASE_DIR / "examples" / "pipelines" / "original_0.jpg"
+    # image_path = BASE_DIR / "examples" / "pipelines" / "06668994-c27e-44d9-8d59-f1f65559c2e1-recap.jpeg"
+    # image_path = BASE_DIR / "examples" / "pipelines" / "eb04d624-a180-4e5c-b592-ab0d40b558f9-recap.jpeg"
+
 
     # Run complete pipeline
     results = await pipeline.run(
         image=image_path,
-        reference_images=reference_images,
         planogram_description=planogram,
-        confidence_threshold=0.6,
         return_overlay="identified",
         overlay_save_path="/tmp/planogram_overlay.jpg",
     )

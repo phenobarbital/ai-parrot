@@ -86,6 +86,8 @@ class AdvertisementEndcap(BaseModel):
         default="backlit_graphic", description="Type of promotional display"
     )
     position: Literal["header", "top", "middle", "bottom", "side"] = Field(default="header", description="Position of endcap")
+    product_weight: float = Field(default=0.8, description="Weight of product compliance in overall score")
+    text_weight: float = Field(default=0.2, description="Weight of text compliance in overall score")
     brand_requirements: List[str] = Field(default_factory=list, description="Required brand elements")
     text_requirements: List[TextRequirement] = Field(default_factory=list, description="Required text elements")
     reference_image_path: Optional[str] = Field(default=None, description="Path to reference image for comparison")

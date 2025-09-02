@@ -9,6 +9,13 @@ from .abstract import AbstractLoader
 try:
     from ebooklib import epub
     EBOOKLIB_AVAILABLE = True
+    try:
+        ITEM_DOCUMENT = epub.ITEM_DOCUMENT
+    except AttributeError:
+        try:
+            from ebooklib.epub import ITEM_DOCUMENT
+        except ImportError:
+            ITEM_DOCUMENT = 9  # Known constant value
 except Exception:
     EBOOKLIB_AVAILABLE = False
 
@@ -171,19 +178,17 @@ class EpubLoader(AbstractLoader):
         id_to_item = {it.get_id(): it for it in book.get_items()}
         order = 0
         for entry in (book.spine or []):
-            # entry is (idref, attrs_dict)
             if isinstance(entry, tuple) and entry and isinstance(entry[0], str):
                 idref = entry[0]
                 item = id_to_item.get(idref)
                 if item is None:
                     continue
-                if item.get_type() == epub.ITEM_DOCUMENT:
+                if item.get_type() == ITEM_DOCUMENT:
                     yield order, item
                     order += 1
 
-        # Fallback: if spine empty, iterate all documents in declared order
         if order == 0:
-            for i, item in enumerate(book.get_items_of_type(epub.ITEM_DOCUMENT)):
+            for i, item in enumerate(book.get_items_of_type(ITEM_DOCUMENT)):
                 yield i, item
 
     def _derive_title_from_html(self, html: str) -> Optional[str]:
