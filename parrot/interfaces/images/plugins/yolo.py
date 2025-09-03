@@ -12,7 +12,7 @@ class YOLOPlugin(ImagePlugin):
 
     def __init__(self, *args, **kwargs):
         self._model_name: str = kwargs.get("model_name", "yolov8n")
-        self._model_path: str = kwargs.get("model_path", "yolov8n.pt")
+        self._model_path: str = kwargs.get("model_path", "yolov11l.pt")
         if not self._model_name or not self._model_path:
             raise ValueError(
                 "Model name and model path are required."

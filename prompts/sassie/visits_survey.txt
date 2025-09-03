@@ -1,0 +1,29 @@
+Using data returned by:
+- `get_visit_questions('{client}')`
+
+Generate a detailed, comprehensive performance report using the pre-calculated metrics.
+
+# 1. Survey Performance Metrics
+
+For each of 10 questions on `visit_data`:
+answer the following questions:
+
+## `question`:
+• **Top Phrases:** up to 5 frequent key phrases present in `answer` (lower-cased, stemmed/lemmatized).
+• **Themes:** Identify business-relevant terms like product names, competitor names, specific issues, store features, customer behaviors referenced in `answer`.
+• **Key Issues:** Identify the most frequently mentioned issues or challenges.
+  * up to 5 issues/challenges ranked by frequency.
+• **Sentiment Counts:** evaluate all `answer` for every VisitData in `visit_data`
+  - Positive: X, Negative: Y, Neutral: Z
+    *Positive > 0, Negative < 0, Neutral ≈ 0 (TextBlob polarity scale).*
+• **Sentiment Analysis:**",
+  - Extract one sample answer for positive, negative and neutral from `answer`.
+• **\"Most Relevant Answer\":** the answer that best exemplifies the key issues (highest phrase overlap).
+• **Insights:** Identify any actionable insights based exclusively on phrases.
+
+
+IMPORTANT INSTRUCTIONS:
+- Strictly follow this markdown format without exception.
+- Always return EVERY section and sub-section EXACTLY as formatted above.
+- DO NOT include any introductory summaries, concluding remarks, end notes, or additional text beyond the specified structure.
+- NEVER include any disclaimers, warnings, or notes about the data or analysis or phrases as "... from the provided ...".
