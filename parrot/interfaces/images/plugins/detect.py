@@ -73,9 +73,13 @@ class DetectionPlugin(ClassifyBase):
                 detections.append(detection_dict)
 
             # Create the final result dictionary
+            detected = False
+            if detection_result.total_count > 0:
+                detected = True
             r = {
                 "analysis": detection_result.analysis,
                 "total_count": detection_result.total_count,  # Include this for completeness
+                "detected": detected,
                 "detections": detections
             }
 
@@ -106,7 +110,7 @@ class DetectionPlugin(ClassifyBase):
         if self.section_name in detections_column:
             del detections_column[self.section_name]
 
-        if hasattr(self, 'filter_column') and hasattr(self, 'filter_by'):
+        if getattr(self, 'filter_column', None) and getattr(self, 'filter_by', None):
             filter_value = row[self.filter_column] if self.filter_column in row else None
             # Check if filter value is valid and not NA
             if not self._is_valid_filter_value(filter_value):
@@ -132,7 +136,9 @@ class DetectionPlugin(ClassifyBase):
             if _result:
                 detections = self._extract_detection_results(_result)
                 self.logger.info(f"Successfully detected {detections['total_count']} products")
-                self.logger.debug(f"Analysis: {detections['analysis'][:100]}...")
+                self.logger.debug(
+                    f"Analysis: {detections['analysis'][:100]}..."
+                )
                 detections_column[self.section_name] = detections
                 row[self.column_name] = detections_column
                 # Return the updated detections column

@@ -1,0 +1,7 @@
+Use the provided report:
+
+{report}
+
+Write a crisp, actionable, C-level closing remarks
+    - Using the information provided, Please present the last actionable recommendations and best practices.
+    - Can we have like a recommendations, specific actions to be addressed.
