@@ -1,11 +1,11 @@
 Using data returned by:
-- `get_visit_questions('{client}')`
+- `get_visit_questions('{client}', '{questions}')`
 
 Generate a detailed, comprehensive performance report using the pre-calculated metrics.
 
 # 1. Survey Performance Metrics
 
-For each of 10 questions on `visit_data`:
+For each of questions on `visit_data`:
 answer the following questions:
 
 ## `question`:

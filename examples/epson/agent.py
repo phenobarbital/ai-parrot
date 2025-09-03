@@ -182,18 +182,6 @@ async def get_agent():
         llm='openai',
         model='gpt-4o',
     )
-    # embed_model = {
-    #     "model": "thenlper/gte-base",
-    #     "model_type": "huggingface"
-    # }
-    # agent.define_store(
-    #     vector_store='postgres',
-    #     embedding_model=embed_model,
-    #     dsn=default_dsn,
-    #     dimension=768,
-    #     table='products_information',
-    #     schema='epson',
-    # )
     await agent.configure()
     return agent
 

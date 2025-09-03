@@ -10,10 +10,8 @@ questions AS (
       AND  fq.hide_from_clients     = 0
       AND  fq.hide_from_client_masters = 0
       AND  fq.question_format IN (9,10,12,13,20,24,25,31,33)
-      AND  fq.question_id NOT IN ('1400:1', '1400:31', '1400:321', '1400:41','1400:51','1400:61','1400:71','1400:81','1400:91','1400:101','1400:111','1400:121','1400:261', '1400:11', '1400:311', '1400:241')
-      ---AND fq.question_id IN ('1400:181', '1400:191', '1400:201', '1400:211' )
-      --- AND fq.question_id IN ('1400:231', '1400:271', '1400:301')
-      AND fq.question_id IN ('1400:281', '1400:291', '1400:221')
+      ---AND  fq.question_id NOT IN ('1400:1', '1400:31', '1400:321', '1400:41','1400:51','1400:61','1400:71','1400:81','1400:91','1400:101','1400:111','1400:121','1400:261', '1400:11', '1400:311', '1400:241')
+      AND fq.question_id IN ('{question}')
 ),
 
 /* ---------- 2 · Diccionario de opciones ------------------------------------------------------------- */
@@ -60,8 +58,8 @@ responses AS (
                     /* id “sintético” si la lista está vacía pero existe mapping */
                     SELECT fr.question_id || ':' || fr.response_text
                     WHERE fr.response_text ~ '^[0-9]+$'
-                      AND EXISTS (SELECT 1
-                                   FROM opts o2
+                      AND EXISTS (
+                        SELECT 1 FROM opts o2
                                    WHERE o2.answer_option_id = fr.question_id || ':' || fr.response_text)
                    ) ids
               JOIN opts o ON o.answer_option_id = ids.ans_id ),
@@ -73,6 +71,7 @@ responses AS (
     GROUP  BY fr.activity_item_id, fr.question_id,
               fr.response_text, fr.answer_option_ids
 ),
+
 
 /* ---------- 4 · Visitas núcleo (filtrado por fechas) ----------------------------------------------- */
 visits AS (
@@ -88,6 +87,7 @@ visits AS (
         actst.state_code,
         actst.country_code,
         actst.zipcode,
+        act.account_name,
         actst.territory_name,
         actst.region_name,
         actst.district_name,
@@ -99,6 +99,15 @@ visits AS (
     WHERE  act.formid      = 1400
       AND  act.status_code >= 3
     ---  AND  act.activity_item_updateddon BETWEEN 'firstdate' AND 'lastdate'
+),
+totals AS (
+  SELECT
+      COUNT(DISTINCT v.store_number)     AS qty_stores_visited,
+      COUNT(DISTINCT v.account_name)     AS qty_retailers_visited,
+      COUNT(DISTINCT v.activity_item_id) AS qty_total_visits,
+      COUNT(DISTINCT v.state_code)       AS qty_states_visited,
+      COUNT(DISTINCT v.shopper_id)       AS qty_mystery_shoppers
+  FROM visits v
 )
 /* ---------- 5 · Resultado final --------------------------------------------------------------------- */
 SELECT
@@ -110,17 +119,25 @@ SELECT
     v.store_name                   AS "store_name",
     v.city                         AS "city",
     v.state_code                   AS "state_code",
+    v.account_name                 AS "account_name",
     v.district_name                AS "district",
     v.region_name                  AS "region",
     v.territory_name               AS "division",
     v.market_name                  AS "market",
-    jsonb_agg(jsonb_build_object('survey_id', v.activity_item_id, 'question_id', q.question_id, 'question', q.question_text, 'answer', r.answer_text)) as visit_data
+    jsonb_agg(jsonb_build_object('survey_id', v.activity_item_id, 'question_id', q.question_id, 'question', q.question_text, 'answer', r.answer_text)) as visit_data,
+    t.qty_stores_visited,
+    t.qty_retailers_visited,
+    t.qty_total_visits,
+    t.qty_states_visited,
+    t.qty_mystery_shoppers
 FROM   visits     v
 CROSS  JOIN questions q
 LEFT   JOIN responses r
        ON  r.activity_item_id = v.activity_item_id
        AND r.question_id      = q.question_id
+CROSS  JOIN totals t
 GROUP BY v.activity_item_id, v.client_name, v.shopper_id, v.activity_item_actual_end,
          v.store_number, v.store_name, v.store_address, v.city, v.state_code,
-         v.country_code, v.zipcode, v.district_name, v.region_name, v.territory_name, v.market_name
+         v.country_code, v.zipcode, v.account_name, v.district_name, v.region_name, v.territory_name, v.market_name,
+         t.qty_stores_visited, t.qty_retailers_visited, t.qty_total_visits, t.qty_states_visited, t.qty_mystery_shoppers
 ORDER BY v.activity_item_id
