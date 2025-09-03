@@ -127,6 +127,28 @@ class BasicAgent(Chatbot):
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         return f"{prefix}_{timestamp}.{extension}"
 
+    async def save_document(
+        self,
+        content: str,
+        prefix: str = 'report',
+        extension: str = 'txt',
+        subdir: str = 'documents'
+    ) -> None:
+        """Save the document to a file."""
+        report_filename = self._create_filename(
+            prefix=prefix, extension=extension
+        )
+        try:
+            async with aiofiles.open(
+                STATIC_DIR.joinpath(self.agent_id, subdir, report_filename),
+                'w'
+            ) as report_file:
+                await report_file.write(content)
+        except Exception as e:
+            self.logger.error(
+                f"Failed to save document {report_filename}: {e}"
+            )
+
     async def open_prompt(self, prompt_file: str = None) -> str:
         """
         Opens a prompt file and returns its content.

@@ -1,0 +1,9 @@
+Use the provided report:
+
+{report}
+
+Write a crisp, actionable, C-level executive summary of the content in Section 1.
+- 5–7 bullets max
+- Focus on outcomes, risks, and next actions
+- Quantify where possible
+- No fluff

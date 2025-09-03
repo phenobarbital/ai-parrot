@@ -88,6 +88,7 @@ class BaseNextStop(AbstractToolkit):
         super().__init__(**kwargs)
         self.default_dsn = dsn or default_dsn
         self.program = program or 'hisense'
+        self.agent_name: str = kwargs.get('agent_name', 'nextstop')
         self._json_encoder = json_encoder
         self._json_decoder = json_decoder
 
@@ -119,7 +120,7 @@ class BaseNextStop(AbstractToolkit):
         """Fetch the prompt content from the specified file."""
         prompt_path = BASE_DIR.joinpath(
             'agents',
-            'nextstop',
+            self.agent_name,
             self.program,
             'prompts', f"{prompt_file}.txt"
         )
@@ -142,7 +143,7 @@ class BaseNextStop(AbstractToolkit):
         """
         query_path = BASE_DIR.joinpath(
             'agents',
-            'nextstop',
+            self.agent_name,
             self.program,
             'queries',
             f"{query_name}.sql"
