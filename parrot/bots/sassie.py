@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import List
+from typing import List, Dict
 import textwrap
 from datetime import datetime
 from navconfig import BASE_DIR
@@ -54,6 +54,20 @@ class SassieAgent(BasicAgent):
     )
     speech_length: int = 20  # Default length for the speech report
     num_speakers: int = 2  # Default number of speakers for the podcast
+    speakers: Dict[str, str] = {
+        "interviewer": {
+            "name": "Lydia",
+            "role": "interviewer",
+            "characteristic": "Bright",
+            "gender": "female"
+        },
+        "interviewee": {
+            "name": "Steven",
+            "role": "interviewee",
+            "characteristic": "Informative",
+            "gender": "male"
+        }
+    }
 
     def __init__(
         self,
@@ -154,12 +168,24 @@ class SassieAgent(BasicAgent):
                     report=final_report
                 )
                 executive_summary = response.output
+                # and the closing remarks:
+                _, response = await self.generate_report(
+                    prompt_file="final_survey.txt",
+                    save=False,
+                    program=program,
+                    report=final_report
+                )
+                closing_remarks = response.output
                 final_report = textwrap.dedent(f"""
 # 1. Executive Summary:
 {executive_summary}
 
 # 2. Survey Metadata:
 {final_report}
+
+# 3. Closing remarks:
+{closing_remarks}
+
 """)
                 print(f"Final Report generated successfully.")
                 # Generate a PDF report
@@ -174,7 +200,8 @@ class SassieAgent(BasicAgent):
                 # -- Generate a podcast script
                 podcast = await self.speech_report(
                     report=final_report,
-                    num_speakers=2,
+                    max_lines=self.speech_length,
+                    num_speakers=self.num_speakers,
                     podcast_instructions='conversation.txt'
                 )
                 print(f"Podcast script generated: {podcast}")
