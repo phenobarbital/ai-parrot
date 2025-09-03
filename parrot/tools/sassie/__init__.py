@@ -1,20 +1,90 @@
-from typing import List, Optional, Dict, Any
+from decimal import Decimal
+from typing import List, Optional, Dict, Any, Union
+from typing_extensions import Annotated
 from datetime import date
 import json
-from pydantic import BaseModel, ConfigDict, Field
-from datamodel.parsers.json import json_decoder, json_encoder, JSONContent  # noqa  pylint: disable=E0611
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+from datamodel.parsers.json import json_encoder  # noqa  pylint: disable=E0611
 from ...exceptions import ToolError  # pylint: disable=E0611
 from ..toolkit import tool_schema
 from ..nextstop.base import BaseNextStop
 
+class ProductInput(BaseModel):
+    """Input schema for querying Epson product information."""
+    model: Optional[str] = Field(
+        default=None,
+        description="The unique identifier for the Epson product."
+    )
+    product_name: Optional[str] = Field(
+        default=None,
+        description="The name of the Epson product."
+    )
+    output_format: Optional[str] = Field(
+        default='structured',
+        description="Output format for the employee data"
+    )
+
+    # Add a model_config to prevent additional properties
+    model_config = ConfigDict(
+        arbitrary_types_allowed=False,
+        extra="forbid",
+    )
+
+
+class ProductInfo(BaseModel):
+    """Schema for the product information returned by the query."""
+    name: str
+    model: str
+    description: str
+    picture_url: str
+    brand: str
+    pricing: Decimal
+    customer_satisfaction: Optional[str] = None
+    product_evaluation: Optional[str] = None
+    product_compliant: Optional[str] = None
+    specifications: Dict[str, Union[dict, list]] = Field(
+        default_factory=dict,
+        description="Specifications of the product, can be a dict or list."
+    )
+    review_average: float
+    reviews: int
+
+    @field_validator('specifications', mode='before')
+    @classmethod
+    def parse_specifications(cls, v):
+        if v is None or v == '':
+            return {}
+        if isinstance(v, dict):
+            return v
+        if isinstance(v, (bytes, bytearray)):
+            v = v.decode('utf-8', errors='ignore')
+        if isinstance(v, str):
+            try:
+                parsed = json.loads(v)
+            except json.JSONDecodeError as e:
+                raise ValueError("Specifications field is not a valid JSON string.") from e
+            if not isinstance(parsed, dict):
+                raise TypeError("Specifications JSON must decode to a dictionary.")
+            return parsed
+        raise TypeError("specifications must be a dict or a JSON string.")
+
+    # Add a model_config to prevent additional properties
+    model_config = ConfigDict(
+        arbitrary_types_allowed=False,
+        extra="forbid",
+    )
 
 class ClientInput(BaseModel):
     """Input schema for client-related tools."""
-    client_id: str = Field(..., description="Unique identifier for the client")
     program: Optional[str] = Field(
-        None,
+        default='google',
         description="Program name, defaults to current program if not provided"
     )
+    question: str = Field(
+        None,
+        description="Question ID to retrieve"
+    )
+    client: str = Field(default='1400', description="Unique identifier for the client")
 
     model_config = ConfigDict(extra="forbid")
 
@@ -59,11 +129,13 @@ class VisitsToolkit(BaseNextStop):
     This toolkit provides tools to:
     - visits_survey: Get visit survey data for an specified Client.
     - get_visit_questions: Get visit questions and answers for a specific client.
+    - get_product_information: Get basic product information.
     """
     async def _get_visits(
         self,
-        client_id: str,
         program: str,
+        client: str,
+        question: str,
         **kwargs
     ) -> List[Dict[str, Any]]:
         """Internal method to fetch raw visit data for a specified client.
@@ -71,7 +143,7 @@ class VisitsToolkit(BaseNextStop):
         if program:
             self.program = program
         sql = await self._get_query("surveys")
-        sql = sql.format(client=client_id)
+        sql = sql.format(client=client, question=question)
         try:
             return await self._get_dataset(
                 sql,
@@ -80,7 +152,7 @@ class VisitsToolkit(BaseNextStop):
             )
         except ToolError as te:
             raise ValueError(
-                f"No Survey Visit data found for client {client_id}, error: {te}"
+                f"No Survey Visit data found for client {client}, error: {te}"
             )
         except Exception as e:
             raise ValueError(f"Error fetching Survey visit data: {e}"
@@ -89,8 +161,9 @@ class VisitsToolkit(BaseNextStop):
     @tool_schema(ClientInput)
     async def visits_survey(
         self,
-        client_id: str,
         program: str,
+        client: str,
+        question: str,
         **kwargs
     ) -> List[EvaluationRecord]:
         """Fetch visit survey data for a specified client.
@@ -98,8 +171,9 @@ class VisitsToolkit(BaseNextStop):
         if program:
             self.program = program
         visits = await self._get_visits(
-            client_id,
-            program
+            program=program,
+            client=client,
+            question=question
         )
         # removing the column "visit_data" from the response
         for visit in visits:
@@ -110,8 +184,9 @@ class VisitsToolkit(BaseNextStop):
     @tool_schema(ClientInput)
     async def get_visit_questions(
         self,
-        client_id: str,
         program: str,
+        client: str,
+        question: str,
     ) -> Dict[str, List[Dict[str, Any]]]:
         """
         Get visit information for a specific store, focusing on questions and answers.
@@ -119,8 +194,9 @@ class VisitsToolkit(BaseNextStop):
         if program:
             self.program = program
         visits = await self._get_visits(
-            client_id,
-            program
+            client=client,
+            program=program,
+            question=question
         )
         if isinstance(visits, str):  # If an error message was returned
             return visits
@@ -144,3 +220,40 @@ class VisitsToolkit(BaseNextStop):
                     }
                 )
         return json_encoder(question_data)
+
+    @tool_schema(ProductInput)
+    async def get_product_information(
+        self,
+        model: str,
+        product_name: Optional[str] = None,
+        output_format: str = 'structured',
+        structured_obj: Optional[ProductInfo] = ProductInfo
+    ) -> ProductInfo:
+        """
+        Retrieve product information for a given Epson product Model.
+        """
+        try:
+            sql = await self._get_query("product_info")
+            sql = sql.format(model=model)
+            data = await self._get_dataset(
+                sql,
+                output_format=output_format,
+                structured_obj=structured_obj
+            )
+            if not data:
+                raise ToolError(
+                    f"No Product data found for model {model}."
+                )
+            return data
+        except ToolError as te:
+            raise ValueError(
+                f"No Product data found for model {model}, error: {te}"
+            )
+        except ValueError as ve:
+            raise ValueError(
+                f"Invalid data format, error: {ve}"
+            )
+        except Exception as e:
+            raise ValueError(
+                f"Error fetching Product data: {e}"
+            )

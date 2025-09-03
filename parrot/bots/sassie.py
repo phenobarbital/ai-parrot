@@ -20,7 +20,7 @@ Your name is SassieSurvey, an IA Copilot specialized in providing detailed infor
 
 $capabilities
 
-**Mission:** Provide all the necessary information about surveys.
+**Mission:** Our employees go to an assigned store and suggest that you've heard positive things about the new Google Pixel 10 phone and are considering upgrading. When speaking with a store employee, present these three (3) concerns as reasons you might hesitate to switch: 1. Messaging not working well with iPhone/Samsung friends. 2. Pixel’s camera may not be as good as if you upgraded to the most current version of your device. 3. Switching phones is a pain / might lose data
 **Background:** Visits are mystery shopper evaluations conducted by employees to assess the performance of retail stores. The evaluations focus on various aspects such as customer service, product availability, store cleanliness, and overall shopping experience. The goal of these visits is to ensure that stores meet company standards and provide a positive experience for customers.
 
 **Knowledge Base:**
@@ -46,12 +46,11 @@ class SassieAgent(BasicAgent):
     """
     _agent_response = AgentResponse
     speech_context: str = (
-        "The report evaluates the performance of the employee's previous visits and defines strengths and weaknesses."
+        "This report provides insight into the 350+ retail locations that we visited during the recent Pixel 10 release. "
     )
     speech_system_prompt: str = (
-        "You are an expert brand ambassador for T-ROC, a leading retail solutions provider."
-        " Your task is to create a conversational script about the strengths and weaknesses of previous visits and what"
-        " factors should be addressed to achieve a perfect visit."
+        "You are an expert podcast scriptwriter. Your task is to create a conversational script about the mystery shopper report. "
+        "Starts with \"this report provides insight into the 350+ retail locations that we visited during the recent Pixel 10 release. The angle that we took was the following: Go to your assigned store and suggest that you've heard positive things about the new Google Pixel 10 phone and are considering upgrading. When speaking with a store employee, present these three (3) concerns as reasons you might hesitate to switch: 1. Messaging not working well with iPhone/Samsung friends. 2. Pixel’s camera may not be as good as if you upgraded to the most current version of your device. 3. Switching phones is a pain / might lose data.  The subsequent responses can be summarized as follows: "
     )
     speech_length: int = 20  # Default length for the speech report
     num_speakers: int = 2  # Default number of speakers for the podcast
@@ -107,3 +106,82 @@ class SassieAgent(BasicAgent):
         raise TypeError(
             f"Expected tools to be a list or an AbstractTool instance, got {type(tools)}"
         )
+
+    async def multi_report(self, program: str = 'google') -> AgentResponse:
+        """Generate multiple reports concurrently."""
+        async with self:
+            questions = [
+                '1400:181',
+                '1400:191',
+                '1400:201',
+                # '1400:211',
+                '1400:231',
+                '1400:271',
+                '1400:301',
+                '1400:281',
+                '1400:291',
+                '1400:221',
+                '1400:261',
+            ]
+            partials = []
+            for question in questions:
+                try:
+                    _, response = await self.generate_report(
+                        prompt_file="question_survey.txt",
+                        save=False,
+                        program=program,
+                        question=question
+                    )
+                    if response and response.output:
+                        partials.append(response.output)
+                except Exception as e:
+                    print(f"Unexpected error: {e}")
+                    continue
+            # Generate one final report with all the partials
+            final_report = "\n\n".join(partials)
+            try:
+                # saving the final report as txt:
+                await self.save_document(
+                    content=final_report,
+                    prefix=f"{program}_final_report",
+                    extension='txt'
+                )
+                # Then, generate a new report with the final content:
+                _, response = await self.generate_report(
+                    prompt_file="final_survey_report.txt",
+                    save=True,
+                    program=program,
+                    report=final_report
+                )
+                executive_summary = response.output
+                final_report = textwrap.dedent(f"""
+# 1. Executive Summary:
+{executive_summary}
+
+# 2. Survey Metadata:
+{final_report}
+""")
+                print(f"Final Report generated successfully.")
+                # Generate a PDF report
+                pdf = await self.pdf_report(
+                    title='AI-Generated Sassie Survey Report',
+                    content=final_report,
+                    filename_prefix='sassie_report'
+                )
+                print(
+                    f"Report generated: {pdf}"
+                )
+                # -- Generate a podcast script
+                podcast = await self.speech_report(
+                    report=final_report,
+                    num_speakers=2,
+                    podcast_instructions='conversation.txt'
+                )
+                print(f"Podcast script generated: {podcast}")
+                response.transcript = final_report
+                response.podcast_path = str(podcast.get('podcast_path'))
+                response.pdf_path = str(pdf.result.get('file_path'))
+                response.script_path = str(podcast.get('script_path'))
+                return response
+            except Exception as e:
+                print(f"Unexpected error generating final report or podcast: {e}")
