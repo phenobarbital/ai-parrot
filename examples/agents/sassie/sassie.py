@@ -5,6 +5,7 @@ async def get_agent():
     agent = SassieAgent(
         llm='openai',
         model='gpt-4o',
+        temperature=0
         # model='gemini-2.5-pro'
     )
     await agent.configure()
@@ -26,6 +27,18 @@ async def create_report():
         except Exception as e:
             print(f"Unexpected error: {e}")
 
+async def create_retailer_report():
+    """Create a retailer-specific report for the agent."""
+    agent = await get_agent()
+    async with agent:
+        try:
+            response, response_data = await agent.retailer_report(
+                program='google'
+            )
+            print(f"Retailer Report generated successfully")
+        except Exception as e:
+            print(f"Unexpected error generating retailer report: {e}")
 
 if __name__ == "__main__":
     asyncio.run(create_report())
+    # asyncio.run(create_retailer_report())
