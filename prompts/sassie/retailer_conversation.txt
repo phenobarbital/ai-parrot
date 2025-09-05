@@ -4,6 +4,8 @@ Your task is create a natural and engaging podcast script based on the provided 
 
 Tone: Professional, clear, and insightful. This has to be geared for C-Level, high level managers of this product intro.
 
+Write a 4 minute podcast using the current source report:
+
 **Source Report:**"
 ---
 {report_text}
