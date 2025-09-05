@@ -10,10 +10,8 @@ questions AS (
       AND  fq.hide_from_clients     = 0
       AND  fq.hide_from_client_masters = 0
       AND  fq.question_format IN (9,10,12,13,20,24,25,31,33)
-      ---AND  fq.question_id NOT IN ('1400:1', '1400:31', '1400:321', '1400:41','1400:51','1400:61','1400:71','1400:81','1400:91','1400:101','1400:111','1400:121','1400:261', '1400:11', '1400:311', '1400:241')
       AND fq.question_id IN ('{question}')
 ),
-
 /* ---------- 2 · Diccionario de opciones ------------------------------------------------------------- */
 opts AS (
   SELECT
@@ -39,7 +37,6 @@ opts AS (
     ) AS obj
   WHERE fq.formid = 1400
 ),
-
 /* ---------- 3 · Respuestas con texto normalizado ---------------------------------------------------- */
 responses AS (
     SELECT
@@ -60,8 +57,8 @@ responses AS (
                     WHERE fr.response_text ~ '^[0-9]+$'
                       AND EXISTS (
                         SELECT 1 FROM opts o2
-                                   WHERE o2.answer_option_id = fr.question_id || ':' || fr.response_text)
-                   ) ids
+                        WHERE o2.answer_option_id = fr.question_id || ':' || fr.response_text)
+                  ) ids
               JOIN opts o ON o.answer_option_id = ids.ans_id ),
           /* B · texto libre ------------------------------------------------ */
           fr.response_text
@@ -71,8 +68,6 @@ responses AS (
     GROUP  BY fr.activity_item_id, fr.question_id,
               fr.response_text, fr.answer_option_ids
 ),
-
-
 /* ---------- 4 · Visitas núcleo (filtrado por fechas) ----------------------------------------------- */
 visits AS (
     SELECT
@@ -95,36 +90,52 @@ visits AS (
         act.activity_item_actual_end
     FROM   sassie.activities_stores actst
     JOIN   sassie.activities act
-           ON act.activity_item_id = actst.activity_item_id
+    ON act.activity_item_id = actst.activity_item_id
     WHERE  act.formid      = 1400
-      AND  act.status_code >= 3
-    ---  AND  act.activity_item_updateddon BETWEEN 'firstdate' AND 'lastdate'
+      AND  act.status_code in (9)
+),
+eligible AS (
+  SELECT DISTINCT v.*
+  FROM visits v
+  JOIN responses r
+    ON r.activity_item_id = v.activity_item_id
+  AND r.question_id = '{question}'
+  AND NULLIF(BTRIM(r.answer_text), '') IS NOT NULL
 ),
 totals AS (
   SELECT
-      COUNT(DISTINCT v.store_number)     AS qty_stores_visited,
-      COUNT(DISTINCT v.account_name)     AS qty_retailers_visited,
-      COUNT(DISTINCT v.activity_item_id) AS qty_total_visits,
-      COUNT(DISTINCT v.state_code)       AS qty_states_visited,
-      COUNT(DISTINCT v.shopper_id)       AS qty_mystery_shoppers
-  FROM visits v
+    COUNT(DISTINCT e.store_number)     AS qty_stores_visited,
+    COUNT(DISTINCT e.account_name)     AS qty_retailers_visited,
+    COUNT(DISTINCT e.activity_item_id) AS qty_total_visits,
+    COUNT(DISTINCT e.state_code)       AS qty_states_visited,
+    COUNT(DISTINCT e.shopper_id)       AS qty_mystery_shoppers
+  FROM eligible e
 )
 /* ---------- 5 · Resultado final --------------------------------------------------------------------- */
 SELECT
     v.activity_item_id::text       AS "evaluation_id",
-    v.client_name                  AS "client_name",
-    v.shopper_id                   AS "shopper_id",
+    --- v.client_name                  AS "client_name",
+    --- v.shopper_id                   AS "shopper_id",
     v.activity_item_actual_end     AS "visit_date",
-    v.store_number::text           AS "store_number",
-    v.store_name                   AS "store_name",
-    v.city                         AS "city",
-    v.state_code                   AS "state_code",
+    --- v.store_number::text           AS "store_number",
+    --- v.store_name                   AS "store_name",
+    --- v.city                         AS "city",
+    --- v.state_code                   AS "state_code",
     v.account_name                 AS "account_name",
-    v.district_name                AS "district",
-    v.region_name                  AS "region",
-    v.territory_name               AS "division",
-    v.market_name                  AS "market",
-    jsonb_agg(jsonb_build_object('survey_id', v.activity_item_id, 'question_id', q.question_id, 'question', q.question_text, 'answer', r.answer_text)) as visit_data,
+    --- v.district_name                AS "district",
+    --- v.region_name                  AS "region",
+    --- v.territory_name               AS "division",
+    --- v.market_name                  AS "market",
+    jsonb_object_agg(
+    q.question_id,
+    jsonb_build_object(
+      'question_id', q.question_id,
+      'activity_item_id', r.activity_item_id,
+      'question', q.question_text,
+      'answer', r.answer_text
+    )
+    ORDER BY q.question_id
+  ) AS visit_data,
     t.qty_stores_visited,
     t.qty_retailers_visited,
     t.qty_total_visits,
@@ -136,6 +147,7 @@ LEFT   JOIN responses r
        ON  r.activity_item_id = v.activity_item_id
        AND r.question_id      = q.question_id
 CROSS  JOIN totals t
+WHERE q.question_id = '{question}' AND NULLIF(BTRIM(r.answer_text), '') IS NOT NULL
 GROUP BY v.activity_item_id, v.client_name, v.shopper_id, v.activity_item_actual_end,
          v.store_number, v.store_name, v.store_address, v.city, v.state_code,
          v.country_code, v.zipcode, v.account_name, v.district_name, v.region_name, v.territory_name, v.market_name,
