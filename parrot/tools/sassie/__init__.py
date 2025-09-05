@@ -31,7 +31,6 @@ class RetailerEvaluation(BaseModel):
     """Schema for retailer evaluation data."""
     account_name: str
     created_at: date
-    weighted_score: float
     retailer_evaluation: Dict[str, Any] = Field(
         default_factory=dict,
     )

@@ -1,4 +1,5 @@
 from __future__ import annotations
+import asyncio
 from typing import List, Dict
 import textwrap
 from datetime import datetime
@@ -221,50 +222,55 @@ class SassieAgent(BasicAgent):
             'AT&T',
             'Spectrum'
         ]
-        partials = []
+        partials = {}
         responses = []
         async with self:
             for retailer in retailers:
                 try:
-                    aimessage, response = await self.generate_report(
+                    _, response = await self.generate_report(
                         prompt_file="by_retailer.txt",
                         save=True,
                         program=program,
                         retailer=retailer
                     )
                     final_report = response.output
-                    partials.append(final_report)
-                    # # Generate a PDF report
-                    # pdf = await self.pdf_report(
-                    #     title=f'AI-Generated {retailer} Survey Report',
-                    #     content=final_report,
-                    #     filename_prefix='retailer_report'
-                    # )
-                    # print(
-                    #     f"Report generated: {pdf}"
-                    # )
-                    # # -- Generate a podcast script
-                    # podcast = await self.speech_report(
-                    #     report=final_report,
-                    #     max_lines=self.speech_length,
-                    #     num_speakers=self.num_speakers,
-                    #     podcast_instructions='retailer_conversation.txt'
-                    # )
-                    # print(f"Podcast script generated: {podcast}")
-                    # response.transcript = final_report
-                    # response.podcast_path = str(podcast.get('podcast_path'))
-                    # response.pdf_path = str(pdf.result.get('file_path'))
-                    # response.script_path = str(podcast.get('script_path'))
-                    # responses.append(response)
+                    partials[retailer] = final_report
+                    # Generate a PDF report
+                    pdf = await self.pdf_report(
+                        title=f'AI-Generated {retailer} Survey Report',
+                        content=final_report,
+                        filename_prefix='retailer_report'
+                    )
+                    print(
+                        f"Report generated: {pdf}"
+                    )
+                    # -- Generate a podcast script
+                    podcast = await self.speech_report(
+                        report=final_report,
+                        max_lines=self.speech_length,
+                        num_speakers=self.num_speakers,
+                        podcast_instructions='retailer_conversation.txt'
+                    )
+                    print(f"Podcast script generated: {podcast}")
+                    response.transcript = final_report
+                    response.podcast_path = str(podcast.get('podcast_path'))
+                    response.pdf_path = str(pdf.result.get('file_path'))
+                    response.script_path = str(podcast.get('script_path'))
+                    responses.append(response)
                 except Exception as e:
                     print(f"Unexpected error generating retailer report: {e}")
+                    continue
+                # add a delay between requests to avoid rate limiting
+                await asyncio.sleep(0.5)
             # At the end, generate one final summary report with all the retailers
             if partials:
-                final_report = "\n\n".join(partials)
+                final_report = ""
+                for retailer, report in partials.items():
+                    final_report += f"# {retailer} Report\n\n{report}\n\n"
                 try:
                     # Then, generate a new report with the final content:
                     _, response = await self.generate_report(
-                        prompt_file="final_survey_report.txt",
+                        prompt_file="final_retailer_report.txt",
                         save=True,
                         program=program,
                         report=final_report

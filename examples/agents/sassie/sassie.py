@@ -40,5 +40,5 @@ async def create_retailer_report():
             print(f"Unexpected error generating retailer report: {e}")
 
 if __name__ == "__main__":
-    asyncio.run(create_report())
-    # asyncio.run(create_retailer_report())
+    # asyncio.run(create_report())
+    asyncio.run(create_retailer_report())
