@@ -92,7 +92,7 @@ class AdvertisementEndcap(BaseModel):
     text_requirements: List[TextRequirement] = Field(default_factory=list, description="Required text elements")
     reference_image_path: Optional[str] = Field(default=None, description="Path to reference image for comparison")
     allow_additional_text: bool = Field(default=True, description="Allow additional text beyond requirements")
-    size_constraints: Optional[Dict[str, float]] = Field(default=None, description="Size constraints for the advertisement")
+    size_constraints: Optional[Dict[str, Any]] = Field(default=None, description="Size constraints for the advertisement")
 
 
 class AisleConfig(BaseModel):

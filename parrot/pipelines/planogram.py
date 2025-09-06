@@ -26,6 +26,7 @@ from pydantic import BaseModel, Field
 import cv2
 import torch
 from transformers import CLIPProcessor, CLIPModel
+from navconfig.logging import logging
 from .abstract import AbstractPipeline
 from ..models.detections import (
     DetectionBox,
@@ -99,9 +100,25 @@ class RetailDetector:
         self.iou = iou
         self.device = device
 
+        # Endcap geometry defaults (can be tuned per program)
+        self.endcap_aspect_ratio = 1.35   # width / height
+        self.left_margin_ratio   = 0.12   # expand poster to endcap edges
+        self.right_margin_ratio  = 0.12
+        self.top_margin_ratio    = 0.02
+
+        # Shelf split defaults: header/middle/bottom
+        self.shelf_split = (0.40, 0.25, 0.35)  # sums to ~1.0
+        # Useful elsewhere (price tag guardrails, etc.)
+        self.label_strip_ratio = 0.06
+
         # CLIP for open-vocab and ref matching
-        self.clip = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").to(device)
-        self.proc = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+        self.clip = CLIPModel.from_pretrained(
+            "openai/clip-vit-base-patch32"
+        ).to(device)
+        self.proc = CLIPProcessor.from_pretrained(
+            "openai/clip-vit-base-patch32"
+        )
+        self.logger = logging.getLogger('parrot.pipelines.planogram.RetailDetector')
 
         self.ref_paths = reference_images or []
         self.ref_ad = self.ref_paths[0] if self.ref_paths else None
@@ -235,6 +252,7 @@ class RetailDetector:
     def detect(
         self,
         image: Image.Image,
+        planogram: Optional[PlanogramDescription] = None,
         debug_raw: Optional[str] = None,
         debug_phase1: Optional[str] = None,
         debug_phases: Optional[str] = None,
@@ -246,20 +264,34 @@ class RetailDetector:
 
         h, w = img_array.shape[:2]
 
-        # 1) find promo (OCR + CLIP + fallbacks)
+        # 1) Find the poster:
         ad_box = self._find_poster(img_array)
 
-        # 2) endcap ROI (keep existing)
-        roi_box = self._roi_from_poster(ad_box, h, w)
+        # 2) endcap ROI
+        sc = planogram.advertisement_endcap.size_constraints if planogram and planogram.advertisement_endcap else {}
+        roi_box = self._roi_from_poster(ad_box, h, w, sc)
         rx1, ry1, rx2, ry2 = roi_box
         roi = img_array[ry1:ry2, rx1:rx2]
 
-        # 3) shelf lines & bands (keep existing)
-        shelf_lines, bands = self._find_shelves(roi, rx1, ry1, rx2, ry2, h)
-        header_limit_y = min(v[0] for v in bands.values()) if bands else int(0.4 * h)
-
         # 4) YOLO inside ROI
         yolo_props = self._yolo_props(roi, rx1, ry1)
+
+        # 3) shelves
+        shelf_lines, bands = self._find_shelves(
+            roi_box=roi_box,
+            ad_box=ad_box,
+            w=w, h=h,
+            proposals=yolo_props,
+            size_constraints=sc
+        )
+        # header_limit_y = min(v[0] for v in bands.values()) if bands else int(0.4 * h)
+        # classification fallback limit = header bottom (or 40% of ROI height)
+        if bands and "header" in bands:
+            header_limit_y = bands["header"][1]
+        else:
+            roi_h = max(1, ry2 - ry1)
+            header_limit_y = ry1 + int(0.4 * roi_h)
+
         if debug_raw:
             dbg = self._draw_phase_areas(img_array.copy(), yolo_props, roi_box)
             cv2.imwrite(
@@ -430,93 +462,342 @@ class RetailDetector:
             H - 1           # Go to bottom
         )
 
-    def _roi_from_poster(self, ad_box, h, w):
-        """
-        Create focused ROI with reduced margins
-        """
-        # Tighter horizontal bounds - reduce by ~5-10% on each side
-        rx1 = int(0.15 * w)   # Move right edge in (was 0.08)
-        rx2 = int(0.88 * w)   # Move left edge in (was 0.95)
+    # def _roi_from_poster(self, ad_box, h, w):
+    #     """
+    #     Create focused ROI with reduced margins
+    #     """
+    #     # Tighter horizontal bounds - reduce by ~5-10% on each side
+    #     rx1 = int(0.15 * w)   # Move right edge in (was 0.08)
+    #     rx2 = int(0.88 * w)   # Move left edge in (was 0.95)
 
-        # Vertical: Start from promotional area, go to bottom
-        if ad_box is not None:
-            # Use promotional area as top reference
-            _, y1, _, _ = ad_box
-            ry1 = max(0, int(y1 - 0.03 * h))  # Start slightly above promotional area
-        else:
-            # Fallback: start from upper portion
+    #     # Vertical: Start from promotional area, go to bottom
+    #     if ad_box is not None:
+    #         # Use promotional area as top reference
+    #         _, y1, _, _ = ad_box
+    #         ry1 = max(0, int(y1 - 0.03 * h))  # Start slightly above promotional area
+    #     else:
+    #         # Fallback: start from upper portion
+    #         ry1 = int(0.08 * h)
+
+    #     ry2 = h - 1  # Always go to bottom to capture all shelves
+
+    #     return (rx1, ry1, rx2, ry2)
+
+    def _roi_from_poster(self, ad_box, h, w, size_constraints: Optional[dict] = None):
+        """
+        Compute endcap ROI using planogram size constraints.
+        No detections are used here (YOLO needs this ROI).
+        Returns (rx1, ry1, rx2, ry2) in full-image coords.
+        """
+        sc = self._normalize_size_constraints(size_constraints or {})
+        roi_min_width_frac   = sc["roi_min_width_frac"]
+        roi_max_width_frac   = sc["roi_max_width_frac"]
+        fallback_left_frac   = sc["roi_fallback_left_frac"]
+        fallback_right_frac  = sc["roi_fallback_right_frac"]
+        left_margin_ratio    = sc["left_margin_ratio"]
+        right_margin_ratio   = sc["right_margin_ratio"]
+        top_margin_ratio     = sc["top_margin_ratio"]
+        endcap_width_scale   = sc["endcap_width_scale"]
+
+        # ---- Fallback when no poster ----
+        if ad_box is None:
+            rx1 = int(fallback_left_frac * w)
+            rx2 = int(fallback_right_frac * w)
             ry1 = int(0.08 * h)
+            ry2 = h - 1
+            return (rx1, ry1, rx2, ry2)
 
-        ry2 = h - 1  # Always go to bottom to capture all shelves
+        ax1, ay1, ax2, ay2 = ad_box
+        aw, ah = max(1, ax2 - ax1), max(1, ay2 - ay1)
+        cx = (ax1 + ax2) / 2.0
 
+        # ---- Base width proposal (poster aware) ----
+        width_from_margins = aw * (1.0 + left_margin_ratio + right_margin_ratio)
+        width_from_scale   = aw * endcap_width_scale
+        width_fallback     = (fallback_right_frac - fallback_left_frac) * w
+
+        proposed = sorted([width_from_margins, width_from_scale, width_fallback])[1]
+        min_w = roi_min_width_frac * w
+        max_w = roi_max_width_frac * w
+        target_w = int(max(min_w, min(max_w, proposed)))
+
+        # ---- Center horizontally on poster (clipped) ----
+        rx1 = int(max(0, min(w - 1, cx - target_w / 2)))
+        rx2 = int(min(w - 1, rx1 + target_w))
+        if rx2 - rx1 < target_w:
+            rx1 = int(max(0, min(w - target_w, cx - target_w / 2)))
+            rx2 = int(min(w - 1, rx1 + target_w))
+
+        # ---- Vertical: start a hair above poster; go to bottom ----
+        ry1 = int(max(0, ay1 - ah * top_margin_ratio - 0.02 * h))
+        ry2 = h - 1
         return (rx1, ry1, rx2, ry2)
 
+    def _normalize_size_constraints(self, sc: dict) -> dict:
+        def _get(keys, default):
+            for k in ([keys] if isinstance(keys, str) else keys):
+                if isinstance(sc, dict) and k in sc:
+                    return float(sc[k])
+            return float(default)
+
+        return {
+            # ROI clamping (already used by _roi_from_poster, but safe to keep here)
+            "roi_min_width_frac":     _get(["roi_min_width_frac","min_width_frac","min_w_frac"], 0.52),
+            "roi_max_width_frac":     _get(["roi_max_width_frac","max_width_frac","max_w_frac"], 0.66),
+            "roi_fallback_left_frac": _get(["roi_fallback_left_frac","fallback_left_frac"], 0.18),
+            "roi_fallback_right_frac":_get(["roi_fallback_right_frac","fallback_right_frac"], 0.86),
+            "left_margin_ratio":      _get(["left_margin_ratio","margin_left_ratio"], 0.40),
+            "right_margin_ratio":     _get(["right_margin_ratio","margin_right_ratio"], 0.40),
+            "top_margin_ratio":       _get("top_margin_ratio", 0.06),
+            "endcap_width_scale":     _get(["endcap_width_scale","width_scale_from_poster"], 1.9),
+
+            # Band rules
+            "vertical_gap_frac":            _get("vertical_gap_frac", 0.006),  # gaps between bands (h fraction)
+            "header_pad_frac":              _get("header_pad_frac", 0.00),     # tiny pad around promo
+
+            # Middle sizing (robust target + minimum from promo)
+            "middle_from_header_frac":      _get("middle_from_header_frac", 0.35),
+            "middle_target_frac":           _get("middle_target_frac", 0.30),  # of (ROI - header)
+            "middle_min_frac":              _get("middle_min_frac", 0.25),
+            "middle_max_frac":              _get("middle_max_frac", 0.35),
+            "middle_from_promo_min_frac":   _get("middle_from_promo_min_frac", 0.60),  # ≥60% of promo
+            "middle_min_px":                _get("middle_min_px", 80),         # practical min for printers
+
+            # Bottom sizing (from promo, with image-height cap)
+            "bottom_from_promo_frac":       _get("bottom_from_promo_frac", 1.00),  # = promo height by default
+            "bottom_max_image_frac":        _get("bottom_max_image_frac", 0.35),   # ≤ 35% of image height
+            "bottom_min_px":                _get("bottom_min_px",  40),
+        }
+
     # --------------------------- shelves -------------------------------------
-    def _find_shelves(self, roi: np.ndarray, rx1, ry1, rx2, ry2, H):
+    def _box_conf(self, p):
         """
-        Shelf line detection
+        Return (x1,y1,x2,y2,conf) from an object-like or dict-like proposal.
+        Expected class name is handled by the caller.
         """
-        g = cv2.cvtColor(roi, cv2.COLOR_RGB2GRAY)
+        if hasattr(p, "x1"):
+            return p.x1, p.y1, p.x2, p.y2, getattr(p, "confidence", 0.0)
+        if hasattr(p, "get"):
+            box = p.get("box", p)
+            if isinstance(box, (list, tuple)) and len(box) >= 4:
+                x1, y1, x2, y2 = box[:4]
+            else:
+                x1, y1, x2, y2 = box.get("x1"), box.get("y1"), box.get("x2"), box.get("y2")
+            return x1, y1, x2, y2, float(p.get("confidence", 0.0))
+        return None
 
-        # Enhanced edge detection
-        g = cv2.GaussianBlur(g, (3, 3), 0)
-        e = cv2.Canny(g, 40, 120, apertureSize=3)
+    def _find_shelves(
+        self,
+        roi_box,                 # (rx1, ry1, rx2, ry2)
+        ad_box,                  # (px1, py1, px2, py2) from _find_poster (may be None)
+        h, w,
+        proposals=None,          # optional YOLO list
+        size_constraints: dict = None
+    ):
+        sc = self._normalize_size_constraints(size_constraints or {})
+        rx1, ry1, rx2, ry2 = map(int, roi_box)
+        roi_h = max(1, ry2 - ry1)
 
-        # More conservative Hough line detection
-        roi_width = rx2 - rx1
-        roi_height = ry2 - ry1
-        min_line_length = int(0.4 * roi_width)
+        def _extract_box_conf(p):
+            if hasattr(p, "x1"):
+                return int(p.x1), int(p.y1), int(p.x2), int(p.y2), float(getattr(p, "confidence", 0.0))
+            if hasattr(p, "get"):
+                box = p.get("box", p)
+                if isinstance(box, (list, tuple)) and len(box) >= 4:
+                    x1, y1, x2, y2 = box[:4]
+                else:
+                    x1, y1, x2, y2 = box.get("x1"), box.get("y1"), box.get("x2"), box.get("y2")
+                return int(x1), int(y1), int(x2), int(y2), float(p.get("confidence", 0.0))
+            return None
 
-        lines = cv2.HoughLinesP(
-            e, 1, np.pi/180,
-            threshold=max(50, int(0.3 * roi_width)),
-            minLineLength=min_line_length,
-            maxLineGap=15
-        )
+        def _estimate_shelf_top(proposals, ry1, ry2, py1, py2):
+            if not proposals:
+                return min(ry2, py2 + max(5, int(0.06 * roi_h)))  # was *h
+            support = {"printer", "product_box", "product_candidate"}
+            y_top = None
+            band_top = py1 + int(0.20 * (py2 - py1))
+            band_bot = py2 + int(0.20 * (py2 - py1))
+            for p in proposals:
+                cname = getattr(p, "class_name", None) or (p.get("class_name") if hasattr(p, "get") else None)
+                if cname not in support:
+                    continue
+                bc = self._box_conf(p)
+                if not bc:
+                    continue
+                x1, y1, x2, y2, conf = bc
+                cy = 0.5 * (y1 + y2)
+                if band_top <= cy <= band_bot:
+                    y_top = y1 if y_top is None else min(y_top, y1)
+            if y_top is None:
+                return min(ry2, py2 + max(5, int(0.06 * roi_h)))  # was *h
+            return max(ry1, min(y_top, ry2))
 
-        ys = []
-        if lines is not None:
-            for x1, y1, x2, y2 in lines[:, 0]:
-                # More strict horizontal line filtering
-                if abs(y2 - y1) <= 3 and abs(x2 - x1) >= min_line_length * 0.8:
-                    ys.append(y1 + ry1)  # Convert to full image coordinates
+        # --- 1) choose promotional anchor (YOLO > ad_box > fallback) -------
+        px1 = py1 = px2 = py2 = None
+        best_conf = -1.0
+        if proposals:
+            for p in proposals:
+                cname = getattr(p, "class_name", None)
+                if cname is None and hasattr(p, "get"):
+                    cname = p.get("class_name")
+                if cname not in ("promotional_candidate", "promotional_graphic"):
+                    continue
+                bc = _extract_box_conf(p)
+                if not bc:
+                    continue
+                x1, y1, x2, y2, conf = bc
+                if None in (x1, y1, x2, y2):
+                    continue
+                if conf > best_conf:
+                    best_conf, (px1, py1, px2, py2) = conf, (x1, y1, x2, y2)
 
-        ys = sorted(set(ys))
-        levels = []
-        for y in ys:
-            if not levels or abs(y - levels[-1]) > 20:  # Increased minimum separation
-                levels.append(y)
+        if px1 is None and ad_box is not None:
+            px1, py1, px2, py2 = map(int, ad_box)
+        if px1 is None:
+            return self._find_shelves_proportional(roi_box, rx1, ry1, rx2, ry2, h)
 
-        if len(levels) < 2:
-            # Create evenly spaced shelf levels based on ROI
-            levels = [
-                ry1 + int(0.45 * roi_height),  # Top shelf line
-                ry1 + int(0.75 * roi_height),  # Bottom shelf line
-            ]
-        elif len(levels) == 2:
-            # We have 2 lines, ensure they're properly ordered
-            levels = sorted(levels)
+        # clamp promo vertically to ROI
+        py1 = max(ry1, min(py1, ry2 - 1))
+        py2 = max(py1 + 1, min(py2, ry2))
+
+        # --- 2) CAP promo.bottom at shelf-top (prevents header swallowing ROI) -------
+        shelf_top = _estimate_shelf_top(proposals, ry1, ry2, py1, py2)
+        vertical_gap_frac = sc.get('vertical_gap_frac', 0.006)
+        header_pad_frac = sc.get('header_pad_frac', 0.00)
+        middle_from_promo_min_frac = sc.get('middle_from_promo_min_frac', 0.60)
+        middle_min_px = sc.get('middle_min_px', 80)
+
+        py2 = min(py2, shelf_top - max(2, int(vertical_gap_frac * roi_h)))
+        if py2 <= py1:  # safety: enforce minimal header height
+            py2 = min(ry2 - 1, py1 + max(30, int(0.15 * roi_h)))
+
+        promo_h = max(1, py2 - py1)
+
+        # --- 3) gaps / padding --------------------------------------------------------
+        gap_px = int(vertical_gap_frac * roi_h)
+        pad_px = int(header_pad_frac * roi_h)
+
+        # --- 4) HEADER = promo height (±pad), but RESERVE space for mid+bot ----------
+        hy1 = max(ry1, py1 - pad_px)
+        hy2_candidate = min(ry2, py2 + pad_px)
+
+        middle_from_header_frac = sc.get('middle_from_header_frac', None)
+        header_h_candidate = max(1, hy2_candidate - hy1)
+        middle_from_promo_min_frac = sc.get('middle_from_promo_min_frac', 0.60)
+        middle_min_px = sc.get('middle_min_px', 80)
+
+        header_h_candidate = max(1, hy2_candidate - hy1)
+        if middle_from_header_frac is not None:
+            # use header-based rule so header won't be over-trimmed
+            min_mid_allowed = max(int(middle_from_header_frac * header_h_candidate),
+                                int(middle_min_px))
         else:
-            # More than 2 lines, pick the best 2
-            levels = sorted(levels)[:2]
+            # fall back to your current promo-based minimum
+            min_mid_allowed = int(max(
+                middle_from_promo_min_frac * promo_h,
+                middle_min_px
+            ))
+        bottom_from_promo_frac = sc.get("bottom_from_promo_frac", 1.00)
+        bottom_max_image_frac = sc.get("bottom_max_image_frac", 0.35)
+        bot_nominal = int(min(bottom_from_promo_frac * promo_h,
+                      bottom_max_image_frac * roi_h))
+        must_have = min_mid_allowed + bot_nominal + 2 * gap_px
+        rem_if_header_full = ry2 - hy2_candidate
 
-        # Create bands with appropriate height
-        bands = {}
+        if rem_if_header_full < must_have:
+            deficit = must_have - rem_if_header_full
+            # shrink header just enough; keep a reasonable minimum header height
+            min_header_px = max(30, int(0.15 * promo_h))
+            hy2 = max(hy1 + min_header_px, hy2_candidate - deficit)
+        else:
+            hy2 = hy2_candidate
 
-        # Header band: from ROI start (ry1) down to the first shelf line
-        bands["header"] = (ry1, levels[0])
-        # Top shelf: between the first and second shelf lines
-        bands["middle"] = (levels[0], levels[1])
-        # Middle/BOTTOM area: from second line to ROI end
-        bands["bottom"] = (levels[1], ry2)
+        header_bottom = hy2
 
-        # Ensure all bands have positive height
-        for name, (y1, y2) in bands.items():
-            if y2 <= y1:
-                print(f"WARNING: Invalid band {name}: y1={y1}, y2={y2}")
-                # Fix by giving minimum height
-                bands[name] = (y1, y1 + 50)
+        # --- 5) MIDDLE exactly under header ------------------------------------------
+        rem_top = header_bottom + gap_px
+        rem_bot = ry2
+        rem_h   = max(1, rem_bot - rem_top)
 
+        target_mid = sc["middle_target_frac"] * rem_h
+        target_mid = max(sc["middle_min_frac"] * rem_h,
+                        min(sc["middle_max_frac"] * rem_h, target_mid))
+        target_mid = max(target_mid,
+                        middle_from_promo_min_frac * promo_h,
+                        middle_min_px)
+
+        if middle_from_header_frac is not None:
+            header_h = max(1, header_bottom - hy1)
+            target_mid = max(target_mid, int(middle_from_header_frac * header_h))
+
+        middle_bottom = int(min(ry2, rem_top + target_mid))
+
+        # --- 6) BOTTOM under middle; height from promo (with image cap) ---------------
+        bot_h_nominal = int(min(sc["bottom_from_promo_frac"] * promo_h,
+                                sc["bottom_max_image_frac"] * roi_h))
+        bottom_top    = middle_bottom + gap_px
+        bottom_bottom = bottom_top + bot_h_nominal
+
+        if bottom_bottom > ry2:
+            overflow = bottom_bottom - ry2
+            # shrink middle (down to its minimum) to make room
+            min_mid_allowed = int(max(
+                sc["middle_min_frac"] * rem_h,
+                sc["middle_from_promo_min_frac"] * promo_h,
+                sc["middle_min_px"]
+            ))
+            current_mid = middle_bottom - rem_top
+            can_shrink  = max(0, current_mid - min_mid_allowed)
+            if can_shrink > 0:
+                shrink = min(overflow, can_shrink)
+                middle_bottom -= shrink
+                bottom_top    = middle_bottom + gap_px
+                bottom_bottom = bottom_top + bot_h_nominal
+
+        bottom_bottom = min(ry2, bottom_bottom)
+        if bottom_bottom <= bottom_top:
+            bottom_top    = middle_bottom + gap_px
+            bottom_bottom = ry2
+
+        # --- 7) compose result (y-bands) ----------------------------------------------
+        levels = [int(header_bottom), int(middle_bottom)]
+        bands = {
+            "header": (int(hy1),          int(header_bottom)),
+            "middle": (int(rem_top),      int(middle_bottom)),
+            "bottom": (int(bottom_top),   int(bottom_bottom)),
+        }
+
+        self.logger.debug(
+            "🎯 Shelves (ROI-based): promo=(%d,%d→%d,%d,h=%d) header=%d→%d middle=%d→%d bottom=%d→%d roi_h=%d reserve(mid≥%d,bot=%d,gap=%d)",
+            px1, py1, px2, py2, promo_h,
+            bands['header'][0], bands['header'][1],
+            bands['middle'][0], bands['middle'][1],
+            bands['bottom'][0], bands['bottom'][1],
+            roi_h, min_mid_allowed, bot_nominal, gap_px
+        )
+        return levels, bands
+
+    def _find_shelves_proportional(self, roi: tuple, rx1, ry1, rx2, ry2, H):
+        """
+        Fallback proportional layout (kept compatible with your signature/return).
+        """
+        roi_h = max(1, ry2 - ry1)
+        hdr_r, mid_r, bot_r = getattr(self, "shelf_split", (0.40, 0.25, 0.35))
+        s = max(1e-6, (hdr_r + mid_r + bot_r))
+        hdr_r, mid_r, bot_r = hdr_r / s, mid_r / s, bot_r / s
+
+        header_bottom = ry1 + int(hdr_r * roi_h)
+        middle_bottom = header_bottom + int(mid_r * roi_h)
+
+        header_bottom = max(ry1 + 20, min(header_bottom, ry2 - 40))
+        middle_bottom = max(header_bottom + 20, min(middle_bottom, ry2 - 20))
+
+        levels = [int(header_bottom), int(middle_bottom)]
+        bands = {
+            "header": (ry1, levels[0]),
+            "middle": (levels[0], levels[1]),
+            "bottom": (levels[1], ry2),
+        }
         return levels, bands
 
     # ---------------------------- YOLO ---------------------------------------
@@ -1693,6 +1974,7 @@ class PlanogramCompliancePipeline(AbstractPipeline):
     def detect_objects_and_shelves(
         self,
         image,
+        planogram_description: Optional[PlanogramDescription] = None,
         confidence_threshold: float = 0.5
     ):
         self.logger.debug("Step 1: Detecting generic shapes and boundaries...")
@@ -1701,6 +1983,7 @@ class PlanogramCompliancePipeline(AbstractPipeline):
 
         det_out = self.shape_detector.detect(
             image=pil_image,
+            planogram=planogram_description,
             debug_raw="/tmp/data/yolo_raw_debug.png",
             debug_phase1="/tmp/data/yolo_phase1_debug.png",
             debug_phases="/tmp/data/yolo_phases_debug.png",
@@ -2797,7 +3080,7 @@ Respond with the structured data for all {len(detections)} objects.
 
         self.logger.debug("Step 1: Detecting objects and shelves...")
         shelf_regions, detections = self.detect_objects_and_shelves(
-            image, self.confidence_threshold
+            image, planogram_description, self.confidence_threshold
         )
 
         self.logger.debug(
