@@ -138,6 +138,7 @@ class AbstractDBAgent(AbstractBot):
     async def create_system_prompt(
         self,
         user_context: str = "",
+        context: str = "",
         vector_context: str = "",
         pre_context: str = "",
         conversation_context: str = "",
@@ -169,6 +170,8 @@ Based on the user context above, please tailor your response to their specific:
 - Business objectives
 - Preferred communication style
             """)
+        if context:
+            context_parts.append(f"**Additional Context:**\n{context}")
 
         # Add vector context
         if vector_context:
@@ -426,7 +429,8 @@ Columns:
     async def ask(
         self,
         prompt: str,
-        user_context: str = "",
+        user_context: Optional[str] = None,
+        context: Optional[str] = None,
         session_id: Optional[str] = None,
         user_id: Optional[str] = None,
         use_conversation_history: bool = True,
@@ -490,6 +494,7 @@ Columns:
             # Create system prompt with user context
             system_prompt = await self.create_system_prompt(
                 user_context=user_context,
+                context=context or "",
                 vector_context=vector_context,
                 conversation_context=conversation_context,
                 metadata=vector_metadata,
