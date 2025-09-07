@@ -25,11 +25,11 @@ class DatabaseQueryArgs(BaseModel):
     )
     query: str = Field(
         ...,
-        description="SQL query to execute (only allowing SELECT statements for data retrieval)"
+        description="Query to execute (only allowing statements for data retrieval). Must match the dialect of the specified database driver."
     )
     credentials: Optional[Dict[str, Any]] = Field(
         None,
-        description="Dictionary containing database connection credentials (optional if default credentials available)"
+        description="Dictionary containing database connection credentials (optional if default credentials available), eg. {'dsn': '...'} or {'host': '...', 'port"
     )
     output_format: Literal["pandas", "json"] = Field(
         "pandas",
@@ -62,7 +62,7 @@ class DatabaseQueryArgs(BaseModel):
     @classmethod
     def validate_driver(cls, v):
         supported_drivers = [
-            'bigquery', 'pg', 'mysql', 'influx', 'sqlite',
+            'bigquery', 'pg', 'postgresql', 'mysql', 'influx', 'sqlite',
             'oracle', 'mssql', 'clickhouse', 'duckdb'
         ]
         if v.lower() not in supported_drivers:
@@ -158,7 +158,10 @@ class DatabaseQueryTool(AbstractTool):
 
         return {'is_safe': True, 'message': 'Query validation passed'}
 
-    def _get_default_credentials(self, database_driver: str) -> Tuple[Dict[str, Any], Optional[str]]:
+    def _get_default_credentials(
+        self,
+        database_driver: str
+    ) -> Tuple[Dict[str, Any], Optional[str]]:
         """
         Get default credentials for the specified database driver.
         This method should be customized based on your environment and security practices.
@@ -166,8 +169,11 @@ class DatabaseQueryTool(AbstractTool):
         TODO: using default credentials from QuerySource config.
         """
         dsn = None
+        if database_driver == 'postgresql':
+            database_driver = 'pg'
         if database_driver == 'pg':
             dsn = default_dsn
+        # TODO: Add logic to fetch default credentials from secure storage or environment variables
         default_credentials = {
             'bigquery': {
                 'credentials_file': config.get('GOOGLE_APPLICATION_CREDENTIALS'),
@@ -227,7 +233,7 @@ class DatabaseQueryTool(AbstractTool):
 
     def _get_credentials(
         self,
-        database_driver: str,
+        driver: str,
         provided_credentials: Optional[Dict[str, Any]]
     ) -> Tuple[Dict[str, Any], str]:
         """Get database credentials, either provided or default."""
@@ -235,11 +241,11 @@ class DatabaseQueryTool(AbstractTool):
             return provided_credentials, None
 
         try:
-            default_creds, dsn = self._get_default_credentials(database_driver)
+            default_creds, dsn = self._get_default_credentials(driver)
             return default_creds, dsn
         except Exception as e:
             raise ValueError(
-                f"No credentials provided and could not get default credentials for {database_driver}: {e}"
+                f"No credentials provided and could not get default for {driver}: {e}"
             )
 
     def _add_row_limit(self, query: str, max_rows: int) -> str:
@@ -266,8 +272,9 @@ class DatabaseQueryTool(AbstractTool):
         timeout: int,
         max_rows: int
     ) -> Union[pd.DataFrame, str]:
-        """Execute the actual database query using asyncdb."""
+        """Execute the actual database query using Asyncdb."""
 
+        # TODO: combine AsyncDB with Ibis for better abstraction.
         try:
             # Create AsyncDB instance
             if dsn:
@@ -282,7 +289,9 @@ class DatabaseQueryTool(AbstractTool):
                 # Add row limit to query if specified and not already present
                 modified_query = self._add_row_limit(query, max_rows)
 
-                self.logger.info(f"Executing query on {database_driver}: {modified_query[:100]}...")
+                self.logger.info(
+                    f"Executing query on {database_driver}: {modified_query[:100]}..."
+                )
 
                 # Execute query with timeout
                 result, errors = await asyncio.wait_for(
@@ -296,7 +305,9 @@ class DatabaseQueryTool(AbstractTool):
                 # Return the actual result based on format
                 if output_format == 'pandas':
                     if not isinstance(result, pd.DataFrame):
-                        raise Exception(f"Expected pandas DataFrame but got {type(result)}")
+                        raise Exception(
+                            f"Expected pandas DataFrame but got {type(result)}"
+                        )
                     return result
                 else:  # json
                     if isinstance(result, str):
@@ -339,12 +350,16 @@ class DatabaseQueryTool(AbstractTool):
         start_time = datetime.now()
 
         try:
-            self.logger.info(f"Starting database query on {database_driver}")
+            self.logger.info(
+                f"Starting database query on {database_driver}"
+            )
 
             # Validate query safety
             validation_result = self._validate_query_safety(query)
             if not validation_result['is_safe']:
-                raise ValueError(f"Query validation failed: {validation_result['message']}")
+                raise ValueError(
+                    f"Query validation failed: {validation_result['message']}"
+                )
 
             # Get credentials
             creds, dsn = self._get_credentials(database_driver, credentials)
@@ -433,7 +448,7 @@ class DatabaseQueryTool(AbstractTool):
     def get_supported_drivers(self) -> List[str]:
         """Get list of supported database drivers."""
         return [
-            'bigquery', 'pg', 'mysql', 'influx', 'sqlite',
+            'bigquery', 'pg', 'postgres', 'postgresql', 'mysql', 'influx', 'sqlite',
             'oracle', 'mssql', 'clickhouse', 'snowflake'
         ]
 

@@ -685,7 +685,6 @@ class RetailDetector:
         header_h_candidate = max(1, hy2_candidate - hy1)
         middle_from_promo_min_frac = sc.get('middle_from_promo_min_frac', 0.60)
         middle_min_px = sc.get('middle_min_px', 80)
-
         header_h_candidate = max(1, hy2_candidate - hy1)
         if middle_from_header_frac is not None:
             # use header-based rule so header won't be over-trimmed
