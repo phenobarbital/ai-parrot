@@ -324,7 +324,7 @@ class DatabaseQueryTool(AbstractTool):
 
     async def _execute(
         self,
-        database_driver: str,
+        driver: str,
         query: str,
         credentials: Optional[Dict[str, Any]] = None,
         output_format: str = "pandas",
@@ -336,7 +336,7 @@ class DatabaseQueryTool(AbstractTool):
         Execute the database query (AbstractTool interface).
 
         Args:
-            database_driver: Database driver to use
+            driver: Database driver to use
             query: SQL query to execute
             credentials: Optional database credentials
             output_format: Output format ('pandas' or 'json')
@@ -351,7 +351,7 @@ class DatabaseQueryTool(AbstractTool):
 
         try:
             self.logger.info(
-                f"Starting database query on {database_driver}"
+                f"Starting database query on {driver}"
             )
 
             # Validate query safety
@@ -362,11 +362,11 @@ class DatabaseQueryTool(AbstractTool):
                 )
 
             # Get credentials
-            creds, dsn = self._get_credentials(database_driver, credentials)
+            creds, dsn = self._get_credentials(driver, credentials)
 
             # Execute query
             result = await self._execute_database_query(
-                database_driver,
+                driver,
                 creds,
                 dsn,
                 query,
