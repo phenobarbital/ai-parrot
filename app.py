@@ -60,7 +60,7 @@ class Main(AppHandler):
         # Prompt Library:
         PromptLibraryManagement.configure(self.app, '/api/v1/chatbots/prompt_library')
         # Questions (Usage handler, for sharing)
-        ChatbotUsageHandler.configure(self.app, '/api/v1/chatbots/usage')
+        ChatbotUsageHandler.configure(self.app, '/api/v1/chatbots_usage')
         self.app.router.add_view(
             '/api/v1/chatbots/questions/{sid}',
             ChatbotSharingQuestion
