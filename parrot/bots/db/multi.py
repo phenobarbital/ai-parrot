@@ -12,8 +12,8 @@ import json
 from pydantic import Field
 import argparse
 # Import all database agents
-from .dbagent import AbstractDBAgent
-from .sqlagent import SQLDbAgent, create_sql_agent
+from .abstract import AbstractDBAgent
+from .sql import SQLDbAgent, create_sql_agent
 from .influx import InfluxDBAgent, create_influxdb_agent
 from .elastic import ElasticDbAgent, create_elasticsearch_agent
 

@@ -12,7 +12,9 @@ JOIN google.customer_satisfaction cs USING (sku)
 JOIN google.products_evaluation pe  USING (sku)
 JOIN google.products_compliant pc USING (sku)
 WHERE p.brand = 'Google'  and p.specifications is not null and cs.customer_satisfaction is not null
-GROUP BY p.model, p.model_code;
+AND p.model = 'Pixel 10 Pro XL'
+GROUP BY p.model, p.model_code
+
 """
 
 
@@ -128,7 +130,8 @@ async def create_report():
                 # -- Generate a podcast script
                 podcast = await agent.speech_report(
                     report=final_output,
-                    num_speakers=1
+                    num_speakers=1,
+                    podcast_instructions='product_conversation.txt'
                 )
                 # saving the values to response:
                 response.transcript = final_output
