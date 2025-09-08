@@ -499,12 +499,18 @@ class RetailDetector:
         top_margin_ratio     = sc["top_margin_ratio"]
         endcap_width_scale   = sc["endcap_width_scale"]
 
+        bottom_from_promo    = sc["bottom_from_promo_frac"]      # e.g., 1.00 → +1× promo height
+        bottom_max_img_frac  = sc["bottom_max_image_frac"]       # e.g., 0.35 → ≤35% of image height from ROI top
+        bottom_min_px        = int(sc["bottom_min_px"])          # guardrail (e.g., 40 px)
+
         # ---- Fallback when no poster ----
         if ad_box is None:
             rx1 = int(fallback_left_frac * w)
             rx2 = int(fallback_right_frac * w)
             ry1 = int(0.08 * h)
-            ry2 = h - 1
+            # cap vertical extent by image fraction
+            ry2_cap = ry1 + int(bottom_max_img_frac * h)
+            ry2 = min(h - 1, max(ry1 + bottom_min_px, ry2_cap))
             return (rx1, ry1, rx2, ry2)
 
         ax1, ay1, ax2, ay2 = ad_box
@@ -515,11 +521,8 @@ class RetailDetector:
         width_from_margins = aw * (1.0 + left_margin_ratio + right_margin_ratio)
         width_from_scale   = aw * endcap_width_scale
         width_fallback     = (fallback_right_frac - fallback_left_frac) * w
-
         proposed = sorted([width_from_margins, width_from_scale, width_fallback])[1]
-        min_w = roi_min_width_frac * w
-        max_w = roi_max_width_frac * w
-        target_w = int(max(min_w, min(max_w, proposed)))
+        target_w = int(max(roi_min_width_frac * w, min(roi_max_width_frac * w, proposed)))
 
         # ---- Center horizontally on poster (clipped) ----
         rx1 = int(max(0, min(w - 1, cx - target_w / 2)))
@@ -530,7 +533,15 @@ class RetailDetector:
 
         # ---- Vertical: start a hair above poster; go to bottom ----
         ry1 = int(max(0, ay1 - ah * top_margin_ratio - 0.02 * h))
+
+        # candidate bottoms
+        by_promo = ay2 + int(ah * bottom_from_promo)           # a bit below promo
+        by_img_cap = ry1 + int(bottom_max_img_frac * h)        # cap vs full image
+        by_min = ry1 + max(bottom_min_px, int(0.15 * ah))      # ensure usable ROI
+
+        # ry2 = min(h - 1, max(by_min, min(by_promo, by_img_cap)))
         ry2 = h - 1
+
         return (rx1, ry1, rx2, ry2)
 
     def _normalize_size_constraints(self, sc: dict) -> dict:
@@ -1879,8 +1890,7 @@ class PlanogramCompliancePipeline(AbstractPipeline):
     def detect_objects_and_shelves(
         self,
         image,
-        planogram_description: Optional[PlanogramDescription] = None,
-        confidence_threshold: float = 0.5
+        planogram_description: Optional[PlanogramDescription] = None
     ):
         self.logger.debug("Step 1: Detecting generic shapes and boundaries...")
 
@@ -2096,76 +2106,6 @@ class PlanogramCompliancePipeline(AbstractPipeline):
                 kept.append(d)
         return kept
 
-    def _organize_into_shelves(
-        self,
-        detections: List[DetectionBox],
-        image_size: Tuple[int, int]
-    ) -> List[ShelfRegion]:
-        """
-        Organize detections into shelf regions with non-overlapping boundaries
-        """
-        width, height = image_size
-        shelf_regions = []
-
-        header_objects = []
-        top_objects = []
-        middle_objects = []
-        bottom_objects = []
-
-        for d in detections:
-            center_y = (d.y1 + d.y2) / 2
-            y_ratio = center_y / height
-
-            if (d.class_name == "promotional_candidate" or
-                (y_ratio < 0.3 and d.area > 0.1 * width * height)):
-                # Large objects in upper area OR promotional candidates go to header
-                header_objects.append(d)
-            elif y_ratio < 0.5:
-                # Upper area products go to top shelf
-                top_objects.append(d)
-            elif y_ratio < 0.75:
-                # Middle area
-                middle_objects.append(d)
-            else:
-                # Lower area
-                bottom_objects.append(d)
-
-        # Create shelf regions
-        if header_objects:
-            shelf_regions.append(self._create_shelf_region("header", "header", header_objects))
-        if top_objects:
-            shelf_regions.append(self._create_shelf_region("top_shelf", "top", top_objects))
-        if middle_objects:
-            shelf_regions.append(self._create_shelf_region("middle_shelf", "middle", middle_objects))
-        if bottom_objects:
-            shelf_regions.append(self._create_shelf_region("bottom_shelf", "bottom", bottom_objects))
-
-        return shelf_regions
-
-
-    def _create_shelf_region(self, shelf_id: str, level: str, objects: List[DetectionBox]) -> ShelfRegion:
-        """Create a shelf region from objects"""
-        if not objects:
-            return None
-
-        x1 = min(obj.x1 for obj in objects)
-        y1 = min(obj.y1 for obj in objects)
-        x2 = max(obj.x2 for obj in objects)
-        y2 = max(obj.y2 for obj in objects)
-
-        bbox = DetectionBox(
-            x1=x1, y1=y1, x2=x2, y2=y2,
-            confidence=1.0, class_id=-1, class_name="shelf_region",
-            area=(x2-x1) * (y2-y1)
-        )
-
-        return ShelfRegion(
-            shelf_id=shelf_id,
-            bbox=bbox,
-            level=level,
-            objects=objects
-        )
-
     def _debug_dump_crops(self, img: Image.Image, dets, tag="step1"):
         os.makedirs("/tmp/data/debug", exist_ok=True)
         h, w = img.size[1], img.size[0]
@@ -2182,7 +2122,84 @@ class PlanogramCompliancePipeline(AbstractPipeline):
                 cv2.cvtColor(crop, cv2.COLOR_RGB2BGR)
             )
 
-    # STEP 2: LLM Object Identification
+    # STEP 2: LLM Object Identification ##########
+    async def _llm_check_promo_brand(
+        self,
+        full_img: Image.Image,
+        ad_box,
+        target_brand: str
+    ) -> dict:
+        """Crop promo -> ask LLM for brand verification."""
+        W, H = full_img.size
+        x1, y1, x2, y2 = _clamp(W, H, *ad_box)  # uses existing clamp helper
+        crop = full_img.crop((x1, y1, x2, y2))
+
+        schema = {
+            "type": "object",
+            "properties": {
+                "brand": {"type": "string"},
+                "brand_match": {"type": "boolean"},
+                "logo_present": {"type": "boolean"},
+                "exact_text_hits": {"type": "array", "items": {"type": "string"}},
+                "confidence": {"type": "number"}
+            },
+            "required": ["brand", "brand_match", "confidence"]
+        }
+
+        prompt = (
+            f"You see a cropped promotional banner only. "
+            f"Answer in JSON: Is the brand '{target_brand}' clearly present? "
+            f"Consider logos and large text. If uncertain, return brand_match=false and confidence<0.6."
+        )
+
+        # uses your existing image-ask call path
+        out = await self.llm.ask_to_image(
+            image=crop,
+            prompt=prompt,
+            structured_output=schema
+        )
+        return out or {
+            "brand": "",
+            "brand_match": False,
+            "confidence": 0.0,
+            "logo_present": False,
+            "exact_text_hits": []
+        }
+
+    async def _llm_check_aisle_category(
+        self,
+        roi_img: Image.Image,
+        aisle_name: str,
+        hints: list[str]
+    ) -> dict:
+        """Send the ROI to LLM to sanity-check that we are in the expected aisle."""
+        schema = {
+            "type": "object",
+            "properties": {
+                "aisle": {"type": "string"},
+                "is_expected_aisle": {"type": "boolean"},
+                "confidence": {"type": "number"},
+                "evidence": {"type": "array", "items": {"type": "string"}}
+            },
+            "required": ["aisle", "is_expected_aisle", "confidence"]
+        }
+        hint_str = ", ".join(hints or [])
+        prompt = (
+            f"Classify the aisle in this photo. Expected aisle: '{aisle_name}'. "
+            f"Hints: {hint_str}. Return JSON with is_expected_aisle=true only if the image clearly matchs aisle or hints."
+        )
+        out = await self.llm.ask_to_image(
+            image=roi_img,
+            prompt=prompt,
+            structured_output=schema
+        )
+        return out or {
+            "aisle": "",
+            "is_expected_aisle": False,
+            "confidence": 0.0,
+            "evidence": []
+        }
+
     async def identify_objects_with_references(
         self,
         image: Union[str, Path, Image.Image],
@@ -2720,7 +2737,9 @@ Respond with the structured data for all {len(detections)} objects.
     def check_planogram_compliance(
         self,
         identified_products: List[IdentifiedProduct],
-        planogram_description: PlanogramDescription
+        planogram_description: PlanogramDescription,
+        brand_ok: bool,
+        aisle_ok: bool
     ) -> List[ComplianceResult]:
         """Check compliance of identified products against the planogram
 
@@ -2732,6 +2751,12 @@ Respond with the structured data for all {len(detections)} objects.
             List[ComplianceResult]: The compliance results for each shelf
         """
         results: List[ComplianceResult] = []
+
+        # --- Header brand gate ---
+        brand_expected = (planogram_description.brand or "").strip()
+        brand_found = None
+        brand_conf = 0.0
+        brand_ok = False
 
         # Group found products by shelf level
         by_shelf = defaultdict(list)
@@ -2776,6 +2801,14 @@ Respond with the structured data for all {len(detections)} objects.
                     all_features = []
                     ocr_blocks = []
                     for promo in promos:
+                        bc = getattr(p, "extra", {}).get("brand_check")
+                        if bc:
+                            if bc.get("brand_match"):
+                                brand_found = bc.get("brand")
+                                brand_conf = max(brand_conf, bc.get("confidence", 0.0))
+                                brand_ok = bool(bc.get("brand_match")) and brand_conf >= 0.6
+                                if brand_expected:
+                                    brand_ok = brand_ok and (brand_found and brand_found.lower() == brand_expected.lower())
                         if getattr(promo, "visual_features", None):
                             all_features.extend(promo.visual_features)
                             for feat in promo.visual_features:
@@ -2848,11 +2881,14 @@ Respond with the structured data for all {len(detections)} objects.
                 else:
                     status = ComplianceStatus.NON_COMPLIANT
             else:
+                overall_text_ok = bool(overall_text_ok and brand_ok and aisle_ok)
                 # For header shelf, require both product and text compliance
                 if basic_score >= threshold and not major_unexpected and overall_text_ok:
                     status = ComplianceStatus.COMPLIANT
                 elif basic_score == 0.0:
                     status = ComplianceStatus.MISSING
+                elif not overall_text_ok:
+                    status = ComplianceStatus.NON_COMPLIANT
                 else:
                     status = ComplianceStatus.NON_COMPLIANT
 
@@ -2871,18 +2907,20 @@ Respond with the structured data for all {len(detections)} objects.
             combined_score = (basic_score * weights["product_compliance"] +
                             text_score * weights["text_compliance"])
 
-            results.append(ComplianceResult(
-                shelf_level=shelf_level,
-                expected_products=expected,
-                found_products=found,
-                missing_products=missing,
-                unexpected_products=unexpected,
-                compliance_status=status,
-                compliance_score=combined_score,
-                text_compliance_results=text_results,
-                text_compliance_score=text_score,
-                overall_text_compliant=overall_text_ok
-            ))
+            results.append(
+                ComplianceResult(
+                    shelf_level=shelf_level,
+                    expected_products=expected,
+                    found_products=found,
+                    missing_products=missing,
+                    unexpected_products=unexpected,
+                    compliance_status=status,
+                    compliance_score=combined_score,
+                    text_compliance_results=text_results,
+                    text_compliance_score=text_score,
+                    overall_text_compliant=overall_text_ok
+                )
+            )
 
         return results
 
@@ -2980,6 +3018,60 @@ Respond with the structured data for all {len(detections)} objects.
 
         return name
 
+    async def identify_aisle_and_branding(
+        self,
+        image: Image.Image,
+        planogram_description: PlanogramDescription,
+        identified_products: List[IdentifiedProduct]
+    ) -> Tuple[bool, bool]:
+        """
+        Identify aisle and branding using LLM.
+
+        Returns:
+            Tuple indicating if aisle and branding are correct.
+        """
+        # --- BRAND CHECK ON PROMO
+        brand_ok = True
+        endcap = getattr(planogram_description, "advertisement_endcap", None)
+        target_brand = getattr(planogram_description, "brand", None)
+        if endcap and endcap.enabled and target_brand:
+            promo_items = [
+                p for p in identified_products if p.product_type == "promotional_graphic" and p.detection_box
+            ]
+            if promo_items:
+                p = max(promo_items, key=lambda x: x.detection_box.area)
+                bx = (
+                    p.detection_box.x1,
+                    p.detection_box.y1,
+                    p.detection_box.x2,
+                    p.detection_box.y2
+                )
+                response = await self._llm_check_promo_brand(image, bx, target_brand)
+                # stash on product for compliance step
+                p.extra = getattr(p, "extra", {})
+                p.extra["brand_check"] = response
+                brand_ok = bool(response.output.get("brand_match")) and (response.output.get("confidence", 0) >= 0.6)
+                # also add as a visual_feature so it shows on overlays
+                p.visual_features.append(
+                    f"brand:{response.output.get('brand','').strip()}:{response.output.get('confidence',0):.2f}"
+                )
+            else:
+                brand_ok = False  # no promo found; header will be non-compliant
+        # --- AISLE CHECK (optional safety net)
+        aisle_ok = True
+        if getattr(planogram_description, "aisle", None):
+            aisle_cfg = planogram_description.aisle
+            response = await self._llm_check_aisle_category(
+                image,
+                aisle_cfg.name,
+                aisle_cfg.category_hints
+            )
+            self.last_aisle_check = response
+            aisle_ok = bool(
+                response.output.get("is_expected_aisle")
+            ) and (response.output.get("confidence", 0) >= 0.6)
+        return aisle_ok, brand_ok
+
     # Complete Pipeline
     async def run(
         self,
@@ -2997,19 +3089,28 @@ Respond with the structured data for all {len(detections)} objects.
 
         self.logger.debug("Step 1: Detecting objects and shelves...")
         shelf_regions, detections = self.detect_objects_and_shelves(
-            image, planogram_description, self.confidence_threshold
+            image, planogram_description
         )
 
         self.logger.debug(
             f"Found {len(detections)} objects in {len(shelf_regions)} shelf regions"
         )
 
-        self.logger.info("Step 2: Identifying objects with LLM...")
+        self.logger.notice("Step 2: Identifying objects with LLM...")
         identified_products = await self.identify_objects_with_references(
             image, detections, shelf_regions, self.reference_images
         )
 
-        print(identified_products)
+        self.logger.notice('Step 2: Identify aisle and branding ...')
+        pil = Image.open(image) if isinstance(image, (str, Path)) else image
+        aisle_ok, brand_ok = await self.identify_aisle_and_branding(
+            pil,
+            planogram_description,
+            identified_products
+        )
+        self.logger.debug(f"Aisle OK: {aisle_ok}, Brand OK: {brand_ok}")
+
+        self.logger.debug(f"Identified Products: {identified_products}")
 
         # De-duplicate promotional_graphic (keep the largest)
         promos = [p for p in identified_products if p.product_type == "promotional_graphic" and p.detection_box]
@@ -3020,7 +3121,7 @@ Respond with the structured data for all {len(detections)} objects.
             ] + [keep]
 
         compliance_results = self.check_planogram_compliance(
-            identified_products, planogram_description
+            identified_products, planogram_description, brand_ok, aisle_ok
         )
 
         # Calculate overall compliance

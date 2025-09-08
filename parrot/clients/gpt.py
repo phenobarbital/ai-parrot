@@ -1,3 +1,4 @@
+import re
 from typing import AsyncIterator, Dict, List, Optional, Union, Any, Tuple
 import base64
 import io
@@ -10,6 +11,7 @@ from logging import getLogger
 from enum import Enum
 from PIL import Image
 import pytesseract
+from pydantic import BaseModel, ValidationError
 from datamodel.parsers.json import json_decoder, json_decoder  # pylint: disable=E0611 # noqa
 from navconfig import config
 from tenacity import (
@@ -424,6 +426,19 @@ class OpenAIClient(AbstractClient):
             "image_url": {"url": f"data:{mime_type};base64,{encoded_data}"}
         }
 
+    def _parse_json_from_text(self, text: str) -> Union[dict, list]:
+        """Robustly parse JSON even if the model wraps it in ```json fences."""
+        if not text:
+            return {}
+        # strip fences
+        s = text.strip()
+        s = re.sub(r"^```(?:json)?\s*", "", s, flags=re.I)
+        s = re.sub(r"\s*```$", "", s)
+        # grab the largest {...} or [...] block if extra prose sneaks in
+        m = re.search(r"(\{.*\}|\[.*\])", s, flags=re.S)
+        s = m.group(1) if m else s
+        return json_decoder(s)
+
     async def ask_to_image(
         self,
         prompt: str,
@@ -470,22 +485,27 @@ class OpenAIClient(AbstractClient):
         result = response.choices[0].message
 
         final_output = None
-        if structured_output:
-            try:
-                final_output = structured_output.model_validate_json(result.content)
-            except Exception:
-                final_output = result.content
+        assistant_response_text = ""
+        if structured_output is not None:
+            if isinstance(structured_output, dict):
+                assistant_response_text = result.content
+                try:
+                    final_output = self._parse_json_from_text(assistant_response_text)
+                except Exception:
+                    final_output = assistant_response_text
+            else:
+                try:
+                    final_output = structured_output.model_validate_json(result.content)
+                except Exception:
+                    try:
+                        final_output = structured_output.model_validate(result.content)
+                    except ValidationError:
+                        final_output = result.content
 
         assistant_message = {
             "role": "assistant", "content": [{"type": "text", "text": result.content}]
         }
         messages.append(assistant_message)
-
-        # Extract assistant response text for conversation memory
-        assistant_response_text = ""
-        for content_block in result.get("content", []):
-            if content_block.get("type") == "text":
-                assistant_response_text += content_block.get("text", "")
 
         # Update conversation memory
         await self._update_conversation_memory(
@@ -503,7 +523,7 @@ class OpenAIClient(AbstractClient):
         usage = response.usage.model_dump() if response.usage else {}
 
         ai_message = AIMessageFactory.from_openai(
-            response=result.model_dump(),
+            response=response,
             input_text=f"[Image Analysis]: {prompt}",
             model=model,
             user_id=user_id,

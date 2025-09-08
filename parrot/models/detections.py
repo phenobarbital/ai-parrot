@@ -32,6 +32,7 @@ class IdentifiedProduct(BaseModel):
     product_model: Optional[str] = Field(None, description="Specific product model")
     confidence: float = Field(ge=0.0, le=1.0, description="Confidence score")
     visual_features: List[str] = Field(default_factory=list, description="Visual features")
+    extra: Dict[str, str] = Field(default_factory=dict, description="Extra descriptive tags")
     reference_match: Optional[str] = Field(None, description="Reference image match")
     shelf_location: str = Field(description="Shelf location")
     position_on_shelf: str = Field(description="Position on shelf")
