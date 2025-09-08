@@ -1349,10 +1349,17 @@ class RetailDetector:
                     "promotional_candidate": s_poster * 0.2,
                     "product_candidate": s_printer,
                     "box_candidate": s_box,
-                    "price_tag": 0.0,  # Already handled above
+                    "price_tag": 0.0,
                     "ink_bottle": 0.3
                 }
                 yolo_cls = (yolo_class or "").lower()
+
+                # Filter non-retail objects with very low confidence
+                if base_conf < 0.01 and any(k in yolo_cls for k in ("keyboard", "mouse", "remote", "cell phone")):
+                    print(
+                        f"   ⚠️  Skipping #{raw_index}: non-retail {yolo_class} conf={base_conf:.3f}"
+                    )
+                    continue
 
                 # SHELF POSITION ANALYSIS
                 shelf_level = self._determine_shelf_level(center_y, bands)
@@ -2826,9 +2833,15 @@ Respond with the structured data for all {len(detections)} objects.
             )
 
             # FIX 4: Better status determination logic
+            # Allow minor unexpected (ink bottles, price tags)
+            major_unexpected = [
+                p for p in unexpected if not any(
+                    word in p.lower() for word in ["ink bottle", "price tag", "502"]
+                )
+            ]
             # For product shelves (non-header), focus on product compliance
             if shelf_level != "header":
-                if basic_score >= threshold and not unexpected:
+                if basic_score >= threshold and not major_unexpected:
                     status = ComplianceStatus.COMPLIANT
                 elif basic_score == 0.0:
                     status = ComplianceStatus.MISSING
@@ -2836,7 +2849,7 @@ Respond with the structured data for all {len(detections)} objects.
                     status = ComplianceStatus.NON_COMPLIANT
             else:
                 # For header shelf, require both product and text compliance
-                if basic_score >= threshold and not unexpected and overall_text_ok:
+                if basic_score >= threshold and not major_unexpected and overall_text_ok:
                     status = ComplianceStatus.COMPLIANT
                 elif basic_score == 0.0:
                     status = ComplianceStatus.MISSING
@@ -2880,7 +2893,13 @@ Respond with the structured data for all {len(detections)} objects.
 
         name = product_name.lower().strip()
 
+        # Just handle the essential mappings
+        if "promotional" in name or "advertisement" in name or "graphic" in name:
+            return "promotional_graphic"
+
         # Map various representations to standard names
+        # TODO: get the product list from planogram_config
+        # example: "ET-2980", "ET-2980 box", "Epson EcoTank Advertisement", "price tag", etc.
         mapping = {
             # Printer models (device only)
             "et-2980": "et_2980",
