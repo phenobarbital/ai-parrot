@@ -10,7 +10,7 @@ from logging import getLogger
 from enum import Enum
 from PIL import Image
 import pytesseract
-from datamodel.parsers.json import json_decoder  # pylint: disable=E0611 # noqa
+from datamodel.parsers.json import json_decoder, json_decoder  # pylint: disable=E0611 # noqa
 from navconfig import config
 from tenacity import (
     AsyncRetrying,
@@ -961,7 +961,8 @@ class OpenAIClient(AbstractClient):
 
         raw = response.choices[0].message.content or "{}"
         try:
-            data = json.loads(raw)
+            # data = json.loads(raw)
+            data = json_decoder(raw)
             items = data.get("items") or data.get("detections") or []
         except Exception:
             # fallback: try best-effort parse if model didn’t honor schema
