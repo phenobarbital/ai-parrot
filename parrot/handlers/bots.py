@@ -45,13 +45,94 @@ class ChatbotUsageHandler(ModelView):
 
     model = ChatbotUsage
     driver: str = 'bigquery'
-    credentials: dict = {
-        "credentials": BIGQUERY_CREDENTIALS,
-        "project_id": BIGQUERY_PROJECT_ID,
-    }
     name: str = "Chatbot Usage"
-    path: str = '/api/v1/chatbots/usage'
+    path: str = '/api/v1/chatbots_usage'
     pk: str = 'sid'
+
+    def get_connection(self):
+        params = {
+            "credentials": BIGQUERY_CREDENTIALS,
+            "project_id": BIGQUERY_PROJECT_ID,
+        }
+        return AsyncDB(
+            'bigquery',
+            params=params,
+            force_closing=False
+        )
+
+    async def post(self):
+        # Try to use validator when available (as in FormModel); otherwise parse JSON.
+        usage = None
+        if hasattr(self, 'validate_payload'):
+            usage = await self.validate_payload()
+        if usage is None:
+            try:
+                payload = await self.request.json()
+            except Exception:
+                payload = None
+            if not payload:
+                return self.error(
+                    response={
+                        "message": "Error on Chatbot Usage payload"
+                    },
+                    status=400
+                )
+            try:
+                usage = ChatbotUsage(**payload)
+            except Exception as exc:
+                return self.error(
+                    response={
+                        "message": f"Invalid Chatbot Usage payload: {exc}"
+                    },
+                    status=400
+                )
+
+        db = self.get_connection()
+        try:
+            async with await db.connection() as conn:  #pylint: disable=E1101
+                data = usage.to_dict()
+                # Normalize types for BigQuery
+                if 'sid' in data:
+                    data['sid'] = str(data['sid'])
+                if 'chatbot_id' in data:
+                    data['chatbot_id'] = str(data['chatbot_id'])
+                if 'event_timestamp' in data:
+                    data['event_timestamp'] = str(data['event_timestamp'])
+
+                # Enrich from request context if missing
+                if not data.get('origin'):
+                    data['origin'] = getattr(self.request, 'remote', None)
+                if not data.get('user_agent'):
+                    data['user_agent'] = self.request.headers.get('User-Agent', '')
+                if not data.get('user_id'):
+                    try:
+                        data['user_id'] = await self.get_userid(session=self._session)
+                    except Exception:
+                        pass
+
+                # Ensure _at exists (sid:used_at)
+                if not data.get('_at') and data.get('sid') and data.get('used_at'):
+                    data['_at'] = f"{data['sid']}:{data['used_at']}"
+
+                await conn.write(
+                    [data],
+                    table_id=ChatbotUsage.Meta.name,
+                    dataset_id=ChatbotUsage.Meta.schema,
+                    use_streams=False,
+                    use_pandas=False
+                )
+                return self.json_response({
+                    "message": "Chatbot Usage recorded.",
+                    "question": data.get('question'),
+                    "sid": data.get('sid')
+                }, status=201)
+        except Exception as e:
+            return self.error(
+                response={
+                    "message": f"Error on Chatbot Usage: {e}"
+                },
+                status=400
+            )
 
 
 class ChatbotSharingQuestion(BaseView):
