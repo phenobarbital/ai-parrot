@@ -12,12 +12,15 @@ from typing import Dict, Any, List, Optional, Union
 import re
 from urllib.parse import urlparse, quote_plus
 from datetime import datetime
+import pandas as pd
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import text
 from .abstract import AbstractDBAgent
 from .tools import DatabaseSchema, TableMetadata
+from ...models import AIMessage
 from ...tools.asdb import DatabaseQueryTool
+from ...tools import ToolResult
 
 
 class SQLAgent(AbstractDBAgent):
@@ -52,7 +55,7 @@ class SQLAgent(AbstractDBAgent):
         credentials: Union[str, Dict[str, Any]] = None,
         database_flavor: str = "postgresql",
         schema_name: str = "public",
-        max_sample_rows: int = 5,
+        max_sample_rows: int = 2,
         **kwargs
     ):
         """
@@ -72,15 +75,16 @@ class SQLAgent(AbstractDBAgent):
         # DSN strings for different purposes
         self.discovery_dsn = None  # SQLAlchemy format for schema discovery
         self.dsn = None            # asyncdb format for DatabaseQueryTool
+        self.credentials = None
+        self.connection_dict = None
+        if isinstance(credentials, dict):
+            self.connection_dict = credentials
 
         # Validate database flavor
         if self.database_flavor not in self.SQLALCHEMY_DIALECT_MAPPING:
             raise ValueError(
                 f"Unsupported database flavor: {database_flavor}"
             )
-
-        # Process credentials and generate DSNs
-        self._process_credentials(credentials)
 
         super().__init__(
             name=name,
@@ -89,8 +93,50 @@ class SQLAgent(AbstractDBAgent):
             **kwargs
         )
 
+        # Process credentials and generate DSNs
+        self._process_credentials(credentials)
+
         # Add SQL-specific tools
         self._setup_sql_tools()
+
+    def _dsn_for_sqlalchemy(self, connection_string: str) -> str:
+        """Adapt connection string for SQLAlchemy async drivers."""
+        parsed = urlparse(connection_string)
+
+        if parsed.scheme.startswith('postgresql') and '+asyncpg' not in parsed.scheme:
+            return connection_string.replace('postgresql://', 'postgresql+asyncpg://')
+        elif parsed.scheme.startswith('postgres') and '+asyncpg' not in parsed.scheme:
+            return connection_string.replace('postgres://', 'postgresql+asyncpg://')
+        elif parsed.scheme.startswith('mysql') and '+aiomysql' not in parsed.scheme:
+            return connection_string.replace('mysql://', 'mysql+aiomysql://')
+        elif parsed.scheme.startswith('mssql') and '+aioodbc' not in parsed.scheme:
+            return connection_string.replace('mssql://', 'mssql+aioodbc://')
+
+        return connection_string
+
+    def _dsn_for_asyncdb(self, connection_string: str) -> str:
+        """Adapt connection string for asyncdb format."""
+        parsed = urlparse(connection_string)
+
+        # Check if already in asyncdb format:
+        if parsed.scheme in ['postgres', 'mysql', 'mssql']:
+            return connection_string
+
+        # Convert SQLAlchemy formats to asyncdb formats
+        if parsed.scheme.startswith('postgresql'):
+            return connection_string.replace(
+                'postgresql+asyncpg://', 'postgres://'
+            ).replace('postgresql://', 'postgres://')
+        elif parsed.scheme.startswith('mysql'):
+            return connection_string.replace(
+                'mysql+aiomysql://', 'mysql://'
+            ).replace('mysql://', 'mysql://')
+        elif parsed.scheme.startswith('mssql'):
+            return connection_string.replace(
+                'mssql+aioodbc://', 'mssql://'
+            ).replace('mssql://', 'mssql://')
+
+        return connection_string
 
     def _process_credentials(self, credentials: Union[str, Dict[str, Any]]) -> None:
         """
@@ -102,16 +148,20 @@ class SQLAgent(AbstractDBAgent):
         if isinstance(credentials, str):
             # Connection string provided
             self.connection_string = credentials
-            self.discovery_dsn = self._adapt_connection_string_for_sqlalchemy(credentials)
-            self.dsn = self._adapt_connection_string_for_asyncdb(credentials)
+            self.discovery_dsn = self._dsn_for_sqlalchemy(credentials)
+            self.dsn = self._dsn_for_asyncdb(credentials)
+            self.credentials = {}
         elif isinstance(credentials, dict):
             # Dictionary credentials provided
             self.connection_dict = credentials
             self.discovery_dsn = self._build_sqlalchemy_dsn_from_dict(credentials)
             self.dsn = self._build_asyncdb_dsn_from_dict(credentials)
             self.connection_string = self.discovery_dsn
+            self.credentials = credentials
         else:
-            raise ValueError("Credentials must be either a connection string or dictionary")
+            raise ValueError(
+                "Credentials must be either a connection string or dictionary"
+            )
 
     def _build_sqlalchemy_dsn_from_dict(self, creds: Dict[str, Any]) -> str:
         """
@@ -191,41 +241,6 @@ class SQLAgent(AbstractDBAgent):
 
         return dsn
 
-    def _adapt_connection_string_for_sqlalchemy(self, connection_string: str) -> str:
-        """Adapt connection string for SQLAlchemy async drivers."""
-        parsed = urlparse(connection_string)
-
-        if parsed.scheme.startswith('postgresql') and '+asyncpg' not in parsed.scheme:
-            return connection_string.replace('postgresql://', 'postgresql+asyncpg://')
-        elif parsed.scheme.startswith('postgres') and '+asyncpg' not in parsed.scheme:
-            return connection_string.replace('postgres://', 'postgresql+asyncpg://')
-        elif parsed.scheme.startswith('mysql') and '+aiomysql' not in parsed.scheme:
-            return connection_string.replace('mysql://', 'mysql+aiomysql://')
-        elif parsed.scheme.startswith('mssql') and '+aioodbc' not in parsed.scheme:
-            return connection_string.replace('mssql://', 'mssql+aioodbc://')
-
-        return connection_string
-
-    def _adapt_connection_string_for_asyncdb(self, connection_string: str) -> str:
-        """Adapt connection string for asyncdb format."""
-        parsed = urlparse(connection_string)
-
-        # Convert SQLAlchemy formats to asyncdb formats
-        if parsed.scheme.startswith('postgresql'):
-            return connection_string.replace(
-                'postgresql+asyncpg://', 'postgres://'
-            ).replace('postgresql://', 'postgres://')
-        elif parsed.scheme.startswith('mysql'):
-            return connection_string.replace(
-                'mysql+aiomysql://', 'mysql://'
-            ).replace('mysql://', 'mysql://')
-        elif parsed.scheme.startswith('mssql'):
-            return connection_string.replace(
-                'mssql+aioodbc://', 'mssql://'
-            ).replace('mssql://', 'mssql://')
-
-        return connection_string
-
     def _setup_sql_tools(self):
         """Setup SQL-specific tools including DatabaseQueryTool."""
         # The DatabaseQueryTool should already be registered in the parent class
@@ -272,18 +287,15 @@ class SQLAgent(AbstractDBAgent):
         """Test DatabaseQueryTool connection."""
         try:
             # Get database query tool from registered tools
-            db_tool = None
-            for tool in self.tools:
-                if isinstance(tool, DatabaseQueryTool):
-                    db_tool = tool
-                    break
-
+            db_tool = self.tool_manager.get_tool('DatabaseQueryTool')
             if db_tool:
                 # Test with a simple query
                 test_result = await db_tool.execute(
                     driver='pg' if self.database_flavor in ['postgresql', 'postgres', 'pg'] else self.database_flavor,
                     query="SELECT 1 as test_column LIMIT 1",
-                    credentials=self.dsn
+                    dsn=self.dsn,
+                    credentials=self.credentials or None,
+                    output_format='native'
                 )
 
                 if test_result.status == "success":
@@ -571,12 +583,7 @@ class SQLAgent(AbstractDBAgent):
         """Get sample data using DatabaseQueryTool."""
         try:
             # Get database query tool
-            db_tool = None
-            for tool in self.tools:
-                if isinstance(tool, DatabaseQueryTool):
-                    db_tool = tool
-                    break
-
+            db_tool = self.tool_manager.get_tool('DatabaseQueryTool')
             if not db_tool:
                 self.logger.warning("DatabaseQueryTool not found")
                 return []
@@ -586,14 +593,15 @@ class SQLAgent(AbstractDBAgent):
             sample_query = f"SELECT * FROM {full_table_name} LIMIT {self.max_sample_rows}"
 
             # Execute query
-            result = await db_tool._execute(
+            result = await db_tool.execute(
                 driver='pg' if self.database_flavor in ['postgresql', 'postgres'] else self.database_flavor,
                 query=sample_query,
-                credentials=self.dsn
+                dsn=self.dsn,
+                credentials=self.connection_dict,
+                output_format='json'
             )
-
-            if result.status == "success" and result.result.get('data'):
-                return result.result['data']
+            if result.status == "success":
+                return result.result
             else:
                 self.logger.warning(f"Could not get sample data for {table_name}: {result.error}")
                 return []
@@ -676,10 +684,12 @@ class SQLAgent(AbstractDBAgent):
                 validation_query = query
 
             # Execute validation query
-            result = await db_tool._execute(
+            result = await db_tool.execute(
                 driver='pg' if self.database_flavor in ['postgresql', 'postgres'] else self.database_flavor,
                 query=validation_query,
-                credentials=self.dsn
+                dsn=self.dsn,
+                credentials=self.connection_dict,
+                output_format='native'
             )
 
             return {
@@ -696,15 +706,13 @@ class SQLAgent(AbstractDBAgent):
                 "method": "tool_validation"
             }
 
-    async def execute_query(self, query: str, limit: int = 100) -> Dict[str, Any]:
+    async def execute_query(self, query: str, limit: int = 200) -> Dict[str, Any]:
         """Execute SQL query and return results using DatabaseQueryTool."""
         try:
             # Get database query tool
-            db_tool = None
-            for tool in self.tools:
-                if isinstance(tool, DatabaseQueryTool):
-                    db_tool = tool
-                    break
+            db_tool = self.tool_manager.get_tool('DatabaseQueryTool')
+            if not db_tool:
+                db_tool = None
 
             if not db_tool:
                 return {
@@ -715,32 +723,39 @@ class SQLAgent(AbstractDBAgent):
 
             # Add limit for SELECT queries if not present
             execution_query = query
+            result = None
             if query.strip().upper().startswith('SELECT') and 'LIMIT' not in query.upper():
                 execution_query = f"{query.rstrip(';')} LIMIT {limit}"
 
-            # Execute query
-            result = await db_tool._execute(
+            # Execute query (return a ToolResult)
+            result = await db_tool.execute(
                 driver='pg' if self.database_flavor in ['postgresql', 'postgres'] else self.database_flavor,
                 query=execution_query,
-                credentials=self.dsn
+                dsn=self.dsn,
+                credentials=self.connection_dict,
+                output_format='pandas'
             )
 
             if result.status == "success":
+                data = result.result
+                columns = data.columns.tolist() if not data.empty else []
+                row_count = len(data) if not data.empty else 0
                 return {
                     "success": True,
-                    "data": result.result.get('data', []),
-                    "columns": result.result.get('columns', []),
-                    "row_count": len(result.result.get('data', [])),
+                    "data": data,
+                    "columns": columns,
+                    "row_count": row_count,
                     "query": execution_query,
-                    "execution_time": result.result.get('execution_time'),
-                    "tool_used": "DatabaseQueryTool"
+                    "tool_used": "DatabaseQueryTool",
+                    "raw_result": result
                 }
             else:
                 return {
                     "success": False,
                     "error": result.error,
                     "query": execution_query,
-                    "tool_used": "DatabaseQueryTool"
+                    "tool_used": "DatabaseQueryTool",
+                    "raw_result": result
                 }
 
         except Exception as e:
@@ -748,7 +763,9 @@ class SQLAgent(AbstractDBAgent):
             return {
                 "success": False,
                 "error": str(e),
-                "query": query
+                "query": query,
+                "tool_used": "DatabaseQueryTool",
+                "raw_result": None
             }
 
     async def _get_schema_context_for_query(
@@ -834,6 +851,152 @@ SQL Query:"""
         else:
             return response_text.strip()
 
+    async def ask(
+        self,
+        prompt: str,
+        user_context: str = "",
+        context: str = "",
+        return_results: bool = True,  # New parameter to control query execution
+        session_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        use_conversation_history: bool = True,
+        **kwargs
+    ) -> AIMessage:
+        """
+        Enhanced ask method that can automatically execute generated SQL queries.
+
+        Args:
+            prompt: The user's question about the database
+            user_context: User-specific context for database interaction
+            context: Additional context about data location, schema guidance
+            return_results: If True, automatically execute generated SQL queries and return data
+            session_id: Session identifier for conversation history
+            user_id: User identifier
+            use_conversation_history: Whether to use conversation history
+            **kwargs: Additional arguments for LLM
+
+        Returns:
+            AIMessage: The response from the LLM, potentially enhanced with query results
+        """
+        # First, get the standard response from the parent method
+        response = await super().ask(
+            prompt=prompt,
+            user_context=user_context,
+            context=context,
+            session_id=session_id,
+            user_id=user_id,
+            use_conversation_history=use_conversation_history,
+            **kwargs
+        )
+
+        # If return_results is False, return the response as-is
+        if not return_results:
+            return response
+
+        # Try to extract and execute SQL queries from the response
+        try:
+            response_text = str(response.output) if response.output else ""
+
+            # Extract SQL queries from the response
+            sql_queries = self._extract_queries(response_text)
+
+            if sql_queries:
+                # Execute the first/main SQL query
+                main_query = sql_queries[0]
+                self.logger.debug(
+                    f"Auto-executing extracted query: {main_query[:100]}..."
+                )
+
+                # Execute the query
+                result = await self.execute_query(
+                    query=main_query
+                )
+                # Preserve original response
+                response.response = response_text
+                # is the dataframe:
+                response.output = result.get('data', None)
+                response.raw_response = result # Preserve raw ToolResult
+
+                # Add execution metadata if response has metadata attribute
+                if hasattr(response, 'metadata') and response.metadata:
+                    response.metadata.update({
+                        'auto_executed_query': True,
+                        'executed_query': main_query,
+                        'execution_success': result.get('status') == 'success',
+                        'row_count': result.get('row_count', 0),
+                        'columns': result.get('columns', []),
+                        'error': result.get('error', None)
+                    })
+
+        except Exception as e:
+            self.logger.warning(
+                f"Failed to auto-execute query: {e}"
+            )
+            # Don't fail the entire request, just log the warning
+            # The user still gets the explanation even if execution fails
+
+        return response
+
+    def _extract_queries(self, response_text: str) -> List[str]:
+        """
+        Extract SQL queries from LLM response text.
+
+        Args:
+            response_text: The full response text from the LLM
+
+        Returns:
+            List of extracted SQL queries
+        """
+        queries = []
+
+        # Method 1: Extract from markdown code blocks
+        sql_pattern = r'```sql\n(.*?)\n```'
+        matches = re.findall(sql_pattern, response_text, re.DOTALL | re.IGNORECASE)
+
+        for match in matches:
+            cleaned_query = match.strip()
+            if cleaned_query and not cleaned_query.lower().startswith('--'):
+                queries.append(cleaned_query)
+
+        # Method 2: If no markdown blocks, look for SQL-like patterns
+        if not queries:
+            # Look for common SQL patterns
+            sql_keywords = r'\b(SELECT|WITH|SHOW|DESCRIBE|EXPLAIN)\b'
+            lines = response_text.split('\n')
+            current_query = []
+            in_query = False
+
+            for line in lines:
+                line = line.strip()
+                if re.search(sql_keywords, line, re.IGNORECASE):
+                    in_query = True
+                    current_query = [line]
+                elif in_query:
+                    if line.endswith(';') or not line:
+                        if line.endswith(';'):
+                            current_query.append(line)
+                        query = '\n'.join(current_query).strip()
+                        if query:
+                            queries.append(query)
+                        in_query = False
+                        current_query = []
+                    else:
+                        current_query.append(line)
+
+        # Clean up queries
+        cleaned_queries = []
+        for query in queries:
+            # Remove common prefixes/suffixes
+            query = re.sub(r'^```sql\s*', '', query, flags=re.IGNORECASE)
+            query = re.sub(r'\s*```$', '', query)
+            query = query.strip()
+
+            # Basic validation - should contain SELECT, WITH, etc.
+            if re.search(r'\b(SELECT|WITH|SHOW|DESCRIBE|EXPLAIN)\b', query, re.IGNORECASE):
+                cleaned_queries.append(query)
+
+        return cleaned_queries
+
     def _extract_tables_from_query(self, query: str) -> List[str]:
         """Extract table names from SQL query."""
         pattern = r'(?:FROM|JOIN)\s+(?:[\w\.]*\.)?(\w+)'
@@ -845,6 +1008,8 @@ SQL Query:"""
         if self.engine:
             await self.engine.dispose()
         await super().cleanup()
+
+
 
 
 # Factory function for creating enhanced SQL agents

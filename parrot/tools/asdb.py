@@ -19,7 +19,7 @@ from .abstract import AbstractTool
 class DatabaseQueryArgs(BaseModel):
     """Arguments schema for DatabaseQueryTool."""
 
-    database_driver: str = Field(
+    driver: str = Field(
         ...,
         description="Database driver to use (bigquery, pg, mysql, influx, sqlite, oracle, etc.)"
     )
@@ -28,12 +28,16 @@ class DatabaseQueryArgs(BaseModel):
         description="Query to execute (only allowing statements for data retrieval). Must match the dialect of the specified database driver."
     )
     credentials: Optional[Dict[str, Any]] = Field(
-        None,
+        default=None,
         description="Dictionary containing database connection credentials (optional if default credentials available), eg. {'dsn': '...'} or {'host': '...', 'port"
     )
-    output_format: Literal["pandas", "json"] = Field(
+    dsn: Optional[str] = Field(
+        default=None,
+        description="Optional DSN string for database connection (overrides credentials if provided)"
+    )
+    output_format: Literal["pandas", "json", 'native', 'arrow'] = Field(
         "pandas",
-        description="Output format for query results: 'pandas' for DataFrame or 'json' for JSON string"
+        description="Output format for query results: 'pandas' for DataFrame, 'json' for JSON string, 'native' for native format, 'arrow' for Apache Arrow format"
     )
     query_timeout: int = Field(
         300,
@@ -58,7 +62,7 @@ class DatabaseQueryArgs(BaseModel):
             raise ValueError("Max rows must be positive")
         return v
 
-    @field_validator('database_driver')
+    @field_validator('driver')
     @classmethod
     def validate_driver(cls, v):
         supported_drivers = [
@@ -68,6 +72,14 @@ class DatabaseQueryArgs(BaseModel):
         if v.lower() not in supported_drivers:
             raise ValueError(f"Database driver must be one of: {supported_drivers}")
         return v.lower()
+
+    @field_validator('credentials', mode='before')
+    @classmethod
+    def validate_credentials(cls, v):
+        """Ensure credentials is either None, a dict, or a DSN string."""
+        if isinstance(v, str):
+            v = { "dsn": v }
+        return v
 
 
 class DatabaseQueryTool(AbstractTool):
@@ -160,7 +172,7 @@ class DatabaseQueryTool(AbstractTool):
 
     def _get_default_credentials(
         self,
-        database_driver: str
+        driver: str
     ) -> Tuple[Dict[str, Any], Optional[str]]:
         """
         Get default credentials for the specified database driver.
@@ -169,9 +181,9 @@ class DatabaseQueryTool(AbstractTool):
         TODO: using default credentials from QuerySource config.
         """
         dsn = None
-        if database_driver == 'postgresql':
-            database_driver = 'pg'
-        if database_driver == 'pg':
+        if driver == 'postgresql':
+            driver = 'pg'
+        if driver == 'pg':
             dsn = default_dsn
         # TODO: Add logic to fetch default credentials from secure storage or environment variables
         default_credentials = {
@@ -219,12 +231,12 @@ class DatabaseQueryTool(AbstractTool):
             }
         }
 
-        if database_driver not in default_credentials:
+        if driver not in default_credentials:
             raise ValueError(
-                f"No default credentials configured for database driver: {database_driver}"
+                f"No default credentials configured for database driver: {driver}"
             )
 
-        creds = default_credentials[database_driver].copy()
+        creds = default_credentials[driver].copy()
 
         # Remove None values
         creds = {k: v for k, v in creds.items() if v is not None}
@@ -264,7 +276,7 @@ class DatabaseQueryTool(AbstractTool):
 
     async def _execute_database_query(
         self,
-        database_driver: str,
+        driver: str,
         credentials: Dict[str, Any],
         dsn: Optional[str],
         query: str,
@@ -278,9 +290,9 @@ class DatabaseQueryTool(AbstractTool):
         try:
             # Create AsyncDB instance
             if dsn:
-                db = AsyncDB(database_driver, dsn=dsn)
+                db = AsyncDB(driver, dsn=dsn)
             else:
-                db = AsyncDB(database_driver, params=credentials)
+                db = AsyncDB(driver, params=credentials)
 
             async with await db.connection() as conn:  # pylint: disable=E1101 # noqa
                 # Set output format
@@ -290,7 +302,7 @@ class DatabaseQueryTool(AbstractTool):
                 modified_query = self._add_row_limit(query, max_rows)
 
                 self.logger.info(
-                    f"Executing query on {database_driver}: {modified_query[:100]}..."
+                    f"Executing query on {driver}: {modified_query[:100]}..."
                 )
 
                 # Execute query with timeout
@@ -401,7 +413,7 @@ class DatabaseQueryTool(AbstractTool):
 
     def execute_sync(
         self,
-        database_driver: str,
+        driver: str,
         query: str,
         credentials: Optional[Dict[str, Any]] = None,
         output_format: str = "pandas",
@@ -412,7 +424,7 @@ class DatabaseQueryTool(AbstractTool):
         Execute database query synchronously.
 
         Args:
-            database_driver: Database driver to use
+            driver: Database driver to use
             query: SQL query to execute
             credentials: Optional database credentials
             output_format: Output format ('pandas' or 'json')
@@ -426,7 +438,7 @@ class DatabaseQueryTool(AbstractTool):
             loop = asyncio.get_running_loop()
             # If we're in an async context, create a task
             task = loop.create_task(self.execute(
-                database_driver=database_driver,
+                driver=driver,
                 query=query,
                 credentials=credentials,
                 output_format=output_format,
@@ -437,7 +449,7 @@ class DatabaseQueryTool(AbstractTool):
         except RuntimeError:
             # No running loop, safe to create one
             return asyncio.run(self.execute(
-                database_driver=database_driver,
+                driver=driver,
                 query=query,
                 credentials=credentials,
                 output_format=output_format,
@@ -454,14 +466,14 @@ class DatabaseQueryTool(AbstractTool):
 
     def test_connection(
         self,
-        database_driver: str,
+        driver: str,
         credentials: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
         Test database connection.
 
         Args:
-            database_driver: Database driver to test
+            driver: Database driver to test
             credentials: Optional credentials to use
 
         Returns:
@@ -472,7 +484,7 @@ class DatabaseQueryTool(AbstractTool):
             test_query = "SELECT 1 as test_column"
 
             result = self.execute_sync(
-                database_driver=database_driver,
+                driver=driver,
                 query=test_query,
                 credentials=credentials,
                 output_format="pandas",
@@ -482,14 +494,14 @@ class DatabaseQueryTool(AbstractTool):
 
             return {
                 "status": "success",
-                "message": f"Successfully connected to {database_driver}",
+                "message": f"Successfully connected to {driver}",
                 "test_result": result.to_dict('records') if isinstance(result, pd.DataFrame) else result
             }
 
         except Exception as e:
             return {
                 "status": "error",
-                "message": f"Failed to connect to {database_driver}: {str(e)}"
+                "message": f"Failed to connect to {driver}: {str(e)}"
             }
 
     def save_query_result(
