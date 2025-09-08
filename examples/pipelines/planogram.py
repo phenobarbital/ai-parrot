@@ -34,6 +34,7 @@ async def main():
         "shelves": [
             {
                 "level": "header",
+                "height_ratio": 0.34,  # 33% of ROI height
                 "products": [
                     {
                         "name": "Epson EcoTank Advertisement",
@@ -46,6 +47,7 @@ async def main():
             },
             {
                 "level": "middle",
+                "height_ratio": 0.25,  # 30% of ROI height
                 "products": [
                     {
                         "name": "ET-2980",
@@ -69,7 +71,7 @@ async def main():
                 "compliance_threshold": 0.9
             },
             {
-                "level": "bottom",
+                "level": "bottom", # No height_ratio = remaining space
                 "products": [
                     {
                         "name": "ET-2980 box",

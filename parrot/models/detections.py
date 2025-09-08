@@ -69,6 +69,7 @@ class ShelfConfig(BaseModel):
     compliance_threshold: float = Field(default=0.8, description="Compliance threshold for this shelf")
     allow_extra_products: bool = Field(default=False, description="Allow products not in the specification")
     position_strict: bool = Field(default=False, description="Enforce strict positioning")
+    height_ratio: Optional[float] = Field(default=0.30)  # Add this field: 0.30 = 30% of ROI height
 
 class TextRequirement(BaseModel):
     """Text requirement for promotional materials"""
