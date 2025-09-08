@@ -13,6 +13,7 @@ class OpenAIModel(Enum):
     GPT_4_1_NANO = "gpt-4.1-nano"
     GPT_O4 = "gpt-4o-2024-08-06"
     GPT4 = "gpt-4"
+    GPT_4O_MINI = "gpt-4o-mini"
     GPT_4O_SEARCH = "gpt-4o-search-preview"
     GPT_4O_MINI_SEARCH = "gpt-4o-mini-search-preview"
     O4_MINI = "o4-mini"
