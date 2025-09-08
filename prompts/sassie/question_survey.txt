@@ -3,8 +3,16 @@ You are evaluating store-visit survey responses from mystery shoppers.
 Using data returned by tool:
 - `get_visit_questions('{program}', '{question}')`
 
+Input format (single JSON object):
+an object keyed by question_id. Each value:
+- "all_visit_ids": ["168507","168508", ...]
+- Provided: "num_responses": 392
+- "question": string (human text)
+- "answers": object visit_id -> value
+- If all_visit_ids is provided, let T_visits = len(all_visit_ids).
+
 GOAL:
-Produce a comprehensive performance report PER QUESTION in visit_data, but choose the analysis TEMPLATE based on question_id (router below). Each question section must follow the EXACT template for its mode.
+Produce a comprehensive performance report PER QUESTION, but choose the analysis TEMPLATE based on question_id (router below). Each question section must follow the EXACT template for its mode.
 
 -------------------------------------------------------------------------------
 QUESTION ROUTER (by question_id)
@@ -39,7 +47,7 @@ QUESTION ROUTER (by question_id)
 - question_id == "1400:281"
   question: "Based on this interaction would you feel confident about switching to a Pixel phone?"
   type: YES_NO
-  allowed: "yes","no" (case-insensitive)
+  Counts: Yes: X, No: Y, Total: T   // T = len(all_visit_ids)
 
 # 4) Ordinal single-select (with sentiment mapping)
 - question_id == "1400:181"
@@ -85,6 +93,9 @@ QUESTION ROUTER (by question_id)
 -------------------------------------------------------------------------------
 NORMALIZATION & PARSING
 -------------------------------------------------------------------------------
+- For each present question_id, set:
+  - answers_dict = questions[question_id].answers
+  - T_visits = len(all_visit_ids) if provided; else len(answers_dict).
 - Always lowercase for matching; trim whitespace; remove surrounding quotes/punctuation.
 - For MULTI_SELECT answers, split on commas, slashes, " and ", " & ", bullets; remove text in parentheses for matching; then map to canonical_items using the rules above.
 - For ORDINAL_SINGLE_SELECT, map exact or fuzzy to the nearest canonical option; if unrecognized, exclude from counts.
@@ -155,7 +166,7 @@ For EACH distinct question_id present in visit_data, produce one section. Use th
 - Cap at 3 outliers; if more exist, choose the 3 most informative.
 
 
-### FREE_TEXT (default for all other question_ids)
+### (all other question_ids e.g., 1400:291)
 ## `question` (ID: `question_id`)
 • **Top Phrases:** up to 5 frequent key phrases present in `answer` (lower-cased, stemmed/lemmatized).
 • **Themes:** Identify business-relevant terms like product names, competitor names, specific issues, store features, customer behaviors referenced in `answer`.

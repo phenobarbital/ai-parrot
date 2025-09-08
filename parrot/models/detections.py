@@ -69,6 +69,7 @@ class ShelfConfig(BaseModel):
     compliance_threshold: float = Field(default=0.8, description="Compliance threshold for this shelf")
     allow_extra_products: bool = Field(default=False, description="Allow products not in the specification")
     position_strict: bool = Field(default=False, description="Enforce strict positioning")
+    height_ratio: Optional[float] = Field(default=0.30)  # Add this field: 0.30 = 30% of ROI height
 
 class TextRequirement(BaseModel):
     """Text requirement for promotional materials"""
@@ -92,7 +93,7 @@ class AdvertisementEndcap(BaseModel):
     text_requirements: List[TextRequirement] = Field(default_factory=list, description="Required text elements")
     reference_image_path: Optional[str] = Field(default=None, description="Path to reference image for comparison")
     allow_additional_text: bool = Field(default=True, description="Allow additional text beyond requirements")
-    size_constraints: Optional[Dict[str, float]] = Field(default=None, description="Size constraints for the advertisement")
+    size_constraints: Optional[Dict[str, Any]] = Field(default=None, description="Size constraints for the advertisement")
 
 
 class AisleConfig(BaseModel):

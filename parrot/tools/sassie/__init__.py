@@ -1,13 +1,64 @@
 from decimal import Decimal
 from typing import List, Optional, Dict, Any, Union
-from typing_extensions import Annotated
 from datetime import date
 import json
+from typing_extensions import Annotated
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from datamodel.parsers.json import json_encoder  # noqa  pylint: disable=E0611
 from ...exceptions import ToolError  # pylint: disable=E0611
 from ..toolkit import tool_schema
 from ..nextstop.base import BaseNextStop
+
+
+class RetailerInput(BaseModel):
+    """Input schema for querying retailer evaluation data."""
+    program: Optional[str] = Field(
+        default='google',
+        description="Program name, defaults to current program if not provided"
+    )
+    retailer: str = Field(
+        ...,
+        description="The name of the retailer to query."
+    )
+
+    # Add a model_config to prevent additional properties
+    model_config = ConfigDict(
+        arbitrary_types_allowed=False,
+        extra="forbid",
+    )
+
+class RetailerEvaluation(BaseModel):
+    """Schema for retailer evaluation data."""
+    account_name: str
+    created_at: date
+    retailer_evaluation: Dict[str, Any] = Field(
+        default_factory=dict,
+    )
+
+    @field_validator('retailer_evaluation', mode='before')
+    @classmethod
+    def parse_retailer_evaluation(cls, v):
+        if v is None or v == '':
+            return {}
+        if isinstance(v, dict):
+            return v
+        if isinstance(v, (bytes, bytearray)):
+            v = v.decode('utf-8', errors='ignore')
+        if isinstance(v, str):
+            try:
+                parsed = json.loads(v)
+            except json.JSONDecodeError as e:
+                raise ValueError("Evaluations field is not a valid JSON string.") from e
+            if not isinstance(parsed, dict):
+                raise TypeError("Evaluations JSON must decode to a dictionary.")
+            return parsed
+        raise TypeError("evaluations must be a dict or a JSON string.")
+
+    # Add a model_config to prevent additional properties
+    model_config = ConfigDict(
+        arbitrary_types_allowed=False,
+        extra="forbid",
+    )
 
 class ProductInput(BaseModel):
     """Input schema for querying Epson product information."""
@@ -93,22 +144,22 @@ class VisitData(BaseModel):
     question_id: str = Field(..., description="Unique identifier for the question")
     question: str = Field(..., description="The question made by the survey")
     answer: Optional[str] = Field(default='', description="Answer provided for the question")
+    activity_item_id: Optional[int] = Field(
+        default=None,
+        description="Identifier for the activity item associated with the question"
+    )
 
 class EvaluationRecord(BaseModel):
     """Complete evaluation record with visit data and metadata."""
     evaluation_id: str = Field(..., description="Unique evaluation identifier")
-    client_name: str = Field(..., description="Name of the client")
-    shopper_id: int = Field(..., description="Shopper identifier")
     visit_date: date = Field(..., description="Date of the visit")
-    store_number: str = Field(..., description="Store number/identifier")
-    store_name: str = Field(..., description="Name of the store")
-    city: str = Field(..., description="City where the store is located")
-    state_code: str = Field(..., description="State code (e.g., TX)")
-    district: str = Field(..., description="District name")
-    region: Optional[str] = Field(None, description="Region (may be null)")
-    division: Optional[str] = Field(None, description="Division (may be null)")
-    market: Optional[str] = Field(None, description="Market (may be null)")
-    visit_data: List[VisitData] = Field(..., description="List of question-answer pairs from the visit")
+    account_name: str = Field(..., description="Name of the account associated with the visit")
+    visit_data: Dict[str, VisitData] = Field(..., description="Dictionary of question-answer pairs from the visit")
+    qty_stores_visited: int = Field(..., description="Number of stores visited")
+    qty_retailers_visited: int = Field(..., description="Number of retailers visited")
+    qty_total_visits: int = Field(..., description="Total number of visits made")
+    qty_states_visited: int = Field(..., description="Number of states visited")
+    qty_mystery_shoppers: int = Field(..., description="Number of mystery shoppers involved")
 
     class Config:
         # Allow parsing of date strings
@@ -130,6 +181,7 @@ class VisitsToolkit(BaseNextStop):
     - visits_survey: Get visit survey data for an specified Client.
     - get_visit_questions: Get visit questions and answers for a specific client.
     - get_product_information: Get basic product information.
+    - get_retailer: Get retailer evaluation data.
     """
     async def _get_visits(
         self,
@@ -205,20 +257,22 @@ class VisitsToolkit(BaseNextStop):
         for _, visit in enumerate(visits):
             if not visit.visit_data:
                 continue
-            for qa_item in visit.visit_data:
-                idx = f"{qa_item.question_id} - {qa_item.question}"
+            for question_id, qa_item in visit.visit_data.items():
+                idx = f"{question_id}"
                 if idx not in question_data:
-                    question_data[idx] = []
-                if qa_item.question_id not in question_data:
-                    question_data[qa_item.question_id] = []
+                    question_data[idx] = {
+                        "all_visit_ids": [],
+                        "num_responses": 0,
+                        "question": qa_item.question,
+                        "answers": {}
+                    }
                 # reduce the size of answer to 100 characters
                 if qa_item.answer and len(qa_item.answer) > 100:
                     qa_item.answer = qa_item.answer[:100] + "..."
-                question_data[idx].append(
-                    {
-                        "answer": qa_item.answer or ''
-                    }
-                )
+                question_data[idx]["answers"][f"{visit.evaluation_id}"] = qa_item.answer
+                question_data[idx]["all_visit_ids"].append(visit.evaluation_id)
+                question_data[idx]["num_responses"] += 1
+        print('Questions found:', len(question_data))
         return json_encoder(question_data)
 
     @tool_schema(ProductInput)
@@ -257,3 +311,42 @@ class VisitsToolkit(BaseNextStop):
             raise ValueError(
                 f"Error fetching Product data: {e}"
             )
+
+    @tool_schema(RetailerInput)
+    async def get_retailer(
+        self,
+        program: str,
+        retailer: str,
+        output_format: str = 'structured',
+        structured_obj: Optional[RetailerEvaluation] = RetailerEvaluation
+    ) -> RetailerEvaluation:
+        """
+        Retrieve retailer evaluation data for a given retailer name.
+        """
+        if program:
+            self.program = program
+        try:
+            sql = await self._get_query("by_retailer")
+            sql = sql.format(retailer=retailer)
+            data = await self._get_dataset(
+                sql,
+                output_format=output_format,
+                structured_obj=structured_obj
+            )
+            if not data:
+                raise ToolError(
+                    f"No Retailer data found for retailer {retailer}."
+                )
+            return data
+        except ToolError as te:
+            raise ValueError(
+                f"No Retailer data found for retailer {retailer}, error: {te}"
+            )
+        except ValueError as ve:
+            raise ValueError(
+                f"Invalid data format, error: {ve}"
+            )
+        except Exception as e:
+            raise ValueError(
+                f"Error fetching Retailer data: {e}"
+    )

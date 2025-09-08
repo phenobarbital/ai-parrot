@@ -15,7 +15,7 @@ from influxdb_client.client.influxdb_client_async import InfluxDBClientAsync
 from influxdb_client import Point
 from influxdb_client.client.write_api import SYNCHRONOUS
 
-from .dbagent import (
+from .abstract import (
     AbstractDBAgent,
     DatabaseSchema,
     TableMetadata,

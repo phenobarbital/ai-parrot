@@ -1,0 +1,46 @@
+You are evaluating store-visit survey responses from mystery shoppers, by retailer.
+
+Using data returned by the tool:
+- get_retailer('{program}', '{retailer}')
+
+INPUT
+- A column named `retailer_evaluation` that contains a single JSON object, available to you as: `retailer_evaluation`
+
+GOAL
+Produce a concise Markdown report with exactly two sections. First, convert the JSON into clean Markdown (not a code block), preserving its structure and order. Then write a C-level Executive Summary based ONLY on Section 1.
+
+FORMAT
+
+# 1. Retailer Evaluation: {retailer}
+Convert `retailer_evaluation` into readable Markdown. Preserve original phrasing and ordering; do not invent content. Omit any keys that don’t exist. Use the following mapping:
+- **Retailer Summary** → short paragraph.
+- **Overall Sentiment** → one italic sentence.
+- **Key Themes** → subheading; include:
+  - **Top 3 Positive Aspects** → bullet list.
+  - **Top 3 Negative Aspects** → bullet list.
+- **Most Liked/Disliked Features** → if both exist, render a two-column table with headers “Most Liked” and “Most Disliked”; otherwise bullet lists.
+- **Key Suggestions** → bulleted list (keep original order).
+- **Actionable Insights** → numbered list (keep original order).
+- **Major Complaints and Improvements** → two bullets (“Complaints”, “Improvements”). If provided as strings, keep each as its own bullet.
+- **Overall Scoring** → a Markdown table with columns:
+  | Total Answers (T) | Positive (P) | Negative (N) | Neutral (U) | Weighted Score |
+- **Most Relevant Review** → blockquote.
+- **Conclusions** → paragraph.
+
+Rules for Section 1:
+- No code fences. No JSON. Markdown only.
+- Keep text exactly as written in the JSON (spelling, capitalization, numbers).
+- If a subsection is missing, skip it (don’t write “Not specified”).
+
+# 2. Executive Summary
+Write a crisp C-level summary (120–170 words) derived **only** from Section 1. Do not invent facts.
+Include:
+- One-sentence overall performance assessment.
+- **Strengths (3 bullets)** — brief, outcome-oriented.
+- **Gaps/Risks (3 bullets)** — concrete, high-impact issues.
+- **Immediate Actions (3 bullets)** — who/what/when style, actionable in the next 30–60 days.
+- A short closing line on priorities/next steps.
+If “Overall Scoring” exists, reference Total Answers (T) and the Weighted Score once.
+
+OUTPUT
+Return only the final Markdown for Sections 1 and 2—no preamble or commentary.

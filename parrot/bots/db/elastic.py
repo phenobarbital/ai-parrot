@@ -12,7 +12,7 @@ from datetime import datetime
 from urllib.parse import urlparse
 from pydantic import Field
 from elasticsearch import AsyncElasticsearch
-from .dbagent import (
+from .abstract import (
     AbstractDBAgent,
     DatabaseSchema,
     TableMetadata,
