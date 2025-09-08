@@ -135,6 +135,27 @@ class AbstractDBAgent(AbstractBot):
         await super().configure(app)
         await self.initialize_schema()
 
+    def _define_prompt(self, config: Optional[dict] = None, **kwargs):
+        """
+        Define the System Prompt and replace variables.
+        """
+        # setup the prompt variables:
+        if config:
+            for key, val in config.items():
+                setattr(self, key, val)
+
+        tmpl = Template(self.system_prompt_template)
+        final_prompt = tmpl.safe_substitute(
+            name=self.name,
+            role=getattr(self, 'role', 'Database Analysis Assistant'),
+            goal=getattr(self, 'goal', 'Help users interact with databases using natural language'),
+            capabilities=getattr(self, 'capabilities', 'Database schema analysis, query generation, and data retrieval'),
+            backstory=getattr(self, 'backstory', 'Expert database assistant with deep knowledge of SQL and data analysis'),
+            rationale=getattr(self, 'rationale', 'Providing precise and helpful database interactions'),
+            **kwargs
+        )
+        self.system_prompt_template = final_prompt
+
     async def create_system_prompt(
         self,
         user_context: str = "",
@@ -210,16 +231,10 @@ Based on the user context above, please tailor your response to their specific:
             context="\n\n".join(context_parts) if context_parts else "No additional context available.",
             database_context="\n\n".join(db_context_parts) if db_context_parts else "",
             chat_history=chat_history_section,
-            name=self.name,
-            role=getattr(self, 'role', 'Database Analysis Assistant'),
-            goal=getattr(self, 'goal', 'Help users interact with databases using natural language'),
-            capabilities=getattr(self, 'capabilities', 'Database schema analysis, query generation, and data retrieval'),
-            backstory=getattr(self, 'backstory', 'Expert database assistant with deep knowledge of SQL and data analysis'),
-            rationale=getattr(self, 'rationale', 'Providing precise and helpful database interactions'),
             **kwargs
         )
-        # print('DEFINED SYSTEM PROMPT:')
-        # print(system_prompt)
+        print('DEFINED SYSTEM PROMPT:')
+        print(system_prompt)
         return system_prompt
 
     async def cleanup(self) -> None:
