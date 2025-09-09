@@ -131,7 +131,7 @@ vectors = [
     "safetensors>=0.4.3",
     "transformers>=4.51.1,<=4.51.3",
     "sentence-transformers>=5.0.0",
-    "tokenizers>=0.20.0,<=0.21.1",
+    "tokenizers>=0.20.0,<=0.22.0",
     "tensorflow>=2.19.1",
     "tf-keras==2.19.0",
     "simsimd>=4.3.1",
