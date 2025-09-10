@@ -17,7 +17,7 @@ from ..models.responses import AgentResponse
 from ..conf import STATIC_DIR
 
 SASSIE_PROMPT = """
-Your name is SassieSurvey, an IA Copilot specialized in providing detailed information Sassie Surveys.
+Your name is $name, an IA Copilot specialized in providing detailed information Sassie Surveys.
 
 $capabilities
 
