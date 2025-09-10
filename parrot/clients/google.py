@@ -2897,3 +2897,174 @@ Your job is to produce a final summary from the following text and identify the 
         except Exception as e:
             self.logger.error(f"Image generation failed: {e}")
             raise
+
+    def _upload_video(self, video_path: Union[str, Path]) -> str:
+        """
+        Uploads a video file to Google GenAi Client.
+        """
+        if isinstance(video_path, str):
+            video_path = Path(video_path).resolve()
+        if not video_path.exists():
+            raise FileNotFoundError(
+                f"Video file not found: {video_path}"
+            )
+        video_file = self.client.files.upload(
+            file=video_path
+        )
+        while video_file.state == "PROCESSING":
+            time.sleep(10)
+            video_file = self.client.files.get(name=video_file.name)
+
+        if video_file.state == "FAILED":
+            raise ValueError(video_file.state)
+
+        self.logger.debug(
+            f"Uploaded video file: {video_file.uri}"
+        )
+
+        return video_file
+
+    async def video_understanding(
+        self,
+        prompt: str,
+        model: Union[str, GoogleModel] = GoogleModel.GEMINI_2_5_FLASH,
+        temperature: Optional[float] = None,
+        prompt_instruction: Optional[str] = None,
+        video: Optional[Union[str, Path]] = None,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        stateless: bool = True,
+        offsets: Optional[tuple[str, str]] = None,
+    ) -> AIMessage:
+        """
+        Using a video (local or youtube) no analyze and extract information from videos.
+        """
+        model = model.value if isinstance(model, GoogleModel) else model
+        turn_id = str(uuid.uuid4())
+
+        self.logger.info(
+            f"Starting image generation with model: {model}"
+        )
+
+        if stateless:
+            # For stateless mode, skip conversation memory
+            messages = [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
+            conversation_history = None
+        else:
+            # Use the unified conversation context preparation from AbstractClient
+            messages, conversation_history, prompt_instruction = await self._prepare_conversation_context(
+                prompt, None, user_id, session_id, prompt_instruction, stateless=stateless
+            )
+
+        # Prepare conversation history for Google GenAI format
+        history = []
+        if messages:
+            for msg in messages[:-1]: # Exclude the current user message (last in list)
+                role = msg['role'].lower()
+                if role == 'user':
+                    parts = []
+                    for part_content in msg.get('content', []):
+                        if isinstance(part_content, dict) and part_content.get('type') == 'text':
+                            parts.append(Part(text=part_content.get('text', '')))
+                    if parts:
+                        history.append(UserContent(parts=parts))
+                elif role in ['assistant', 'model']:
+                    parts = []
+                    for part_content in msg.get('content', []):
+                        if isinstance(part_content, dict) and part_content.get('type') == 'text':
+                            parts.append(Part(text=part_content.get('text', '')))
+                    if parts:
+                        history.append(ModelContent(parts=parts))
+
+        config=types.GenerateContentConfig(
+            response_modalities=['Text', 'Image'],
+            temperature=temperature or self.temperature,
+            system_instruction=prompt_instruction
+        )
+
+        if isinstance(video, str) and video.startswith("http"):
+            # youtube video link:
+            data = types.FileData(
+                file_uri=video
+            )
+            video_metadata = None
+            if offsets:
+                video_metadata=types.VideoMetadata(
+                    start_offset=offsets[0],
+                    end_offset=offsets[1]
+                )
+            video_info = types.Part(
+                file_data=data,
+                video_metadata=video_metadata
+            )
+        else:
+            video_info = self._upload_video(video)
+
+        try:
+            start_time = time.time()
+            content = [
+                types.Part(
+                    text=prompt
+                ),
+                video_info
+            ]
+            # Use the asynchronous client for image generation
+            if stateless:
+                response = await self.client.aio.models.generate_content(
+                    model=model,
+                    contents=content,
+                    config=config
+                )
+            else:
+                # Create the stateful chat session
+                chat = self.client.aio.chats.create(model=model, history=history, config=config)
+                response = await chat.send_message(
+                    message=content,
+                )
+            execution_time = time.time() - start_time
+
+            final_response = response.text
+
+            usage = CompletionUsage(execution_time=execution_time)
+
+            if not stateless:
+                await self._update_conversation_memory(
+                    user_id,
+                    session_id,
+                    conversation_history,
+                    messages + [
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": f"[Image Analysis]: {prompt}"}
+                            ]
+                        },
+                    ],
+                    None,
+                    turn_id,
+                    prompt,
+                    final_response,
+                    []
+                )
+            # Create AIMessage using factory
+            ai_message = AIMessageFactory.from_gemini(
+                response=response,
+                input_text=prompt,
+                model=model,
+                user_id=user_id,
+                session_id=session_id,
+                turn_id=turn_id,
+                structured_output=final_response,
+                tool_calls=None,
+                conversation_history=conversation_history,
+                text_response=final_response
+            )
+
+            # Override provider to distinguish from Vertex AI
+            ai_message.provider = "google_genai"
+
+            return ai_message
+
+        except Exception as e:
+            self.logger.error(f"Image generation failed: {e}")
+            raise
