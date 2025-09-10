@@ -2744,3 +2744,156 @@ Your job is to produce a final summary from the following text and identify the 
         ai_message.provider = "google_genai"
 
         return ai_message
+
+    async def image_generation(
+        self,
+        prompt_data: Union[str, ImageGenerationPrompt],
+        model: Union[str, GoogleModel] = GoogleModel.GEMINI_2_5_FLASH_IMAGE_PREVIEW,
+        temperature: Optional[float] = None,
+        prompt_instruction: Optional[str] = None,
+        reference_images: List[Optional[Path]] = None,
+        output_directory: Optional[Path] = None,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        stateless: bool = True
+    ) -> AIMessage:
+        """
+        Generates images based on a text prompt using Nano-Banana.
+        """
+        if isinstance(prompt_data, str):
+            prompt_data = ImageGenerationPrompt(
+                prompt=prompt_data,
+                model=model,
+            )
+        if prompt_data.model:
+            model = GoogleModel.GEMINI_2_5_FLASH_IMAGE_PREVIEW.value
+        model = model.value if isinstance(model, GoogleModel) else model
+        turn_id = str(uuid.uuid4())
+        prompt_data.model = model
+
+        self.logger.info(
+            f"Starting image generation with model: {model}"
+        )
+
+        messages, conversation_session, _ = await self._prepare_conversation_context(
+            prompt_data.prompt, None, user_id, session_id, None
+        )
+
+        full_prompt = prompt_data.prompt
+        if prompt_data.styles:
+            full_prompt += ", " + ", ".join(prompt_data.styles)
+
+        # Prepare conversation history for Google GenAI format
+        history = []
+        if messages:
+            for msg in messages[:-1]: # Exclude the current user message (last in list)
+                role = msg['role'].lower()
+                if role == 'user':
+                    parts = []
+                    for part_content in msg.get('content', []):
+                        if isinstance(part_content, dict) and part_content.get('type') == 'text':
+                            parts.append(Part(text=part_content.get('text', '')))
+                    if parts:
+                        history.append(UserContent(parts=parts))
+                elif role in ['assistant', 'model']:
+                    parts = []
+                    for part_content in msg.get('content', []):
+                        if isinstance(part_content, dict) and part_content.get('type') == 'text':
+                            parts.append(Part(text=part_content.get('text', '')))
+                    if parts:
+                        history.append(ModelContent(parts=parts))
+
+        ref_images = []
+        if reference_images:
+            self.logger.info(
+                f"Using reference image: {reference_images}"
+            )
+            for img_path in reference_images:
+                if not img_path.exists():
+                    raise FileNotFoundError(
+                        f"Reference image not found: {img_path}"
+                    )
+                # Load the reference image
+                ref_images.append(Image.open(img_path))
+
+        config=types.GenerateContentConfig(
+            response_modalities=['Text', 'Image'],
+            temperature=temperature or self.temperature,
+            system_instruction=prompt_instruction
+        )
+
+        try:
+            start_time = time.time()
+            content = [full_prompt, *ref_images] if ref_images else [full_prompt]
+            # Use the asynchronous client for image generation
+            if stateless:
+                response = await self.client.aio.models.generate_content(
+                    model=prompt_data.model,
+                    contents=content,
+                    config=config
+                )
+            else:
+                # Create the stateful chat session
+                chat = self.client.aio.chats.create(model=model, history=history, config=config)
+                response = await chat.send_message(
+                    message=content,
+                )
+            execution_time = time.time() - start_time
+
+            pil_images = []
+            saved_image_paths = []
+            raw_response = {} # Initialize an empty dict for the raw response
+
+            raw_response['generated_images'] = []
+            for part in response.candidates[0].content.parts:
+                if part.text is not None:
+                    raw_response['text'] = part.text
+                elif part.inline_data is not None:
+                    image = Image.open(io.BytesIO(part.inline_data.data))
+                    pil_images.append(image)
+                    if output_directory:
+                        if isinstance(output_directory, str):
+                            output_directory = Path(output_directory).resolve()
+                        file_path = self._save_image(image, output_directory)
+                        saved_image_paths.append(file_path)
+                        raw_response['generated_images'].append({
+                            'uri': file_path,
+                            'seed': None
+                        })
+
+            usage = CompletionUsage(execution_time=execution_time)
+            if not stateless:
+                await self._update_conversation_memory(
+                    user_id,
+                    session_id,
+                    conversation_session,
+                    messages + [
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": f"[Image Analysis]: {full_prompt}"}
+                            ]
+                        },
+                    ],
+                    None,
+                    turn_id,
+                    prompt_data.prompt,
+                    response.text,
+                    []
+                )
+            ai_message = AIMessageFactory.from_imagen(
+                output=pil_images,
+                images=saved_image_paths,
+                input=full_prompt,
+                model=model,
+                user_id=user_id,
+                session_id=session_id,
+                provider='nano-banana',
+                usage=usage,
+                raw_response=raw_response
+            )
+            return ai_message
+
+        except Exception as e:
+            self.logger.error(f"Image generation failed: {e}")
+            raise
