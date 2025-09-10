@@ -44,6 +44,10 @@ class DetectionBox(BaseModel):
     class_name: str = Field(default=None, description="Detected class name")
     area: int = Field(default=None, description="Bounding box area in pixels")
     label: Optional[str] = Field(None, description="Optional label for the detection")
+    ocr_text: Optional[str] = Field(
+        None,
+        description="OCR text within the bounding box, if any"
+    )
 
 class ShelfRegion(BaseModel):
     """Detected shelf region"""

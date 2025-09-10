@@ -51,6 +51,28 @@ try:
 except Exception:
     YOLO = None
 
+
+def clean_ocr_text(text: str) -> str:
+    """
+    Cleans an OCR string by removing non-alphanumeric characters (except spaces)
+    and normalizing whitespace.
+
+    Args:
+        text: The raw OCR output string.
+
+    Returns:
+        A cleaned-up string.
+    """
+    if not text:
+        return ""
+
+    # 1. Remove all characters that are NOT letters, numbers, or whitespace
+    #    [^a-zA-Z0-9\s] means "match any character that is not in this set"
+    only_alnum_and_space = re.sub(r'[^a-zA-Z0-9\s-]', '', text)
+    # 2. Normalize whitespace: collapse multiple spaces into one, and trim ends
+    cleaned_text = " ".join(only_alnum_and_space.split())
+    return cleaned_text
+
 CID = {
     "promotional_candidate": 103,
     "product_candidate": 100,
@@ -58,6 +80,7 @@ CID = {
     "price_tag": 102,  # Make sure this is defined
     "shelf_region": 190,
 }
+
 
 PROMO_NAMES = {"promotional_candidate", "promotional_graphic"}
 
@@ -845,10 +868,12 @@ Return exactly FOUR detections with the following strict criteria:
                 classes = r.boxes.cls.cpu().numpy().astype(int)
                 names = r.names
 
-                print(f"   📊 Raw YOLO output: {len(xyxy)} detections")
+                print(
+                    f"   📊 Raw YOLO output: {len(xyxy)} detections"
+                )
 
                 phase_count = 0
-                for i, ((x1, y1, x2, y2), conf, cls_id) in enumerate(zip(xyxy, confs, classes)):
+                for _, ((x1, y1, x2, y2), conf, cls_id) in enumerate(zip(xyxy, confs, classes)):
                     gx1, gy1, gx2, gy2 = int(x1) + rx1, int(y1) + ry1, int(x2) + rx1, int(y2) + ry1
 
                     width, height = x2 - x1, y2 - y1
@@ -871,6 +896,41 @@ Return exactly FOUR detections with the following strict criteria:
                     if allow and yolo_class not in allow:
                         continue
 
+                    ocr_text = None
+                    orientation = self._detect_orientation(gx1, gy1, gx2, gy2)
+                    if (area_ratio >= 0.0008 and area_ratio <= 0.9):
+                        # Only run OCR on boxes with an area > 5% of the ROI
+                        if area_ratio > 0.05:
+                            try:
+                                # Crop the specific proposal from the ROI image
+                                # Use local coordinates (x1, y1, x2, y2) for this
+                                proposal_img_crop = roi[int(y1):int(y2), int(x1):int(x2)]
+
+                                # --- ROTATION LOGIC for VERTICAL BOXES ---
+                                if orientation == 'vertical':
+                                    # Rotate the crop 90 degrees counter-clockwise to make text horizontal
+                                    proposal_img_crop = cv2.rotate(
+                                        proposal_img_crop,
+                                        cv2.ROTATE_90_CLOCKWISE
+                                    )
+
+                                # Run Tesseract on the crop
+                                raw_text = pytesseract.image_to_string(
+                                    proposal_img_crop,
+                                    # config='--psm 6'
+                                    config="--psm 6 -l eng"
+                                )
+
+                                # Clean up the text
+                                ocr_text = " ".join(raw_text.strip().split())
+                                ocr_text = clean_ocr_text(ocr_text)
+
+                                print('OCR TEXT > ', ocr_text)
+                            except Exception as ocr_error:
+                                self.logger.warning(
+                                    f"OCR failed for a proposal: {ocr_error}"
+                                )
+
                     # Light filtering - let classification handle the heavy lifting
                     if (area_ratio >= 0.0008 and area_ratio <= 0.9 and
                         0.1 <= aspect_ratio <= 10.0 and conf >= conf_thresh):
@@ -889,6 +949,7 @@ Return exactly FOUR detections with the following strict criteria:
                             "orientation": orientation,
                             "retail_candidates": self._get_retail_candidates(yolo_class),
                             "raw_index": len(all_proposals) + 1,
+                            "ocr_text": ocr_text,
                             "phase": phase_name
                         }
                         all_proposals.append(proposal)
