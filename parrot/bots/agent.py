@@ -84,7 +84,7 @@ class BasicAgent(Chatbot):
         self.logger = logging.getLogger(
             f'{self.name}.Agent'
         )
-        ## Google GenAI Client:
+        ## Google GenAI Client (for multi-modal responses and TTS generation):
         self.client = GoogleGenAIClient()
 
     def default_tools(self, tools: List[AbstractTool]) -> List[AbstractTool]:

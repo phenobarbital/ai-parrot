@@ -105,7 +105,7 @@ async def create_report():
                 _, response = await agent.generate_report(
                     prompt_file="product_info.txt",
                     save=True,
-                    model=model
+                    model=model,
                 )
                 final_output = response.output
                 pdf = await agent.pdf_report(
