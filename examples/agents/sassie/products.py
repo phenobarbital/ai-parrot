@@ -14,7 +14,6 @@ JOIN google.products_compliant pc USING (sku)
 WHERE p.brand = 'Google'  and p.specifications is not null and cs.customer_satisfaction is not null
 AND p.model = 'Pixel 10 Pro XL'
 GROUP BY p.model, p.model_code
-
 """
 
 

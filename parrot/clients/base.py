@@ -990,3 +990,16 @@ class AbstractClient(ABC):
             delay *= (0.5 + random.random() * 0.5)
 
         await asyncio.sleep(delay)
+
+    def _parse_json_from_text(self, text: str) -> Union[dict, list]:
+        """Robustly parse JSON even if the model wraps it in ```json fences."""
+        if not text:
+            return {}
+        # strip fences
+        s = text.strip()
+        s = re.sub(r"^```(?:json)?\s*", "", s, flags=re.I)
+        s = re.sub(r"\s*```$", "", s)
+        # grab the largest {...} or [...] block if extra prose sneaks in
+        m = re.search(r"(\{.*\}|\[.*\])", s, flags=re.S)
+        s = m.group(1) if m else s
+        return json_decoder(s)
