@@ -4,6 +4,7 @@ Step 1: Object Detection (YOLO/ResNet)
 Step 2: LLM Object Identification with Reference Images
 Step 3: Planogram Comparison and Compliance Verification
 """
+import asyncio
 import os
 from typing import List, Dict, Any, Optional, Union, Tuple
 from collections import defaultdict, Counter
@@ -13,7 +14,7 @@ import traceback
 from pathlib import Path
 from datetime import datetime
 import math
-from matplotlib.pyplot import box
+import io
 import pytesseract
 from PIL import (
     Image,
@@ -27,15 +28,18 @@ from pydantic import BaseModel, Field
 import cv2
 import torch
 from transformers import CLIPProcessor, CLIPModel
+from google.genai.errors import ServerError
 from navconfig.logging import logging
 from .abstract import AbstractPipeline
 from ..models.detections import (
     DetectionBox,
+    Detections,
     ShelfRegion,
     IdentifiedProduct,
     PlanogramDescription,
     PlanogramDescriptionFactory,
 )
+from ..clients.google import GoogleGenAIClient, GoogleModel
 from ..models.compliance import (
     ComplianceResult,
     ComplianceStatus,
@@ -90,6 +94,7 @@ class RetailDetector:
     def __init__(
         self,
         yolo_model: str = "yolo12l.pt",
+        llm: Any = None,
         conf: float = 0.15,
         iou: float = 0.5,
         device: str = "cuda" if torch.cuda.is_available() else "cpu",
@@ -103,7 +108,13 @@ class RetailDetector:
         self.conf = conf
         self.iou = iou
         self.device = device
-
+        self.llm = llm
+        self.google = GoogleGenAIClient(
+            model=GoogleModel.GEMINI_2_5_FLASH,
+            temperature=0.0,
+            max_retries=2,
+            timeout=20
+        )
         # Endcap geometry defaults (can be tuned per program)
         self.endcap_aspect_ratio = 1.35   # width / height
         self.left_margin_ratio   = 0.12   # expand poster to endcap edges
@@ -134,8 +145,8 @@ class RetailDetector:
         # text prompts (backup if no product refs)
         self.text_tokens = self.proc(text=[
             "retail promotional poster lightbox",
-            "Epson EcoTank printer device on shelf",
-            "printer product box carton"
+            "Epson Printer device on shelf",
+            "Epson product box carton"
         ], return_tensors="pt", padding=True).to(self.device)
         with torch.no_grad():
             self.text_feats = self.clip.get_text_features(**self.text_tokens)
@@ -253,7 +264,7 @@ class RetailDetector:
         return keep
 
     # -------------------------- public entry ---------------------------------
-    def detect(
+    async def detect(
         self,
         image: Image.Image,
         planogram: Optional[PlanogramDescription] = None,
@@ -269,16 +280,25 @@ class RetailDetector:
         h, w = img_array.shape[:2]
 
         # 1) Find the poster:
-        ad_box = self._find_poster(img_array)
+        debug_poster_path = debug_raw.replace(".png", "_poster_debug.png") if debug_raw else None
+        endcap, ad, brand = await self._find_poster(enhanced, planogram, debug_poster_path)
+        # Check if detections are valid before proceeding
+        if not endcap or not ad:
+            print("ERROR: Failed to get required detections.")
+            return # or raise an exception
 
         # 2) endcap ROI
-        sc = planogram.advertisement_endcap.size_constraints if planogram and planogram.advertisement_endcap else {}
-        roi_box = self._roi_from_poster(ad_box, h, w, sc)
+        roi_box = endcap.bbox.get_pixel_coordinates(width=w, height=h)
+        ad_box = ad.bbox.get_pixel_coordinates(width=w, height=h)
+
+        # Unpack the Pixel coordinates
         rx1, ry1, rx2, ry2 = roi_box
+
         roi = img_array[ry1:ry2, rx1:rx2]
 
         # 4) YOLO inside ROI
         yolo_props = self._yolo_props(roi, rx1, ry1)
+        print('PROPS > ', yolo_props)
 
         # Extract planogram config for shelf layout
         planogram_config = None
@@ -302,7 +322,8 @@ class RetailDetector:
         shelf_lines, bands = self._find_shelves(
             roi_box=roi_box,
             ad_box=ad_box,
-            w=w, h=h,
+            w=w,
+            h=h,
             planogram_config=planogram_config
         )
         # header_limit_y = min(v[0] for v in bands.values()) if bands else int(0.4 * h)
@@ -315,10 +336,11 @@ class RetailDetector:
 
         if debug_raw:
             dbg = self._draw_phase_areas(img_array.copy(), yolo_props, roi_box)
-            cv2.imwrite(
-                debug_phases,
-                cv2.cvtColor(dbg, cv2.COLOR_RGB2BGR)
-            )
+            if debug_phases:
+                cv2.imwrite(
+                    debug_phases,
+                    cv2.cvtColor(dbg, cv2.COLOR_RGB2BGR)
+                )
             dbg = self._draw_yolo(img_array.copy(), yolo_props, roi_box, shelf_lines)
             cv2.imwrite(
                 debug_raw,
@@ -389,272 +411,312 @@ class RetailDetector:
             feat = feat / feat.norm(dim=-1, keepdim=True)
         return feat
 
+    def _coerce_bbox(self, bbox, W, H):
+        if bbox is None:
+            return None
+        if isinstance(bbox, (list, tuple)) and len(bbox) == 4:
+            x1, y1, x2, y2 = map(float, bbox)
+        elif isinstance(bbox, dict):
+            if {"x1","y1","x2","y2"} <= bbox.keys():
+                x1, y1, x2, y2 = map(float, (bbox["x1"], bbox["y1"], bbox["x2"], bbox["y2"]))
+            elif {"x","y","w","h"} <= bbox.keys():
+                x1, y1 = float(bbox["x"]), float(bbox["y"])
+                x2, y2 = x1 + float(bbox["w"]), y1 + float(bbox["h"])
+            else:
+                return None
+        else:
+            return None
+        def to_px(v, M):
+            return int(round(v * M)) if v <= 1.5 else int(round(v))
+        x1, y1, x2, y2 = to_px(x1, W), to_px(y1, H), to_px(x2, W), to_px(y2, H)
+        if x2 < x1:
+            x1, x2 = x2, x1
+        if y2 < y1:
+            y1, y2 = y2, y1
+        x1 = max(0, min(W-1, x1))
+        x2 = max(0, min(W-1, x2))
+        y1 = max(0, min(H-1, y1))
+        y2 = max(0, min(H-1, y2))
+        if (x2-x1) < 4 or (y2-y1) < 4:
+            return None
+        return (x1, y1, x2, y2)
+
+    def _downscale_image(self, img: Image.Image, max_side=1024, quality=82) -> Image.Image:
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+        w, h = img.size
+        s = max(w, h)
+        if s > max_side:
+            scale = max_side / float(s)
+            img = img.resize((int(w*scale), int(h*scale)), Image.LANCZOS)
+        # (Optional) strip metadata by re-encoding
+        bio = io.BytesIO()
+        img.save(bio, format="JPEG", quality=quality, optimize=True)
+        bio.seek(0)
+        return Image.open(bio)
+
     # ---------------------- poster localization -------------------------------
-    def _find_poster(self, img: np.ndarray) -> Optional[Tuple[int,int,int,int]]:
+    async def _find_poster(
+        self,
+        image: Image.Image,
+        planogram: PlanogramDescription,
+        debug_path: Optional[str] = None
+    ) -> tuple[Detections, Detections, Detections]:
         """
-        Find the entire endcap display area, not just the poster text
+        Ask the vision model to find the main promotional graphic for the given brand/tags.
+        Returns (x1,y1,x2,y2) in absolute pixels, and the parsed JSON for logging.
         """
-        H, W = img.shape[:2]
+        w, _ = image.size
+        brand = (getattr(planogram, "brand", "") or "").strip()
+        tags = [t.strip() for t in getattr(planogram, "tags", []) or []]
+        endcap = getattr(planogram, "advertisement_endcap", None)
+        if endcap and getattr(endcap, "text_requirements", None):
+            for tr in endcap.text_requirements:
+                if getattr(tr, "required_text", None):
+                    tags.append(tr.required_text)
+        tag_hint = ", ".join(sorted(set(f"'{t}'" for t in tags if t)))
 
-        # 1) Look for the main promotional display using OCR
-        data = pytesseract.image_to_data(Image.fromarray(img), output_type=pytesseract.Output.DICT)
-        xs, ys, xe, ye = [], [], [], []
+        # downscale for LLM
+        image_small = self._downscale_image(image, max_side=1024, quality=78)
+        prompt = f"""
+Analyze the image to identify the entire retail endcap display and its key components.
 
-        for i, word in enumerate(data.get("text", [])):
-            if not word:
-                continue
-            w = word.lower()
+Your response must be a single JSON object with a 'detections' list. Each detection must have a 'label', 'confidence', a 'content' with any detected text, and a 'bbox' with normalized coordinates (x1, y1, x2, y2).
 
-            # Target keywords for Epson displays
-            if any(k in w for k in ("epson","hello","savings","cartridges","ecotank","goodbye")):
-                x, y = data["left"][i], data["top"][i]
-                bw, bh = data["width"][i], data["height"][i]
+Useful phrases to look for inside the lightbox: {tag_hint}
 
-                # FILTER: Ignore text found in the leftmost 15% (Microsoft signage)
-                if x < 0.15 * W:
-                    continue
+Return exactly FOUR detections with the following strict criteria:
 
-                # FILTER: Focus on upper portion (promotional graphics)
-                if y > 0.5 * H:  # Skip text too low
-                    continue
+1.  **'brand_logo'**: A bounding box that tightly encloses the **'{brand}' brand logo**.
+    - This logo is the dark text located at the **very top of the white area** inside the sign.
 
-                xs.append(x)
-                ys.append(y)
-                xe.append(x+bw)
-                ye.append(y+bh)
+2.  **'poster_text'**: A bounding box for the main marketing headline.
+    - This box should tightly enclose ALL lines of the marketing text, which may include phrases like {tag_hint}.
+    - Crucially, ensure the bottom edge of the box is **slightly below the text**, not cutting through the middle of the words.
 
-        # If we found promotional text, use it as anchor for the full display area
-        if xs:
-            text_x1, text_y1, text_x2, text_y2 = min(xs), min(ys), max(xe), max(ye)
+3.  **'poster_panel'**: A bounding box for the **entire backlit sign including its frame**.
+    - The box must tightly enclose the sign's outer **silver/gray frame** on all four sides.
+    - The top edge (**y1**) must be at or just above the top of the frame.
+    - The bottom edge (**y2**) must be determined by the marketing content. It should extend just slightly below the lowest line of text on the sign (the "Epson EcoTank..." line), effectively using the bottom of the 'poster_text' area as its guide.
+    - The right edge (**x2**) must contain the full width of the sign, including any side borders.
+    - **The 'content' field for this detection should be null.**
 
-            # STRATEGY: Use the promotional text as center point, but expand to capture full endcap
-            # The endcap display typically spans from edge to edge of the visible product area
-
-            # Find the actual product display boundaries by looking for the white shelf/products
-            display_x1 = int(0.12 * W)  # Start after Microsoft signage
-            display_x2 = int(0.92 * W)  # Go nearly to edge but leave some margin
-
-            # Vertical: Start from promotional area, go to bottom
-            display_y1 = max(0, int(text_y1 - 0.05 * H))  # Slightly above promotional text
-            display_y2 = H - 1  # Go to bottom
-
-            return _clamp(W, H, display_x1, display_y1, display_x2, display_y2)
-
-        # 2) CLIP approach as backup
-        if self.ref_ad_feat is not None:
-            windows = []
-            ww, hh = int(0.6 * W), int(0.35 * H)  # Larger windows to capture more
-
-            # Sample wider area to find promotional content
-            for cx in (int(0.35 * W), int(0.5 * W), int(0.65 * W)):
-                for cy in (int(0.25 * H), int(0.35 * H)):
-                    x1 = max(0, cx - ww // 2)
-                    x2 = min(W - 1, x1 + ww)
-                    y1 = max(0, cy - hh // 2)
-                    y2 = min(H - 1, y1 + hh)
-                    windows.append((x1, y1, x2, y2))
-
-            best = None
-            best_s = -1.0
-
-            for (x1, y1, x2, y2) in windows:
-                crop = Image.fromarray(img[y1:y2, x1:x2])
-                with torch.no_grad():
-                    ip = self.proc(images=crop, return_tensors="pt").to(self.device)
-                    f = self.clip.get_image_features(**ip)
-                    f = f / f.norm(dim=-1, keepdim=True)
-                    s = float((f @ self.ref_ad_feat.T).squeeze())
-                if s > best_s:
-                    best_s = s
-                    best = (x1, y1, x2, y2)
-
-            if best is not None and best_s > 0.12:
-                # Use CLIP result as center, but expand to full display width
-                _, by1, _, by2 = best
-                display_x1 = int(0.12 * W)
-                display_x2 = int(0.92 * W)
-                return _clamp(W, H, display_x1, by1, display_x2, H - 1)
-
-        # 3) Fallback: Define the full endcap display area
-        return (
-            int(0.12 * W),  # Start after left-side signage
-            int(0.12 * H),  # Start from upper area
-            int(0.92 * W),  # Go nearly to right edge
-            H - 1           # Go to bottom
+4.  **'endcap'**: A bounding box for the **entire retail endcap display**.
+    - First, identify the entire **visual group of all products, boxes, and shelves** that belong together in this single display.
+    - The bounding box must then encompass this **entire group**.
+    - The top edge (**y1**) must align with the top of the large backlit sign's frame.
+    - The left (**x1**) and right (**x2**) edges must be wide enough to contain the **absolute horizontal extent of the entire product group**. No part of any product or box belonging to this display should be cropped.
+    - The bottom edge (**y2**) must align with the **bottom of the physical base of the lowest shelf**. This line is visible between the bottom of the product boxes and the floor/carpet. This ensures the entire lowest shelf is included, but the **floor is excluded**.
+    - **The 'content' field for this detection should be null.**
+"""
+        max_attempts = 2  # Initial attempt + 1 retry
+        retry_delay_seconds = 10
+        msg = None
+        for attempt in range(max_attempts):
+            try:
+                async with self.google as client:
+                    msg = await client.ask_to_image(
+                        image=image_small,
+                        prompt=prompt,
+                        model="gemini-2.5-flash",
+                        no_memory=True,
+                        structured_output=Detections,
+                    )
+                # If the call succeeds, break out of the loop
+                break
+            except ServerError as e:
+                # Check if this was the last attempt
+                if attempt < max_attempts - 1:
+                    print(
+                        f"WARNING: Model is overloaded. Retrying in {retry_delay_seconds} seconds... (Attempt {attempt + 1}/{max_attempts})"
+                    )
+                    await asyncio.sleep(retry_delay_seconds)
+                else:
+                    print(
+                        f"ERROR: Model is still overloaded after {max_attempts} attempts. Failing."
+                    )
+                    # Re-raise the exception if the last attempt fails
+                    raise e
+        # Evaluate the Output:
+        data = msg.structured_output or msg.output or {}
+        dets = data.detections or []
+        if not dets:
+            return None, data
+        print('detections > ', dets)
+        # pick detections
+        panel_det = next(
+            (d for d in dets if d.label == "poster_panel"), None) \
+            or next((d for d in dets if d.label == "poster"), None) \
+            or (max(dets, key=lambda x: float(x.confidence)) if dets else None
         )
+        # endcap:
+        endcap_det = next((d for d in dets if d.label == "endcap"), None)
+        # expand the endcap at right/left to 2% of image width:
+        if endcap_det:
+            ex = int(0.02 * w)
+            ex_r = int(0.03 * w)
+            endcap_det.bbox.x1 = max(0.0, endcap_det.bbox.x1 - ex / w)
+            endcap_det.bbox.x2 = min(1.0, endcap_det.bbox.x2 + ex_r / w)
+        # poster text:
+        text_det = next((d for d in dets if d.label == "poster_text"), None)
+        # brand logo:
+        brand_det = next((d for d in dets if d.label == "brand_logo"), None)
+        if panel_det and text_det:
+            print("INFO: Found both panel and text. Applying boundary correction.")
+            # Get the bottom of the text box
+            text_bottom_y2 = text_det.bbox.y2
+            # Optional: Add a small amount of padding (e.g., 5% of image height)
+            padding = 0.05
+            new_panel_y2 = min(text_bottom_y2 + padding, 1.0) # Ensure it doesn't exceed 1.0
+            panel_det.bbox.y2 = new_panel_y2
 
-    def _roi_from_poster(self, ad_box, h, w, size_constraints: Optional[dict] = None):
-        """
-        Compute endcap ROI using planogram size constraints.
-        No detections are used here (YOLO needs this ROI).
-        Returns (rx1, ry1, rx2, ry2) in full-image coords.
-        """
-        sc = self._normalize_size_constraints(size_constraints or {})
-        roi_min_width_frac   = sc["roi_min_width_frac"]
-        roi_max_width_frac   = sc["roi_max_width_frac"]
-        fallback_left_frac   = sc["roi_fallback_left_frac"]
-        fallback_right_frac  = sc["roi_fallback_right_frac"]
-        left_margin_ratio    = sc["left_margin_ratio"]
-        right_margin_ratio   = sc["right_margin_ratio"]
-        top_margin_ratio     = sc["top_margin_ratio"]
-        endcap_width_scale   = sc["endcap_width_scale"]
+        if debug_path:
+            panel_px = panel_det.bbox.get_coordinates()
+            self._save_poster_debug(image, panel_px, dets, debug_path)
 
-        # ---- Fallback when no poster ----
-        if ad_box is None:
-            rx1 = int(fallback_left_frac * w)
-            rx2 = int(fallback_right_frac * w)
-            ry1 = int(0.08 * h)
-            ry2 = h - 1
-            return (rx1, ry1, rx2, ry2)
+        return endcap_det, panel_det, brand_det
 
-        ax1, ay1, ax2, ay2 = ad_box
-        aw, ah = max(1, ax2 - ax1), max(1, ay2 - ay1)
-        cx = (ax1 + ax2) / 2.0
+    def _save_poster_debug(
+        self,
+        pil_image: Image.Image,
+        poster_bounds: Tuple[int, int, int, int],
+        detections: List[dict],
+        save_path: str
+    ) -> None:
+        """Save debug image showing poster detection results"""
+        try:
+            debug_img = pil_image.copy()
+            draw = ImageDraw.Draw(debug_img)
+            # draw the detections:
+            for det in detections:
+                label = det.label
+                conf = float(det.confidence or 0.0)
+                bbox = det.bbox
+                x1 = int(bbox.x1 * debug_img.width)
+                y1 = int(bbox.y1 * debug_img.height)
+                x2 = int(bbox.x2 * debug_img.width)
+                y2 = int(bbox.y2 * debug_img.height)
+                x1, y1, x2, y2 = _clamp(debug_img.width, debug_img.height, x1, y1, x2, y2)
 
-        # ---- Base width proposal (poster aware) ----
-        width_from_margins = aw * (1.0 + left_margin_ratio + right_margin_ratio)
-        width_from_scale   = aw * endcap_width_scale
-        width_fallback     = (fallback_right_frac - fallback_left_frac) * w
+                color = (255, 165, 0) if label == "poster_panel" else (0, 255, 255)
+                draw.rectangle(
+                    [(x1, y1), (x2, y2)],
+                    outline=color,
+                    width=3
+                )
+                draw.text(
+                    (x1, y1 - 20),
+                    f"{label} {conf:.2f}",
+                    fill=color
+                )
 
-        proposed = sorted([width_from_margins, width_from_scale, width_fallback])[1]
-        min_w = roi_min_width_frac * w
-        max_w = roi_max_width_frac * w
-        target_w = int(max(min_w, min(max_w, proposed)))
+            # Draw final poster bounds in bright green
+            x1, y1, x2, y2 = poster_bounds
+            draw.rectangle(
+                [(x1, y1), (x2, y2)],
+                outline=(0, 255, 0),
+                width=4
+            )
+            draw.text(
+                (x1, y1 - 45),
+                f"POSTER: {x2-x1}x{y2-y1}",
+                fill=(0, 255, 0)
+            )
 
-        # ---- Center horizontally on poster (clipped) ----
-        rx1 = int(max(0, min(w - 1, cx - target_w / 2)))
-        rx2 = int(min(w - 1, rx1 + target_w))
-        if rx2 - rx1 < target_w:
-            rx1 = int(max(0, min(w - target_w, cx - target_w / 2)))
-            rx2 = int(min(w - 1, rx1 + target_w))
+            # Save debug image
+            Path(save_path).parent.mkdir(parents=True, exist_ok=True)
+            debug_img.save(save_path, quality=95)
+            self.logger.debug(f"Saved poster debug image to {save_path}")
 
-        # ---- Vertical: start a hair above poster; go to bottom ----
-        ry1 = int(max(0, ay1 - ah * top_margin_ratio - 0.02 * h))
-        ry2 = h - 1
-        return (rx1, ry1, rx2, ry2)
-
-    def _normalize_size_constraints(self, sc: dict) -> dict:
-        def _get(keys, default):
-            for k in ([keys] if isinstance(keys, str) else keys):
-                if isinstance(sc, dict) and k in sc:
-                    return float(sc[k])
-            return float(default)
-
-        return {
-            # ROI clamping (already used by _roi_from_poster, but safe to keep here)
-            "roi_min_width_frac":     _get(["roi_min_width_frac","min_width_frac","min_w_frac"], 0.52),
-            "roi_max_width_frac":     _get(["roi_max_width_frac","max_width_frac","max_w_frac"], 0.66),
-            "roi_fallback_left_frac": _get(["roi_fallback_left_frac","fallback_left_frac"], 0.18),
-            "roi_fallback_right_frac":_get(["roi_fallback_right_frac","fallback_right_frac"], 0.86),
-            "left_margin_ratio":      _get(["left_margin_ratio","margin_left_ratio"], 0.40),
-            "right_margin_ratio":     _get(["right_margin_ratio","margin_right_ratio"], 0.40),
-            "top_margin_ratio":       _get("top_margin_ratio", 0.06),
-            "endcap_width_scale":     _get(["endcap_width_scale","width_scale_from_poster"], 1.9),
-
-            # Band rules
-            "vertical_gap_frac":            _get("vertical_gap_frac", 0.006),  # gaps between bands (h fraction)
-            "header_pad_frac":              _get("header_pad_frac", 0.00),     # tiny pad around promo
-
-            # Middle sizing (robust target + minimum from promo)
-            "middle_from_header_frac":      _get("middle_from_header_frac", 0.35),
-            "middle_target_frac":           _get("middle_target_frac", 0.30),  # of (ROI - header)
-            "middle_min_frac":              _get("middle_min_frac", 0.25),
-            "middle_max_frac":              _get("middle_max_frac", 0.35),
-            "middle_from_promo_min_frac":   _get("middle_from_promo_min_frac", 0.60),  # ≥60% of promo
-            "middle_min_px":                _get("middle_min_px", 80),         # practical min for printers
-
-            # Bottom sizing (from promo, with image-height cap)
-            "bottom_from_promo_frac":       _get("bottom_from_promo_frac", 1.00),  # = promo height by default
-            "bottom_max_image_frac":        _get("bottom_max_image_frac", 0.35),   # ≤ 35% of image height
-            "bottom_min_px":                _get("bottom_min_px",  40),
-        }
+        except Exception as e:
+            self.logger.error(f"Failed to save debug image: {e}")
 
     # --------------------------- shelves -------------------------------------
-    def _box_conf(self, p):
-        """
-        Return (x1,y1,x2,y2,conf) from an object-like or dict-like proposal.
-        Expected class name is handled by the caller.
-        """
-        if hasattr(p, "x1"):
-            return p.x1, p.y1, p.x2, p.y2, getattr(p, "confidence", 0.0)
-        if hasattr(p, "get"):
-            box = p.get("box", p)
-            if isinstance(box, (list, tuple)) and len(box) >= 4:
-                x1, y1, x2, y2 = box[:4]
-            else:
-                x1, y1, x2, y2 = box.get("x1"), box.get("y1"), box.get("x2"), box.get("y2")
-            return x1, y1, x2, y2, float(p.get("confidence", 0.0))
-        return None
-
     def _find_shelves(
-        self,
-        roi_box,                 # (rx1, ry1, rx2, ry2)
-        ad_box,                  # (px1, py1, px2, py2) from _find_poster (may be None)
-        h, w,
-        planogram_config: dict = None  # Add planogram config parameter
-    ):
+            self,
+            roi_box: tuple[int, int, int, int],
+            ad_box: tuple[int, int, int, int],
+            h: int, w: int,
+            planogram_config: dict = None
+    ) -> tuple[List[int], dict]:
         """
-        Simplified shelf detection based on planogram configuration.
-        Divides ROI proportionally based on shelf order and height settings.
+        Detects shelf bands based on planogram configuration, prioritizing the
+        dynamically detected ad_box for the header.
         """
         rx1, ry1, rx2, ry2 = map(int, roi_box)
+        _, ad_y1, _, ad_y2 = map(int, ad_box)
         roi_h = max(1, ry2 - ry1)
 
-        # Get shelf configuration from planogram
+        # Fallback to the old proportional method if no planogram is provided
         if not planogram_config or 'shelves' not in planogram_config:
-            # Fallback to proportional layout if no config
             return self._find_shelves_proportional(roi_box, rx1, ry1, rx2, ry2, h)
 
         shelf_configs = planogram_config['shelves']
-        num_shelves = len(shelf_configs)
-
-        if num_shelves == 0:
+        if not shelf_configs:
             return [], {}
 
-        # Calculate shelf heights based on configuration
-        shelf_heights = []
-        total_height_ratio = 0.0
-
-        for shelf_config in shelf_configs:
-            # Check if shelf has height attribute (0.30 = 30% of ROI)
-            height_ratio = shelf_config.get('height_ratio', None)
-            if height_ratio is None:
-                # Default: equal division among all shelves
-                height_ratio = 1.0 / num_shelves
-            shelf_heights.append(height_ratio)
-            total_height_ratio += height_ratio
-
-        # Normalize heights to ensure they sum to 1.0
-        if total_height_ratio != 1.0:
-            shelf_heights = [h / total_height_ratio for h in shelf_heights]
-
-        # Calculate actual pixel boundaries
-        levels = []
         bands = {}
-        current_y = ry1
+        levels = []
 
-        for i, (shelf_config, height_ratio) in enumerate(zip(shelf_configs, shelf_heights)):
+        # --- 1. Prioritize the Header based on ad_box ---
+        # The header starts at the top of the ROI and ends at the bottom of the ad_box
+        header_config = next((s for s in shelf_configs if s.get('level') == 'header'), None)
+        if header_config:
+            # Use the detected ad_box y-coordinates for the header band
+            header_top = ad_y1
+            header_bottom = ad_y2
+            bands[header_config['level']] = (header_top, header_bottom)
+            current_y = header_bottom
+            remaining_configs = [s for s in shelf_configs if s.get('level') != 'header']
+        else:
+            # If no header is defined, start from the top of the ROI
+            current_y = ry1
+            remaining_configs = shelf_configs
+
+        # --- 2. Calculate space for remaining shelves ---
+        remaining_roi_h = max(1, ry2 - current_y)
+
+        # Calculate space consumed by shelves with a fixed height_ratio
+        height_from_ratios = 0
+        shelves_without_ratio = []
+        for shelf_config in remaining_configs:
+            if 'height_ratio' in shelf_config and shelf_config['height_ratio'] is not None:
+                # height_ratio is a percentage of the TOTAL ROI height
+                height_from_ratios += int(shelf_config['height_ratio'] * roi_h)
+            else:
+                shelves_without_ratio.append(shelf_config)
+
+        # Calculate height for each shelf without a specified ratio
+        auto_size_h = max(0, remaining_roi_h - height_from_ratios)
+        auto_shelf_height = int(auto_size_h / len(shelves_without_ratio)) if shelves_without_ratio else 0
+
+        # --- 3. Build the bands for the remaining shelves ---
+        for i, shelf_config in enumerate(remaining_configs):
             shelf_level = shelf_config['level']
-            shelf_pixel_height = int(height_ratio * roi_h)
 
-            # Ensure we don't exceed ROI boundaries
-            shelf_bottom = min(ry2, current_y + shelf_pixel_height)
+            if 'height_ratio' in shelf_config and shelf_config['height_ratio'] is not None:
+                shelf_pixel_height = int(shelf_config['height_ratio'] * roi_h)
+            else:
+                shelf_pixel_height = auto_shelf_height
 
-            # For the last shelf, extend to ROI bottom to avoid gaps
-            if i == len(shelf_configs) - 1:
+            shelf_bottom = current_y + shelf_pixel_height
+
+            # For the very last shelf, ensure it extends to the bottom of the ROI
+            if i == len(remaining_configs) - 1:
                 shelf_bottom = ry2
 
             bands[shelf_level] = (current_y, shelf_bottom)
-            levels.append(shelf_bottom)
-
             current_y = shelf_bottom
 
-        # Remove the last level as it represents the bottom boundary
-        if levels:
-            levels = levels[:-1]
+        # --- 4. Create the levels list (separator lines) ---
+        # The levels are the bottom coordinate of each shelf band, except for the last one
+        if bands:
+            # Ensure order from top to bottom based on the planogram config
+            ordered_levels = [bands[s['level']][1] for s in shelf_configs if s['level'] in bands]
+            levels = ordered_levels[:-1]
 
         self.logger.debug(
-            f"📊 Simplified Shelves: {len(shelf_configs)} shelves configured, "
+            f"📊 Planogram Shelves: {len(shelf_configs)} shelves configured, "
             f"ROI height={roi_h}, bands={bands}"
         )
 
@@ -1867,6 +1929,7 @@ class PlanogramCompliancePipeline(AbstractPipeline):
         self.shape_detector = RetailDetector(
             yolo_model=detection_model,
             conf=confidence_threshold,
+            llm=self.llm,
             device="cuda" if torch.cuda.is_available() else "cpu",
             reference_images=reference_images
         )
@@ -1876,17 +1939,16 @@ class PlanogramCompliancePipeline(AbstractPipeline):
         self.reference_images = reference_images or []
         self.confidence_threshold = confidence_threshold
 
-    def detect_objects_and_shelves(
+    async def detect_objects_and_shelves(
         self,
         image,
-        planogram_description: Optional[PlanogramDescription] = None,
-        confidence_threshold: float = 0.5
+        planogram_description: Optional[PlanogramDescription] = None
     ):
         self.logger.debug("Step 1: Detecting generic shapes and boundaries...")
 
         pil_image = Image.open(image) if isinstance(image, (str, Path)) else image
 
-        det_out = self.shape_detector.detect(
+        det_out = await self.shape_detector.detect(
             image=pil_image,
             planogram=planogram_description,
             debug_raw="/tmp/data/yolo_raw_debug.png",
@@ -2096,76 +2158,6 @@ class PlanogramCompliancePipeline(AbstractPipeline):
                 kept.append(d)
         return kept
 
-    def _organize_into_shelves(
-        self,
-        detections: List[DetectionBox],
-        image_size: Tuple[int, int]
-    ) -> List[ShelfRegion]:
-        """
-        Organize detections into shelf regions with non-overlapping boundaries
-        """
-        width, height = image_size
-        shelf_regions = []
-
-        header_objects = []
-        top_objects = []
-        middle_objects = []
-        bottom_objects = []
-
-        for d in detections:
-            center_y = (d.y1 + d.y2) / 2
-            y_ratio = center_y / height
-
-            if (d.class_name == "promotional_candidate" or
-                (y_ratio < 0.3 and d.area > 0.1 * width * height)):
-                # Large objects in upper area OR promotional candidates go to header
-                header_objects.append(d)
-            elif y_ratio < 0.5:
-                # Upper area products go to top shelf
-                top_objects.append(d)
-            elif y_ratio < 0.75:
-                # Middle area
-                middle_objects.append(d)
-            else:
-                # Lower area
-                bottom_objects.append(d)
-
-        # Create shelf regions
-        if header_objects:
-            shelf_regions.append(self._create_shelf_region("header", "header", header_objects))
-        if top_objects:
-            shelf_regions.append(self._create_shelf_region("top_shelf", "top", top_objects))
-        if middle_objects:
-            shelf_regions.append(self._create_shelf_region("middle_shelf", "middle", middle_objects))
-        if bottom_objects:
-            shelf_regions.append(self._create_shelf_region("bottom_shelf", "bottom", bottom_objects))
-
-        return shelf_regions
-
-
-    def _create_shelf_region(self, shelf_id: str, level: str, objects: List[DetectionBox]) -> ShelfRegion:
-        """Create a shelf region from objects"""
-        if not objects:
-            return None
-
-        x1 = min(obj.x1 for obj in objects)
-        y1 = min(obj.y1 for obj in objects)
-        x2 = max(obj.x2 for obj in objects)
-        y2 = max(obj.y2 for obj in objects)
-
-        bbox = DetectionBox(
-            x1=x1, y1=y1, x2=x2, y2=y2,
-            confidence=1.0, class_id=-1, class_name="shelf_region",
-            area=(x2-x1) * (y2-y1)
-        )
-
-        return ShelfRegion(
-            shelf_id=shelf_id,
-            bbox=bbox,
-            level=level,
-            objects=objects
-        )
-
     def _debug_dump_crops(self, img: Image.Image, dets, tag="step1"):
         os.makedirs("/tmp/data/debug", exist_ok=True)
         h, w = img.size[1], img.size[0]
@@ -2182,7 +2174,6 @@ class PlanogramCompliancePipeline(AbstractPipeline):
                 cv2.cvtColor(crop, cv2.COLOR_RGB2BGR)
             )
 
-    # STEP 2: LLM Object Identification
     async def identify_objects_with_references(
         self,
         image: Union[str, Path, Image.Image],
@@ -2492,7 +2483,6 @@ class PlanogramCompliancePipeline(AbstractPipeline):
             # Add normalized variants to help TextMatcher:
             #  - lowercase, punctuation stripped
             #  - a single combined line
-            import re
             def norm(s: str) -> str:
                 s = s.lower()
                 s = re.sub(r"[^a-z0-9\s]", " ", s)         # drop punctuation like colons
@@ -2720,7 +2710,7 @@ Respond with the structured data for all {len(detections)} objects.
     def check_planogram_compliance(
         self,
         identified_products: List[IdentifiedProduct],
-        planogram_description: PlanogramDescription
+        planogram_description: PlanogramDescription,
     ) -> List[ComplianceResult]:
         """Check compliance of identified products against the planogram
 
@@ -2848,11 +2838,14 @@ Respond with the structured data for all {len(detections)} objects.
                 else:
                     status = ComplianceStatus.NON_COMPLIANT
             else:
+                overall_text_ok = bool(overall_text_ok)
                 # For header shelf, require both product and text compliance
                 if basic_score >= threshold and not major_unexpected and overall_text_ok:
                     status = ComplianceStatus.COMPLIANT
                 elif basic_score == 0.0:
                     status = ComplianceStatus.MISSING
+                elif not overall_text_ok:
+                    status = ComplianceStatus.NON_COMPLIANT
                 else:
                     status = ComplianceStatus.NON_COMPLIANT
 
@@ -2871,18 +2864,20 @@ Respond with the structured data for all {len(detections)} objects.
             combined_score = (basic_score * weights["product_compliance"] +
                             text_score * weights["text_compliance"])
 
-            results.append(ComplianceResult(
-                shelf_level=shelf_level,
-                expected_products=expected,
-                found_products=found,
-                missing_products=missing,
-                unexpected_products=unexpected,
-                compliance_status=status,
-                compliance_score=combined_score,
-                text_compliance_results=text_results,
-                text_compliance_score=text_score,
-                overall_text_compliant=overall_text_ok
-            ))
+            results.append(
+                ComplianceResult(
+                    shelf_level=shelf_level,
+                    expected_products=expected,
+                    found_products=found,
+                    missing_products=missing,
+                    unexpected_products=unexpected,
+                    compliance_status=status,
+                    compliance_score=combined_score,
+                    text_compliance_results=text_results,
+                    text_compliance_score=text_score,
+                    overall_text_compliant=overall_text_ok
+                )
+            )
 
         return results
 
@@ -2996,20 +2991,20 @@ Respond with the structured data for all {len(detections)} objects.
         """
 
         self.logger.debug("Step 1: Detecting objects and shelves...")
-        shelf_regions, detections = self.detect_objects_and_shelves(
-            image, planogram_description, self.confidence_threshold
+        shelf_regions, detections = await self.detect_objects_and_shelves(
+            image, planogram_description
         )
 
         self.logger.debug(
             f"Found {len(detections)} objects in {len(shelf_regions)} shelf regions"
         )
 
-        self.logger.info("Step 2: Identifying objects with LLM...")
+        self.logger.notice("Step 2: Identifying objects with LLM...")
         identified_products = await self.identify_objects_with_references(
             image, detections, shelf_regions, self.reference_images
         )
 
-        print(identified_products)
+        self.logger.debug(f"Identified Products: {identified_products}")
 
         # De-duplicate promotional_graphic (keep the largest)
         promos = [p for p in identified_products if p.product_type == "promotional_graphic" and p.detection_box]

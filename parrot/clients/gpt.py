@@ -1,3 +1,4 @@
+import re
 from typing import AsyncIterator, Dict, List, Optional, Union, Any, Tuple
 import base64
 import io
@@ -10,6 +11,7 @@ from logging import getLogger
 from enum import Enum
 from PIL import Image
 import pytesseract
+from pydantic import BaseModel, ValidationError
 from datamodel.parsers.json import json_decoder, json_decoder  # pylint: disable=E0611 # noqa
 from navconfig import config
 from tenacity import (
@@ -394,7 +396,11 @@ class OpenAIClient(AbstractClient):
             results.append(result)
         return results
 
-    def _encode_image_for_openai(self, image: Union[Path, bytes, Image.Image]) -> Dict[str, Any]:
+    def _encode_image_for_openai(
+        self,
+        image: Union[Path, bytes, Image.Image],
+        low_quality: bool = False
+    ) -> Dict[str, Any]:
         """Encode image for OpenAI's vision API."""
         if isinstance(image, Path):
             if not image.exists():
@@ -421,7 +427,10 @@ class OpenAIClient(AbstractClient):
 
         return {
             "type": "image_url",
-            "image_url": {"url": f"data:{mime_type};base64,{encoded_data}"}
+            "image_url": {
+                "url": f"data:{mime_type};base64,{encoded_data}",
+                "detail": "low" if low_quality else "auto"
+            }
         }
 
     async def ask_to_image(
@@ -435,22 +444,29 @@ class OpenAIClient(AbstractClient):
         structured_output: Optional[type] = None,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
+        no_memory: bool = False,
+        low_quality: bool = False
     ) -> AIMessage:
         """Ask OpenAI a question about an image with optional conversation memory."""
         turn_id = str(uuid.uuid4())
 
-        messages, conversation_session, system_prompt = await self._prepare_conversation_context(
-            prompt, None, user_id, session_id, None
-        )
+        if no_memory:
+            messages = []
+            conversation_session = None
+            system_prompt = None
+        else:
+            messages, conversation_session, system_prompt = await self._prepare_conversation_context(
+                prompt, None, user_id, session_id, None
+            )
 
         content = [{"type": "text", "text": prompt}]
 
-        primary_image_content = self._encode_image_for_openai(image)
+        primary_image_content = self._encode_image_for_openai(image, low_quality=low_quality)
         content.insert(0, primary_image_content)
 
         if reference_images:
             for ref_image in reference_images:
-                ref_image_content = self._encode_image_for_openai(ref_image)
+                ref_image_content = self._encode_image_for_openai(ref_image, low_quality=low_quality)
                 content.insert(0, ref_image_content)
 
         new_message = {"role": "user", "content": content}
@@ -460,32 +476,59 @@ class OpenAIClient(AbstractClient):
         else:
             messages.append(new_message)
 
+        response_format = None
+        if structured_output:
+            if hasattr(structured_output, 'model_json_schema'):
+                response_format = {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": structured_output.__name__.lower(),
+                        "schema": structured_output.model_json_schema()
+                    }
+                }
+            elif isinstance(structured_output, dict):
+                response_format = {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "response",
+                        "schema": structured_output
+                    }
+                }
+        else:
+            response_format = {"type": "json_object"}
+
         response = await self.client.chat.completions.create(
             model=model,
             messages=messages,
             max_tokens=max_tokens or self.max_tokens,
             temperature=temperature or self.temperature,
+            response_format=response_format
         )
 
         result = response.choices[0].message
 
         final_output = None
-        if structured_output:
-            try:
-                final_output = structured_output.model_validate_json(result.content)
-            except Exception:
-                final_output = result.content
+        assistant_response_text = ""
+        if structured_output is not None:
+            if isinstance(structured_output, dict):
+                assistant_response_text = result.content
+                try:
+                    final_output = self._parse_json_from_text(assistant_response_text)
+                except Exception:
+                    final_output = assistant_response_text
+            else:
+                try:
+                    final_output = structured_output.model_validate_json(result.content)
+                except Exception:
+                    try:
+                        final_output = structured_output.model_validate(result.content)
+                    except ValidationError:
+                        final_output = result.content
 
         assistant_message = {
             "role": "assistant", "content": [{"type": "text", "text": result.content}]
         }
         messages.append(assistant_message)
-
-        # Extract assistant response text for conversation memory
-        assistant_response_text = ""
-        for content_block in result.get("content", []):
-            if content_block.get("type") == "text":
-                assistant_response_text += content_block.get("text", "")
 
         # Update conversation memory
         await self._update_conversation_memory(
@@ -503,7 +546,7 @@ class OpenAIClient(AbstractClient):
         usage = response.usage.model_dump() if response.usage else {}
 
         ai_message = AIMessageFactory.from_openai(
-            response=result.model_dump(),
+            response=response,
             input_text=f"[Image Analysis]: {prompt}",
             model=model,
             user_id=user_id,
