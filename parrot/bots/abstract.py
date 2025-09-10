@@ -63,6 +63,11 @@ class AbstractBot(DBInterface, ABC):
     # Define human prompt template
     human_prompt_template = BASIC_HUMAN_PROMPT
     _default_llm: str = 'google'
+    # LLM:
+    llm_client: str = 'google'
+    default_model: str = 'gemini-2.5-flash'
+    temperature: float = 0.1
+    max_tokens: int = 1024
 
     def __init__(
         self,
@@ -127,9 +132,10 @@ class AbstractBot(DBInterface, ABC):
         self.context = kwargs.get('use_context', True)
 
         # Definition of LLM Client
-        self._llm_model = kwargs.get('model', 'gemini-2.5-flash')
+        self._llm: Union[str, Any] = kwargs.get('llm', self.llm_client)
+        self._llm_model = kwargs.get('model', self.default_model)
         self._llm_preset: str = kwargs.get('preset', None)
-        self._llm: Union[str, Any] = kwargs.get('llm', 'google')
+
         if isinstance(self._llm, str):
             self._llm = SUPPORTED_CLIENTS.get(self._llm.lower(), None)
         if self._llm:
@@ -150,8 +156,8 @@ class AbstractBot(DBInterface, ABC):
             self._max_tokens = presetting.get('max_tokens', 1024)
         else:
             # Default LLM Presetting by LLMs
-            self._llm_temp = kwargs.get('temperature', 0.1)
-            self._max_tokens = kwargs.get('max_tokens', 1024)
+            self._llm_temp = kwargs.get('temperature', self.temperature)
+            self._max_tokens = kwargs.get('max_tokens', self.max_tokens)
         # LLM Configuration:
         self._top_k = kwargs.get('top_k', 41)
         self._top_p = kwargs.get('top_p', 0.9)
