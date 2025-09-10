@@ -1,6 +1,38 @@
 from typing import List, Dict, Optional, Literal, Any, Mapping
 from pydantic import BaseModel, Field
 
+class BoundingBox(BaseModel):
+    """Normalized bounding box coordinates"""
+    x1: float = Field(..., description="The leftmost x-coordinate (normalized)", ge=0, le=1)
+    y1: float = Field(..., description="The topmost y-coordinate (normalized)", ge=0, le=1)
+    x2: float = Field(..., description="The rightmost x-coordinate (normalized)", ge=0, le=1)
+    y2: float = Field(..., description="The bottommost y-coordinate (normalized)", ge=0, le=1)
+
+    def get_coordinates(self) -> tuple[float, float, float, float]:
+        """Return bounding box as (x1, y1, x2, y2)"""
+        return (self.x1, self.y1, self.x2, self.y2)
+
+    def get_pixel_coordinates(self, width: int, height: int) -> tuple[int, int, int, int]:
+        """Return bounding box as (x1, y1, x2, y2) absolute integer pixels."""
+        px1 = int(self.x1 * width)
+        py1 = int(self.y1 * height)
+        px2 = int(self.x2 * width)
+        py2 = int(self.y2 * height)
+        return (px1, py1, px2, py2)
+
+class Detection(BaseModel):
+    """Generic detection result"""
+    label: Optional[str] = Field(None, description="Optional label for the detection")
+    confidence: float = Field(ge=0.0, le=1.0, description="Detection confidence")
+    content: Optional[str] = Field(None, description="The recognized text content within the bounding box, if any.")
+    bbox: BoundingBox
+
+
+class Detections(BaseModel):
+    """Collection of detections in an image"""
+    detections: List[Detection] = Field(default_factory=list, description="List of detected bounding boxes")
+
+
 class DetectionBox(BaseModel):
     """Bounding box from object detection"""
     x1: int = Field(description="Left x coordinate")
@@ -8,10 +40,10 @@ class DetectionBox(BaseModel):
     x2: int = Field(description="Right x coordinate")
     y2: int = Field(description="Bottom y coordinate")
     confidence: float = Field(ge=0.0, le=1.0, description="Detection confidence")
-    class_id: int = Field(description="Detected class ID")
-    class_name: str = Field(description="Detected class name")
-    area: int = Field(description="Bounding box area in pixels")
-
+    class_id: int = Field(default=None, description="Detected class ID")
+    class_name: str = Field(default=None, description="Detected class name")
+    area: int = Field(default=None, description="Bounding box area in pixels")
+    label: Optional[str] = Field(None, description="Optional label for the detection")
 
 class ShelfRegion(BaseModel):
     """Detected shelf region"""
@@ -113,6 +145,8 @@ class PlanogramDescription(BaseModel):
     brand: str = Field(description="Primary brand for this planogram")
     category: str = Field(description="Product category")
     aisle: AisleConfig = Field(description="Aisle configuration")
+    tags: List[str] = Field(default_factory=list, description="Tags for special features or promotions")
+    advertisement: Dict[str, Any] = Field(default_factory=dict, description="Advertisement sizing and positioning")
 
     # Detection configuration
     brand_detection: BrandDetectionConfig = Field(default_factory=BrandDetectionConfig, description="Brand detection settings")
@@ -160,6 +194,14 @@ class PlanogramDescriptionFactory:
                 "name": "Electronics",
                 "category_hints": ["printers", "ink", "paper"],
                 "lighting_conditions": "normal"
+            },
+            "tags": ["goodbye", "hello", "savings", "cartridges"],
+            # Advertisement sizing and positioning
+            "advertisement": {
+                "width_percent": 0.45,      # 45% of image width
+                "height_percent": 0.25,     # 25% of image height
+                "top_margin_percent": 0.02, # 2% margin above detected brand
+                "side_margin_percent": 0.05 # 5% margin on sides
             },
             "brand_detection": {
                 "enabled": True,
@@ -284,6 +326,8 @@ class PlanogramDescriptionFactory:
             brand=config_dict["brand"],
             category=config_dict["category"],
             aisle=aisle_config,
+            advertisement=config_dict.get("advertisement", {}),
+            tags=config_dict.get("tags", []),
             brand_detection=brand_detection_config,
             category_detection=category_detection_config,
             shelves=shelf_configs,

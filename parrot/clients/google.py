@@ -1288,6 +1288,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
         count_objects: bool = False,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
+        no_memory: bool = False,
     ) -> AIMessage:
         """
         Ask a question to Google's Generative AI using a stateful chat session.
@@ -1296,9 +1297,14 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
         turn_id = str(uuid.uuid4())
         original_prompt = prompt
 
-        messages, conversation_session, _ = await self._prepare_conversation_context(
-            prompt, None, user_id, session_id, None
-        )
+        if no_memory:
+            # For no_memory mode, skip conversation memory
+            messages = [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
+            conversation_session = None
+        else:
+            messages, conversation_session, _ = await self._prepare_conversation_context(
+                prompt, None, user_id, session_id, None
+            )
 
         # Prepare conversation history for Google GenAI format
         history = []
@@ -1412,31 +1418,43 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                     f"Failed to parse structured output from vision model: {e}"
                 )
                 final_output = response.text
+        elif '```json' in response.text:
+            # Attempt to extract JSON from markdown code block
+            try:
+                final_output = self._parse_json_from_text(response.text)
+            except Exception as e:
+                self.logger.error(
+                    f"Failed to parse JSON from markdown in vision model response: {e}"
+                )
+                final_output = response.text
+        else:
+            final_output = response.text
 
         final_assistant_message = {
             "role": "model", "content": [
-                {"type": "text", "text": response.text}
+                {"type": "text", "text": final_output}
             ]
         }
-        await self._update_conversation_memory(
-            user_id,
-            session_id,
-            conversation_session,
-            messages + [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": f"[Image Analysis]: {prompt}"}
-                    ]
-                },
-                final_assistant_message
-            ],
-            None,
-            turn_id,
-            original_prompt,
-            response.text,
-            []
-        )
+        if no_memory is False:
+            await self._update_conversation_memory(
+                user_id,
+                session_id,
+                conversation_session,
+                messages + [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": f"[Image Analysis]: {prompt}"}
+                        ]
+                    },
+                    final_assistant_message
+                ],
+                None,
+                turn_id,
+                original_prompt,
+                response.text,
+                []
+            )
         ai_message = AIMessageFactory.from_gemini(
             response=response,
             input_text=original_prompt,

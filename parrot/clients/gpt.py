@@ -396,7 +396,11 @@ class OpenAIClient(AbstractClient):
             results.append(result)
         return results
 
-    def _encode_image_for_openai(self, image: Union[Path, bytes, Image.Image]) -> Dict[str, Any]:
+    def _encode_image_for_openai(
+        self,
+        image: Union[Path, bytes, Image.Image],
+        low_quality: bool = False
+    ) -> Dict[str, Any]:
         """Encode image for OpenAI's vision API."""
         if isinstance(image, Path):
             if not image.exists():
@@ -423,21 +427,11 @@ class OpenAIClient(AbstractClient):
 
         return {
             "type": "image_url",
-            "image_url": {"url": f"data:{mime_type};base64,{encoded_data}"}
+            "image_url": {
+                "url": f"data:{mime_type};base64,{encoded_data}",
+                "detail": "low" if low_quality else "auto"
+            }
         }
-
-    def _parse_json_from_text(self, text: str) -> Union[dict, list]:
-        """Robustly parse JSON even if the model wraps it in ```json fences."""
-        if not text:
-            return {}
-        # strip fences
-        s = text.strip()
-        s = re.sub(r"^```(?:json)?\s*", "", s, flags=re.I)
-        s = re.sub(r"\s*```$", "", s)
-        # grab the largest {...} or [...] block if extra prose sneaks in
-        m = re.search(r"(\{.*\}|\[.*\])", s, flags=re.S)
-        s = m.group(1) if m else s
-        return json_decoder(s)
 
     async def ask_to_image(
         self,
@@ -450,22 +444,29 @@ class OpenAIClient(AbstractClient):
         structured_output: Optional[type] = None,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
+        no_memory: bool = False,
+        low_quality: bool = False
     ) -> AIMessage:
         """Ask OpenAI a question about an image with optional conversation memory."""
         turn_id = str(uuid.uuid4())
 
-        messages, conversation_session, system_prompt = await self._prepare_conversation_context(
-            prompt, None, user_id, session_id, None
-        )
+        if no_memory:
+            messages = []
+            conversation_session = None
+            system_prompt = None
+        else:
+            messages, conversation_session, system_prompt = await self._prepare_conversation_context(
+                prompt, None, user_id, session_id, None
+            )
 
         content = [{"type": "text", "text": prompt}]
 
-        primary_image_content = self._encode_image_for_openai(image)
+        primary_image_content = self._encode_image_for_openai(image, low_quality=low_quality)
         content.insert(0, primary_image_content)
 
         if reference_images:
             for ref_image in reference_images:
-                ref_image_content = self._encode_image_for_openai(ref_image)
+                ref_image_content = self._encode_image_for_openai(ref_image, low_quality=low_quality)
                 content.insert(0, ref_image_content)
 
         new_message = {"role": "user", "content": content}
@@ -475,11 +476,33 @@ class OpenAIClient(AbstractClient):
         else:
             messages.append(new_message)
 
+        response_format = None
+        if structured_output:
+            if hasattr(structured_output, 'model_json_schema'):
+                response_format = {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": structured_output.__name__.lower(),
+                        "schema": structured_output.model_json_schema()
+                    }
+                }
+            elif isinstance(structured_output, dict):
+                response_format = {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "response",
+                        "schema": structured_output
+                    }
+                }
+        else:
+            response_format = {"type": "json_object"}
+
         response = await self.client.chat.completions.create(
             model=model,
             messages=messages,
             max_tokens=max_tokens or self.max_tokens,
             temperature=temperature or self.temperature,
+            response_format=response_format
         )
 
         result = response.choices[0].message
