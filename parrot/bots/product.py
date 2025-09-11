@@ -1,9 +1,5 @@
 from typing import List, Optional, Any, Dict
-import asyncio
-import textwrap
-from datetime import datetime
 from asyncdb import AsyncDB
-from pydantic import BaseModel, Field
 from querysource.conf import default_dsn
 from navconfig import BASE_DIR
 from ..tools import AbstractTool
@@ -85,22 +81,26 @@ class ProductReport(BasicAgent):
         )
         return tools
 
-    async def create_product_report(self, program_slug: str) -> List[ProductResponse]:
+    async def create_product_report(self, program_slug: str, models: Optional[List[str]] = None) -> List[ProductResponse]:
         """
-        Create product reports for all products in a given program/tenant.
+        Create product reports for products in a given program/tenant.
         
         Args:
             program_slug: The program/tenant identifier (e.g., 'hisense')
+            models: Optional list of specific models to process. If None, processes all models.
             
         Returns:
             List of ProductResponse objects with generated reports
         """
         # Get list of products using the tool
         product_list_tool = ProductListTool()
-        products = await product_list_tool._execute(program_slug)
+        products = await product_list_tool._execute(program_slug, models)
         
         if not products:
-            print(f"No products found for program '{program_slug}'")
+            if models:
+                print(f"No products found for program '{program_slug}' with models: {models}")
+            else:
+                print(f"No products found for program '{program_slug}'")
             return []
         
         responses = []
@@ -166,10 +166,13 @@ class ProductReport(BasicAgent):
                         del response_dict['images']
                         del response_dict['response']
                         
+                        # Add program_slug to the response
+                        response_dict['program_slug'] = program_slug
+                        
                         # Create ProductResponse and save to database
                         try:
                             ProductResponse.Meta.connection = conn
-                            ProductResponse.Meta.schema = program_slug  # Usa program_slug como schema
+                            ProductResponse.Meta.schema = program_slug
                             product_response = ProductResponse(**response_dict)
                             product_response.model = model
                             product_response.agent_id = self.agent_id
@@ -177,10 +180,12 @@ class ProductReport(BasicAgent):
                             
                             print(f"Saving product response for {model}")
                             await product_response.save()
+                            print(f"Successfully saved product response for {model}")
                             responses.append(product_response)
                             
                         except Exception as e:
                             print(f"Error saving ProductResponse for {model}: {e}")
+                            print(f"Response dict keys: {list(response_dict.keys())}")
                             continue
                             
                     except Exception as e:
