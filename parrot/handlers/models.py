@@ -228,6 +228,12 @@ class BotModel(Model):
         required=False,
         ui_help="Whether the bot’s conversation history is enabled or not."
     )
+    # advanced: Bot Class
+    bot_class: Optional[str] = Field(
+        required=False,
+        default='BasicBot',
+        ui_help="The bot’s class path, e.g., 'parrot.bots.unified.UnifiedBot'."
+    )
 
     # Security and permissions
     permissions: dict = Field(
