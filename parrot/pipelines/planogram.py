@@ -593,7 +593,7 @@ Return exactly FIVE detections with the following strict criteria:
         advertisement_config = getattr(planogram, "advertisement", {})
         # Default values if not in planogram, normalized to image (not ROI)
         config_width_percent = advertisement_config.get('width_percent', 0.45)
-        config_height_percent = advertisement_config.get('height_percent', 0.30)
+        config_height_percent = advertisement_config.get('height_percent', 0.33)
         config_top_margin_percent = advertisement_config.get('top_margin_percent', 0.02)
         # E.g., 5% of panel width
         side_margin_percent = advertisement_config.get('side_margin_percent', 0.05)
@@ -864,6 +864,153 @@ Return exactly FIVE detections with the following strict criteria:
         return levels, bands
 
     # ---------------------------- YOLO ---------------------------------------
+    def _preprocess_roi_for_detection(self, roi: np.ndarray) -> np.ndarray:
+        """
+        Gentle, adaptive preprocessing that only enhances when needed.
+        Preserves well-contrasted images and applies minimal enhancement.
+        """
+        try:
+            # Convert BGR to RGB if needed
+            if len(roi.shape) == 3 and roi.shape[2] == 3:
+                rgb_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2RGB)
+            else:
+                rgb_roi = roi.copy()
+
+            # Analyze image quality to determine if preprocessing is needed
+            gray = cv2.cvtColor(rgb_roi, cv2.COLOR_RGB2GRAY)
+
+            # Calculate contrast metrics
+            contrast = gray.std()  # Standard deviation as contrast measure
+            mean_brightness = gray.mean()
+
+            # Calculate edge density (measure of detail/sharpness)
+            edges = cv2.Canny(gray, 50, 150)
+            edge_density = np.sum(edges > 0) / edges.size
+
+            # Determine if image needs enhancement
+            needs_contrast_boost = contrast < 45  # Low contrast threshold
+            needs_brightness_adjustment = mean_brightness < 80 or mean_brightness > 180
+            needs_edge_enhancement = edge_density < 0.02  # Very few edges detected
+
+            # If image quality is already good, apply minimal or no processing
+            if not (needs_contrast_boost or needs_brightness_adjustment or needs_edge_enhancement):
+                # Image is already well-contrasted, return with minimal enhancement
+                result = rgb_roi.copy().astype(np.float32)
+
+                # Very subtle sharpening only
+                kernel = np.array([[-0.1, -0.1, -0.1],
+                                [-0.1,  1.8, -0.1],
+                                [-0.1, -0.1, -0.1]])
+                for i in range(3):
+                    result[:,:,i] = cv2.filter2D(result[:,:,i], -1, kernel)
+
+                result = np.clip(result, 0, 255).astype(np.uint8)
+
+                # Convert back to BGR if needed
+                if len(roi.shape) == 3 and roi.shape[2] == 3:
+                    result = cv2.cvtColor(result, cv2.COLOR_RGB2BGR)
+
+                return result
+
+            # Apply gentle enhancement for images that need it
+            result = rgb_roi.copy()
+
+            # Gentle contrast enhancement only if needed
+            if needs_contrast_boost:
+                lab = cv2.cvtColor(result, cv2.COLOR_RGB2LAB)
+
+                # Very mild CLAHE
+                clahe = cv2.createCLAHE(clipLimit=1.5, tileGridSize=(12,12))
+                lab[:,:,0] = clahe.apply(lab[:,:,0])
+
+                result = cv2.cvtColor(lab, cv2.COLOR_LAB2RGB)
+
+            # Gentle brightness adjustment only if needed
+            if needs_brightness_adjustment:
+                if mean_brightness < 80:
+                    # Slightly brighten dark images
+                    result = cv2.convertScaleAbs(result, alpha=1.0, beta=15)
+                elif mean_brightness > 180:
+                    # Slightly darken bright images
+                    result = cv2.convertScaleAbs(result, alpha=0.95, beta=-10)
+
+            # Very subtle edge enhancement only if edges are weak
+            if needs_edge_enhancement:
+                gray_enhanced = cv2.cvtColor(result, cv2.COLOR_RGB2GRAY)
+                edges_weak = cv2.Canny(gray_enhanced, 30, 100)
+
+                # Create very mild edge mask
+                kernel_small = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 1))
+                edges_weak = cv2.dilate(edges_weak, kernel_small, iterations=1)
+
+                edge_mask = edges_weak > 0
+                result_float = result.astype(np.float32)
+
+                # Very gentle edge enhancement
+                for i in range(3):
+                    channel = result_float[:,:,i]
+                    channel[edge_mask] = np.clip(channel[edge_mask] * 1.1, 0, 255)
+                    result_float[:,:,i] = channel
+
+                result = result_float.astype(np.uint8)
+
+            # Convert back to BGR if needed
+            if len(roi.shape) == 3 and roi.shape[2] == 3:
+                result = cv2.cvtColor(result, cv2.COLOR_RGB2BGR)
+
+            return result
+
+        except Exception as e:
+            self.logger.warning(f"ROI preprocessing failed: {e}")
+            return roi
+
+    def _preprocess_roi_for_detection_minimal(self, roi: np.ndarray) -> np.ndarray:
+        """
+        Ultra-minimal preprocessing - only applies when absolutely necessary.
+        Use this version if you want maximum preservation of original image quality.
+        """
+        try:
+            # Convert BGR to RGB if needed
+            if len(roi.shape) == 3 and roi.shape[2] == 3:
+                rgb_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2RGB)
+            else:
+                rgb_roi = roi.copy()
+
+            # Quick contrast check
+            gray = cv2.cvtColor(rgb_roi, cv2.COLOR_RGB2GRAY)
+            contrast = gray.std()
+
+            # Only process if contrast is very low
+            if contrast > 35:
+                # Good contrast - return original with minimal sharpening
+                result = rgb_roi.astype(np.float32)
+
+                # Ultra-subtle sharpening
+                kernel = np.array([[0, -0.05, 0],
+                                [-0.05, 1.2, -0.05],
+                                [0, -0.05, 0]])
+
+                for i in range(3):
+                    result[:,:,i] = cv2.filter2D(result[:,:,i], -1, kernel)
+
+                result = np.clip(result, 0, 255).astype(np.uint8)
+            else:
+                # Low contrast - apply gentle CLAHE only
+                lab = cv2.cvtColor(rgb_roi, cv2.COLOR_RGB2LAB)
+                clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(10,10))
+                lab[:,:,0] = clahe.apply(lab[:,:,0])
+                result = cv2.cvtColor(lab, cv2.COLOR_LAB2RGB)
+
+            # Convert back to BGR if needed
+            if len(roi.shape) == 3 and roi.shape[2] == 3:
+                result = cv2.cvtColor(result, cv2.COLOR_RGB2BGR)
+
+            return result
+
+        except Exception as e:
+            self.logger.warning(f"Minimal ROI preprocessing failed: {e}")
+            return roi
+
     def _yolo_props(self, roi: np.ndarray, rx1, ry1, detection_phases: Optional[List[Dict[str, Any]]] = None):
         """
         Multi-phase YOLO detection with configurable confidence levels and weighted scoring.
@@ -876,15 +1023,82 @@ Return exactly FIVE detections with the following strict criteria:
         """
         #   printer ≈ 5–9%, product_box ≈ 7–12%, promotional_graphic ≥ 20%
         CLASS_LIMITS = {
-            "promotional_graphic": {"amin": 0.20, "amax": 0.95, "armin": 0.4, "armax": 4.0, "band": (0.00, 0.70)},
-            "printer":             {"amin": 0.05, "amax": 0.11, "armin": 0.6, "armax": 3.2, "band": (0.25, 0.80)},
-            "product_box":         {"amin": 0.07, "amax": 0.14, "armin": 0.4, "armax": 3.5, "band": (0.55, 0.98)},
-            "price_tag":           {"amin": 0.0006, "amax": 0.012, "armin": 1.4, "armax": 9.0, "band": (0.45, 0.95)},
-            "ink_bottle":          {"amin": 0.002, "amax": 0.03,  "armin": 0.3, "armax": 3.0, "band": (0.50, 0.95)},
+            # Base retail categories
+            "poster":       {"min_area": 0.06, "max_area": 0.95, "min_ar": 0.5, "max_ar": 3.5},
+            "person":       {"min_area": 0.02, "max_area": 0.60, "min_ar": 0.3, "max_ar": 3.5},
+            "printer":      {"min_area": 0.010, "max_area": 0.28, "min_ar": 0.6, "max_ar": 2.8},
+            "product_box":  {"min_area": 0.003, "max_area": 0.20, "min_ar": 0.4, "max_ar": 3.2},
+            "price_tag":    {"min_area": 0.0006,"max_area": 0.010,"min_ar": 1.6, "max_ar": 8.0},
+
+            # YOLO classes mapped to retail categories with their own limits
+            "tv":           {"min_area": 0.06, "max_area": 0.95, "min_ar": 0.5, "max_ar": 3.5},  # → poster
+            "monitor":      {"min_area": 0.06, "max_area": 0.95, "min_ar": 0.5, "max_ar": 3.5},  # → poster
+            "laptop":       {"min_area": 0.06, "max_area": 0.95, "min_ar": 0.5, "max_ar": 3.5},  # → poster
+            "microwave":    {"min_area": 0.010, "max_area": 0.28, "min_ar": 0.6, "max_ar": 2.8}, # → printer
+            "book":         {"min_area": 0.003, "max_area": 0.20, "min_ar": 0.4, "max_ar": 3.2}, # → product_box
+            "box":          {"min_area": 0.003, "max_area": 0.20, "min_ar": 0.4, "max_ar": 3.2}, # → product_box
+            "suitcase":     {"min_area": 0.003, "max_area": 0.20, "min_ar": 0.4, "max_ar": 3.2}, # → product_box
+            "bottle":       {"min_area": 0.0006,"max_area": 0.010,"min_ar": 1.6, "max_ar": 8.0}, # → price_tag
+            "clock":        {"min_area": 0.0006,"max_area": 0.010,"min_ar": 1.6, "max_ar": 8.0}, # → price_tag
+            "mouse":        {"min_area": 0.0006,"max_area": 0.010,"min_ar": 1.6, "max_ar": 8.0}, # → price_tag
+            "remote":       {"min_area": 0.0006,"max_area": 0.010,"min_ar": 1.6, "max_ar": 8.0}, # → price_tag
+            "cell phone":   {"min_area": 0.0006,"max_area": 0.010,"min_ar": 1.6, "max_ar": 8.0}, # → price_tag
         }
-        # soft slack so true objects aren’t clipped by hard borders
-        AREA_SLACK = 0.015      # ±1.5% area slack
-        BAND_SLACK = 0.15       # ±15% vertical slack
+
+        # Mapping from YOLO classes to retail categories
+        YOLO_TO_RETAIL = {
+            "tv": "poster",
+            "monitor": "poster",
+            "laptop": "poster",
+            "microwave": "printer",
+            "keyboard": "product_box",
+            "book": "product_box",
+            "box": "product_box",
+            "suitcase": "product_box",
+            "bottle": "price_tag",
+            "clock": "price_tag",
+            "mouse": "price_tag",
+            "remote": "price_tag",
+            "cell phone": "price_tag",
+        }
+
+        def _get_class_limits(yolo_class: str) -> Optional[Dict[str, float]]:
+            """Get class limits for a YOLO class"""
+            return CLASS_LIMITS.get(yolo_class, None)
+
+        def _get_retail_category(yolo_class: str) -> str:
+            """Map YOLO class to retail category"""
+            return YOLO_TO_RETAIL.get(yolo_class, yolo_class)
+
+        def _passes_class_limits(yolo_class: str, area_ratio: float, aspect_ratio: float) -> tuple[bool, str]:
+            """Check if detection passes class-specific limits"""
+            limits = _get_class_limits(yolo_class)
+            if not limits:
+                # Use generic fallback limits if no class-specific ones
+                generic_ok = (0.0008 <= area_ratio <= 0.9 and 0.1 <= aspect_ratio <= 10.0)
+                return generic_ok, "generic_limits"
+
+            area_ok = limits["min_area"] <= area_ratio <= limits["max_area"]
+            ar_ok = limits["min_ar"] <= aspect_ratio <= limits["max_ar"]
+
+            if area_ok and ar_ok:
+                retail_category = _get_retail_category(yolo_class)
+                return True, f"class_limits_{yolo_class}→{retail_category}"
+            else:
+                # Provide specific failure reason for debugging
+                reasons = []
+                if not area_ok:
+                    reasons.append(
+                        f"area={area_ratio:.4f} not in [{limits['min_area']:.4f}, {limits['max_area']:.4f}]"
+                    )
+                if not ar_ok:
+                    reasons.append(
+                        f"ar={aspect_ratio:.2f} not in [{limits['min_ar']:.2f}, {limits['max_ar']:.2f}]"
+                    )
+                return False, f"failed_{yolo_class}: {'; '.join(reasons)}"
+
+        # Preprocess ROI to enhance detection of similar-colored objects
+        enhanced_roi = self._preprocess_roi_for_detection_minimal(roi)
 
         if detection_phases is None:
             detection_phases = [
@@ -947,7 +1161,7 @@ Return exactly FIVE detections with the following strict criteria:
                     f"   Config: conf={conf_thresh}, iou={iou_thresh}, weight={weight}"
                 )
 
-                r = self.yolo(roi, conf=conf_thresh, iou=iou_thresh, verbose=False)[0]
+                r = self.yolo(enhanced_roi, conf=conf_thresh, iou=iou_thresh, verbose=False)[0]
 
                 if not hasattr(r, 'boxes') or r.boxes is None:
                     print(f"   📊 No boxes detected in {phase_name}")
@@ -963,6 +1177,7 @@ Return exactly FIVE detections with the following strict criteria:
                 )
 
                 phase_count = 0
+                phase_rejected = 0
 
                 for _, ((x1, y1, x2, y2), conf, cls_id) in enumerate(zip(xyxy, confs, classes)):
                     gx1, gy1, gx2, gy2 = int(x1) + rx1, int(y1) + ry1, int(x2) + rx1, int(y2) + ry1
@@ -981,13 +1196,21 @@ Return exactly FIVE detections with the following strict criteria:
                     aspect_ratio = width / max(height, 1)
                     yolo_class = names[cls_id]
 
-                    print('YOLO DETECTION > ', cls_id, yolo_class)
-
                     min_area = phase.get("min_area")
                     if min_area and area_ratio < float(min_area):
                         continue
 
                     stats["passed_size"] += 1
+
+                    # Apply class-specific limits
+                    limits_passed, limit_reason = _passes_class_limits(yolo_class, area_ratio, aspect_ratio)
+
+                    if not limits_passed:
+                        phase_rejected += 1
+                        stats["rejected_class_limits"] += 1
+                        if phase_rejected <= 3:  # Log first few rejections for debugging
+                            print(f"   ❌ Rejected {yolo_class}: {limit_reason}")
+                        continue
 
                     ocr_text = None
                     orientation = self._detect_orientation(gx1, gy1, gx2, gy2)
@@ -1052,6 +1275,7 @@ Return exactly FIVE detections with the following strict criteria:
                         "ocr_text": ocr_text,
                         "phase": phase_name
                     }
+                    print('PROPOSAL > ', proposal)
                     all_proposals.append(proposal)
                     stats["total_detections"] += 1
                     phase_count += 1
@@ -1064,7 +1288,14 @@ Return exactly FIVE detections with the following strict criteria:
             print(f"\n📊 Detection Summary: {len(deduplicated)} total proposals")
             print("   Focus: Let classification phase handle object type distinction")
 
-            print('YOLO PROPS >> ', deduplicated)
+            # Print final statistics
+            print(f"\n📊 Detection Summary:")
+            print(f"   Total YOLO detections: {stats['total_detections']}")
+            print(f"   Passed confidence: {stats['passed_confidence']}")
+            print(f"   Passed basic size: {stats['passed_size']}")
+            print(f"   Passed class limits: {stats['passed_class_limits']}")
+            print(f"   Rejected by class limits: {stats['rejected_class_limits']}")
+            print(f"   Final after deduplication: {len(deduplicated)}")
             return deduplicated
 
         except Exception as e:
