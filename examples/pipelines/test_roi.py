@@ -106,7 +106,7 @@ planogram_config = {
 
 async def test_roi():
     photos = [
-        # "250714 BBY 501 Kennesaw GA.jpg",
+        "250714 BBY 501 Kennesaw GA.jpg",
         "original_0.jpg",
         # "06668994-c27e-44d9-8d59-f1f65559c2e1-recap.jpeg",
         # "eb04d624-a180-4e5c-b592-ab0d40b558f9-recap.jpeg",
