@@ -593,7 +593,7 @@ Return exactly FIVE detections with the following strict criteria:
         advertisement_config = getattr(planogram, "advertisement", {})
         # Default values if not in planogram, normalized to image (not ROI)
         config_width_percent = advertisement_config.get('width_percent', 0.45)
-        config_height_percent = advertisement_config.get('height_percent', 0.20)
+        config_height_percent = advertisement_config.get('height_percent', 0.30)
         config_top_margin_percent = advertisement_config.get('top_margin_percent', 0.02)
         # E.g., 5% of panel width
         side_margin_percent = advertisement_config.get('side_margin_percent', 0.05)
@@ -614,79 +614,46 @@ Return exactly FIVE detections with the following strict criteria:
 
         # --- endcap Detected:
         endcap_det = next((d for d in dets if d.label == "endcap"), None)
-        # First, check if the detected endcap is plausible (e.g., it fully contains the panel)
-        is_plausible = (
-            endcap_det and
-            # Check if endcap roughly contains panel vertically
-            abs(endcap_det.bbox.y1 - panel_det.bbox.y1) < side_margin_percent and
-            endcap_det.bbox.y2 >= panel_det.bbox.y2 and
-            # Check if endcap broadly aligns with panel horizontally
-            abs(endcap_det.bbox.x1 - panel_det.bbox.x1) < side_margin_percent and
-            abs(endcap_det.bbox.x2 - panel_det.bbox.x2) < side_margin_percent
-        )
-        if is_plausible:
-            self.logger.info(
-                "AI endcap detection is plausible. Correcting height based on planogram config."
-            )
-
-            panel_height = panel_det.bbox.y2 - panel_det.bbox.y1
-            if config_height_percent > 0:
-                endcap_total_height = panel_height / config_height_percent
-            else:
-                self.logger.warning(
-                    "config_height_percent is zero or invalid, using default endcap height."
-                )
-                endcap_total_height = panel_height * 3.0  # Fallback multiplier
-
-            endcap_det.bbox.y2 = min(panel_det.bbox.y1 + endcap_total_height, 0.98)
-            # Ensure endcap's top aligns with panel's top (or slightly above if top_margin_percent is used)
-            endcap_det.bbox.y1 = max(0.0, panel_det.bbox.y1 - config_top_margin_percent)
-        else:
-            # --- Case B: The AI's detection is missing or bad, so we CREATE it from scratch ---
-            self.logger.warning(
-                "AI endcap detection missing or implausible. Deriving from panel."
-            )
-        # 1. HEIGHT is ALWAYS derived programmatically for maximum reliability.
-        # panel_height = panel_det.bbox.y2 - panel_det.bbox.y1
-        # if config_height_percent > 0:
-        #     endcap_total_height = panel_height / config_height_percent
-        # else:
-        #     endcap_total_height = panel_height * 3.0 # Fallback
-
-        # final_y1 = max(0.0, panel_det.bbox.y1 - config_top_margin_percent)
-        # final_y2 = min(final_y1 + endcap_total_height, 0.98) # Clamp to 98% to avoid the floor
-
-        # base_x1 = min(panel_det.bbox.x1, endcap_det.bbox.x1)
-        # base_x2 = max(panel_det.bbox.x2, endcap_det.bbox.x2)
-
-        # final_x1 = max(0.0, base_x1 - side_margin_percent)
-        # final_x2 = min(1.0, base_x2 + side_margin_percent)
-
         # compares if endcap x2 and x1 are equal to panel x2 and x1
         # panel (yellow)
-        px1, px2 = panel_det.bbox.x1, panel_det.bbox.x2
+        px1, py1, px2, py2 = panel_det.bbox.x1, panel_det.bbox.y1, panel_det.bbox.x2, panel_det.bbox.y2
         panel_w = px2 - px1
-        # endcap (cyan)
-        ex1, ex2 = endcap_det.bbox.x1, endcap_det.bbox.x2
-        # small tolerance so we don't "expand" on tiny overlaps
-        tol = self.left_margin_ratio * panel_w  # tune ~0.1–0.5% of panel width
-        new_ex1, new_ex2 = ex1, ex2
-        # If endcap is smaller, expand to panel; if larger, keep as-is
-        if ex1 > px1 + tol:
-            # new_ex1 = max(0.0, px1 - self.left_margin_ratio * (px2 - px1))
-            new_ex1 = px1 - self.left_margin_ratio * panel_w
-        if ex2 < px2 - tol:
-            # new_ex2 = min(1.0, px2 + self.right_margin_ratio * (px2 - px1))
-            new_ex2 = px2 + self.right_margin_ratio * panel_w
+        panel_h  = py2 - py1
 
-        # (optional) clamp to bounds — use 0..1 if normalized, else 0..img_w
-        new_ex1 = max(0.0, new_ex1)
-        new_ex2 = min(1.0, new_ex2)
-        # keep monotonic
-        if new_ex2 <= new_ex1:
-            new_ex2 = new_ex1 + 1e-6
+        # panel_height : endcap_height ratio, e.g., 0.33 if panel ~33% of endcap height
+        ratio = max(1e-6, float(config_height_percent))
+        top_margin = float(config_top_margin_percent)         # e.g., 0.01
+        x_tol = 0.003 * panel_w                               # ~0.3% of panel width
+        y_tol = 0.005                                         # ~0.5% absolute; tune to taste
 
-        endcap_det.bbox.x1, endcap_det.bbox.x2 = new_ex1, new_ex2
+        # --- Target Y from panel + config ---
+        target_y1 = max(0.0, py1 - top_margin)
+        target_y2 = min(0.98, target_y1 + panel_h / ratio)    # cap a little above floor
+
+        # If no endcap or Y is off-target, override Y with target values
+        if (endcap_det is None or
+            abs(endcap_det.bbox.y1 - target_y1) > y_tol or
+            abs(endcap_det.bbox.y2 - target_y2) > y_tol):
+            ex1, ex2 = (px1, px2) if endcap_det is None else (endcap_det.bbox.x1, endcap_det.bbox.x2)
+            ey1, ey2 = target_y1, target_y2
+        else:
+            ex1, ex2 = endcap_det.bbox.x1, endcap_det.bbox.x2
+            ey1, ey2 = endcap_det.bbox.y1, endcap_det.bbox.y2
+
+        # --- X correction: expand only when inside the panel band ---
+        if ex1 > px1 + x_tol:
+            ex1 = px1 - self.left_margin_ratio  * panel_w
+        if ex2 < px2 - x_tol:
+            ex2 = px2 + self.right_margin_ratio * panel_w
+
+        # Clamp & monotonic
+        ex1 = max(0.0, ex1)
+        ex2 = min(1.0, ex2)
+        if ex2 <= ex1:
+            ex2 = ex1 + 1e-6
+
+        endcap_det.bbox.x1, endcap_det.bbox.x2 = ex1, ex2
+        endcap_det.bbox.y1, endcap_det.bbox.y2 = ey1, ey2
 
         if debug_path:
             panel_px = panel_det.bbox.get_coordinates()
