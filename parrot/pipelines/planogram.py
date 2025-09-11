@@ -874,6 +874,17 @@ Return exactly FIVE detections with the following strict criteria:
             rx1, ry1: ROI offset coordinates
             detection_phases: List of phase configurations. If None, uses default 2-phase approach.
         """
+        #   printer ≈ 5–9%, product_box ≈ 7–12%, promotional_graphic ≥ 20%
+        CLASS_LIMITS = {
+            "promotional_graphic": {"amin": 0.20, "amax": 0.95, "armin": 0.4, "armax": 4.0, "band": (0.00, 0.70)},
+            "printer":             {"amin": 0.05, "amax": 0.11, "armin": 0.6, "armax": 3.2, "band": (0.25, 0.80)},
+            "product_box":         {"amin": 0.07, "amax": 0.14, "armin": 0.4, "armax": 3.5, "band": (0.55, 0.98)},
+            "price_tag":           {"amin": 0.0006, "amax": 0.012, "armin": 1.4, "armax": 9.0, "band": (0.45, 0.95)},
+            "ink_bottle":          {"amin": 0.002, "amax": 0.03,  "armin": 0.3, "armax": 3.0, "band": (0.50, 0.95)},
+        }
+        # soft slack so true objects aren’t clipped by hard borders
+        AREA_SLACK = 0.015      # ±1.5% area slack
+        BAND_SLACK = 0.15       # ±15% vertical slack
 
         if detection_phases is None:
             detection_phases = [
@@ -929,8 +940,12 @@ Return exactly FIVE detections with the following strict criteria:
                 iou_thresh = phase["iou"]
                 weight = phase["weight"]
 
-                print(f"\n📡 Phase {phase_idx + 1}: {phase_name}")
-                print(f"   Config: conf={conf_thresh}, iou={iou_thresh}, weight={weight}")
+                print(
+                    f"\n📡 Phase {phase_idx + 1}: {phase_name}"
+                )
+                print(
+                    f"   Config: conf={conf_thresh}, iou={iou_thresh}, weight={weight}"
+                )
 
                 r = self.yolo(roi, conf=conf_thresh, iou=iou_thresh, verbose=False)[0]
 
@@ -948,7 +963,6 @@ Return exactly FIVE detections with the following strict criteria:
                 )
 
                 phase_count = 0
-                phase_rejected = 0
 
                 for _, ((x1, y1, x2, y2), conf, cls_id) in enumerate(zip(xyxy, confs, classes)):
                     gx1, gy1, gx2, gy2 = int(x1) + rx1, int(y1) + ry1, int(x2) + rx1, int(y2) + ry1
@@ -1039,6 +1053,7 @@ Return exactly FIVE detections with the following strict criteria:
                         "phase": phase_name
                     }
                     all_proposals.append(proposal)
+                    stats["total_detections"] += 1
                     phase_count += 1
 
                 print(f"   ✅ Kept {phase_count} detections from {phase_name}")
