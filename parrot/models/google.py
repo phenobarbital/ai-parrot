@@ -16,6 +16,7 @@ class GoogleModel(Enum):
     GEMINI_2_0_IMAGE_GENERATION = "gemini-2.0-flash-preview-image-generation"
     GEMINI_2_5_FLASH_TTS = "gemini-2.5-flash-preview-tts"
     GEMINI_2_5_PRO_TTS = "gemini-2.5-pro-preview-tts"
+    GEMINI_2_5_FLASH_IMAGE_PREVIEW = "gemini-2.5-flash-image-preview"
     VEO_3_0 = "veo-3.0-generate-preview"
     VEO_2_0 = "veo-2.0-generate-001"
 

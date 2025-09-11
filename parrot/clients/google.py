@@ -20,7 +20,13 @@ from google.genai.types import (
 from google.genai import types
 from navconfig import config, BASE_DIR
 import pandas as pd
-from .base import AbstractClient, ToolDefinition, StreamingRetryConfig
+from .base import (
+    AbstractClient,
+    ToolDefinition,
+    RetryConfig,
+    TokenRetryMixin,
+    StreamingRetryConfig
+)
 from ..models import (
     AIMessage,
     AIMessageFactory,
@@ -407,12 +413,14 @@ class GoogleGenAIClient(AbstractClient):
         all_tool_calls: List[ToolCall],
         model: str = None,
         max_iterations: int = 10,
-        config: GenerateContentConfig = None
+        config: GenerateContentConfig = None,
+        max_retries: int = 1,
     ) -> Any:
         """
         Simple multi-turn function calling - just keep going until no more function calls.
         """
         current_response = initial_response
+        current_config = config
         iteration = 0
 
         model = model or self.model
@@ -438,7 +446,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                         """
                         current_response = await chat.send_message(
                             synthesis_prompt,
-                            config=config
+                            config=current_config
                         )
                         # Check if this worked
                         synthesis_text = self._safe_extract_text(current_response)
@@ -449,10 +457,14 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                     except Exception as e:
                         self.logger.error(f"Synthesis attempt failed: {e}")
 
-                self.logger.info(f"No function calls found - completed after {iteration-1} iterations")
+                self.logger.info(
+                    f"No function calls found - completed after {iteration-1} iterations"
+                )
                 break
 
-            self.logger.info(f"Iteration {iteration}: Processing {len(function_calls)} function calls")
+            self.logger.info(
+                f"Iteration {iteration}: Processing {len(function_calls)} function calls"
+            )
 
             # Execute function calls
             tool_call_objects = []
@@ -513,14 +525,31 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                         )
                     )
             # Send responses back
+            retry_count = 0
             try:
                 self.logger.debug(
                     f"Sending {len(function_response_parts)} responses back to model"
                 )
-                current_response = await chat.send_message(
-                    function_response_parts,
-                    config=config
-                )
+                while retry_count < max_retries:
+                    try:
+                        current_response = await chat.send_message(
+                            function_response_parts,
+                            config=current_config
+                        )
+                        finish_reason = getattr(current_response.candidates[0], 'finish_reason', None)
+                        if finish_reason and finish_reason.name == "MAX_TOKENS" and current_config.max_output_tokens == 1024:
+                            self.logger.warning("Hit MAX_TOKENS limit")
+                            retry_count += 1
+                            current_config.max_output_tokens += 8192
+                            continue
+                        break
+                    except Exception as e:
+                        self.logger.error(f"Error sending message: {e}")
+                        retry_count += 1
+                        await asyncio.sleep(2 ** retry_count)  # Exponential backoff
+                        if (retry_count + 1) >= max_retries:
+                            self.logger.error("Max retries reached, aborting")
+                            raise e
 
                 # Check for UNEXPECTED_TOOL_CALL error
                 if (hasattr(current_response, 'candidates') and
@@ -743,7 +772,8 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
         session_id: Optional[str] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
         use_tools: Optional[bool] = None,
-        stateless: bool = False
+        stateless: bool = False,
+        **kwargs
     ) -> AIMessage:
         """
         Ask a question to Google's Generative AI with support for parallel tool calls.
@@ -762,6 +792,8 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                 ("custom_functions", "builtin_tools", or None)
             stateless (bool): If True, don't use conversation memory (stateless mode).
         """
+        max_retries = kwargs.pop('max_retries', 1)
+
         model = model.value if isinstance(model, GoogleModel) else model
         # If use_tools is None, use the instance default
         _use_tools = use_tools if use_tools is not None else self.enable_tools
@@ -815,7 +847,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                         history.append(ModelContent(parts=parts))
 
         generation_config = {
-            "max_output_tokens": max_tokens or self.max_tokens,
+            "max_output_tokens": max_tokens or self.max_tokens or 2048,
             "temperature": temperature or self.temperature
         }
 
@@ -909,6 +941,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
         if stateless:
             # For stateless mode, handle in a single call (existing behavior)
             contents = []
+
             for msg in messages:
                 role = "model" if msg["role"] == "assistant" else msg["role"]
                 if role in ["user", "model"]:
@@ -918,12 +951,30 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                             "role": role,
                             "parts": [{"text": " ".join(text_parts)}]
                         })
-
-            response = await self.client.aio.models.generate_content(
-                model=model,
-                contents=contents,
-                config=final_config
-            )
+            try:
+                retry_count = 0
+                while retry_count < max_retries:
+                    response = await self.client.aio.models.generate_content(
+                        model=model,
+                        contents=contents,
+                        config=final_config
+                    )
+                    finish_reason = getattr(response.candidates[0], 'finish_reason', None)
+                    if finish_reason and finish_reason.name == "MAX_TOKENS" and generation_config["max_output_tokens"] == 1024:
+                        retry_count += 1
+                        self.logger.warning(
+                            f"Hit MAX_TOKENS limit on stateless response. Retrying {retry_count}/{max_retries} with increased token limit."
+                        )
+                        final_config.max_output_tokens = 8192
+                        continue
+                    break
+            except Exception as e:
+                self.logger.error(
+                    f"Error during generate_content: {e}"
+                )
+                if (retry_count + 1) >= max_retries:
+                    raise e
+                retry_count += 1
 
             # Handle function calls in stateless mode
             final_response = await self._handle_stateless_function_calls(
@@ -935,11 +986,30 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                 model=model,
                 history=history
             )
+            retry_count = 0
             # Send initial message
-            response = await chat.send_message(
-                message=prompt,
-                config=final_config
-            )
+            while retry_count < max_retries:
+                try:
+                    response = await chat.send_message(
+                        message=prompt,
+                        config=final_config
+                    )
+                    finish_reason = getattr(response.candidates[0], 'finish_reason', None)
+                    if finish_reason and finish_reason.name == "MAX_TOKENS" and generation_config["max_output_tokens"] == 1024:
+                        retry_count += 1
+                        self.logger.warning(
+                            f"Hit MAX_TOKENS limit on initial response. Retrying {retry_count}/{max_retries} with increased token limit."
+                        )
+                        final_config.max_output_tokens = 8192
+                        continue
+                    break
+                except Exception as e:
+                    self.logger.error(
+                        f"Error during initial chat.send_message: {e}"
+                    )
+                    if (retry_count + 1) >= max_retries:
+                        raise e
+                    retry_count += 1
 
             self.logger.debug(
                 f"Initial response has function calls: {bool(getattr(response, 'candidates', [{}])[0].content.parts if hasattr(response, 'candidates') else False)}"
@@ -947,7 +1017,13 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
 
             # Multi-turn function calling loop
             final_response = await self._handle_multiturn_function_calls(
-                chat, response, all_tool_calls, model=model, max_iterations=10, config=final_config
+                chat,
+                response,
+                all_tool_calls,
+                model=model,
+                max_iterations=10,
+                config=final_config,
+                max_retries=max_retries
             )
 
         # Extract assistant response text for conversation memory
@@ -2744,3 +2820,327 @@ Your job is to produce a final summary from the following text and identify the 
         ai_message.provider = "google_genai"
 
         return ai_message
+
+    async def image_generation(
+        self,
+        prompt_data: Union[str, ImageGenerationPrompt],
+        model: Union[str, GoogleModel] = GoogleModel.GEMINI_2_5_FLASH_IMAGE_PREVIEW,
+        temperature: Optional[float] = None,
+        prompt_instruction: Optional[str] = None,
+        reference_images: List[Optional[Path]] = None,
+        output_directory: Optional[Path] = None,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        stateless: bool = True
+    ) -> AIMessage:
+        """
+        Generates images based on a text prompt using Nano-Banana.
+        """
+        if isinstance(prompt_data, str):
+            prompt_data = ImageGenerationPrompt(
+                prompt=prompt_data,
+                model=model,
+            )
+        if prompt_data.model:
+            model = GoogleModel.GEMINI_2_5_FLASH_IMAGE_PREVIEW.value
+        model = model.value if isinstance(model, GoogleModel) else model
+        turn_id = str(uuid.uuid4())
+        prompt_data.model = model
+
+        self.logger.info(
+            f"Starting image generation with model: {model}"
+        )
+
+        messages, conversation_session, _ = await self._prepare_conversation_context(
+            prompt_data.prompt, None, user_id, session_id, None
+        )
+
+        full_prompt = prompt_data.prompt
+        if prompt_data.styles:
+            full_prompt += ", " + ", ".join(prompt_data.styles)
+
+        # Prepare conversation history for Google GenAI format
+        history = []
+        if messages:
+            for msg in messages[:-1]: # Exclude the current user message (last in list)
+                role = msg['role'].lower()
+                if role == 'user':
+                    parts = []
+                    for part_content in msg.get('content', []):
+                        if isinstance(part_content, dict) and part_content.get('type') == 'text':
+                            parts.append(Part(text=part_content.get('text', '')))
+                    if parts:
+                        history.append(UserContent(parts=parts))
+                elif role in ['assistant', 'model']:
+                    parts = []
+                    for part_content in msg.get('content', []):
+                        if isinstance(part_content, dict) and part_content.get('type') == 'text':
+                            parts.append(Part(text=part_content.get('text', '')))
+                    if parts:
+                        history.append(ModelContent(parts=parts))
+
+        ref_images = []
+        if reference_images:
+            self.logger.info(
+                f"Using reference image: {reference_images}"
+            )
+            for img_path in reference_images:
+                if not img_path.exists():
+                    raise FileNotFoundError(
+                        f"Reference image not found: {img_path}"
+                    )
+                # Load the reference image
+                ref_images.append(Image.open(img_path))
+
+        config=types.GenerateContentConfig(
+            response_modalities=['Text', 'Image'],
+            temperature=temperature or self.temperature,
+            system_instruction=prompt_instruction
+        )
+
+        try:
+            start_time = time.time()
+            content = [full_prompt, *ref_images] if ref_images else [full_prompt]
+            # Use the asynchronous client for image generation
+            if stateless:
+                response = await self.client.aio.models.generate_content(
+                    model=prompt_data.model,
+                    contents=content,
+                    config=config
+                )
+            else:
+                # Create the stateful chat session
+                chat = self.client.aio.chats.create(model=model, history=history, config=config)
+                response = await chat.send_message(
+                    message=content,
+                )
+            execution_time = time.time() - start_time
+
+            pil_images = []
+            saved_image_paths = []
+            raw_response = {} # Initialize an empty dict for the raw response
+
+            raw_response['generated_images'] = []
+            for part in response.candidates[0].content.parts:
+                if part.text is not None:
+                    raw_response['text'] = part.text
+                elif part.inline_data is not None:
+                    image = Image.open(io.BytesIO(part.inline_data.data))
+                    pil_images.append(image)
+                    if output_directory:
+                        if isinstance(output_directory, str):
+                            output_directory = Path(output_directory).resolve()
+                        file_path = self._save_image(image, output_directory)
+                        saved_image_paths.append(file_path)
+                        raw_response['generated_images'].append({
+                            'uri': file_path,
+                            'seed': None
+                        })
+
+            usage = CompletionUsage(execution_time=execution_time)
+            if not stateless:
+                await self._update_conversation_memory(
+                    user_id,
+                    session_id,
+                    conversation_session,
+                    messages + [
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": f"[Image Analysis]: {full_prompt}"}
+                            ]
+                        },
+                    ],
+                    None,
+                    turn_id,
+                    prompt_data.prompt,
+                    response.text,
+                    []
+                )
+            ai_message = AIMessageFactory.from_imagen(
+                output=pil_images,
+                images=saved_image_paths,
+                input=full_prompt,
+                model=model,
+                user_id=user_id,
+                session_id=session_id,
+                provider='nano-banana',
+                usage=usage,
+                raw_response=raw_response
+            )
+            return ai_message
+
+        except Exception as e:
+            self.logger.error(f"Image generation failed: {e}")
+            raise
+
+    def _upload_video(self, video_path: Union[str, Path]) -> str:
+        """
+        Uploads a video file to Google GenAi Client.
+        """
+        if isinstance(video_path, str):
+            video_path = Path(video_path).resolve()
+        if not video_path.exists():
+            raise FileNotFoundError(
+                f"Video file not found: {video_path}"
+            )
+        video_file = self.client.files.upload(
+            file=video_path
+        )
+        while video_file.state == "PROCESSING":
+            time.sleep(10)
+            video_file = self.client.files.get(name=video_file.name)
+
+        if video_file.state == "FAILED":
+            raise ValueError(video_file.state)
+
+        self.logger.debug(
+            f"Uploaded video file: {video_file.uri}"
+        )
+
+        return video_file
+
+    async def video_understanding(
+        self,
+        prompt: str,
+        model: Union[str, GoogleModel] = GoogleModel.GEMINI_2_5_FLASH,
+        temperature: Optional[float] = None,
+        prompt_instruction: Optional[str] = None,
+        video: Optional[Union[str, Path]] = None,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        stateless: bool = True,
+        offsets: Optional[tuple[str, str]] = None,
+    ) -> AIMessage:
+        """
+        Using a video (local or youtube) no analyze and extract information from videos.
+        """
+        model = model.value if isinstance(model, GoogleModel) else model
+        turn_id = str(uuid.uuid4())
+
+        self.logger.info(
+            f"Starting image generation with model: {model}"
+        )
+
+        if stateless:
+            # For stateless mode, skip conversation memory
+            messages = [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
+            conversation_history = None
+        else:
+            # Use the unified conversation context preparation from AbstractClient
+            messages, conversation_history, prompt_instruction = await self._prepare_conversation_context(
+                prompt, None, user_id, session_id, prompt_instruction, stateless=stateless
+            )
+
+        # Prepare conversation history for Google GenAI format
+        history = []
+        if messages:
+            for msg in messages[:-1]: # Exclude the current user message (last in list)
+                role = msg['role'].lower()
+                if role == 'user':
+                    parts = []
+                    for part_content in msg.get('content', []):
+                        if isinstance(part_content, dict) and part_content.get('type') == 'text':
+                            parts.append(Part(text=part_content.get('text', '')))
+                    if parts:
+                        history.append(UserContent(parts=parts))
+                elif role in ['assistant', 'model']:
+                    parts = []
+                    for part_content in msg.get('content', []):
+                        if isinstance(part_content, dict) and part_content.get('type') == 'text':
+                            parts.append(Part(text=part_content.get('text', '')))
+                    if parts:
+                        history.append(ModelContent(parts=parts))
+
+        config=types.GenerateContentConfig(
+            response_modalities=['Text', 'Image'],
+            temperature=temperature or self.temperature,
+            system_instruction=prompt_instruction
+        )
+
+        if isinstance(video, str) and video.startswith("http"):
+            # youtube video link:
+            data = types.FileData(
+                file_uri=video
+            )
+            video_metadata = None
+            if offsets:
+                video_metadata=types.VideoMetadata(
+                    start_offset=offsets[0],
+                    end_offset=offsets[1]
+                )
+            video_info = types.Part(
+                file_data=data,
+                video_metadata=video_metadata
+            )
+        else:
+            video_info = self._upload_video(video)
+
+        try:
+            start_time = time.time()
+            content = [
+                types.Part(
+                    text=prompt
+                ),
+                video_info
+            ]
+            # Use the asynchronous client for image generation
+            if stateless:
+                response = await self.client.aio.models.generate_content(
+                    model=model,
+                    contents=content,
+                    config=config
+                )
+            else:
+                # Create the stateful chat session
+                chat = self.client.aio.chats.create(model=model, history=history, config=config)
+                response = await chat.send_message(
+                    message=content,
+                )
+            execution_time = time.time() - start_time
+
+            final_response = response.text
+
+            usage = CompletionUsage(execution_time=execution_time)
+
+            if not stateless:
+                await self._update_conversation_memory(
+                    user_id,
+                    session_id,
+                    conversation_history,
+                    messages + [
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": f"[Image Analysis]: {prompt}"}
+                            ]
+                        },
+                    ],
+                    None,
+                    turn_id,
+                    prompt,
+                    final_response,
+                    []
+                )
+            # Create AIMessage using factory
+            ai_message = AIMessageFactory.from_gemini(
+                response=response,
+                input_text=prompt,
+                model=model,
+                user_id=user_id,
+                session_id=session_id,
+                turn_id=turn_id,
+                structured_output=final_response,
+                tool_calls=None,
+                conversation_history=conversation_history,
+                text_response=final_response
+            )
+
+            # Override provider to distinguish from Vertex AI
+            ai_message.provider = "google_genai"
+
+            return ai_message
+
+        except Exception as e:
+            self.logger.error(f"Image generation failed: {e}")
+            raise
