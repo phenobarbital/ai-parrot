@@ -20,7 +20,13 @@ from google.genai.types import (
 from google.genai import types
 from navconfig import config, BASE_DIR
 import pandas as pd
-from .base import AbstractClient, ToolDefinition, StreamingRetryConfig
+from .base import (
+    AbstractClient,
+    ToolDefinition,
+    RetryConfig,
+    TokenRetryMixin,
+    StreamingRetryConfig
+)
 from ..models import (
     AIMessage,
     AIMessageFactory,
@@ -407,12 +413,14 @@ class GoogleGenAIClient(AbstractClient):
         all_tool_calls: List[ToolCall],
         model: str = None,
         max_iterations: int = 10,
-        config: GenerateContentConfig = None
+        config: GenerateContentConfig = None,
+        max_retries: int = 1,
     ) -> Any:
         """
         Simple multi-turn function calling - just keep going until no more function calls.
         """
         current_response = initial_response
+        current_config = config
         iteration = 0
 
         model = model or self.model
@@ -438,7 +446,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                         """
                         current_response = await chat.send_message(
                             synthesis_prompt,
-                            config=config
+                            config=current_config
                         )
                         # Check if this worked
                         synthesis_text = self._safe_extract_text(current_response)
@@ -449,10 +457,14 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                     except Exception as e:
                         self.logger.error(f"Synthesis attempt failed: {e}")
 
-                self.logger.info(f"No function calls found - completed after {iteration-1} iterations")
+                self.logger.info(
+                    f"No function calls found - completed after {iteration-1} iterations"
+                )
                 break
 
-            self.logger.info(f"Iteration {iteration}: Processing {len(function_calls)} function calls")
+            self.logger.info(
+                f"Iteration {iteration}: Processing {len(function_calls)} function calls"
+            )
 
             # Execute function calls
             tool_call_objects = []
@@ -513,14 +525,31 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                         )
                     )
             # Send responses back
+            retry_count = 0
             try:
                 self.logger.debug(
                     f"Sending {len(function_response_parts)} responses back to model"
                 )
-                current_response = await chat.send_message(
-                    function_response_parts,
-                    config=config
-                )
+                while retry_count < max_retries:
+                    try:
+                        current_response = await chat.send_message(
+                            function_response_parts,
+                            config=current_config
+                        )
+                        finish_reason = getattr(current_response.candidates[0], 'finish_reason', None)
+                        if finish_reason and finish_reason.name == "MAX_TOKENS" and current_config.max_output_tokens == 1024:
+                            self.logger.warning("Hit MAX_TOKENS limit")
+                            retry_count += 1
+                            current_config.max_output_tokens += 8192
+                            continue
+                        break
+                    except Exception as e:
+                        self.logger.error(f"Error sending message: {e}")
+                        retry_count += 1
+                        await asyncio.sleep(2 ** retry_count)  # Exponential backoff
+                        if (retry_count + 1) >= max_retries:
+                            self.logger.error("Max retries reached, aborting")
+                            raise e
 
                 # Check for UNEXPECTED_TOOL_CALL error
                 if (hasattr(current_response, 'candidates') and
@@ -743,7 +772,8 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
         session_id: Optional[str] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
         use_tools: Optional[bool] = None,
-        stateless: bool = False
+        stateless: bool = False,
+        **kwargs
     ) -> AIMessage:
         """
         Ask a question to Google's Generative AI with support for parallel tool calls.
@@ -762,6 +792,8 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                 ("custom_functions", "builtin_tools", or None)
             stateless (bool): If True, don't use conversation memory (stateless mode).
         """
+        max_retries = kwargs.pop('max_retries', 1)
+
         model = model.value if isinstance(model, GoogleModel) else model
         # If use_tools is None, use the instance default
         _use_tools = use_tools if use_tools is not None else self.enable_tools
@@ -815,7 +847,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                         history.append(ModelContent(parts=parts))
 
         generation_config = {
-            "max_output_tokens": max_tokens or self.max_tokens,
+            "max_output_tokens": max_tokens or self.max_tokens or 2048,
             "temperature": temperature or self.temperature
         }
 
@@ -909,6 +941,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
         if stateless:
             # For stateless mode, handle in a single call (existing behavior)
             contents = []
+
             for msg in messages:
                 role = "model" if msg["role"] == "assistant" else msg["role"]
                 if role in ["user", "model"]:
@@ -918,12 +951,30 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                             "role": role,
                             "parts": [{"text": " ".join(text_parts)}]
                         })
-
-            response = await self.client.aio.models.generate_content(
-                model=model,
-                contents=contents,
-                config=final_config
-            )
+            try:
+                retry_count = 0
+                while retry_count < max_retries:
+                    response = await self.client.aio.models.generate_content(
+                        model=model,
+                        contents=contents,
+                        config=final_config
+                    )
+                    finish_reason = getattr(response.candidates[0], 'finish_reason', None)
+                    if finish_reason and finish_reason.name == "MAX_TOKENS" and generation_config["max_output_tokens"] == 1024:
+                        retry_count += 1
+                        self.logger.warning(
+                            f"Hit MAX_TOKENS limit on stateless response. Retrying {retry_count}/{max_retries} with increased token limit."
+                        )
+                        final_config.max_output_tokens = 8192
+                        continue
+                    break
+            except Exception as e:
+                self.logger.error(
+                    f"Error during generate_content: {e}"
+                )
+                if (retry_count + 1) >= max_retries:
+                    raise e
+                retry_count += 1
 
             # Handle function calls in stateless mode
             final_response = await self._handle_stateless_function_calls(
@@ -935,11 +986,30 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                 model=model,
                 history=history
             )
+            retry_count = 0
             # Send initial message
-            response = await chat.send_message(
-                message=prompt,
-                config=final_config
-            )
+            while retry_count < max_retries:
+                try:
+                    response = await chat.send_message(
+                        message=prompt,
+                        config=final_config
+                    )
+                    finish_reason = getattr(response.candidates[0], 'finish_reason', None)
+                    if finish_reason and finish_reason.name == "MAX_TOKENS" and generation_config["max_output_tokens"] == 1024:
+                        retry_count += 1
+                        self.logger.warning(
+                            f"Hit MAX_TOKENS limit on initial response. Retrying {retry_count}/{max_retries} with increased token limit."
+                        )
+                        final_config.max_output_tokens = 8192
+                        continue
+                    break
+                except Exception as e:
+                    self.logger.error(
+                        f"Error during initial chat.send_message: {e}"
+                    )
+                    if (retry_count + 1) >= max_retries:
+                        raise e
+                    retry_count += 1
 
             self.logger.debug(
                 f"Initial response has function calls: {bool(getattr(response, 'candidates', [{}])[0].content.parts if hasattr(response, 'candidates') else False)}"
@@ -947,7 +1017,13 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
 
             # Multi-turn function calling loop
             final_response = await self._handle_multiturn_function_calls(
-                chat, response, all_tool_calls, model=model, max_iterations=10, config=final_config
+                chat,
+                response,
+                all_tool_calls,
+                model=model,
+                max_iterations=10,
+                config=final_config,
+                max_retries=max_retries
             )
 
         # Extract assistant response text for conversation memory
