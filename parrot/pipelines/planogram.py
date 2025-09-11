@@ -575,6 +575,20 @@ Return exactly FIVE detections with the following strict criteria:
             self.logger.error("Critical failure: Could not detect the poster_panel.")
             return None, None, None, None
 
+        # promotional graphic (inside the panel):
+        promo_graphic_det = next((d for d in dets if d.label == "promotional_graphic"), None)
+
+        # check if promo_graphic is contained by panel_det, if not, increase the panel:
+        if promo_graphic_det and panel_det:
+            # If promo graphic is outside panel, expand panel to include it
+            if not (
+                promo_graphic_det.bbox.x1 >= panel_det.bbox.x1 and
+                promo_graphic_det.bbox.x2 <= panel_det.bbox.x2
+            ):
+                self.logger.info("Expanding poster_panel to include promotional_graphic.")
+                panel_det.bbox.x1 = min(panel_det.bbox.x1, promo_graphic_det.bbox.x1)
+                panel_det.bbox.x2 = max(panel_det.bbox.x2, promo_graphic_det.bbox.x2)
+
         # Get planogram advertisement config with safe defaults
         advertisement_config = getattr(planogram, "advertisement", {})
         # Default values if not in planogram, normalized to image (not ROI)
@@ -582,12 +596,12 @@ Return exactly FIVE detections with the following strict criteria:
         config_height_percent = advertisement_config.get('height_percent', 0.20)
         config_top_margin_percent = advertisement_config.get('top_margin_percent', 0.02)
         # E.g., 5% of panel width
-        panel_padding_x = advertisement_config.get('side_margin_percent', 0.05)
+        side_margin_percent = advertisement_config.get('side_margin_percent', 0.05)
 
         # --- Refined Panel Padding ---
         # Apply padding to the panel_det itself to ensure it captures the full visual area
-        panel_det.bbox.x1 = max(0.0, panel_det.bbox.x1 - panel_padding_x)
-        panel_det.bbox.x2 = min(1.0, panel_det.bbox.x2 + panel_padding_x)
+        panel_det.bbox.x1 = max(0.0, panel_det.bbox.x1 - side_margin_percent)
+        panel_det.bbox.x2 = min(1.0, panel_det.bbox.x2 + side_margin_percent)
 
         if panel_det and text_det:
             print("INFO: Found both panel and text. Applying boundary correction.")
@@ -598,19 +612,17 @@ Return exactly FIVE detections with the following strict criteria:
             new_panel_y2 = min(text_bottom_y2 + padding, 1.0) # Ensure it doesn't exceed 1.0
             panel_det.bbox.y2 = new_panel_y2
 
-        # endcap Detected:
+        # --- endcap Detected:
         endcap_det = next((d for d in dets if d.label == "endcap"), None)
         # First, check if the detected endcap is plausible (e.g., it fully contains the panel)
-        p_threshold_y = 0.1 # Allow 10% vertical offset
-        p_threshold_x = 0.1 # Allow 10% horizontal offset
         is_plausible = (
             endcap_det and
             # Check if endcap roughly contains panel vertically
-            abs(endcap_det.bbox.y1 - panel_det.bbox.y1) < p_threshold_y and
+            abs(endcap_det.bbox.y1 - panel_det.bbox.y1) < side_margin_percent and
             endcap_det.bbox.y2 >= panel_det.bbox.y2 and
             # Check if endcap broadly aligns with panel horizontally
-            abs(endcap_det.bbox.x1 - panel_det.bbox.x1) < p_threshold_x and
-            abs(endcap_det.bbox.x2 - panel_det.bbox.x2) < p_threshold_x
+            abs(endcap_det.bbox.x1 - panel_det.bbox.x1) < side_margin_percent and
+            abs(endcap_det.bbox.x2 - panel_det.bbox.x2) < side_margin_percent
         )
         if is_plausible:
             self.logger.info(
@@ -634,6 +646,21 @@ Return exactly FIVE detections with the following strict criteria:
             self.logger.warning(
                 "AI endcap detection missing or implausible. Deriving from panel."
             )
+        # 1. HEIGHT is ALWAYS derived programmatically for maximum reliability.
+        # panel_height = panel_det.bbox.y2 - panel_det.bbox.y1
+        # if config_height_percent > 0:
+        #     endcap_total_height = panel_height / config_height_percent
+        # else:
+        #     endcap_total_height = panel_height * 3.0 # Fallback
+
+        # final_y1 = max(0.0, panel_det.bbox.y1 - config_top_margin_percent)
+        # final_y2 = min(final_y1 + endcap_total_height, 0.98) # Clamp to 98% to avoid the floor
+
+        # base_x1 = min(panel_det.bbox.x1, endcap_det.bbox.x1)
+        # base_x2 = max(panel_det.bbox.x2, endcap_det.bbox.x2)
+
+        # final_x1 = max(0.0, base_x1 - side_margin_percent)
+        # final_x2 = min(1.0, base_x2 + side_margin_percent)
 
         # compares if endcap x2 and x1 are equal to panel x2 and x1
         # panel (yellow)
@@ -641,9 +668,6 @@ Return exactly FIVE detections with the following strict criteria:
         panel_w = px2 - px1
         # endcap (cyan)
         ex1, ex2 = endcap_det.bbox.x1, endcap_det.bbox.x2
-
-        print('Panel coordinates > ', px1, px2)
-        print('Endcap coordinates > ', ex1, ex2)
         # small tolerance so we don't "expand" on tiny overlaps
         tol = self.left_margin_ratio * panel_w  # tune ~0.1–0.5% of panel width
         new_ex1, new_ex2 = ex1, ex2
