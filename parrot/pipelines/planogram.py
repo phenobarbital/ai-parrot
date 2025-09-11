@@ -1286,49 +1286,6 @@ Return exactly FIVE detections with the following strict criteria:
         return inter / max(1.0, aarea + barea - inter)
 
     # ------------------- OCR + CLIP preselection -----------------------------
-    async def verify_proposal_crop(
-        self,
-        proposal_image: Image.Image
-    ) -> Optional[VerificationResult]:
-        """
-        Uses Gemini to verify a single low-confidence proposal crop.
-
-        Args:
-            proposal_image: A PIL Image of the cropped detection.
-
-        Returns:
-            A VerificationResult object with the classification and OCR text, or None on failure.
-        """
-        prompt = """
-Analyze the provided image, which is a cropped photo of a single object on a retail shelf. Your task is to act as an expert retail analyst.
-
-1.  **Classify the object**: Determine if the primary object is a 'product_candidate' (the physical device, like a printer) or a 'box_candidate' (the retail packaging for the product). If you cannot tell, classify it as 'unclear'.
-2.  **Extract Text**: Carefully read and extract any clearly visible text from the object. Clean up the text by removing random characters and correcting obvious OCR errors. If no text is legible, this should be null.
-
-Return your analysis in the specified JSON format.
-"""
-        try:
-            async with self.google as client:
-                msg = await client.ask_to_image(
-                    prompt=prompt,
-                    image=proposal_image,
-                    model=GoogleModel.GEMINI_2_5_FLASH,
-                    structured_output=VerificationResult,
-                    no_memory=True
-                )
-                if msg and msg.output:
-                    # The result will be a parsed VerificationResult object
-                    return msg.output
-                else:
-                    self.logger.warning(
-                        "Gemini verification returned no structured output."
-                    )
-                    return None
-
-        except Exception as e:
-            self.logger.error(f"Gemini verification call failed: {e}")
-            return None
-
     async def _classify_proposals(self, img, props, bands, header_limit_y, ad_box=None):
         """
         Simplified proposal classification using a clear, hierarchical decision process.
@@ -1340,8 +1297,6 @@ Return your analysis in the specified JSON format.
         final_proposals = []
         # --- Define thresholds for clarity ---
         PRICE_TAG_AREA_THRESHOLD = 0.005  # 0.5% of total image area
-        # If the confidence from CLIP is low, send it to Gemini for a second opinion.
-        CONFIDENCE_THRESHOLD_FOR_VERIFICATION = 0.3
 
         print(f"\n🎯 Simplified Classification: Running {len(props)} proposals...")
         print("   " + "="*60)
@@ -1407,28 +1362,6 @@ Return your analysis in the specified JSON format.
                     confidence = s_box
 
                 final_class = CID[class_name]
-
-                if confidence < CONFIDENCE_THRESHOLD_FOR_VERIFICATION:
-                    # Send to Gemini for verification
-                    self.logger.warning(
-                        f"Low confidence ({confidence:.2f}) for {class_name}, sending to Gemini."
-                    )
-                    # Create the crop PIL image
-                    x1, y1, x2, y2 = p["box"]
-                    crop_np = img[y1:y2, x1:x2]
-                    crop_pil = Image.fromarray(cv2.cvtColor(crop_np, cv2.COLOR_BGR2RGB))
-                    try:
-                        verification_result = await self.verify_proposal_crop(crop_pil)
-                        if verification_result:
-                            self.logger.info(
-                                f"Gemini verification successful. Overriding data."
-                            )
-                            final_class = CID[verification_result.object_type.value]
-                            confidence = 0.95
-                            p['ocr_text'] = verification_result.visible_text
-                    except Exception as e:
-                        self.logger.error(f"Gemini verification failed: {e}")
-                        pass
 
                 final_proposals.append(
                     DetectionBox(

@@ -112,6 +112,55 @@ class MessageResponse(TypedDict):
     usage: Dict[str, int]
 
 @dataclass
+class RetryConfig:
+    """Configuration for MAX_TOKENS retry behavior."""
+    max_retries: int = 1
+    token_increase_threshold: int = 1024
+    new_token_limit: int = 8192
+    error_patterns: List[str] = None
+
+    def __post_init__(self):
+        if self.error_patterns is None:
+            self.error_patterns = [
+                r"MAX_TOKENS?",
+                r"TOKEN.*LIMIT",
+                r"CONTEXT.*LENGTH",
+                r"TOO.*MANY.*TOKENS"
+            ]
+
+class TokenRetryMixin:
+    """Mixin class to add token retry functionality to any LLM client."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.retry_config = RetryConfig()
+
+    def is_token_limit_error(self, error: Exception) -> bool:
+        """Check if the error is related to token limits."""
+        error_message = str(error).upper()
+
+        for pattern in self.retry_config.error_patterns:
+            if re.search(pattern, error_message):
+                return True
+        return False
+
+    def should_retry_with_more_tokens(self, current_tokens: int, retry_count: int) -> bool:
+        """Determine if we should retry with increased tokens."""
+        return (
+            retry_count < self.retry_config.max_retries and
+            current_tokens <= self.retry_config.token_increase_threshold
+        )
+
+    def get_increased_token_limit(self, current_tokens: int) -> int:
+        """Calculate the new token limit for retry."""
+        if current_tokens <= 1024:
+            return 8192
+        elif current_tokens <= 4096:
+            return 16384
+        else:
+            return min(current_tokens * 2, 32768)  # Cap at 32k tokens
+
+@dataclass
 class BatchRequest:
     """Data structure for batch request."""
     custom_id: str
