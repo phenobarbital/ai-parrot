@@ -18,7 +18,7 @@ planogram_config = {
     # Advertisement sizing and positioning
     "advertisement": {
         "width_percent": 0.45,      # 45% of image width
-        "height_percent": 0.30,     # 30% of image height
+        "height_percent": 0.26,     # 26% of image height
         "top_margin_percent": 0.02, # 2% margin above detected brand
         "side_margin_percent": 0.03  # 3% margin on sides
     },
