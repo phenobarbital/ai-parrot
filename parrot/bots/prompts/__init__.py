@@ -15,6 +15,8 @@ $backstory
 $pre_context
 $context
 
+$user_context
+
 $chat_history
 
 Given the above context and conversation history, please provide answers to the following question adding detailed and useful insights.

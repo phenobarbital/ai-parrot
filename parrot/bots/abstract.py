@@ -1060,12 +1060,22 @@ class AbstractBot(DBInterface, ABC):
 
     async def create_system_prompt(
         self,
+        user_context: str = "",
         vector_context: str = "",
         conversation_context: str = "",
         metadata: Optional[Dict[str, Any]] = None,
         **kwargs
     ) -> str:
-        """Create the complete system prompt for the LLM."""
+        """
+        Create the complete system prompt for the LLM with user context support.
+
+        Args:
+            user_context: User-specific context for the database interaction
+            vector_context: Vector store context
+            conversation_context: Previous conversation context
+            metadata: Additional metadata
+            **kwargs: Additional template variables
+        """
         # Process conversation and vector contexts
         context_parts = []
         if vector_context:
@@ -1084,14 +1094,40 @@ class AbstractBot(DBInterface, ABC):
         if conversation_context:
             chat_history_section = f"**Previous Conversation:**\n{conversation_context}"
 
+        # Add user context if provided
+        u_context = ""
+        if user_context:
+            u_context = (f"""
+Use the following information about user's data to guide your responses:
+**User Context:**
+{user_context}
+Based on the user context above, please tailor your response to their specific:
+- Role and responsibilities
+- Technical expertise level
+- Business objectives
+        """)
         # Apply template substitution
         tmpl = Template(self.system_prompt_template)
         system_prompt = tmpl.safe_substitute(
             context="\n\n".join(context_parts) if context_parts else "No additional context available.",
             chat_history=chat_history_section,
+            user_context=u_context,
             **kwargs
         )
         return system_prompt
+
+    async def get_user_context(self, user_id: str, session_id: str) -> str:
+        """
+        Retrieve user-specific context for the database interaction.
+
+        Args:
+            user_id: User identifier
+            session_id: Session identifier
+
+        Returns:
+            str: User-specific context
+        """
+        return ""
 
     async def conversation(
         self,
@@ -1199,11 +1235,14 @@ class AbstractBot(DBInterface, ABC):
                 f"Tool usage decision: use_tools={use_tools}, mode={mode}, "
                 f"effective_mode={effective_mode}, available_tools={len(self.tools)}"
             )
+            # get user context:
+            user_context = await self.get_user_context(user_id, session_id)
             # Create system prompt
             system_prompt = await self.create_system_prompt(
                 vector_context=vector_context,
                 conversation_context=conversation_context,
                 vector_metadata=vector_metadata,
+                user_context=user_context
                 **kwargs
             )
             # Configure LLM if needed
