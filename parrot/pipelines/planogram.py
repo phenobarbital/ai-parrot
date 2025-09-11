@@ -352,7 +352,7 @@ class RetailDetector:
         )
         # 6) shrink -> merge -> remove those fully inside the poster
         # proposals = self._shrink(img_array, proposals)
-        proposals = self._merge(proposals, iou_same=0.45)
+        # proposals = self._merge(proposals, iou_same=0.45)
 
         if brand:
             bx1, by1, bx2, by2 = brand.bbox.get_pixel_coordinates(width=w, height=h)
@@ -383,9 +383,9 @@ class RetailDetector:
             print(f"  + Injected poster_text: '{panel_text.content}'")
 
         # 7) keep exactly ONE promo & align ROI to it
-        proposals, promo_roi = self._consolidate_promos(proposals, ad_box)
-        if promo_roi is not None:
-            ad_box = promo_roi
+        # proposals, promo_roi = self._consolidate_promos(proposals, ad_box)
+        # if promo_roi is not None:
+        #     ad_box = promo_roi
 
         # shelves dict to satisfy callers; in flat mode keep it empty
         shelves = {
@@ -874,31 +874,35 @@ Return exactly FIVE detections with the following strict criteria:
             rx1, ry1: ROI offset coordinates
             detection_phases: List of phase configurations. If None, uses default 2-phase approach.
         """
+
         if detection_phases is None:
             detection_phases = [
-                {
-                    "name": "poster_high",
-                    "conf": 0.40,
+                {  # Coarse: quickly find large boxes (e.g., header, promo)
+                    "name": "coarse",
+                    "conf": 0.35,
                     "iou": 0.35,
-                    "weight": 0.15,
-                    "allow": ["person","tv","monitor","screen","display","billboard","poster"],
-                    "min_area": 0.06,      # >= 6% of ROI
-                    "region": "top40"      # only top 40% of ROI
-                },  # backlit/TV/person near header
+                    "weight": 0.20,
+                    "min_area": 0.05,  # >= 5% of ROI
+                    "description": "High confidence pass for large objects",
+                },
+                # Standard: main workhorse for printers & boxes
                 {
-                    "name": "high_confidence",
+                    "name": "standard",
                     "conf": 0.05,
                     "iou": 0.20,
                     "weight": 0.70,
+                    "min_area": 0.001,
                     "description": "High confidence pass for clear objects"
-                }, # printers + product boxes
+                },
+                # Aggressive: recover misses but still bounded by class limits
                 {
                     "name": "aggressive",
-                    "conf": 0.003,
+                    "conf": 0.008,
                     "iou": 0.15,
-                    "weight": 0.15,
+                    "weight": 0.10,
+                    "min_area": 0.0006,
                     "description": "Selective aggressive pass for missed objects only"
-                }
+                },
             ]
 
         try:
@@ -908,6 +912,15 @@ Return exactly FIVE detections with the following strict criteria:
 
             print(f"\n🔄 Detection with Your Preferred Settings on ROI {W}x{H}")
             print("   " + "="*70)
+
+            # Statistics tracking
+            stats = {
+                "total_detections": 0,
+                "passed_confidence": 0,
+                "passed_size": 0,
+                "passed_class_limits": 0,
+                "rejected_class_limits": 0
+            }
 
             # Run both phases with your settings
             for phase_idx, phase in enumerate(detection_phases):
@@ -935,6 +948,8 @@ Return exactly FIVE detections with the following strict criteria:
                 )
 
                 phase_count = 0
+                phase_rejected = 0
+
                 for _, ((x1, y1, x2, y2), conf, cls_id) in enumerate(zip(xyxy, confs, classes)):
                     gx1, gy1, gx2, gy2 = int(x1) + rx1, int(y1) + ry1, int(x2) + rx1, int(y2) + ry1
 
@@ -945,18 +960,20 @@ Return exactly FIVE detections with the following strict criteria:
                     if conf < conf_thresh:
                         continue
 
+                    stats["passed_confidence"] += 1
+
                     area = width * height
                     area_ratio = area / roi_area
                     aspect_ratio = width / max(height, 1)
                     yolo_class = names[cls_id]
+
+                    print('YOLO DETECTION > ', cls_id, yolo_class)
+
                     min_area = phase.get("min_area")
                     if min_area and area_ratio < float(min_area):
                         continue
 
-                    # allow-list
-                    allow = phase.get("allow")
-                    if allow and yolo_class not in allow:
-                        continue
+                    stats["passed_size"] += 1
 
                     ocr_text = None
                     orientation = self._detect_orientation(gx1, gy1, gx2, gy2)
@@ -1006,29 +1023,23 @@ Return exactly FIVE detections with the following strict criteria:
                                     f"OCR failed for a proposal: {ocr_error}"
                                 )
 
-                    # Light filtering - let classification handle the heavy lifting
-                    if (area_ratio >= 0.0008 and area_ratio <= 0.9 and
-                        0.1 <= aspect_ratio <= 10.0 and conf >= conf_thresh):
-                        # conf >= (0.12 if phase_name == "high_confidence" else 0.003)):
-
-                        orientation = self._detect_orientation(gx1, gy1, gx2, gy2)
-                        weighted_conf = float(conf) * weight
-
-                        proposal = {
-                            "yolo_label": yolo_class,
-                            "yolo_conf": float(conf),
-                            "weighted_conf": weighted_conf,
-                            "box": (gx1, gy1, gx2, gy2),
-                            "area_ratio": area_ratio,
-                            "aspect_ratio": aspect_ratio,
-                            "orientation": orientation,
-                            "retail_candidates": self._get_retail_candidates(yolo_class),
-                            "raw_index": len(all_proposals) + 1,
-                            "ocr_text": ocr_text,
-                            "phase": phase_name
-                        }
-                        all_proposals.append(proposal)
-                        phase_count += 1
+                    orientation = self._detect_orientation(gx1, gy1, gx2, gy2)
+                    weighted_conf = float(conf) * weight
+                    proposal = {
+                        "yolo_label": yolo_class,
+                        "yolo_conf": float(conf),
+                        "weighted_conf": weighted_conf,
+                        "box": (gx1, gy1, gx2, gy2),
+                        "area_ratio": area_ratio,
+                        "aspect_ratio": aspect_ratio,
+                        "orientation": orientation,
+                        "retail_candidates": self._get_retail_candidates(yolo_class),
+                        "raw_index": len(all_proposals) + 1,
+                        "ocr_text": ocr_text,
+                        "phase": phase_name
+                    }
+                    all_proposals.append(proposal)
+                    phase_count += 1
 
                 print(f"   ✅ Kept {phase_count} detections from {phase_name}")
 
@@ -1045,70 +1056,6 @@ Return exactly FIVE detections with the following strict criteria:
             print(f"Detection failed: {e}")
             traceback.print_exc()
             return []
-
-    def _analyze_visual_features(self, crop: Image.Image, area_ratio: float, aspect: float, yolo_class: str) -> Dict[str, Any]:
-        """
-        Enhanced visual feature analysis with skin tone and bottle detection
-        """
-        try:
-            crop_array = np.array(crop)
-
-            if crop_array.ndim == 3:
-                r_mean = np.mean(crop_array[:, :, 0])
-                g_mean = np.mean(crop_array[:, :, 1])
-                b_mean = np.mean(crop_array[:, :, 2])
-
-                # Blue dominance (for Epson boxes)
-                is_blue_dominant = (b_mean > r_mean * 1.2 and b_mean > g_mean * 1.15 and b_mean > 100)
-
-                # White/gray dominance (for printers)
-                color_std = np.std([r_mean, g_mean, b_mean])
-                avg_brightness = (r_mean + g_mean + b_mean) / 3
-                is_white_gray = (color_std < 25 and avg_brightness > 140)
-
-                # Skin tone detection (to avoid human fingers)
-                is_skin_tone = (r_mean > g_mean * 0.9 and g_mean > b_mean * 1.1 and
-                            r_mean > 120 and g_mean > 80 and b_mean < 120)
-
-                # Bottle shape detection (tall and narrow)
-                has_bottle_shape = (aspect < 0.6 and area_ratio < 0.02)
-
-                # Person features (for promotional graphics)
-                has_person_features = yolo_class == "person"
-
-                brightness = avg_brightness / 255.0
-            else:
-                is_blue_dominant = False
-                is_white_gray = False
-                is_skin_tone = False
-                has_bottle_shape = False
-                has_person_features = False
-                brightness = 0.5
-                r_mean = g_mean = b_mean = 0
-
-            # Edge analysis
-            gray = cv2.cvtColor(crop_array, cv2.COLOR_RGB2GRAY) if crop_array.ndim == 3 else crop_array
-            edges = cv2.Canny(gray, 50, 150)
-            edge_density = np.sum(edges > 0) / edges.size
-
-            return {
-                "is_blue_dominant": is_blue_dominant,
-                "is_white_gray": is_white_gray,
-                "is_skin_tone": is_skin_tone,
-                "has_bottle_shape": has_bottle_shape,
-                "has_person_features": has_person_features,
-                "brightness": brightness,
-                "edge_density": edge_density,
-                "r_mean": r_mean, "g_mean": g_mean, "b_mean": b_mean,
-            }
-
-        except Exception:
-            return {
-                "is_blue_dominant": False, "is_white_gray": False, "is_skin_tone": False,
-                "has_bottle_shape": False, "has_person_features": False,
-                "brightness": 0.5, "edge_density": 0.0,
-                "r_mean": 0, "g_mean": 0, "b_mean": 0,
-            }
 
     def _determine_shelf_level(self, center_y: float, bands: Dict[str, tuple]) -> str:
         """Enhanced shelf level determination"""
@@ -1148,15 +1095,16 @@ Return exactly FIVE detections with the following strict criteria:
         """Light retail candidate mapping - let classification do the heavy work"""
         mapping = {
             "microwave": ["printer", "product_box"],
-            "tv": ["printer", "promotional_graphic"],
-            "monitor": ["printer", "promotional_graphic"],
-            "laptop": ["printer", "promotional_graphic"],
-            "book": ["product_box", "printer"],
+            "tv": ["promotional_graphic"],
+            "monitor": ["promotional_graphic"],
+            "laptop": ["promotional_graphic"],
+            "book": ["product_box"],
             "box": ["product_box"],
             "suitcase": ["product_box", "printer"],
             "bottle": ["ink_bottle", "price_tag"],
             "person": ["promotional_graphic"],
             "clock": ["small_object", "price_tag"],
+            "cell phone": ["small_object", "price_tag"],
         }
         return mapping.get(yolo_class, ["product_candidate"])
 
@@ -1928,8 +1876,8 @@ class PlanogramCompliancePipeline(AbstractPipeline):
         shelves = det_out["shelves"]          # {'top': DetectionBox(...), 'middle': ...}
         proposals    = det_out["proposals"]        # List[DetectionBox]
 
-        # print("PROPOSALS:", proposals)
-        # print("SHELVES:", shelves)
+        print("PROPOSALS:", proposals)
+        print("SHELVES:", shelves)
 
         # --- IMPORTANT: use Phase-1 shelf bands (not %-of-image buckets) ---
         shelf_regions = self._materialize_shelf_regions(shelves, proposals)
