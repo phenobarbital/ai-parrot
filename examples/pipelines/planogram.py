@@ -112,20 +112,7 @@ async def main():
             ],
             # NEW: endcap geometry priors
             "size_constraints": {
-                "vertical_gap_frac": 0.008,          # small gap between bands
-                "header_pad_frac": 0.00,             # tiny extra above/below promo in header
-
-                # Middle sizing
-                "middle_from_header_frac": 0.32,   # ≥ 32% of header height (set None if no header)
-                "middle_target_frac": 0.32,          # of (ROI - header)
-                "middle_min_frac": 0.25,             # lower bound vs remaining-ROI
-                "middle_max_frac": 0.35,             # upper bound vs remaining-ROI
-                "middle_from_promo_min_frac": 0.30,  # ≥ 60% of promo height (set 0.25 if you prefer the 25–35% rule)
-                "middle_min_px": 80,                 # practical minimum (printers)
-
-                # Bottom sizing
-                "bottom_from_promo_frac": 1.00,      # = promo height; set 0.85 for your other planogram
-                "bottom_max_image_frac": 0.35        # safety cap vs full image height
+                "backlit_height_ratio": 0.25,  # 25% of ROI height
             }
         }
     }
@@ -136,13 +123,13 @@ async def main():
 
     # Endcap photo:
     # image_path = BASE_DIR / "examples" / "pipelines" / "250714 BBY 501 Kennesaw GA.jpg"
-    # image_path = BASE_DIR / "examples" / "pipelines" / "original_0.jpg"
+    image_path = BASE_DIR / "examples" / "pipelines" / "original_0.jpg"
     # image_path = BASE_DIR / "examples" / "pipelines" / "06668994-c27e-44d9-8d59-f1f65559c2e1-recap.jpeg"
     # image_path = BASE_DIR / "examples" / "pipelines" / "eb04d624-a180-4e5c-b592-ab0d40b558f9-recap.jpeg"
     # new test:
     # image_path = BASE_DIR / "examples" / "pipelines" / "356e053c-d630-4930-a2fd-cba4ab8f5e2b-recap.jpeg"
     # for evaluate wrong ROI:
-    image_path = BASE_DIR / "examples" / "pipelines" / "f7b45f4c-c33f-4312-9afb-e01af138e6f8-recap.jpeg"
+    # image_path = BASE_DIR / "examples" / "pipelines" / "f7b45f4c-c33f-4312-9afb-e01af138e6f8-recap.jpeg"
     # check if compliance:
     # image_path = BASE_DIR / "examples" / "pipelines" / "check-compliance.jpeg"
 
