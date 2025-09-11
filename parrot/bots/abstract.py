@@ -102,6 +102,7 @@ class AbstractBot(DBInterface, ABC):
 
         # Basic Bot Information:
         self.name: str = name
+
         ##  Logging:
         self.logger = logging.getLogger(
             f'{self.name}.Bot'
