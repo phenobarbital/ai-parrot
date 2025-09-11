@@ -604,7 +604,9 @@ Return exactly FIVE detections with the following strict criteria:
         panel_det.bbox.x2 = min(1.0, panel_det.bbox.x2 + side_margin_percent)
 
         if panel_det and text_det:
-            print("INFO: Found both panel and text. Applying boundary correction.")
+            print(
+                "INFO: Found both panel and text. Applying boundary correction."
+            )
             # Get the bottom of the text box
             text_bottom_y2 = text_det.bbox.y2
             # Optional: Add a small amount of padding (e.g., 8% of image height)
@@ -622,9 +624,9 @@ Return exactly FIVE detections with the following strict criteria:
 
         # panel_height : endcap_height ratio, e.g., 0.33 if panel ~33% of endcap height
         ratio = max(1e-6, float(config_height_percent))
-        top_margin = float(config_top_margin_percent)         # e.g., 0.01
-        x_tol = 0.003 * panel_w                               # ~0.3% of panel width
-        y_tol = 0.005                                         # ~0.5% absolute; tune to taste
+        top_margin = float(config_top_margin_percent)  # e.g., 0.01
+        x_tol = 0.003 * panel_w                        # ~0.3% of panel width
+        y_tol = 0.005                                  # ~0.5% absolute; tune to taste
 
         # --- Target Y from panel + config ---
         target_y1 = max(0.0, py1 - top_margin)
