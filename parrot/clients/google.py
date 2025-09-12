@@ -3270,6 +3270,12 @@ Your job is to produce a final summary from the following text and identify the 
         # the main image, and finally the individual crops.
         contents = [Part(text=prompt)] # Start with the user-provided prompt
 
+        # --- Create a lookup map from ID to pre-calculated details ---
+        id_to_details = {}
+        for i, det in enumerate(detections, 1):
+            shelf, pos = self._shelf_and_position(det, shelf_regions)
+            id_to_details[i] = {"shelf": shelf, "position": pos, "detection": det}
+
         if reference_images:
             # Add a text part to introduce the references
             contents.append(Part(text="\n\n--- REFERENCE IMAGE GUIDE ---"))
@@ -3324,27 +3330,26 @@ Your job is to produce a final summary from the following text and identify the 
 
             for item in identified_items:
                 # Case 1: Item was pre-detected (has a positive ID)
-                if item.detection_id > 0:
-                    if item.detection_id in id_to_detection:
-                        item.detection_box = id_to_detection[item.detection_id]
-                        final_products.append(item)
-                    else:
-                        self.logger.warning(
-                            f"LLM returned a pre-detected ID '{item.detection_id}' that doesn't exist, skipping."
-                        )
+                if item.detection_id > 0 and item.detection_id in id_to_details:
+                    details = id_to_details[item.detection_id]
+                    item.detection_box = details["detection"]
+                    # SAFETY NET: ALWAYS use our own logic for shelf and position
+                    item.shelf_location = details["shelf"]
+                    item.position_on_shelf = details["position"]
+                    final_products.append(item)
 
                 # Case 2: Item was newly found by the LLM (has a negative ID from our validator)
                 elif item.detection_id < 0:
-                    # The Pydantic validator has already created the detection_box for us.
                     if item.detection_box:
-                        self.logger.info(
-                            f"Adding new object found by LLM: {item.product_type} {item.product_model or ''}"
-                        )
+                        # SAFETY NET: ALWAYS use our own logic for shelf and position
+                        shelf, pos = self._shelf_and_position(item.detection_box, shelf_regions)
+                        item.shelf_location = shelf
+                        item.position_on_shelf = pos
+                        self.logger.info(f"Adding new object found by LLM: {item.product_type} on shelf '{shelf}'")
                         final_products.append(item)
                     else:
-                        self.logger.warning(
-                            f"LLM-found item with ID '{item.detection_id}' is missing a detection_box, skipping."
-                        )
+                        self.logger.warning(f"LLM-found item with ID '{item.detection_id}' is missing a detection_box, skipping.")
+
 
                 # Catch any other weird cases
                 else:

@@ -112,15 +112,15 @@ async def test_roi():
     photos = [
         "250714 BBY 501 Kennesaw GA.jpg",
         "original_0.jpg",
-        # "06668994-c27e-44d9-8d59-f1f65559c2e1-recap.jpeg",
-        # "eb04d624-a180-4e5c-b592-ab0d40b558f9-recap.jpeg",
-        # "356e053c-d630-4930-a2fd-cba4ab8f5e2b-recap.jpeg",
-        # "f7b45f4c-c33f-4312-9afb-e01af138e6f8-recap.jpeg",
-        # "check-compliance.jpeg",
-        # "669d25e9-f490-478b-b699-a30d6e15b49a-recap.jpeg",
-        # "360cd9f5-842f-41eb-b5b2-8a7f01822693-recap.jpeg",
-        # "89366c84-b8ef-4319-82f6-fdee61c17490-recap.jpeg",
-        # "d1179fc4-70ff-4088-8da6-2d1d4d19e44a-recap.jpeg"
+        "06668994-c27e-44d9-8d59-f1f65559c2e1-recap.jpeg",
+        "eb04d624-a180-4e5c-b592-ab0d40b558f9-recap.jpeg",
+        "356e053c-d630-4930-a2fd-cba4ab8f5e2b-recap.jpeg",
+        "f7b45f4c-c33f-4312-9afb-e01af138e6f8-recap.jpeg",
+        "check-compliance.jpeg",
+        "669d25e9-f490-478b-b699-a30d6e15b49a-recap.jpeg",
+        "360cd9f5-842f-41eb-b5b2-8a7f01822693-recap.jpeg",
+        "89366c84-b8ef-4319-82f6-fdee61c17490-recap.jpeg",
+        "d1179fc4-70ff-4088-8da6-2d1d4d19e44a-recap.jpeg"
     ]
     reference_images = [
         BASE_DIR / "examples" / "pipelines" / "ET-2980.jpg",
