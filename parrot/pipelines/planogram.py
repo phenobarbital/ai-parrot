@@ -2522,29 +2522,29 @@ class PlanogramCompliancePipeline(AbstractPipeline):
     ) -> str:
         """Builds a more detailed prompt to help Gemini differentiate similar products."""
 
-        # --- (This part remains the same) ---
-        detection_lines = []
+        # --- Part 1: Describe Existing Detections ---
+        detection_lines = ["\nDETECTED OBJECTS (with pre-assigned IDs):"]
         if detections:
-            detection_lines.append("\nDETECTED OBJECTS (with pre-assigned IDs):")
             for i, detection in enumerate(detections, 1):
                 detection_lines.append(
                     f"ID {i}: Initial class '{detection.class_name}' at bbox ({detection.x1},{detection.y1},{detection.x2},{detection.y2})"
                 )
         else:
-            detection_lines.append("\nNo objects were pre-detected. Please find all relevant products.")
+            detection_lines.append("None")
 
-        shelf_lines = ["\nSHELF ORGANIZATION:"]
-        # ... (rest of shelf logic is the same) ...
+        print('SHELF REFIONS > ', shelf_regions)
+
+        # --- Part 2: Define the Ground-Truth Shelf Layout ---
+        shelf_definitions = ["\n**VALID SHELF NAMES & LOCATIONS (Ground Truth):**"]
+        valid_shelf_names = []
         for shelf in shelf_regions:
-            object_ids_on_shelf = []
-            for obj in shelf.objects:
-                try:
-                    idx = detections.index(obj) + 1
-                    object_ids_on_shelf.append(str(idx))
-                except ValueError:
-                    continue
-            id_str = f"Objects: {', '.join(object_ids_on_shelf)}" if object_ids_on_shelf else "Objects: None"
-            shelf_lines.append(f"- {shelf.level.upper()} SHELF: {id_str}")
+            # Only include the main shelves in the list of options for the LLM
+            if shelf.level in ['header', 'middle', 'bottom']:
+                valid_shelf_names.append(f"'{shelf.level}'")
+                shelf_definitions.append(f"- Shelf '{shelf.level}': Covers the vertical pixel range from y={shelf.bbox.y1} to y={shelf.bbox.y2}.")
+
+        shelf_definitions.append(f"\n**RULE:** For the `shelf_location` field, you MUST use one of these exact names: {', '.join(valid_shelf_names)}.")
+
 
         # --- NEW: Enhanced Instructions ---
         prompt = f"""
@@ -2552,7 +2552,7 @@ You are an expert at identifying retail products in planogram displays.
 I have provided an image of a retail endcap, labeled reference images, and a list of {len(detections)} pre-detected objects.
 
 {''.join(detection_lines)}
-{''.join(shelf_lines)}
+{''.join(shelf_definitions)}
 
 **YOUR TWO-PART TASK:**
 
