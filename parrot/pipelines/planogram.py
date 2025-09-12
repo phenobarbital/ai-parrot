@@ -37,7 +37,6 @@ from ..models.detections import (
     Detections,
     ShelfRegion,
     IdentifiedProduct,
-    IdentificationResponse,
     PlanogramDescription,
     PlanogramDescriptionFactory,
 )
@@ -47,6 +46,7 @@ from ..models.compliance import (
     ComplianceStatus,
     TextComplianceResult,
     TextMatcher,
+    BrandComplianceResult
 )
 try:
     from ultralytics import YOLO  # yolo12m works with this API
@@ -1947,7 +1947,7 @@ class PlanogramCompliancePipeline(AbstractPipeline):
         llm_provider: str = "claude",
         llm_model: Optional[str] = None,
         detection_model: str = "yolov8n",
-        reference_images: List[Path] = None,
+        reference_images: Dict[str, Path] = None,
         confidence_threshold: float = 0.25,
         **kwargs: Any
     ):
@@ -1974,12 +1974,12 @@ class PlanogramCompliancePipeline(AbstractPipeline):
             conf=confidence_threshold,
             llm=self.llm,
             device="cuda" if torch.cuda.is_available() else "cpu",
-            reference_images=reference_images
+            reference_images=list(reference_images.values())
         )
         self.logger.debug(
             f"Initialized RetailDetector with {detection_model}"
         )
-        self.reference_images = reference_images or []
+        self.reference_images = reference_images or {}
         self.confidence_threshold = confidence_threshold
 
     async def detect_objects_and_shelves(
@@ -2259,17 +2259,22 @@ class PlanogramCompliancePipeline(AbstractPipeline):
         async with self.llm as client:
             try:
                 if self.llm_provider == "google":
+                    extra_refs = {
+                        "annotated_image": annotated_image,
+                        **reference_images
+                    }
                     identified_products = await client.image_identification(
+                        prompt=self._build_gemini_identification_prompt(effective_dets, shelf_regions),
                         image=image,
                         detections=effective_dets,
                         shelf_regions=shelf_regions,
-                        reference_images=reference_images,
+                        reference_images=extra_refs,
                         temperature=0.0
                     )
                 elif self.llm_provider == "openai":
                     # Build identification prompt (without structured output request)
                     prompt = self._build_identification_prompt(effective_dets, shelf_regions)
-                    extra_refs = [annotated_image] + (reference_images or [])
+                    extra_refs = [annotated_image] + (list(reference_images.values()) or [])
                     identified_products = await client.image_identification(
                         image=image,
                         prompt=prompt,
@@ -2280,7 +2285,9 @@ class PlanogramCompliancePipeline(AbstractPipeline):
                         ocr_hints=True
                     )
                 else:
-                    identified_products = []
+                    # Fallback to your existing logic for other clients like OpenAI
+                    self.logger.warning("Using legacy identification logic.")
+                    return [] # Placeholder for your other client logic
                 identified_products = await self._augment_products_with_box_ocr(
                     image,
                     identified_products
@@ -2508,6 +2515,86 @@ class PlanogramCompliancePipeline(AbstractPipeline):
 
         return image
 
+# In planogram.py, inside the PlanogramCompliancePipeline class
+
+    def _build_gemini_identification_prompt(
+        self,
+        detections: List[DetectionBox],
+        shelf_regions: List[ShelfRegion]
+    ) -> str:
+        """Builds an enhanced prompt for Gemini to identify existing and find new objects."""
+
+        # --- Part 1: Describe Existing Detections ---
+        detection_lines = []
+        if detections:
+            detection_lines.append("\nDETECTED OBJECTS (with pre-assigned IDs):")
+            for i, detection in enumerate(detections, 1):
+                detection_lines.append(
+                    f"ID {i}: Initial class '{detection.class_name}' at bbox ({detection.x1},{detection.y1},{detection.x2},{detection.y2})"
+                )
+        else:
+            detection_lines.append("\nNo objects were pre-detected. Please find all relevant products in the image.")
+
+        # --- Part 2: Describe Shelf Layout ---
+        shelf_lines = ["\nSHELF ORGANIZATION:"]
+        for shelf in shelf_regions:
+            object_ids_on_shelf = []
+            for obj in shelf.objects:
+                # Find the index of the object in the original detections list
+                try:
+                    idx = detections.index(obj) + 1
+                    object_ids_on_shelf.append(str(idx))
+                except ValueError:
+                    continue # Object not in the main list
+
+            id_str = f"Objects: {', '.join(object_ids_on_shelf)}" if object_ids_on_shelf else "Objects: None"
+            shelf_lines.append(f"- {shelf.level.upper()} SHELF: {id_str}")
+
+        # --- Part 3: Main Instructions and Rules ---
+        prompt = f"""
+You are an expert at identifying retail products in planogram displays.
+I have provided an image of a retail endcap, reference images of products, and a list of {len(detections)} objects already detected by a computer vision model.
+
+{''.join(detection_lines)}
+{''.join(shelf_lines)}
+
+**YOUR TWO-PART TASK:**
+
+**PART 1: IDENTIFY PRE-DETECTED OBJECTS**
+- For each object with an ID, identify it according to the rules below.
+
+**PART 2: FIND MISSED OBJECTS (CRITICAL)**
+- **Carefully examine the entire image for any other prominent products (especially printers or large boxes) that DO NOT have an ID number.**
+- If you find any, add them to your response.
+- For these newly found objects, you MUST:
+    1. Set `detection_id` to `null`.
+    2. Provide an approximate `bbox` array with `[x1, y1, x2, y2]` pixel coordinates.
+
+**IDENTIFICATION RULES (Apply to all objects):**
+1.  **PRINTERS (Devices):** White/gray devices with controls/screens. `product_type` is 'printer'. `product_model` is 'ET-XXXX'.
+2.  **BOXES (Packaging):** Blue packaging with printer images. `product_type` is 'product_box'. `product_model` is 'ET-XXXX box'.
+3.  **PROMOTIONAL GRAPHICS:** Large signs/posters. `product_type` is 'promotional_graphic'.
+4.  **PRICE TAGS:** Small labels. `product_type` is 'fact_tag'.
+5.  **KEY DISTINCTION:** An actual device is a 'printer'. Packaging with a picture of the device is a 'product_box'.
+
+**JSON OUTPUT FORMAT:**
+Respond with a single JSON object. For each product you identify (both pre-detected and newly found), provide an entry in the 'detections' list with the following fields:
+- `detection_id`: The original ID (1-{len(detections)}), or `null` for newly found items.
+- `detection_box`: ONLY for newly found items (`detection_id` is `null`). An array of four integers `[x1, y1, x2, y2]`.
+- `product_type`: 'printer', 'product_box', 'promotional_graphic', 'fact_tag', 'ink_bottle'.
+- `product_model`: The specific model name, following the rules above.
+- `brand`: The brand, e.g., 'Epson'.
+- `confidence`: Your confidence in the identification (0.0-1.0).
+- `visual_features`: A list of key visual identifiers (e.g. white printer, blue product box, price tag)
+- `reference_match`: Which reference image matches (or 'none').
+- `shelf_location`: 'header', 'middle', or 'bottom'.
+- `position_on_shelf`: 'left', 'center', or 'right'.
+- `advertisement_type`: For ads, one of ['backlit_graphic', 'endcap_poster', etc.].
+
+Analyze all provided images and return the complete JSON response.
+"""
+        return prompt
+
     def _build_identification_prompt(
         self,
         detections: List[DetectionBox],
@@ -2626,32 +2713,196 @@ Respond with the structured data for all {len(detections)} objects.
         return prompt
 
     # STEP 3: Planogram Compliance Check
+    # def check_planogram_compliance(
+    #     self,
+    #     identified_products: List[IdentifiedProduct],
+    #     planogram_description: PlanogramDescription,
+    # ) -> List[ComplianceResult]:
+    #     """Check compliance of identified products against the planogram
+
+    #     Args:
+    #         identified_products (List[IdentifiedProduct]): The products identified in the image
+    #         planogram_description (PlanogramDescription): The expected planogram layout
+
+    #     Returns:
+    #         List[ComplianceResult]: The compliance results for each shelf
+    #     """
+    #     results: List[ComplianceResult] = []
+
+    #     # Group found products by shelf level
+    #     by_shelf = defaultdict(list)
+    #     for p in identified_products:
+    #         by_shelf[p.shelf_location].append(p)
+
+    #     # Iterate through expected shelves
+    #     for shelf_cfg in planogram_description.shelves:
+    #         shelf_level = shelf_cfg.level
+
+    #         # Build expected product list (excluding tags)
+    #         expected = []
+    #         for sp in shelf_cfg.products:
+    #             if sp.product_type in ("fact_tag", "price_tag", "slot"):
+    #                 continue
+    #             nm = self._normalize_product_name((sp.name or sp.product_type) or "unknown")
+    #             expected.append(nm)
+
+    #         # Gather found products on this shelf
+    #         found, promos = [], []
+    #         for p in by_shelf.get(shelf_level, []):
+    #             if p.product_type in ("fact_tag", "price_tag", "slot"):
+    #                 continue
+    #             nm = self._normalize_product_name(p.product_model or p.product_type)
+    #             found.append(nm)
+    #             if p.product_type == "promotional_graphic":
+    #                 promos.append(p)
+
+    #         # Calculate basic product compliance
+    #         missing = [e for e in expected if e not in found]
+    #         unexpected = [] if shelf_cfg.allow_extra_products else [f for f in found if f not in expected]
+    #         basic_score = (sum(1 for e in expected if e in found) / (len(expected) or 1))
+
+    #         # FIX 3: Enhanced text compliance handling
+    #         text_results, text_score, overall_text_ok = [], 1.0, True
+
+    #         # Check for advertisement endcap on this shelf
+    #         endcap = planogram_description.advertisement_endcap
+    #         if endcap and endcap.enabled and endcap.position == shelf_level:
+    #             if endcap.text_requirements:
+    #                 # Combine visual features from all promotional items
+    #                 all_features = []
+    #                 ocr_blocks = []
+    #                 for promo in promos:
+    #                     if getattr(promo, "visual_features", None):
+    #                         all_features.extend(promo.visual_features)
+    #                         for feat in promo.visual_features:
+    #                             if isinstance(feat, str) and feat.startswith("ocr:"):
+    #                                 ocr_blocks.append(feat[4:].strip())
+
+    #                 if ocr_blocks:
+    #                     ocr_norm = self._normalize_ocr_text(" ".join(ocr_blocks))
+    #                     if ocr_norm:
+    #                         all_features.append(ocr_norm)
+
+    #                 # If no promotional graphics found but text required, create default failure
+    #                 if not promos and shelf_level == "header":
+    #                     self.logger.warning(
+    #                         f"No promotional graphics found on {shelf_level} shelf but text requirements exist"
+    #                     )
+    #                     overall_text_ok = False
+    #                     for text_req in endcap.text_requirements:
+    #                         text_results.append(TextComplianceResult(
+    #                             required_text=text_req.required_text,
+    #                             found=False,
+    #                             matched_features=[],
+    #                             confidence=0.0,
+    #                             match_type=text_req.match_type
+    #                         ))
+    #                 else:
+    #                     # Check text requirements against found features
+    #                     for text_req in endcap.text_requirements:
+    #                         result = TextMatcher.check_text_match(
+    #                             required_text=text_req.required_text,
+    #                             visual_features=all_features,
+    #                             match_type=text_req.match_type,
+    #                             case_sensitive=text_req.case_sensitive,
+    #                             confidence_threshold=text_req.confidence_threshold
+    #                         )
+    #                         text_results.append(result)
+
+    #                         if not result.found and text_req.mandatory:
+    #                             overall_text_ok = False
+
+    #                 # Calculate text compliance score
+    #                 if text_results:
+    #                     text_score = sum(r.confidence for r in text_results if r.found) / len(text_results)
+
+    #         # For non-header shelves without text requirements, don't penalize
+    #         elif shelf_level != "header":
+    #             overall_text_ok = True  # Don't require text compliance on product shelves
+    #             text_score = 1.0
+
+    #         # Determine compliance threshold
+    #         threshold = getattr(
+    #             shelf_cfg,
+    #             "compliance_threshold",
+    #             planogram_description.global_compliance_threshold or 0.8
+    #         )
+
+    #         # FIX 4: Better status determination logic
+    #         # Allow minor unexpected (ink bottles, price tags)
+    #         major_unexpected = [
+    #             p for p in unexpected if not any(
+    #                 word in p.lower() for word in ["ink bottle", "price tag", "502"]
+    #             )
+    #         ]
+    #         # For product shelves (non-header), focus on product compliance
+    #         if shelf_level != "header":
+    #             if basic_score >= threshold and not major_unexpected:
+    #                 status = ComplianceStatus.COMPLIANT
+    #             elif basic_score == 0.0:
+    #                 status = ComplianceStatus.MISSING
+    #             else:
+    #                 status = ComplianceStatus.NON_COMPLIANT
+    #         else:
+    #             overall_text_ok = bool(overall_text_ok)
+    #             # For header shelf, require both product and text compliance
+    #             if basic_score >= threshold and not major_unexpected and overall_text_ok:
+    #                 status = ComplianceStatus.COMPLIANT
+    #             elif basic_score == 0.0:
+    #                 status = ComplianceStatus.MISSING
+    #             elif not overall_text_ok:
+    #                 status = ComplianceStatus.NON_COMPLIANT
+    #             else:
+    #                 status = ComplianceStatus.NON_COMPLIANT
+
+    #         # Calculate combined score with appropriate weighting
+    #         if shelf_level == "header":
+    #             # Header: Balance product and text compliance
+    #             endcap = planogram_description.advertisement_endcap
+    #             weights = {
+    #                 "product_compliance": endcap.product_weight,
+    #                 "text_compliance": endcap.text_weight
+    #             }
+    #         else:
+    #             # Product shelves: Emphasize product compliance
+    #             weights = {"product_compliance": 0.9, "text_compliance": 0.1}
+
+    #         combined_score = (basic_score * weights["product_compliance"] +
+    #                         text_score * weights["text_compliance"])
+
+    #         results.append(
+    #             ComplianceResult(
+    #                 shelf_level=shelf_level,
+    #                 expected_products=expected,
+    #                 found_products=found,
+    #                 missing_products=missing,
+    #                 unexpected_products=unexpected,
+    #                 compliance_status=status,
+    #                 compliance_score=combined_score,
+    #                 text_compliance_results=text_results,
+    #                 text_compliance_score=text_score,
+    #                 overall_text_compliant=overall_text_ok
+    #             )
+    #         )
+
+    #     return results
+
     def check_planogram_compliance(
         self,
         identified_products: List[IdentifiedProduct],
         planogram_description: PlanogramDescription,
     ) -> List[ComplianceResult]:
-        """Check compliance of identified products against the planogram
-
-        Args:
-            identified_products (List[IdentifiedProduct]): The products identified in the image
-            planogram_description (PlanogramDescription): The expected planogram layout
-
-        Returns:
-            List[ComplianceResult]: The compliance results for each shelf
-        """
+        """Check compliance of identified products against the planogram."""
         results: List[ComplianceResult] = []
 
-        # Group found products by shelf level
         by_shelf = defaultdict(list)
         for p in identified_products:
             by_shelf[p.shelf_location].append(p)
 
-        # Iterate through expected shelves
         for shelf_cfg in planogram_description.shelves:
             shelf_level = shelf_cfg.level
+            products_on_shelf = by_shelf.get(shelf_level, [])
 
-            # Build expected product list (excluding tags)
             expected = []
             for sp in shelf_cfg.products:
                 if sp.product_type in ("fact_tag", "price_tag", "slot"):
@@ -2659,25 +2910,26 @@ Respond with the structured data for all {len(detections)} objects.
                 nm = self._normalize_product_name((sp.name or sp.product_type) or "unknown")
                 expected.append(nm)
 
-            # Gather found products on this shelf
             found, promos = [], []
-            for p in by_shelf.get(shelf_level, []):
-                if p.product_type in ("fact_tag", "price_tag", "slot"):
+            for p in products_on_shelf:
+                if p.product_type in ("fact_tag", "price_tag", "slot", "brand_logo"): # Exclude brand_logo from product counts
                     continue
                 nm = self._normalize_product_name(p.product_model or p.product_type)
                 found.append(nm)
                 if p.product_type == "promotional_graphic":
                     promos.append(p)
 
-            # Calculate basic product compliance
             missing = [e for e in expected if e not in found]
             unexpected = [] if shelf_cfg.allow_extra_products else [f for f in found if f not in expected]
             basic_score = (sum(1 for e in expected if e in found) / (len(expected) or 1))
 
-            # FIX 3: Enhanced text compliance handling
             text_results, text_score, overall_text_ok = [], 1.0, True
 
-            # Check for advertisement endcap on this shelf
+            # NEW: Initialize variables for brand compliance
+            brand_compliance_result: Optional[BrandComplianceResult] = None
+            brand_score = 0.0
+            brand_check_ok = True # Assume OK unless mandatory check fails
+
             endcap = planogram_description.advertisement_endcap
             if endcap and endcap.enabled and endcap.position == shelf_level:
                 if endcap.text_requirements:
@@ -2729,59 +2981,80 @@ Respond with the structured data for all {len(detections)} objects.
                     if text_results:
                         text_score = sum(r.confidence for r in text_results if r.found) / len(text_results)
 
-            # For non-header shelves without text requirements, don't penalize
+                # NEW: Implement the brand logo check for the header shelf
+                brand_reqs = planogram_description.brand or None
+                if brand_reqs:
+                    expected_brand = planogram_description.brand
+                    # Find the detected brand_logo object on this shelf
+                    brand_logo_product = next(
+                        (p for p in products_on_shelf if p.product_type == 'brand_logo'), None
+                    )
+
+                    found_brand = None
+                    is_match = False
+                    logo_confidence = 0.0
+
+                    if brand_logo_product and brand_logo_product.brand:
+                        found_brand = brand_logo_product.brand
+                        logo_confidence = brand_logo_product.confidence
+                        # Case-insensitive comparison for robustness
+                        if expected_brand.lower() in found_brand.lower():
+                            is_match = True
+                            brand_score = 1.0
+
+                    brand_compliance_result = BrandComplianceResult(
+                        expected_brand=expected_brand,
+                        found_brand=found_brand,
+                        found=is_match,
+                        confidence=logo_confidence
+                    )
+
+                    # Apply the mandatory rule
+                    brand_check_ok = is_match
+
             elif shelf_level != "header":
-                overall_text_ok = True  # Don't require text compliance on product shelves
+                overall_text_ok = True
                 text_score = 1.0
 
-            # Determine compliance threshold
             threshold = getattr(
-                shelf_cfg,
-                "compliance_threshold",
-                planogram_description.global_compliance_threshold or 0.8
+                shelf_cfg, "compliance_threshold", planogram_description.global_compliance_threshold or 0.8
             )
 
-            # FIX 4: Better status determination logic
-            # Allow minor unexpected (ink bottles, price tags)
-            major_unexpected = [
-                p for p in unexpected if not any(
-                    word in p.lower() for word in ["ink bottle", "price tag", "502"]
-                )
-            ]
-            # For product shelves (non-header), focus on product compliance
+            major_unexpected = [p for p in unexpected if "ink bottle" not in p.lower() and "price tag" not in p.lower()]
+
+            # MODIFIED: Status determination logic with brand check override
+            status = ComplianceStatus.NON_COMPLIANT # Default status
             if shelf_level != "header":
                 if basic_score >= threshold and not major_unexpected:
                     status = ComplianceStatus.COMPLIANT
-                elif basic_score == 0.0:
+                elif basic_score == 0.0 and len(expected) > 0:
                     status = ComplianceStatus.MISSING
-                else:
-                    status = ComplianceStatus.NON_COMPLIANT
-            else:
-                overall_text_ok = bool(overall_text_ok)
-                # For header shelf, require both product and text compliance
-                if basic_score >= threshold and not major_unexpected and overall_text_ok:
+            else: # Header shelf logic
+                # The brand check is now a mandatory condition for compliance
+                if not brand_check_ok:
+                    status = ComplianceStatus.NON_COMPLIANT # OVERRIDE: Brand check failed
+                elif basic_score >= threshold and not major_unexpected and overall_text_ok:
                     status = ComplianceStatus.COMPLIANT
-                elif basic_score == 0.0:
+                elif basic_score == 0.0 and len(expected) > 0:
                     status = ComplianceStatus.MISSING
-                elif not overall_text_ok:
-                    status = ComplianceStatus.NON_COMPLIANT
                 else:
                     status = ComplianceStatus.NON_COMPLIANT
 
-            # Calculate combined score with appropriate weighting
-            if shelf_level == "header":
-                # Header: Balance product and text compliance
-                endcap = planogram_description.advertisement_endcap
+            # MODIFIED: Combined score calculation with brand weight
+            if shelf_level == "header" and endcap:
                 weights = {
-                    "product_compliance": endcap.product_weight,
-                    "text_compliance": endcap.text_weight
+                    "product": endcap.product_weight,
+                    "text": endcap.text_weight,
+                    "brand": getattr(endcap, "brand_weight", 0.0) # Use 0 if not defined
                 }
+                combined_score = (
+                    (basic_score * weights["product"]) +
+                    (text_score * weights["text"]) +
+                    (brand_score * weights["brand"])
+                )
             else:
-                # Product shelves: Emphasize product compliance
                 weights = {"product_compliance": 0.9, "text_compliance": 0.1}
-
-            combined_score = (basic_score * weights["product_compliance"] +
-                            text_score * weights["text_compliance"])
+                combined_score = (basic_score * weights["product_compliance"] + text_score * weights["text_compliance"])
 
             results.append(
                 ComplianceResult(
@@ -2794,7 +3067,8 @@ Respond with the structured data for all {len(detections)} objects.
                     compliance_score=combined_score,
                     text_compliance_results=text_results,
                     text_compliance_score=text_score,
-                    overall_text_compliant=overall_text_ok
+                    overall_text_compliant=overall_text_ok,
+                    brand_compliance_result=brand_compliance_result
                 )
             )
 

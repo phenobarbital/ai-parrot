@@ -3209,10 +3209,11 @@ Your job is to produce a final summary from the following text and identify the 
 
     async def image_identification(
         self,
+        prompt: str,
         image: Union[Path, bytes, Image.Image],
         detections: List[DetectionBox],
         shelf_regions: List[ShelfRegion],
-        reference_images: Optional[List[Union[Path, bytes, Image.Image]]] = None,
+        reference_images: Optional[Dict[str, Union[Path, bytes, Image.Image]]] = None,
         model: Union[str, GoogleModel] = GoogleModel.GEMINI_2_5_PRO,
         temperature: float = 0.0,
         user_id: Optional[str] = None,
@@ -3255,36 +3256,16 @@ Your job is to produce a final summary from the following text and identify the 
         # --- 2. Construct the Multi-Modal Prompt for Gemini ---
         # The prompt is a list of parts: text instructions, reference images,
         # the main image, and finally the individual crops.
-        contents = []
+        contents = [Part(text=prompt)] # Start with the user-provided prompt
 
-        # Start with the detailed text prompt
-        prompt_lines = [
-            "You are an expert at identifying retail products in planogram displays.",
-            "Analyze the provided images to identify each numbered detection. Use the reference images for comparison.",
-            "\n**TASK:** For each detection ID, provide a detailed identification in the specified JSON format. "
-            "Base your identification on visual features (shape, color, control panels, packaging) "
-            "and use the provided OCR text as a strong hint.",
-            "\n**IMPORTANT NAMING & CLASSIFICATION RULES:**",
-            "1. **DEVICES (Printers):** If you see the actual printer device (often white/gray with physical controls), set `product_type` to 'printer' and `product_model` to its model name (e.g., 'ET-4950').",
-            "2. **PACKAGING (Boxes):** If you see the product's box (often blue with images of the printer), set `product_type` to 'product_box' and `product_model` to the model name plus ' box' (e.g., 'ET-4950 box').",
-            "3. **PROMOTIONAL GRAPHICS:** For large signs, posters, or banners, set `product_type` to 'promotional_graphic'. Extract the `brand` (e.g., 'Epson') and set `advertisement_type` (e.g., 'backlit_graphic', 'endcap_poster').",
-            "4. **PRICE TAGS:** For small labels with pricing or specs, set `product_type` to 'fact_tag' and `product_model` to 'price tag'.",
-            "5. **INK:** For small ink bottles or their boxes, use `product_type` 'ink_bottle' or 'ink_bottle_box'.",
-            "\n**DETECTED OBJECTS METADATA:**"
-        ]
-        for item in detection_details:
-            det = item["detection"]
-            ocr_preview = det.ocr_text[:80].replace('\n', ' ') if det.ocr_text else 'None'
-            prompt_lines.append(
-                f"- **ID {item['id']}**: Initial class='{det.class_name}', shelf='{item['shelf']}', pos='{item['position']}', ocr_hint='{ocr_preview}'"
-            )
-
-        contents.append(Part(text="\n".join(prompt_lines)))
-
-        # Add reference images (if any)
         if reference_images:
-            for ref_img_input in reference_images:
+            # Add a text part to introduce the references
+            contents.append(Part(text="\n\n--- REFERENCE IMAGE GUIDE ---"))
+            for label, ref_img_input in reference_images.items():
+                # Add the label text, then the image
+                contents.append(Part(text=f"Reference for '{label}':"))
                 contents.append(self._get_image_from_input(ref_img_input))
+            contents.append(Part(text="--- END REFERENCE GUIDE ---"))
 
         # Add the main image for overall context
         contents.append(main_image_pil)
@@ -3293,12 +3274,17 @@ Your job is to produce a final summary from the following text and identify the 
         for item in detection_details:
             contents.append(item['crop'])
 
+        # Manually generate the JSON schema from the Pydantic model
+        raw_schema = IdentificationResponse.model_json_schema()
+        # Clean the schema to remove unsupported properties like 'additionalProperties'
+        _schema = self.clean_google_schema(raw_schema)
+
         # --- 3. Configure the API Call for Structured Output ---
         generation_config = GenerateContentConfig(
             temperature=temperature,
             max_output_tokens=8192, # Generous limit for JSON with many items
             response_mime_type="application/json",
-            response_schema=IdentificationResponse,
+            response_schema=_schema,
         )
 
         # --- 4. Call Gemini and Process the Response ---
@@ -3311,7 +3297,9 @@ Your job is to produce a final summary from the following text and identify the 
 
             response_text = self._safe_extract_text(response)
             if not response_text:
-                raise ValueError("Received an empty response from the model.")
+                raise ValueError(
+                    "Received an empty response from the model."
+                )
 
             # The model output should conform to the Pydantic model directly
             parsed_data = IdentificationResponse.model_validate_json(response_text)
