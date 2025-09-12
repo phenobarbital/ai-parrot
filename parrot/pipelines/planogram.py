@@ -2557,7 +2557,7 @@ I have provided an image of a retail endcap, labeled reference images, and a lis
 **YOUR TWO-PART TASK:**
 
 1.  **IDENTIFY PRE-DETECTED OBJECTS:** For each object with an ID, identify it using the rules and visual guide below.
-2.  **FIND MISSED OBJECTS:** Carefully find any other prominent products (especially printers or large boxes) that DO NOT have an ID. For these new items, set `detection_id` to `null` and provide an approximate `bbox` array `[x1, y1, x2, y2]`.
+2.  **FIND MISSED OBJECTS:** Carefully find any other prominent products (especially printers or large boxes) that DO NOT have an ID. For these new items, set `detection_id` to `null` and provide an approximate `detection_box` array `[x1, y1, x2, y2]`.
 
 ---
 **!! IMPORTANT VISUAL GUIDE FOR PRINTERS !!**
@@ -2578,6 +2578,17 @@ The printer models are visually similar. You MUST use the control panel to tell 
 
 **JSON OUTPUT FORMAT:**
 Respond with a single JSON object. For each product you identify (both pre-detected and newly found), provide an entry in the 'detections' list with all the required fields.
+
+For each detection (ID 1-{len(detections)}), provide:
+- detection_id: The exact ID number from the red bounding box (1-{len(detections)}), or null if newly found.
+- product_type: printer, product_box, fact_tag, promotional_graphic, or ink_bottle
+- product_model: Follow naming rules above based on product_type
+- confidence: Your confidence (0.0-1.0)
+- visual_features: List of visual features
+- reference_match: Which reference image matches (or "none")
+- shelf_location: header, top, middle, or bottom
+- position_on_shelf: left, center, or right
+- Remove any duplicates - only one entry per detection_id
 
 **!! FINAL CHECK !!**
 Before responding, ensure **every single object** in the 'detections' list includes all required fields, especially `confidence`, `shelf_location`, and `position_on_shelf`. Do not omit any fields.

@@ -3171,24 +3171,36 @@ Your job is to produce a final summary from the following text and identify the 
         return pil_img.crop((x1, y1, x2, y2))
 
     def _shelf_and_position(self, box: DetectionBox, regions: List[ShelfRegion]) -> Tuple[str, str]:
-        """Determines the shelf and position for a given detection box."""
+        """
+        Determines the shelf and position for a given detection box using a robust
+        centroid-based assignment logic.
+        """
+        if not regions:
+            return "unknown", "center"
+
+        # --- NEW LOGIC: Use the object's center point for assignment ---
+        center_y = box.y1 + (box.y2 - box.y1) / 2
         best_region = None
-        best_overlap = 0
 
-        # Find the shelf region with the most overlap
+        # 1. Primary Method: Find which shelf region CONTAINS the center point.
         for region in regions:
-            rx1, ry1, rx2, ry2 = region.bbox.x1, region.bbox.y1, region.bbox.x2, region.bbox.y2
-            ix1, iy1 = max(rx1, box.x1), max(ry1, box.y1)
-            ix2, iy2 = min(rx2, box.x2), min(ry2, box.y2)
-            overlap_area = max(0, ix2 - ix1) * max(0, iy2 - iy1)
-
-            if overlap_area > best_overlap:
-                best_overlap = overlap_area
+            if region.bbox.y1 <= center_y < region.bbox.y2:
                 best_region = region
+                break # Found the correct shelf
+
+        # 2. Fallback Method: If no shelf contains the center (edge case), find the closest one.
+        if not best_region:
+            min_distance = float('inf')
+            for region in regions:
+                shelf_center_y = region.bbox.y1 + (region.bbox.y2 - region.bbox.y1) / 2
+                distance = abs(center_y - shelf_center_y)
+                if distance < min_distance:
+                    min_distance = distance
+                    best_region = region
 
         shelf = best_region.level if best_region else "unknown"
 
-        # Determine position (left, center, right) within that shelf
+        # --- Position logic remains the same, it's correct ---
         if best_region:
             box_center_x = (box.x1 + box.x2) / 2.0
             shelf_width = best_region.bbox.x2 - best_region.bbox.x1
@@ -3203,7 +3215,7 @@ Your job is to produce a final summary from the following text and identify the 
             else:
                 position = "center"
         else:
-            position = "center" # Fallback
+            position = "center"
 
         return shelf, position
 
@@ -3308,7 +3320,7 @@ Your job is to produce a final summary from the following text and identify the 
 
             # --- 5. Link LLM results back to original detections ---
             final_products = []
-            id_to_detection = {det.id: det for i, det in enumerate(detections, 1)}
+            id_to_detection = {i: det for i, det in enumerate(detections, 1)}
 
             for item in identified_items:
                 # Case 1: Item was pre-detected (has a positive ID)
@@ -3336,7 +3348,9 @@ Your job is to produce a final summary from the following text and identify the 
 
                 # Catch any other weird cases
                 else:
-                    self.logger.warning(f"LLM returned an item with an invalid ID '{item.detection_id}', skipping.")
+                    self.logger.warning(
+                        f"LLM returned an item with an invalid ID '{item.detection_id}', skipping."
+                    )
 
             self.logger.info(
                 f"Successfully identified {len(final_products)} products."
