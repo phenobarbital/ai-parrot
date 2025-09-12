@@ -3301,6 +3301,7 @@ Your job is to produce a final summary from the following text and identify the 
                     "Received an empty response from the model."
                 )
 
+            print('RAW RESPONSE:', response_text)
             # The model output should conform to the Pydantic model directly
             parsed_data = IdentificationResponse.model_validate_json(response_text)
             identified_items = parsed_data.identified_products
