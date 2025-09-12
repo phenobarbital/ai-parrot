@@ -6,6 +6,10 @@ from parrot.pipelines.planogram import (
 )
 from parrot.models.detections import PlanogramDescriptionFactory
 from parrot.clients.gpt import OpenAIClient, OpenAIModel
+from parrot.clients.google import (
+    GoogleGenAIClient,
+    GoogleModel
+)
 
 planogram_config = {
     "brand": "Epson",
@@ -129,7 +133,8 @@ async def test_roi():
         detector = RetailDetector(
             yolo_model="yolo11l.pt",
             conf=0.15,
-            llm=OpenAIClient(model=OpenAIModel.GPT_4O_MINI),
+            # llm=OpenAIClient(model=OpenAIModel.GPT_4O_MINI),
+            llm=GoogleGenAIClient(model=GoogleModel.GEMINI_2_5_PRO),
             device="cuda",
             reference_images=reference_images
         )
