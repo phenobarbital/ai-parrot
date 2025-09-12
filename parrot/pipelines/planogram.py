@@ -37,6 +37,7 @@ from ..models.detections import (
     Detections,
     ShelfRegion,
     IdentifiedProduct,
+    IdentificationResponse,
     PlanogramDescription,
     PlanogramDescriptionFactory,
 )
@@ -105,13 +106,6 @@ def _clamp(W,H,x1,y1,x2,y2):
     x1,x2 = int(max(0,min(W-1,min(x1,x2)))), int(max(0,min(W-1,max(x1,x2))))
     y1,y2 = int(max(0,min(H-1,min(y1,y2)))), int(max(0,min(H-1,max(y1,y2))))
     return x1, y1, x2, y2
-
-class IdentificationResponse(BaseModel):
-    """Response model for product identification"""
-    identified_products: List[IdentifiedProduct] = Field(
-        alias="detections",
-        description="List of identified products from the image"
-    )
 
 
 class RetailDetector:
@@ -1532,19 +1526,56 @@ Return exactly FIVE detections with the following strict criteria:
         return inter / max(1.0, aarea + barea - inter)
 
     # ------------------- OCR + CLIP preselection -----------------------------
+    def _analyze_crop_visuals(self, crop_bgr: np.ndarray) -> dict:
+        """Analyzes a crop for dominant color properties to distinguish printers from boxes."""
+        if crop_bgr.size == 0:
+            return {"is_mostly_white": False, "is_mostly_blue": False}
+
+        # Convert to HSV for better color analysis
+        hsv = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2HSV)
+
+        # --- White/Gray Detection ---
+        # Define a broad range for white, light gray, and silver colors
+        lower_white = np.array([0, 0, 150])
+        upper_white = np.array([180, 50, 255])
+        white_mask = cv2.inRange(hsv, lower_white, upper_white)
+
+        # --- Blue Detection ---
+        # Define a range for the Epson blue
+        lower_blue = np.array([95, 80, 40])
+        upper_blue = np.array([125, 255, 255])
+        blue_mask = cv2.inRange(hsv, lower_blue, upper_blue)
+
+        # Calculate the percentage of the image that is white or blue
+        total_pixels = crop_bgr.shape[0] * crop_bgr.shape[1]
+        white_percentage = (cv2.countNonZero(white_mask) / total_pixels) * 100
+        blue_percentage = (cv2.countNonZero(blue_mask) / total_pixels) * 100
+
+        # Determine if the object is primarily one color
+        # Thresholds can be tuned, but these are generally effective.
+        is_mostly_white = white_percentage > 40
+        is_mostly_blue = blue_percentage > 35
+
+        return {
+            "is_mostly_white": is_mostly_white,
+            "is_mostly_blue": is_mostly_blue,
+            "white_pct": white_percentage,
+            "blue_pct": blue_percentage,
+        }
+
     async def _classify_proposals(self, img, props, bands, header_limit_y, ad_box=None):
         """
-        Simplified proposal classification using a clear, hierarchical decision process.
+        ENHANCED proposal classification with a robust, heuristic-first decision process.
         1.  Identify price tags by size.
         2.  Identify promotional graphics by position.
-        3.  Classify all other objects (products vs. boxes) using CLIP similarity.
+        3.  For remaining objects, use strong visual heuristics (color) to classify.
+        4.  Use CLIP similarity only as a fallback for ambiguous cases.
         """
         H, W = img.shape[:2]
         final_proposals = []
-        # --- Define thresholds for clarity ---
         PRICE_TAG_AREA_THRESHOLD = 0.005  # 0.5% of total image area
 
-        print(f"\n🎯 Simplified Classification: Running {len(props)} proposals...")
+        print(f"\n🎯 Enhanced Classification: Running {len(props)} proposals...")
         print("   " + "="*60)
 
         for p in props:
@@ -1553,67 +1584,90 @@ Return exactly FIVE detections with the following strict criteria:
             area_ratio = area / (H * W)
             center_y = (y1 + y2) / 2
 
-            # --- 1. First, check for Price Tags based on size ---
+            # Helper to determine shelf level for context
+            shelf_level = self._determine_shelf_level(center_y, bands)
+
+            # --- 1. Price Tag Check (by size) ---
             if area_ratio < PRICE_TAG_AREA_THRESHOLD:
                 final_proposals.append(
                     DetectionBox(
-                    x1=x1, y1=y1, x2=x2, y2=y2,
-                    confidence=p.get('yolo_conf', 0.8), # Assign a reasonable confidence
-                    class_id=102,
-                    class_name="price_tag",
-                    area=area,
-                    ocr_text=p.get('ocr_text')
+                        x1=x1, y1=y1, x2=x2, y2=y2,
+                        confidence=p.get('yolo_conf', 0.8),
+                        class_id=CID["price_tag"],
+                        class_name="price_tag",
+                        area=area,
+                        ocr_text=p.get('ocr_text')
                     )
                 )
-                continue # Done with this proposal, move to the next one
+                continue
 
-            # --- 2. Second, check for Promotional Graphics based on position ---
-            in_header = center_y < header_limit_y
-            if in_header:
+            # --- 2. Promotional Graphic Check (by position) ---
+            if center_y < header_limit_y:
                 final_proposals.append(
                     DetectionBox(
                         x1=x1, y1=y1, x2=x2, y2=y2,
-                        confidence=p.get('yolo_conf', 0.9), # High confidence for anything in header
+                        confidence=p.get('yolo_conf', 0.9),
                         class_id=CID["promotional_candidate"],
                         class_name="promotional_candidate",
                         area=area,
                         ocr_text=p.get('ocr_text')
                     )
                 )
-                continue # Done with this proposal
+                continue
 
-            # --- 3. Finally, classify the rest (products/boxes) using CLIP ---
+            # --- 3. Heuristic & CLIP Classification for Products/Boxes ---
             try:
-                crop = img[y1:y2, x1:x2]
-                if crop.size == 0:
+                crop_bgr = img[y1:y2, x1:x2]
+                if crop_bgr.size == 0:
                     continue
 
-                crop_pil = Image.fromarray(cv2.cvtColor(crop, cv2.COLOR_BGR2RGB))
+                # Get visual heuristics and CLIP scores
+                visuals = self._analyze_crop_visuals(crop_bgr)
 
+                crop_pil = Image.fromarray(cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2RGB))
                 with torch.no_grad():
                     ip = self.proc(images=crop_pil, return_tensors="pt").to(self.device)
                     img_feat = self.clip.get_image_features(**ip)
                     img_feat /= img_feat.norm(dim=-1, keepdim=True)
-
-                    # self.text_feats should be for ["...poster", "...printer", "...box"]
                     text_sims = (img_feat @ self.text_feats.T).squeeze().tolist()
                     s_poster, s_printer, s_box = text_sims[0], text_sims[1], text_sims[2]
 
-                # Decide between printer and box based on higher CLIP score
-                if s_printer > s_box:
-                    class_name = "product_candidate"
-                    confidence = s_printer
-                else:
-                    class_name = "box_candidate"
-                    confidence = s_box
+                # --- New Decision Logic ---
+                class_name = None
+                confidence = 0.8 # Default confidence for heuristic-based decision
 
-                final_class = CID[class_name]
+                # Priority 1: Strong color evidence overrides everything.
+                if visuals["is_mostly_white"] and not visuals["is_mostly_blue"]:
+                    class_name = "product_candidate" # It's a white printer device
+                    confidence = 0.95 # High confidence in color heuristic
+                elif visuals["is_mostly_blue"]:
+                    class_name = "box_candidate" # It's a blue product box
+                    confidence = 0.95
 
+                # Priority 2: If color is ambiguous, use shelf location as a strong hint.
+                if not class_name:
+                    if shelf_level == "middle":
+                        class_name = "product_candidate"
+                        confidence = 0.85
+                    elif shelf_level == "bottom":
+                        class_name = "box_candidate"
+                        confidence = 0.85
+
+                # Priority 3 (Fallback): If still undecided, use the original CLIP score.
+                if not class_name:
+                    if s_printer > s_box:
+                        class_name = "product_candidate"
+                        confidence = s_printer
+                    else:
+                        class_name = "box_candidate"
+                        confidence = s_box
+
+                final_class_id = CID[class_name]
                 final_proposals.append(
                     DetectionBox(
                         x1=x1, y1=y1, x2=x2, y2=y2,
                         confidence=confidence,
-                        class_id=final_class,
+                        class_id=final_class_id,
                         class_name=class_name,
                         area=area,
                         ocr_text=p.get('ocr_text')
@@ -1621,116 +1675,9 @@ Return exactly FIVE detections with the following strict criteria:
                 )
 
             except Exception as e:
-                self.logger.error(
-                    f"Failed to classify proposal with CLIP: {e}"
-                )
+                self.logger.error(f"Failed to classify proposal with heuristics/CLIP: {e}")
 
         return final_proposals
-
-    def _get_promotional_assignment(self, x1, y1, x2, y2, bands, ad_box, yolo_class, area_ratio, aspect):
-        """
-        Promotional graphic assignment based on area overlap with header
-        """
-        if not bands or "header" not in bands:
-            return {"is_promotional": False, "reason": "no header band defined"}
-
-        # Calculate area overlap with header shelf
-        header_y1, header_y2 = bands["header"]
-
-        # Calculate intersection with header band
-        intersection_y1 = max(y1, header_y1)
-        intersection_y2 = min(y2, header_y2)
-
-        if intersection_y2 <= intersection_y1:
-            header_overlap_ratio = 0.0
-        else:
-            object_height = y2 - y1
-            intersection_height = intersection_y2 - intersection_y1
-            header_overlap_ratio = intersection_height / max(object_height, 1)
-
-        # Calculate IoU with ad_box if available
-        ad_iou = 0.0
-        if ad_box is not None:
-            ad_iou = self._iou_xyxy((x1, y1, x2, y2), ad_box)
-
-        # More aggressive assignment to header based on different criteria
-        reasons = []
-
-        # Criterion 1: High header overlap
-        if header_overlap_ratio > 0.5:  # Lowered from 0.6 to catch more cases
-            reasons.append(f"header_overlap={header_overlap_ratio:.2f}")
-
-        # Criterion 2: Large banner with some header presence
-        if area_ratio > 0.1 and aspect > 1.5 and header_overlap_ratio > 0.2:  # Lowered thresholds
-            reasons.append(
-                f"large_banner(area={area_ratio:.3f},aspect={aspect:.1f},header={header_overlap_ratio:.2f})"
-            )
-
-        # Criterion 3: Person detection with header presence
-        if yolo_class == "person" and header_overlap_ratio > 0.3:  # Lowered from 0.4
-            reasons.append(
-                f"person_in_header(overlap={header_overlap_ratio:.2f})"
-            )
-
-        # Criterion 4: Strong ad_box overlap
-        if ad_iou > 0.4:  # Lowered from 0.5
-            reasons.append(f"ad_box_overlap(iou={ad_iou:.2f})")
-
-        # Criterion 5: TV/monitor classes that are likely promotional
-        yolo_cls = (yolo_class or "").lower()
-        if any(cls in yolo_cls for cls in ["tv", "monitor", "laptop"]) and header_overlap_ratio > 0.2:
-            reasons.append(f"display_device_in_header({yolo_class})")
-
-        # Criterion 6: Very large objects that span header (regardless of center)
-        if area_ratio > 0.2 and header_overlap_ratio > 0.1:  # Any presence in header for very large objects
-            reasons.append(f"very_large_object(area={area_ratio:.3f})")
-
-        is_promotional = len(reasons) > 0
-        reason = "; ".join(reasons) if reasons else "not promotional"
-
-        if is_promotional:
-            print(f"   📍 Promotional detected: {reason}")
-
-        return {
-            "is_promotional": is_promotional,
-            "reason": reason,
-            "header_overlap_ratio": header_overlap_ratio,
-            "ad_iou": ad_iou
-        }
-
-    def _is_likely_price_tag(self, width, height, area_ratio, yolo_class, visual_analysis):
-        """
-        FIX 2: Enhanced price tag detection logic (unchanged - working correctly)
-        """
-        # Size-based criteria (stricter than before)
-        size_criteria = (
-            width <= 120 and
-            height <= 90 and
-            area_ratio <= 0.012
-        )
-
-        # Visual criteria
-        is_white_or_light = visual_analysis.get("is_white_gray", False) or visual_analysis.get("brightness", 0.5) > 0.7
-        is_not_blue_box = not visual_analysis.get("is_blue_dominant", False)
-
-        # YOLO class criteria - be more specific about what could be price tags
-        yolo_cls = (yolo_class or "").lower()
-        tag_friendly_classes = ["book", "clock", "bottle", "mouse", "remote", "cell phone"]
-        is_tag_friendly_yolo = any(cls in yolo_cls for cls in tag_friendly_classes)
-
-        # Aspect ratio criteria - price tags are usually not extremely elongated
-        aspect_ratio = width / max(height, 1)
-        reasonable_aspect = 0.3 <= aspect_ratio <= 3.0
-
-        # Combine criteria
-        is_price_tag = (
-            size_criteria and
-            is_not_blue_box and  # Not a blue product box
-            reasonable_aspect and
-            (is_white_or_light or is_tag_friendly_yolo)
-        )
-
-        return is_price_tag
 
     # --------------------- shrink/merge/cleanup ------------------------------
     def _shrink(self, img, dets: List[DetectionBox]) -> List[DetectionBox]:
@@ -2309,30 +2256,19 @@ class PlanogramCompliancePipeline(AbstractPipeline):
         annotated_image = self._create_annotated_image(pil_image, effective_dets)
         # annotated_image = self._create_annotated_image(image, detections)
 
-        # Build identification prompt (without structured output request)
-        prompt = self._build_identification_prompt(effective_dets, shelf_regions)
-
         async with self.llm as client:
-
             try:
-                if self.llm_provider == "claude":
-                    response = await client.ask_to_image(
-                        image=annotated_image,
-                        prompt=prompt,
-                        reference_images=reference_images,
-                        max_tokens=4000,
-                        structured_output=IdentificationResponse,
-                    )
-                elif self.llm_provider == "google":
-                    extra_refs = [annotated_image] + (reference_images or [])
+                if self.llm_provider == "google":
                     identified_products = await client.image_identification(
                         image=image,
                         detections=effective_dets,
                         shelf_regions=shelf_regions,
-                        reference_images=extra_refs,
+                        reference_images=reference_images,
                         temperature=0.0
                     )
                 elif self.llm_provider == "openai":
+                    # Build identification prompt (without structured output request)
+                    prompt = self._build_identification_prompt(effective_dets, shelf_regions)
                     extra_refs = [annotated_image] + (reference_images or [])
                     identified_products = await client.image_identification(
                         image=image,
@@ -2343,87 +2279,23 @@ class PlanogramCompliancePipeline(AbstractPipeline):
                         temperature=0.0,
                         ocr_hints=True
                     )
-                    identified_products = await self._augment_products_with_box_ocr(
-                        image,
-                        identified_products
-                    )
-                    for product in identified_products:
-                        if product.product_type == "promotional_graphic":
-                            if lines := await self._extract_text_from_region(image, product.detection_box):
-                                snippet = " ".join(lines)[:120]
-                                product.visual_features = (product.visual_features or []) + [f"ocr:{snippet}"]
-                    return identified_products
-                else:  # Fallback
-                    response = await client.ask_to_image(
-                        image=annotated_image,
-                        prompt=prompt,
-                        reference_images=reference_images,
-                        structured_output=IdentificationResponse,
-                        max_tokens=4000
-                    )
-
-                self.logger.debug(f"Response type: {type(response)}")
-                self.logger.debug(f"Response content: {response}")
-
-                if hasattr(response, 'structured_output') and response.structured_output:
-                    identification_response = response.structured_output
-
-                    self.logger.debug(f"Structured output type: {type(identification_response)}")
-
-                    # Handle IdentificationResponse object directly
-                    if isinstance(identification_response, IdentificationResponse):
-                        # Access the identified_products list from the IdentificationResponse
-                        identified_products = identification_response.identified_products
-
-                        self.logger.debug(
-                            f"Got {len(identified_products)} products from IdentificationResponse"
-                        )
-
-                        # Add detection_box to each product based on detection_id
-                        valid_products = []
-                        for product in identified_products:
-                            if product.detection_id and 1 <= product.detection_id <= len(effective_dets):
-                                det_idx = product.detection_id - 1
-                                product.detection_box = effective_dets[det_idx]
-
-                                # ⬅️ Do OCR *after* we have the box
-                                if product.product_type == "promotional_graphic":
-                                    lines = await self._extract_text_from_region(image, product.detection_box)
-                                    if lines:
-                                        snippet = " ".join(lines)[:120]
-                                        product.visual_features = (product.visual_features or []) + [f"ocr:{snippet}"]
-
-                                valid_products.append(product)
-                                self.logger.debug(
-                                    f"Linked {product.product_type} {product.product_model} (ID: {product.detection_id}) to detection box"
-                                )
-                            else:
-                                self.logger.warning(
-                                    f"Product has invalid detection_id: {product.detection_id}"
-                                )
-
-                        self.logger.debug(f"Successfully linked {len(valid_products)} out of {len(identified_products)} products")
-                        return valid_products
-
-                    else:
-                        self.logger.error(
-                            f"Expected IdentificationResponse, got: {type(identification_response)}"
-                        )
-                        fallbacks = self._create_simple_fallbacks(effective_dets, shelf_regions)
-                        fallbacks = await self._augment_products_with_box_ocr(image, fallbacks)
-                        return fallbacks
                 else:
-                    self.logger.warning("No structured output received")
-                    fallbacks = self._create_simple_fallbacks(effective_dets, shelf_regions)
-                    fallbacks = await self._augment_products_with_box_ocr(image, fallbacks)
-                    return fallbacks
+                    identified_products = []
+                identified_products = await self._augment_products_with_box_ocr(
+                    image,
+                    identified_products
+                )
+                for product in identified_products:
+                    if product.product_type == "promotional_graphic":
+                        if lines := await self._extract_text_from_region(image, product.detection_box):
+                            snippet = " ".join(lines)[:120]
+                            product.visual_features = (product.visual_features or []) + [f"ocr:{snippet}"]
+                return identified_products
 
             except Exception as e:
                 self.logger.error(f"Error in structured identification: {e}")
                 traceback.print_exc()
-                fallbacks = self._create_simple_fallbacks(effective_dets, shelf_regions)
-                fallbacks = await self._augment_products_with_box_ocr(image, fallbacks)
-                return fallbacks
+                raise
 
     def _guess_et_model_from_text(self, text: str) -> Optional[str]:
         """
@@ -2753,56 +2625,6 @@ Respond with the structured data for all {len(detections)} objects.
 
         return prompt
 
-    def _create_simple_fallbacks(
-        self,
-        detections: List[DetectionBox],
-        shelf_regions: List[ShelfRegion]
-    ) -> List[IdentifiedProduct]:
-        """Create simple fallback identifications"""
-
-        results = []
-        for detection in detections:
-            shelf_location = "unknown"
-            for shelf in shelf_regions:
-                if detection in shelf.objects:
-                    shelf_location = shelf.level
-                    break
-
-            if detection.class_name == "element" and shelf_location == "header":
-                product_type = "promotional_graphic"
-            elif detection.class_name == "element" and shelf_location == "top":
-                product_type = "printer"
-            elif detection.class_name == "tag":
-                product_type = "fact_tag"
-            elif detection.class_name == "box":
-                product_type = "product_box"
-            else:
-                cls = detection.class_name
-                if cls == "promotional_graphic":
-                    product_type = "promotional_graphic"
-                elif cls == "printer":
-                    product_type = "printer"
-                elif cls == "product_box":
-                    product_type = "product_box"
-                elif cls in ("price_tag", "fact_tag"):
-                    product_type = "fact_tag"
-                else:
-                    product_type = "unknown"
-
-            product = IdentifiedProduct(
-                detection_box=detection,
-                product_type=product_type,
-                product_model=None,
-                confidence=0.3,
-                visual_features=["fallback_identification"],
-                reference_match=None,
-                shelf_location=shelf_location,
-                position_on_shelf="center"
-            )
-            results.append(product)
-
-        return results
-
     # STEP 3: Planogram Compliance Check
     def check_planogram_compliance(
         self,
@@ -3101,7 +2923,9 @@ Respond with the structured data for all {len(detections)} objects.
             image, detections, shelf_regions, self.reference_images
         )
 
-        self.logger.debug(f"Identified Products: {identified_products}")
+        self.logger.debug(
+            f"Identified Products: {identified_products}"
+        )
 
         # De-duplicate promotional_graphic (keep the largest)
         promos = [p for p in identified_products if p.product_type == "promotional_graphic" and p.detection_box]
