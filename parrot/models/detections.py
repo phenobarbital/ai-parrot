@@ -79,6 +79,23 @@ class IdentifiedProduct(BaseModel):
     detection_box: Optional[DetectionBox] = Field(None, description="Detection box information")
     extra: Dict[str, str] = Field(default_factory=dict, description="Any Extra descriptive tags")
 
+    @field_validator('confidence', mode='before')
+    @classmethod
+    def validate_confidence(cls, v: Any) -> float:
+        """Ensure confidence is between 0 and 1."""
+        if isinstance(v, str):
+            if v.lower() == 'high':
+                return 0.9
+            elif v.lower() == 'medium':
+                return 0.6
+            elif v.lower() == 'low':
+                return 0.3
+            else:
+                return 0.5  # Default for unrecognized strings
+        if not (0 <= v <= 1):
+            raise ValueError(f"confidence must be between 0 and 1, got {v}")
+        return v
+
     @field_validator('position_on_shelf', mode='before')
     @classmethod
     def validate_position_on_shelf(cls, v: Any) -> Optional[str]:
