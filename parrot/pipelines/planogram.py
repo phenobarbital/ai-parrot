@@ -554,7 +554,7 @@ Return exactly FIVE detections with the following strict criteria:
         dets = data.detections or []
         if not dets:
             return None, data
-        print('detections > ', dets)
+        # print('detections > ', dets)
         # pick detections
         panel_det = next(
             (d for d in dets if d.label == "poster_panel"), None) \
@@ -2002,8 +2002,8 @@ class PlanogramCompliancePipeline(AbstractPipeline):
         shelves = det_out["shelves"]          # {'top': DetectionBox(...), 'middle': ...}
         proposals    = det_out["proposals"]        # List[DetectionBox]
 
-        print("PROPOSALS:", proposals)
-        print("SHELVES:", shelves)
+        # print("PROPOSALS:", proposals)
+        # print("SHELVES:", shelves)
 
         # --- IMPORTANT: use Phase-1 shelf bands (not %-of-image buckets) ---
         shelf_regions = self._materialize_shelf_regions(shelves, proposals)
@@ -2249,7 +2249,7 @@ class PlanogramCompliancePipeline(AbstractPipeline):
         pil_image = self._get_image(image)
 
         # Create annotated image showing detection boxes
-        effective_dets = [d for d in detections if d.class_name not in {"slot", "shelf_region"}]
+        effective_dets = [d for d in detections if d.class_name not in {"slot", "shelf_region", "price_tag", "fact_tag"}]
         self._debug_dump_crops(pil_image, effective_dets, tag="effective")
         self._debug_dump_crops(pil_image, detections, tag="raw")
 
@@ -2531,8 +2531,6 @@ class PlanogramCompliancePipeline(AbstractPipeline):
                 )
         else:
             detection_lines.append("None")
-
-        print('SHELF REFIONS > ', shelf_regions)
 
         # --- Part 2: Define the Ground-Truth Shelf Layout ---
         shelf_definitions = ["\n**VALID SHELF NAMES & LOCATIONS (Ground Truth):**"]
