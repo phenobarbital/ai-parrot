@@ -2,7 +2,7 @@ import re
 import sys
 import asyncio
 from datetime import datetime
-from typing import Any, AsyncIterator, Dict, List, Optional, Union
+from typing import Any, AsyncIterator, Dict, List, Optional, Union, Tuple
 import logging
 import time
 from pathlib import Path
@@ -54,6 +54,12 @@ from ..models.google import (
     FictionalSpeaker
 )
 from ..exceptions import SpeechGenerationError  # pylint: disable=E0611
+from ..models.detections import (
+    DetectionBox,
+    ShelfRegion,
+    IdentifiedProduct,
+    IdentificationResponse
+)
 
 
 logging.getLogger(
@@ -3144,3 +3150,231 @@ Your job is to produce a final summary from the following text and identify the 
         except Exception as e:
             self.logger.error(f"Image generation failed: {e}")
             raise
+
+    def _get_image_from_input(self, image: Union[str, Path, Image.Image]) -> Image.Image:
+        """Helper to consistently load an image into a PIL object."""
+        if isinstance(image, (str, Path)):
+            return Image.open(image).convert("RGB")
+        elif isinstance(image, bytes):
+            return Image.open(io.BytesIO(image)).convert("RGB")
+        else:
+            return image.convert("RGB")
+
+    def _crop_box(self, pil_img: Image.Image, box: DetectionBox) -> Image.Image:
+        """Crops a detection box from a PIL image with a small padding."""
+        # A small padding can provide more context to the model
+        pad = 8
+        x1 = max(0, box.x1 - pad)
+        y1 = max(0, box.y1 - pad)
+        x2 = min(pil_img.width, box.x2 + pad)
+        y2 = min(pil_img.height, box.y2 + pad)
+        return pil_img.crop((x1, y1, x2, y2))
+
+    def _shelf_and_position(self, box: DetectionBox, regions: List[ShelfRegion]) -> Tuple[str, str]:
+        """
+        Determines the shelf and position for a given detection box using a robust
+        centroid-based assignment logic.
+        """
+        if not regions:
+            return "unknown", "center"
+
+        # --- NEW LOGIC: Use the object's center point for assignment ---
+        center_y = box.y1 + (box.y2 - box.y1) / 2
+        best_region = None
+
+        # 1. Primary Method: Find which shelf region CONTAINS the center point.
+        for region in regions:
+            if region.bbox.y1 <= center_y < region.bbox.y2:
+                best_region = region
+                break # Found the correct shelf
+
+        # 2. Fallback Method: If no shelf contains the center (edge case), find the closest one.
+        if not best_region:
+            min_distance = float('inf')
+            for region in regions:
+                shelf_center_y = region.bbox.y1 + (region.bbox.y2 - region.bbox.y1) / 2
+                distance = abs(center_y - shelf_center_y)
+                if distance < min_distance:
+                    min_distance = distance
+                    best_region = region
+
+        shelf = best_region.level if best_region else "unknown"
+
+        # --- Position logic remains the same, it's correct ---
+        if best_region:
+            box_center_x = (box.x1 + box.x2) / 2.0
+            shelf_width = best_region.bbox.x2 - best_region.bbox.x1
+            third_width = shelf_width / 3.0
+            left_boundary = best_region.bbox.x1 + third_width
+            right_boundary = best_region.bbox.x1 + 2 * third_width
+
+            if box_center_x < left_boundary:
+                position = "left"
+            elif box_center_x > right_boundary:
+                position = "right"
+            else:
+                position = "center"
+        else:
+            position = "center"
+
+        return shelf, position
+
+    async def image_identification(
+        self,
+        prompt: str,
+        image: Union[Path, bytes, Image.Image],
+        detections: List[DetectionBox],
+        shelf_regions: List[ShelfRegion],
+        reference_images: Optional[Dict[str, Union[Path, bytes, Image.Image]]] = None,
+        model: Union[str, GoogleModel] = GoogleModel.GEMINI_2_5_PRO,
+        temperature: float = 0.0,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+    ) -> List[IdentifiedProduct]:
+        """
+        Step 2: Identify products using detected boxes, reference images, and Gemini Vision.
+
+        This method sends the full image, reference images, and individual crops of each
+        detection to Gemini for precise identification, returning a structured list of
+        IdentifiedProduct objects.
+
+        Args:
+            image: The main image of the retail display.
+            detections: A list of `DetectionBox` objects from the initial detection step.
+            shelf_regions: A list of `ShelfRegion` objects defining shelf boundaries.
+            reference_images: Optional list of images showing ideal products.
+            model: The Gemini model to use, defaulting to Gemini 2.5 Pro for its advanced vision capabilities.
+            temperature: The sampling temperature for the model's response.
+
+        Returns:
+            A list of `IdentifiedProduct` objects with detailed identification info.
+        """
+        self.logger.info(f"Starting Gemini identification for {len(detections)} detections.")
+        model_name = model.value if isinstance(model, GoogleModel) else model
+
+        # --- 1. Prepare Images and Metadata ---
+        main_image_pil = self._get_image_from_input(image)
+        detection_details = []
+        for i, det in enumerate(detections, start=1):
+            shelf, pos = self._shelf_and_position(det, shelf_regions)
+            detection_details.append({
+                "id": i,
+                "detection": det,
+                "shelf": shelf,
+                "position": pos,
+                "crop": self._crop_box(main_image_pil, det),
+            })
+
+        # --- 2. Construct the Multi-Modal Prompt for Gemini ---
+        # The prompt is a list of parts: text instructions, reference images,
+        # the main image, and finally the individual crops.
+        contents = [Part(text=prompt)] # Start with the user-provided prompt
+
+        if reference_images:
+            # Add a text part to introduce the references
+            contents.append(Part(text="\n\n--- REFERENCE IMAGE GUIDE ---"))
+            for label, ref_img_input in reference_images.items():
+                # Add the label text, then the image
+                contents.append(Part(text=f"Reference for '{label}':"))
+                contents.append(self._get_image_from_input(ref_img_input))
+            contents.append(Part(text="--- END REFERENCE GUIDE ---"))
+
+        # Add the main image for overall context
+        contents.append(main_image_pil)
+
+        # Add each cropped detection image
+        for item in detection_details:
+            contents.append(item['crop'])
+
+        # Manually generate the JSON schema from the Pydantic model
+        raw_schema = IdentificationResponse.model_json_schema()
+        # Clean the schema to remove unsupported properties like 'additionalProperties'
+        _schema = self.clean_google_schema(raw_schema)
+
+        # --- 3. Configure the API Call for Structured Output ---
+        generation_config = GenerateContentConfig(
+            temperature=temperature,
+            max_output_tokens=8192, # Generous limit for JSON with many items
+            response_mime_type="application/json",
+            response_schema=_schema,
+        )
+
+        # --- 4. Call Gemini and Process the Response ---
+        try:
+            response = await self.client.aio.models.generate_content(
+                model=model_name,
+                contents=contents,
+                config=generation_config,
+            )
+
+            response_text = self._safe_extract_text(response)
+            if not response_text:
+                raise ValueError(
+                    "Received an empty response from the model."
+                )
+
+            print('RAW RESPONSE:', response_text)
+            # The model output should conform to the Pydantic model directly
+            parsed_data = IdentificationResponse.model_validate_json(response_text)
+            identified_items = parsed_data.identified_products
+
+            # --- 5. Link LLM results back to original detections ---
+            final_products = []
+            id_to_detection = {i: det for i, det in enumerate(detections, 1)}
+
+            for item in identified_items:
+                # Case 1: Item was pre-detected (has a positive ID)
+                if item.detection_id > 0:
+                    if item.detection_id in id_to_detection:
+                        item.detection_box = id_to_detection[item.detection_id]
+                        final_products.append(item)
+                    else:
+                        self.logger.warning(
+                            f"LLM returned a pre-detected ID '{item.detection_id}' that doesn't exist, skipping."
+                        )
+
+                # Case 2: Item was newly found by the LLM (has a negative ID from our validator)
+                elif item.detection_id < 0:
+                    # The Pydantic validator has already created the detection_box for us.
+                    if item.detection_box:
+                        self.logger.info(
+                            f"Adding new object found by LLM: {item.product_type} {item.product_model or ''}"
+                        )
+                        final_products.append(item)
+                    else:
+                        self.logger.warning(
+                            f"LLM-found item with ID '{item.detection_id}' is missing a detection_box, skipping."
+                        )
+
+                # Catch any other weird cases
+                else:
+                    self.logger.warning(
+                        f"LLM returned an item with an invalid ID '{item.detection_id}', skipping."
+                    )
+
+            self.logger.info(
+                f"Successfully identified {len(final_products)} products."
+            )
+            return final_products
+
+        except Exception as e:
+            self.logger.error(
+                f"Gemini image identification failed: {e}"
+            )
+            # Fallback to creating simple products from initial detections
+            fallback_products = []
+            for item in detection_details:
+                shelf, pos = item["shelf"], item["position"]
+                det = item["detection"]
+                fallback_products.append(IdentifiedProduct(
+                    detection_box=det,
+                    detection_id=item['id'],
+                    product_type=det.class_name,
+                    product_model=None,
+                    confidence=det.confidence * 0.5, # Lower confidence for fallback
+                    visual_features=["fallback_identification"],
+                    reference_match="none",
+                    shelf_location=shelf,
+                    position_on_shelf=pos
+                ))
+            return fallback_products

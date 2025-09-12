@@ -46,6 +46,7 @@ from ..models.compliance import (
     ComplianceStatus,
     TextComplianceResult,
     TextMatcher,
+    BrandComplianceResult
 )
 try:
     from ultralytics import YOLO  # yolo12m works with this API
@@ -105,13 +106,6 @@ def _clamp(W,H,x1,y1,x2,y2):
     x1,x2 = int(max(0,min(W-1,min(x1,x2)))), int(max(0,min(W-1,max(x1,x2))))
     y1,y2 = int(max(0,min(H-1,min(y1,y2)))), int(max(0,min(H-1,max(y1,y2))))
     return x1, y1, x2, y2
-
-class IdentificationResponse(BaseModel):
-    """Response model for product identification"""
-    identified_products: List[IdentifiedProduct] = Field(
-        alias="detections",
-        description="List of identified products from the image"
-    )
 
 
 class RetailDetector:
@@ -1532,19 +1526,56 @@ Return exactly FIVE detections with the following strict criteria:
         return inter / max(1.0, aarea + barea - inter)
 
     # ------------------- OCR + CLIP preselection -----------------------------
+    def _analyze_crop_visuals(self, crop_bgr: np.ndarray) -> dict:
+        """Analyzes a crop for dominant color properties to distinguish printers from boxes."""
+        if crop_bgr.size == 0:
+            return {"is_mostly_white": False, "is_mostly_blue": False}
+
+        # Convert to HSV for better color analysis
+        hsv = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2HSV)
+
+        # --- White/Gray Detection ---
+        # Define a broad range for white, light gray, and silver colors
+        lower_white = np.array([0, 0, 150])
+        upper_white = np.array([180, 50, 255])
+        white_mask = cv2.inRange(hsv, lower_white, upper_white)
+
+        # --- Blue Detection ---
+        # Define a range for the Epson blue
+        lower_blue = np.array([95, 80, 40])
+        upper_blue = np.array([125, 255, 255])
+        blue_mask = cv2.inRange(hsv, lower_blue, upper_blue)
+
+        # Calculate the percentage of the image that is white or blue
+        total_pixels = crop_bgr.shape[0] * crop_bgr.shape[1]
+        white_percentage = (cv2.countNonZero(white_mask) / total_pixels) * 100
+        blue_percentage = (cv2.countNonZero(blue_mask) / total_pixels) * 100
+
+        # Determine if the object is primarily one color
+        # Thresholds can be tuned, but these are generally effective.
+        is_mostly_white = white_percentage > 40
+        is_mostly_blue = blue_percentage > 35
+
+        return {
+            "is_mostly_white": is_mostly_white,
+            "is_mostly_blue": is_mostly_blue,
+            "white_pct": white_percentage,
+            "blue_pct": blue_percentage,
+        }
+
     async def _classify_proposals(self, img, props, bands, header_limit_y, ad_box=None):
         """
-        Simplified proposal classification using a clear, hierarchical decision process.
+        ENHANCED proposal classification with a robust, heuristic-first decision process.
         1.  Identify price tags by size.
         2.  Identify promotional graphics by position.
-        3.  Classify all other objects (products vs. boxes) using CLIP similarity.
+        3.  For remaining objects, use strong visual heuristics (color) to classify.
+        4.  Use CLIP similarity only as a fallback for ambiguous cases.
         """
         H, W = img.shape[:2]
         final_proposals = []
-        # --- Define thresholds for clarity ---
         PRICE_TAG_AREA_THRESHOLD = 0.005  # 0.5% of total image area
 
-        print(f"\n🎯 Simplified Classification: Running {len(props)} proposals...")
+        print(f"\n🎯 Enhanced Classification: Running {len(props)} proposals...")
         print("   " + "="*60)
 
         for p in props:
@@ -1553,67 +1584,90 @@ Return exactly FIVE detections with the following strict criteria:
             area_ratio = area / (H * W)
             center_y = (y1 + y2) / 2
 
-            # --- 1. First, check for Price Tags based on size ---
+            # Helper to determine shelf level for context
+            shelf_level = self._determine_shelf_level(center_y, bands)
+
+            # --- 1. Price Tag Check (by size) ---
             if area_ratio < PRICE_TAG_AREA_THRESHOLD:
                 final_proposals.append(
                     DetectionBox(
-                    x1=x1, y1=y1, x2=x2, y2=y2,
-                    confidence=p.get('yolo_conf', 0.8), # Assign a reasonable confidence
-                    class_id=102,
-                    class_name="price_tag",
-                    area=area,
-                    ocr_text=p.get('ocr_text')
+                        x1=x1, y1=y1, x2=x2, y2=y2,
+                        confidence=p.get('yolo_conf', 0.8),
+                        class_id=CID["price_tag"],
+                        class_name="price_tag",
+                        area=area,
+                        ocr_text=p.get('ocr_text')
                     )
                 )
-                continue # Done with this proposal, move to the next one
+                continue
 
-            # --- 2. Second, check for Promotional Graphics based on position ---
-            in_header = center_y < header_limit_y
-            if in_header:
+            # --- 2. Promotional Graphic Check (by position) ---
+            if center_y < header_limit_y:
                 final_proposals.append(
                     DetectionBox(
                         x1=x1, y1=y1, x2=x2, y2=y2,
-                        confidence=p.get('yolo_conf', 0.9), # High confidence for anything in header
+                        confidence=p.get('yolo_conf', 0.9),
                         class_id=CID["promotional_candidate"],
                         class_name="promotional_candidate",
                         area=area,
                         ocr_text=p.get('ocr_text')
                     )
                 )
-                continue # Done with this proposal
+                continue
 
-            # --- 3. Finally, classify the rest (products/boxes) using CLIP ---
+            # --- 3. Heuristic & CLIP Classification for Products/Boxes ---
             try:
-                crop = img[y1:y2, x1:x2]
-                if crop.size == 0:
+                crop_bgr = img[y1:y2, x1:x2]
+                if crop_bgr.size == 0:
                     continue
 
-                crop_pil = Image.fromarray(cv2.cvtColor(crop, cv2.COLOR_BGR2RGB))
+                # Get visual heuristics and CLIP scores
+                visuals = self._analyze_crop_visuals(crop_bgr)
 
+                crop_pil = Image.fromarray(cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2RGB))
                 with torch.no_grad():
                     ip = self.proc(images=crop_pil, return_tensors="pt").to(self.device)
                     img_feat = self.clip.get_image_features(**ip)
                     img_feat /= img_feat.norm(dim=-1, keepdim=True)
-
-                    # self.text_feats should be for ["...poster", "...printer", "...box"]
                     text_sims = (img_feat @ self.text_feats.T).squeeze().tolist()
                     s_poster, s_printer, s_box = text_sims[0], text_sims[1], text_sims[2]
 
-                # Decide between printer and box based on higher CLIP score
-                if s_printer > s_box:
-                    class_name = "product_candidate"
-                    confidence = s_printer
-                else:
-                    class_name = "box_candidate"
-                    confidence = s_box
+                # --- New Decision Logic ---
+                class_name = None
+                confidence = 0.8 # Default confidence for heuristic-based decision
 
-                final_class = CID[class_name]
+                # Priority 1: Strong color evidence overrides everything.
+                if visuals["is_mostly_white"] and not visuals["is_mostly_blue"]:
+                    class_name = "product_candidate" # It's a white printer device
+                    confidence = 0.95 # High confidence in color heuristic
+                elif visuals["is_mostly_blue"]:
+                    class_name = "box_candidate" # It's a blue product box
+                    confidence = 0.95
 
+                # Priority 2: If color is ambiguous, use shelf location as a strong hint.
+                if not class_name:
+                    if shelf_level == "middle":
+                        class_name = "product_candidate"
+                        confidence = 0.85
+                    elif shelf_level == "bottom":
+                        class_name = "box_candidate"
+                        confidence = 0.85
+
+                # Priority 3 (Fallback): If still undecided, use the original CLIP score.
+                if not class_name:
+                    if s_printer > s_box:
+                        class_name = "product_candidate"
+                        confidence = s_printer
+                    else:
+                        class_name = "box_candidate"
+                        confidence = s_box
+
+                final_class_id = CID[class_name]
                 final_proposals.append(
                     DetectionBox(
                         x1=x1, y1=y1, x2=x2, y2=y2,
                         confidence=confidence,
-                        class_id=final_class,
+                        class_id=final_class_id,
                         class_name=class_name,
                         area=area,
                         ocr_text=p.get('ocr_text')
@@ -1621,116 +1675,9 @@ Return exactly FIVE detections with the following strict criteria:
                 )
 
             except Exception as e:
-                self.logger.error(
-                    f"Failed to classify proposal with CLIP: {e}"
-                )
+                self.logger.error(f"Failed to classify proposal with heuristics/CLIP: {e}")
 
         return final_proposals
-
-    def _get_promotional_assignment(self, x1, y1, x2, y2, bands, ad_box, yolo_class, area_ratio, aspect):
-        """
-        Promotional graphic assignment based on area overlap with header
-        """
-        if not bands or "header" not in bands:
-            return {"is_promotional": False, "reason": "no header band defined"}
-
-        # Calculate area overlap with header shelf
-        header_y1, header_y2 = bands["header"]
-
-        # Calculate intersection with header band
-        intersection_y1 = max(y1, header_y1)
-        intersection_y2 = min(y2, header_y2)
-
-        if intersection_y2 <= intersection_y1:
-            header_overlap_ratio = 0.0
-        else:
-            object_height = y2 - y1
-            intersection_height = intersection_y2 - intersection_y1
-            header_overlap_ratio = intersection_height / max(object_height, 1)
-
-        # Calculate IoU with ad_box if available
-        ad_iou = 0.0
-        if ad_box is not None:
-            ad_iou = self._iou_xyxy((x1, y1, x2, y2), ad_box)
-
-        # More aggressive assignment to header based on different criteria
-        reasons = []
-
-        # Criterion 1: High header overlap
-        if header_overlap_ratio > 0.5:  # Lowered from 0.6 to catch more cases
-            reasons.append(f"header_overlap={header_overlap_ratio:.2f}")
-
-        # Criterion 2: Large banner with some header presence
-        if area_ratio > 0.1 and aspect > 1.5 and header_overlap_ratio > 0.2:  # Lowered thresholds
-            reasons.append(
-                f"large_banner(area={area_ratio:.3f},aspect={aspect:.1f},header={header_overlap_ratio:.2f})"
-            )
-
-        # Criterion 3: Person detection with header presence
-        if yolo_class == "person" and header_overlap_ratio > 0.3:  # Lowered from 0.4
-            reasons.append(
-                f"person_in_header(overlap={header_overlap_ratio:.2f})"
-            )
-
-        # Criterion 4: Strong ad_box overlap
-        if ad_iou > 0.4:  # Lowered from 0.5
-            reasons.append(f"ad_box_overlap(iou={ad_iou:.2f})")
-
-        # Criterion 5: TV/monitor classes that are likely promotional
-        yolo_cls = (yolo_class or "").lower()
-        if any(cls in yolo_cls for cls in ["tv", "monitor", "laptop"]) and header_overlap_ratio > 0.2:
-            reasons.append(f"display_device_in_header({yolo_class})")
-
-        # Criterion 6: Very large objects that span header (regardless of center)
-        if area_ratio > 0.2 and header_overlap_ratio > 0.1:  # Any presence in header for very large objects
-            reasons.append(f"very_large_object(area={area_ratio:.3f})")
-
-        is_promotional = len(reasons) > 0
-        reason = "; ".join(reasons) if reasons else "not promotional"
-
-        if is_promotional:
-            print(f"   📍 Promotional detected: {reason}")
-
-        return {
-            "is_promotional": is_promotional,
-            "reason": reason,
-            "header_overlap_ratio": header_overlap_ratio,
-            "ad_iou": ad_iou
-        }
-
-    def _is_likely_price_tag(self, width, height, area_ratio, yolo_class, visual_analysis):
-        """
-        FIX 2: Enhanced price tag detection logic (unchanged - working correctly)
-        """
-        # Size-based criteria (stricter than before)
-        size_criteria = (
-            width <= 120 and
-            height <= 90 and
-            area_ratio <= 0.012
-        )
-
-        # Visual criteria
-        is_white_or_light = visual_analysis.get("is_white_gray", False) or visual_analysis.get("brightness", 0.5) > 0.7
-        is_not_blue_box = not visual_analysis.get("is_blue_dominant", False)
-
-        # YOLO class criteria - be more specific about what could be price tags
-        yolo_cls = (yolo_class or "").lower()
-        tag_friendly_classes = ["book", "clock", "bottle", "mouse", "remote", "cell phone"]
-        is_tag_friendly_yolo = any(cls in yolo_cls for cls in tag_friendly_classes)
-
-        # Aspect ratio criteria - price tags are usually not extremely elongated
-        aspect_ratio = width / max(height, 1)
-        reasonable_aspect = 0.3 <= aspect_ratio <= 3.0
-
-        # Combine criteria
-        is_price_tag = (
-            size_criteria and
-            is_not_blue_box and  # Not a blue product box
-            reasonable_aspect and
-            (is_white_or_light or is_tag_friendly_yolo)
-        )
-
-        return is_price_tag
 
     # --------------------- shrink/merge/cleanup ------------------------------
     def _shrink(self, img, dets: List[DetectionBox]) -> List[DetectionBox]:
@@ -2000,7 +1947,7 @@ class PlanogramCompliancePipeline(AbstractPipeline):
         llm_provider: str = "claude",
         llm_model: Optional[str] = None,
         detection_model: str = "yolov8n",
-        reference_images: List[Path] = None,
+        reference_images: Dict[str, Path] = None,
         confidence_threshold: float = 0.25,
         **kwargs: Any
     ):
@@ -2027,12 +1974,12 @@ class PlanogramCompliancePipeline(AbstractPipeline):
             conf=confidence_threshold,
             llm=self.llm,
             device="cuda" if torch.cuda.is_available() else "cpu",
-            reference_images=reference_images
+            reference_images=list(reference_images.values())
         )
         self.logger.debug(
             f"Initialized RetailDetector with {detection_model}"
         )
-        self.reference_images = reference_images or []
+        self.reference_images = reference_images or {}
         self.confidence_threshold = confidence_threshold
 
     async def detect_objects_and_shelves(
@@ -2309,30 +2256,25 @@ class PlanogramCompliancePipeline(AbstractPipeline):
         annotated_image = self._create_annotated_image(pil_image, effective_dets)
         # annotated_image = self._create_annotated_image(image, detections)
 
-        # Build identification prompt (without structured output request)
-        prompt = self._build_identification_prompt(effective_dets, shelf_regions)
-
         async with self.llm as client:
-
             try:
-                if self.llm_provider == "claude":
-                    response = await client.ask_to_image(
-                        image=annotated_image,
-                        prompt=prompt,
-                        reference_images=reference_images,
-                        max_tokens=4000,
-                        structured_output=IdentificationResponse,
-                    )
-                elif self.llm_provider == "google":
-                    response = await client.ask_to_image(
-                        image=annotated_image,
-                        prompt=prompt,
-                        reference_images=reference_images,
-                        structured_output=IdentificationResponse,
-                        max_tokens=4000
+                if self.llm_provider == "google":
+                    extra_refs = {
+                        "annotated_image": annotated_image,
+                        **reference_images
+                    }
+                    identified_products = await client.image_identification(
+                        prompt=self._build_gemini_identification_prompt(effective_dets, shelf_regions),
+                        image=image,
+                        detections=effective_dets,
+                        shelf_regions=shelf_regions,
+                        reference_images=extra_refs,
+                        temperature=0.0
                     )
                 elif self.llm_provider == "openai":
-                    extra_refs = [annotated_image] + (reference_images or [])
+                    # Build identification prompt (without structured output request)
+                    prompt = self._build_identification_prompt(effective_dets, shelf_regions)
+                    extra_refs = [annotated_image] + (list(reference_images.values()) or [])
                     identified_products = await client.image_identification(
                         image=image,
                         prompt=prompt,
@@ -2342,87 +2284,25 @@ class PlanogramCompliancePipeline(AbstractPipeline):
                         temperature=0.0,
                         ocr_hints=True
                     )
-                    identified_products = await self._augment_products_with_box_ocr(
-                        image,
-                        identified_products
-                    )
-                    for product in identified_products:
-                        if product.product_type == "promotional_graphic":
-                            if lines := await self._extract_text_from_region(image, product.detection_box):
-                                snippet = " ".join(lines)[:120]
-                                product.visual_features = (product.visual_features or []) + [f"ocr:{snippet}"]
-                    return identified_products
-                else:  # Fallback
-                    response = await client.ask_to_image(
-                        image=annotated_image,
-                        prompt=prompt,
-                        reference_images=reference_images,
-                        structured_output=IdentificationResponse,
-                        max_tokens=4000
-                    )
-
-                self.logger.debug(f"Response type: {type(response)}")
-                self.logger.debug(f"Response content: {response}")
-
-                if hasattr(response, 'structured_output') and response.structured_output:
-                    identification_response = response.structured_output
-
-                    self.logger.debug(f"Structured output type: {type(identification_response)}")
-
-                    # Handle IdentificationResponse object directly
-                    if isinstance(identification_response, IdentificationResponse):
-                        # Access the identified_products list from the IdentificationResponse
-                        identified_products = identification_response.identified_products
-
-                        self.logger.debug(
-                            f"Got {len(identified_products)} products from IdentificationResponse"
-                        )
-
-                        # Add detection_box to each product based on detection_id
-                        valid_products = []
-                        for product in identified_products:
-                            if product.detection_id and 1 <= product.detection_id <= len(effective_dets):
-                                det_idx = product.detection_id - 1
-                                product.detection_box = effective_dets[det_idx]
-
-                                # ⬅️ Do OCR *after* we have the box
-                                if product.product_type == "promotional_graphic":
-                                    lines = await self._extract_text_from_region(image, product.detection_box)
-                                    if lines:
-                                        snippet = " ".join(lines)[:120]
-                                        product.visual_features = (product.visual_features or []) + [f"ocr:{snippet}"]
-
-                                valid_products.append(product)
-                                self.logger.debug(
-                                    f"Linked {product.product_type} {product.product_model} (ID: {product.detection_id}) to detection box"
-                                )
-                            else:
-                                self.logger.warning(
-                                    f"Product has invalid detection_id: {product.detection_id}"
-                                )
-
-                        self.logger.debug(f"Successfully linked {len(valid_products)} out of {len(identified_products)} products")
-                        return valid_products
-
-                    else:
-                        self.logger.error(
-                            f"Expected IdentificationResponse, got: {type(identification_response)}"
-                        )
-                        fallbacks = self._create_simple_fallbacks(effective_dets, shelf_regions)
-                        fallbacks = await self._augment_products_with_box_ocr(image, fallbacks)
-                        return fallbacks
                 else:
-                    self.logger.warning("No structured output received")
-                    fallbacks = self._create_simple_fallbacks(effective_dets, shelf_regions)
-                    fallbacks = await self._augment_products_with_box_ocr(image, fallbacks)
-                    return fallbacks
+                    # Fallback to your existing logic for other clients like OpenAI
+                    self.logger.warning("Using legacy identification logic.")
+                    return [] # Placeholder for your other client logic
+                identified_products = await self._augment_products_with_box_ocr(
+                    image,
+                    identified_products
+                )
+                for product in identified_products:
+                    if product.product_type == "promotional_graphic":
+                        if lines := await self._extract_text_from_region(image, product.detection_box):
+                            snippet = " ".join(lines)[:120]
+                            product.visual_features = (product.visual_features or []) + [f"ocr:{snippet}"]
+                return identified_products
 
             except Exception as e:
                 self.logger.error(f"Error in structured identification: {e}")
                 traceback.print_exc()
-                fallbacks = self._create_simple_fallbacks(effective_dets, shelf_regions)
-                fallbacks = await self._augment_products_with_box_ocr(image, fallbacks)
-                return fallbacks
+                raise
 
     def _guess_et_model_from_text(self, text: str) -> Optional[str]:
         """
@@ -2635,6 +2515,88 @@ class PlanogramCompliancePipeline(AbstractPipeline):
 
         return image
 
+    def _build_gemini_identification_prompt(
+        self,
+        detections: List[DetectionBox],
+        shelf_regions: List[ShelfRegion]
+    ) -> str:
+        """Builds a more detailed prompt to help Gemini differentiate similar products."""
+
+        # --- (This part remains the same) ---
+        detection_lines = []
+        if detections:
+            detection_lines.append("\nDETECTED OBJECTS (with pre-assigned IDs):")
+            for i, detection in enumerate(detections, 1):
+                detection_lines.append(
+                    f"ID {i}: Initial class '{detection.class_name}' at bbox ({detection.x1},{detection.y1},{detection.x2},{detection.y2})"
+                )
+        else:
+            detection_lines.append("\nNo objects were pre-detected. Please find all relevant products.")
+
+        shelf_lines = ["\nSHELF ORGANIZATION:"]
+        # ... (rest of shelf logic is the same) ...
+        for shelf in shelf_regions:
+            object_ids_on_shelf = []
+            for obj in shelf.objects:
+                try:
+                    idx = detections.index(obj) + 1
+                    object_ids_on_shelf.append(str(idx))
+                except ValueError:
+                    continue
+            id_str = f"Objects: {', '.join(object_ids_on_shelf)}" if object_ids_on_shelf else "Objects: None"
+            shelf_lines.append(f"- {shelf.level.upper()} SHELF: {id_str}")
+
+        # --- NEW: Enhanced Instructions ---
+        prompt = f"""
+You are an expert at identifying retail products in planogram displays.
+I have provided an image of a retail endcap, labeled reference images, and a list of {len(detections)} pre-detected objects.
+
+{''.join(detection_lines)}
+{''.join(shelf_lines)}
+
+**YOUR TWO-PART TASK:**
+
+1.  **IDENTIFY PRE-DETECTED OBJECTS:** For each object with an ID, identify it using the rules and visual guide below.
+2.  **FIND MISSED OBJECTS:** Carefully find any other prominent products (especially printers or large boxes) that DO NOT have an ID. For these new items, set `detection_id` to `null` and provide an approximate `detection_box` array `[x1, y1, x2, y2]`.
+
+---
+**!! IMPORTANT VISUAL GUIDE FOR PRINTERS !!**
+REFERENCE IMAGES show Epson printer models - compare visual design, control panels, ink systems.
+
+The printer models are visually similar. You MUST use the control panel to tell them apart.
+* **ET-2980:** Has a **simple control panel** with a small screen and arrow buttons. **NO number pad.**
+* **ET-3950:** Has a **larger control panel with a physical number pad (0-9)** to the right of the screen.
+* **ET-4950:** Has a **large color touchscreen** and very few physical buttons.
+
+**Use these specific features to make your final decision on the printer model.**
+---
+
+**IDENTIFICATION RULES:**
+1.  **PRINTERS (Devices):** White/gray devices. Use the visual guide above to determine the correct `product_model` ('ET-2980', 'ET-3950', or 'ET-4950').
+2.  **BOXES (Packaging):** Blue packaging. `product_type` is 'product_box'. `product_model` is 'ET-XXXX box'.
+3.  **PROMOTIONAL GRAPHICS:** Large signs/posters. `product_type` is 'promotional_graphic'.
+
+**JSON OUTPUT FORMAT:**
+Respond with a single JSON object. For each product you identify (both pre-detected and newly found), provide an entry in the 'detections' list with all the required fields.
+
+For each detection (ID 1-{len(detections)}), provide:
+- detection_id: The exact ID number from the red bounding box (1-{len(detections)}), or null if newly found.
+- product_type: printer, product_box, fact_tag, promotional_graphic, or ink_bottle
+- product_model: Follow naming rules above based on product_type
+- confidence: Your confidence (0.0-1.0)
+- visual_features: List of visual features
+- reference_match: Which reference image matches (or "none")
+- shelf_location: header, top, middle, or bottom
+- position_on_shelf: left, center, or right
+- Remove any duplicates - only one entry per detection_id
+
+**!! FINAL CHECK !!**
+Before responding, ensure **every single object** in the 'detections' list includes all required fields, especially `confidence`, `shelf_location`, and `position_on_shelf`. Do not omit any fields.
+
+Analyze all provided images and return the complete JSON response.
+    """
+        return prompt
+
     def _build_identification_prompt(
         self,
         detections: List[DetectionBox],
@@ -2752,83 +2714,197 @@ Respond with the structured data for all {len(detections)} objects.
 
         return prompt
 
-    def _create_simple_fallbacks(
-        self,
-        detections: List[DetectionBox],
-        shelf_regions: List[ShelfRegion]
-    ) -> List[IdentifiedProduct]:
-        """Create simple fallback identifications"""
-
-        results = []
-        for detection in detections:
-            shelf_location = "unknown"
-            for shelf in shelf_regions:
-                if detection in shelf.objects:
-                    shelf_location = shelf.level
-                    break
-
-            if detection.class_name == "element" and shelf_location == "header":
-                product_type = "promotional_graphic"
-            elif detection.class_name == "element" and shelf_location == "top":
-                product_type = "printer"
-            elif detection.class_name == "tag":
-                product_type = "fact_tag"
-            elif detection.class_name == "box":
-                product_type = "product_box"
-            else:
-                cls = detection.class_name
-                if cls == "promotional_graphic":
-                    product_type = "promotional_graphic"
-                elif cls == "printer":
-                    product_type = "printer"
-                elif cls == "product_box":
-                    product_type = "product_box"
-                elif cls in ("price_tag", "fact_tag"):
-                    product_type = "fact_tag"
-                else:
-                    product_type = "unknown"
-
-            product = IdentifiedProduct(
-                detection_box=detection,
-                product_type=product_type,
-                product_model=None,
-                confidence=0.3,
-                visual_features=["fallback_identification"],
-                reference_match=None,
-                shelf_location=shelf_location,
-                position_on_shelf="center"
-            )
-            results.append(product)
-
-        return results
-
     # STEP 3: Planogram Compliance Check
+    # def check_planogram_compliance(
+    #     self,
+    #     identified_products: List[IdentifiedProduct],
+    #     planogram_description: PlanogramDescription,
+    # ) -> List[ComplianceResult]:
+    #     """Check compliance of identified products against the planogram
+
+    #     Args:
+    #         identified_products (List[IdentifiedProduct]): The products identified in the image
+    #         planogram_description (PlanogramDescription): The expected planogram layout
+
+    #     Returns:
+    #         List[ComplianceResult]: The compliance results for each shelf
+    #     """
+    #     results: List[ComplianceResult] = []
+
+    #     # Group found products by shelf level
+    #     by_shelf = defaultdict(list)
+    #     for p in identified_products:
+    #         by_shelf[p.shelf_location].append(p)
+
+    #     # Iterate through expected shelves
+    #     for shelf_cfg in planogram_description.shelves:
+    #         shelf_level = shelf_cfg.level
+
+    #         # Build expected product list (excluding tags)
+    #         expected = []
+    #         for sp in shelf_cfg.products:
+    #             if sp.product_type in ("fact_tag", "price_tag", "slot"):
+    #                 continue
+    #             nm = self._normalize_product_name((sp.name or sp.product_type) or "unknown")
+    #             expected.append(nm)
+
+    #         # Gather found products on this shelf
+    #         found, promos = [], []
+    #         for p in by_shelf.get(shelf_level, []):
+    #             if p.product_type in ("fact_tag", "price_tag", "slot"):
+    #                 continue
+    #             nm = self._normalize_product_name(p.product_model or p.product_type)
+    #             found.append(nm)
+    #             if p.product_type == "promotional_graphic":
+    #                 promos.append(p)
+
+    #         # Calculate basic product compliance
+    #         missing = [e for e in expected if e not in found]
+    #         unexpected = [] if shelf_cfg.allow_extra_products else [f for f in found if f not in expected]
+    #         basic_score = (sum(1 for e in expected if e in found) / (len(expected) or 1))
+
+    #         # FIX 3: Enhanced text compliance handling
+    #         text_results, text_score, overall_text_ok = [], 1.0, True
+
+    #         # Check for advertisement endcap on this shelf
+    #         endcap = planogram_description.advertisement_endcap
+    #         if endcap and endcap.enabled and endcap.position == shelf_level:
+    #             if endcap.text_requirements:
+    #                 # Combine visual features from all promotional items
+    #                 all_features = []
+    #                 ocr_blocks = []
+    #                 for promo in promos:
+    #                     if getattr(promo, "visual_features", None):
+    #                         all_features.extend(promo.visual_features)
+    #                         for feat in promo.visual_features:
+    #                             if isinstance(feat, str) and feat.startswith("ocr:"):
+    #                                 ocr_blocks.append(feat[4:].strip())
+
+    #                 if ocr_blocks:
+    #                     ocr_norm = self._normalize_ocr_text(" ".join(ocr_blocks))
+    #                     if ocr_norm:
+    #                         all_features.append(ocr_norm)
+
+    #                 # If no promotional graphics found but text required, create default failure
+    #                 if not promos and shelf_level == "header":
+    #                     self.logger.warning(
+    #                         f"No promotional graphics found on {shelf_level} shelf but text requirements exist"
+    #                     )
+    #                     overall_text_ok = False
+    #                     for text_req in endcap.text_requirements:
+    #                         text_results.append(TextComplianceResult(
+    #                             required_text=text_req.required_text,
+    #                             found=False,
+    #                             matched_features=[],
+    #                             confidence=0.0,
+    #                             match_type=text_req.match_type
+    #                         ))
+    #                 else:
+    #                     # Check text requirements against found features
+    #                     for text_req in endcap.text_requirements:
+    #                         result = TextMatcher.check_text_match(
+    #                             required_text=text_req.required_text,
+    #                             visual_features=all_features,
+    #                             match_type=text_req.match_type,
+    #                             case_sensitive=text_req.case_sensitive,
+    #                             confidence_threshold=text_req.confidence_threshold
+    #                         )
+    #                         text_results.append(result)
+
+    #                         if not result.found and text_req.mandatory:
+    #                             overall_text_ok = False
+
+    #                 # Calculate text compliance score
+    #                 if text_results:
+    #                     text_score = sum(r.confidence for r in text_results if r.found) / len(text_results)
+
+    #         # For non-header shelves without text requirements, don't penalize
+    #         elif shelf_level != "header":
+    #             overall_text_ok = True  # Don't require text compliance on product shelves
+    #             text_score = 1.0
+
+    #         # Determine compliance threshold
+    #         threshold = getattr(
+    #             shelf_cfg,
+    #             "compliance_threshold",
+    #             planogram_description.global_compliance_threshold or 0.8
+    #         )
+
+    #         # FIX 4: Better status determination logic
+    #         # Allow minor unexpected (ink bottles, price tags)
+    #         major_unexpected = [
+    #             p for p in unexpected if not any(
+    #                 word in p.lower() for word in ["ink bottle", "price tag", "502"]
+    #             )
+    #         ]
+    #         # For product shelves (non-header), focus on product compliance
+    #         if shelf_level != "header":
+    #             if basic_score >= threshold and not major_unexpected:
+    #                 status = ComplianceStatus.COMPLIANT
+    #             elif basic_score == 0.0:
+    #                 status = ComplianceStatus.MISSING
+    #             else:
+    #                 status = ComplianceStatus.NON_COMPLIANT
+    #         else:
+    #             overall_text_ok = bool(overall_text_ok)
+    #             # For header shelf, require both product and text compliance
+    #             if basic_score >= threshold and not major_unexpected and overall_text_ok:
+    #                 status = ComplianceStatus.COMPLIANT
+    #             elif basic_score == 0.0:
+    #                 status = ComplianceStatus.MISSING
+    #             elif not overall_text_ok:
+    #                 status = ComplianceStatus.NON_COMPLIANT
+    #             else:
+    #                 status = ComplianceStatus.NON_COMPLIANT
+
+    #         # Calculate combined score with appropriate weighting
+    #         if shelf_level == "header":
+    #             # Header: Balance product and text compliance
+    #             endcap = planogram_description.advertisement_endcap
+    #             weights = {
+    #                 "product_compliance": endcap.product_weight,
+    #                 "text_compliance": endcap.text_weight
+    #             }
+    #         else:
+    #             # Product shelves: Emphasize product compliance
+    #             weights = {"product_compliance": 0.9, "text_compliance": 0.1}
+
+    #         combined_score = (basic_score * weights["product_compliance"] +
+    #                         text_score * weights["text_compliance"])
+
+    #         results.append(
+    #             ComplianceResult(
+    #                 shelf_level=shelf_level,
+    #                 expected_products=expected,
+    #                 found_products=found,
+    #                 missing_products=missing,
+    #                 unexpected_products=unexpected,
+    #                 compliance_status=status,
+    #                 compliance_score=combined_score,
+    #                 text_compliance_results=text_results,
+    #                 text_compliance_score=text_score,
+    #                 overall_text_compliant=overall_text_ok
+    #             )
+    #         )
+
+    #     return results
+
     def check_planogram_compliance(
         self,
         identified_products: List[IdentifiedProduct],
         planogram_description: PlanogramDescription,
     ) -> List[ComplianceResult]:
-        """Check compliance of identified products against the planogram
-
-        Args:
-            identified_products (List[IdentifiedProduct]): The products identified in the image
-            planogram_description (PlanogramDescription): The expected planogram layout
-
-        Returns:
-            List[ComplianceResult]: The compliance results for each shelf
-        """
+        """Check compliance of identified products against the planogram."""
         results: List[ComplianceResult] = []
 
-        # Group found products by shelf level
         by_shelf = defaultdict(list)
         for p in identified_products:
             by_shelf[p.shelf_location].append(p)
 
-        # Iterate through expected shelves
         for shelf_cfg in planogram_description.shelves:
             shelf_level = shelf_cfg.level
+            products_on_shelf = by_shelf.get(shelf_level, [])
 
-            # Build expected product list (excluding tags)
             expected = []
             for sp in shelf_cfg.products:
                 if sp.product_type in ("fact_tag", "price_tag", "slot"):
@@ -2836,25 +2912,26 @@ Respond with the structured data for all {len(detections)} objects.
                 nm = self._normalize_product_name((sp.name or sp.product_type) or "unknown")
                 expected.append(nm)
 
-            # Gather found products on this shelf
             found, promos = [], []
-            for p in by_shelf.get(shelf_level, []):
-                if p.product_type in ("fact_tag", "price_tag", "slot"):
+            for p in products_on_shelf:
+                if p.product_type in ("fact_tag", "price_tag", "slot", "brand_logo"): # Exclude brand_logo from product counts
                     continue
                 nm = self._normalize_product_name(p.product_model or p.product_type)
                 found.append(nm)
                 if p.product_type == "promotional_graphic":
                     promos.append(p)
 
-            # Calculate basic product compliance
             missing = [e for e in expected if e not in found]
             unexpected = [] if shelf_cfg.allow_extra_products else [f for f in found if f not in expected]
             basic_score = (sum(1 for e in expected if e in found) / (len(expected) or 1))
 
-            # FIX 3: Enhanced text compliance handling
             text_results, text_score, overall_text_ok = [], 1.0, True
 
-            # Check for advertisement endcap on this shelf
+            # NEW: Initialize variables for brand compliance
+            brand_compliance_result: Optional[BrandComplianceResult] = None
+            brand_score = 0.0
+            brand_check_ok = True # Assume OK unless mandatory check fails
+
             endcap = planogram_description.advertisement_endcap
             if endcap and endcap.enabled and endcap.position == shelf_level:
                 if endcap.text_requirements:
@@ -2906,59 +2983,80 @@ Respond with the structured data for all {len(detections)} objects.
                     if text_results:
                         text_score = sum(r.confidence for r in text_results if r.found) / len(text_results)
 
-            # For non-header shelves without text requirements, don't penalize
+                # NEW: Implement the brand logo check for the header shelf
+                brand_reqs = planogram_description.brand or None
+                if brand_reqs:
+                    expected_brand = planogram_description.brand
+                    # Find the detected brand_logo object on this shelf
+                    brand_logo_product = next(
+                        (p for p in products_on_shelf if p.product_type == 'brand_logo'), None
+                    )
+
+                    found_brand = None
+                    is_match = False
+                    logo_confidence = 0.0
+
+                    if brand_logo_product and brand_logo_product.brand:
+                        found_brand = brand_logo_product.brand
+                        logo_confidence = brand_logo_product.confidence
+                        # Case-insensitive comparison for robustness
+                        if expected_brand.lower() in found_brand.lower():
+                            is_match = True
+                            brand_score = 1.0
+
+                    brand_compliance_result = BrandComplianceResult(
+                        expected_brand=expected_brand,
+                        found_brand=found_brand,
+                        found=is_match,
+                        confidence=logo_confidence
+                    )
+
+                    # Apply the mandatory rule
+                    brand_check_ok = is_match
+
             elif shelf_level != "header":
-                overall_text_ok = True  # Don't require text compliance on product shelves
+                overall_text_ok = True
                 text_score = 1.0
 
-            # Determine compliance threshold
             threshold = getattr(
-                shelf_cfg,
-                "compliance_threshold",
-                planogram_description.global_compliance_threshold or 0.8
+                shelf_cfg, "compliance_threshold", planogram_description.global_compliance_threshold or 0.8
             )
 
-            # FIX 4: Better status determination logic
-            # Allow minor unexpected (ink bottles, price tags)
-            major_unexpected = [
-                p for p in unexpected if not any(
-                    word in p.lower() for word in ["ink bottle", "price tag", "502"]
-                )
-            ]
-            # For product shelves (non-header), focus on product compliance
+            major_unexpected = [p for p in unexpected if "ink bottle" not in p.lower() and "price tag" not in p.lower()]
+
+            # MODIFIED: Status determination logic with brand check override
+            status = ComplianceStatus.NON_COMPLIANT # Default status
             if shelf_level != "header":
                 if basic_score >= threshold and not major_unexpected:
                     status = ComplianceStatus.COMPLIANT
-                elif basic_score == 0.0:
+                elif basic_score == 0.0 and len(expected) > 0:
                     status = ComplianceStatus.MISSING
-                else:
-                    status = ComplianceStatus.NON_COMPLIANT
-            else:
-                overall_text_ok = bool(overall_text_ok)
-                # For header shelf, require both product and text compliance
-                if basic_score >= threshold and not major_unexpected and overall_text_ok:
+            else: # Header shelf logic
+                # The brand check is now a mandatory condition for compliance
+                if not brand_check_ok:
+                    status = ComplianceStatus.NON_COMPLIANT # OVERRIDE: Brand check failed
+                elif basic_score >= threshold and not major_unexpected and overall_text_ok:
                     status = ComplianceStatus.COMPLIANT
-                elif basic_score == 0.0:
+                elif basic_score == 0.0 and len(expected) > 0:
                     status = ComplianceStatus.MISSING
-                elif not overall_text_ok:
-                    status = ComplianceStatus.NON_COMPLIANT
                 else:
                     status = ComplianceStatus.NON_COMPLIANT
 
-            # Calculate combined score with appropriate weighting
-            if shelf_level == "header":
-                # Header: Balance product and text compliance
-                endcap = planogram_description.advertisement_endcap
+            # MODIFIED: Combined score calculation with brand weight
+            if shelf_level == "header" and endcap:
                 weights = {
-                    "product_compliance": endcap.product_weight,
-                    "text_compliance": endcap.text_weight
+                    "product": endcap.product_weight,
+                    "text": endcap.text_weight,
+                    "brand": getattr(endcap, "brand_weight", 0.0) # Use 0 if not defined
                 }
+                combined_score = (
+                    (basic_score * weights["product"]) +
+                    (text_score * weights["text"]) +
+                    (brand_score * weights["brand"])
+                )
             else:
-                # Product shelves: Emphasize product compliance
                 weights = {"product_compliance": 0.9, "text_compliance": 0.1}
-
-            combined_score = (basic_score * weights["product_compliance"] +
-                            text_score * weights["text_compliance"])
+                combined_score = (basic_score * weights["product_compliance"] + text_score * weights["text_compliance"])
 
             results.append(
                 ComplianceResult(
@@ -2971,7 +3069,8 @@ Respond with the structured data for all {len(detections)} objects.
                     compliance_score=combined_score,
                     text_compliance_results=text_results,
                     text_compliance_score=text_score,
-                    overall_text_compliant=overall_text_ok
+                    overall_text_compliant=overall_text_ok,
+                    brand_compliance_result=brand_compliance_result
                 )
             )
 
@@ -3100,7 +3199,9 @@ Respond with the structured data for all {len(detections)} objects.
             image, detections, shelf_regions, self.reference_images
         )
 
-        self.logger.debug(f"Identified Products: {identified_products}")
+        self.logger.debug(
+            f"Identified Products: {identified_products}"
+        )
 
         # De-duplicate promotional_graphic (keep the largest)
         promos = [p for p in identified_products if p.product_type == "promotional_graphic" and p.detection_box]

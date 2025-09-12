@@ -1,5 +1,6 @@
 from typing import List, Dict, Optional, Literal, Any, Mapping
-from pydantic import BaseModel, Field
+import uuid
+from pydantic import BaseModel, Field, field_validator
 
 class BoundingBox(BaseModel):
     """Normalized bounding box coordinates"""
@@ -59,20 +60,96 @@ class ShelfRegion(BaseModel):
 
 class IdentifiedProduct(BaseModel):
     """Product identified by LLM using reference images"""
+    detection_id: int = Field(None, description="The unique ID of the corresponding detection box.")
+    product_type: str = Field(description="Type of product")
+    product_model: Optional[str] = Field(None, description="Specific product model")
     brand: Optional[str] = Field(None, description="Brand on the item (e.g., Epson)")
+    confidence: float = Field(ge=0.0, le=1.0, description="Confidence score")
+    visual_features: List[str] = Field(default_factory=list, description="List of key visual identifiers.")
+    reference_match: Optional[str] = Field(None, description="Which reference image was matched, or 'none'.")
+    shelf_location: Optional[str] = Field(
+        None, description="The shelf level where the product is located: 'header', 'top', 'middle', 'bottom'."
+    )
+    position_on_shelf: Optional[str] = Field(
+        None, description="Position on the shelf: 'left', 'center', 'right'."
+    )
     advertisement_type: Optional[str] = Field(
         None, description="Ad type if promotional (backlit_graphic, endcap_poster, shelf_talker, banner, digital_display)"
     )
     detection_box: Optional[DetectionBox] = Field(None, description="Detection box information")
-    product_type: str = Field(description="Type of product")
-    product_model: Optional[str] = Field(None, description="Specific product model")
-    confidence: float = Field(ge=0.0, le=1.0, description="Confidence score")
-    visual_features: List[str] = Field(default_factory=list, description="Visual features")
-    extra: Dict[str, str] = Field(default_factory=dict, description="Extra descriptive tags")
-    reference_match: Optional[str] = Field(None, description="Reference image match")
-    shelf_location: str = Field(description="Shelf location")
-    position_on_shelf: str = Field(description="Position on shelf")
-    detection_id: Optional[int] = Field(None, description="Detection ID from annotated image")
+    extra: Dict[str, str] = Field(default_factory=dict, description="Any Extra descriptive tags")
+
+    @field_validator('confidence', mode='before')
+    @classmethod
+    def validate_confidence(cls, v: Any) -> float:
+        """Ensure confidence is between 0 and 1."""
+        if isinstance(v, str):
+            if v.lower() == 'high':
+                return 0.9
+            elif v.lower() == 'medium':
+                return 0.6
+            elif v.lower() == 'low':
+                return 0.3
+            else:
+                return 0.5  # Default for unrecognized strings
+        if not (0 <= v <= 1):
+            raise ValueError(f"confidence must be between 0 and 1, got {v}")
+        return v
+
+    @field_validator('position_on_shelf', mode='before')
+    @classmethod
+    def validate_position_on_shelf(cls, v: Any) -> Optional[str]:
+        """Ensure position_on_shelf is one of the accepted values."""
+        if isinstance(v, int):
+            mapping = {0: "left", 1: "center", 2: "right"}
+            return mapping.get(v, None)
+        valid_positions = {"left", "center", "right"}
+        if v is not None and v.lower() not in valid_positions:
+            raise ValueError(f"position_on_shelf must be one of {valid_positions}, got '{v}'")
+        return v.lower() if v else v
+
+    @field_validator('detection_id', mode='before')
+    @classmethod
+    def set_id_for_llm_found_items(cls, v: Any) -> int:
+        """If detection_id is null, generate a unique negative ID."""
+        if v is None:
+            # Generate a unique integer to avoid collisions. Negative values clearly
+            # indicate that this item was found by the LLM, not YOLO.
+            return -int(str(uuid.uuid4().int)[:8])
+        return v
+
+    # VALIDATOR 2: Converts a coordinate list into a DetectionBox object.
+    @field_validator('detection_box', mode='before')
+    @classmethod
+    def convert_list_to_detection_box(cls, v: Any, values: Any) -> Any:
+        """If detection_box is a list [x1,y1,x2,y2], convert it to a DetectionBox object."""
+        # The 'v' is the value of the 'detection_box' field itself.
+        if isinstance(v, list) and len(v) == 4:
+            x1, y1, x2, y2 = v
+
+            # We need the confidence to create a valid DetectionBox.
+            # 'values.data' gives us access to the other raw data in the JSON object.
+            confidence = values.data.get('confidence', 0.95) # Default to 0.95 if not found
+
+            return DetectionBox(
+                x1=int(x1),
+                y1=int(y1),
+                x2=int(x2),
+                y2=int(y2),
+                confidence=float(confidence),
+                class_id=0,  # Placeholder ID for LLM-found items
+                class_name='llm_detected',
+                area=abs(int(x2) - int(x1)) * abs(int(y2) - int(y1))
+            )
+        # If it's already a dict or a DetectionBox object, pass it through.
+        return v
+
+class IdentificationResponse(BaseModel):
+    """Response from product identification"""
+    identified_products: List[IdentifiedProduct] = Field(
+        alias="detections",
+        description="List of identified products from the image"
+    )
 
 # Enhanced models for pipeline planogram description
 class BrandDetectionConfig(BaseModel):
