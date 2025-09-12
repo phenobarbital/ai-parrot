@@ -2515,16 +2515,14 @@ class PlanogramCompliancePipeline(AbstractPipeline):
 
         return image
 
-# In planogram.py, inside the PlanogramCompliancePipeline class
-
     def _build_gemini_identification_prompt(
         self,
         detections: List[DetectionBox],
         shelf_regions: List[ShelfRegion]
     ) -> str:
-        """Builds an enhanced prompt for Gemini to identify existing and find new objects."""
+        """Builds a more detailed prompt to help Gemini differentiate similar products."""
 
-        # --- Part 1: Describe Existing Detections ---
+        # --- (This part remains the same) ---
         detection_lines = []
         if detections:
             detection_lines.append("\nDETECTED OBJECTS (with pre-assigned IDs):")
@@ -2533,66 +2531,56 @@ class PlanogramCompliancePipeline(AbstractPipeline):
                     f"ID {i}: Initial class '{detection.class_name}' at bbox ({detection.x1},{detection.y1},{detection.x2},{detection.y2})"
                 )
         else:
-            detection_lines.append("\nNo objects were pre-detected. Please find all relevant products in the image.")
+            detection_lines.append("\nNo objects were pre-detected. Please find all relevant products.")
 
-        # --- Part 2: Describe Shelf Layout ---
         shelf_lines = ["\nSHELF ORGANIZATION:"]
+        # ... (rest of shelf logic is the same) ...
         for shelf in shelf_regions:
             object_ids_on_shelf = []
             for obj in shelf.objects:
-                # Find the index of the object in the original detections list
                 try:
                     idx = detections.index(obj) + 1
                     object_ids_on_shelf.append(str(idx))
                 except ValueError:
-                    continue # Object not in the main list
-
+                    continue
             id_str = f"Objects: {', '.join(object_ids_on_shelf)}" if object_ids_on_shelf else "Objects: None"
             shelf_lines.append(f"- {shelf.level.upper()} SHELF: {id_str}")
 
-        # --- Part 3: Main Instructions and Rules ---
+        # --- NEW: Enhanced Instructions ---
         prompt = f"""
 You are an expert at identifying retail products in planogram displays.
-I have provided an image of a retail endcap, reference images of products, and a list of {len(detections)} objects already detected by a computer vision model.
+I have provided an image of a retail endcap, labeled reference images, and a list of {len(detections)} pre-detected objects.
 
 {''.join(detection_lines)}
 {''.join(shelf_lines)}
 
 **YOUR TWO-PART TASK:**
 
-**PART 1: IDENTIFY PRE-DETECTED OBJECTS**
-- For each object with an ID, identify it according to the rules below.
+1.  **IDENTIFY PRE-DETECTED OBJECTS:** For each object with an ID, identify it using the rules and visual guide below.
+2.  **FIND MISSED OBJECTS:** Carefully find any other prominent products (especially printers or large boxes) that DO NOT have an ID. For these new items, set `detection_id` to `null` and provide an approximate `bbox` array `[x1, y1, x2, y2]`.
 
-**PART 2: FIND MISSED OBJECTS (CRITICAL)**
-- **Carefully examine the entire image for any other prominent products (especially printers or large boxes) that DO NOT have an ID number.**
-- If you find any, add them to your response.
-- For these newly found objects, you MUST:
-    1. Set `detection_id` to `null`.
-    2. Provide an approximate `bbox` array with `[x1, y1, x2, y2]` pixel coordinates.
+---
+**!! IMPORTANT VISUAL GUIDE FOR PRINTERS !!**
+REFERENCE IMAGES show Epson printer models - compare visual design, control panels, ink systems.
+The printer models are visually similar. You MUST use the control panel to tell them apart.
 
-**IDENTIFICATION RULES (Apply to all objects):**
-1.  **PRINTERS (Devices):** White/gray devices with controls/screens. `product_type` is 'printer'. `product_model` is 'ET-XXXX'.
-2.  **BOXES (Packaging):** Blue packaging with printer images. `product_type` is 'product_box'. `product_model` is 'ET-XXXX box'.
+* **ET-2980:** Has a **simple control panel** with a small screen and arrow buttons. **NO number pad.**
+* **ET-3950:** Has a **larger control panel with a physical number pad (0-9)** to the right of the screen.
+* **ET-4950:** Has a **large color touchscreen** and very few physical buttons.
+
+**Use these specific features to make your final decision on the printer model.**
+---
+
+**IDENTIFICATION RULES:**
+1.  **PRINTERS (Devices):** White/gray devices. Use the visual guide above to determine the correct `product_model` ('ET-2980', 'ET-3950', or 'ET-4950').
+2.  **BOXES (Packaging):** Blue packaging. `product_type` is 'product_box'. `product_model` is 'ET-XXXX box'.
 3.  **PROMOTIONAL GRAPHICS:** Large signs/posters. `product_type` is 'promotional_graphic'.
-4.  **PRICE TAGS:** Small labels. `product_type` is 'fact_tag'.
-5.  **KEY DISTINCTION:** An actual device is a 'printer'. Packaging with a picture of the device is a 'product_box'.
 
 **JSON OUTPUT FORMAT:**
-Respond with a single JSON object. For each product you identify (both pre-detected and newly found), provide an entry in the 'detections' list with the following fields:
-- `detection_id`: The original ID (1-{len(detections)}), or `null` for newly found items.
-- `detection_box`: ONLY for newly found items (`detection_id` is `null`). An array of four integers `[x1, y1, x2, y2]`.
-- `product_type`: 'printer', 'product_box', 'promotional_graphic', 'fact_tag', 'ink_bottle'.
-- `product_model`: The specific model name, following the rules above.
-- `brand`: The brand, e.g., 'Epson'.
-- `confidence`: Your confidence in the identification (0.0-1.0).
-- `visual_features`: A list of key visual identifiers (e.g. white printer, blue product box, price tag)
-- `reference_match`: Which reference image matches (or 'none').
-- `shelf_location`: 'header', 'middle', or 'bottom'.
-- `position_on_shelf`: 'left', 'center', or 'right'.
-- `advertisement_type`: For ads, one of ['backlit_graphic', 'endcap_poster', etc.].
+Respond with a single JSON object. For each product you identify (both pre-detected and newly found), provide an entry in the 'detections' list with all the required fields (`detection_id`, `bbox` for new items, `product_type`, `product_model`, `brand`, etc.).
 
 Analyze all provided images and return the complete JSON response.
-"""
+    """
         return prompt
 
     def _build_identification_prompt(
