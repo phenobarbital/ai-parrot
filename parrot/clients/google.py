@@ -3307,18 +3307,35 @@ Your job is to produce a final summary from the following text and identify the 
 
             # --- 5. Link LLM results back to original detections ---
             final_products = []
-            id_to_detection = {i+1: det for i, det in enumerate(detections)}
+            id_to_detection = {det.id: det for i, det in enumerate(detections, 1)}
 
             for item in identified_items:
-                if item.detection_id in id_to_detection:
-                    original_detection = id_to_detection[item.detection_id]
-                    # The IdentifiedProduct model expects a DetectionBox
-                    item.detection_box = original_detection
-                    final_products.append(item)
+                # Case 1: Item was pre-detected (has a positive ID)
+                if item.detection_id > 0:
+                    if item.detection_id in id_to_detection:
+                        item.detection_box = id_to_detection[item.detection_id]
+                        final_products.append(item)
+                    else:
+                        self.logger.warning(
+                            f"LLM returned a pre-detected ID '{item.detection_id}' that doesn't exist, skipping."
+                        )
+
+                # Case 2: Item was newly found by the LLM (has a negative ID from our validator)
+                elif item.detection_id < 0:
+                    # The Pydantic validator has already created the detection_box for us.
+                    if item.detection_box:
+                        self.logger.info(
+                            f"Adding new object found by LLM: {item.product_type} {item.product_model or ''}"
+                        )
+                        final_products.append(item)
+                    else:
+                        self.logger.warning(
+                            f"LLM-found item with ID '{item.detection_id}' is missing a detection_box, skipping."
+                        )
+
+                # Catch any other weird cases
                 else:
-                    self.logger.warning(
-                        f"LLM returned an invalid detection_id '{item.detection_id}', skipping."
-                    )
+                    self.logger.warning(f"LLM returned an item with an invalid ID '{item.detection_id}', skipping.")
 
             self.logger.info(
                 f"Successfully identified {len(final_products)} products."
