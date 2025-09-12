@@ -1,11 +1,13 @@
-from typing import Optional, Dict, Union
+from typing import Optional, Dict, Union, List, Any
 from decimal import Decimal
 import json
 from pydantic import BaseModel, Field, field_validator, ConfigDict
 from navconfig import BASE_DIR
 from asyncdb import AsyncDB
+from asyncdb.models import Model, Field as ModelField
 from querysource.conf import default_dsn
 from ..abstract import AbstractTool
+from datetime import datetime
 
 
 class ProductInput(BaseModel):
@@ -87,3 +89,118 @@ class ProductInfoTool(AbstractTool):
                 raise ValueError(f"No product found with model '{model}' in program '{program_slug}'.")
 
             return ProductInfo(**product_data[0])
+
+
+class ProductListInput(BaseModel):
+    """Input schema for product list requests."""
+    program_slug: str = Field(..., description="The program slug to get products from (e.g., 'google', 'hisense').")
+    models: Optional[List[str]] = Field(default=None, description="Optional list of specific models to get. If None, gets all models.")
+
+
+class ProductListTool(AbstractTool):
+    """Tool to get list of products for a given program/tenant."""
+    name = "get_products_list"
+    description = (
+        "Use this tool to get a list of products for a given program/tenant. "
+        "Provide the program slug as input. Optionally provide a list of specific models."
+    )
+    args_schema = ProductListInput
+
+    async def _execute(self, program_slug: str, models: Optional[List[str]] = None) -> List[Dict[str, str]]:
+        """Get list of products for a program."""
+        db = AsyncDB('pg', dsn=default_dsn)
+        
+        # Choose the appropriate query file
+        if models:
+            # Use specific models query
+            query_file = BASE_DIR / 'agents' / 'product_report' / program_slug / 'product_single.sql'
+        else:
+            # Use all products query
+            query_file = BASE_DIR / 'agents' / 'product_report' / program_slug / 'products_list.sql'
+            
+        if not query_file.exists():
+            raise FileNotFoundError(
+                f"Products query file not found for program_slug '{program_slug}' at {query_file}"
+            )
+        
+        query = query_file.read_text()
+        async with await db.connection() as conn:
+            if models:
+                # Execute with models parameter
+                products, error = await conn.query(query, models)
+            else:
+                # Execute without parameters
+                products, error = await conn.query(query)
+                
+            if error:
+                raise RuntimeError(f"Database query failed: {error}")
+            if not products:
+                return []
+            
+            return products
+
+
+class ProductResponse(Model):
+    """
+    ProductResponse is a model that defines the structure of the response for Product agents.
+    """
+    model: Optional[str] = ModelField(
+        default=None,
+        description="Model of the product"
+    )
+    program_slug: Optional[str] = ModelField(
+        default=None,
+        description="Program/tenant identifier"
+    )
+    agent_id: Optional[str] = ModelField(
+        default=None,
+        description="Unique identifier for the agent that processed the request"
+    )
+    agent_name: Optional[str] = ModelField(
+        default="ProductReport",
+        description="Name of the agent that processed the request"
+    )
+    status: str = ModelField(default="success", description="Status of the response")
+    data: Optional[str] = ModelField(
+        default=None,
+        description="Data returned by the agent, can be text, JSON, etc."
+    )
+    # Optional output field for structured data
+    output: Optional[Any] = ModelField(
+        default=None,
+        description="Output of the agent's processing"
+    )
+    attributes: Dict[str, str] = ModelField(
+        default_factory=dict,
+        description="Attributes associated with the response"
+    )
+    # Timestamp
+    created_at: datetime = ModelField(
+        default_factory=datetime.now, description="Timestamp when response was created"
+    )
+    # Optional file paths
+    transcript: Optional[str] = ModelField(
+        default=None, description="Transcript of the conversation with the agent"
+    )
+    script_path: Optional[str] = ModelField(
+        default=None, description="Path to the conversational script associated with the session"
+    )
+    podcast_path: Optional[str] = ModelField(
+        default=None, description="Path to the podcast associated with the session"
+    )
+    pdf_path: Optional[str] = ModelField(
+        default=None, description="Path to the PDF associated with the session"
+    )
+    document_path: Optional[str] = ModelField(
+        default=None, description="Path to any document generated during session"
+    )
+    # complete list of generated files:
+    files: List[str] = ModelField(
+        default_factory=list, description="List of documents generated during the session")
+
+    class Meta:
+        """Meta class for ProductResponse."""
+        name = "products_informations"
+        schema = "product_report"
+        strict = True
+        frozen = False
