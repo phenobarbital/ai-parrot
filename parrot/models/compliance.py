@@ -1,4 +1,4 @@
-from typing import List, Tuple, Iterable, Set
+from typing import List, Optional, Tuple, Iterable, Set
 from enum import Enum
 import re
 import unicodedata
@@ -22,7 +22,11 @@ class TextComplianceResult(BaseModel):
     confidence: float
     match_type: str
 
-
+class BrandComplianceResult(BaseModel):
+    expected_brand: str
+    found_brand: Optional[str] = None
+    found: bool = False
+    confidence: float = 0.0
 class ComplianceResult(BaseModel):
     """Final compliance check result"""
     shelf_level: str = Field(description="Shelf level being checked")
@@ -39,6 +43,9 @@ class ComplianceResult(BaseModel):
         description="Compliance score"
     )
     text_compliance_results: List[TextComplianceResult] = Field(default_factory=list)
+    brand_compliance_result: Optional[BrandComplianceResult] = Field(
+        None, description="Result of the brand logo compliance check."
+    )
     text_compliance_score: float = Field(default=1.0)
     overall_text_compliant: bool = Field(default=True)
 

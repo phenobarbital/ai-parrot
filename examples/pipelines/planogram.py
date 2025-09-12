@@ -2,19 +2,25 @@ import asyncio
 from navconfig import BASE_DIR
 from parrot.pipelines.planogram import PlanogramCompliancePipeline
 from parrot.clients.gpt import OpenAIClient, OpenAIModel
+from parrot.clients.google import (
+    GoogleGenAIClient,
+    GoogleModel
+)
 
 async def main():
     """Example usage of the 3-step pipeline"""
-    llm = OpenAIClient(model=OpenAIModel.GPT_4O_MINI)
+    # llm = OpenAIClient(model=OpenAIModel.GPT_4O_MINI)
+    llm = GoogleGenAIClient(model=GoogleModel.GEMINI_2_5_PRO)
     # llm = ClaudeClient(model=ClaudeModel.SONNET_4)  # Uncomment to use Claude
 
     # Reference images for product identification
-    reference_images = [
-        BASE_DIR / "examples" / "pipelines" / "advertisement.png",
-        BASE_DIR / "examples" / "pipelines" / "ET-2980.jpg",
-        BASE_DIR / "examples" / "pipelines" / "ET-3950.jpg",
-        BASE_DIR / "examples" / "pipelines" / "ET-4950.jpg"
-    ]
+    reference_images = {
+        "ET-3950 BOX": BASE_DIR / "examples" / "pipelines" / "ET-3950-BOX.jpg",
+        "ET-4950 BOX": BASE_DIR / "examples" / "pipelines" / "ET-4950-BOX.jpg",
+        "ET-2980 Printer": BASE_DIR / "examples" / "pipelines" / "ET-2980.jpg",
+        "ET-3950 Printer": BASE_DIR / "examples" / "pipelines" / "ET-3950.jpg",
+        "ET-4950 Printer": BASE_DIR / "examples" / "pipelines" / "ET-4950.jpg"
+    }
     # Initialize pipeline
     pipeline = PlanogramCompliancePipeline(
         llm=llm,
@@ -122,8 +128,8 @@ async def main():
     )
 
     # Endcap photo:
-    # image_path = BASE_DIR / "examples" / "pipelines" / "250714 BBY 501 Kennesaw GA.jpg"
-    image_path = BASE_DIR / "examples" / "pipelines" / "original_0.jpg"
+    image_path = BASE_DIR / "examples" / "pipelines" / "250714 BBY 501 Kennesaw GA.jpg"
+    # image_path = BASE_DIR / "examples" / "pipelines" / "original_0.jpg"
     # image_path = BASE_DIR / "examples" / "pipelines" / "06668994-c27e-44d9-8d59-f1f65559c2e1-recap.jpeg"
     # image_path = BASE_DIR / "examples" / "pipelines" / "eb04d624-a180-4e5c-b592-ab0d40b558f9-recap.jpeg"
     # new test:

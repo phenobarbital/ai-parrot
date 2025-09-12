@@ -13,7 +13,7 @@ class AbstractPipeline(ABC):
     def __init__(
         self,
         llm: Any = None,
-        llm_provider: str = "claude",
+        llm_provider: str = "google",
         llm_model: Optional[str] = None,
         **kwargs: Any
     ):
