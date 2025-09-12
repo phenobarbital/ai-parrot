@@ -60,17 +60,19 @@ class ShelfRegion(BaseModel):
 
 class IdentifiedProduct(BaseModel):
     """Product identified by LLM using reference images"""
-    detection_id: int = Field(description="The unique ID of the corresponding detection box.")
+    detection_id: int = Field(None, description="The unique ID of the corresponding detection box.")
     product_type: str = Field(description="Type of product")
     product_model: Optional[str] = Field(None, description="Specific product model")
     brand: Optional[str] = Field(None, description="Brand on the item (e.g., Epson)")
     confidence: float = Field(ge=0.0, le=1.0, description="Confidence score")
     visual_features: List[str] = Field(default_factory=list, description="List of key visual identifiers.")
     reference_match: Optional[str] = Field(None, description="Which reference image was matched, or 'none'.")
-    shelf_location: str = Field(
-        description="The shelf level where the product is located: 'header', 'top', 'middle', 'bottom'."
+    shelf_location: Optional[str] = Field(
+        None, description="The shelf level where the product is located: 'header', 'top', 'middle', 'bottom'."
     )
-    position_on_shelf: str = Field(description="Position on the shelf: 'left', 'center', 'right'.")
+    position_on_shelf: Optional[str] = Field(
+        None, description="Position on the shelf: 'left', 'center', 'right'."
+    )
     advertisement_type: Optional[str] = Field(
         None, description="Ad type if promotional (backlit_graphic, endcap_poster, shelf_talker, banner, digital_display)"
     )

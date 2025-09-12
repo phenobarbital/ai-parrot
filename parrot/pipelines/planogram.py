@@ -2562,8 +2562,8 @@ I have provided an image of a retail endcap, labeled reference images, and a lis
 ---
 **!! IMPORTANT VISUAL GUIDE FOR PRINTERS !!**
 REFERENCE IMAGES show Epson printer models - compare visual design, control panels, ink systems.
-The printer models are visually similar. You MUST use the control panel to tell them apart.
 
+The printer models are visually similar. You MUST use the control panel to tell them apart.
 * **ET-2980:** Has a **simple control panel** with a small screen and arrow buttons. **NO number pad.**
 * **ET-3950:** Has a **larger control panel with a physical number pad (0-9)** to the right of the screen.
 * **ET-4950:** Has a **large color touchscreen** and very few physical buttons.
@@ -2577,7 +2577,10 @@ The printer models are visually similar. You MUST use the control panel to tell 
 3.  **PROMOTIONAL GRAPHICS:** Large signs/posters. `product_type` is 'promotional_graphic'.
 
 **JSON OUTPUT FORMAT:**
-Respond with a single JSON object. For each product you identify (both pre-detected and newly found), provide an entry in the 'detections' list with all the required fields (`detection_id`, `bbox` for new items, `product_type`, `product_model`, `brand`, etc.).
+Respond with a single JSON object. For each product you identify (both pre-detected and newly found), provide an entry in the 'detections' list with all the required fields.
+
+**!! FINAL CHECK !!**
+Before responding, ensure **every single object** in the 'detections' list includes all required fields, especially `confidence`, `shelf_location`, and `position_on_shelf`. Do not omit any fields.
 
 Analyze all provided images and return the complete JSON response.
     """
