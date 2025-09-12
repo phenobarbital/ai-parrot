@@ -1,5 +1,6 @@
 from typing import List, Dict, Optional, Literal, Any, Mapping
-from pydantic import BaseModel, Field
+import uuid
+from pydantic import BaseModel, Field, field_validator
 
 class BoundingBox(BaseModel):
     """Normalized bounding box coordinates"""
@@ -75,6 +76,42 @@ class IdentifiedProduct(BaseModel):
     )
     detection_box: Optional[DetectionBox] = Field(None, description="Detection box information")
     extra: Dict[str, str] = Field(default_factory=dict, description="Any Extra descriptive tags")
+
+    @field_validator('detection_id', mode='before')
+    @classmethod
+    def set_id_for_llm_found_items(cls, v: Any) -> int:
+        """If detection_id is null, generate a unique negative ID."""
+        if v is None:
+            # Generate a unique integer to avoid collisions. Negative values clearly
+            # indicate that this item was found by the LLM, not YOLO.
+            return -int(str(uuid.uuid4().int)[:8])
+        return v
+
+    # VALIDATOR 2: Converts a coordinate list into a DetectionBox object.
+    @field_validator('detection_box', mode='before')
+    @classmethod
+    def convert_list_to_detection_box(cls, v: Any, values: Any) -> Any:
+        """If detection_box is a list [x1,y1,x2,y2], convert it to a DetectionBox object."""
+        # The 'v' is the value of the 'detection_box' field itself.
+        if isinstance(v, list) and len(v) == 4:
+            x1, y1, x2, y2 = v
+
+            # We need the confidence to create a valid DetectionBox.
+            # 'values.data' gives us access to the other raw data in the JSON object.
+            confidence = values.data.get('confidence', 0.95) # Default to 0.95 if not found
+
+            return DetectionBox(
+                x1=int(x1),
+                y1=int(y1),
+                x2=int(x2),
+                y2=int(y2),
+                confidence=float(confidence),
+                class_id=0,  # Placeholder ID for LLM-found items
+                class_name='llm_detected',
+                area=abs(int(x2) - int(x1)) * abs(int(y2) - int(y1))
+            )
+        # If it's already a dict or a DetectionBox object, pass it through.
+        return v
 
 class IdentificationResponse(BaseModel):
     """Response from product identification"""
