@@ -2324,12 +2324,13 @@ class PlanogramCompliancePipeline(AbstractPipeline):
                         structured_output=IdentificationResponse,
                     )
                 elif self.llm_provider == "google":
-                    response = await client.ask_to_image(
-                        image=annotated_image,
-                        prompt=prompt,
-                        reference_images=reference_images,
-                        structured_output=IdentificationResponse,
-                        max_tokens=4000
+                    extra_refs = [annotated_image] + (reference_images or [])
+                    identified_products = await client.image_identification(
+                        image=image,
+                        detections=effective_dets,
+                        shelf_regions=shelf_regions,
+                        reference_images=extra_refs,
+                        temperature=0.0
                     )
                 elif self.llm_provider == "openai":
                     extra_refs = [annotated_image] + (reference_images or [])
