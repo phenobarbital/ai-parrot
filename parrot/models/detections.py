@@ -79,6 +79,18 @@ class IdentifiedProduct(BaseModel):
     detection_box: Optional[DetectionBox] = Field(None, description="Detection box information")
     extra: Dict[str, str] = Field(default_factory=dict, description="Any Extra descriptive tags")
 
+    @field_validator('position_on_shelf', mode='before')
+    @classmethod
+    def validate_position_on_shelf(cls, v: Any) -> Optional[str]:
+        """Ensure position_on_shelf is one of the accepted values."""
+        if isinstance(v, int):
+            mapping = {0: "left", 1: "center", 2: "right"}
+            return mapping.get(v, None)
+        valid_positions = {"left", "center", "right"}
+        if v is not None and v.lower() not in valid_positions:
+            raise ValueError(f"position_on_shelf must be one of {valid_positions}, got '{v}'")
+        return v.lower() if v else v
+
     @field_validator('detection_id', mode='before')
     @classmethod
     def set_id_for_llm_found_items(cls, v: Any) -> int:
