@@ -4,16 +4,17 @@ Abstract Bot interface.
 from abc import ABC
 import contextlib
 import importlib
-from typing import Any, Dict, List, Union, Optional
+from typing import Any, Dict, List, Union, Optional, AsyncIterator
 from collections.abc import Callable
+from contextlib import asynccontextmanager
 import uuid
 from string import Template
 import asyncio
+import inspect
 import copy
 from aiohttp import web
 from navconfig.logging import logging
 from navigator_auth.conf import AUTH_SESSION_OBJECT
-
 from parrot.tools.math import MathTool  # pylint: disable=E0611
 from ..interfaces import DBInterface
 from ..exceptions import ConfigError  # pylint: disable=E0611
@@ -53,6 +54,76 @@ logging.getLogger(name='rquest').setLevel(logging.INFO)
 logging.getLogger("grpc").setLevel(logging.CRITICAL)
 
 
+class RequestContext:
+    """RequestContext.
+
+    This class is a context manager for handling request-specific data.
+    It is designed to be used with the `async with` statement to ensure
+    proper setup and teardown of resources.
+
+    Attributes:
+        request (web.Request): The incoming web request.
+        app (Optional[Any]): An optional application context.
+        llm (Optional[Any]): An optional language model instance.
+        kwargs (dict): Additional keyword arguments for customization.
+    """
+
+    def __init__(
+        self,
+        request: web.Request = None,
+        app: Optional[Any] = None,
+        llm: Optional[Any] = None,
+        **kwargs
+    ):
+        """Initialize the RequestContext with the given parameters."""
+        self.request = request
+        self.app = app
+        self.llm = llm
+        self.kwargs = kwargs
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc_value, traceback):
+        pass
+
+
+class RequestBot:
+    """RequestBot.
+
+    This class is a wrapper around the AbstractBot to provide request-specific context.
+    """
+    def __init__(self, delegate: 'AbstractBot', context: RequestContext):
+        self.delegate = delegate
+        self.ctx = context
+
+    def __getattr__(self, name: str):
+        attr = getattr(self.delegate, name)
+        # If the attribute is a callable method (and not just a property)
+        if callable(attr):
+            # Check if the original method is async
+            if inspect.iscoroutinefunction(attr):
+                # Return a new ASYNC function that wraps the original
+                async def async_wrapper(*args, **kwargs):
+                    # Inject the context into the call
+                    if 'ctx' not in kwargs:
+                        kwargs['ctx'] = self.ctx
+                    # Await the original async method with the modified arguments
+                    return await attr(*args, **kwargs)
+                return async_wrapper
+            else:
+                # Return a new SYNC function that wraps the original
+                def sync_wrapper(*args, **kwargs):
+                    # Inject the context into the call
+                    if 'ctx' not in kwargs:
+                        kwargs['ctx'] = self.ctx
+                    # Call the original sync method with the modified arguments
+                    return attr(*args, **kwargs)
+                return sync_wrapper
+        else:
+            # If it's a simple attribute (e.g., self.delegate.name), return it directly
+            return attr
+
 class AbstractBot(DBInterface, ABC):
     """AbstractBot.
 
@@ -81,8 +152,6 @@ class AbstractBot(DBInterface, ABC):
         **kwargs
     ):
         """Initialize the Chatbot with the given configuration."""
-        self._request: Optional[web.Request] = None
-
         # System and Human Prompts:
         if system_prompt:
             self.system_prompt_template = system_prompt or self.system_prompt_template
@@ -230,6 +299,9 @@ class AbstractBot(DBInterface, ABC):
         if _permissions is None:
             _permissions = {}
         self._permissions = {**_default, **_permissions}
+        # Bounded Semaphore:
+        max_concurrency = int(kwargs.get('max_concurrency', 20))
+        self._semaphore = asyncio.BoundedSemaphore(max_concurrency)
 
     def set_program(self, program_slug: str) -> None:
         """Set the program slug for the bot."""
@@ -1144,6 +1216,7 @@ Based on the user context above, please tailor your response to their specific:
         memory: Optional[Callable] = None,
         ensemble_config: dict = None,
         mode: str = "adaptive",
+        ctx: Optional[RequestContext] = None,
         **kwargs
     ) -> AIMessage:
         """
@@ -1412,13 +1485,14 @@ Based on the user context above, please tailor your response to their specific:
     async def __aexit__(self, exc_type, exc_value, traceback):
         pass
 
-    def retrieval(
+    @asynccontextmanager
+    async def retrieval(
         self,
         request: web.Request = None,
         app: Optional[Any] = None,
         llm: Optional[Any] = None,
         **kwargs
-    ) -> "AbstractBot":
+    ) -> AsyncIterator["RequestBot"]:
         """
         Configure the retrieval chain for the Chatbot, returning `self` if allowed,
         or raise HTTPUnauthorized if not. A permissions dictionary can specify
@@ -1434,81 +1508,67 @@ Based on the user context above, please tailor your response to their specific:
         Returns:
             AbstractBot: The Chatbot object or raise HTTPUnauthorized.
         """
-        self._request = request
-        session = request.session
-        try:
-            userinfo = session[AUTH_SESSION_OBJECT]
-        except KeyError:
-            userinfo = {}
+        ctx = RequestContext(
+            request=request,
+            app=app,
+            llm=llm,
+            **kwargs
+        )
+        wrapper = RequestBot(delegate=self, context=ctx)
 
-        # decode your user from session
+        # --- Permission Evaluation ---
+        is_authorized = False
         try:
+            session = request.session
+            userinfo = session.get(AUTH_SESSION_OBJECT, {})
             user = session.decode("user")
         except (KeyError, TypeError):
+            raise web.HTTPUnauthorized(reason="Invalid user session")
+
+        # 1: Superuser is always allowed
+        if userinfo.get('superuser', False) is True:
+            is_authorized = True
+
+        if not is_authorized:
+            # Convenience references
+            users_allowed = self._permissions.get('users', [])
+            groups_allowed = self._permissions.get('groups', [])
+            job_codes_allowed = self._permissions.get('job_codes', [])
+            programs_allowed = self._permissions.get('programs', [])
+            orgs_allowed = self._permissions.get('organizations', [])
+
+            # 2: Check user
+            if users_allowed == "*" or user.get('username') in users_allowed:
+                is_authorized = True
+
+            # 3: Check job_code
+            elif job_codes_allowed == "*" or user.get('job_code') in job_codes_allowed:
+                is_authorized = True
+
+            # 4: Check groups
+            elif groups_allowed == "*" or not set(userinfo.get("groups", [])).isdisjoint(groups_allowed):
+                is_authorized = True
+
+            # 5: Check programs
+            elif programs_allowed == "*" or not set(userinfo.get("programs", [])).isdisjoint(programs_allowed):
+                is_authorized = True
+
+            # 6: Check organizations
+            elif orgs_allowed == "*" or not set(userinfo.get("organizations", [])).isdisjoint(orgs_allowed):
+                is_authorized = True
+
+        # --- Authorization Check and Yield ---
+        if not is_authorized:
             raise web.HTTPUnauthorized(
-                reason="Invalid user"
+                reason=f"User {user.get('username', 'Unknown')} is not authorized for this bot."
             )
 
-        # 1: superuser is always allowed
-        if userinfo.get('superuser', False) is True:
-            return self
-
-        # convenience references
-        users_allowed = self._permissions.get('users', [])
-        groups_allowed = self._permissions.get('groups', [])
-        job_codes_allowed = self._permissions.get('job_codes', [])
-        programs_allowed = self._permissions.get('programs', [])
-        orgs_allowed = self._permissions.get('organizations', [])
-
-        # 2: check if 'users' == "*" or user.username in 'users'
-        if users_allowed == "*":
-            return self
-        if user.get('username') in users_allowed:
-            return self
-
-        # 3: check job_code
-        if job_codes_allowed == "*":
-            return self
-        try:
-            if user.job_code in job_codes_allowed:
-                return self
-        except AttributeError:
-            pass
-
-        # 4: check groups
-        # If groups_allowed == "*", no restriction on groups
-        if groups_allowed == "*":
-            return self
-        # otherwise, see if there's an intersection
-        user_groups = set(userinfo.get("groups", []))
-        if not user_groups.isdisjoint(groups_allowed):
-            return self
-
-        # 5: check programs
-        if programs_allowed == "*":
-            return self
-        try:
-            user_programs = set(userinfo.get("programs", []))
-            if not user_programs.isdisjoint(programs_allowed):
-                return self
-        except AttributeError:
-            pass
-
-
-        # 6: check organizations
-        if orgs_allowed == "*":
-            return self
-        try:
-            user_orgs = set(userinfo.get("organizations", []))
-            if not user_orgs.isdisjoint(orgs_allowed):
-                return self
-        except AttributeError:
-            pass
-
-        # If none of the conditions pass, raise unauthorized:
-        raise web.HTTPUnauthorized(
-            reason=f"User {user.username} is not Unauthorized"
-        )
+        # If authorized, acquire semaphore and yield control
+        async with self._semaphore:
+            try:
+                yield wrapper
+            finally:
+                ctx = None
 
     async def shutdown(self, **kwargs) -> None:
         """
@@ -1528,6 +1588,7 @@ Based on the user context above, please tailor your response to their specific:
         user_id: Optional[str] = None,
         use_conversation_history: bool = True,
         memory: Optional[Callable] = None,
+        ctx: Optional[RequestContext] = None,
         **kwargs
     ) -> AIMessage:
         """
