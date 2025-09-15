@@ -41,7 +41,7 @@ class ChatHandler(BaseView):
         else:
             # retrieve chatbof information:
             manager = self.request.app['bot_manager']
-            chatbot = manager.get_bot(name)
+            chatbot = await manager.get_bot(name)
             if not chatbot:
                 return self.error(
                     f"Chatbot {name} not found.",
@@ -93,7 +93,7 @@ class ChatHandler(BaseView):
                 status=404
             )
         try:
-            chatbot: AbstractBot = manager.get_bot(name)
+            chatbot: AbstractBot = await manager.get_bot(name)
             if not chatbot:
                 raise KeyError(
                     f"Chatbot {name} not found."
@@ -419,7 +419,7 @@ class BotManagement(BaseView):
                 status=404
             )
         try:
-            chatbot: AbstractBot = manager.get_bot(chatbot_name)
+            chatbot: AbstractBot = await manager.get_bot(chatbot_name)
             if not chatbot:
                 raise KeyError(
                     f"Chatbot {chatbot_name} not found."
