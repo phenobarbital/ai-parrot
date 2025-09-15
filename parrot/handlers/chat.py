@@ -147,29 +147,35 @@ class ChatHandler(BaseView):
                 if method:= self._check_methods(bot, method_name):
                     sig = inspect.signature(method)
                     method_params = {}
+                    missing_required = []
                     for param_name, param in sig.parameters.items():
-                        if param_name == 'self':
+                        if param_name == 'self' or param_name in 'kwargs':
                             continue
+                        # Handle different parameter types
+                        if param.kind == inspect.Parameter.VAR_POSITIONAL:
+                            # *args - skip, we don't handle positional args via JSON
+                            continue
+                        elif param.kind == inspect.Parameter.VAR_KEYWORD:
+                            # **kwargs - pass all remaining data that wasn't matched
+                            continue
+                        # Regular parameters
                         if param_name in data:
                             method_params[param_name] = data[param_name]
                         elif param.default == inspect.Parameter.empty:
                             # Required parameter missing
-                            return self.json_response(
-                                {
-                                    "message": f"Required parameter '{param_name}' missing",
-                                    "required_params": [p for p in sig.parameters.keys() if p != 'self']
-                                },
+                            missing_required.append(param_name)
+                    if missing_required:
+                        return self.json_response(
+                            {
+                                "message": f"Required parameters missing: {', '.join(missing_required)}",
+                                "required_params": [p for p in sig.parameters.keys() if p != 'self']
+                            },
                                 status=400
                             )
                     try:
+                        print('Invoking method ', method_name, ' with params ', method_params)
                         result = await method(
-                            question=question,
-                            session_id=session_id,
-                            user_id=user_id,
-                            search_type=search_type,
-                            llm=llm,
-                            model=model,
-                            **data
+                            **method_params
                         )
                         return self.json_response(
                             response=result.model_dump()
