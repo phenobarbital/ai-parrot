@@ -217,9 +217,9 @@ class SassieAgent(BasicAgent):
     async def retailer_report(self, program: str = 'google') -> AgentResponse:
         """Generate a report for a specific retailer."""
         retailers = [
-            # 'T-Mobile',
-            # 'Verizon',
-            # 'AT&T',
+            'T-Mobile',
+            'Verizon',
+            'AT&T',
             'Spectrum'
         ]
         partials = {}

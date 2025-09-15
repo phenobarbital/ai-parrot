@@ -3025,7 +3025,7 @@ Your job is to produce a final summary from the following text and identify the 
         turn_id = str(uuid.uuid4())
 
         self.logger.info(
-            f"Starting image generation with model: {model}"
+            f"Starting video analysis with model: {model}"
         )
 
         if stateless:
@@ -3059,7 +3059,7 @@ Your job is to produce a final summary from the following text and identify the 
                         history.append(ModelContent(parts=parts))
 
         config=types.GenerateContentConfig(
-            response_modalities=['Text', 'Image'],
+            response_modalities=['Text'],
             temperature=temperature or self.temperature,
             system_instruction=prompt_instruction
         )

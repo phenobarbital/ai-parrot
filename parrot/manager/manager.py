@@ -10,13 +10,14 @@ from datamodel.exceptions import ValidationError  # pylint: disable=E0611 # noqa
 # Navigator:
 from navconfig.logging import logging
 from asyncdb.exceptions import NoDataFound
-from .bots.abstract import AbstractBot
-from .bots.basic import BasicBot
-from .bots.chatbot import Chatbot
-from .bots.agent import BasicAgent
-from .handlers.chat import ChatHandler, BotHandler
-from .handlers import ChatbotHandler
-from .handlers.models import BotModel
+from ..bots.abstract import AbstractBot
+from ..bots.basic import BasicBot
+from ..bots.chatbot import Chatbot
+from ..bots.agent import BasicAgent
+from ..handlers.chat import ChatHandler, BotHandler
+from ..handlers import ChatbotHandler
+from ..handlers.models import BotModel
+from ..registry import agent_registry, AgentRegistry
 
 
 class BotManager:
@@ -34,6 +35,7 @@ class BotManager:
         self.logger = logging.getLogger(
             name='Parrot.Manager'
         )
+        self.registry: AgentRegistry = agent_registry
 
     def get_bot_class(self, class_name: str) -> Type[AbstractBot]:
         """
@@ -44,7 +46,11 @@ class BotManager:
         Returns:
         Type[AbstractBot]: A Bot class derived from AbstractBot.
         """
-        module = import_module('.bots', __package__)
+        if class_name in self._bots:
+            # return the class of the existing bot instance
+            return self._bots[class_name].__class__
+
+        module = import_module('..bots', __package__)
         try:
             return getattr(module, class_name)
         except AttributeError:
@@ -52,24 +58,77 @@ class BotManager:
                 f"No class named '{class_name}' found in the module 'bots'."
             )
 
-    async def load_bots(self, app: web.Application) -> None:
-        """Load all bots from DB using the new unified BotModel."""
-        self.logger.info("Loading bots from DB...")
-        db = app['database']
-        async with await db.acquire() as conn:
-            BotModel.Meta.connection = conn
-            try:
-                bots = await BotModel.filter(enabled=True)
-            except Exception as e:
-                self.logger.error(
-                    f"Failed to load bots from DB: {e}"
-                )
-                return
+    def _log_final_state(self) -> None:
+        """Log the final state of bot loading."""
+        registry_info = self.registry.get_registration_info()
+        self.logger.notice("=== Bot Loading Complete ===")
+        self.logger.notice(f"Registered agents: {registry_info['total_registered']}")
+        # self.logger.info(f"Startup agents: {startup_info['total_startup_agents']}")
+        self.logger.notice(f"Active bots: {len(self._bots)}")
 
-            for bot_model in bots:
+    async def _process_startup_results(self, startup_results: Dict[str, Any]) -> None:
+        """Process startup instantiation results."""
+        for agent_name, result in startup_results.items():
+            if result["status"] == "success":
+                instance = result.get("instance")
+                if instance:
+                    self._bots[agent_name] = instance
+                    self.logger.info(
+                        f"Added startup agent to active bots: {agent_name}"
+                    )
+            else:
+                self.logger.error(
+                    f"Startup agent {agent_name} failed: {result['error']}"
+                )
+
+    async def load_bots(self, app: web.Application) -> None:
+        """Enhanced bot loading using the registry."""
+        self.logger.info("Starting bot loading with global registry")
+
+        # Step 1: Import modules to trigger decorator registration
+        await self.registry.load_modules()
+
+        # Step 2: Register config-based agents
+        config_count = self.registry.discover_config_agents()
+        self.logger.info(
+            f"Registered {config_count} agents from config"
+        )
+
+        # Step 3: Instantiate startup agents
+        startup_results = await self.registry.instantiate_startup_agents(app)
+        await self._process_startup_results(startup_results)
+
+        # Step 4: Load database bots
+        await self._load_database_bots(app)
+
+        # Step 5: Report final state
+        self._log_final_state()
+
+    async def _load_database_bots(self, app: web.Application) -> None:
+        """Load bots from database."""
+        try:
+            # Import here to avoid circular imports
+            from ..handlers.models import BotModel
+            db = app['database']
+            async with await db.acquire() as conn:
+                BotModel.Meta.connection = conn
+                try:
+                    all_bots = await BotModel.filter(enabled=True)
+                except Exception as e:
+                    self.logger.error(
+                        f"Failed to load bots from DB: {e}"
+                    )
+                    return
+
+            for bot_model in all_bots:
                 self.logger.notice(
                     f"Loading bot '{bot_model.name}' (mode: {bot_model.operation_mode})..."
                 )
+                if bot_model.name in self._bots:
+                    self.logger.debug(
+                        f"Bot {bot_model.name} already active, skipping"
+                    )
+                    continue
                 try:
                     # Use the factory function from models.py or create bot directly
                     if hasattr(self, 'get_bot_class') and hasattr(bot_model, 'bot_class'):
@@ -78,11 +137,7 @@ class BotManager:
                     else:
                         # Default to BasicBot or your default bot class
                         class_name = BasicBot
-
-                    # Create bot using the model's configuration
-                    # bot_config = bot_model.to_bot_config()
-                    # Initialize the bot with the configuration
-                    chatbot = class_name(
+                    bot_instance = class_name(
                         chatbot_id=bot_model.chatbot_id,
                         name=bot_model.name,
                         description=bot_model.description,
@@ -127,37 +182,30 @@ class BotManager:
                         language=bot_model.language,
                         disclaimer=bot_model.disclaimer,
                     )
-
                     # Set the model ID reference
-                    chatbot.model_id = bot_model.chatbot_id
+                    bot_instance.model_id = bot_model.chatbot_id
 
-                    # Configure the bot
-                    try:
-                        await chatbot.configure(app=app)
-                        self.add_bot(chatbot)
-                        self.logger.info(
-                            f"Successfully loaded bot '{bot_model.name}' "
-                            f"with {len(bot_model.tools) if bot_model.tools else 0} tools"
-                        )
-                    except ValidationError as e:
+                    await bot_instance.configure(app)
+                    self.add_bot(bot_instance)
+                    self.logger.info(
+                        f"Successfully loaded bot '{bot_model.name}' "
+                        f"with {len(bot_model.tools) if bot_model.tools else 0} tools"
+                    )
+                except ValidationError as e:
                         self.logger.error(
                             f"Invalid configuration for bot '{bot_model.name}': {e}"
                         )
-                    except Exception as e:
-                        self.logger.error(
-                            f"Failed to configure bot '{bot_model.name}': {e}"
-                        )
-
                 except Exception as e:
                     self.logger.error(
-                        f"Failed to create bot instance for '{bot_model.name}': {e}"
+                        f"Failed to load database bot {bot_instance.name}: {str(e)}"
                     )
-                    continue
-
-        self.logger.info(
-            f":: Bots loaded successfully. Total active bots: {len(self._bots)}"
-        )
-
+            self.logger.info(
+                f":: Bots loaded successfully. Total active bots: {len(self._bots)}"
+            )
+        except Exception as e:
+            self.logger.error(
+                f"Database bot loading failed: {str(e)}"
+            )
 
     # Alternative approach using the factory function from models.py
     async def load_bots_with_factory(self, app: web.Application) -> None:
@@ -244,9 +292,22 @@ class BotManager:
         """Add a Bot to the manager."""
         self._bots[bot.name] = bot
 
-    def get_bot(self, name: str) -> AbstractBot:
+    async def get_bot(self, name: str) -> AbstractBot:
         """Get a Bot by name."""
-        return self._bots.get(name)
+        if name in self._bots:
+            return self._bots[name]
+        if self.registry.has(name):
+            try:
+                bot_instance = await self.registry.get_instance(name)
+                if bot_instance:
+                    await bot_instance.configure(self.app)
+                    self.add_bot(bot_instance)
+                    return bot_instance
+            except Exception as e:
+                self.logger.error(
+                    f"Failed to get bot instance from registry: {e}"
+                )
+        return None
 
     def remove_bot(self, name: str) -> None:
         """Remove a Bot by name."""
@@ -341,6 +402,10 @@ class BotManager:
         )
         router.add_view(
             '/api/v1/chat/{chatbot_name}',
+            ChatHandler
+        )
+        router.add_view(
+            '/api/v1/chat/{chatbot_name}/{method_name}',
             ChatHandler
         )
         # ChatBot Manager
