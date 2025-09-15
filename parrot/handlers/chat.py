@@ -67,6 +67,8 @@ class ChatHandler(BaseView):
             'update', 'insert', '__dict__', '__class__', 'retrieval',
             '_define_prompt', 'configure_llm', 'configure_store', 'default_tools'
         }
+        if not method_name:
+            return None
         if method_name.startswith('_') or method_name in forbidden_methods:
             raise AttributeError(
                 f"Method {method_name} error, not found or forbidden."
