@@ -8,6 +8,7 @@ from ..clients.google import GoogleGenAIClient
 from .chatbot import Chatbot
 from .prompts import AGENT_PROMPT
 from ..tools.abstract import AbstractTool
+from ..tools.manager import ToolManager
 from ..tools.pythonpandas import PythonPandasTool
 from ..tools.google import GoogleLocationTool, GoogleRoutesTool
 from ..tools.openweather import OpenWeatherTool
@@ -86,6 +87,9 @@ class BasicAgent(Chatbot):
         )
         ## Google GenAI Client (for multi-modal responses and TTS generation):
         self.client = GoogleGenAIClient()
+        ## Tool Manager:
+        self.tool_manager = ToolManager()
+        self.tool_manager.default_tools([])  # Start with no tools
 
     def default_tools(self, tools: List[AbstractTool]) -> List[AbstractTool]:
         """Return the default tools for the agent."""
