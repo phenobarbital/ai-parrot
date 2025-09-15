@@ -23,6 +23,7 @@ from .epubloader import EpubLoader
 from .excel import ExcelLoader
 # from .video import VideoLoader
 from .videolocal import VideoLocalLoader
+from .videounderstanding import VideoUnderstandingLoader
 # from .vimeo import VimeoLoader
 from .audio import AudioLoader
 
@@ -48,6 +49,9 @@ AVAILABLE_LOADERS = {
     '.epub': EpubLoader,
     '.mp3': AudioLoader,
     '.wav': AudioLoader,
-    '.avi': VideoLocalLoader,
-    '.mp4': VideoLocalLoader,
+    '.avi': VideoUnderstandingLoader,
+    '.mp4': VideoUnderstandingLoader,
+    '.webm': VideoUnderstandingLoader,
+    '.mov': VideoUnderstandingLoader,
+    '.mkv': VideoUnderstandingLoader,
 }
