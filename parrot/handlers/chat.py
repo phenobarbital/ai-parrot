@@ -4,6 +4,7 @@ import re
 import uuid
 import asyncio
 import importlib
+import inspect
 from pathlib import Path
 from aiohttp import web
 from asyncdb.exceptions.exceptions import NoDataFound  # pylint: disable=E0611  # noqa
@@ -41,7 +42,7 @@ class ChatHandler(BaseView):
         else:
             # retrieve chatbof information:
             manager = self.request.app['bot_manager']
-            chatbot = manager.get_bot(name)
+            chatbot = await manager.get_bot(name)
             if not chatbot:
                 return self.error(
                     f"Chatbot {name} not found.",
@@ -58,6 +59,29 @@ class ChatHandler(BaseView):
                 "config_file": config_file
             })
 
+    def _check_methods(self, bot: AbstractBot, method_name: str):
+        """Check if the method exists in the bot and is callable."""
+        forbidden_methods = {
+            '__init__', '__del__', '__getattribute__', '__setattr__',
+            'configure', '_setup_database_tools', 'save', 'delete',
+            'update', 'insert', '__dict__', '__class__', 'retrieval',
+            '_define_prompt', 'configure_llm', 'configure_store', 'default_tools'
+        }
+        if method_name.startswith('_') or method_name in forbidden_methods:
+            raise AttributeError(
+                f"Method {method_name} error, not found or forbidden."
+            )
+        if not hasattr(bot, method_name):
+            raise AttributeError(
+                f"Method {method_name} error, not found or forbidden."
+            )
+        method = getattr(bot, method_name)
+        if not callable(method):
+            raise TypeError(
+                f"Attribute {method_name} is not callable in bot {bot.name}."
+            )
+        return method
+
     async def post(self, *args, **kwargs):
         """
         post.
@@ -67,15 +91,9 @@ class ChatHandler(BaseView):
         """
         app = self.request.app
         name = self.request.match_info.get('chatbot_name', None)
+        method_name = self.request.match_info.get('method_name', None)
         qs = self.query_parameters(self.request)
         data = await self.request.json()
-        if not 'query' in data:
-            return self.json_response(
-                {
-                "message": "No query was found."
-                },
-                status=400
-            )
         if 'llm' in qs:
             # passing another LLM to the Chatbot:
             llm = data.pop('llm')
@@ -93,7 +111,7 @@ class ChatHandler(BaseView):
                 status=404
             )
         try:
-            chatbot: AbstractBot = manager.get_bot(name)
+            chatbot: AbstractBot = await manager.get_bot(name)
             if not chatbot:
                 raise KeyError(
                     f"Chatbot {name} not found."
@@ -106,7 +124,7 @@ class ChatHandler(BaseView):
                 status=404
             )
         # getting the question:
-        question = data.pop('query')
+        question = data.pop('query', None)
         search_type = data.pop('search_type', 'similarity')
         return_sources = data.pop('return_sources', True)
         try:
@@ -121,11 +139,60 @@ class ChatHandler(BaseView):
                 status=400
             )
         try:
-            async with chatbot.retrieval(self.request) as bot:
+            async with chatbot.retrieval(self.request, app=app, llm=llm) as bot:
                 session_id = session.get('session_id', None)
                 user_id = session.get('user_id', None)
                 if not session_id:
                     session_id = str(uuid.uuid4())
+                if method:= self._check_methods(bot, method_name):
+                    sig = inspect.signature(method)
+                    method_params = {}
+                    missing_required = []
+                    for param_name, param in sig.parameters.items():
+                        if param_name == 'self' or param_name in 'kwargs':
+                            continue
+                        # Handle different parameter types
+                        if param.kind == inspect.Parameter.VAR_POSITIONAL:
+                            # *args - skip, we don't handle positional args via JSON
+                            continue
+                        elif param.kind == inspect.Parameter.VAR_KEYWORD:
+                            # **kwargs - pass all remaining data that wasn't matched
+                            continue
+                        # Regular parameters
+                        if param_name in data:
+                            method_params[param_name] = data[param_name]
+                        elif param.default == inspect.Parameter.empty:
+                            # Required parameter missing
+                            missing_required.append(param_name)
+                    if missing_required:
+                        return self.json_response(
+                            {
+                                "message": f"Required parameters missing: {', '.join(missing_required)}",
+                                "required_params": [p for p in sig.parameters.keys() if p != 'self']
+                            },
+                                status=400
+                            )
+                    try:
+                        print('Invoking method ', method_name, ' with params ', method_params)
+                        result = await method(
+                            **method_params
+                        )
+                        return self.json_response(
+                            response=result.model_dump()
+                        )
+                    except Exception as exc:
+                        return self.error(
+                            f"Error invoking method {method_name} on chatbot {name}: {exc}",
+                            exception=exc,
+                            status=400
+                        )
+                if not question:
+                    return self.json_response(
+                        {
+                            "message": "Query parameter is required to interact with the chatbot."
+                        },
+                        status=400
+                    )
                 result = await bot.conversation(
                     question=question,
                     session_id=session_id,
@@ -419,7 +486,7 @@ class BotManagement(BaseView):
                 status=404
             )
         try:
-            chatbot: AbstractBot = manager.get_bot(chatbot_name)
+            chatbot: AbstractBot = await manager.get_bot(chatbot_name)
             if not chatbot:
                 raise KeyError(
                     f"Chatbot {chatbot_name} not found."

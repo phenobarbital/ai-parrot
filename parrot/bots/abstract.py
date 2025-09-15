@@ -1241,8 +1241,8 @@ Based on the user context above, please tailor your response to their specific:
             system_prompt = await self.create_system_prompt(
                 vector_context=vector_context,
                 conversation_context=conversation_context,
-                vector_metadata=vector_metadata,
-                user_context=user_context
+                metadata=vector_metadata,
+                user_context=user_context,
                 **kwargs
             )
             # Configure LLM if needed
@@ -1295,7 +1295,9 @@ Based on the user context above, please tailor your response to their specific:
             self.logger.info("Conversation task was cancelled.")
             raise
         except Exception as e:
-            self.logger.error(f"Error in conversation: {e}")
+            self.logger.error(
+                f"Error in conversation: {e}"
+            )
             raise
 
     def as_markdown(
@@ -1410,7 +1412,13 @@ Based on the user context above, please tailor your response to their specific:
     async def __aexit__(self, exc_type, exc_value, traceback):
         pass
 
-    def retrieval(self, request: web.Request = None) -> "AbstractBot":
+    def retrieval(
+        self,
+        request: web.Request = None,
+        app: Optional[Any] = None,
+        llm: Optional[Any] = None,
+        **kwargs
+    ) -> "AbstractBot":
         """
         Configure the retrieval chain for the Chatbot, returning `self` if allowed,
         or raise HTTPUnauthorized if not. A permissions dictionary can specify
