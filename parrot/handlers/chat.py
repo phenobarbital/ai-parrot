@@ -203,6 +203,7 @@ class ChatHandler(BaseView):
                     llm=llm,
                     model=model,
                     return_sources=return_sources,
+                    request=self.request,
                     **data
                 )
                 return self.json_response(
