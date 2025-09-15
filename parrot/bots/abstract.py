@@ -1412,7 +1412,13 @@ Based on the user context above, please tailor your response to their specific:
     async def __aexit__(self, exc_type, exc_value, traceback):
         pass
 
-    def retrieval(self, request: web.Request = None) -> "AbstractBot":
+    def retrieval(
+        self,
+        request: web.Request = None,
+        app: Optional[Any] = None,
+        llm: Optional[Any] = None,
+        **kwargs
+    ) -> "AbstractBot":
         """
         Configure the retrieval chain for the Chatbot, returning `self` if allowed,
         or raise HTTPUnauthorized if not. A permissions dictionary can specify
