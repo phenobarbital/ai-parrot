@@ -33,6 +33,7 @@ from .models import (
     QueryExecutionResponse
 )
 from .prompts import DB_AGENT_PROMPT, BASIC_HUMAN_PROMPT
+from .retries import QueryRetryConfig, SQLRetryHandler
 
 
 # ============================================================================
@@ -365,11 +366,15 @@ class AbstractDBAgent(AbstractBot, ABC):
         query: str,
         user_role: UserRole = UserRole.DATA_ANALYST,
         return_format: Optional[ReturnFormat] = None,
+        enable_retry: bool = True,
         **kwargs
     ) -> AIMessage:
         """
         Main query processing with schema-centric 3-step pipeline.
         """
+        # Add retry configuration to kwargs
+        retry_config = kwargs.pop('retry_config', QueryRetryConfig())
+
         try:
             # Step 1: Route the query
             route: RouteDecision = await self.query_router.route(
@@ -406,7 +411,17 @@ class AbstractDBAgent(AbstractBot, ABC):
             # Step 3b: Execute query (if needed)
             exec_result = None
             if route.needs_execution and sql_query:
-                exec_result = await self._execute_query(sql_query, route.execution_options)
+                if enable_retry:
+                    exec_result = await self._execute_query(
+                        sql_query,
+                        route.execution_options,
+                        retry_config
+                    )
+                else:
+                    exec_result = await self._execute_query_safe(
+                        sql_query,
+                        route.execution_options
+                    )
 
             # Step 4: Format response
             return self._format_response(route, query, sql_query, explanation, exec_result, llm_response)
@@ -580,71 +595,180 @@ Provide detailed validation results.
         validation_text = str(llm_response.output) if llm_response.output else str(llm_response.response)
         return validation_text, llm_response
 
-    async def _execute_query(self, sql_query: str, options: Dict[str, Any]) -> QueryExecutionResponse:
+    async def _execute_query(
+        self,
+        sql_query: str,
+        options: Dict[str, Any],
+        retry_config: Optional[QueryRetryConfig] = None
+    ) -> QueryExecutionResponse:
         """Execute SQL query with schema security."""
+
+        retry_handler = SQLRetryHandler(self, retry_config or QueryRetryConfig())
+        retry_count = 0
+        last_error = None
+        query_history = []  # Track all attempts
+
+        while retry_count <= retry_handler.config.max_retries:
+            try:
+                self.logger.debug(f"🔄 QUERY ATTEMPT {retry_count + 1}: Executing SQL")
+                # Execute the query
+                result = await self._execute_query_internal(sql_query, options)
+                # Success!
+                if retry_count > 0:
+                    self.logger.info(
+                        f"✅ QUERY SUCCESS: Fixed after {retry_count} retries"
+                    )
+
+                return result
+            except Exception as e:
+                self.logger.warning(
+                    f"❌ QUERY FAILED (attempt {retry_count + 1}): {e}"
+                )
+
+                query_history.append({
+                    "attempt": retry_count + 1,
+                    "query": sql_query,
+                    "error": str(e),
+                    "error_type": type(e).__name__
+                })
+
+                last_error = e
+
+                # Check if this is a retryable error
+                if not retry_handler._is_retryable_error(e):
+                    self.logger.info(f"🚫 NON-RETRYABLE ERROR: {type(e).__name__}")
+                    break
+
+                # Check if we've hit max retries
+                if retry_count >= retry_handler.config.max_retries:
+                    self.logger.info(f"🛑 MAX RETRIES REACHED: {retry_count}")
+                    break
+
+                # Try to fix the query
+                self.logger.info(
+                    f"🔧 ATTEMPTING QUERY FIX: Retry {retry_count + 1}"
+                )
+
+                try:
+                    fixed_query = await self._fix_query(
+                        original_query=sql_query,
+                        error=e,
+                        retry_count=retry_count,
+                        query_history=query_history
+                    )
+                    if fixed_query and fixed_query.strip() != sql_query.strip():
+                        sql_query = fixed_query
+                        retry_count += 1
+                    else:
+                        self.logger.warning(
+                            f"🔧 NO QUERY FIX: LLM returned same or empty query"
+                        )
+                        break
+                except Exception as fix_error:
+                    self.logger.error(
+                        f"🔧 QUERY FIX FAILED: {fix_error}"
+                    )
+                    break
+        # All retries failed, return error response
+        start_time = datetime.now()
+        execution_time = (datetime.now() - start_time).total_seconds() * 1000
+
+        return QueryExecutionResponse(
+            success=False,
+            data=None,
+            row_count=0,
+            execution_time_ms=execution_time,
+            error_message=f"Query failed after {retry_count} retries. Last error: {last_error}",
+            query_plan=None,
+            metadata={
+                "retry_count": retry_count,
+                "query_history": query_history,
+                "last_error_type": type(last_error).__name__ if last_error else None
+            }
+        )
+
+    async def _execute_query_internal(
+        self,
+        sql_query: str,
+        options: Dict[str, Any]
+    ) -> QueryExecutionResponse:
+        """Execute query and raise exceptions (don't catch them) for retry mechanism."""
+
+        start_time = datetime.now()
+
+        # Validate query targets correct schemas
+        if not self._validate_schema_security(sql_query):
+            raise ValueError(
+                f"Query attempts to access schemas outside of allowed list: {self.allowed_schemas}"
+            )
+
+        # Execute query - LET EXCEPTIONS PROPAGATE for retry mechanism
+        async with self.session_maker() as session:
+            # Set search path for security
+            search_path = ','.join(self.allowed_schemas)
+            await session.execute(text(f"SET search_path = '{search_path}'"))
+
+            # Add timeout
+            timeout = options.get('timeout', 30)
+            await session.execute(text(f"SET statement_timeout = '{timeout}s'"))
+
+            # Execute main query
+            query_plan = None
+            if options.get('explain_analyze', False):
+                # Get query plan first
+                plan_result = await session.execute(text(f"EXPLAIN ANALYZE {sql_query}"))
+                query_plan = "\n".join([row[0] for row in plan_result.fetchall()])
+
+            # Execute actual query - DON'T CATCH EXCEPTIONS HERE
+            result = await session.execute(text(sql_query))
+
+            if sql_query.strip().upper().startswith('SELECT'):
+                # Handle SELECT queries
+                rows = result.fetchall()
+                columns = list(result.keys()) if rows else []
+
+                # Apply limit
+                limit = options.get('limit', 1000)
+                limited_rows = rows[:limit] if len(rows) > limit else rows
+
+                # Convert to list of dicts
+                data = [dict(zip(columns, row)) for row in limited_rows]
+                row_count = len(rows)  # Original count
+            else:
+                # Handle non-SELECT queries
+                data = None
+                columns = []
+                row_count = result.rowcount
+
+            execution_time = (datetime.now() - start_time).total_seconds() * 1000
+
+            return QueryExecutionResponse(
+                success=True,
+                data=data,
+                row_count=row_count,
+                execution_time_ms=execution_time,
+                columns=columns,
+                query_plan=query_plan,
+                schema_used=self.primary_schema
+            )
+
+    async def _execute_query_safe(
+        self,
+        sql_query: str,
+        options: Dict[str, Any]
+    ) -> QueryExecutionResponse:
+        """Execute query with error handling (for non-retry scenarios)."""
 
         start_time = datetime.now()
 
         try:
-            # Validate query targets correct schemas
-            if not self._validate_schema_security(sql_query):
-                raise ValueError(
-                    f"Query attempts to access schemas outside of allowed list: {self.allowed_schemas}"
-                )
-
-            # Execute query
-            async with self.session_maker() as session:
-                # Set search path for security
-                search_path = ','.join(self.allowed_schemas)
-                await session.execute(text(f"SET search_path = '{search_path}'"))
-
-                # Add timeout
-                timeout = options.get('timeout', 30)
-                await session.execute(text(f"SET statement_timeout = '{timeout}s'"))
-
-                # Execute main query
-                if options.get('explain_analyze', False):
-                    # Get query plan first
-                    plan_result = await session.execute(text(f"EXPLAIN ANALYZE {sql_query}"))
-                    query_plan = "\n".join([row[0] for row in plan_result.fetchall()])
-                else:
-                    query_plan = None
-
-                # Execute actual query
-                result = await session.execute(text(sql_query))
-
-                if sql_query.strip().upper().startswith('SELECT'):
-                    # Handle SELECT queries
-                    rows = result.fetchall()
-                    columns = list(result.keys()) if rows else []
-
-                    # Apply limit
-                    limit = options.get('limit', 1000)
-                    limited_rows = rows[:limit] if len(rows) > limit else rows
-
-                    # Convert to list of dicts
-                    data = [dict(zip(columns, row)) for row in limited_rows]
-                    row_count = len(rows)  # Original count
-                else:
-                    # Handle non-SELECT queries
-                    data = None
-                    columns = []
-                    row_count = result.rowcount
-
-                execution_time = (datetime.now() - start_time).total_seconds() * 1000
-
-                return QueryExecutionResponse(
-                    success=True,
-                    data=data,
-                    row_count=row_count,
-                    execution_time_ms=execution_time,
-                    columns=columns,
-                    query_plan=query_plan,
-                    schema_used=self.primary_schema
-                )
+            # Use the internal method that raises exceptions
+            return await self._execute_query_internal(sql_query, options)
 
         except Exception as e:
             execution_time = (datetime.now() - start_time).total_seconds() * 1000
+
+            self.logger.error(f"Query execution failed: {e}")
 
             return QueryExecutionResponse(
                 success=False,
@@ -654,6 +778,122 @@ Provide detailed validation results.
                 error_message=str(e),
                 schema_used=self.primary_schema
             )
+
+    async def _fix_query(
+        self,
+        original_query: str,
+        error: Exception,
+        retry_count: int,
+        query_history: List[Dict[str, Any]]
+    ) -> Optional[str]:
+        """Use LLM to fix a failed SQL query based on the error."""
+
+        retry_handler = SQLRetryHandler(self)
+
+        # Extract problematic table/column info
+        table_name, column_name = retry_handler._extract_table_column_from_error(
+            original_query, error
+        )
+
+        # Get sample data if possible
+        sample_data = ""
+        if table_name and column_name:
+            sample_data = await retry_handler._get_sample_data_for_error(
+                self.primary_schema, table_name, column_name
+            )
+
+        # Build error context
+        error_context = f"""
+**QUERY EXECUTION ERROR:**
+Error Type: {type(error).__name__}
+Error Message: {str(error)}
+
+**FAILED QUERY:**
+```sql
+{original_query}
+```
+
+**RETRY ATTEMPT:** {retry_count + 1} of {retry_handler.config.max_retries}
+
+{sample_data}
+
+**PREVIOUS ATTEMPTS:**
+{self._format_query_history(query_history)}
+    """
+
+        # Enhanced system prompt for query fixing
+        fix_prompt = f"""
+You are a PostgreSQL expert specializing in fixing SQL query errors.
+
+**PRIMARY TASK:** Fix the failed SQL query based on the error message and sample data.
+
+**COMMON ERROR PATTERNS & FIXES:**
+
+💰 **Currency/Number Format Errors:**
+- Error: "invalid input syntax for type numeric: '1,999.99'"
+- Fix: Remove commas and currency symbols properly
+- Example: `CAST(REPLACE(REPLACE(pricing, '$', ''), ',', '') AS NUMERIC)`
+
+📝 **String/Text Conversion Issues:**
+- Error: Type conversion failures
+- Fix: Use proper casting with text cleaning
+- Example: `CAST(TRIM(column_name) AS INTEGER)`
+
+🔤 **Column/Table Name Issues:**
+- Error: "column does not exist"
+- Fix: Check exact column names from metadata, use proper quoting
+- Example: Use "column_name" if names have special characters
+
+**SCHEMA CONTEXT:**
+Primary Schema: {self.primary_schema}
+Available Schemas: {', '.join(self.allowed_schemas)}
+
+{error_context}
+
+**FIXING INSTRUCTIONS:**
+1. Analyze the error message carefully
+2. Look at the sample data to understand the actual format
+3. Modify the query to handle the data format properly
+4. Keep the same business logic (ORDER BY, LIMIT, etc.)
+5. Only change what's necessary to fix the error
+6. Test your logic against the sample data shown
+
+**OUTPUT:** Return ONLY the corrected SQL query, no explanations.
+    """
+        try:
+            response = await self._llm.ask(
+                prompt="Fix the failing SQL query based on the error details above.",
+                system_prompt=fix_prompt,
+                temperature=0.0  # Deterministic fixes
+            )
+
+            fixed_query = self._extract_sql_from_response(
+                str(response.output) if response.output else str(response.response)
+            )
+
+            if fixed_query:
+                self.logger.debug(f"FIXED QUERY: {fixed_query}")
+                return fixed_query
+            else:
+                self.logger.warning(f"LLM FIX: No SQL query found in response")
+                return None
+
+        except Exception as e:
+            self.logger.error(f"LLM FIX ERROR: {e}")
+            return None
+
+    def _format_query_history(self, query_history: List[Dict[str, Any]]) -> str:
+        """Format query history for LLM context."""
+        if not query_history:
+            return "No previous attempts."
+
+        formatted = []
+        for attempt in query_history:
+            formatted.append(
+                f"Attempt {attempt['attempt']}: {attempt['error_type']} - {attempt['error']}"
+            )
+
+        return "\n".join(formatted)
 
     def _validate_schema_security(self, sql_query: str) -> bool:
         """Ensure query only accesses authorized schemas."""
