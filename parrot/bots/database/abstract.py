@@ -10,7 +10,7 @@ Designed for:
 - "Show me" = data retrieval pattern recognition
 """
 
-from abc import ABC, abstractmethod
+from abc import ABC
 from typing import Dict, Any, List, Optional, Union
 from datetime import datetime
 import re
@@ -98,9 +98,6 @@ class AbstractDBAgent(AbstractBot, ABC):
             allowed_schemas=self.allowed_schemas
         )
 
-        # Register tools
-        self._register_database_tools()
-
         # Schema analysis flag
         self.auto_analyze_schema = auto_analyze_schema
         self.schema_analyzed = False
@@ -112,12 +109,46 @@ class AbstractDBAgent(AbstractBot, ABC):
         # Connect to database
         await self.connect_database()
 
+        # Register tools
+        self._register_database_tools()
+
         # Share tools with LLM
         await self._share_tools_with_llm()
 
         # Auto-analyze schema if enabled
         if self.auto_analyze_schema and not self.schema_analyzed:
             await self.analyze_schema()
+
+    def _register_database_tools(self):
+        """Register database-specific tools."""
+        self.schema_tool = SchemaSearchTool(
+            engine=self.engine,
+            metadata_cache=self.metadata_cache,
+            allowed_schemas=self.allowed_schemas.copy(),
+            session_maker=self.session_maker
+        )
+        self.tool_manager.add_tool(self.schema_tool)
+        self.logger.debug(
+            f"Registered SchemaSearchTool with {len(self.allowed_schemas)} schemas"
+        )
+
+    async def _share_tools_with_llm(self):
+        """Share ToolManager tools with LLM Client."""
+        if not hasattr(self, '_llm') or not self._llm:
+            self.logger.warning("LLM client not initialized, cannot share tools")
+            return
+
+        if not hasattr(self._llm, 'tool_manager'):
+            self.logger.warning("LLM client has no tool_manager")
+            return
+
+        tools = list(self.tool_manager.get_tools())
+        for tool in tools:
+            self._llm.tool_manager.add_tool(tool)
+
+        self.logger.info(
+            f"Shared {len(tools)} tools with LLM Client"
+        )
 
     async def connect_database(self) -> None:
         """Connect to PostgreSQL database using SQLAlchemy async."""
@@ -167,30 +198,6 @@ class AbstractDBAgent(AbstractBot, ABC):
         except Exception as e:
             self.logger.error(f"Failed to connect to database: {e}")
             raise
-
-    # @abstractmethod
-    def _register_database_tools(self):
-        """Register database-specific tools."""
-        schema_search = SchemaSearchTool(agent=self)
-        self.tool_manager.add_tool(schema_search)
-
-    async def _share_tools_with_llm(self):
-        """Share ToolManager tools with LLM Client."""
-        if not hasattr(self, '_llm') or not self._llm:
-            self.logger.warning("LLM client not initialized, cannot share tools")
-            return
-
-        if not hasattr(self._llm, 'tool_manager'):
-            self.logger.warning("LLM client has no tool_manager")
-            return
-
-        tools = list(self.tool_manager.get_tools())
-        for tool in tools:
-            self._llm.tool_manager.add_tool(tool)
-
-        self.logger.info(
-            f"Shared {len(tools)} tools with LLM Client"
-        )
 
     async def analyze_schema(self) -> None:
         """Analyze all allowed schemas and populate metadata cache."""
@@ -434,7 +441,9 @@ class AbstractDBAgent(AbstractBot, ABC):
                     )
 
             # Step 4: Format response
-            return self._format_response(route, query, sql_query, explanation, exec_result, llm_response)
+            return self._format_response(
+                route, query, sql_query, explanation, exec_result, llm_response
+            )
 
         except Exception as e:
             self.logger.error(
@@ -564,49 +573,24 @@ class AbstractDBAgent(AbstractBot, ABC):
             return None
 
     async def _use_schema_search_tool(self, user_query: str) -> Optional[str]:
-        """Use LLM with SchemaSearchTool to discover relevant metadata."""
-
-        # Create prompt that encourages tool usage
-        tool_discovery_prompt = f"""
-    You are helping find database tables and columns relevant to this user query.
-
-    User Query: "{user_query}"
-    Available Schemas: {', '.join(self.allowed_schemas)}
-    Primary Schema: {self.primary_schema}
-
-    Please use the schema_search tool to find tables that might contain the data the user needs.
-
-    Examples of what to search for:
-    - If user asks about "products" → search for "products"
-    - If user asks about "pricing" → search for "price" or "pricing"
-    - If user asks about "users" → search for "users" or "customers"
-    - If user asks about "TV" → search for "products" (since TVs are products)
-
-    Use the schema_search tool to find relevant tables and columns.
-    """
-
+        """Use schema search tool to discover relevant metadata."""
         try:
-            # Call LLM with access to SchemaSearchTool
-            response = await self._llm.ask(
-                prompt=tool_discovery_prompt,
-                temperature=0.1,  # Low temperature for focused search
+            # Direct call to schema tool
+            search_results = await self.schema_tool.search_schema(
+                search_term=user_query,
+                search_type="all",
+                limit=5
             )
 
-            # Check if LLM used the schema_search tool
-            if hasattr(response, 'tool_calls') and response.tool_calls:
-                self.logger.info(f"LLM USED TOOLS: {len(response.tool_calls)} tool calls made")
-
-                # The tools were already executed by the LLM, but let's check for new metadata
-                # and cache any newly discovered tables
-                discovered_tables = await self._process_tool_discoveries(response.tool_calls)
-
-                if discovered_tables:
-                    return "\n---\n".join(discovered_tables)
+            if search_results:
+                self.logger.info(f"Found {len(search_results)} tables via schema tool")
+                metadata_parts = []
+                for table in search_results:
+                    metadata_parts.append(table.to_yaml_context())
+                return "\n---\n".join(metadata_parts)
 
         except Exception as e:
-            self.logger.error(
-                f"TOOL DISCOVERY ERROR: {e}"
-            )
+            self.logger.error(f"Schema tool failed: {e}")
 
         return None
 
@@ -618,14 +602,16 @@ class AbstractDBAgent(AbstractBot, ABC):
         )
 
         # Step 1: Search for similar tables across all allowed schemas
-        similar_tables = await self.metadata_cache.search_similar_tables(
-            schema_names=self.allowed_schemas,
-            query=query,
+        similar_tables = await self.schema_tool.search_schema(
+            search_term=query,
+            search_type="all",
             limit=5
         )
 
         if similar_tables:
-            self.logger.notice(f"🔍 DISCOVERY: Found {len(similar_tables)} similar tables:")
+            self.logger.notice(
+                f"🔍 DISCOVERY: Found {len(similar_tables)} similar tables:"
+            )
             # Format as YAML context
             metadata_parts = []
             for table in similar_tables:
@@ -744,10 +730,9 @@ Apply semantic understanding to map user concepts to available columns.
         if not sql_query:
             if self._is_explanatory_response(response_text):
                 self.logger.info(f"🔍 LLM PROVIDED EXPLANATION: No SQL generated, but explanation available")
-                # Return the explanation as the "explanation" field, no SQL
                 return None, response_text, llm_response
-        else:
-            self.logger.warning(f"🔍 LLM RESPONSE UNCLEAR: No SQL found and doesn't look like explanation")
+            else:  # ← FIX: Move the else inside the if not sql_query block
+                self.logger.warning(f"🔍 LLM RESPONSE UNCLEAR: No SQL found and doesn't look like explanation")
 
         return sql_query, response_text, llm_response
 
@@ -1149,38 +1134,57 @@ Available Schemas: {', '.join(self.allowed_schemas)}
 
     def _extract_sql_from_response(self, response_text: str) -> str:
         """Extract SQL query from LLM response."""
-        # Look for SQL code blocks
-        sql_pattern = r'```sql\n(.*?)\n```'
-        matches = re.findall(sql_pattern, response_text, re.DOTALL | re.IGNORECASE)
+        sql_patterns = [
+            r'```sql\s*(.*?)\s*```',  # ```sql with optional whitespace
+            r'```SQL\s*(.*?)\s*```',  # ```SQL (uppercase)
+            r'```\s*(SELECT.*?(?:;|\Z))',  # ``` with SELECT (no sql label)
+            r'```\s*(WITH.*?(?:;|\Z))',   # ``` with WITH (no sql label)
+        ]
 
-        if matches:
-            return matches[0].strip()
+        for pattern in sql_patterns:
+            matches = re.findall(pattern, response_text, re.DOTALL | re.IGNORECASE)
+            if matches:
+                sql = matches[0].strip()
+                if sql:
+                    self.logger.debug(f"SQL EXTRACTED via pattern: {pattern[:20]}...")
+                    return sql
 
-        # Fallback: look for SQL keywords
         lines = response_text.split('\n')
         sql_lines = []
         in_sql = False
 
         for line in lines:
-            line_upper = line.strip().upper()
+            line_stripped = line.strip()
+            line_upper = line_stripped.upper()
+
+            # Start collecting SQL when we see a SQL keyword
             if any(line_upper.startswith(kw) for kw in ['SELECT', 'WITH', 'INSERT', 'UPDATE', 'DELETE']):
                 in_sql = True
-                sql_lines.append(line)
+                sql_lines.append(line_stripped)
             elif in_sql:
-                if line.strip().endswith(';') or not line.strip():
-                    if line.strip().endswith(';'):
-                        sql_lines.append(line)
+                # Continue collecting until we hit a terminator or empty line
+                if line_stripped.endswith(';'):
+                    sql_lines.append(line_stripped)
+                    break
+                elif not line_stripped:
+                    break
+                elif line_stripped.startswith('**') or line_stripped.startswith('#'):
+                    # Stop at markdown headers or emphasis
                     break
                 else:
-                    sql_lines.append(line)
+                    sql_lines.append(line_stripped)
 
         if sql_lines:
-            return '\n'.join(sql_lines).strip()
+            sql_query = '\n'.join(sql_lines)
+            self.logger.debug(f"SQL EXTRACTED via fallback parsing")
+            return sql_query
 
-        # Last resort: return original if it looks like SQL
+        # Last resort: return original if it contains SQL keywords
         if any(kw in response_text.upper() for kw in ['SELECT', 'FROM', 'WHERE']):
+            self.logger.warning("Using entire response as SQL (last resort)")
             return response_text.strip()
 
+        self.logger.warning("No SQL found in response")
         return ""
 
     def _format_response(
@@ -1282,78 +1286,6 @@ Available Schemas: {', '.join(self.allowed_schemas)}
                 "explanation_type": "llm_analysis" if explanation else None
             }
         )
-
-    async def search_schema(
-        self,
-        search_term: str,
-        search_type: str = "all",
-        limit: int = 10
-    ) -> List[Dict[str, Any]]:
-        """Enhanced search_schema method that the SchemaSearchTool uses."""
-
-        # Try cache first (existing logic)
-        cached_results = await self.metadata_cache._search_cache_only(
-            self.allowed_schemas, search_term, limit
-        )
-
-        if cached_results:
-            self.logger.debug(
-                f"🔍 SEARCH CACHE HIT: Found {len(cached_results)} results for '{search_term}'"
-            )
-            return [{
-                "type": "table",
-                "name": table.table_name,
-                "schema": table.schema_name,
-                "content": table.to_yaml_context(),
-                "relevance_score": 1.0
-            } for table in cached_results]
-
-        # Cache miss - search database directly
-        self.logger.info(f"🔍 SEARCH DATABASE: Looking for '{search_term}' in database")
-        try:
-            async with self.session_maker() as session:
-                if search_type in ["all", "tables"]:
-                    # Search for table names
-                    table_query = """
-                    SELECT table_schema, table_name, table_type
-                    FROM information_schema.tables
-                    WHERE table_schema = ANY(:schemas)
-                    AND (LOWER(table_name) LIKE LOWER(:pattern)
-                        OR LOWER(table_name) = LOWER(:exact))
-                    ORDER BY
-                        CASE WHEN LOWER(table_name) = LOWER(:exact) THEN 1 ELSE 2 END,
-                        table_name
-                    LIMIT :limit
-                    """
-
-                    result = await session.execute(text(table_query), {
-                        "schemas": self.allowed_schemas,
-                        "pattern": f"%{search_term}%",
-                        "exact": search_term,
-                        "limit": limit
-                    })
-
-                    results = []
-                    for row in result:
-                        results.append({
-                            "type": "table",
-                            "name": row.table_name,
-                            "schema": row.table_schema,
-                            "table_type": row.table_type,
-                            "relevance_score": 1.0 if row.table_name.lower() == search_term.lower() else 0.8
-                        })
-
-                    self.logger.info(
-                        f"🔍 DATABASE FOUND: {len(results)} tables matching '{search_term}'"
-                    )
-                    return results
-
-        except Exception as e:
-            self.logger.error(
-                f"DATABASE SEARCH ERROR: {e}"
-            )
-
-        return []
 
     async def cleanup(self) -> None:
         """Cleanup resources."""
