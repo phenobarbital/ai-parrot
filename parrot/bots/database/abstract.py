@@ -616,7 +616,7 @@ Provide detailed validation results.
                 # Success!
                 if retry_count > 0:
                     self.logger.info(
-                        f"✅ QUERY SUCCESS: Fixed after {retry_count} retries"
+                        f"✅ QUERY SUCCESS: Fixed after {retry_count + 1} retries"
                     )
 
                 return result
