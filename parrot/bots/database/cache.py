@@ -150,6 +150,8 @@ class SchemaMetadataCache:
                 schema_meta = self.schema_cache[schema_name]
                 all_objects = schema_meta.get_all_objects()
 
+                self.logger.debug(f"🔍 SEARCHING SCHEMA '{schema_name}': {len(all_objects)} tables available")
+
                 for table_name, table_meta in all_objects.items():
                     score = self._calculate_relevance_score(table_name, table_meta, keywords)
 
@@ -157,9 +159,8 @@ class SchemaMetadataCache:
                         self.logger.debug(
                             f"🔍 MATCH: {table_name} scored {score}"
                         )
-                        # Add the score to the table metadata for sorting
-                        table_meta_copy = table_meta
-                        results.append((table_meta_copy, score))
+                        # IMPORTANT: Return the actual TableMetadata object, not a tuple
+                        results.append(table_meta)  # FIX: was (table_meta_copy, score)
 
                         if len(results) >= limit:
                             break
@@ -167,11 +168,16 @@ class SchemaMetadataCache:
                 if len(results) >= limit:
                     break
 
-        # Sort by relevance score (highest first) and return just the TableMetadata objects
-        results.sort(key=lambda x: x[1], reverse=True)
-        final_results = [table_meta for table_meta, score in results]
+        # FIX: Sort by a different method since we're not storing scores anymore
+        # For now, just return in order found (cache already does some relevance filtering)
+        final_results = results[:limit]
 
         self.logger.info(f"🔍 SEARCH: Found {len(final_results)} results")
+
+        # DEBUG: Log what we're returning
+        for i, table in enumerate(final_results):
+            self.logger.debug(f"  Result {i+1}: {table.schema}.{table.tablename}")
+
         return final_results
 
     def _extract_search_keywords(self, query: str) -> List[str]:
