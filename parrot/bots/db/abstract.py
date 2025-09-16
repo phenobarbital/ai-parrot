@@ -303,7 +303,7 @@ Based on the user context above, please tailor your response to their specific:
                     "type": "table_schema",
                     "database": self.schema_metadata.database_name,
                     "schema": table.schema,
-                    "table_name": table.name,
+                    "tablename": table.tablename,
                     "database_type": self.schema_metadata.database_type
                 }
             }
@@ -317,7 +317,7 @@ Based on the user context above, please tailor your response to their specific:
                     "type": "view_schema",
                     "database": self.schema_metadata.database_name,
                     "schema": view.schema,
-                    "view_name": view.name,
+                    "view_name": view.tablename,
                     "database_type": self.schema_metadata.database_type
                 }
             }
@@ -331,7 +331,7 @@ Based on the user context above, please tailor your response to their specific:
         object_type = "VIEW" if is_view else "TABLE"
 
         content = f"""
-{object_type}: {table.schema}.{table.name}
+{object_type}: {table.schema}.{table.tablename}
 Description: {table.description or 'No description available'}
 
 Columns:
