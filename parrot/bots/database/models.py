@@ -34,18 +34,19 @@ class ReturnFormat(str, Enum):
     QUERY_DATA_EXPLANATION = "full_response"  # SQL + results + explanation
     QUERY_ONLY = "query_only"                 # Just SQL, no execution
 
-
 @dataclass
 class SchemaMetadata:
     """Metadata for a single schema (client)."""
-    schema_name: str
     database_name: str
+    schema: str
     table_count: int
     view_count: int
     total_rows: Optional[int] = None
     last_analyzed: Optional[datetime] = None
+    database_type: Optional[str] = Field(default='postgresql')
     tables: Dict[str, 'TableMetadata'] = field(default_factory=dict)
     views: Dict[str, 'TableMetadata'] = field(default_factory=dict)
+    functions: List[Dict[str, Any]] = field(default_factory=list)
 
     def get_all_objects(self) -> Dict[str, 'TableMetadata']:
         """Get all tables and views."""
@@ -55,8 +56,8 @@ class SchemaMetadata:
 @dataclass
 class TableMetadata:
     """Enhanced table metadata for large-scale operations."""
-    schema_name: str
-    table_name: str
+    schema: str
+    tablename: str
     table_type: str  # 'BASE TABLE', 'VIEW'
     full_name: str   # schema.table for easy reference
     comment: Optional[str] = None
@@ -74,17 +75,17 @@ class TableMetadata:
 
     def __post_init__(self):
         if not self.full_name:
-            self.full_name = f'"{self.schema_name}"."{self.table_name}"'
+            self.full_name = f'"{self.schema}"."{self.tablename}"'
 
     def to_yaml_context(self) -> str:
         """Convert to YAML context optimized for LLM consumption."""
         # Include only essential information to avoid token bloat
-        essential_columns = self.columns[:10]  # Limit to first 10 columns
+        essential_columns = self.columns[:20]  # Limit to first 20 columns
 
         data = {
             'table': self.full_name,
             'type': self.table_type,
-            'description': self.comment or f"{self.table_type.lower()} in {self.schema_name} schema",
+            'description': self.comment or f"{self.table_type.lower()} in {self.schema} schema",
             'columns': [
                 {
                     'name': col['name'],
@@ -99,8 +100,8 @@ class TableMetadata:
             'sample_values': self._get_sample_column_values()
         }
 
-        if len(self.columns) > 10:
-            data['note'] = f"Showing 10 of {len(self.columns)} columns. Use schema tools for complete structure."
+        if len(self.columns) > 20:
+            data['note'] = f"Showing 20 of {len(self.columns)} columns. Use schema search tools for complete structure."
 
         return yaml.dump(data, default_flow_style=False, sort_keys=False)
 

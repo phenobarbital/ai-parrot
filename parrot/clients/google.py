@@ -659,9 +659,14 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
         return function_calls
 
     def _safe_extract_text(self, response) -> str:
-        """Enhanced text extraction that handles the mixed content warnings properly."""
+        """
+        Enhanced text extraction that handles reasoning models and mixed content warnings.
 
-        # First try: Use response.text directly (best case)
+        This method tries multiple approaches to extract text from Google GenAI responses,
+        handling special cases like thought_signature parts from reasoning models.
+        """
+
+        # Method 1: Try response.text first (fastest path)
         try:
             if hasattr(response, 'text') and response.text:
                 text = response.text.strip()
@@ -669,9 +674,10 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                     self.logger.debug(f"Extracted text via response.text: '{text[:100]}...'")
                     return text
         except Exception as e:
-            self.logger.debug(f"response.text failed: {e}")
+            # This is expected with reasoning models that have mixed content
+            self.logger.debug(f"response.text failed (normal for reasoning models): {e}")
 
-        # Second try: Manual extraction from parts
+        # Method 2: Manual extraction from parts (more robust)
         try:
             if (hasattr(response, 'candidates') and
                 response.candidates and
@@ -682,87 +688,76 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                 response.candidates[0].content.parts):
 
                 text_parts = []
+                thought_parts_found = 0
 
-                # Extract text from each part
+                # Extract text from each part, handling special cases
                 for part in response.candidates[0].content.parts:
+                    # Check for regular text content
                     if hasattr(part, 'text') and part.text:
                         clean_text = part.text.strip()
                         if clean_text:
                             text_parts.append(clean_text)
-                            self.logger.debug(f"Found text part: '{clean_text[:50]}...'")
+                            self.logger.debug(
+                                f"Found text part: '{clean_text[:50]}...'"
+                            )
 
+                    # Log non-text parts but don't extract them
+                    elif hasattr(part, 'thought_signature'):
+                        thought_parts_found += 1
+                        self.logger.debug(
+                            "Found thought_signature part (reasoning model internal thought)"
+                        )
+
+                # Log reasoning model detection
+                if thought_parts_found > 0:
+                    self.logger.debug(f"Detected reasoning model with {thought_parts_found} thought parts")
+
+                # Combine text parts
                 if text_parts:
-                    combined_text = ' '.join(text_parts)
-                    self.logger.debug(f"Manually extracted text: '{combined_text[:100]}...'")
-                    return combined_text
+                    combined_text = "".join(text_parts).strip()
+                    if combined_text:
+                        self.logger.debug(f"Successfully extracted text from {len(text_parts)} parts")
+                        return combined_text
                 else:
-                    self.logger.debug("No text parts found in response")
+                    self.logger.debug("No text parts found in response parts")
 
         except Exception as e:
             self.logger.error(f"Manual text extraction failed: {e}")
 
-        # Third try: Check if there's any accessible text content anywhere
+        # Method 3: Deep inspection for debugging (fallback)
         try:
-            # Sometimes the response structure might be different
-            self.logger.debug(f"Response type: {type(response)}")
+            if hasattr(response, 'candidates') and response.candidates:
+                candidate = response.candidates[0] if len(response.candidates) > 0 else None
+                if candidate:
+                    if hasattr(candidate, 'finish_reason'):
+                        finish_reason = str(candidate.finish_reason)
+                        self.logger.debug(f"Response finish reason: {finish_reason}")
+                        if 'MAX_TOKENS' in finish_reason:
+                            self.logger.warning("Response truncated due to token limit")
+                        elif 'SAFETY' in finish_reason:
+                            self.logger.warning("Response blocked by safety filters")
+                        elif 'STOP' in finish_reason:
+                            self.logger.debug("Response completed normally but no text found")
 
-            if hasattr(response, 'candidates'):
-                self.logger.debug(f"Candidates count: {len(response.candidates) if response.candidates else 0}")
-
-                if response.candidates and len(response.candidates) > 0:
-                    candidate = response.candidates[0]
-                    self.logger.debug(f"Candidate type: {type(candidate)}")
-
-                    if hasattr(candidate, 'content'):
-                        content = candidate.content
-                        self.logger.debug(f"Content type: {type(content)}")
-
-                        if hasattr(content, 'parts'):
-                            parts = content.parts
-                            self.logger.debug(f"Parts count: {len(parts) if parts else 0}")
-
-                            # ADD DEBUG CODE HERE:
-                            # Debug finish reason and response state
-                            if hasattr(candidate, 'finish_reason'):
-                                self.logger.debug(f"Finish reason: {candidate.finish_reason}")
-
-                            if parts is None:
-                                self.logger.error("Parts is None!")
-                            elif len(parts) == 0:
-                                self.logger.error("Parts list is empty - no content generated!")
-                                # Check if the model stopped for a specific reason
-                                if hasattr(candidate, 'finish_reason'):
-                                    finish_reason = str(candidate.finish_reason)
-                                    if 'STOP' in finish_reason:
-                                        self.logger.error("Model finished normally but generated no content")
-                                    elif 'MAX_TOKENS' in finish_reason:
-                                        self.logger.error("Model hit token limit")
-                                    elif 'SAFETY' in finish_reason:
-                                        self.logger.error("Model stopped due to safety filters")
-                                    else:
-                                        self.logger.error(f"Model stopped with reason: {finish_reason}")
-                            else:
-                                # Parts exist, debug each one
-                                for i, part in enumerate(parts):
-                                    self.logger.debug(f"Part {i} type: {type(part)}")
-
-                                    # Check all possible attributes of the part
-                                    part_attrs = [attr for attr in dir(part) if not attr.startswith('_')]
-                                    self.logger.debug(f"Part {i} attributes: {part_attrs}")
-
-                                    # Try different ways to access text
-                                    for attr in ['text', 'content', 'data']:
-                                        if hasattr(part, attr):
-                                            value = getattr(part, attr)
-                                            if value and isinstance(value, str):
-                                                self.logger.debug(f"Found text in part.{attr}: '{value[:50]}...'")
-                                                return value.strip()
+                    if hasattr(candidate, 'content') and candidate.content:
+                        if hasattr(candidate.content, 'parts'):
+                            parts_count = len(candidate.content.parts) if candidate.content.parts else 0
+                            self.logger.debug(f"Response has {parts_count} parts but no extractable text")
+                            if candidate.content.parts:
+                                part_types = []
+                                for part in candidate.content.parts:
+                                    part_attrs = [attr for attr in dir(part)
+                                                    if not attr.startswith('_') and hasattr(part, attr) and getattr(part, attr)]
+                                    part_types.append(part_attrs)
+                                self.logger.debug(f"Part attribute types found: {part_types}")
 
         except Exception as e:
-            self.logger.error(f"Deep text extraction failed: {e}")
+            self.logger.error(f"Deep inspection failed: {e}")
 
-        # Fallback: Return empty string instead of None
-        self.logger.warning("Could not extract any text from response")
+        # Method 4: Final fallback - return empty string with clear logging
+        self.logger.warning(
+            "Could not extract any text from response using any method"
+        )
         return ""
 
     async def ask(
