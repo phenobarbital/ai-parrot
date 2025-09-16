@@ -516,6 +516,7 @@ class AbstractDBAgent(AbstractBot, ABC):
         system_prompt = f"""
 You are a PostgreSQL query expert for multi-schema databases.
 
+**Database Context:**
 **Primary Schema:** {self.primary_schema}
 **Allowed Schemas:** {', '.join(self.allowed_schemas)}
 
@@ -524,11 +525,13 @@ You are a PostgreSQL query expert for multi-schema databases.
 
 **Instructions:**
 1. Generate PostgreSQL queries using only these schemas: {', '.join([f'"{schema}"' for schema in self.allowed_schemas])}
-2. NEVER invent table names - only use tables from the metadata above
-3. If metadata is insufficient, use schema exploration tools
-4. For "show me" queries, generate simple SELECT statements
-5. Always include appropriate LIMIT clauses
-6. Prefer primary schema "{self.primary_schema}" unless user specifies otherwise
+2. If you can generate a query using the available tables/columns, return ONLY the SQL query in a ```sql code block
+3. NEVER invent table names - only use tables from the metadata above
+4. If metadata is insufficient, use schema exploration tools
+5. If you CANNOT generate a query (missing tables, columns, etc.), explain WHY in plain text - do NOT use code blocks
+6. For "show me" queries, generate simple SELECT statements
+7. Always include appropriate LIMIT clauses
+8. Prefer primary schema "{self.primary_schema}" unless user specifies otherwise
 
 **COLUMN SELECTION STRATEGY:**
 1. First, look for EXACT matches to user terms
@@ -546,8 +549,10 @@ You are a PostgreSQL query expert for multi-schema databases.
 **User Intent:** {route.intent.value}
 **Return Format:** {route.return_format.value}
 
-Generate an accurate PostgreSQL query using ACTUAL column names from the metadata.
+Analyze the request and either generate a valid PostgreSQL query OR explain why it cannot be fulfilled.
 Apply semantic understanding to map user concepts to available columns.
+
+**Your Task:** Analyze the user request and provide either a SQL query OR a clear explanation.
     """
 
         # Call LLM for query generation
@@ -560,9 +565,61 @@ Apply semantic understanding to map user concepts to available columns.
 
         # Extract SQL and explanation
         response_text = str(llm_response.output) if llm_response.output else str(llm_response.response)
+        # 🔍 DEBUG: Log what LLM actually said
+        self.logger.info(f"🤖 LLM RESPONSE: {response_text[:200]}...")
         sql_query = self._extract_sql_from_response(response_text)
 
+        if not sql_query:
+            if self._is_explanatory_response(response_text):
+                self.logger.info(f"🔍 LLM PROVIDED EXPLANATION: No SQL generated, but explanation available")
+                # Return the explanation as the "explanation" field, no SQL
+                return None, response_text, llm_response
+        else:
+            self.logger.warning(f"🔍 LLM RESPONSE UNCLEAR: No SQL found and doesn't look like explanation")
+
         return sql_query, response_text, llm_response
+
+    def _is_explanatory_response(self, response_text: str) -> bool:
+        """Detect if the LLM response is an explanation rather than SQL."""
+
+        # Clean the response for analysis
+        cleaned_text = response_text.strip().lower()
+
+        # Patterns that indicate explanatory responses
+        explanation_patterns = [
+            "i cannot",
+            "i'm sorry",
+            "i am sorry",
+            "unable to",
+            "cannot fulfill",
+            "cannot generate",
+            "cannot create",
+            "the table",
+            "the metadata",
+            "does not contain",
+            "missing",
+            "not found",
+            "no table",
+            "no column",
+            "not available",
+            "insufficient information",
+            "please provide",
+            "you need to"
+        ]
+
+        # Check if response contains explanatory language
+        contains_explanation = any(pattern in cleaned_text for pattern in explanation_patterns)
+
+        # Check if response lacks SQL patterns
+        sql_patterns = ['select', 'from', 'where', 'order by', 'group by', 'insert', 'update', 'delete']
+        contains_sql = any(pattern in cleaned_text for pattern in sql_patterns)
+
+        # It's explanatory if it has explanation patterns but no SQL
+        is_explanatory = contains_explanation and not contains_sql
+
+        self.logger.debug(f"🔍 EXPLANATION CHECK: explanation_patterns={contains_explanation}, sql_patterns={contains_sql}, is_explanatory={is_explanatory}")
+
+        return is_explanatory
 
     async def _validate_user_sql(self, sql_query: str, metadata_context: str) -> tuple[str, AIMessage]:
         """Validate user-provided SQL."""
@@ -966,8 +1023,17 @@ Available Schemas: {', '.join(self.allowed_schemas)}
         """Format final response based on route decision."""
 
         response_parts = []
+        if not sql_query and explanation:
+            response_parts.append(f"**Explanation:**\n{explanation}")
+            # Add some helpful context
+            response_parts.append(f"\n**Available Schemas:** {', '.join(self.allowed_schemas)}")
+            response_parts.append(f"**Primary Schema:** {self.primary_schema}")
+            # Suggest ways to get more info
+            response_parts.append(f"\n**Suggestions:**")
+            response_parts.append(f"- Check available tables with: 'What tables are in the {self.primary_schema} schema?'")
+            response_parts.append(f"- Check table structure with: 'Describe the [table_name] table'")
 
-        if route.return_format == ReturnFormat.DATA_ONLY:
+        elif route.return_format == ReturnFormat.DATA_ONLY:
             if exec_result and exec_result.success and exec_result.data:
                 response_parts.append(f"Found {exec_result.row_count} rows:")
                 # Data will be in output field
@@ -1018,13 +1084,11 @@ Available Schemas: {', '.join(self.allowed_schemas)}
             # Fallback for cases where no LLM was called
             model_name = getattr(self, '_llm_model', 'unknown')
             provider_name = getattr(self._llm, 'client_type', 'unknown') if hasattr(self, '_llm') else 'unknown'
-            usage_info = CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0)
-
-        if hasattr(self, '_llm') and self._llm:
-            if hasattr(self._llm, 'client_type'):
-                provider_name = str(self._llm.client_type)
-            elif hasattr(self._llm, 'provider'):
-                provider_name = str(self._llm.provider)
+            usage_info = CompletionUsage(
+                prompt_tokens=0,
+                completion_tokens=0,
+                total_tokens=0
+            )
 
         return AIMessage(
             input=original_query,
@@ -1041,7 +1105,9 @@ Available Schemas: {', '.join(self.allowed_schemas)}
                 "sql_query": sql_query,
                 "execution_success": exec_result.success if exec_result else None,
                 "row_count": exec_result.row_count if exec_result else 0,
-                "execution_time_ms": exec_result.execution_time_ms if exec_result else 0
+                "execution_time_ms": exec_result.execution_time_ms if exec_result else 0,
+                "has_explanation": bool(explanation and self._is_explanatory_response(explanation)),
+                "explanation_type": "llm_analysis" if explanation else None
             }
         )
 
