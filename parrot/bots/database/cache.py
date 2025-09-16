@@ -2,7 +2,9 @@
 # SCHEMA-AWARE METADATA CACHE
 # ============================================================================
 from typing import Dict, List, Optional
+import re
 from cachetools import TTLCache
+from navconfig.logging import logging
 from .models import SchemaMetadata, TableMetadata
 from ...stores.abstract import AbstractStore
 
@@ -25,6 +27,8 @@ class SchemaMetadataCache:
         # Schema-level caches
         self.schema_cache: Dict[str, SchemaMetadata] = {}
         self.table_access_stats: Dict[str, int] = {}
+
+        self.logger = logging.getLogger("Parrot.SchemaMetadataCache")
 
         if not self.vector_enabled:
             print("Vector store not provided - using LRU cache only")
@@ -134,6 +138,11 @@ class SchemaMetadataCache:
         """Fallback search using only cache when vector store unavailable."""
         results = []
         query_lower = query.lower()
+        keywords = self._extract_search_keywords(query_lower)
+
+        self.logger.notice(
+            f"🔍 SEARCH: Extracted keywords from '{query}': {keywords}"
+        )
 
         # Search through schema caches
         for schema_name in schema_names:
@@ -142,16 +151,79 @@ class SchemaMetadataCache:
                 all_objects = schema_meta.get_all_objects()
 
                 for table_name, table_meta in all_objects.items():
-                    # Simple text matching
-                    if (query_lower in table_name.lower() or
-                        (table_meta.comment and query_lower in table_meta.comment.lower()) or
-                        any(query_lower in col['name'].lower() for col in table_meta.columns)):
-                        results.append(table_meta)
+                    score = self._calculate_relevance_score(table_name, table_meta, keywords)
+
+                    if score > 0:
+                        self.logger.debug(
+                            f"🔍 MATCH: {table_name} scored {score}"
+                        )
+                        # Add the score to the table metadata for sorting
+                        table_meta_copy = table_meta
+                        results.append((table_meta_copy, score))
 
                         if len(results) >= limit:
-                            return results
+                            break
 
-        return results
+                if len(results) >= limit:
+                    break
+
+        # Sort by relevance score (highest first) and return just the TableMetadata objects
+        results.sort(key=lambda x: x[1], reverse=True)
+        final_results = [table_meta for table_meta, score in results]
+
+        self.logger.info(f"🔍 SEARCH: Found {len(final_results)} results")
+        return final_results
+
+    def _extract_search_keywords(self, query: str) -> List[str]:
+        """Extract meaningful keywords from a natural language query."""
+        # Convert to lowercase and remove common stop words
+        stop_words = {
+            'get', 'show', 'find', 'list', 'select', 'by', 'from', 'the', 'a', 'an',
+            'and', 'or', 'of', 'to', 'in', 'on', 'at', 'for', 'with', 'top', 'all'
+        }
+
+        # Split on non-alphanumeric characters and filter
+        words = re.findall(r'\b[a-zA-Z]+\b', query.lower())
+        keywords = [word for word in words if word not in stop_words and len(word) > 2]
+
+        return keywords
+
+    def _calculate_relevance_score(
+        self,
+        table_name: str,
+        table_meta: TableMetadata,
+        keywords: List[str]
+    ) -> float:
+        """Calculate relevance score for a table based on keywords."""
+        score = 0.0
+
+        table_name_lower = table_name.lower()
+        column_names = [col['name'].lower() for col in table_meta.columns]
+
+        for keyword in keywords:
+            keyword_lower = keyword.lower()
+
+            if keyword_lower == table_name_lower:
+                score += 10.0
+                self.logger.debug(f"Exact table match: '{keyword}' == '{table_name}'")
+
+            elif keyword_lower in table_name_lower:
+                score += 5.0
+                self.logger.debug(f"Partial table match: '{keyword}' in '{table_name}'")
+
+            elif keyword_lower in column_names:
+                score += 8.0
+                self.logger.debug(f"Column match: '{keyword}' found in columns")
+
+            elif any(keyword_lower in col_name for col_name in column_names):
+                score += 3.0
+                self.logger.debug(f"Partial column match: '{keyword}' partially matches column")
+
+            elif table_meta.comment and keyword_lower in table_meta.comment.lower():
+                score += 2.0
+                self.logger.debug(f"Comment match: '{keyword}' in table comment")
+
+        return score
 
     def get_schema_overview(self, schema_name: str) -> Optional[SchemaMetadata]:
         """Get complete schema overview."""
