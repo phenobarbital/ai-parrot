@@ -436,7 +436,7 @@ class AbstractDBAgent(AbstractBot, ABC):
                 response=f"Error processing query: {str(e)}",
                 output=None,
                 model=getattr(self, '_llm_model', 'unknown'),
-                provider=getattr(self, '_llm', 'unknown'),
+                provider=str(getattr(self, '_llm', 'unknown')),
                 metadata={
                     "error": str(e), "schema": self.primary_schema
                 },
@@ -678,6 +678,7 @@ Provide detailed validation results.
             data=None,
             row_count=0,
             execution_time_ms=execution_time,
+            schema_used=self.primary_schema,
             error_message=f"Query failed after {retry_count} retries. Last error: {last_error}",
             query_plan=None,
             metadata={
@@ -1030,7 +1031,7 @@ Available Schemas: {', '.join(self.allowed_schemas)}
             response=response_text,
             output=exec_result.data if exec_result and exec_result.success else None,
             model=model_name,
-            provider=provider_name,
+            provider=str(provider_name),
             usage=usage_info,
             metadata={
                 "primary_schema": self.primary_schema,
