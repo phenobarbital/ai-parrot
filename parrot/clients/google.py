@@ -17,6 +17,7 @@ from google.genai.types import (
     ModelContent,
     UserContent,
 )
+import aiofiles
 from google.genai import types
 from navconfig import config, BASE_DIR
 import pandas as pd
@@ -869,7 +870,8 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
         else:
             tool_type = 'builtin_tools' if _use_tools else None
 
-        tools = self._build_tools(tool_type) if tool_type else None
+        tools = self._build_tools(tool_type) if tool_type else []
+
         self.logger.debug(
             f"Using model: {model}, max_tokens: {max_tokens}, temperature: {temperature}, "
             f"structured_output: {structured_output}, "
@@ -3378,3 +3380,226 @@ Your job is to produce a final summary from the following text and identify the 
                     position_on_shelf=pos
                 ))
             return fallback_products
+
+    async def create_speech(
+        self,
+        content: str,
+        voice_name: Optional[str] = 'charon',
+        model: Union[str, GoogleModel] = GoogleModel.GEMINI_2_5_FLASH,
+        output_directory: Optional[Path] = None,
+        only_script: bool = False,
+        script_file: str = "narration_script.txt",
+        podcast_file: str= "generated_podcast.wav",
+        mime_format: str = "audio/wav",
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        max_retries: int = 3,
+        retry_delay: float = 1.0,
+        language: str = "en-US"
+    ) -> AIMessage:
+        """
+        Generates a simple narrative script from text and then converts it to speech.
+        This is a simpler, two-step process for text-to-speech generation.
+
+        Args:
+            content (str): The text content to generate speech from.
+            voice_name (Optional[str]): The name of the voice to use. Defaults to 'charon'.
+            model (Union[str, GoogleModel]): The model for the text-to-text step.
+            output_directory (Optional[Path]): Directory to save the audio file.
+            mime_format (str): The audio format, e.g., 'audio/wav'.
+            user_id (Optional[str]): Optional user identifier.
+            session_id (Optional[str]): Optional session identifier.
+            max_retries (int): Maximum network retries.
+            retry_delay (float): Delay for retries.
+
+        Returns:
+            An AIMessage object containing the generated audio, the text script, and metadata.
+        """
+        self.logger.info(
+            "Starting a two-step text-to-speech process."
+        )
+        # Step 1: Generate a simple, narrated script from the provided text.
+        system_prompt = f"""
+You are a professional scriptwriter. Given the input text, generate a clear, narrative style, suitable for a voiceover.
+
+**Instructions:**
+- The conversation should be engaging, natural, and suitable for a TTS system.
+- The script should be formatted for TTS, with clear speaker lines.
+"""
+        script_prompt = f"""
+Read the following text in a clear, narrative style, suitable for a voiceover.
+Ensure the tone is neutral and professional. Do not add any conversational
+elements. Just read the text.
+
+Text:
+---
+{content}
+---
+"""
+        script_text = ''
+        script_response = None
+        try:
+            script_response = await self.ask(
+                prompt=script_prompt,
+                model=model,
+                system_prompt=system_prompt,
+                temperature=0.0,
+                stateless=True,
+                use_tools=False,
+            )
+            script_text = script_response.output
+        except Exception as e:
+            self.logger.error(f"Script generation failed: {e}")
+            raise SpeechGenerationError(
+                f"Script generation failed: {str(e)}"
+            ) from e
+
+        if not script_text:
+            raise SpeechGenerationError(
+                "Script generation failed, could not proceed with speech generation."
+            )
+
+        self.logger.info(f"Generated script text successfully.")
+        saved_file_paths = []
+        if only_script:
+            # If only the script is needed, save it and return it in an AIMessage
+            output_directory.mkdir(parents=True, exist_ok=True)
+            script_path = output_directory / script_file
+            try:
+                async with aiofiles.open(script_path, "w", encoding="utf-8") as f:
+                    await f.write(script_text)
+                self.logger.info(
+                    f"Saved narration script to {script_path}"
+                )
+                saved_file_paths.append(script_path)
+            except Exception as e:
+                self.logger.error(f"Failed to save script file: {e}")
+            ai_message = AIMessageFactory.from_gemini(
+                response=script_response,
+                text_response=script_text,
+                input_text=content,
+                model=model if isinstance(model, str) else model.value,
+                user_id=user_id,
+                session_id=session_id,
+                files=saved_file_paths
+            )
+            return ai_message
+
+        # Step 2: Generate speech from the generated script.
+        speech_config_data = SpeechGenerationPrompt(
+            prompt=script_text,
+            speakers=[
+                SpeakerConfig(
+                    name="narrator",
+                    voice=voice_name,
+                )
+            ],
+            language=language
+        )
+
+        # Use the existing core logic to generate the audio
+        model = GoogleModel.GEMINI_2_5_FLASH_TTS.value
+
+        speaker = speech_config_data.speakers[0]
+        final_voice = speaker.voice
+
+        speech_config = types.SpeechConfig(
+            voice_config=types.VoiceConfig(
+                prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                    voice_name=final_voice
+                )
+            ),
+            language_code=speech_config_data.language or "en-US"
+        )
+
+        config = types.GenerateContentConfig(
+            response_modalities=["AUDIO"],
+            speech_config=speech_config,
+            temperature=0.7
+        )
+
+        for attempt in range(max_retries + 1):
+            try:
+                if attempt > 0:
+                    delay = retry_delay * (2 ** (attempt - 1))
+                    self.logger.info(
+                        f"Retrying speech (attempt {attempt + 1}/{max_retries + 1}) after {delay}s delay..."
+                    )
+                    await asyncio.sleep(delay)
+                start_time = time.time()
+                response = await self.client.aio.models.generate_content(
+                    model=model,
+                    contents=speech_config_data.prompt,
+                    config=config,
+                )
+                execution_time = time.time() - start_time
+                audio_data = self._extract_audio_data(response)
+                if audio_data is None:
+                    raise SpeechGenerationError(
+                        "No audio data found in response. The speech generation may have failed."
+                    )
+
+                saved_file_paths = []
+                if output_directory:
+                    output_directory.mkdir(parents=True, exist_ok=True)
+                    podcast_path = output_directory / podcast_file
+                    script_path = output_directory / script_file
+                    self._save_audio_file(audio_data, podcast_path, mime_format)
+                    saved_file_paths.append(podcast_path)
+                    try:
+                        async with aiofiles.open(script_path, "w", encoding="utf-8") as f:
+                            await f.write(script_text)
+                        self.logger.info(f"Saved narration script to {script_path}")
+                        saved_file_paths.append(script_path)
+                    except Exception as e:
+                        self.logger.error(f"Failed to save script file: {e}")
+
+                usage = CompletionUsage(
+                    execution_time=execution_time,
+                    input_tokens=len(script_text),
+                )
+
+                ai_message = AIMessageFactory.from_speech(
+                    output=audio_data,
+                    files=saved_file_paths,
+                    input=script_text,
+                    model=model,
+                    provider="google_genai",
+                    documents=[script_path],
+                    usage=usage,
+                    user_id=user_id,
+                    session_id=session_id,
+                    raw_response=None
+                )
+                return ai_message
+
+            except (
+                aiohttp.ClientPayloadError,
+                aiohttp.ClientConnectionError,
+                aiohttp.ClientResponseError,
+                aiohttp.ServerTimeoutError,
+                ConnectionResetError,
+                TimeoutError,
+                asyncio.TimeoutError
+            ) as network_error:
+                if attempt < max_retries:
+                    self.logger.warning(
+                        f"Network error on attempt {attempt + 1}: {str(network_error)}. Retrying..."
+                    )
+                    continue
+                else:
+                    self.logger.error(
+                        f"Speech generation failed after {max_retries + 1} attempts"
+                    )
+                    raise SpeechGenerationError(
+                        f"Speech generation failed after {max_retries + 1} attempts. "
+                        f"Last error: {str(network_error)}."
+                    ) from network_error
+
+            except Exception as e:
+                self.logger.error(
+                    f"Speech generation failed with non-retryable error: {str(e)}"
+                )
+                raise SpeechGenerationError(
+                    f"Speech generation failed: {str(e)}"
+                ) from e

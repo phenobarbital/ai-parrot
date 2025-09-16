@@ -54,7 +54,8 @@ class AbstractDBAgent(AbstractBot, ABC):
         primary_schema: Optional[str] = None,
         vector_store: Optional[AbstractStore] = None,
         auto_analyze_schema: bool = True,
-        client_id: Optional[str] = None,  # For per-client agents
+        client_id: Optional[str] = None,
+        database_type: str = "postgresql",
         **kwargs
     ):
         super().__init__(name=name, **kwargs)
@@ -75,6 +76,7 @@ class AbstractDBAgent(AbstractBot, ABC):
 
         self.client_id = client_id or self.primary_schema
         self.dsn = dsn
+        self.database_type = database_type
 
         # Database components
         self.engine: Optional[AsyncEngine] = None
@@ -150,20 +152,17 @@ class AbstractDBAgent(AbstractBot, ABC):
             f"Shared {len(tools)} tools with LLM Client"
         )
 
+    def _ensure_async_driver(self, dsn: str) -> str:
+        return dsn
+
     async def connect_database(self) -> None:
-        """Connect to PostgreSQL database using SQLAlchemy async."""
+        """Connect to SQL database using SQLAlchemy async."""
         if not self.dsn:
             raise ValueError("Connection string is required")
 
         try:
             # Ensure async driver
-            if '+asyncpg' not in self.dsn:
-                connection_string = self.dsn.replace(
-                    'postgresql://', 'postgresql+asyncpg://'
-                )
-            else:
-                connection_string = self.dsn
-
+            connection_string = self._ensure_async_driver(self.dsn)
             # Build search path from allowed schemas
             search_path = ','.join(self.allowed_schemas)
 
@@ -206,177 +205,37 @@ class AbstractDBAgent(AbstractBot, ABC):
                 f"Analyzing schemas: {self.allowed_schemas} (primary: {self.primary_schema})"
             )
 
-            total_tables = 0
+            # Delegate to schema manager tool
+            analysis_results = await self.schema_tool.analyze_all_schemas()
 
-            for schema_name in self.allowed_schemas:
-                try:
-                    schema_table_count = await self._analyze_schema(schema_name)
-                    total_tables += schema_table_count
-                    self.logger.notice(
-                        f"Schema '{schema_name}': {schema_table_count} tables/views analyzed"
-                    )
-
-                except Exception as e:
-                    self.logger.warning(f"Failed to analyze schema '{schema_name}': {e}")
-                    # Continue with other schemas
-                    continue
+            # Log results
+            total_tables = sum(analysis_results.values())
+            for schema_name, table_count in analysis_results.items():
+                if table_count > 0:
+                    self.logger.info(f"Schema '{schema_name}': {table_count} tables/views")
+                else:
+                    self.logger.warning(f"Schema '{schema_name}': Analysis failed or no tables found")
 
             self.schema_analyzed = True
-            self.logger.info(
-                f"Schema analysis completed. Total: {total_tables} tables/views across "
-                f"{len(self.allowed_schemas)} schemas"
-            )
+            self.logger.info(f"Schema analysis completed. Total: {total_tables} tables/views")
 
         except Exception as e:
             self.logger.error(f"Schema analysis failed: {e}")
             raise
 
-    async def _analyze_schema(self, schema_name: str) -> int:
-        """Analyze individual schema and return table count."""
+    async def get_table_metadata(self, schema: str, tablename: str) -> Optional[TableMetadata]:
+        """Get table metadata - delegates to schema tool."""
+        if not self.schema_tool:
+            raise RuntimeError("Schema tool not initialized. Call configure() first.")
 
-        async with self.session_maker() as session:
-            # Get all tables and views in schema
-            tables_query = """
-                SELECT
-                    table_name,
-                    table_type,
-                    obj_description(pgc.oid) as comment
-                FROM information_schema.tables ist
-                LEFT JOIN pg_class pgc ON pgc.relname = ist.table_name
-                LEFT JOIN pg_namespace pgn ON pgn.oid = pgc.relnamespace
-                WHERE table_schema = :schema_name
-                AND table_type IN ('BASE TABLE', 'VIEW')
-                ORDER BY table_name
-            """
+        return await self.schema_tool.get_table_details(schema, tablename)
 
-            result = await session.execute(
-                text(tables_query),
-                {"schema_name": schema_name}
-            )
+    async def get_schema_overview(self, schema_name: str) -> Optional[Dict[str, Any]]:
+        """Get schema overview - delegates to schema Tool."""
+        if not self.schema_tool:
+            raise RuntimeError("Schema Tool not initialized. Call configure() first.")
 
-            tables_data = result.fetchall()
-
-            # Analyze each table
-            for table_row in tables_data:
-                table_name = table_row.table_name
-                table_type = table_row.table_type
-                comment = table_row.comment
-
-                try:
-                    # Get detailed table metadata
-                    table_metadata = await self._analyze_table(
-                        session, schema_name, table_name, table_type, comment
-                    )
-
-                    # Store in cache
-                    await self.metadata_cache.store_table_metadata(table_metadata)
-
-                except Exception as e:
-                    self.logger.warning(
-                        f"Failed to analyze table {schema_name}.{table_name}: {e}"
-                    )
-
-            return len(tables_data)
-
-    async def _analyze_table(
-        self,
-        session: AsyncSession,
-        schema_name: str,
-        table_name: str,
-        table_type: str,
-        comment: Optional[str]
-    ) -> TableMetadata:
-        """Analyze individual table metadata."""
-
-        # Get column information
-        columns_query = """
-            SELECT
-                column_name,
-                data_type,
-                is_nullable,
-                column_default,
-                character_maximum_length,
-                col_description(pgc.oid, ordinal_position) as comment
-            FROM information_schema.columns isc
-            LEFT JOIN pg_class pgc ON pgc.relname = isc.table_name
-            LEFT JOIN pg_namespace pgn ON pgn.oid = pgc.relnamespace
-            WHERE table_schema = :schema_name
-            AND table_name = :table_name
-            ORDER BY ordinal_position
-        """
-
-        result = await session.execute(
-            text(columns_query),
-            {"schema_name": schema_name, "table_name": table_name}
-        )
-
-        columns = []
-        for col_row in result.fetchall():
-            columns.append({
-                "name": col_row.column_name,
-                "type": col_row.data_type,
-                "nullable": col_row.is_nullable == "YES",
-                "default": col_row.column_default,
-                "max_length": col_row.character_maximum_length,
-                "comment": col_row.comment
-            })
-
-        # Get primary keys
-        pk_query = """
-            SELECT column_name
-            FROM information_schema.key_column_usage kcu
-            JOIN information_schema.table_constraints tc
-                ON kcu.constraint_name = tc.constraint_name
-                AND kcu.table_schema = tc.table_schema
-            WHERE tc.constraint_type = 'PRIMARY KEY'
-            AND kcu.table_schema = :schema_name
-            AND kcu.table_name = :table_name
-            ORDER BY ordinal_position
-        """
-
-        pk_result = await session.execute(
-            text(pk_query),
-            {"schema_name": schema_name, "table_name": table_name}
-        )
-        primary_keys = [row.column_name for row in pk_result.fetchall()]
-
-        # Get row count estimate
-        row_count = None
-        if table_type == 'BASE TABLE':
-            try:
-                count_query = f'SELECT reltuples::bigint FROM pg_class WHERE relname = :table_name'
-                count_result = await session.execute(text(count_query), {"table_name": table_name})
-                row_count = count_result.scalar()
-            except:
-                pass  # Skip if estimate fails
-
-        # Get sample data (only for tables, not views, and only if reasonable size)
-        sample_data = []
-        if table_type == 'BASE TABLE' and row_count and row_count < 1000000:  # Only for < 1M rows
-            try:
-                sample_query = f'SELECT * FROM "{schema_name}"."{table_name}" LIMIT 3'
-                sample_result = await session.execute(text(sample_query))
-                rows = sample_result.fetchall()
-                if rows:
-                    columns_names = list(sample_result.keys())
-                    sample_data = [dict(zip(columns_names, row)) for row in rows]
-            except:
-                pass  # Skip if sample fails
-
-        return TableMetadata(
-            schema=schema_name,
-            tablename=table_name,
-            table_type=table_type,
-            full_name=f'"{schema_name}"."{table_name}"',
-            comment=comment,
-            columns=columns,
-            primary_keys=primary_keys,
-            foreign_keys=[],
-            indexes=[],
-            row_count=row_count,
-            sample_data=sample_data,
-            last_accessed=datetime.now()
-        )
+        return await self.schema_tool.get_schema_overview(schema_name)
 
     async def ask(
         self,
@@ -466,112 +325,6 @@ class AbstractDBAgent(AbstractBot, ABC):
                 ),
             )
 
-    async def _process_tool_discoveries(self, tool_calls: List[Any]) -> List[str]:
-        """Process SchemaSearchTool results and cache new metadata."""
-
-        discovered_metadata = []
-
-        for tool_call in tool_calls:
-            if tool_call.name == "schema_search":
-                try:
-                    # The tool was already executed, check what was found
-                    if hasattr(tool_call, 'result') and tool_call.result:
-                        search_results = tool_call.result.result
-
-                        if search_results:
-                            self.logger.info(f"🔧 TOOL FOUND: {len(search_results)} results")
-
-                            # Process each result and cache if it's a table
-                            for result in search_results:
-                                if result.get('type') == 'table':
-                                    table_name = result.get('name')
-                                    schema_name = result.get('schema', self.primary_schema)
-
-                                    # Try to get this table metadata and cache it
-                                    cached_metadata = await self._ensure_table_cached(schema_name, table_name)
-                                    if cached_metadata:
-                                        discovered_metadata.append(cached_metadata.to_yaml_context())
-
-                except Exception as e:
-                    self.logger.error(f"PROCESSING ERROR: {e}")
-
-        return discovered_metadata
-
-    # 5. Helper method to ensure table metadata is cached
-    async def _ensure_table_cached(self, schema_name: str, table_name: str) -> Optional[TableMetadata]:
-        """Ensure table metadata is in cache, fetch if necessary."""
-
-        # Check if already cached
-        cached = await self.metadata_cache.get_table_metadata(schema_name, table_name)
-        if cached:
-            return cached
-        # Not cached - analyze and cache it
-        try:
-            # This should be the same logic you use during schema analysis
-            async with self.session_maker() as session:
-                # Get table info (this is example - adapt to your existing logic)
-                table_info_query = """
-                SELECT
-                    column_name, data_type, is_nullable, column_default,
-                    character_maximum_length, numeric_precision, numeric_scale
-                FROM information_schema.columns
-                WHERE table_schema = :schema AND table_name = :table
-                ORDER BY ordinal_position
-                """
-
-                result = await session.execute(
-                    text(table_info_query),
-                    {"schema": schema_name, "table": table_name}
-                )
-
-                columns = []
-                for row in result:
-                    columns.append({
-                        'name': row.column_name,
-                        'type': row.data_type,
-                        'nullable': row.is_nullable == 'YES',
-                        'default': row.column_default,
-                        'max_length': row.character_maximum_length,
-                        'comment': None
-                    })
-
-                if not columns:
-                    self.logger.warning(f"📊 NO COLUMNS FOUND: {schema_name}.{table_name}")
-                    return None
-
-                # Get sample data
-                sample_query = f'SELECT * FROM "{schema_name}"."{table_name}" LIMIT 3'
-                sample_result = await session.execute(text(sample_query))
-                sample_data = [dict(row._mapping) for row in sample_result.fetchall()]
-
-                # Create TableMetadata object
-                table_metadata = TableMetadata(
-                    schema=schema_name,
-                    tablename=table_name,
-                    table_type='BASE TABLE',
-                    full_name=f'"{schema_name}"."{table_name}"',
-                    comment=None,
-                    columns=columns,
-                    primary_keys=[],
-                    foreign_keys=[],
-                    indexes=[],
-                    row_count=len(sample_data),
-                    sample_data=sample_data,
-                    last_accessed=datetime.now(),
-                    access_frequency=0,
-                    avg_query_time=None
-                )
-
-                # Cache it
-                await self.metadata_cache.store_table_metadata(table_metadata)
-                self.logger.info(f"✅ CACHED: {schema_name}.{table_name} with {len(columns)} columns")
-
-                return table_metadata
-
-        except Exception as e:
-            self.logger.error(f"📊 ANALYSIS ERROR: {e}")
-            return None
-
     async def _use_schema_search_tool(self, user_query: str) -> Optional[str]:
         """Use schema search tool to discover relevant metadata."""
         try:
@@ -583,14 +336,18 @@ class AbstractDBAgent(AbstractBot, ABC):
             )
 
             if search_results:
-                self.logger.info(f"Found {len(search_results)} tables via schema tool")
+                self.logger.info(
+                    f"Found {len(search_results)} tables via schema tool"
+                )
                 metadata_parts = []
                 for table in search_results:
                     metadata_parts.append(table.to_yaml_context())
                 return "\n---\n".join(metadata_parts)
 
         except Exception as e:
-            self.logger.error(f"Schema tool failed: {e}")
+            self.logger.error(
+                f"Schema tool failed: {e}"
+            )
 
         return None
 
