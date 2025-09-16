@@ -79,25 +79,25 @@ class SchemaMetadataCache:
 
     async def store_table_metadata(self, metadata: TableMetadata):
         """Store table metadata in available cache tiers."""
-        cache_key = self._table_cache_key(metadata.schema_name, metadata.table_name)
+        cache_key = self._table_cache_key(metadata.schema, metadata.tablename)
 
         # Store in hot cache
         self.hot_cache[cache_key] = metadata
 
         # Update schema cache
-        if metadata.schema_name not in self.schema_cache:
-            self.schema_cache[metadata.schema_name] = SchemaMetadata(
-                schema_name=metadata.schema_name,
+        if metadata.schema not in self.schema_cache:
+            self.schema_cache[metadata.schema] = SchemaMetadata(
+                schema=metadata.schema,
                 database_name="navigator",  # Could be dynamic
                 table_count=0,
                 view_count=0
             )
 
-        schema_meta = self.schema_cache[metadata.schema_name]
+        schema_meta = self.schema_cache[metadata.schema]
         if metadata.table_type == 'BASE TABLE':
-            schema_meta.tables[metadata.table_name] = metadata
+            schema_meta.tables[metadata.tablename] = metadata
         else:
-            schema_meta.views[metadata.table_name] = metadata
+            schema_meta.views[metadata.tablename] = metadata
 
         # Store in vector store only if enabled
         if self.vector_enabled:
@@ -262,8 +262,8 @@ class SchemaMetadataCache:
                 "content": metadata.to_yaml_context(),
                 "metadata": {
                     "type": "table_metadata",
-                    "schema_name": metadata.schema_name,
-                    "table_name": metadata.table_name,
+                    "schema": metadata.schema,
+                    "tablename": metadata.tablename,
                     "table_type": metadata.table_type,
                     "full_name": metadata.full_name
                 }

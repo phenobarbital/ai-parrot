@@ -34,6 +34,7 @@ from .models import (
 )
 from .prompts import DB_AGENT_PROMPT, BASIC_HUMAN_PROMPT
 from .retries import QueryRetryConfig, SQLRetryHandler
+from .tools import SchemaSearchTool
 
 
 # ============================================================================
@@ -169,8 +170,9 @@ class AbstractDBAgent(AbstractBot, ABC):
 
     # @abstractmethod
     def _register_database_tools(self):
-        """Register database-specific tools. Must be implemented by subclasses."""
-        pass
+        """Register database-specific tools."""
+        schema_search = SchemaSearchTool(agent=self)
+        self.tool_manager.add_tool(schema_search)
 
     async def _share_tools_with_llm(self):
         """Share ToolManager tools with LLM Client."""
@@ -186,20 +188,26 @@ class AbstractDBAgent(AbstractBot, ABC):
         for tool in tools:
             self._llm.tool_manager.add_tool(tool)
 
-        self.logger.info(f"Shared {len(tools)} tools with LLM Client")
+        self.logger.info(
+            f"Shared {len(tools)} tools with LLM Client"
+        )
 
     async def analyze_schema(self) -> None:
         """Analyze all allowed schemas and populate metadata cache."""
         try:
-            self.logger.info(f"Analyzing schemas: {self.allowed_schemas} (primary: {self.primary_schema})")
+            self.logger.notice(
+                f"Analyzing schemas: {self.allowed_schemas} (primary: {self.primary_schema})"
+            )
 
             total_tables = 0
 
             for schema_name in self.allowed_schemas:
                 try:
-                    schema_table_count = await self._analyze_single_schema(schema_name)
+                    schema_table_count = await self._analyze_schema(schema_name)
                     total_tables += schema_table_count
-                    self.logger.info(f"Schema '{schema_name}': {schema_table_count} tables/views analyzed")
+                    self.logger.notice(
+                        f"Schema '{schema_name}': {schema_table_count} tables/views analyzed"
+                    )
 
                 except Exception as e:
                     self.logger.warning(f"Failed to analyze schema '{schema_name}': {e}")
@@ -216,7 +224,7 @@ class AbstractDBAgent(AbstractBot, ABC):
             self.logger.error(f"Schema analysis failed: {e}")
             raise
 
-    async def _analyze_single_schema(self, schema_name: str) -> int:
+    async def _analyze_schema(self, schema_name: str) -> int:
         """Analyze individual schema and return table count."""
 
         async with self.session_maker() as session:
@@ -257,7 +265,9 @@ class AbstractDBAgent(AbstractBot, ABC):
                     await self.metadata_cache.store_table_metadata(table_metadata)
 
                 except Exception as e:
-                    self.logger.warning(f"Failed to analyze table {schema_name}.{table_name}: {e}")
+                    self.logger.warning(
+                        f"Failed to analyze table {schema_name}.{table_name}: {e}"
+                    )
 
             return len(tables_data)
 
@@ -347,15 +357,15 @@ class AbstractDBAgent(AbstractBot, ABC):
                 pass  # Skip if sample fails
 
         return TableMetadata(
-            schema_name=schema_name,
-            table_name=table_name,
+            schema=schema_name,
+            tablename=table_name,
             table_type=table_type,
             full_name=f'"{schema_name}"."{table_name}"',
             comment=comment,
             columns=columns,
             primary_keys=primary_keys,
-            foreign_keys=[],  # Could be implemented
-            indexes=[],       # Could be implemented
+            foreign_keys=[],
+            indexes=[],
             row_count=row_count,
             sample_data=sample_data,
             last_accessed=datetime.now()
@@ -447,15 +457,167 @@ class AbstractDBAgent(AbstractBot, ABC):
                 ),
             )
 
+    async def _process_tool_discoveries(self, tool_calls: List[Any]) -> List[str]:
+        """Process SchemaSearchTool results and cache new metadata."""
+
+        discovered_metadata = []
+
+        for tool_call in tool_calls:
+            if tool_call.name == "schema_search":
+                try:
+                    # The tool was already executed, check what was found
+                    if hasattr(tool_call, 'result') and tool_call.result:
+                        search_results = tool_call.result.result
+
+                        if search_results:
+                            self.logger.info(f"🔧 TOOL FOUND: {len(search_results)} results")
+
+                            # Process each result and cache if it's a table
+                            for result in search_results:
+                                if result.get('type') == 'table':
+                                    table_name = result.get('name')
+                                    schema_name = result.get('schema', self.primary_schema)
+
+                                    # Try to get this table metadata and cache it
+                                    cached_metadata = await self._ensure_table_cached(schema_name, table_name)
+                                    if cached_metadata:
+                                        discovered_metadata.append(cached_metadata.to_yaml_context())
+
+                except Exception as e:
+                    self.logger.error(f"PROCESSING ERROR: {e}")
+
+        return discovered_metadata
+
+    # 5. Helper method to ensure table metadata is cached
+    async def _ensure_table_cached(self, schema_name: str, table_name: str) -> Optional[TableMetadata]:
+        """Ensure table metadata is in cache, fetch if necessary."""
+
+        # Check if already cached
+        cached = await self.metadata_cache.get_table_metadata(schema_name, table_name)
+        if cached:
+            return cached
+        # Not cached - analyze and cache it
+        try:
+            # This should be the same logic you use during schema analysis
+            async with self.session_maker() as session:
+                # Get table info (this is example - adapt to your existing logic)
+                table_info_query = """
+                SELECT
+                    column_name, data_type, is_nullable, column_default,
+                    character_maximum_length, numeric_precision, numeric_scale
+                FROM information_schema.columns
+                WHERE table_schema = :schema AND table_name = :table
+                ORDER BY ordinal_position
+                """
+
+                result = await session.execute(
+                    text(table_info_query),
+                    {"schema": schema_name, "table": table_name}
+                )
+
+                columns = []
+                for row in result:
+                    columns.append({
+                        'name': row.column_name,
+                        'type': row.data_type,
+                        'nullable': row.is_nullable == 'YES',
+                        'default': row.column_default,
+                        'max_length': row.character_maximum_length,
+                        'comment': None
+                    })
+
+                if not columns:
+                    self.logger.warning(f"📊 NO COLUMNS FOUND: {schema_name}.{table_name}")
+                    return None
+
+                # Get sample data
+                sample_query = f'SELECT * FROM "{schema_name}"."{table_name}" LIMIT 3'
+                sample_result = await session.execute(text(sample_query))
+                sample_data = [dict(row._mapping) for row in sample_result.fetchall()]
+
+                # Create TableMetadata object
+                table_metadata = TableMetadata(
+                    schema=schema_name,
+                    tablename=table_name,
+                    table_type='BASE TABLE',
+                    full_name=f'"{schema_name}"."{table_name}"',
+                    comment=None,
+                    columns=columns,
+                    primary_keys=[],
+                    foreign_keys=[],
+                    indexes=[],
+                    row_count=len(sample_data),
+                    sample_data=sample_data,
+                    last_accessed=datetime.now(),
+                    access_frequency=0,
+                    avg_query_time=None
+                )
+
+                # Cache it
+                await self.metadata_cache.store_table_metadata(table_metadata)
+                self.logger.info(f"✅ CACHED: {schema_name}.{table_name} with {len(columns)} columns")
+
+                return table_metadata
+
+        except Exception as e:
+            self.logger.error(f"📊 ANALYSIS ERROR: {e}")
+            return None
+
+    async def _use_schema_search_tool(self, user_query: str) -> Optional[str]:
+        """Use LLM with SchemaSearchTool to discover relevant metadata."""
+
+        # Create prompt that encourages tool usage
+        tool_discovery_prompt = f"""
+    You are helping find database tables and columns relevant to this user query.
+
+    User Query: "{user_query}"
+    Available Schemas: {', '.join(self.allowed_schemas)}
+    Primary Schema: {self.primary_schema}
+
+    Please use the schema_search tool to find tables that might contain the data the user needs.
+
+    Examples of what to search for:
+    - If user asks about "products" → search for "products"
+    - If user asks about "pricing" → search for "price" or "pricing"
+    - If user asks about "users" → search for "users" or "customers"
+    - If user asks about "TV" → search for "products" (since TVs are products)
+
+    Use the schema_search tool to find relevant tables and columns.
+    """
+
+        try:
+            # Call LLM with access to SchemaSearchTool
+            response = await self._llm.ask(
+                prompt=tool_discovery_prompt,
+                temperature=0.1,  # Low temperature for focused search
+            )
+
+            # Check if LLM used the schema_search tool
+            if hasattr(response, 'tool_calls') and response.tool_calls:
+                self.logger.info(f"LLM USED TOOLS: {len(response.tool_calls)} tool calls made")
+
+                # The tools were already executed by the LLM, but let's check for new metadata
+                # and cache any newly discovered tables
+                discovered_tables = await self._process_tool_discoveries(response.tool_calls)
+
+                if discovered_tables:
+                    return "\n---\n".join(discovered_tables)
+
+        except Exception as e:
+            self.logger.error(
+                f"TOOL DISCOVERY ERROR: {e}"
+            )
+
+        return None
+
     async def _discover_metadata(self, query: str) -> str:
         """Discover relevant metadata for the query across allowed schemas."""
 
-        # 🔍 DEBUG: Log the discovery process
-        self.logger.info(f"🔍 DISCOVERY: Starting metadata discovery for query: '{query}'")
-        self.logger.info(f"🔍 DISCOVERY: Allowed schemas: {self.allowed_schemas}")
-        self.logger.info(f"🔍 DISCOVERY: Primary schema: {self.primary_schema}")
+        self.logger.debug(
+            f"🔍 DISCOVERY: Starting metadata discovery for query: '{query}'"
+        )
 
-        # Search for similar tables across all allowed schemas
+        # Step 1: Search for similar tables across all allowed schemas
         similar_tables = await self.metadata_cache.search_similar_tables(
             schema_names=self.allowed_schemas,
             query=query,
@@ -474,33 +636,43 @@ class AbstractDBAgent(AbstractBot, ABC):
                 f"🔍 DISCOVERY: No similar tables found for query: '{query}'"
             )
 
-        # Fallback: get hot tables from all allowed schemas
+        # Step 2: Cache miss - use LLM with SchemaSearchTool to discover metadata
+        try:
+            discovered_metadata = await self._use_schema_search_tool(query)
+            if discovered_metadata:
+                self.logger.info(
+                    f"Found metadata via SchemaSearchTool"
+                )
+                return discovered_metadata
+        except Exception as e:
+            self.logger.warning(f"TOOL FAILED: {e}")
+
+        # Step 3: Existing fallback logic (hot tables)
         hot_tables = self.metadata_cache.get_hot_tables(self.allowed_schemas, limit=3)
         if hot_tables:
-            self.logger.info(f"🔍 DISCOVERY: Using fallback hot tables: {hot_tables}")
+            self.logger.debug(f"DISCOVERY: Using fallback hot tables: {hot_tables}")
             metadata_parts = []
             for schema_name, table_name, access_count in hot_tables:
-                self.logger.info(f"🔍   - {schema_name}.{table_name} (accessed {access_count} times)")
+                self.logger.debug(f"🔍   - {schema_name}.{table_name} (accessed {access_count} times)")
                 table_meta = await self.metadata_cache.get_table_metadata(
                     schema_name, table_name
                 )
                 if table_meta:
                     # 🔍 DEBUG: Log the columns of hot tables too
-                    self.logger.info(f"🔍     Columns: {[col['name'] for col in table_meta.columns]}")
+                    self.logger.debug(f"🔍     Columns: {[col['name'] for col in table_meta.columns]}")
                     metadata_parts.append(table_meta.to_yaml_context())
 
             if metadata_parts:
                 metadata_context = "\n---\n".join(metadata_parts)
-                self.logger.info(f"🔍 DISCOVERY: Fallback metadata context length: {len(metadata_context)} chars")
                 return metadata_context
         else:
             self.logger.warning(
-                f"🔍 DISCOVERY: No hot tables found either!"
+                f"DISCOVERY: No hot tables found either!"
             )
 
         fallback_message = f"Allowed schemas: {', '.join(self.allowed_schemas)} (primary: {self.primary_schema})"
         self.logger.warning(
-            f"🔍 DISCOVERY: Using minimal fallback: {fallback_message}"
+            f"DISCOVERY: Using minimal fallback: {fallback_message}"
         )
         return fallback_message
 
@@ -1110,6 +1282,78 @@ Available Schemas: {', '.join(self.allowed_schemas)}
                 "explanation_type": "llm_analysis" if explanation else None
             }
         )
+
+    async def search_schema(
+        self,
+        search_term: str,
+        search_type: str = "all",
+        limit: int = 10
+    ) -> List[Dict[str, Any]]:
+        """Enhanced search_schema method that the SchemaSearchTool uses."""
+
+        # Try cache first (existing logic)
+        cached_results = await self.metadata_cache._search_cache_only(
+            self.allowed_schemas, search_term, limit
+        )
+
+        if cached_results:
+            self.logger.debug(
+                f"🔍 SEARCH CACHE HIT: Found {len(cached_results)} results for '{search_term}'"
+            )
+            return [{
+                "type": "table",
+                "name": table.table_name,
+                "schema": table.schema_name,
+                "content": table.to_yaml_context(),
+                "relevance_score": 1.0
+            } for table in cached_results]
+
+        # Cache miss - search database directly
+        self.logger.info(f"🔍 SEARCH DATABASE: Looking for '{search_term}' in database")
+        try:
+            async with self.session_maker() as session:
+                if search_type in ["all", "tables"]:
+                    # Search for table names
+                    table_query = """
+                    SELECT table_schema, table_name, table_type
+                    FROM information_schema.tables
+                    WHERE table_schema = ANY(:schemas)
+                    AND (LOWER(table_name) LIKE LOWER(:pattern)
+                        OR LOWER(table_name) = LOWER(:exact))
+                    ORDER BY
+                        CASE WHEN LOWER(table_name) = LOWER(:exact) THEN 1 ELSE 2 END,
+                        table_name
+                    LIMIT :limit
+                    """
+
+                    result = await session.execute(text(table_query), {
+                        "schemas": self.allowed_schemas,
+                        "pattern": f"%{search_term}%",
+                        "exact": search_term,
+                        "limit": limit
+                    })
+
+                    results = []
+                    for row in result:
+                        results.append({
+                            "type": "table",
+                            "name": row.table_name,
+                            "schema": row.table_schema,
+                            "table_type": row.table_type,
+                            "relevance_score": 1.0 if row.table_name.lower() == search_term.lower() else 0.8
+                        })
+
+                    self.logger.info(
+                        f"🔍 DATABASE FOUND: {len(results)} tables matching '{search_term}'"
+                    )
+                    return results
+
+        except Exception as e:
+            self.logger.error(
+                f"DATABASE SEARCH ERROR: {e}"
+            )
+
+        return []
 
     async def cleanup(self) -> None:
         """Cleanup resources."""
