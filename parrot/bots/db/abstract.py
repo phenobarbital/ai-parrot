@@ -39,6 +39,11 @@ class AbstractDBAgent(AbstractBot):
     system_prompt_template: str = DB_AGENT_PROMPT
     human_prompt_template = BASIC_HUMAN_PROMPT
     _default_temperature: float = 0.0
+    # _default_llm: str = 'openai'
+    # LLM:
+    # llm_client: str = 'openai'
+    # default_model: str = 'gpt-4o'
+    max_tokens: int = 8192
 
     def __init__(
         self,
@@ -62,10 +67,19 @@ class AbstractDBAgent(AbstractBot):
         """
         kwargs.setdefault('temperature', self._default_temperature)
         super().__init__(name=name, **kwargs)
-        self.role = kwargs.get('role', 'Database Analysis Assistant')
-        self.goal = kwargs.get('goal', 'Help users interact with databases using natural language')
-        self.capabilities = kwargs.get('capabilities', 'Database schema analysis, query generation, and data retrieval')
-        self.backstory = kwargs.get('backstory', 'Expert database assistant with deep knowledge of SQL and data analysis')
+        self.role = kwargs.get(
+            'role', 'Database Analysis Assistant')
+        self.goal = kwargs.get(
+            'goal', 'Help users interact with databases using natural language'
+        )
+        self.capabilities = kwargs.get(
+            'capabilities',
+            'Database schema analysis, query generation, and data retrieval'
+        )
+        self.backstory = kwargs.get(
+            'backstory',
+            'Expert database assistant with deep knowledge of SQL and data analysis'
+        )
 
         self.credentials = credentials
         self.schema_name = schema_name
@@ -233,8 +247,6 @@ Based on the user context above, please tailor your response to their specific:
             chat_history=chat_history_section,
             **kwargs
         )
-        print('DEFINED SYSTEM PROMPT:')
-        print(system_prompt)
         return system_prompt
 
     async def cleanup(self) -> None:
