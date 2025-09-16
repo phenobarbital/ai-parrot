@@ -79,25 +79,25 @@ class SchemaMetadataCache:
 
     async def store_table_metadata(self, metadata: TableMetadata):
         """Store table metadata in available cache tiers."""
-        cache_key = self._table_cache_key(metadata.schema_name, metadata.table_name)
+        cache_key = self._table_cache_key(metadata.schema, metadata.tablename)
 
         # Store in hot cache
         self.hot_cache[cache_key] = metadata
 
         # Update schema cache
-        if metadata.schema_name not in self.schema_cache:
-            self.schema_cache[metadata.schema_name] = SchemaMetadata(
-                schema_name=metadata.schema_name,
+        if metadata.schema not in self.schema_cache:
+            self.schema_cache[metadata.schema] = SchemaMetadata(
+                schema=metadata.schema,
                 database_name="navigator",  # Could be dynamic
                 table_count=0,
                 view_count=0
             )
 
-        schema_meta = self.schema_cache[metadata.schema_name]
+        schema_meta = self.schema_cache[metadata.schema]
         if metadata.table_type == 'BASE TABLE':
-            schema_meta.tables[metadata.table_name] = metadata
+            schema_meta.tables[metadata.tablename] = metadata
         else:
-            schema_meta.views[metadata.table_name] = metadata
+            schema_meta.views[metadata.tablename] = metadata
 
         # Store in vector store only if enabled
         if self.vector_enabled:
@@ -150,6 +150,8 @@ class SchemaMetadataCache:
                 schema_meta = self.schema_cache[schema_name]
                 all_objects = schema_meta.get_all_objects()
 
+                self.logger.debug(f"🔍 SEARCHING SCHEMA '{schema_name}': {len(all_objects)} tables available")
+
                 for table_name, table_meta in all_objects.items():
                     score = self._calculate_relevance_score(table_name, table_meta, keywords)
 
@@ -157,9 +159,8 @@ class SchemaMetadataCache:
                         self.logger.debug(
                             f"🔍 MATCH: {table_name} scored {score}"
                         )
-                        # Add the score to the table metadata for sorting
-                        table_meta_copy = table_meta
-                        results.append((table_meta_copy, score))
+                        # IMPORTANT: Return the actual TableMetadata object, not a tuple
+                        results.append(table_meta)  # FIX: was (table_meta_copy, score)
 
                         if len(results) >= limit:
                             break
@@ -167,11 +168,16 @@ class SchemaMetadataCache:
                 if len(results) >= limit:
                     break
 
-        # Sort by relevance score (highest first) and return just the TableMetadata objects
-        results.sort(key=lambda x: x[1], reverse=True)
-        final_results = [table_meta for table_meta, score in results]
+        # FIX: Sort by a different method since we're not storing scores anymore
+        # For now, just return in order found (cache already does some relevance filtering)
+        final_results = results[:limit]
 
         self.logger.info(f"🔍 SEARCH: Found {len(final_results)} results")
+
+        # DEBUG: Log what we're returning
+        for i, table in enumerate(final_results):
+            self.logger.debug(f"  Result {i+1}: {table.schema}.{table.tablename}")
+
         return final_results
 
     def _extract_search_keywords(self, query: str) -> List[str]:
@@ -262,8 +268,8 @@ class SchemaMetadataCache:
                 "content": metadata.to_yaml_context(),
                 "metadata": {
                     "type": "table_metadata",
-                    "schema_name": metadata.schema_name,
-                    "table_name": metadata.table_name,
+                    "schema": metadata.schema,
+                    "tablename": metadata.tablename,
                     "table_type": metadata.table_type,
                     "full_name": metadata.full_name
                 }

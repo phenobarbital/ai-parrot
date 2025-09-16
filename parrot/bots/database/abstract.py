@@ -10,7 +10,7 @@ Designed for:
 - "Show me" = data retrieval pattern recognition
 """
 
-from abc import ABC, abstractmethod
+from abc import ABC
 from typing import Dict, Any, List, Optional, Union
 from datetime import datetime
 import re
@@ -34,6 +34,7 @@ from .models import (
 )
 from .prompts import DB_AGENT_PROMPT, BASIC_HUMAN_PROMPT
 from .retries import QueryRetryConfig, SQLRetryHandler
+from .tools import SchemaSearchTool
 
 
 # ============================================================================
@@ -97,9 +98,6 @@ class AbstractDBAgent(AbstractBot, ABC):
             allowed_schemas=self.allowed_schemas
         )
 
-        # Register tools
-        self._register_database_tools()
-
         # Schema analysis flag
         self.auto_analyze_schema = auto_analyze_schema
         self.schema_analyzed = False
@@ -111,12 +109,46 @@ class AbstractDBAgent(AbstractBot, ABC):
         # Connect to database
         await self.connect_database()
 
+        # Register tools
+        self._register_database_tools()
+
         # Share tools with LLM
         await self._share_tools_with_llm()
 
         # Auto-analyze schema if enabled
         if self.auto_analyze_schema and not self.schema_analyzed:
             await self.analyze_schema()
+
+    def _register_database_tools(self):
+        """Register database-specific tools."""
+        self.schema_tool = SchemaSearchTool(
+            engine=self.engine,
+            metadata_cache=self.metadata_cache,
+            allowed_schemas=self.allowed_schemas.copy(),
+            session_maker=self.session_maker
+        )
+        self.tool_manager.add_tool(self.schema_tool)
+        self.logger.debug(
+            f"Registered SchemaSearchTool with {len(self.allowed_schemas)} schemas"
+        )
+
+    async def _share_tools_with_llm(self):
+        """Share ToolManager tools with LLM Client."""
+        if not hasattr(self, '_llm') or not self._llm:
+            self.logger.warning("LLM client not initialized, cannot share tools")
+            return
+
+        if not hasattr(self._llm, 'tool_manager'):
+            self.logger.warning("LLM client has no tool_manager")
+            return
+
+        tools = list(self.tool_manager.get_tools())
+        for tool in tools:
+            self._llm.tool_manager.add_tool(tool)
+
+        self.logger.info(
+            f"Shared {len(tools)} tools with LLM Client"
+        )
 
     async def connect_database(self) -> None:
         """Connect to PostgreSQL database using SQLAlchemy async."""
@@ -167,39 +199,22 @@ class AbstractDBAgent(AbstractBot, ABC):
             self.logger.error(f"Failed to connect to database: {e}")
             raise
 
-    # @abstractmethod
-    def _register_database_tools(self):
-        """Register database-specific tools. Must be implemented by subclasses."""
-        pass
-
-    async def _share_tools_with_llm(self):
-        """Share ToolManager tools with LLM Client."""
-        if not hasattr(self, '_llm') or not self._llm:
-            self.logger.warning("LLM client not initialized, cannot share tools")
-            return
-
-        if not hasattr(self._llm, 'tool_manager'):
-            self.logger.warning("LLM client has no tool_manager")
-            return
-
-        tools = list(self.tool_manager.get_tools())
-        for tool in tools:
-            self._llm.tool_manager.add_tool(tool)
-
-        self.logger.info(f"Shared {len(tools)} tools with LLM Client")
-
     async def analyze_schema(self) -> None:
         """Analyze all allowed schemas and populate metadata cache."""
         try:
-            self.logger.info(f"Analyzing schemas: {self.allowed_schemas} (primary: {self.primary_schema})")
+            self.logger.notice(
+                f"Analyzing schemas: {self.allowed_schemas} (primary: {self.primary_schema})"
+            )
 
             total_tables = 0
 
             for schema_name in self.allowed_schemas:
                 try:
-                    schema_table_count = await self._analyze_single_schema(schema_name)
+                    schema_table_count = await self._analyze_schema(schema_name)
                     total_tables += schema_table_count
-                    self.logger.info(f"Schema '{schema_name}': {schema_table_count} tables/views analyzed")
+                    self.logger.notice(
+                        f"Schema '{schema_name}': {schema_table_count} tables/views analyzed"
+                    )
 
                 except Exception as e:
                     self.logger.warning(f"Failed to analyze schema '{schema_name}': {e}")
@@ -216,7 +231,7 @@ class AbstractDBAgent(AbstractBot, ABC):
             self.logger.error(f"Schema analysis failed: {e}")
             raise
 
-    async def _analyze_single_schema(self, schema_name: str) -> int:
+    async def _analyze_schema(self, schema_name: str) -> int:
         """Analyze individual schema and return table count."""
 
         async with self.session_maker() as session:
@@ -257,7 +272,9 @@ class AbstractDBAgent(AbstractBot, ABC):
                     await self.metadata_cache.store_table_metadata(table_metadata)
 
                 except Exception as e:
-                    self.logger.warning(f"Failed to analyze table {schema_name}.{table_name}: {e}")
+                    self.logger.warning(
+                        f"Failed to analyze table {schema_name}.{table_name}: {e}"
+                    )
 
             return len(tables_data)
 
@@ -347,15 +364,15 @@ class AbstractDBAgent(AbstractBot, ABC):
                 pass  # Skip if sample fails
 
         return TableMetadata(
-            schema_name=schema_name,
-            table_name=table_name,
+            schema=schema_name,
+            tablename=table_name,
             table_type=table_type,
             full_name=f'"{schema_name}"."{table_name}"',
             comment=comment,
             columns=columns,
             primary_keys=primary_keys,
-            foreign_keys=[],  # Could be implemented
-            indexes=[],       # Could be implemented
+            foreign_keys=[],
+            indexes=[],
             row_count=row_count,
             sample_data=sample_data,
             last_accessed=datetime.now()
@@ -424,7 +441,9 @@ class AbstractDBAgent(AbstractBot, ABC):
                     )
 
             # Step 4: Format response
-            return self._format_response(route, query, sql_query, explanation, exec_result, llm_response)
+            return self._format_response(
+                route, query, sql_query, explanation, exec_result, llm_response
+            )
 
         except Exception as e:
             self.logger.error(
@@ -436,7 +455,7 @@ class AbstractDBAgent(AbstractBot, ABC):
                 response=f"Error processing query: {str(e)}",
                 output=None,
                 model=getattr(self, '_llm_model', 'unknown'),
-                provider=getattr(self, '_llm', 'unknown'),
+                provider=str(getattr(self, '_llm', 'unknown')),
                 metadata={
                     "error": str(e), "schema": self.primary_schema
                 },
@@ -447,23 +466,152 @@ class AbstractDBAgent(AbstractBot, ABC):
                 ),
             )
 
+    async def _process_tool_discoveries(self, tool_calls: List[Any]) -> List[str]:
+        """Process SchemaSearchTool results and cache new metadata."""
+
+        discovered_metadata = []
+
+        for tool_call in tool_calls:
+            if tool_call.name == "schema_search":
+                try:
+                    # The tool was already executed, check what was found
+                    if hasattr(tool_call, 'result') and tool_call.result:
+                        search_results = tool_call.result.result
+
+                        if search_results:
+                            self.logger.info(f"🔧 TOOL FOUND: {len(search_results)} results")
+
+                            # Process each result and cache if it's a table
+                            for result in search_results:
+                                if result.get('type') == 'table':
+                                    table_name = result.get('name')
+                                    schema_name = result.get('schema', self.primary_schema)
+
+                                    # Try to get this table metadata and cache it
+                                    cached_metadata = await self._ensure_table_cached(schema_name, table_name)
+                                    if cached_metadata:
+                                        discovered_metadata.append(cached_metadata.to_yaml_context())
+
+                except Exception as e:
+                    self.logger.error(f"PROCESSING ERROR: {e}")
+
+        return discovered_metadata
+
+    # 5. Helper method to ensure table metadata is cached
+    async def _ensure_table_cached(self, schema_name: str, table_name: str) -> Optional[TableMetadata]:
+        """Ensure table metadata is in cache, fetch if necessary."""
+
+        # Check if already cached
+        cached = await self.metadata_cache.get_table_metadata(schema_name, table_name)
+        if cached:
+            return cached
+        # Not cached - analyze and cache it
+        try:
+            # This should be the same logic you use during schema analysis
+            async with self.session_maker() as session:
+                # Get table info (this is example - adapt to your existing logic)
+                table_info_query = """
+                SELECT
+                    column_name, data_type, is_nullable, column_default,
+                    character_maximum_length, numeric_precision, numeric_scale
+                FROM information_schema.columns
+                WHERE table_schema = :schema AND table_name = :table
+                ORDER BY ordinal_position
+                """
+
+                result = await session.execute(
+                    text(table_info_query),
+                    {"schema": schema_name, "table": table_name}
+                )
+
+                columns = []
+                for row in result:
+                    columns.append({
+                        'name': row.column_name,
+                        'type': row.data_type,
+                        'nullable': row.is_nullable == 'YES',
+                        'default': row.column_default,
+                        'max_length': row.character_maximum_length,
+                        'comment': None
+                    })
+
+                if not columns:
+                    self.logger.warning(f"📊 NO COLUMNS FOUND: {schema_name}.{table_name}")
+                    return None
+
+                # Get sample data
+                sample_query = f'SELECT * FROM "{schema_name}"."{table_name}" LIMIT 3'
+                sample_result = await session.execute(text(sample_query))
+                sample_data = [dict(row._mapping) for row in sample_result.fetchall()]
+
+                # Create TableMetadata object
+                table_metadata = TableMetadata(
+                    schema=schema_name,
+                    tablename=table_name,
+                    table_type='BASE TABLE',
+                    full_name=f'"{schema_name}"."{table_name}"',
+                    comment=None,
+                    columns=columns,
+                    primary_keys=[],
+                    foreign_keys=[],
+                    indexes=[],
+                    row_count=len(sample_data),
+                    sample_data=sample_data,
+                    last_accessed=datetime.now(),
+                    access_frequency=0,
+                    avg_query_time=None
+                )
+
+                # Cache it
+                await self.metadata_cache.store_table_metadata(table_metadata)
+                self.logger.info(f"✅ CACHED: {schema_name}.{table_name} with {len(columns)} columns")
+
+                return table_metadata
+
+        except Exception as e:
+            self.logger.error(f"📊 ANALYSIS ERROR: {e}")
+            return None
+
+    async def _use_schema_search_tool(self, user_query: str) -> Optional[str]:
+        """Use schema search tool to discover relevant metadata."""
+        try:
+            # Direct call to schema tool
+            search_results = await self.schema_tool.search_schema(
+                search_term=user_query,
+                search_type="all",
+                limit=5
+            )
+
+            if search_results:
+                self.logger.info(f"Found {len(search_results)} tables via schema tool")
+                metadata_parts = []
+                for table in search_results:
+                    metadata_parts.append(table.to_yaml_context())
+                return "\n---\n".join(metadata_parts)
+
+        except Exception as e:
+            self.logger.error(f"Schema tool failed: {e}")
+
+        return None
+
     async def _discover_metadata(self, query: str) -> str:
         """Discover relevant metadata for the query across allowed schemas."""
 
-        # 🔍 DEBUG: Log the discovery process
-        self.logger.info(f"🔍 DISCOVERY: Starting metadata discovery for query: '{query}'")
-        self.logger.info(f"🔍 DISCOVERY: Allowed schemas: {self.allowed_schemas}")
-        self.logger.info(f"🔍 DISCOVERY: Primary schema: {self.primary_schema}")
+        self.logger.debug(
+            f"🔍 DISCOVERY: Starting metadata discovery for query: '{query}'"
+        )
 
-        # Search for similar tables across all allowed schemas
-        similar_tables = await self.metadata_cache.search_similar_tables(
-            schema_names=self.allowed_schemas,
-            query=query,
+        # Step 1: Search for similar tables across all allowed schemas
+        similar_tables = await self.schema_tool.search_schema(
+            search_term=query,
+            search_type="all",
             limit=5
         )
 
         if similar_tables:
-            self.logger.notice(f"🔍 DISCOVERY: Found {len(similar_tables)} similar tables:")
+            self.logger.notice(
+                f"🔍 DISCOVERY: Found {len(similar_tables)} similar tables:"
+            )
             # Format as YAML context
             metadata_parts = []
             for table in similar_tables:
@@ -474,33 +622,43 @@ class AbstractDBAgent(AbstractBot, ABC):
                 f"🔍 DISCOVERY: No similar tables found for query: '{query}'"
             )
 
-        # Fallback: get hot tables from all allowed schemas
+        # Step 2: Cache miss - use LLM with SchemaSearchTool to discover metadata
+        try:
+            discovered_metadata = await self._use_schema_search_tool(query)
+            if discovered_metadata:
+                self.logger.info(
+                    f"Found metadata via SchemaSearchTool"
+                )
+                return discovered_metadata
+        except Exception as e:
+            self.logger.warning(f"TOOL FAILED: {e}")
+
+        # Step 3: Existing fallback logic (hot tables)
         hot_tables = self.metadata_cache.get_hot_tables(self.allowed_schemas, limit=3)
         if hot_tables:
-            self.logger.info(f"🔍 DISCOVERY: Using fallback hot tables: {hot_tables}")
+            self.logger.debug(f"DISCOVERY: Using fallback hot tables: {hot_tables}")
             metadata_parts = []
             for schema_name, table_name, access_count in hot_tables:
-                self.logger.info(f"🔍   - {schema_name}.{table_name} (accessed {access_count} times)")
+                self.logger.debug(f"🔍   - {schema_name}.{table_name} (accessed {access_count} times)")
                 table_meta = await self.metadata_cache.get_table_metadata(
                     schema_name, table_name
                 )
                 if table_meta:
                     # 🔍 DEBUG: Log the columns of hot tables too
-                    self.logger.info(f"🔍     Columns: {[col['name'] for col in table_meta.columns]}")
+                    self.logger.debug(f"🔍     Columns: {[col['name'] for col in table_meta.columns]}")
                     metadata_parts.append(table_meta.to_yaml_context())
 
             if metadata_parts:
                 metadata_context = "\n---\n".join(metadata_parts)
-                self.logger.info(f"🔍 DISCOVERY: Fallback metadata context length: {len(metadata_context)} chars")
                 return metadata_context
         else:
             self.logger.warning(
-                f"🔍 DISCOVERY: No hot tables found either!"
+                f"DISCOVERY: No hot tables found either!"
             )
 
         fallback_message = f"Allowed schemas: {', '.join(self.allowed_schemas)} (primary: {self.primary_schema})"
         self.logger.warning(
-            f"🔍 DISCOVERY: Using minimal fallback: {fallback_message}"
+            f"DISCOVERY: Using minimal fallback: {fallback_message}"
         )
         return fallback_message
 
@@ -516,6 +674,7 @@ class AbstractDBAgent(AbstractBot, ABC):
         system_prompt = f"""
 You are a PostgreSQL query expert for multi-schema databases.
 
+**Database Context:**
 **Primary Schema:** {self.primary_schema}
 **Allowed Schemas:** {', '.join(self.allowed_schemas)}
 
@@ -524,11 +683,13 @@ You are a PostgreSQL query expert for multi-schema databases.
 
 **Instructions:**
 1. Generate PostgreSQL queries using only these schemas: {', '.join([f'"{schema}"' for schema in self.allowed_schemas])}
-2. NEVER invent table names - only use tables from the metadata above
-3. If metadata is insufficient, use schema exploration tools
-4. For "show me" queries, generate simple SELECT statements
-5. Always include appropriate LIMIT clauses
-6. Prefer primary schema "{self.primary_schema}" unless user specifies otherwise
+2. If you can generate a query using the available tables/columns, return ONLY the SQL query in a ```sql code block
+3. NEVER invent table names - only use tables from the metadata above
+4. If metadata is insufficient, use schema exploration tools
+5. If you CANNOT generate a query (missing tables, columns, etc.), explain WHY in plain text - do NOT use code blocks
+6. For "show me" queries, generate simple SELECT statements
+7. Always include appropriate LIMIT clauses
+8. Prefer primary schema "{self.primary_schema}" unless user specifies otherwise
 
 **COLUMN SELECTION STRATEGY:**
 1. First, look for EXACT matches to user terms
@@ -546,8 +707,10 @@ You are a PostgreSQL query expert for multi-schema databases.
 **User Intent:** {route.intent.value}
 **Return Format:** {route.return_format.value}
 
-Generate an accurate PostgreSQL query using ACTUAL column names from the metadata.
+Analyze the request and either generate a valid PostgreSQL query OR explain why it cannot be fulfilled.
 Apply semantic understanding to map user concepts to available columns.
+
+**Your Task:** Analyze the user request and provide either a SQL query OR a clear explanation.
     """
 
         # Call LLM for query generation
@@ -560,9 +723,60 @@ Apply semantic understanding to map user concepts to available columns.
 
         # Extract SQL and explanation
         response_text = str(llm_response.output) if llm_response.output else str(llm_response.response)
+        # 🔍 DEBUG: Log what LLM actually said
+        self.logger.info(f"🤖 LLM RESPONSE: {response_text[:200]}...")
         sql_query = self._extract_sql_from_response(response_text)
 
+        if not sql_query:
+            if self._is_explanatory_response(response_text):
+                self.logger.info(f"🔍 LLM PROVIDED EXPLANATION: No SQL generated, but explanation available")
+                return None, response_text, llm_response
+            else:  # ← FIX: Move the else inside the if not sql_query block
+                self.logger.warning(f"🔍 LLM RESPONSE UNCLEAR: No SQL found and doesn't look like explanation")
+
         return sql_query, response_text, llm_response
+
+    def _is_explanatory_response(self, response_text: str) -> bool:
+        """Detect if the LLM response is an explanation rather than SQL."""
+
+        # Clean the response for analysis
+        cleaned_text = response_text.strip().lower()
+
+        # Patterns that indicate explanatory responses
+        explanation_patterns = [
+            "i cannot",
+            "i'm sorry",
+            "i am sorry",
+            "unable to",
+            "cannot fulfill",
+            "cannot generate",
+            "cannot create",
+            "the table",
+            "the metadata",
+            "does not contain",
+            "missing",
+            "not found",
+            "no table",
+            "no column",
+            "not available",
+            "insufficient information",
+            "please provide",
+            "you need to"
+        ]
+
+        # Check if response contains explanatory language
+        contains_explanation = any(pattern in cleaned_text for pattern in explanation_patterns)
+
+        # Check if response lacks SQL patterns
+        sql_patterns = ['select', 'from', 'where', 'order by', 'group by', 'insert', 'update', 'delete']
+        contains_sql = any(pattern in cleaned_text for pattern in sql_patterns)
+
+        # It's explanatory if it has explanation patterns but no SQL
+        is_explanatory = contains_explanation and not contains_sql
+
+        self.logger.debug(f"🔍 EXPLANATION CHECK: explanation_patterns={contains_explanation}, sql_patterns={contains_sql}, is_explanatory={is_explanatory}")
+
+        return is_explanatory
 
     async def _validate_user_sql(self, sql_query: str, metadata_context: str) -> tuple[str, AIMessage]:
         """Validate user-provided SQL."""
@@ -678,6 +892,7 @@ Provide detailed validation results.
             data=None,
             row_count=0,
             execution_time_ms=execution_time,
+            schema_used=self.primary_schema,
             error_message=f"Query failed after {retry_count} retries. Last error: {last_error}",
             query_plan=None,
             metadata={
@@ -919,38 +1134,57 @@ Available Schemas: {', '.join(self.allowed_schemas)}
 
     def _extract_sql_from_response(self, response_text: str) -> str:
         """Extract SQL query from LLM response."""
-        # Look for SQL code blocks
-        sql_pattern = r'```sql\n(.*?)\n```'
-        matches = re.findall(sql_pattern, response_text, re.DOTALL | re.IGNORECASE)
+        sql_patterns = [
+            r'```sql\s*(.*?)\s*```',  # ```sql with optional whitespace
+            r'```SQL\s*(.*?)\s*```',  # ```SQL (uppercase)
+            r'```\s*(SELECT.*?(?:;|\Z))',  # ``` with SELECT (no sql label)
+            r'```\s*(WITH.*?(?:;|\Z))',   # ``` with WITH (no sql label)
+        ]
 
-        if matches:
-            return matches[0].strip()
+        for pattern in sql_patterns:
+            matches = re.findall(pattern, response_text, re.DOTALL | re.IGNORECASE)
+            if matches:
+                sql = matches[0].strip()
+                if sql:
+                    self.logger.debug(f"SQL EXTRACTED via pattern: {pattern[:20]}...")
+                    return sql
 
-        # Fallback: look for SQL keywords
         lines = response_text.split('\n')
         sql_lines = []
         in_sql = False
 
         for line in lines:
-            line_upper = line.strip().upper()
+            line_stripped = line.strip()
+            line_upper = line_stripped.upper()
+
+            # Start collecting SQL when we see a SQL keyword
             if any(line_upper.startswith(kw) for kw in ['SELECT', 'WITH', 'INSERT', 'UPDATE', 'DELETE']):
                 in_sql = True
-                sql_lines.append(line)
+                sql_lines.append(line_stripped)
             elif in_sql:
-                if line.strip().endswith(';') or not line.strip():
-                    if line.strip().endswith(';'):
-                        sql_lines.append(line)
+                # Continue collecting until we hit a terminator or empty line
+                if line_stripped.endswith(';'):
+                    sql_lines.append(line_stripped)
+                    break
+                elif not line_stripped:
+                    break
+                elif line_stripped.startswith('**') or line_stripped.startswith('#'):
+                    # Stop at markdown headers or emphasis
                     break
                 else:
-                    sql_lines.append(line)
+                    sql_lines.append(line_stripped)
 
         if sql_lines:
-            return '\n'.join(sql_lines).strip()
+            sql_query = '\n'.join(sql_lines)
+            self.logger.debug(f"SQL EXTRACTED via fallback parsing")
+            return sql_query
 
-        # Last resort: return original if it looks like SQL
+        # Last resort: return original if it contains SQL keywords
         if any(kw in response_text.upper() for kw in ['SELECT', 'FROM', 'WHERE']):
+            self.logger.warning("Using entire response as SQL (last resort)")
             return response_text.strip()
 
+        self.logger.warning("No SQL found in response")
         return ""
 
     def _format_response(
@@ -965,8 +1199,17 @@ Available Schemas: {', '.join(self.allowed_schemas)}
         """Format final response based on route decision."""
 
         response_parts = []
+        if not sql_query and explanation:
+            response_parts.append(f"**Explanation:**\n{explanation}")
+            # Add some helpful context
+            response_parts.append(f"\n**Available Schemas:** {', '.join(self.allowed_schemas)}")
+            response_parts.append(f"**Primary Schema:** {self.primary_schema}")
+            # Suggest ways to get more info
+            response_parts.append(f"\n**Suggestions:**")
+            response_parts.append(f"- Check available tables with: 'What tables are in the {self.primary_schema} schema?'")
+            response_parts.append(f"- Check table structure with: 'Describe the [table_name] table'")
 
-        if route.return_format == ReturnFormat.DATA_ONLY:
+        elif route.return_format == ReturnFormat.DATA_ONLY:
             if exec_result and exec_result.success and exec_result.data:
                 response_parts.append(f"Found {exec_result.row_count} rows:")
                 # Data will be in output field
@@ -1017,20 +1260,18 @@ Available Schemas: {', '.join(self.allowed_schemas)}
             # Fallback for cases where no LLM was called
             model_name = getattr(self, '_llm_model', 'unknown')
             provider_name = getattr(self._llm, 'client_type', 'unknown') if hasattr(self, '_llm') else 'unknown'
-            usage_info = CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0)
-
-        if hasattr(self, '_llm') and self._llm:
-            if hasattr(self._llm, 'client_type'):
-                provider_name = str(self._llm.client_type)
-            elif hasattr(self._llm, 'provider'):
-                provider_name = str(self._llm.provider)
+            usage_info = CompletionUsage(
+                prompt_tokens=0,
+                completion_tokens=0,
+                total_tokens=0
+            )
 
         return AIMessage(
             input=original_query,
             response=response_text,
             output=exec_result.data if exec_result and exec_result.success else None,
             model=model_name,
-            provider=provider_name,
+            provider=str(provider_name),
             usage=usage_info,
             metadata={
                 "primary_schema": self.primary_schema,
@@ -1040,7 +1281,9 @@ Available Schemas: {', '.join(self.allowed_schemas)}
                 "sql_query": sql_query,
                 "execution_success": exec_result.success if exec_result else None,
                 "row_count": exec_result.row_count if exec_result else 0,
-                "execution_time_ms": exec_result.execution_time_ms if exec_result else 0
+                "execution_time_ms": exec_result.execution_time_ms if exec_result else 0,
+                "has_explanation": bool(explanation and self._is_explanatory_response(explanation)),
+                "explanation_type": "llm_analysis" if explanation else None
             }
         )
 
