@@ -19,6 +19,7 @@ from ..bots.abstract import AbstractBot
 from ..loaders import AbstractLoader, AVAILABLE_LOADERS
 from ..loaders.markdown import MarkdownLoader
 from .models import BotModel
+from ..models.responses import AIMessage
 
 
 @is_authenticated()
@@ -175,15 +176,29 @@ class ChatHandler(BaseView):
                                 status=400
                             )
                     try:
-                        print('Invoking method ', method_name, ' with params ', method_params)
-                        result = await method(
+                        method_params = {**method_params, **data}
+                        response = await method(
                             **method_params
                         )
+                        if isinstance(response, web.Response):
+                            return response
+                        elif isinstance(response, AIMessage):
+                            result = response.model_dump()
+                        if isinstance(response, str):
+                            result = {
+                                "response": response
+                            }
+                        elif isinstance(response, list):
+                            result = {
+                                "response": result
+                            }
+                        else:
+                            result = response
                         return self.json_response(
-                            response=result.model_dump()
+                            response=result
                         )
                     except Exception as exc:
-                        return self.error(
+                        self.error(
                             f"Error invoking method {method_name} on chatbot {name}: {exc}",
                             exception=exc,
                             status=400
