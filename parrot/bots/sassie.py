@@ -15,6 +15,7 @@ from ..tools.sassie import VisitsToolkit
 from ..tools.pythonpandas import PythonPandasTool
 from ..models.responses import AgentResponse
 from ..conf import STATIC_DIR
+from ..registry import register_agent
 
 SASSIE_PROMPT = """
 Your name is $name, an IA Copilot specialized in providing detailed information Sassie Surveys.
@@ -37,7 +38,6 @@ Given the above context, available tools, and conversation history, please provi
 $rationale
 
 """
-
 
 class SassieAgent(BasicAgent):
     """SassieAgent in Navigator.

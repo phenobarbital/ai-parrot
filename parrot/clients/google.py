@@ -21,6 +21,7 @@ import aiofiles
 from google.genai import types
 from navconfig import config, BASE_DIR
 import pandas as pd
+from sklearn.base import defaultdict
 from .base import (
     AbstractClient,
     ToolDefinition,
@@ -212,23 +213,22 @@ class GoogleGenAIClient(AbstractClient):
 
         return cleaned
 
-
     def _build_tools(self, tool_type: str) -> Optional[List[types.Tool]]:
         """Build tools based on the specified type."""
         if tool_type == "custom_functions":
             # migrate to use abstractool + tool definition:
-            function_declarations = []
+            # Group function declarations by their category
+            declarations_by_category = defaultdict(list)
             for tool in self.tool_manager.all_tools():
                 tool_name = tool.name
+                category = getattr(tool, 'category', 'tools')
                 if isinstance(tool, AbstractTool):
                     full_schema = tool.get_tool_schema()
                     tool_description = full_schema.get("description", tool.description)
                     # Extract ONLY the parameters part
                     schema = full_schema.get("parameters", {}).copy()
-
                     # Clean the schema for Google compatibility
                     schema = self.clean_google_schema(schema)
-
                 elif isinstance(tool, ToolDefinition):
                     tool_description = tool.description
                     schema = self.clean_google_schema(tool.input_schema.copy())
@@ -245,25 +245,27 @@ class GoogleGenAIClient(AbstractClient):
                         "properties": {},
                         "required": []
                     }
-
                 try:
-                    function_declarations.append(
-                        types.FunctionDeclaration(
-                            name=tool_name,
-                            description=tool_description,
-                            parameters=self._fix_tool_schema(schema)
-                        )
+                    declaration = types.FunctionDeclaration(
+                        name=tool_name,
+                        description=tool_description,
+                        parameters=self._fix_tool_schema(schema)
                     )
+                    declarations_by_category[category].append(declaration)
                 except Exception as e:
                     self.logger.error(f"Error creating function declaration for {tool_name}: {e}")
                     # Skip this tool if it can't be created
                     continue
 
-            return [
-                types.Tool(
-                    function_declarations=function_declarations
-                )
-            ]
+            tool_list = []
+            for category, declarations in declarations_by_category.items():
+                if declarations:
+                    tool_list.append(
+                        types.Tool(
+                            function_declarations=declarations
+                        )
+                    )
+            return tool_list
         elif tool_type == "builtin_tools":
             return [
                 types.Tool(
@@ -418,6 +420,7 @@ class GoogleGenAIClient(AbstractClient):
         chat,
         initial_response,
         all_tool_calls: List[ToolCall],
+        original_prompt: Optional[str] = None,
         model: str = None,
         max_iterations: int = 10,
         config: GenerateContentConfig = None,
@@ -531,16 +534,25 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                             )
                         )
                     )
+            # Add a re-evaluation prompt to remind the model of the full context
+            reevaluation_prompt = (
+                "The previous tool calls have been executed. Please review the results and the original request "
+                "to determine if the full request has been satisfied. If not, perform the next necessary step or tool call. "
+                f"Original Request: '{original_prompt}'"
+            )
+            # Combine the tool results with the re-evaluation prompt
+            next_prompt_parts = function_response_parts + [Part(text=reevaluation_prompt)]
+
             # Send responses back
             retry_count = 0
             try:
                 self.logger.debug(
-                    f"Sending {len(function_response_parts)} responses back to model"
+                    f"Sending {len(next_prompt_parts)} responses back to model"
                 )
                 while retry_count < max_retries:
                     try:
                         current_response = await chat.send_message(
-                            function_response_parts,
+                            next_prompt_parts,
                             config=current_config
                         )
                         finish_reason = getattr(current_response.candidates[0], 'finish_reason', None)
@@ -875,7 +887,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
         self.logger.debug(
             f"Using model: {model}, max_tokens: {max_tokens}, temperature: {temperature}, "
             f"structured_output: {structured_output}, "
-            f"use_tools: {_use_tools}, tool_type: {tool_type}, tools: {len(tools)}, "
+            f"use_tools: {_use_tools}, tool_type: {tool_type}, toolbox: {len(tools)}, "
         )
 
         use_structured_output = bool(structured_output)
@@ -940,7 +952,6 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
             tools=tools,
             **generation_config
         )
-
         if stateless:
             # For stateless mode, handle in a single call (existing behavior)
             contents = []
@@ -1023,6 +1034,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                 chat,
                 response,
                 all_tool_calls,
+                original_prompt=original_prompt,
                 model=model,
                 max_iterations=10,
                 config=final_config,
