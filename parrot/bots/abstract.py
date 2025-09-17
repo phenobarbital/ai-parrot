@@ -145,8 +145,8 @@ class AbstractBot(DBInterface, ABC):
         name: str = 'Nav',
         system_prompt: str = None,
         human_prompt: str = None,
-        use_tools: bool = True,
-        tools: List[Union[str, AbstractTool]] = None,
+        use_tools: bool = False,
+        tools: List[Union[str, AbstractTool, ToolDefinition]] = None,
         tool_threshold: float = 0.7,  # Confidence threshold for tool usage,
         debug: bool = False,
         **kwargs
@@ -177,11 +177,17 @@ class AbstractBot(DBInterface, ABC):
             f'{self.name}.Bot'
         )
         # Agentic Tools:
-        self.tools = tools or []
+        self.tool_manager: ToolManager = ToolManager(
+            logger=self.logger,
+            debug=debug
+        )
         self.tool_threshold = tool_threshold
         self.enable_tools: bool = use_tools or kwargs.get('enable_tools', True)
-        if len(self.tools) > 0:
-            self.enable_tools = True
+        # Initialize tools if provided
+        if tools:
+            self._initialize_tools(tools)
+            if self.tool_manager.tool_count() > 0:
+                self.enable_tools = True
         # Optional aiohttp Application:
         self.app: Optional[web.Application] = None
         # Start initialization:
@@ -303,6 +309,39 @@ class AbstractBot(DBInterface, ABC):
         max_concurrency = int(kwargs.get('max_concurrency', 20))
         self._semaphore = asyncio.BoundedSemaphore(max_concurrency)
 
+    def _initialize_tools(self, tools: List[Union[str, AbstractTool, ToolDefinition]]) -> None:
+        """Initialize tools in the ToolManager."""
+        for tool in tools:
+            try:
+                if isinstance(tool, str):
+                    # Handle tool by name (e.g., 'math', 'calculator')
+                    if self.tool_manager.load_tool(tool):
+                        self.logger.info(
+                            f"Successfully loaded tool: {tool}"
+                        )
+                        continue
+                    else:
+                        # try to select a list of built-in tools
+                        builtin_tools = {
+                            "math": MathTool
+                        }
+                        if tool.lower() in builtin_tools:
+                            tool_instance = builtin_tools[tool.lower()]()
+                            self.tool_manager.register_tool(tool_instance)
+                            self.logger.info(f"Registered built-in tool: {tool}")
+                            continue
+                elif isinstance(tool, (AbstractTool, ToolDefinition)):
+                    # Handle tool objects directly
+                    self.tool_manager.register_tool(tool)
+                else:
+                    self.logger.warning(
+                        f"Unknown tool type: {type(tool)}"
+                    )
+            except Exception as e:
+                self.logger.error(
+                    f"Error initializing tool {tool}: {e}"
+                )
+
     def set_program(self, program_slug: str) -> None:
         """Set the program slug for the bot."""
         self._program_slug = program_slug
@@ -392,6 +431,14 @@ class AbstractBot(DBInterface, ABC):
         except Exception:
             raise
 
+    def _sync_tools_to_llm(self) -> None:
+        """Sync tools from Bot's ToolManager to LLM's ToolManager."""
+        try:
+            self._llm.tool_manager.sync(self.tool_manager)
+            self._llm.enable_tools = True
+        except Exception as e:
+            self.logger.error(f"Error syncing tools to LLM: {e}")
+
     def configure_llm(
         self,
         llm: Union[str, Callable] = None,
@@ -478,12 +525,15 @@ class AbstractBot(DBInterface, ABC):
                     )
         # Register tools directly on client (like your working examples)
         try:
-            self._llm.register_tools(self.tools)
-            self.logger.info(
-                f"Registered {len(self.tools)} tools with LLM client"
-            )
+            if hasattr(self._llm, 'tool_manager'):
+                self._sync_tools_to_llm()
+            else:
+                if hasattr(self._llm, 'tool_manager'):
+                    self._llm.tool_manager = self.tool_manager
         except Exception as e:
-            self.logger.error(f"Error registering tools: {e}")
+            self.logger.error(
+                f"Error registering tools: {e}"
+            )
 
     def define_store(
         self,
@@ -633,6 +683,7 @@ class AbstractBot(DBInterface, ABC):
 
         # Configure conversation memory FIRST
         self.configure_conversation_memory()
+
         # Configure LLM:
         try:
             self.configure_llm()
@@ -643,14 +694,17 @@ class AbstractBot(DBInterface, ABC):
             raise
         # set Client tools:
         # Log tools configuration AFTER LLM is configured
+        # Log comprehensive tools configuration
         tools_summary = self.get_tools_summary()
         self.logger.info(
             f"Configuration complete: "
             f"tools_enabled={tools_summary['tools_enabled']}, "
             f"operation_mode={tools_summary['operation_mode']}, "
             f"tools_count={tools_summary['tools_count']}, "
+            f"categories={tools_summary['categories']}, "
             f"effective_mode={tools_summary['effective_mode']}"
         )
+
         # And define Prompt:
         try:
             self._define_prompt()
@@ -1117,17 +1171,42 @@ class AbstractBot(DBInterface, ABC):
 
         return False
 
+    def get_tool(self, tool_name: str) -> Optional[Union[ToolDefinition, AbstractTool]]:
+        """Get a specific tool by name."""
+        return self.tool_manager.get_tool(tool_name)
+
+    def list_tool_categories(self) -> List[str]:
+        """List available tool categories."""
+        return self.tool_manager.list_categories()
+
+    def get_tools_by_category(self, category: str) -> List[str]:
+        """Get tools by category."""
+        return self.tool_manager.get_tools_by_category(category)
+
     def get_tools_summary(self) -> Dict[str, Any]:
-        """Get a summary of available tools and configuration."""
+        """Get a comprehensive summary of available tools and configuration."""
+        tool_details = {}
+        for tool_name in self.get_available_tools():
+            tool = self.get_tool(tool_name)
+            if tool:
+                tool_details[tool_name] = {
+                    'description': getattr(tool, 'description', 'No description'),
+                    'category': getattr(tool, 'category', 'general'),
+                    'type': type(tool).__name__
+                }
+
         return {
             'tools_enabled': self.enable_tools,
             'operation_mode': self.operation_mode,
             'tools_count': self.get_tools_count(),
             'available_tools': self.get_available_tools(),
+            'tool_details': tool_details,
+            'categories': self.list_tool_categories(),
             'has_tools': self.has_tools(),
             'is_agent_mode': self.is_agent_mode(),
             'is_conversational_mode': self.is_conversational_mode(),
-            'effective_mode': self.get_operation_mode()
+            'effective_mode': self.get_operation_mode(),
+            'tool_threshold': self.tool_threshold
         }
 
     async def create_system_prompt(
@@ -1306,7 +1385,7 @@ Based on the user context above, please tailor your response to their specific:
             # Log tool usage decision
             self.logger.info(
                 f"Tool usage decision: use_tools={use_tools}, mode={mode}, "
-                f"effective_mode={effective_mode}, available_tools={len(self.tools)}"
+                f"effective_mode={effective_mode}, available_tools={self.tool_manager.tool_count()}"
             )
             # get user context:
             user_context = await self.get_user_context(user_id, session_id)
@@ -1336,6 +1415,7 @@ Based on the user context above, please tailor your response to their specific:
                     temperature=kwargs.get('temperature', self._llm_temp),
                     user_id=user_id,
                     session_id=session_id,
+                    use_tools=use_tools,
                 )
 
                 # Enhance the response with context metadata
@@ -1676,7 +1756,11 @@ Based on the user context above, please tailor your response to their specific:
                 response.turn_id = turn_id
 
                 # Return the response
-                return self.get_response(response, return_sources=False, return_context=False)
+                return self.get_response(
+                    response,
+                    return_sources=False,
+                    return_context=False
+                )
 
         except asyncio.CancelledError:
             self.logger.info("Conversation task was cancelled.")
@@ -1912,10 +1996,7 @@ Based on the user context above, please tailor your response to their specific:
     def get_tools_count(self) -> int:
         """Get the total number of available tools from LLM client."""
         # During initialization, before LLM is configured, fall back to self.tools
-        if self._llm is None:
-            return len(self.tools)
-        else:
-            return self._llm.tool_manager.tool_count()
+        return self.tool_manager.tool_count()
 
     def has_tools(self) -> bool:
         """Check if any tools are available via LLM client."""
@@ -1923,9 +2004,7 @@ Based on the user context above, please tailor your response to their specific:
 
     def get_available_tools(self) -> List[str]:
         """Get list of available tool names from LLM client."""
-        if hasattr(self, '_llm') and self._llm and hasattr(self._llm, 'tool_manager'):
-            return list(self._llm.tool_manager.list_tools())
-        return []
+        return list(self.tool_manager.list_tools())
 
     def register_tool(
         self,
@@ -1935,8 +2014,18 @@ Based on the user context above, please tailor your response to their specific:
         input_schema: Dict[str, Any] = None,
         function: Callable = None,
     ) -> None:
-        """Register a tool via LLM client's tool_manager."""
-        if hasattr(self, '_llm') and self._llm and hasattr(self._llm, 'tool_manager'):
+        """Register a tool in both Bot and LLM ToolManagers."""
+        # Register in Bot's ToolManager
+        self.tool_manager.register_tool(
+            tool=tool,
+            name=name,
+            description=description,
+            input_schema=input_schema,
+            function=function
+        )
+
+        # Also register in LLM's ToolManager if available
+        if hasattr(self._llm, 'tool_manager'):
             self._llm.tool_manager.register_tool(
                 tool=tool,
                 name=name,
@@ -1944,21 +2033,33 @@ Based on the user context above, please tailor your response to their specific:
                 input_schema=input_schema,
                 function=function
             )
-        else:
-            # Store for later registration when LLM client is created
-            if not hasattr(self, 'tools'):
-                self.tools = []
-            self.tools.append({
-                'tool': tool,
-                'name': name,
-                'description': description,
-                'input_schema': input_schema,
-                'function': function
-            })
 
     def register_tools(self, tools: List[Union[ToolDefinition, AbstractTool]]) -> None:
         """Register multiple tools via LLM client's tool_manager."""
-        if hasattr(self, '_llm') and self._llm and hasattr(self._llm, 'tool_manager'):
-            self._llm.tool_manager.register_tools(tools)
-        else:
-            self.tools.extend(tools)
+        self.tool_manager.register_tools(tools)
+
+    def validate_tools(self) -> Dict[str, Any]:
+        """Validate all registered tools."""
+        validation_results = {
+            'valid_tools': [],
+            'invalid_tools': [],
+            'total_count': self.get_tools_count(),
+            'validation_errors': []
+        }
+
+        for tool_name in self.get_available_tools():
+            try:
+                tool = self.get_tool(tool_name)
+                if tool and hasattr(tool, 'validate'):
+                    if tool.validate():
+                        validation_results['valid_tools'].append(tool_name)
+                    else:
+                        validation_results['invalid_tools'].append(tool_name)
+                else:
+                    # Assume valid if no validation method
+                    validation_results['valid_tools'].append(tool_name)
+            except Exception as e:
+                validation_results['invalid_tools'].append(tool_name)
+                validation_results['validation_errors'].append(f"{tool_name}: {str(e)}")
+
+        return validation_results
