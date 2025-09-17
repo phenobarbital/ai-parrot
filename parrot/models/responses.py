@@ -3,6 +3,7 @@ from pathlib import Path
 from datetime import datetime
 from dataclasses import dataclass
 from pydantic import BaseModel, Field
+import aiofiles
 from .basic import CompletionUsage, ToolCall
 
 @dataclass
@@ -433,7 +434,8 @@ class AIMessageFactory:
         tool_calls: List[ToolCall] = None,
         # Add these new parameters:
         conversation_history: Optional[Any] = None,
-        text_response: Optional[str] = None
+        text_response: Optional[str] = None,
+        files: Optional[List[Path]] = None
     ) -> AIMessage:
         """Create AIMessage from Gemini/Vertex AI response."""
         # Handle both direct text responses and response objects
@@ -470,7 +472,8 @@ class AIMessageFactory:
             session_id=session_id,
             turn_id=turn_id,
             raw_response=response.__dict__ if hasattr(response, '__dict__') else str(response),
-            response=content
+            response=content,
+            files=files or [],
         )
 
         if conversation_history:

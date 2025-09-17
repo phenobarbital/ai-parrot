@@ -19,17 +19,20 @@ async def sql_agent():
 
     print('Generating SQLAgent...')
 
-    sql_agent = SQLAgent(dsn=async_default_dsn, allowed_schemas=["hisense"], client_id="hisense")
+    sql_agent = SQLAgent(dsn=async_default_dsn, allowed_schemas=["auth", "hisense"], client_id="hisense")
 
     await sql_agent.configure()
 
     async with sql_agent:
         response = await sql_agent.ask(
+            "Return in markdown format the metadata of table inventory in schema hisense",
+            # "get all superusers in users",
+            # 'Get top-10 products by pricing',
             # 'Get top-10 TV LEDs products by pricing',
             # 'which products have better review average?',
             # 'how many products have Lowest Price below 300?',
-            'which is the highest price of a LED TV product?, important: pricing is a varchar column with format like $1,999.00',
-            user_role="data_analyst"
+            # 'which is the highest price of a product_type LED TV from table products?, important: pricing is a varchar column with format like $1,999.00',
+            user_role="developer"
         )
         print('--- SQL Agent Response ---')
         print(response)
