@@ -453,3 +453,35 @@ class BasicAgent(Chatbot):
             file_prefix=filename_prefix,
         )
         return result
+
+    async def create_speech(
+        self,
+        content: str,
+        language: str = "en-US",
+        only_script: bool = False,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """Generate a Transcript Report and a Podcast based on findings."""
+        output_directory = STATIC_DIR.joinpath(self.agent_id, 'documents')
+        output_directory.mkdir(parents=True, exist_ok=True)
+        script_name = self._create_filename(prefix='script', extension='txt')
+        podcast_name = self._create_filename(prefix='podcast', extension='wav')
+        try:
+            async with self.client as client:
+                # 1. Generate the conversational script and podcast:
+                response = await client.create_speech(
+                    content=content,
+                    output_directory=output_directory,
+                    only_script=only_script,
+                    script_file=script_name,
+                    podcast_file=podcast_name,
+                    language=language,
+                )
+                return response
+        except Exception as e:
+            self.logger.error(
+                f"Error generating speech: {e}"
+            )
+            raise RuntimeError(
+                f"Failed to generate speech: {e}"
+            )

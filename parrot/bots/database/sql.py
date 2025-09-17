@@ -27,3 +27,13 @@ class SQLAgent(AbstractDBAgent):
             auto_analyze_schema=auto_analyze_schema,
             client_id=client_id,
             **kwargs)
+
+    def _ensure_async_driver(self, dsn: str) -> str:
+        # Ensure async driver
+        if '+asyncpg' not in dsn:
+            connection_string = dsn.replace(
+                'postgresql://', 'postgresql+asyncpg://'
+            )
+        else:
+            connection_string = dsn
+        return connection_string
