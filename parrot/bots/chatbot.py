@@ -147,13 +147,6 @@ class Chatbot(AbstractBot):
         self.auto_tool_detection = getattr(self, 'auto_tool_detection', True)
         self.tool_threshold = getattr(self, 'tool_threshold', 0.7)
         self.operation_mode = getattr(self, 'operation_mode', 'adaptive')
-
-        # Load manual tools
-        if hasattr(self, 'tools') and self.tools:
-            self.logger.info(
-                f"Loaded {len(self.tools)} manual tools"
-            )
-
         # Embedding Model Configuration
         self.embedding_model: dict = getattr(self, 'embedding_model', {
             'model_name': EMBEDDING_DEFAULT_MODEL,
@@ -189,7 +182,7 @@ class Chatbot(AbstractBot):
             f"tools_enabled={self.enable_tools}, "
             f"operation_mode={self.operation_mode}, "
             f"use_vector={self._use_vector}, "
-            f"tools_count={len(self.tools)}"
+            f"tools_count={self.tool_manager.tool_count()}"
         )
 
     async def bot_exists(
@@ -288,7 +281,7 @@ class Chatbot(AbstractBot):
         # Load tools from database
         tool_names = self._from_db(bot, 'tools', default=[])
         if tool_names and self.enable_tools:
-            self.tools = tool_names
+            self.tool_manager.register_tools(tool_names)
 
         # Embedding Model Configuration
         self.embedding_model: dict = self._from_db(
@@ -327,7 +320,7 @@ class Chatbot(AbstractBot):
             f"tools_enabled={self.enable_tools}, "
             f"operation_mode={self.operation_mode}, "
             f"use_vector={self._use_vector}, "
-            f"tools_count={len(self.tools)}"
+            f"tools_count={self.tool_manager.tool_count()}"
         )
 
     def _define_prompt(self, config: dict = None, **kwargs):
@@ -365,9 +358,6 @@ class Chatbot(AbstractBot):
         if self._debug:
             print(' SYSTEM PROMPT ')
             print(final_prompt)
-            self.logger.debug(
-                f"System prompt configured with tools: {len(self.tools)} tools available"
-            )
 
     async def update_database_config(self, **updates) -> bool:
         """
@@ -434,7 +424,7 @@ class Chatbot(AbstractBot):
                     'tools_enabled': getattr(self, 'enable_tools', True),
                     'auto_tool_detection': getattr(self, 'auto_tool_detection', True),
                     'tool_threshold': getattr(self, 'tool_threshold', 0.7),
-                    'tools': [tool.name for tool in self.tools.list_tools()] if self.tools else [],
+                    'tools': [tool.name for tool in self.tool_manager.list_tools()] if self.tool_manager else [],
                     'operation_mode': getattr(self, 'operation_mode', 'adaptive'),
                     'use_vector': self._use_vector,
                     'vector_store_config': self._vector_store,
@@ -484,8 +474,8 @@ class Chatbot(AbstractBot):
             'operation_mode': getattr(self, 'operation_mode', 'adaptive'),
             'current_mode': self.get_operation_mode(),
             'tools_enabled': getattr(self, 'enable_tools', False),
-            'tools_count': len(self.tools) if self.tools else 0,
-            'available_tools': self.tools.list_tools() if self.tools else [],
+            'tools_count': self.tool_manager.tool_count() if self.tool_manager else 0,
+            'available_tools': self.tool_manager.list_tools() if self.tool_manager else [],
             'use_vector_store': self._use_vector,
             'vector_store_type': self._vector_store.get('name', 'none') if self._vector_store else 'none',
             'llm': self._llm,
@@ -526,13 +516,13 @@ class Chatbot(AbstractBot):
 
             # Test tools configuration
             if getattr(self, 'enable_tools', False):
-                if not self.tools:
+                if not self.tool_manager:
                     results['warnings'].append("Tools enabled but no tools loaded")
                 else:
-                    results['info'].append(f"Tools loaded: {len(self.tools)}")
+                    results['info'].append(f"Tools loaded: {len(self.tool_manager.list_tools())}")
 
                     # Test each tool
-                    for tool in self.tools:
+                    for tool in self.tool_manager.list_tools():
                         try:
                             # Basic tool validation
                             if not hasattr(tool, 'name'):
@@ -583,6 +573,6 @@ class Chatbot(AbstractBot):
     def __str__(self) -> str:
         """String representation of the bot."""
         mode = self.get_operation_mode()
-        tools_info = f", {len(self.tools)} tools" if self.tools else ", no tools"
+        tools_info = f", {self.tool_manager.tool_count()} tools" if self.enable_tools else ", no tools"
         vector_info = ", vector store" if self._use_vector else ""
         return f"{self.name} ({mode} mode{tools_info}{vector_info})"

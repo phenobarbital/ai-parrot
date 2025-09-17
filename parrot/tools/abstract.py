@@ -237,31 +237,6 @@ class AbstractTool(ABC):
                 }
             )
 
-    def execute_sync(self, **kwargs) -> ToolResult:
-        """
-        Synchronous wrapper for execute method.
-
-        Args:
-            **kwargs: Tool arguments
-
-        Returns:
-            ToolResult
-        """
-        try:
-            loop = asyncio.get_running_loop()
-            # If we're in an async context, we can't use run_until_complete
-            # So we'll need to schedule it
-            task = loop.create_task(self.execute(**kwargs))
-            return task
-        except RuntimeError:
-            # No running loop, safe to create one
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            try:
-                return loop.run_until_complete(self.execute(**kwargs))
-            finally:
-                loop.close()
-
     # Utility methods for file handling (inherited from BaseAbstractTool)
     def to_static_url(self, file_path: Union[str, Path]) -> str:
         """
