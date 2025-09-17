@@ -1,4 +1,5 @@
-from typing import Dict, Any
+from typing import Dict, Any, Optional
+import math as mathlib
 from pydantic import BaseModel, Field, field_validator
 from .abstract import AbstractTool
 
@@ -6,11 +7,15 @@ from .abstract import AbstractTool
 # MathTool Arguments Schema
 class MathToolArgs(BaseModel):
     """Arguments schema for MathTool."""
-    a: float = Field(description="First number")
-    b: float = Field(description="Second number")
+    a: float = Field(description="The number for unary operations, or the first number for binary operations.")
     operation: str = Field(
-        description="Mathematical operation to perform. Supported operations: add/addition, subtract/subtraction, multiply/multiplication, divide/division"
+        description="Mathematical operation. Supports: add, subtract, multiply, divide, sqrt."
     )
+    b: Optional[float] = Field(
+        default=None,
+        description="The second number for binary operations. Not used for unary operations like square root."
+    )
+
 
     @field_validator('operation')
     @classmethod
@@ -42,7 +47,10 @@ class MathToolArgs(BaseModel):
             'sum': 'add',
             'difference': 'subtract',
             'product': 'multiply',
-            'quotient': 'divide'
+            'quotient': 'divide',
+            'sqrt': 'sqrt',
+            'square_root': 'sqrt',
+            'square root': 'sqrt'
         }
 
         normalized = v.lower().strip()
@@ -61,13 +69,13 @@ class MathTool(AbstractTool):
     """A tool for performing basic arithmetic operations."""
 
     name = "MathTool"
-    description = "Performs basic arithmetic operations: addition, subtraction, multiplication, and division. Accepts various operation names like 'add', 'addition', '+', 'plus', etc."
+    description = "Performs basic arithmetic operations: addition, subtraction, multiplication, division and square root. Accepts various operation names like 'add', 'addition', '+', 'plus', etc."
     args_schema = MathToolArgs
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
-    async def _execute(self, a: float, b: float, operation: str, **kwargs) -> Dict[str, Any]:
+    async def _execute(self, a: float, operation: str = 'add', b: float = None, **kwargs) -> Dict[str, Any]:
         """
         Execute the mathematical operation.
 
@@ -79,23 +87,32 @@ class MathTool(AbstractTool):
         Returns:
             Dictionary with the result
         """
-        operations = {
+        unary_operations = {
+            "sqrt": self.sqrt
+        }
+        binary_operations = {
             "add": self.add,
             "subtract": self.subtract,
             "multiply": self.multiply,
             "divide": self.divide
         }
 
-        if operation not in operations:
+        if operation in unary_operations:
+            result = unary_operations[operation](a)
+            operands = [a]
+        elif operation in binary_operations:
+            if b is None:
+                raise ValueError(f"Operation '{operation}' requires a second number ('b').")
+            result = binary_operations[operation](a, b)
+            operands = [a, b]
+        else:
             raise ValueError(f"Unsupported operation: {operation}")
-
-        result = operations[operation](a, b)
 
         return {
             "operation": operation,
-            "operands": [a, b],
+            "operands": operands,
             "result": result,
-            "expression": self._format_expression(a, b, operation, result)
+            "expression": self._format_expression(a, operation, result, b)
         }
 
     def add(self, a: float, b: float) -> float:
@@ -116,14 +133,20 @@ class MathTool(AbstractTool):
             raise ValueError("Cannot divide by zero")
         return a / b
 
-    def _format_expression(self, a: float, b: float, operation: str, result: float) -> str:
-        """Format the mathematical expression as a string."""
-        operators = {
-            "add": "+",
-            "subtract": "-",
-            "multiply": "*",
-            "divide": "/"
-        }
+    def sqrt(self, a: float) -> float:
+        """Calculate the square root of a number."""
+        if a < 0:
+            raise ValueError("Cannot calculate the square root of a negative number.")
+        return mathlib.sqrt(a)
 
-        operator = operators.get(operation, operation)
-        return f"{a} {operator} {b} = {result}"
+    def _format_expression(self, a: float, operation: str, result: float, b: Optional[float] = None) -> str:
+        """Format the mathematical expression as a string."""
+        if b is not None: # Binary operation
+            operators = {"add": "+", "subtract": "-", "multiply": "*", "divide": "/"}
+            operator = operators.get(operation, operation)
+            return f"{a} {operator} {b} = {result}"
+        else: # Unary operation
+            if operation == 'sqrt':
+                return f"sqrt({a}) = {result}"
+            # Add other unary operations here if needed
+            return f"{operation}({a}) = {result}"
