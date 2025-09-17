@@ -186,7 +186,8 @@ class ToolManager:
         """
         self.logger = logger or logging.getLogger(self.__class__.__name__)
         self._debug: bool = debug
-        self._tools: Dict[str, Any] = {}  # Unified storage as dictionary
+        self._tools: Dict[str, Union[ToolDefinition, AbstractTool]] = {}
+        self._categories: Dict[str, List[str]] = {}
 
     def default_tools(self, tools: list = None) -> List[AbstractTool]:
         if tools:
@@ -196,6 +197,28 @@ class ToolManager:
             MathTool(),
         ]
         self.register_tools(default_tools)
+
+    def sync(self, other_manager: 'ToolManager') -> None:
+        """
+        Sync tools from another ToolManager instance.
+
+        Args:
+            other_manager: Another ToolManager instance to sync from
+        """
+        if not isinstance(other_manager, ToolManager):
+            self.logger.error("Can only sync from another ToolManager instance")
+            return
+
+        for tool_name, tool in other_manager._tools.items():
+            if tool_name not in self._tools:
+                self._tools[tool_name] = tool
+                self.logger.debug(
+                    f"Synchronized tool: {tool_name}"
+                )
+            else:
+                self.logger.debug(
+                    f"Tool already exists, skipping: {tool_name}"
+                )
 
     def add_tool(self, tool: Union[ToolDefinition, AbstractTool], name: Optional[str] = None) -> None:
         """
@@ -310,7 +333,7 @@ class ToolManager:
                     f"Unsupported tool type: {type(tool)}"
                 )
 
-    def load_tool(self, tool_name: str, **kwargs) -> Optional[Any]:
+    def load_tool(self, tool_name: str, **kwargs) -> bool:
         """
         Load a tool by name.
 
@@ -328,10 +351,12 @@ class ToolManager:
             module = __import__(f"parrot.tools.{tool_file}", fromlist=[tool_name])
             cls = getattr(module, tool_name)
             self._tools[tool_name] = cls(**kwargs)
+            return True
         except (ImportError, AttributeError) as e:
             self.logger.error(
                 f"Error loading tool {tool_name}: {e}"
             )
+            return False
 
     def get_tool_schemas(
         self,
@@ -439,6 +464,14 @@ class ToolManager:
         """
         return self._tools.get(tool_name)
 
+    def list_categories(self) -> List[str]:
+        """List available tool categories."""
+        return list(self._categories.keys())
+
+    def get_tools_by_category(self, category: str) -> List[str]:
+        """Get tools by category."""
+        return self._categories.get(category, [])
+
     def list_tools(self) -> List[str]:
         """Get list of registered tool names."""
         return list(self._tools.keys())
@@ -446,6 +479,10 @@ class ToolManager:
     def get_tools(self) -> Dict[str, Any]:
         """Get all registered tools."""
         return self._tools.values()
+
+    def get_all_tools(self) -> List[Union[ToolDefinition, AbstractTool]]:
+        """Get all registered tool instances."""
+        return list(self._tools.values())
 
     def all_tools(self) -> Generator[Any, Any, Any]:
         """
@@ -457,9 +494,17 @@ class ToolManager:
         for tool in self._tools.values():
             yield tool
 
+    def unregister_tool(self, tool_name: str) -> bool:
+        """Unregister a tool by name."""
+        if tool_name in self._tools:
+            del self._tools[tool_name]
+            return True
+        return False
+
     def clear_tools(self) -> None:
         """Clear all registered tools."""
         self._tools.clear()
+        self._categories.clear()
         self.logger.debug("Cleared all tools")
 
     def remove_tool(self, tool_name: str) -> None:
