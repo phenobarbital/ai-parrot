@@ -268,6 +268,7 @@ class DatabaseResponse:
     schema_context: Optional[str] = None
     optimization_tips: Optional[List[str]] = None
     sample_data: Optional[List[Dict]] = None
+    is_documentation: bool = False  # True if response is primarily documentation
 
     # Metadata
     row_count: int = 0

@@ -602,7 +602,7 @@ Please help the user with their database query using available tools."""
             )
 
             # Step 9: Format response
-            return self._format_response(
+            return await self._format_response(
                 query=query,
                 db_response=db_response,
                 route=route,
@@ -944,6 +944,16 @@ Apply semantic understanding to map user concepts to available columns.
 
         db_response = DatabaseResponse(components_included=route.components)
         llm_response = None
+
+        is_documentation_request = (
+            'metadata' in query.lower() or
+            'documentation' in query.lower() or
+            'describe' in query.lower() or
+            'structure' in query.lower() or
+            route.intent in [QueryIntent.EXPLORE_SCHEMA, QueryIntent.EXPLAIN_METADATA]
+        )
+        db_response.is_documentation = True
+
         # Generate SQL query (if needed)
         if route.needs_query_generation and OutputComponent.SQL_QUERY in route.components:
             sql_query, explanation, llm_response = await self._generate_query(
@@ -987,14 +997,22 @@ Apply semantic understanding to map user concepts to available columns.
                         exec_result.query_plan, exec_result.execution_time_ms
                     )
 
-                # FIXED: Generate LLM-based optimization tips
+                # Generate LLM-based optimization tips
                 if OutputComponent.OPTIMIZATION_TIPS in route.components:
                     db_response.optimization_tips, llm_response = await self._generate_optimization_tips(
                         db_response.query, exec_result.query_plan, metadata_context
                     )
 
-        # FIXED: Generate examples with actual metadata
-        if OutputComponent.EXAMPLES in route.components:
+        # FIXED: For documentation requests, format discovered table metadata instead of examples
+        if OutputComponent.DOCUMENTATION in route.components or is_documentation_request:
+            if discovered_tables:
+                # Generate detailed documentation for discovered tables
+                db_response.documentation = await self._format_table_documentation(
+                    discovered_tables, route.user_role, query
+                )
+
+        # Generate examples only if NOT a documentation request
+        if OutputComponent.EXAMPLES in route.components and not is_documentation_request:
             db_response.examples = await self._generate_examples(
                 query, metadata_context, discovered_tables, route.primary_schema
             )
@@ -1006,6 +1024,156 @@ Apply semantic understanding to map user concepts to available columns.
             )
 
         return db_response, llm_response
+
+    async def _format_table_documentation(
+        self,
+        discovered_tables: List[TableMetadata],
+        user_role: UserRole,
+        original_query: str
+    ) -> str:
+        """
+        FIXED: Format discovered table metadata as proper documentation.
+
+        This replaces the generic examples with actual table documentation.
+        """
+        if not discovered_tables:
+            return "No table metadata found for documentation."
+
+        documentation_parts = []
+
+        for table in discovered_tables:
+            # Table header
+            table_doc = [f"# Table: `{table.full_name}`\n"]
+
+            # Table information
+            if table.comment:
+                table_doc.append(f"**Description:** {table.comment}\n")
+
+            table_doc.append(f"**Schema:** {table.schema}")
+            table_doc.append(f"**Table Name:** {table.tablename}")
+            table_doc.append(f"**Type:** {table.table_type}")
+            table_doc.append(f"**Row Count:** {table.row_count:,}" if table.row_count else "**Row Count:** Unknown")
+
+            # Column documentation
+            if table.columns:
+                table_doc.append("\n## Columns\n")
+
+                # Create markdown table for columns
+                table_doc.append("| Column Name | Data Type | Nullable | Default | Comment |")
+                table_doc.append("|-------------|-----------|----------|---------|---------|")
+
+                for col in table.columns:
+                    nullable = "Yes" if col.get('nullable', True) else "No"
+                    default_val = col.get('default', '') or ''
+                    comment = col.get('comment', '') or ''
+                    data_type = col.get('type', 'unknown')
+
+                    # Handle max_length for varchar types
+                    if col.get('max_length') and 'character' in data_type.lower():
+                        data_type = f"{data_type}({col['max_length']})"
+
+                    table_doc.append(
+                        f"| `{col['name']}` | {data_type} | {nullable} | {default_val} | {comment} |"
+                    )
+
+            # Primary keys
+            if hasattr(table, 'primary_keys') and table.primary_keys:
+                table_doc.append(f"\n**Primary Keys:** {', '.join([f'`{pk}`' for pk in table.primary_keys])}")
+
+            # Foreign keys
+            if hasattr(table, 'foreign_keys') and table.foreign_keys:
+                table_doc.append("\n**Foreign Keys:**")
+                for fk in table.foreign_keys:
+                    if isinstance(fk, dict):
+                        table_doc.append(f"- `{fk.get('column')}` -> `{fk.get('referenced_table')}.{fk.get('referenced_column')}`")
+
+            # Indexes
+            if hasattr(table, 'indexes') and table.indexes:
+                table_doc.append(f"\n**Indexes:** {len(table.indexes)} indexes defined")
+
+            # CREATE TABLE statement for developers
+            if user_role == UserRole.DEVELOPER:
+                create_statement = self._generate_create_table_statement(table)
+                if create_statement:
+                    table_doc.append(f"\n## CREATE TABLE Statement\n\n```sql\n{create_statement}\n```")
+
+            # Sample data (if available and requested)
+            if hasattr(table, 'sample_data') and table.sample_data and len(table.sample_data) > 0:
+                table_doc.append("\n## Sample Data\n")
+                # Show first 3 rows as example
+                sample_rows = table.sample_data[:3]
+                if sample_rows:
+                    # Get column headers
+                    headers = list(sample_rows[0].keys()) if sample_rows else []
+                    if headers:
+                        # Create sample data table
+                        table_doc.append("| " + " | ".join(headers) + " |")
+                        table_doc.append("| " + " | ".join(['---'] * len(headers)) + " |")
+
+                        for row in sample_rows:
+                            values = [str(row.get(h, '')) for h in headers]
+                            # Truncate long values
+                            values = [v[:50] + '...' if len(str(v)) > 50 else str(v) for v in values]
+                            table_doc.append("| " + " | ".join(values) + " |")
+
+            # Access statistics
+            if hasattr(table, 'last_accessed') and table.last_accessed:
+                table_doc.append(f"\n**Last Accessed:** {table.last_accessed}")
+            if hasattr(table, 'access_frequency') and table.access_frequency:
+                table_doc.append(f"**Access Frequency:** {table.access_frequency}")
+
+            documentation_parts.append("\n".join(table_doc))
+
+        return "\n\n---\n\n".join(documentation_parts)
+
+    def _generate_create_table_statement(self, table: TableMetadata) -> str:
+        """Generate CREATE TABLE statement from table metadata."""
+        if not table.columns:
+            return ""
+
+        create_parts = [f'CREATE TABLE {table.full_name} (']
+
+        column_definitions = []
+        for col in table.columns:
+            col_def = f'    "{col["name"]}" {col["type"]}'
+
+            # Add NOT NULL constraint
+            if not col.get('nullable', True):
+                col_def += ' NOT NULL'
+
+            # Add DEFAULT value
+            if col.get('default'):
+                default_val = col['default']
+                # Handle different default value types
+                if default_val.lower() in ['now()', 'current_timestamp', 'current_date']:
+                    col_def += f' DEFAULT {default_val}'
+                elif default_val.replace("'", "").replace('"', '').isdigit():
+                    col_def += f' DEFAULT {default_val}'
+                else:
+                    col_def += f" DEFAULT '{default_val}'"
+
+            column_definitions.append(col_def)
+
+        # Add primary key constraint
+        if hasattr(table, 'primary_keys') and table.primary_keys:
+            pk_cols = ', '.join([f'"{pk}"' for pk in table.primary_keys])
+            column_definitions.append(f'    PRIMARY KEY ({pk_cols})')
+
+        create_parts.append(',\n'.join(column_definitions))
+        create_parts.append(');')
+
+        # Add table comment if exists
+        if table.comment:
+            create_parts.append(f"\n\nCOMMENT ON TABLE {table.full_name} IS '{table.comment}';")
+
+        # Add column comments
+        for col in table.columns:
+            if col.get('comment'):
+                create_parts.append(
+                    f'COMMENT ON COLUMN {table.full_name}."{col["name"]}" IS \'{col["comment"]}\';'
+                )
+
+        return '\n'.join(create_parts)
 
     async def _build_schema_context(
         self,
@@ -1508,31 +1676,52 @@ Available Schemas: {', '.join(self.allowed_schemas)}
     ) -> str:
         """Format response as readable text based on user role."""
         sections = []
+        if db_response.documentation and len(db_response.documentation) > 100:
+            return db_response.documentation
 
         # Role-specific formatting preferences
         if user_role == UserRole.BUSINESS_USER:
             # Simple, data-focused format
             if db_response.data is not None:
                 if isinstance(db_response.data, pd.DataFrame):
-                    sections.append(f"**Results:** {len(db_response.data)} records found")
+                    sections.append(
+                        f"**Results:** {len(db_response.data)} records found"
+                    )
                 else:
-                    sections.append(f"**Results:** {db_response.row_count} records found")
+                    sections.append(
+                        f"**Results:** {db_response.row_count} records found"
+                    )
 
         elif user_role == UserRole.DEVELOPER:
-            # Technical focus with examples
-            if db_response.query:
-                sections.append(f"**SQL Query:**\n```sql\n{db_response.query}\n```")
+            # For developers requesting metadata, prioritize documentation
             if db_response.documentation:
-                sections.append(f"**Documentation:**\n{db_response.documentation}")
-            if db_response.examples:
-                examples_text = "\n".join([f"```sql\n{ex}\n```" for ex in db_response.examples])
-                sections.append(f"**Usage Examples:**\n{examples_text}")
+                sections.append(db_response.documentation)
+            elif discovered_tables:
+                # Fallback to basic table info if no documentation generated
+                for table in discovered_tables[:1]:  # Show first table
+                    sections.append(f"**Table Found:** {table.full_name}")
+                    sections.append(f"**Columns:** {len(table.columns)} columns")
+                    if table.columns:
+                        col_list = ', '.join([f"`{col['name']}`" for col in table.columns[:5]])
+                        if len(table.columns) > 5:
+                            col_list += f", ... and {len(table.columns) - 5} more"
+                        sections.append(f"**Column Names:** {col_list}")
+
+            # Technical focus with examples ONLY if no documentation
+            if not db_response.documentation:
+                if db_response.query:
+                    sections.append(f"**SQL Query:**\n```sql\n{db_response.query}\n```")
+                if db_response.examples:
+                    examples_text = "\n".join([f"```sql\n{ex}\n```" for ex in db_response.examples])
+                    sections.append(f"**Usage Examples:**\n{examples_text}")
 
         elif user_role == UserRole.DATABASE_ADMIN:
             # Performance and optimization focus
             if discovered_tables:
                 sections.append(f"**Analyzed Tables:** {len(discovered_tables)} tables discovered")
 
+            if db_response.documentation:
+                sections.append(db_response.documentation)
             if db_response.query:
                 sections.append(f"**Query:**\n```sql\n{db_response.query}\n```")
             if db_response.execution_plan:
@@ -1575,7 +1764,7 @@ Available Schemas: {', '.join(self.allowed_schemas)}
 
         return "\n\n".join(sections)
 
-    def _format_response(
+    async def _format_response(
         self,
         query: str,
         db_response: DatabaseResponse,
@@ -1586,6 +1775,12 @@ Available Schemas: {', '.join(self.allowed_schemas)}
         **kwargs
     ) -> AIMessage:
         """Format final response based on route decision."""
+
+        if db_response.is_documentation and discovered_tables and not db_response.documentation:
+            # Generate documentation on the fly
+            db_response.documentation = await self._format_table_documentation(
+                discovered_tables, route.user_role, query
+            )
 
         # Generate response text based on format preference
         if output_format == "markdown":
@@ -1623,6 +1818,8 @@ Available Schemas: {', '.join(self.allowed_schemas)}
                 "has_dataframe": isinstance(db_response.data, pd.DataFrame),
                 "data_format": "dataframe" if isinstance(db_response.data, pd.DataFrame) else "dict_list",
                 "discovered_tables": [t.full_name for t in discovered_tables],
+                "is_documentation": db_response.is_documentation,
+                "llm_used": getattr(self, '_llm_model', 'unknown'),
             },
             usage=CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0)
         )
