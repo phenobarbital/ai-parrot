@@ -389,11 +389,10 @@ class AgentHandler(BaseView):
 
     async def get_task_status(self, task_id: str, request: web.Request = None) -> JSONResponse:
         """Get the status of a background task by its ID."""
-        if request:
-            request = self.request
-        if not request:
+        req = request or self.request
+        if not req:
             raise RuntimeError("Request is not available.")
-        service: BackgroundService = self.request.app['background_service']
+        service: BackgroundService = req.app['background_service']
         try:
             job = await service.record(task_id)
             if job:

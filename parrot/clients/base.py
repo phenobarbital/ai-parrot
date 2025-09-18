@@ -200,6 +200,7 @@ class AbstractClient(ABC):
     }
     client_type: str = "generic"
     client_name: str = 'generic'
+    use_session: bool = False
 
     def __init__(
         self,
@@ -213,6 +214,7 @@ class AbstractClient(ABC):
         self.__name__ = self.__class__.__name__
         self.model: str = kwargs.get('model', None)
         self.session: Optional[aiohttp.ClientSession] = None
+        self.use_session: bool = kwargs.get('use_session', self.use_session)
         if preset:
             preset_config = LLM_PRESETS.get(preset, LLM_PRESETS['default'])
             # define temp, top_k, top_p, max_tokens from selected preset:
@@ -249,9 +251,10 @@ class AbstractClient(ABC):
             self.enable_tools = True
 
     async def __aenter__(self):
-        self.session = aiohttp.ClientSession(
-            headers=self.base_headers
-        )
+        if self.use_session:
+            self.session = aiohttp.ClientSession(
+                headers=self.base_headers
+            )
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):

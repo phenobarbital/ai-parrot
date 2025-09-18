@@ -41,6 +41,7 @@ class ClaudeClient(AbstractClient):
     version: str = "2023-06-01"
     client_type: str = "anthropic"
     client_name: str = "claude"
+    use_session: bool = True
 
     def __init__(
         self,

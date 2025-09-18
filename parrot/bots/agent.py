@@ -314,9 +314,10 @@ class BasicAgent(Chatbot):
             async with aiofiles.open(script_output_path, 'w') as script_file:
                 await script_file.write(voice_prompt.prompt)
             self.logger.info(f"Script saved to {script_output_path}")
-            # 4. Generate the audio podcast
-            output_directory = STATIC_DIR.joinpath(self.agent_id, 'podcasts')
-            output_directory.mkdir(parents=True, exist_ok=True)
+        # 4. Generate the audio podcast
+        output_directory = STATIC_DIR.joinpath(self.agent_id, 'podcasts')
+        output_directory.mkdir(parents=True, exist_ok=True)
+        async with self.client as client:
             speech_result = await client.generate_speech(
                 prompt_data=voice_prompt,
                 output_directory=output_directory,

@@ -150,7 +150,9 @@ class SchemaMetadataCache:
                 schema_meta = self.schema_cache[schema_name]
                 all_objects = schema_meta.get_all_objects()
 
-                self.logger.debug(f"🔍 SEARCHING SCHEMA '{schema_name}': {len(all_objects)} tables available")
+                self.logger.debug(
+                    f"🔍 SEARCHING SCHEMA '{schema_name}': {len(all_objects)} tables available"
+                )
 
                 for table_name, table_meta in all_objects.items():
                     score = self._calculate_relevance_score(table_name, table_meta, keywords)

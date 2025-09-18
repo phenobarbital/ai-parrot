@@ -3,13 +3,15 @@ import sys
 import asyncio
 from datetime import datetime
 from typing import Any, AsyncIterator, Dict, List, Optional, Union, Tuple
+from functools import partial
 import logging
 import time
 from pathlib import Path
 import io
 import uuid
-from PIL import Image
+import aiofiles
 import aiohttp
+from PIL import Image
 from google import genai
 from google.genai.types import (
     GenerateContentConfig,
@@ -17,7 +19,6 @@ from google.genai.types import (
     ModelContent,
     UserContent,
 )
-import aiofiles
 from google.genai import types
 from navconfig import config, BASE_DIR
 import pandas as pd
@@ -63,7 +64,6 @@ from ..models.detections import (
     IdentificationResponse
 )
 
-
 logging.getLogger(
     name='PIL.TiffImagePlugin'
 ).setLevel(logging.ERROR)  # Suppress TiffImagePlugin warnings
@@ -82,11 +82,17 @@ class GoogleGenAIClient(AbstractClient):
     client_name: str = 'google'
 
     def __init__(self, **kwargs):
-        api_key = kwargs.pop('api_key', config.get('GOOGLE_API_KEY'))
+        self.api_key = kwargs.pop('api_key', config.get('GOOGLE_API_KEY'))
         super().__init__(**kwargs)
-        self.client = genai.Client(api_key=api_key)
+        self.client = None
         #  Create a single instance of the Voice registry
         self.voice_db = VoiceRegistry(profiles=ALL_VOICE_PROFILES)
+
+    def get_client(self) -> genai.Client:
+        """Get the underlying Google GenAI client."""
+        return genai.Client(
+            api_key=self.api_key
+        )
 
     def _fix_tool_schema(self, schema: dict):
         """Recursively converts schema type values to uppercase for GenAI compatibility."""
@@ -101,12 +107,15 @@ class GoogleGenAIClient(AbstractClient):
                 self._fix_tool_schema(item)
         return schema
 
-    async def __aenter__(
-        self
-    ):
+    async def __aenter__(self):
         """Initialize the client context."""
         # Google GenAI doesn't need explicit session management
+        self.client = self.get_client()
         return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Clean up the client context."""
+        self.client = None
 
     def _analyze_prompt_for_tools(self, prompt: str) -> List[str]:
         """
@@ -1840,12 +1849,21 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         )
 
         # Make a stateless call to the model
-        response = await self.client.aio.models.generate_content(
+        if not self.client:
+            self.client = self.get_client()
+        # response = await self.client.aio.models.generate_content(
+        #     model=model,
+        #     contents=contents,
+        #     config=final_config
+        # )
+        sync_generate_content = partial(
+            self.client.models.generate_content,
             model=model,
             contents=contents,
             config=final_config
         )
-
+        # Run the synchronous function in a separate thread
+        response = await asyncio.to_thread(sync_generate_content)
         # Extract the generated script text
         script_text = response.text if hasattr(response, 'text') else str(response)
         structured_output = script_text
@@ -1903,6 +1921,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         """
         Generates speech from text using either a single voice or multiple voices.
         """
+        start_time = time.time()
         if prompt_data.model:
             model = prompt_data.model
         model = model.value if isinstance(model, GoogleModel) else model
@@ -1969,6 +1988,9 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             temperature=temperature
         )
         # Retry logic for network errors
+        if not self.client:
+            self.client = self.get_client()
+        # chat = self.client.aio.chats.create(model=model, history=None, config=config)
         for attempt in range(max_retries + 1):
 
             try:
@@ -1978,14 +2000,19 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                         f"Retrying speech (attempt {attempt + 1}/{max_retries + 1}) after {delay}s delay..."
                     )
                     await asyncio.sleep(delay)
-                start_time = time.time()
-                response = await self.client.aio.models.generate_content(
+                # response = await self.client.aio.models.generate_content(
+                #     model=model,
+                #     contents=prompt_data.prompt,
+                #     config=config,
+                # )
+                sync_generate_content = partial(
+                    self.client.models.generate_content,
                     model=model,
                     contents=prompt_data.prompt,
-                    config=config,
+                    config=config
                 )
-                execution_time = time.time() - start_time
-
+                # Run the synchronous function in a separate thread
+                response = await asyncio.to_thread(sync_generate_content)
                 # Robust audio data extraction with proper validation
                 audio_data = self._extract_audio_data(response)
                 if audio_data is None:
@@ -2024,6 +2051,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                         f"Saved speech to {file_path}"
                     )
 
+                execution_time = time.time() - start_time
                 usage = CompletionUsage(
                     execution_time=execution_time,
                     # Speech API does not return token counts
