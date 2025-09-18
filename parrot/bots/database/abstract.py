@@ -531,6 +531,7 @@ Please help the user with their database query using available tools."""
             # Step 2: Get vector context from knowledge store
             vector_context = ""
             vector_metadata = {}
+
             if self.knowledge_store:
                 try:
                     search_results = await self.knowledge_store.similarity_search(query, k=5)
@@ -777,6 +778,7 @@ Please help the user with their database query using available tools."""
         query: str,
         route: RouteDecision,
         metadata_context: str,
+        context: Optional[str] = None,
         **kwargs
     ) -> Tuple[str, str, AIMessage]:
         """Generate SQL query using LLM based on user request and metadata."""
@@ -790,6 +792,9 @@ You are a PostgreSQL query expert for multi-schema databases.
 **Database Context:**
 **Primary Schema:** {self.primary_schema}
 **Allowed Schemas:** {', '.join(self.allowed_schemas)}
+
+**Context Information:**
+{context}
 
 **Available Tables and Structure:**
 {metadata_context}
@@ -897,6 +902,7 @@ Apply semantic understanding to map user concepts to available columns.
         conversation_context: str,
         vector_context: str,
         user_context: Optional[str],
+        context: Optional[str] = None,
         **kwargs
     ) -> Tuple[Optional[str], Optional[str], Optional[AIMessage]]:
         """
@@ -916,14 +922,20 @@ Apply semantic understanding to map user concepts to available columns.
             # User provided SQL, validate it
             sql_query = query.strip()
             explanation, llm_response = await self._validate_user_sql(
-                sql_query, metadata_context
+                sql_query=sql_query,
+                metadata_context=metadata_context,
+                context=context
             )
             return sql_query, explanation, llm_response
 
         else:
             # Generate new SQL query using the EXISTING method from your code
             sql_query, explanation, llm_response = await self._query_generation(
-                query, route, metadata_context, **kwargs
+                query=query,
+                route=route,
+                metadata_context=metadata_context,
+                context=context,
+                **kwargs
             )
             return sql_query, explanation, llm_response
 
@@ -938,6 +950,7 @@ Apply semantic understanding to map user concepts to available columns.
         user_context: Optional[str],
         enable_retry: bool,
         retry_config: Optional[QueryRetryConfig] = None,
+        context: Optional[str] = None,
         **kwargs
     ) -> Tuple[DatabaseResponse, AIMessage]:
         """Process query generation with LLM."""
@@ -957,8 +970,14 @@ Apply semantic understanding to map user concepts to available columns.
         # Generate SQL query (if needed)
         if route.needs_query_generation and OutputComponent.SQL_QUERY in route.components:
             sql_query, explanation, llm_response = await self._generate_query(
-                query, route, metadata_context, conversation_context,
-                vector_context, user_context, **kwargs
+                query=query,
+                route=route,
+                metadata_context=metadata_context,
+                conversation_context=conversation_context,
+                vector_context=vector_context,
+                user_context=user_context,
+                context=context,
+                **kwargs
             )
             db_response.query = sql_query
 
@@ -1000,7 +1019,10 @@ Apply semantic understanding to map user concepts to available columns.
                 # Generate LLM-based optimization tips
                 if OutputComponent.OPTIMIZATION_TIPS in route.components:
                     db_response.optimization_tips, llm_response = await self._generate_optimization_tips(
-                        db_response.query, exec_result.query_plan, metadata_context
+                        sql_query=db_response.query,
+                        query_plan=exec_result.query_plan,
+                        metadata_context=metadata_context,
+                        context=context
                     )
 
         # FIXED: For documentation requests, format discovered table metadata instead of examples
@@ -1032,7 +1054,7 @@ Apply semantic understanding to map user concepts to available columns.
         original_query: str
     ) -> str:
         """
-        FIXED: Format discovered table metadata as proper documentation.
+        Format discovered table metadata as proper documentation.
 
         This replaces the generic examples with actual table documentation.
         """
@@ -1236,11 +1258,18 @@ Apply semantic understanding to map user concepts to available columns.
 
         return "\n".join(context_parts)
 
-    async def _validate_user_sql(self, sql_query: str, metadata_context: str) -> tuple[str, AIMessage]:
+    async def _validate_user_sql(self, sql_query: str, metadata_context: str, context: Optional[str] = None) -> tuple[str, AIMessage]:
         """Validate user-provided SQL."""
 
         system_prompt = f"""
 You are validating SQL for multi-schema access.
+
+```sql
+{sql_query}
+```
+
+**Context Information:**
+{context}
 
 **Primary Schema:** {self.primary_schema}
 **Allowed Schemas:** {', '.join(self.allowed_schemas)}
@@ -1907,7 +1936,8 @@ Available Schemas: {', '.join(self.allowed_schemas)}
         self,
         sql_query: str,
         query_plan: str,
-        metadata_context: str
+        metadata_context: str,
+        context: Optional[str] = None
     ) -> Union[List[str], AIMessage]:
         """
         LLM-based optimization tips instead of manual pattern matching.
@@ -2197,6 +2227,11 @@ Provide specific, actionable recommendations based on the actual execution plan:
             )
 
     async def cleanup(self) -> None:
-        """Cleanup resources."""
-        if self.engine:
-            await self.engine.dispose()
+        """Cleanup database and parent resources."""
+        try:
+            # Close database engine
+            if self.engine:
+                await self.engine.dispose()
+                self.logger.debug("Database engine disposed")
+        except Exception as e:
+            self.logger.error(f"Error during DB agent cleanup: {e}")
