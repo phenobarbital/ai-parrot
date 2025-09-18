@@ -45,7 +45,6 @@ class VideoLoader(BaseVideoLoader):
                     f"Unable to Download Video: {e}"
                 )
         try:
-            print('RESULT > ', result)
             filename = result.stdout.strip()  # Remove any trailing newline characters
             print('FILENAME > ', filename)
             file_path = path.joinpath(filename)

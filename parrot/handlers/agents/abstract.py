@@ -1,14 +1,13 @@
 from datetime import datetime
 from pathlib import Path
 from typing import Tuple, Union, List, Dict, Any, Optional, Callable, Sequence, Awaitable
-from abc import abstractmethod
 import functools
 from io import BytesIO
 import tempfile
 import aiofiles
 # Parrot:
 from aiohttp import web
-from datamodel.parsers.json import json_decoder, json_encoder  # noqa  pylint: disable=E0611
+from datamodel.parsers.json import json_encoder  # noqa  pylint: disable=E0611
 # AsyncDB:
 from asyncdb import AsyncDB
 # Requirements from Notify API:
@@ -261,9 +260,9 @@ class AgentHandler(BaseView):
             )
         # Tool definition:
         self.define_tools()
+
         # Startup and shutdown callbacks
         app.on_startup.append(self.create_agent)
-
         # Register Signals:
         if callable(self.on_startup):
             app.on_startup.append(self.on_startup)
@@ -278,7 +277,7 @@ class AgentHandler(BaseView):
         await self._create_agent(app)
 
     def define_tools(self):
-        """Define the tools for the agent."""
+        """Define additional tools for the agent."""
         pass
 
     def db_connection(
@@ -785,18 +784,10 @@ class AgentHandler(BaseView):
     ) -> BasicAgent:
         """Create and configure a BasicAgent instance."""
         try:
-            # llm = OpenAIClient(
-            #     model="gpt-4.1-mini",
-            # )
-            # llm = ClaudeClient(
-            #     model="claude-3-5-sonnet-20241022"
-            # )
             agent = self._agent_class(
                 name=self.agent_name,
                 tools=self._tools,
                 llm=self._use_llm,
-                #model="gpt-4.1-mini",
-                # model="claude-3-5-sonnet-20241022",
                 model=self._use_model
             )
             agent.set_response(self._agent_response)
