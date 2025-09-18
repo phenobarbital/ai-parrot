@@ -134,13 +134,13 @@ class NextStopAgent(AgentHandler):
         }
     ]
 
-    def define_tools(self):
-        """Define the tools for the NextStop agent."""
-        # Get program from session or default
-        program = getattr(self, '_program', 'hisense')
-        tools = StoreInfo(program=program).get_tools()
-        tools.extend(EmployeeToolkit(program=program).get_tools())
-        self._tools = tools
+    # def define_tools(self):
+    #     """Define the tools for the NextStop agent."""
+    #     # Get program from session or default
+    #     program = getattr(self, '_program', 'hisense')
+    #     tools = StoreInfo(program=program).get_tools()
+    #     tools.extend(EmployeeToolkit(program=program).get_tools())
+    #     self._tools = tools
 
     async def get_results(self, request: web.Request) -> web.Response:
         """Return the results of the agent."""

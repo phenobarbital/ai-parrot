@@ -1,8 +1,5 @@
 from __future__ import annotations
 from typing import List
-import textwrap
-from datetime import datetime
-from navconfig import BASE_DIR
 from .agent import BasicAgent
 from .prompts.nextstop import (
     AGENT_PROMPT,
@@ -10,7 +7,7 @@ from .prompts.nextstop import (
     DEFAULT_CAPABILITIES
 )
 from ..tools import AbstractTool
-from ..tools.nextstop import StoreInfo
+from ..tools.nextstop import StoreInfo, EmployeeToolkit
 from ..models.responses import AgentResponse
 
 
@@ -58,5 +55,7 @@ class NextStop(BasicAgent):
         self.capabilities = kwargs.get('capabilities', DEFAULT_CAPABILITIES)
         self.system_prompt_template = prompt_template or AGENT_PROMPT
         self._system_prompt_base = system_prompt or ''
-        # Register all the tools:
-        self.tools = self.default_tools(tools)
+
+    def agent_tools(self) -> List[AbstractTool]:
+        """Return the agent-specific tools."""
+        return StoreInfo().get_tools() + EmployeeToolkit().get_tools()
