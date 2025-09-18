@@ -93,6 +93,8 @@ class SchemaMetadataCache:
                 view_count=0
             )
 
+        print('META > ', metadata)
+
         schema_meta = self.schema_cache[metadata.schema]
         if metadata.table_type == 'BASE TABLE':
             schema_meta.tables[metadata.tablename] = metadata
