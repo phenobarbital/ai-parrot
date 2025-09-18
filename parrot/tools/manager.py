@@ -190,13 +190,11 @@ class ToolManager:
         self._categories: Dict[str, List[str]] = {}
 
     def default_tools(self, tools: list = None) -> List[AbstractTool]:
-        if tools:
-            self.register_tools(tools)
-        # define the list of Default Tools:
-        default_tools = [
-            MathTool(),
-        ]
-        self.register_tools(default_tools)
+        if not tools:
+            tools = [
+                MathTool(),
+            ]
+        self.register_tools(tools)
 
     def sync(self, other_manager: 'ToolManager') -> None:
         """
