@@ -15,7 +15,7 @@ authors = [
     {name = "Jesus Lara", email = "jesuslara@phenobarbital.info"}
 ]
 readme = "README.md"
-license = {text = "MIT"}
+license = "MIT"
 requires-python = ">=3.10.1"
 keywords = ["asyncio", "asyncpg", "aioredis", "aiomcache", "artificial intelligence", "ai", "chatbot", "agents"]
 classifiers = [
@@ -23,7 +23,6 @@ classifiers = [
     "Intended Audience :: Developers",
     "Operating System :: POSIX :: Linux",
     "Environment :: Web Environment",
-    "License :: OSI Approved :: MIT License",
     "Topic :: Software Development :: Build Tools",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Programming Language :: Python :: 3.10",
@@ -197,6 +196,9 @@ Tracker = "https://github.com/phenobarbital/ai-parrot/issues"
 Documentation = "https://github.com/phenobarbital/ai-parrot/"
 Funding = "https://paypal.me/phenobarbital"
 "Say Thanks!" = "https://saythanks.io/to/phenobarbital"
+
+[tool.setuptools]
+license-files = ["LICENSE*"]
 
 # Version from parrot/version.py
 [tool.setuptools_scm]

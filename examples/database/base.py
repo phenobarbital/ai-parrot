@@ -1,6 +1,7 @@
 import asyncio
 from querysource.conf import async_default_dsn
 from parrot.bots.database import AbstractDBAgent, SQLAgent
+from parrot.bots.database.models import UserRole
 
 
 async def test_agent():
@@ -25,14 +26,19 @@ async def sql_agent():
 
     async with sql_agent:
         response = await sql_agent.ask(
-            "Return in markdown format the metadata of table inventory in schema hisense",
+            "Return for documentation in markdown format the metadata of table inventory in schema hisense",
             # "get all superusers in users",
             # 'Get top-10 products by pricing',
             # 'Get top-10 TV LEDs products by pricing',
             # 'which products have better review average?',
             # 'how many products have Lowest Price below 300?',
             # 'which is the highest price of a product_type LED TV from table products?, important: pricing is a varchar column with format like $1,999.00',
-            user_role="developer"
+            user_role=# UserRole.DATA_ANALYST
+                # UserRole.BUSINESS_USER
+                # UserRole.DATA_ENGINEER
+                # UserRole.DB_ADMIN
+                UserRole.DEVELOPER
+                # UserRole.DATA_SCIENTIST
         )
         print('--- SQL Agent Response ---')
         print(response)

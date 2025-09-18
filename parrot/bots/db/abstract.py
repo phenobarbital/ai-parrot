@@ -103,8 +103,10 @@ class AbstractDBAgent(AbstractBot):
         try:
             self.loop = asyncio.get_running_loop()
         except RuntimeError:
-            self.loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(self.loop)
+            raise RuntimeError(
+                "An event loop is required to initialize the AbstractDBAgent."
+            )
+        asyncio.set_event_loop(self.loop)
 
     def default_rationale(self) -> str:
         # TODO: read rationale from a file

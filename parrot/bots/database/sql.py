@@ -30,10 +30,13 @@ class SQLAgent(AbstractDBAgent):
 
     def _ensure_async_driver(self, dsn: str) -> str:
         # Ensure async driver
-        if '+asyncpg' not in dsn:
-            connection_string = dsn.replace(
-                'postgresql://', 'postgresql+asyncpg://'
-            )
+        if self.database_type == 'postgresql':
+            if '+asyncpg' not in dsn:
+                connection_string = dsn.replace(
+                    'postgresql://', 'postgresql+asyncpg://'
+                )
+            else:
+                connection_string = dsn
         else:
             connection_string = dsn
         return connection_string
