@@ -1,5 +1,6 @@
 import textwrap
 from typing import Dict, List, Tuple, Any, Optional
+from abc import abstractmethod
 from datetime import datetime
 import aiofiles
 from navconfig import BASE_DIR
@@ -8,11 +9,9 @@ from ..clients.google import GoogleGenAIClient
 from .chatbot import Chatbot
 from .prompts import AGENT_PROMPT
 from ..tools.abstract import AbstractTool
-from ..tools.manager import ToolManager
 from ..tools.pythonpandas import PythonPandasTool
-from ..tools.google import GoogleLocationTool, GoogleRoutesTool
+from ..tools.google import GoogleLocationTool
 from ..tools.openweather import OpenWeatherTool
-from ..tools.excel import ExcelTool
 from ..tools.gvoice import GoogleVoiceTool
 from ..tools.pdfprint import PDFPrintTool
 from ..tools.ppt import PowerPointTool
@@ -65,8 +64,11 @@ class BasicAgent(Chatbot):
         system_prompt: str = None,
         human_prompt: str = None,
         prompt_template: str = None,
+        use_tools: bool = True,
         **kwargs
     ):
+        self.agent_id = agent_id
+        tools = self._get_default_tools(tools)
         super().__init__(
             name=name,
             llm=llm,
@@ -74,9 +76,9 @@ class BasicAgent(Chatbot):
             system_prompt=system_prompt,
             human_prompt=human_prompt,
             tools=tools,
+            use_tools=use_tools,
             **kwargs
         )
-        self.agent_id = agent_id
         self.system_prompt_template = prompt_template or AGENT_PROMPT
         self._system_prompt_base = system_prompt or ''
         self.enable_tools = True  # Enable tools by default
@@ -87,12 +89,12 @@ class BasicAgent(Chatbot):
         )
         ## Google GenAI Client (for multi-modal responses and TTS generation):
         self.client = GoogleGenAIClient()
-        ## Tool Manager:
-        self.tool_manager = ToolManager()
-        self.tool_manager.default_tools([])  # Start with no tools
+        # install agent-specific tools:
+        self.tools = self.agent_tools()
+        self.tool_manager.register_tools(self.tools)
 
-    def default_tools(self, tools: List[AbstractTool]) -> List[AbstractTool]:
-        """Return the default tools for the agent."""
+    def _get_default_tools(self, tools: list) -> List[AbstractTool]:
+        """Return Agent-specific tools."""
         if not tools:
             tools = []
         tools.extend(
@@ -102,25 +104,17 @@ class BasicAgent(Chatbot):
                     report_dir=STATIC_DIR.joinpath(self.agent_id, 'documents')
                 ),
                 GoogleLocationTool(),
-                # PDFPrintTool(
-                #     output_dir=STATIC_DIR.joinpath(self.agent_id, 'documents')
-                # ),
-                # GoogleRoutesTool(
-                #     output_dir=STATIC_DIR.joinpath(self.agent_id, 'routes')
-                # ),
-                # ExcelTool(
-                #     output_dir=STATIC_DIR.joinpath(self.agent_id, 'documents')
-                # ),
-                # GoogleVoiceTool(
-                #     use_long_audio_synthesis=True,
-                #     output_dir=STATIC_DIR.joinpath(self.agent_id, 'podcasts')
-                # ),
-                # PowerPointTool(
-                #     output_dir=STATIC_DIR.joinpath(self.agent_id, 'presentations')
-                # )
+                GoogleVoiceTool(
+                    use_long_audio_synthesis=True,
+                    output_dir=STATIC_DIR.joinpath(self.agent_id, 'podcasts')
+                ),
             ]
         )
         return tools
+
+    def agent_tools(self) -> List[AbstractTool]:
+        """Return the agent-specific tools."""
+        return []
 
     def set_response(self, response: AgentResponse):
         """Set the response for the agent."""

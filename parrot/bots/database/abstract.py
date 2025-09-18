@@ -1801,12 +1801,27 @@ Available Schemas: {', '.join(self.allowed_schemas)}
         elif OutputComponent.DATA_RESULTS in route.components:
             output_data = db_response.data
 
+        # Extract usage information from LLM response
+        usage_info = CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0)
+        if llm_response and hasattr(llm_response, 'usage') and llm_response.usage:
+            usage_info = llm_response.usage
+
+        # Extract model and provider info from LLM response if available
+        model_name = getattr(self, '_llm_model', 'unknown')
+        provider_name = str(getattr(self, '_llm', 'unknown'))
+
+        if llm_response:
+            if hasattr(llm_response, 'model') and llm_response.model:
+                model_name = llm_response.model
+            if hasattr(llm_response, 'provider') and llm_response.provider:
+                provider_name = str(llm_response.provider)
+
         return AIMessage(
             input=query,
             response=response_text,
             output=output_data,
-            model=getattr(self, '_llm_model', 'unknown'),
-            provider=str(getattr(self, '_llm', 'unknown')),
+            model=model_name,
+            provider=provider_name,
             metadata={
                 "user_role": route.user_role.value,
                 "components_included": [comp.name for comp in OutputComponent if comp in route.components],
@@ -1821,7 +1836,7 @@ Available Schemas: {', '.join(self.allowed_schemas)}
                 "is_documentation": db_response.is_documentation,
                 "llm_used": getattr(self, '_llm_model', 'unknown'),
             },
-            usage=CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0)
+            usage=usage_info
         )
 
     def _extract_performance_metrics(

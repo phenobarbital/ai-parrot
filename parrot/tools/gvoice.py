@@ -122,7 +122,7 @@ class GoogleVoiceTool(AbstractTool):
     - Comprehensive error handling and logging
     """
 
-    name = "google_voice"
+    name = "google_tts_service"
     description = (
         "Generate speech audio from text using Google Cloud Text-to-Speech. "
         "Supports multiple languages, voice models, and output formats. "
