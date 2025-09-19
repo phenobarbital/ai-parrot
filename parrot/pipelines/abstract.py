@@ -58,7 +58,9 @@ class AbstractPipeline(ABC):
             Initialized LLM client
         """
         if provider not in SUPPORTED_CLIENTS:
-            raise ValueError(f"Unsupported LLM provider: {provider}")
+            raise ValueError(
+                f"Unsupported LLM provider: {provider}"
+            )
 
         client_class = SUPPORTED_CLIENTS[provider]
         client = client_class(model=model, **kwargs)

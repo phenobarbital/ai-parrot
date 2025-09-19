@@ -52,6 +52,7 @@ try:
     from ultralytics import YOLO  # yolo12m works with this API
 except Exception:
     YOLO = None
+from .models import ObjectType, VerificationResult, PROMO_NAMES
 
 
 def clean_ocr_text(text: str) -> str:
@@ -85,22 +86,6 @@ CID = {
     "poster_text": 106,
 }
 
-
-PROMO_NAMES = {"promotional_candidate", "promotional_graphic"}
-
-# An Enum to constrain the classification to only the types we want
-class ObjectType(str, Enum):
-    PRODUCT_CANDIDATE = "product_candidate"
-    BOX_CANDIDATE = "box_candidate"
-    UNCLEAR = "unclear"
-
-class VerificationResult(BaseModel):
-    """The result of verifying a single cropped object image."""
-    object_type: ObjectType = Field(..., description="The classification of the object in the image.")
-    visible_text: Optional[str] = Field(
-        None,
-        description="Any clearly visible text extracted from the image, cleaned up. Null if no legible text is found."
-    )
 
 def _clamp(W,H,x1,y1,x2,y2):
     x1,x2 = int(max(0,min(W-1,min(x1,x2)))), int(max(0,min(W-1,max(x1,x2))))
