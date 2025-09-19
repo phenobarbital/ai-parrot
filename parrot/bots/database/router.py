@@ -6,12 +6,10 @@ import re
 from .models import (
     UserRole,
     QueryIntent,
-    OutputFormat,
     RouteDecision,
     OutputComponent,
     get_default_components,
-    INTENT_COMPONENT_MAPPING,
-    ROLE_COMPONENT_DEFAULTS
+    INTENT_COMPONENT_MAPPING
 )
 
 class SchemaQueryRouter:
@@ -22,49 +20,75 @@ class SchemaQueryRouter:
         self.allowed_schemas = allowed_schemas
         # Enhanced pattern matching
         self.patterns = {
-            # Data retrieval patterns
+            # Data retrieval patterns - EXPANDED
             'show_data': [
                 r'\bshow\s+me\b', r'\bdisplay\b', r'\blist\s+all\b',
                 r'\bget\s+all\b', r'\bfind\s+all\b', r'\breturn\s+all\b',
-                r'\bselect\s+.*\s+from\b'
+                r'\bselect\s+.*\s+from\b',
+                # ADD THESE MISSING PATTERNS:
+                r'\bget\s+\w+\s+\d+\s+records?\b',  # "get last 5 records"
+                r'\bget\s+(last|first|top)\s+\d+\b',  # "get last 5", "get top 10"
+                r'\bshow\s+\d+\s+records?\b',  # "show 5 records"
+                r'\bfetch\s+\d+\s+records?\b',  # "fetch 10 records"
+                r'\breturn\s+\d+\s+records?\b',  # "return 5 records"
+                r'\bget\s+records?\s+from\b',  # "get records from"
+                r'\bselect\s+from\b',  # "select from table"
+                r'\blist\s+data\b',  # "list data"
+                r'\bshow\s+data\b',  # "show data"
             ],
-
-            # Analysis patterns
+            # Query generation patterns - EXPANDED
+            'generate_query': [
+                r'\bget\s+\w+\s+and\s+\w+\b', r'\bfind\s+\w+\s+where\b',
+                r'\bcalculate\b', r'\bcount\b', r'\bsum\b', r'\baverage\b',
+                # ADD THESE:
+                r'\bget\s+.*\s+where\b',  # "get users where"
+                r'\bfind\s+.*\s+with\b',  # "find records with"
+                r'\bretrieve\s+.*\s+from\b',  # "retrieve data from"
+                r'\bquery\s+.*\s+for\b',  # "query table for"
+            ],
+            # Schema exploration patterns - NARROWED DOWN
+            'explore_schema': [
+                r'\bwhat\s+tables?\b', r'\blist\s+tables?\b', r'\bshow\s+tables?\b',
+                r'\bwhat\s+.*\s+available\b', r'\bschema\s+structure\b',
+                r'\bdatabase\s+schema\b', r'\btable\s+structure\b',
+                # REMOVE patterns that conflict with data retrieval
+                # Don't include generic "describe", "metadata" here
+            ],
+            # Documentation/Metadata requests - SPECIFIC
+            'explain_metadata': [
+                r'\bmetadata\s+of\s+table\b',  # "metadata of table X"
+                r'\bdescribe\s+table\b',  # "describe table X"
+                r'\btable\s+.*\s+metadata\b',  # "table X metadata"
+                r'\bin\s+markdown\s+format\b',  # "in markdown format"
+                r'\bformat.*metadata\b',
+                r'\bdocument\w*.*table\b',  # "document table X"
+                r'\bexplain\s+.*\s+structure\b',  # "explain table structure"
+            ],
+            # Rest of patterns...
             'analyze_data': [
                 r'\banalyze\b', r'\banalysis\b', r'\btrends?\b',
                 r'\binsights?\b', r'\bpatterns?\b', r'\bstatistics\b',
                 r'\bcorrelation\b', r'\bdistribution\b', r'\bcompare\b'
             ],
-
-            # Schema exploration
-            'explore_schema': [
-                r'\btables?\b', r'\bschema\b', r'\bstructure\b',
-                r'\bcolumns?\b', r'\bdescribe\b', r'\bmetadata\b',
-                r'\bwhat\s+.*\s+available\b'
+            'optimize_query': [
+                r'\btable\s+.*\s+metadata\b',  # "table X metadata"
+                r'\bin\s+markdown\s+format\b',  # "in markdown format"
+                r'\bformat.*metadata\b',
+                r'\bdocument\w*.*table\b',  # "document table X"
+                r'\bexplain\s+.*\s+structure\b',  # "explain table structure"
             ],
-
-            # Optimization focus
+            'analyze_data': [
+                r'\banalyze\b', r'\banalysis\b', r'\btrends?\b',
+                r'\binsights?\b', r'\bpatterns?\b', r'\bstatistics\b',
+                r'\bcorrelation\b', r'\bdistribution\b', r'\bcompare\b'
+            ],
             'optimize_query': [
                 r'\boptimiz\w+\b', r'\bperformance\b', r'\bslow\b',
-                r'\bindex\b', r'\btuning?\b', r'\bexplain\b'
+                r'\bindex\b', r'\btuning?\b', r'\bexplain\s+analyze\b'
             ],
-
-            # Documentation requests
-            'explain_metadata': [
-                r'\bexplain\b', r'\bdocument\w*\b', r'\bmetadata\b',
-                r'\bin\s+markdown\s+format\b', r'\bformat.*metadata\b'
-            ],
-
-            # Example requests
             'create_examples': [
                 r'\bexamples?\b', r'\bhow\s+to\s+use\b', r'\busage\b',
                 r'\bshow.*examples?\b'
-            ],
-
-            # Query generation
-            'generate_query': [
-                r'\bget\s+\w+\s+and\s+\w+\b', r'\bfind\s+\w+\s+where\b',
-                r'\bcalculate\b', r'\bcount\b', r'\bsum\b', r'\baverage\b'
             ]
         }
 
@@ -153,6 +177,15 @@ class SchemaQueryRouter:
             }
         }
 
+        # Determine if we need query generation
+        # ANY component that requires data needs query generation
+        data_requiring_components = {
+            OutputComponent.DATA_RESULTS,
+            OutputComponent.DATAFRAME_OUTPUT,
+            OutputComponent.SAMPLE_DATA,
+            OutputComponent.SQL_QUERY  # Obviously needs query generation
+        }
+
         # Intent-based configuration
         if intent == QueryIntent.VALIDATE_QUERY:
             config['needs_query_generation'] = False
@@ -176,6 +209,27 @@ class SchemaQueryRouter:
 
         if OutputComponent.DATA_RESULTS not in components:
             config['needs_execution'] = False
+
+        if any(comp in components for comp in data_requiring_components):
+            config['needs_query_generation'] = True
+
+        # Components that require actual query execution
+        execution_requiring_components = {
+            OutputComponent.DATA_RESULTS,
+            OutputComponent.DATAFRAME_OUTPUT,
+            OutputComponent.SAMPLE_DATA,
+            OutputComponent.EXECUTION_PLAN,
+            OutputComponent.PERFORMANCE_METRICS
+        }
+
+        if any(comp in components for comp in execution_requiring_components):
+            config['needs_execution'] = True
+
+        # Intent-specific configuration
+        if intent == QueryIntent.SHOW_DATA:
+            config['execution_options']['timeout'] = 30
+        elif intent == QueryIntent.ANALYZE_DATA:
+            config['execution_options']['timeout'] = 60  # More time for complex analysis
 
         return config
 

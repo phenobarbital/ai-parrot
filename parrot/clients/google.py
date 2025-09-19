@@ -946,6 +946,8 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
         })
 
         chat = None
+        if not self.client:
+            self.client = self.get_client()
         final_config = GenerateContentConfig(
             system_instruction=system_prompt,
             safety_settings=[

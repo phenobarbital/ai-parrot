@@ -22,7 +22,7 @@ async def sql_agent():
 
     sql_agent = SQLAgent(
         dsn=async_default_dsn,
-        allowed_schemas=["auth"],
+        allowed_schemas=["auth", "hisense"],
         client_id="hisense"
     )
 
@@ -37,15 +37,16 @@ async def sql_agent():
             # 'which products have better review average?',
             # 'how many products have Lowest Price below 300?',
             # "show me the most expensive products from products table",
-            "get last 5 inventory records from pokemon.onhand_inventory table",
+            "get last 5 records from form_data table",
             # 'which is the highest price of a product_type LED TV from table products?, important: pricing is a varchar column with format like $1,999.00',
             user_role=
-                UserRole.DATA_ANALYST
-                # UserRole.BUSINESS_USER
+                # UserRole.DATA_ANALYST
+                UserRole.BUSINESS_USER
                 # UserRole.DATA_ENGINEER
                 # UserRole.DATABASE_ADMIN
                 # UserRole.DEVELOPER
                 # UserRole.DATA_SCIENTIST
+                # UserRole.QUERY_DEVELOPER
         )
         # print('--- SQL Agent Response ---')
         print(response)
