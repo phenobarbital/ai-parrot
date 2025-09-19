@@ -11,11 +11,14 @@ Designed for:
 """
 
 from abc import ABC
-from typing import Dict, Any, List, Optional, Union, Tuple
+import inspect
+from typing import Dict, Any, List, Optional, Union, Tuple, Type, get_origin, get_args
+from dataclasses import is_dataclass
 from datetime import datetime
 from string import Template
 import re
 import uuid
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import text
@@ -35,7 +38,6 @@ from .models import (
     OutputComponent,
     DatabaseResponse,
     get_default_components,
-    customize_components,
     components_from_string
 )
 from .prompts import DB_AGENT_PROMPT
@@ -424,6 +426,25 @@ Please help the user with their database query using available tools."""
 
         return final_components
 
+    def _is_structured_output_format(self, output_format) -> bool:
+        """Check if output_format is a BaseModel or dataclass."""
+        if output_format is None or isinstance(output_format, str):
+            return False
+        # Check if it's a Pydantic BaseModel class
+        try:
+            if inspect.isclass(output_format) and issubclass(output_format, BaseModel):
+                return True
+        except (TypeError, ImportError):
+            pass
+        # Check if it's a dataclass
+        try:
+            if inspect.isclass(output_format) and is_dataclass(output_format):
+                return True
+        except (TypeError, ImportError):
+            pass
+
+        return False
+
     async def ask(
         self,
         query: str,
@@ -431,7 +452,7 @@ Please help the user with their database query using available tools."""
         user_role: UserRole = UserRole.DATA_ANALYST,
         user_context: Optional[str] = None,
         output_components: Optional[Union[str, OutputComponent]] = None,
-        output_format: Optional[str] = None,  # "markdown", "json", "dataframe"
+        output_format: Optional[Union[str, Type[BaseModel], Type]] = None,  # "markdown", "json", "dataframe"
         session_id: Optional[str] = None,
         user_id: Optional[str] = None,
         use_conversation_history: bool = True,
@@ -442,13 +463,16 @@ Please help the user with their database query using available tools."""
         **kwargs
     ) -> AIMessage:
         """
-        Ask method with role-based component responses.
+        Ask method with role-based component responses and structured output support.
 
         Args:
             query: The user's question about the database
             user_role: User role determining default response components
             output_components: Override default components (string or OutputComponent flags)
-            output_format: Output format preference ("markdown", "json", "dataframe")
+            output_format: Output format preference:
+                - String: "markdown", "json", "dataframe"
+                - BaseModel: Pydantic model class for structured output
+                - Dataclass: Dataclass for structured output
             add_components: Additional components to include (string or OutputComponent flags)
             remove_components: Components to exclude (string or OutputComponent flags)
             context: Additional context for the request
@@ -494,7 +518,23 @@ Please help the user with their database query using available tools."""
                 user_role=UserRole.DATA_ANALYST,
                 add_components="performance,optimize"
             )
+
+            # Structured output with dataclass
+            @dataclass
+            class QueryAnalysis:
+                sql_query: str
+                execution_plan: str
+                performance_metrics: Dict[str, Any]
+                optimization_tips: List[str]
+
+            response = await agent.ask("Analyze query performance",
+                                    user_role=UserRole.QUERY_DEVELOPER,
+                                    output_format=QueryAnalysis)
         """
+        # Detect if output_format is a structured type
+        is_structured_output = self._is_structured_output_format(output_format)
+        structured_output_class = output_format if is_structured_output else None
+
         # Parse user role
         if isinstance(user_role, str):
             user_role = UserRole(user_role.lower())
@@ -582,13 +622,12 @@ Please help the user with their database query using available tools."""
                     f"✅ DISCOVERED: {len(discovered_tables)} tables with context length: {len(metadata_context)}"
                 )
 
-            # Step 6: Make the LLM call with tools enabled
             self.logger.info(
                 f"Processing database query: use_tools=True, "
                 f"available_tools={len(self.tool_manager.get_tools())}"
             )
 
-            # Step 7: Generate/validate query (if needed)
+            # Step 5: Generate/validate query (if needed)
             db_response, llm_response = await self._process_query(
                 query=query,
                 route=route,
@@ -599,13 +638,16 @@ Please help the user with their database query using available tools."""
                 user_context=user_context,
                 enable_retry=enable_retry,
                 retry_config=retry_config,
+                context=context,
                 **kwargs
             )
 
-            # Step 9: Format response
+            # Step 6: Format Final response, with response output
             return await self._format_response(
                 query=query,
                 db_response=db_response,
+                is_structured_output=is_structured_output,
+                structured_output_class=structured_output_class,
                 route=route,
                 llm_response=llm_response,
                 output_format=output_format,
@@ -661,25 +703,32 @@ Please help the user with their database query using available tools."""
 
         # Step 1: Direct schema search using table name extraction
         table_name = self._extract_table_name_from_query(query)
-        if table_name:
-            self.logger.debug(f"📋 Extracted table name: {table_name}")
 
+        if table_name:
+            self.logger.debug(
+                f"📋 Extracted table name: {table_name}"
+            )
             # Search for exact table match first
             for schema in self.allowed_schemas:
-                table_metadata = await self.metadata_cache.get_table_metadata(schema, table_name)
+                table_metadata = await self.metadata_cache.get_table_metadata(
+                    schema,
+                    table_name
+                )
                 if table_metadata:
                     self.logger.info(f"✅ EXACT MATCH: Found {schema}.{table_name}")
                     discovered_tables.append(table_metadata)
                     metadata_parts.append(table_metadata.to_yaml_context())
                     break
 
-        # Step 2: Fuzzy search if no exact match
-        if not discovered_tables:
-            self.logger.debug("🔄 No exact match, performing fuzzy search...")
+        # Step 2: If no exact match, try more precise fuzzy search
+        if not discovered_tables and table_name:
+            self.logger.debug("🔄 No exact match, performing targeted fuzzy search...")
+
+            # Search specifically for the table name, not the entire query
             similar_tables = await self.schema_tool.search_schema(
-                search_term=query,
-                search_type="all",
-                limit=5
+                search_term=table_name,  # Use ONLY the table name, not entire query
+                search_type="table_name",  # Focus on table names only
+                limit=3  # Reduce limit to avoid noise
             )
 
             if similar_tables:
@@ -687,6 +736,12 @@ Please help the user with their database query using available tools."""
                 discovered_tables.extend(similar_tables)
                 for table in similar_tables:
                     metadata_parts.append(table.to_yaml_context())
+            else:
+                # If still no results, be explicit about missing table
+                self.logger.warning(
+                    f"❌ TABLE NOT FOUND: '{table_name}' not found in any schema"
+                )
+                return self._create_table_not_found_response(table_name, query), []
 
         # Step 3: Fallback to hot tables if still no results
         if not discovered_tables:
@@ -705,7 +760,9 @@ Please help the user with their database query using available tools."""
         if not metadata_context:
             # Absolute fallback
             metadata_context = f"Available schemas: {', '.join(self.allowed_schemas)} (primary: {self.primary_schema})"
-            self.logger.warning("⚠️  Using minimal fallback context")
+            self.logger.warning(
+                "⚠️  Using minimal fallback context"
+            )
 
         self.logger.info(
             f"🏁 DISCOVERY COMPLETE: {len(discovered_tables)} tables, "
@@ -714,19 +771,34 @@ Please help the user with their database query using available tools."""
 
         return metadata_context, discovered_tables
 
+    def _create_table_not_found_response(self, table_name: str, original_query: str) -> str:
+        """Create a clear response when table doesn't exist."""
+        return f"""**Table Not Found**: `{table_name}`
+The table `{table_name}` does not exist in any of the available schemas: {', '.join(self.allowed_schemas)}
+
+**Available options:**
+1. Check table name spelling
+2. Use: "show tables" to list available tables
+3. Search for similar tables: "find tables like {table_name[:5]}"
+
+**Available schemas:** {', '.join([f'`{s}`' for s in self.allowed_schemas])}
+"""
+
     def _extract_table_name_from_query(self, query: str) -> Optional[str]:
-        """Extract table name from user query."""
-        # Common patterns for table name extraction
+        """Extract table name with better precision."""
+        # Enhanced patterns with word boundaries and more specific matching
         patterns = [
-            r'table\s+(\w+)',           # "table inventory"
-            r'metadata\s+of\s+table\s+(\w+)',   # "metadata of table inventory"
-            r'metadata\s+of\s+(\w+)',   # "metadata of inventory"
-            r'describe\s+(\w+)',        # "describe inventory"
-            r'structure\s+of\s+(\w+)',  # "structure of inventory"
-            r'information\s+about\s+(\w+)', # "information about inventory"
-            r'details\s+of\s+(\w+)',    # "details of inventory"
-            r'schema\s+(\w+)',          # "schema inventory"
-            r'\b(\w+)\s+table\b',       # "inventory table"
+            r'\bfrom\s+(?:[\w.]+\.)?(\w+)',          # "from schema.table" or "from table"
+            r'\btable\s+(?:[\w.]+\.)?(\w+)',         # "table schema.table" or "table name"
+            r'\bmetadata\s+of\s+(?:table\s+)?(?:[\w.]+\.)?(\w+)',  # "metadata of table X"
+            r'\bdescribe\s+(?:table\s+)?(?:[\w.]+\.)?(\w+)',       # "describe table X"
+            r'\bstructure\s+of\s+(?:[\w.]+\.)?(\w+)', # "structure of table"
+            r'\binformation\s+about\s+(?:[\w.]+\.)?(\w+)', # "information about table"
+            r'\bdetails\s+of\s+(?:[\w.]+\.)?(\w+)',  # "details of table"
+            r'(?:[\w.]+\.)?(\w+)\s+table\b',         # "inventory table"
+            # Be more specific about "records from" pattern
+            r'\brecords?\s+from\s+(?:[\w.]+\.)?(\w+)',    # "records from table"
+            r'\bdata\s+from\s+(?:[\w.]+\.)?(\w+)',        # "data from table"
         ]
 
         query_lower = query.lower()
@@ -734,8 +806,13 @@ Please help the user with their database query using available tools."""
             match = re.search(pattern, query_lower)
             if match:
                 table_name = match.group(1)
-                # Avoid common false positives
-                if table_name not in ['the', 'in', 'from', 'with', 'for', 'about', 'format', 'return']:
+                # Filter out common false positives and SQL keywords
+                false_positives = {
+                    'the', 'in', 'from', 'with', 'for', 'about', 'format',
+                    'return', 'select', 'where', 'order', 'group', 'by',
+                    'limit', 'offset', 'having', 'distinct'
+                }
+                if table_name not in false_positives:
                     self.logger.debug(f"📋 Extracted table name: '{table_name}' using pattern: {pattern}")
                     return table_name
 
@@ -830,11 +907,12 @@ Apply semantic understanding to map user concepts to available columns.
 **Your Task:** Analyze the user request and provide either a SQL query OR a clear explanation.
     """
         # Call LLM for query generation
-        llm_response = await self._llm.ask(
-            prompt=f"User request: {query}",
-            system_prompt=system_prompt,
-            **kwargs
-        )
+        async with self._llm as client:
+            llm_response = await client.ask(
+                prompt=f"User request: {query}",
+                system_prompt=system_prompt,
+                **kwargs
+            )
 
         # Extract SQL and explanation
         response_text = str(llm_response.output) if llm_response.output else str(llm_response.response)
@@ -893,6 +971,290 @@ Apply semantic understanding to map user concepts to available columns.
             f"🔍 EXPLANATION CHECK: explanation_patterns={contains_explanation}, sql_patterns={contains_sql}, is_explanatory={is_explanatory}"
         )
         return is_explanatory
+
+    async def _execute_query_explain(
+        self,
+        sql_query: str,
+    ) -> QueryExecutionResponse:
+        """Execute query with EXPLAIN ANALYZE for performance analysis."""
+
+        start_time = datetime.now()
+
+        try:
+            async with self.session_maker() as session:
+                # Set search path for security
+                search_path = ','.join(self.allowed_schemas)
+                await session.execute(text(f"SET search_path = '{search_path}'"))
+
+                # Execute EXPLAIN ANALYZE first
+                explain_query = f"EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) {sql_query}"
+
+                try:
+                    plan_result = await session.execute(text(explain_query))
+                    query_plan_json = plan_result.fetchone()[0]
+
+                    # Convert JSON plan to readable format
+                    query_plan = self._format_explain_plan(query_plan_json)
+
+                    print('FORMAT PLAN > ', query_plan)
+
+                    execution_time = (datetime.now() - start_time).total_seconds() * 1000
+
+                    return QueryExecutionResponse(
+                        success=True,
+                        data=None,  # EXPLAIN doesn't return data
+                        row_count=0,
+                        execution_time_ms=execution_time,
+                        query_plan=query_plan,
+                        schema_used=self.primary_schema,
+                        metadata={
+                            "plan_json": query_plan_json,  # Store JSON for metrics extraction
+                            "query_type": "explain_analyze"
+                        }
+                    )
+
+                except Exception as e:
+                    # If EXPLAIN fails, the query has syntax/table issues
+                    execution_time = (datetime.now() - start_time).total_seconds() * 1000
+
+                    return QueryExecutionResponse(
+                        success=False,
+                        data=None,
+                        row_count=0,
+                        execution_time_ms=execution_time,
+                        error_message=str(e),
+                        schema_used=self.primary_schema
+                    )
+
+        except Exception as e:
+            execution_time = (datetime.now() - start_time).total_seconds() * 1000
+
+            return QueryExecutionResponse(
+                success=False,
+                data=None,
+                row_count=0,
+                execution_time_ms=execution_time,
+                error_message=f"Database connection error: {str(e)}",
+                schema_used=self.primary_schema
+            )
+
+    def _format_explain_plan(self, plan_json) -> str:
+        """Format EXPLAIN ANALYZE JSON output to comprehensive readable text for developers."""
+        if not plan_json or not isinstance(plan_json, list):
+            return "No execution plan available"
+
+        try:
+            plan_data = plan_json[0]
+            main_plan = plan_data.get("Plan", {})
+
+            # Build comprehensive formatted output
+            lines = []
+
+            # Header with overall timing
+            lines.append("=" * 60)
+            lines.append("POSTGRESQL EXECUTION PLAN ANALYSIS")
+            lines.append("=" * 60)
+
+            # Overall execution statistics
+            if "Execution Time" in plan_data:
+                lines.append(f"📊 **Overall Execution Time:** {plan_data['Execution Time']:.3f}ms")
+            if "Planning Time" in plan_data:
+                lines.append(f"🧠 **Planning Time:** {plan_data['Planning Time']:.3f}ms")
+
+            lines.append("")
+            lines.append("🔍 **Detailed Node Analysis:**")
+            lines.append("-" * 40)
+
+            def format_node_detailed(node, level=0):
+                indent = "  " * level
+                node_type = node.get("Node Type", "Unknown")
+                node_lines = []
+
+                # Main node header
+                node_lines.append(f"{indent}{'└─' if level > 0 else '▶'} **{node_type}**")
+
+                # Cost analysis (startup vs total)
+                startup_cost = node.get("Startup Cost", 0)
+                total_cost = node.get("Total Cost", 0)
+                if startup_cost or total_cost:
+                    node_lines.append(f"{indent}   💰 Cost: {startup_cost:.2f}..{total_cost:.2f}")
+
+                # Timing details (startup vs total)
+                startup_time = node.get("Actual Startup Time")
+                total_time = node.get("Actual Total Time")
+                if startup_time is not None and total_time is not None:
+                    node_lines.append(f"{indent}   ⏱️  Time: {startup_time:.3f}ms..{total_time:.3f}ms")
+
+                # Row estimates vs actual
+                plan_rows = node.get("Plan Rows")
+                actual_rows = node.get("Actual Rows")
+                if plan_rows is not None or actual_rows is not None:
+                    estimate_accuracy = ""
+                    if plan_rows and actual_rows:
+                        ratio = actual_rows / plan_rows if plan_rows > 0 else float('inf')
+                        if ratio > 2 or ratio < 0.5:
+                            estimate_accuracy = f" ⚠️ {'Over' if ratio > 1 else 'Under'}estimated by {ratio:.1f}x"
+
+                    node_lines.append(f"{indent}   📊 Rows: {plan_rows or 'N/A'} planned → {actual_rows or 'N/A'} actual{estimate_accuracy}")
+
+                # Loop information
+                loops = node.get("Actual Loops", 1)
+                if loops > 1:
+                    node_lines.append(f"{indent}   🔄 Loops: {loops}")
+
+                # Width (average row size)
+                if "Plan Width" in node:
+                    node_lines.append(f"{indent}   📏 Avg Row Size: {node['Plan Width']} bytes")
+
+                # Table/relation information
+                if "Relation Name" in node:
+                    table_info = f"{indent}   🗂️  Table: {node['Relation Name']}"
+                    if "Alias" in node and node["Alias"] != node["Relation Name"]:
+                        table_info += f" (as {node['Alias']})"
+                    node_lines.append(table_info)
+
+                # Index information
+                if "Index Name" in node:
+                    index_info = f"{indent}   🔑 Index: {node['Index Name']}"
+                    if "Scan Direction" in node:
+                        index_info += f" ({node['Scan Direction']} scan)"
+                    node_lines.append(index_info)
+
+                # Join/Filter conditions
+                if "Hash Cond" in node:
+                    node_lines.append(f"{indent}   🔗 Hash Condition: {node['Hash Cond']}")
+                if "Index Cond" in node:
+                    node_lines.append(f"{indent}   🎯 Index Condition: {node['Index Cond']}")
+                if "Filter" in node:
+                    node_lines.append(f"{indent}   🔍 Filter: {node['Filter']}")
+                    if "Rows Removed by Filter" in node:
+                        node_lines.append(f"{indent}       ❌ Filtered out: {node['Rows Removed by Filter']} rows")
+
+                # Sort information
+                if "Sort Key" in node:
+                    node_lines.append(f"{indent}   🔤 Sort Key: {', '.join(node['Sort Key'])}")
+                if "Sort Method" in node:
+                    sort_info = f"{indent}   📈 Sort Method: {node['Sort Method']}"
+                    if "Sort Space Used" in node and "Sort Space Type" in node:
+                        sort_info += f" ({node['Sort Space Used']}kB {node['Sort Space Type']})"
+                    node_lines.append(sort_info)
+
+                # Buffer usage (I/O statistics)
+                buffer_info = []
+                buffer_fields = [
+                    ("Shared Hit Blocks", "💾 Shared Hit"),
+                    ("Shared Read Blocks", "💿 Shared Read"),
+                    ("Shared Dirtied Blocks", "✏️ Shared Dirty"),
+                    ("Shared Written Blocks", "💾 Shared Write"),
+                    ("Temp Read Blocks", "🌡️ Temp Read"),
+                    ("Temp Written Blocks", "🌡️ Temp Write")
+                ]
+
+                for field, label in buffer_fields:
+                    if field in node and node[field] > 0:
+                        buffer_info.append(f"{label}: {node[field]}")
+
+                if buffer_info:
+                    node_lines.append(f"{indent}   📊 Buffers: {' | '.join(buffer_info)}")
+
+                # Parallelism information
+                if node.get("Parallel Aware") and "Workers Planned" in node:
+                    parallel_info = f"{indent}   ⚡ Parallel: {node.get('Workers Planned', 0)} workers planned"
+                    if "Workers Launched" in node:
+                        parallel_info += f", {node['Workers Launched']} launched"
+                    node_lines.append(parallel_info)
+
+                # Memory usage
+                if "Hash Buckets" in node:
+                    memory_info = f"{indent}   🧠 Hash: {node['Hash Buckets']} buckets"
+                    if "Hash Batches" in node:
+                        memory_info += f", {node['Hash Batches']} batches"
+                    if "Peak Memory Usage" in node:
+                        memory_info += f", {node['Peak Memory Usage']}kB peak"
+                    node_lines.append(memory_info)
+
+                # Add blank line after each major node
+                node_lines.append("")
+
+                # Process child nodes recursively
+                if "Plans" in node and node["Plans"]:
+                    for child in node["Plans"]:
+                        node_lines.extend(format_node_detailed(child, level + 1))
+
+                return node_lines
+
+            # Format the main execution tree
+            formatted_lines = format_node_detailed(main_plan)
+            lines.extend(formatted_lines)
+
+            # Overall statistics summary
+            lines.append("=" * 40)
+            lines.append("📈 **EXECUTION SUMMARY**")
+            lines.append("=" * 40)
+
+            def extract_totals(node, totals=None):
+                if totals is None:
+                    totals = {
+                        'total_cost': 0,
+                        'total_time': 0,
+                        'total_rows': 0,
+                        'seq_scans': 0,
+                        'index_scans': 0,
+                        'sorts': 0,
+                        'joins': 0
+                    }
+
+                # Accumulate costs and times
+                totals['total_cost'] += node.get('Total Cost', 0)
+                totals['total_time'] += node.get('Actual Total Time', 0)
+                totals['total_rows'] += node.get('Actual Rows', 0)
+
+                # Count operation types
+                node_type = node.get('Node Type', '').lower()
+                if 'seq scan' in node_type:
+                    totals['seq_scans'] += 1
+                elif 'index scan' in node_type or 'index only scan' in node_type:
+                    totals['index_scans'] += 1
+                elif 'sort' in node_type:
+                    totals['sorts'] += 1
+                elif 'join' in node_type:
+                    totals['joins'] += 1
+
+                # Recurse into child plans
+                if 'Plans' in node:
+                    for child in node['Plans']:
+                        extract_totals(child, totals)
+
+                return totals
+
+            totals = extract_totals(main_plan)
+
+            lines.append(f"• Total Estimated Cost: {totals['total_cost']:.2f}")
+            lines.append(f"• Sequential Scans: {totals['seq_scans']}")
+            lines.append(f"• Index Scans: {totals['index_scans']}")
+            lines.append(f"• Sort Operations: {totals['sorts']}")
+            lines.append(f"• Join Operations: {totals['joins']}")
+
+            # Performance indicators
+            lines.append("\n🎯 **PERFORMANCE INDICATORS:**")
+            performance_notes = []
+
+            if totals['seq_scans'] > 0:
+                performance_notes.append("⚠️ Sequential scans detected - consider indexing")
+            if totals['sorts'] > 1:
+                performance_notes.append("📈 Multiple sorts - check ORDER BY optimization")
+            if totals['total_cost'] > 1000:
+                performance_notes.append("💰 High cost query - review for optimization opportunities")
+
+            if performance_notes:
+                lines.extend([f"• {note}" for note in performance_notes])
+            else:
+                lines.append("• ✅ No obvious performance issues detected")
+
+            return "\n".join(lines)
+
+        except Exception as e:
+            return f"Error formatting execution plan: {str(e)}\n\nRaw JSON: {str(plan_json)[:500]}..."
 
     async def _generate_query(
         self,
@@ -963,9 +1325,105 @@ Apply semantic understanding to map user concepts to available columns.
             'documentation' in query.lower() or
             'describe' in query.lower() or
             'structure' in query.lower() or
-            route.intent in [QueryIntent.EXPLORE_SCHEMA, QueryIntent.EXPLAIN_METADATA]
+            route.intent in [QueryIntent.EXPLAIN_METADATA, QueryIntent.EXPLORE_SCHEMA] and
+            route.user_role != UserRole.QUERY_DEVELOPER
         )
-        db_response.is_documentation = True
+        if is_documentation_request:
+            db_response.is_documentation = True
+
+        if route.user_role == UserRole.QUERY_DEVELOPER:
+            # Developers always get raw SQL and data results
+            if OutputComponent.SQL_QUERY in route.components:
+                sql_query, explanation, llm_response = await self._generate_query(
+                    query=query,
+                    route=route,
+                    metadata_context=metadata_context,
+                    conversation_context=conversation_context,
+                    vector_context=vector_context,
+                    user_context=user_context,
+                    context=context,
+                    **kwargs
+                )
+                db_response.query = sql_query
+                # Store the generation attempt explanation
+                if explanation:
+                    db_response.documentation = explanation
+
+            if db_response.query and OutputComponent.EXECUTION_PLAN in route.components:
+                self.logger.info(
+                    f"🔧 QUERY_DEVELOPER: Attempting execution with EXPLAIN ANALYZE"
+                )
+                # Try to execute with EXPLAIN ANALYZE
+                exec_result = await self._execute_query_explain(db_response.query)
+
+                if exec_result.success:
+                    # Extract execution plan
+                    if exec_result.query_plan:
+                        db_response.execution_plan = exec_result.query_plan
+
+                    # Extract JSON plan data from metadata
+                    plan_json = None
+                    if exec_result.metadata and "plan_json" in exec_result.metadata:
+                        plan_json = exec_result.metadata["plan_json"]
+
+                    # Extract performance metrics with JSON data
+                    if OutputComponent.PERFORMANCE_METRICS in route.components:
+                        db_response.performance_metrics = self._extract_performance_metrics(
+                            exec_result.query_plan,
+                            exec_result.execution_time_ms,
+                            plan_json=plan_json  # Pass JSON data
+                        )
+
+                    # Generate optimization tips with JSON data
+                    if OutputComponent.OPTIMIZATION_TIPS in route.components:
+                        db_response.optimization_tips, opt_llm_response = await self._generate_optimization_tips(
+                            sql_query=db_response.query,
+                            query_plan=exec_result.query_plan,
+                            metadata_context=metadata_context,
+                            context=context,
+                            plan_json=plan_json  # Pass JSON data
+                        )
+                        if opt_llm_response and not llm_response:
+                            llm_response = opt_llm_response
+                else:
+                    # Query failed - provide analysis of why it failed
+                    db_response.documentation = f"""**Query Execution Failed**
+**Generated SQL:**
+```sql
+{db_response.query}
+```
+
+**Error:** {exec_result.error_message}
+
+**Analysis:** The query could not be executed. This could be due to:
+- Table/column name issues
+- Syntax errors
+- Permission problems
+- Schema access restrictions
+
+**Recommendations:**
+1. Verify the table exists in the specified schema
+2. Check column names and data types
+3. Ensure proper schema permissions
+        """
+                    # Still provide basic optimization tips for the failed query
+                    if OutputComponent.OPTIMIZATION_TIPS in route.components:
+                        db_response.optimization_tips = [
+                            "🔍 Verify table name exists in available schemas",
+                            "📋 Use 'SHOW TABLES' to list available tables",
+                            "🔧 Check table name spelling and case sensitivity",
+                            "📊 Ensure proper schema permissions are granted"
+                        ]
+
+            # Always provide schema context for QUERY_DEVELOPER
+            if OutputComponent.SCHEMA_CONTEXT in route.components:
+                db_response.schema_context = await self._build_schema_context(
+                    route.primary_schema,
+                    route.allowed_schemas,
+                    discovered_tables=discovered_tables
+                )
+
+            return db_response, llm_response
 
         # Generate SQL query (if needed)
         if route.needs_query_generation and OutputComponent.SQL_QUERY in route.components:
@@ -1025,8 +1483,9 @@ Apply semantic understanding to map user concepts to available columns.
                         context=context
                     )
 
-        # FIXED: For documentation requests, format discovered table metadata instead of examples
-        if OutputComponent.DOCUMENTATION in route.components or is_documentation_request:
+        # For documentation requests, format discovered table metadata instead of examples
+        if (OutputComponent.DOCUMENTATION in route.components or is_documentation_request) and \
+        route.user_role != UserRole.QUERY_DEVELOPER:
             if discovered_tables:
                 # Generate detailed documentation for discovered tables
                 db_response.documentation = await self._format_table_documentation(
@@ -1034,7 +1493,8 @@ Apply semantic understanding to map user concepts to available columns.
                 )
 
         # Generate examples only if NOT a documentation request
-        if OutputComponent.EXAMPLES in route.components and not is_documentation_request:
+        if OutputComponent.EXAMPLES in route.components and not is_documentation_request and \
+        route.user_role != UserRole.QUERY_DEVELOPER:
             db_response.examples = await self._generate_examples(
                 query, metadata_context, discovered_tables, route.primary_schema
             )
@@ -1042,7 +1502,9 @@ Apply semantic understanding to map user concepts to available columns.
         # Schema context (if requested)
         if OutputComponent.SCHEMA_CONTEXT in route.components:
             db_response.schema_context = await self._build_schema_context(
-                route.primary_schema, route.allowed_schemas
+                route.primary_schema,
+                route.allowed_schemas,
+                discovered_tables=discovered_tables
             )
 
         return db_response, llm_response
@@ -1200,63 +1662,218 @@ Apply semantic understanding to map user concepts to available columns.
     async def _build_schema_context(
         self,
         primary_schema: str,
-        allowed_schemas: List[str]
+        allowed_schemas: List[str],
+        discovered_tables: List[TableMetadata] = None
     ) -> str:
         """
-        Build comprehensive schema context for the user.
+        Build schema context showing metadata of tables involved in the query.
 
-        Provides information about available tables, relationships, and schema structure.
+        Args:
+            primary_schema: Primary schema name (for context)
+            allowed_schemas: Allowed schemas (for context)
+            discovered_tables: List of tables discovered for this query
+
+        Returns:
+            Formatted metadata context of the involved tables
         """
+
+        if not discovered_tables:
+            return f"""**Query Context:**
+No specific tables identified for this query.
+
+**Available Schemas:** {', '.join([f'`{s}`' for s in allowed_schemas])}
+**Primary Schema:** `{primary_schema}`
+
+*Use table discovery tools to identify relevant tables for your query.*"""
 
         context_parts = []
 
-        # Schema overview
-        context_parts.append(
-            f"**Database Schema Information:**"
-        )
-        context_parts.append(f"- Primary Schema: `{primary_schema}`")
-        context_parts.append(
-            f"- Accessible Schemas: {', '.join([f'`{s}`' for s in allowed_schemas])}"
-        )
+        # Header
+        context_parts.append("**TABLES INVOLVED IN QUERY**")
+        context_parts.append("=" * 50)
 
-        # Get table counts per schema
-        schema_table_counts = {}
-        for schema_name in allowed_schemas:
-            try:
-                overview = await self.get_schema_overview(schema_name)
-                if overview:
-                    table_count = overview.get('table_count', 0)
-                    view_count = overview.get('view_count', 0)
-                    schema_table_counts[schema_name] = {
-                        'tables': table_count,
-                        'views': view_count
-                    }
-            except Exception as e:
-                self.logger.warning(f"Could not get overview for schema {schema_name}: {e}")
-                schema_table_counts[schema_name] = {'tables': 0, 'views': 0}
+        for i, table in enumerate(discovered_tables, 1):
+            # Table header
+            context_parts.append(f"\n**{i}. {table.full_name}**")
+            context_parts.append(f"   Type: {table.table_type}")
+            if table.row_count is not None and table.row_count >= 0:
+                context_parts.append(f"   Rows: {table.row_count:,}")
+            if table.comment:
+                context_parts.append(f"   Description: {table.comment}")
 
-        # Add schema details
-        if schema_table_counts:
-            context_parts.append(f"\n**Schema Details:**")
-            for schema_name, counts in schema_table_counts.items():
-                context_parts.append(
-                    f"- `{schema_name}`: {counts['tables']} tables, {counts['views']} views"
-                )
+            # Column information in compact format
+            if table.columns:
+                context_parts.append(f"\n   **Columns ({len(table.columns)}):**")
 
-        # Get hot tables (most accessed)
-        hot_tables = self.metadata_cache.get_hot_tables(allowed_schemas, limit=5)
-        if hot_tables:
-            context_parts.append(f"\n**Frequently Used Tables:**")
-            for schema_name, table_name, access_count in hot_tables:
-                context_parts.append(f"- `{schema_name}.{table_name}` (accessed {access_count} times)")
+                # Group columns by type for better readability
+                column_groups = {}
+                for col in table.columns:
+                    col_type = col.get('type', 'unknown')
+                    # Simplify type names for readability
+                    simple_type = self._simplify_column_type(col_type)
+                    if simple_type not in column_groups:
+                        column_groups[simple_type] = []
+                    column_groups[simple_type].append(col)
 
-        # Add usage tips
-        context_parts.append(f"\n**Usage Tips:**")
-        context_parts.append(f"- Use schema-qualified names: `{primary_schema}.table_name`")
-        context_parts.append(f"- Search for tables with: 'What tables contain [keyword]?'")
-        context_parts.append(f"- Get table structure with: 'Describe table [table_name]'")
+                # Display columns by type
+                for type_name, cols in column_groups.items():
+                    col_names = []
+                    for col in cols:
+                        name = col['name']
+                        # Add indicators for special columns
+                        if not col.get('nullable', True):
+                            name += "*"  # Required field
+                        if col.get('default'):
+                            name += "°"  # Has default
+                        col_names.append(name)
+
+                    context_parts.append(f"   • {type_name}: {', '.join(col_names)}")
+
+            # Primary key
+            if hasattr(table, 'primary_keys') and table.primary_keys:
+                pk_list = ', '.join(table.primary_keys)
+                context_parts.append(f"   **Primary Key:** {pk_list}")
+
+            # Foreign keys (relationships)
+            if hasattr(table, 'foreign_keys') and table.foreign_keys:
+                context_parts.append(f"   **Relationships:**")
+                for fk in table.foreign_keys[:3]:  # Limit to first 3 to avoid clutter
+                    if isinstance(fk, dict):
+                        ref_table = fk.get('referenced_table', 'unknown')
+                        ref_col = fk.get('referenced_column', 'unknown')
+                        fk_col = fk.get('column', 'unknown')
+                        context_parts.append(f"   • {fk_col} → {ref_table}.{ref_col}")
+
+                if len(table.foreign_keys) > 3:
+                    context_parts.append(f"   • ... and {len(table.foreign_keys) - 3} more")
+
+            # Indexes (for performance context)
+            if hasattr(table, 'indexes') and table.indexes:
+                idx_count = len(table.indexes)
+                context_parts.append(f"   **Indexes:** {idx_count} defined")
+
+                # Show a few key indexes
+                key_indexes = []
+                for idx in table.indexes[:2]:  # Show first 2
+                    if isinstance(idx, dict):
+                        idx_name = idx.get('name', 'unnamed')
+                        idx_cols = idx.get('columns', [])
+                        if idx_cols:
+                            key_indexes.append(f"{idx_name}({', '.join(idx_cols)})")
+
+                if key_indexes:
+                    context_parts.append(f"   • Key indexes: {', '.join(key_indexes)}")
+
+        # Add usage legend
+        context_parts.append("\n" + "=" * 50)
+        context_parts.append("**LEGEND:**")
+        context_parts.append("• Column* = Required (NOT NULL)")
+        context_parts.append("• Column° = Has default value")
+        context_parts.append("• Relationships show foreign key connections")
+
+        # Query development tips specific to these tables
+        context_parts.append("\n**QUERY DEVELOPMENT TIPS:**")
+
+        # Generate contextual tips based on discovered tables
+        tips = self._generate_table_specific_tips(discovered_tables)
+        context_parts.extend([f"• {tip}" for tip in tips])
 
         return "\n".join(context_parts)
+
+    def _simplify_column_type(self, col_type: str) -> str:
+        """Simplify PostgreSQL column types for readable grouping."""
+        col_type = col_type.lower()
+
+        # Group similar types
+        if 'varchar' in col_type or 'character varying' in col_type or 'text' in col_type:
+            return 'Text'
+        elif 'int' in col_type or 'serial' in col_type:
+            return 'Integer'
+        elif 'numeric' in col_type or 'decimal' in col_type or 'float' in col_type or 'double' in col_type:
+            return 'Number'
+        elif 'timestamp' in col_type or 'date' in col_type or 'time' in col_type:
+            return 'DateTime'
+        elif 'boolean' in col_type:
+            return 'Boolean'
+        elif 'uuid' in col_type:
+            return 'UUID'
+        elif 'json' in col_type:
+            return 'JSON'
+        elif 'array' in col_type:
+            return 'Array'
+        else:
+            return col_type.title()
+
+    def _generate_table_specific_tips(self, discovered_tables: List[TableMetadata]) -> List[str]:
+        """Generate query development tips specific to the discovered tables."""
+        tips = []
+
+        if not discovered_tables:
+            return ["No tables discovered for specific tips"]
+
+        # Analyze the tables for specific tips
+        table_names = [table.tablename for table in discovered_tables]
+        total_columns = sum(len(table.columns) for table in discovered_tables if table.columns)
+
+        # Tip about table joining
+        if len(discovered_tables) > 1:
+            tips.append(f"Multiple tables detected - consider JOIN relationships between {', '.join(table_names)}")
+
+        # Tip about column selection
+        if total_columns > 20:
+            tips.append("Many columns available - use SELECT specific_columns instead of SELECT * for better performance")
+
+        # Tip about primary keys for efficient queries
+        pk_tables = [t.tablename for t in discovered_tables if hasattr(t, 'primary_keys') and t.primary_keys]
+        if pk_tables:
+            tips.append(f"Use primary keys for efficient lookups: {', '.join(pk_tables)}")
+
+        # Tip about large tables
+        large_tables = [t.tablename for t in discovered_tables if t.row_count and t.row_count > 100000]
+        if large_tables:
+            tips.append(f"Large tables detected ({', '.join(large_tables)}) - consider LIMIT clauses and WHERE filtering")
+
+        # Tip about indexes
+        indexed_tables = [t.tablename for t in discovered_tables if hasattr(t, 'indexes') and t.indexes]
+        if indexed_tables:
+            tips.append(f"Indexed tables available - leverage existing indexes for optimal performance")
+
+        # Default tip if no specific tips generated
+        if not tips:
+            tips.append(
+                f"Focus on the {len(discovered_tables)} table(s) structure above for efficient query design"
+            )
+
+        return tips[:4]  # Limit to 4 tips
+
+    async def _get_schema_counts_direct(self, schema_name: str) -> Tuple[int, int]:
+        """Get table and view counts directly from information_schema."""
+        try:
+            async with self.session_maker() as session:
+                # Count tables
+                table_query = text("""
+                    SELECT COUNT(*)
+                    FROM information_schema.tables
+                    WHERE table_schema = :schema_name
+                    AND table_type = 'BASE TABLE'
+                """)
+                table_result = await session.execute(table_query, {"schema_name": schema_name})
+                table_count = table_result.scalar() or 0
+
+                # Count views
+                view_query = text("""
+                    SELECT COUNT(*)
+                    FROM information_schema.views
+                    WHERE table_schema = :schema_name
+                """)
+                view_result = await session.execute(view_query, {"schema_name": schema_name})
+                view_count = view_result.scalar() or 0
+
+                return table_count, view_count
+
+        except Exception as e:
+            self.logger.error(f"Direct schema count failed for {schema_name}: {e}")
+            return 0, 0
 
     async def _validate_user_sql(self, sql_query: str, metadata_context: str, context: Optional[str] = None) -> tuple[str, AIMessage]:
         """Validate user-provided SQL."""
@@ -1286,12 +1903,12 @@ You are validating SQL for multi-schema access.
 
 Provide detailed validation results.
 """
-
-        llm_response = await self._llm.ask(
-            prompt=f"Validate this SQL query:\n\n```sql\n{sql_query}\n```",
-            system_prompt=system_prompt,
-            temperature=0.0
-        )
+        async with self._llm as client:
+            llm_response = await client.ask(
+                prompt=f"Validate this SQL query:\n\n```sql\n{sql_query}\n```",
+                system_prompt=system_prompt,
+                temperature=0.0
+            )
 
         validation_text = str(llm_response.output) if llm_response.output else str(llm_response.response)
         return validation_text, llm_response
@@ -1797,6 +2414,8 @@ Available Schemas: {', '.join(self.allowed_schemas)}
         self,
         query: str,
         db_response: DatabaseResponse,
+        is_structured_output: bool,
+        structured_output_class: Optional[Type[BaseModel]],
         llm_response: Optional[AIMessage],
         route: RouteDecision,
         output_format: Optional[str],
@@ -1811,11 +2430,32 @@ Available Schemas: {', '.join(self.allowed_schemas)}
                 discovered_tables, route.user_role, query
             )
 
+        # Check if we have data to transform
+        has_data = (
+            OutputComponent.DATA_RESULTS in route.components or
+            OutputComponent.DATAFRAME_OUTPUT in route.components
+        ) and db_response.data
+
+        if has_data and is_structured_output:
+            # Handle DataFrame input
+            output_data = self._to_structured_format(
+                db_response.data,
+                structured_output_class
+            )
+            response_text = ""
         # Generate response text based on format preference
-        if output_format == "markdown":
+        elif output_format == "markdown":
             response_text = db_response.to_markdown()
+            if OutputComponent.DATAFRAME_OUTPUT in route.components and isinstance(db_response.data, pd.DataFrame):
+                output_data = db_response.data
+            elif OutputComponent.DATA_RESULTS in route.components:
+                output_data = db_response.data
         elif output_format == "json":
             response_text = db_response.to_json()
+            if OutputComponent.DATAFRAME_OUTPUT in route.components and isinstance(db_response.data, pd.DataFrame):
+                output_data = db_response.data
+            elif OutputComponent.DATA_RESULTS in route.components:
+                output_data = db_response.data
         else:
             response_text = self._format_as_text(
                 db_response,
@@ -1868,10 +2508,35 @@ Available Schemas: {', '.join(self.allowed_schemas)}
             usage=usage_info
         )
 
+    def _to_structured_format(self, data, output_format: Type) -> Union[List, object]:
+        """Convert data to structured format using Pydantic model."""
+        if not output_format:
+            return data
+
+        try:
+            if isinstance(data, pd.DataFrame):
+                data = data.to_dict('records')
+
+            if isinstance(data, list):
+                return [
+                    output_format(**item) if isinstance(item, dict) else item for item in data
+                ]
+            elif isinstance(data, dict):
+                return output_format(**data)
+            else:
+                self.logger.warning(
+                    "Data is neither list nor dict; returning as-is."
+                )
+                return data
+        except Exception as e:
+            self.logger.error(f"Unexpected error during structuring: {e}")
+            return data
+
     def _extract_performance_metrics(
         self,
         query_plan: str,
-        execution_time: float
+        execution_time: float,
+        plan_json: Optional[List[Dict]] = None
     ) -> Dict[str, Any]:
         """Extract performance metrics from query execution plan."""
 
@@ -1879,28 +2544,102 @@ Available Schemas: {', '.join(self.allowed_schemas)}
             "execution_time_ms": execution_time,
             "estimated_cost": "N/A",
             "rows_examined": "N/A",
+            "rows_planned": "N/A",
             "index_usage": "Unknown",
             "scan_types": [],
-            "join_types": []
+            "join_types": [],
+            "buffer_metrics": {},
+            "planning_time_ms": "N/A"
         }
 
+        # If we have JSON plan, extract from there (more accurate)
+        if plan_json and isinstance(plan_json, list) and len(plan_json) > 0:
+            try:
+                plan_data = plan_json[0]
+
+                # Planning time
+                if "Planning Time" in plan_data:
+                    metrics["planning_time_ms"] = plan_data["Planning Time"]
+
+                # Extract from main plan
+                main_plan = plan_data.get("Plan", {})
+
+                # Cost information
+                if "Total Cost" in main_plan:
+                    metrics["estimated_cost"] = main_plan["Total Cost"]
+
+                # Row information
+                if "Actual Rows" in main_plan:
+                    metrics["rows_examined"] = main_plan["Actual Rows"]
+                if "Plan Rows" in main_plan:
+                    metrics["rows_planned"] = main_plan["Plan Rows"]
+
+                # Buffer statistics
+                buffer_stats = {}
+                for key in ["Shared Hit Blocks", "Shared Read Blocks", "Temp Read Blocks", "Temp Written Blocks"]:
+                    if key in main_plan:
+                        buffer_stats[key.lower().replace(" ", "_")] = main_plan[key]
+                if buffer_stats:
+                    metrics["buffer_metrics"] = buffer_stats
+
+                # Recursively analyze all nodes for scan/join types
+                def analyze_node(node):
+                    node_type = node.get("Node Type", "")
+
+                    # Scan types
+                    if "scan" in node_type.lower():
+                        scan_type = node_type
+                        metrics["scan_types"].append(scan_type)
+
+                        # Index usage detection
+                        if "index" in node_type.lower():
+                            if "index only" in node_type.lower():
+                                metrics["index_usage"] = "Index-only scan"
+                            elif "bitmap" in node_type.lower():
+                                metrics["index_usage"] = "Bitmap index scan"
+                            else:
+                                metrics["index_usage"] = "Index scan"
+                        elif "seq" in node_type.lower():
+                            metrics["index_usage"] = "Sequential scan (no indexes)"
+
+                    # Join types
+                    if "join" in node_type.lower():
+                        metrics["join_types"].append(node_type)
+
+                    # Process child plans
+                    if "Plans" in node:
+                        for child_plan in node["Plans"]:
+                            analyze_node(child_plan)
+
+                analyze_node(main_plan)
+
+                # Remove duplicates
+                metrics["scan_types"] = list(set(metrics["scan_types"]))
+                metrics["join_types"] = list(set(metrics["join_types"]))
+
+                return metrics
+
+            except Exception as e:
+                self.logger.error(f"Error extracting metrics from JSON plan: {e}")
+                # Fall back to text parsing
+
+        # Fallback: Extract from text plan
         if not query_plan:
             return metrics
 
         lines = query_plan.split('\n')
-
         for line in lines:
             line_lower = line.lower()
 
             # Extract cost information
-            if 'cost=' in line_lower:
-                cost_match = re.search(r'cost=[\d.]+\.\.([\d.]+)', line)
+            if 'cost:' in line_lower:
+                cost_match = re.search(r'cost:\s*([\d.]+)', line)
                 if cost_match:
                     metrics["estimated_cost"] = float(cost_match.group(1))
 
             # Extract row information
-            if 'rows=' in line_lower:
-                rows_match = re.search(r'rows=(\d+)', line)
+            if 'rows:' in line_lower:
+                rows_match = re.search(r'rows:\s*(\d+)', line)
                 if rows_match:
                     metrics["rows_examined"] = int(rows_match.group(1))
 
@@ -1937,22 +2676,20 @@ Available Schemas: {', '.join(self.allowed_schemas)}
         sql_query: str,
         query_plan: str,
         metadata_context: str,
-        context: Optional[str] = None
-    ) -> Union[List[str], AIMessage]:
+        context: Optional[str] = None,
+        plan_json: Optional[List[Dict]] = None  # Add JSON plan data
+    ) -> Tuple[List[str], Optional[AIMessage]]:
         """
-        LLM-based optimization tips instead of manual pattern matching.
-
-        This uses the LLM to analyze execution plans and provide intelligent
-        optimization recommendations.
+        LLM-based optimization tips with better parsing.
         """
         if not query_plan:
-            return ["Enable query plan analysis for optimization suggestions"]
+            return ["Enable query plan analysis for optimization suggestions"], None
 
         self.logger.debug("🔧 Generating LLM-based optimization tips...")
 
-        # Create optimization analysis prompt
+        # Enhanced prompt with better formatting instructions
         optimization_prompt = f"""
-You are a database performance expert analyzing a PostgreSQL query execution plan.
+You are a PostgreSQL performance tutor helping developers understand and fix query performance issues.
 
 **SQL Query:**
 ```sql
@@ -1963,57 +2700,140 @@ You are a database performance expert analyzing a PostgreSQL query execution pla
 ```
 {query_plan}
 ```
+* If available, here is the JSON representation of the execution plan for more accurate analysis: *
+```json
+{plan_json}
+```
 
 **Available Schema Context:**
-{metadata_context[:1000]}...
+{metadata_context[:1000] if metadata_context else 'No schema context available'}
 
-**Task:** Analyze this execution plan and provide 3-5 specific, actionable optimization recommendations.
+{context}
 
-**Focus on:**
-1. Index recommendations (specific column combinations)
-2. Query restructuring suggestions
-3. Join optimization opportunities
-4. Performance bottlenecks identification
-5. Memory/work_mem tuning suggestions
+**EDUCATIONAL MISSION:**
+Your goal is to teach PostgreSQL optimization concepts while providing actionable solutions. Each recommendation should:
+1. EXPLAIN the underlying PostgreSQL concept (why this matters)
+2. IDENTIFY the specific issue in this query
+3. PROVIDE the exact SQL commands to fix it
+4. EXPLAIN what the fix accomplishes
 
-**Format:** Return each tip as a bullet point starting with an appropriate emoji (⚡, 📈, 🔗, 💾, etc.)
+**RESPONSE FORMAT:**
+- Start each tip with an emoji and descriptive title
+- Include a brief explanation of the PostgreSQL concept
+- Provide specific SQL commands with actual table/column names from the query
+- Explain the expected performance impact
 
-**Example good tips:**
-- ⚡ Add composite index on (column1, column2) to eliminate sequential scan
-- 📈 Consider partitioning table by date_column for better performance
-- 🔗 Rewrite EXISTS subquery as LEFT JOIN for better performance
+**EXAMPLE GOOD TIP:**
+📊 **Update Table Statistics for Better Query Planning**
 
-Provide specific, actionable recommendations based on the actual execution plan:
+**What's happening:** PostgreSQL's query planner uses table statistics to estimate how many rows operations will return. When these statistics are outdated, the planner makes poor decisions (like choosing slow sequential scans over fast index scans).
+
+**The issue:** Your execution plan shows estimated 42M rows but actual 5 rows - this massive discrepancy indicates stale statistics on the `form_data` table.
+
+**Fix this with:**
+```sql
+-- Update statistics for the specific table
+ANALYZE hisense.form_data;
+
+-- Or update all tables in the schema
+ANALYZE;
+
+-- Check when statistics were last updated
+SELECT schemaname, tablename, last_analyze, last_autoanalyze
+FROM pg_stat_user_tables
+WHERE tablename = 'form_data';
+```
+
+**Why this helps:** Fresh statistics allow PostgreSQL to choose optimal execution paths, potentially changing sequential scans to index scans and improving query performance by orders of magnitude.
+
+**FOCUS AREAS FOR THIS QUERY:**
+Based on the execution plan, prioritize recommendations about:
+- Statistics accuracy (row estimate discrepancies)
+- Index usage and creation with specific column combinations
+- Query structure improvements with rewritten SQL examples
+- Buffer usage and I/O optimization
+- Join strategy improvements (if applicable)
+
+**IMPORTANT REQUIREMENTS:**
+- Always include the actual SQL commands to implement your suggestions
+- Use the real table and column names from the provided query
+- Explain PostgreSQL concepts in accessible terms
+- Focus on the most impactful optimizations first (biggest performance gains)
+- Limit to 3-4 high-impact recommendations
+
+Provide specific, educational recommendations with concrete implementation steps:
 """
         try:
             # Call LLM for optimization analysis
-            llm_response = await self._llm.ask(
-                prompt=optimization_prompt,
-                temperature=0.1,  # Low temperature for consistent technical advice
-                max_tokens=800
-            )
+            async with self._llm as client:
+                llm_response = await client.ask(
+                    prompt=optimization_prompt,
+                    temperature=0.1,
+                    max_tokens=4096,
+                    max_retries=2,
+                    use_tools=False,
+                    stateless=True
+                )
 
             response_text = str(llm_response.output) if llm_response.output else str(llm_response.response)
+            self.logger.debug(f"🔧 LLM Optimization Response: {response_text[:200]}...")
 
-            # Extract bullet points from LLM response
+            # Enhanced parsing logic
             tips = []
-            for line in response_text.split('\n'):
-                line = line.strip()
-                if line and (line.startswith('-') or line.startswith('•') or any(emoji in line[:3] for emoji in ['⚡', '📈', '🔗', '💾', '🔧', '📊'])):
-                    # Clean up the formatting
-                    tip = line.lstrip('- •').strip()
-                    if tip:
-                        tips.append(tip)
-
+            tips = self._parse_tips(response_text)
             if tips:
-                self.logger.info(f"✅ Generated {len(tips)} LLM-based optimization tips")
-                return tips[:5], llm_response  # Limit to 5 tips
-
+                self.logger.info(f"✅ Generated {len(tips)} optimization tips")
+                return tips, llm_response
         except Exception as e:
-            self.logger.error(f"❌ LLM optimization analysis failed: {e}")
+            self.logger.error(f"LLM Optimization Tips Error: {e}")
 
         # Fallback to basic analysis if LLM fails
-        return self._generate_basic_optimization_tips(sql_query, query_plan), None
+        return self._generate_basic_optimization_tips(
+            sql_query,
+            query_plan
+        ), None
+
+    def _parse_tips(self, response_text: str) -> List[str]:
+        """Parse performance tips with multi-line content."""
+        tips = []
+        current_tip = []
+        in_tip = False
+
+        lines = response_text.split('\n')
+
+        for line in lines:
+            line = line.strip()
+
+            # Start of a new tip (emoji + title)
+            if (line and any(emoji in line[:10] for emoji in ['📊', '⚡', '🔗', '💾', '🔧', '📈', '🎯', '🔍'])
+                and ('**' in line or line.startswith(('📊', '⚡', '🔗', '💾', '🔧', '📈', '🎯', '🔍')))):
+
+                # Save previous tip if exists
+                if current_tip:
+                    tip_text = '\n'.join(current_tip).strip()
+                    if len(tip_text) > 50:  # Only keep substantial tips
+                        tips.append(tip_text)
+
+                # Start new tip
+                current_tip = [line]
+                in_tip = True
+
+            elif in_tip and line:
+                # Continue building current tip - KEEP ALL CONTENT
+                current_tip.append(line)
+
+            elif in_tip and not line:
+                # Empty line - add it to preserve formatting
+                current_tip.append('')
+
+        # Add the last tip
+        if current_tip:
+            tip_text = '\n'.join(current_tip).strip()
+            if len(tip_text) > 50:
+                tips.append(tip_text)
+
+        # Return all tips without truncation - developers need complete information
+        return tips
 
     def _generate_basic_optimization_tips(self, sql_query: str, query_plan: str) -> List[str]:
         """Fallback basic optimization tips using pattern matching."""
