@@ -7,6 +7,7 @@ from functools import partial
 import logging
 import time
 from pathlib import Path
+import contextlib
 import io
 import uuid
 import aiofiles
@@ -115,6 +116,9 @@ class GoogleGenAIClient(AbstractClient):
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Clean up the client context."""
+        if self.client:
+            with contextlib.suppress(Exception):
+                await self.client._api_client._aiohttp_session.close()   # pylint: disable=E1101 # noqa
         self.client = None
 
     def _analyze_prompt_for_tools(self, prompt: str) -> List[str]:
