@@ -150,7 +150,7 @@ openai = [
 google = [
     "google-api-python-client>=2.166.0,<=2.177.0",
     "google-cloud-texttospeech==2.27.0",
-    "google-genai>=1.32.0",
+    "google-genai>=1.32.0,<=1.36.0",
     "google-cloud-aiplatform==1.110.0",
 ]
 

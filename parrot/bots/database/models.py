@@ -19,6 +19,7 @@ class UserRole(str, Enum):
     DATA_SCIENTIST = "data_scientist"    # Schema context + DataFrame conversion (no limits)
     DATABASE_ADMIN = "database_admin"    # SQL, execution plans, performance, optimization, sample data
     DEVELOPER = "developer"              # SQL/schema, explanations, examples, no data
+    QUERY_DEVELOPER = "query_developer"  # SQL/schema, execution plans, performance, optimization, no data
 
 class OutputComponent(Flag):
     """Flags for different response components - allows combinations."""
@@ -38,7 +39,8 @@ class OutputComponent(Flag):
     BASIC_QUERY = SQL_QUERY | DATA_RESULTS
     FULL_ANALYSIS = SQL_QUERY | EXECUTION_PLAN | PERFORMANCE_METRICS | OPTIMIZATION_TIPS
     DEVELOPER_FOCUS = SQL_QUERY | DOCUMENTATION | EXAMPLES | SCHEMA_CONTEXT
-    BUSINESS_FOCUS = DATA_RESULTS | SAMPLE_DATA
+    BUSINESS_FOCUS = DATA_RESULTS
+    QUERY_DEVELOPER_FOCUS = SQL_QUERY | EXECUTION_PLAN | PERFORMANCE_METRICS | OPTIMIZATION_TIPS | SCHEMA_CONTEXT
 
 class OutputFormat(str, Enum):
     """Defines the desired format of the response."""
@@ -78,7 +80,6 @@ class QueryIntent(str, Enum):
     EXPLAIN_METADATA = "explain_metadata"      # Table/column documentation
     CREATE_EXAMPLES = "create_examples"        # Generate usage examples
     GENERATE_REPORT = "generate_report"        # Create a report from the query results
-
 
 @dataclass
 class SchemaMetadata:
@@ -186,6 +187,7 @@ class QueryExecutionResponse(BaseModel):
     query_plan: Optional[str] = None
     error_message: Optional[str] = None
     schema_used: str
+    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)
 
 
 # ============================================================================
@@ -194,8 +196,7 @@ class QueryExecutionResponse(BaseModel):
 
 ROLE_COMPONENT_DEFAULTS: Dict[UserRole, OutputComponent] = {
     UserRole.BUSINESS_USER: (
-        OutputComponent.DATA_RESULTS |
-        OutputComponent.SAMPLE_DATA
+        OutputComponent.DATA_RESULTS
     ),
     UserRole.DATA_ANALYST: (
         OutputComponent.SQL_QUERY |
@@ -225,6 +226,14 @@ ROLE_COMPONENT_DEFAULTS: Dict[UserRole, OutputComponent] = {
         OutputComponent.EXAMPLES |
         OutputComponent.SCHEMA_CONTEXT
         # Note: No DATA_RESULTS for developers by default
+    ),
+    UserRole.QUERY_DEVELOPER: (
+        OutputComponent.SQL_QUERY |
+        OutputComponent.EXECUTION_PLAN |
+        OutputComponent.PERFORMANCE_METRICS |
+        OutputComponent.OPTIMIZATION_TIPS |
+        OutputComponent.SCHEMA_CONTEXT
+        # Note: No DATA_RESULTS for query developers by default
     )
 }
 
