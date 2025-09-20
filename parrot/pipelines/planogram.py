@@ -2147,7 +2147,7 @@ Respond with the structured data for all {len(detections)} objects.
             )
 
             major_unexpected = [
-                p for p in unexpected if "ink bottle" not in p.lower() and "price tag" not in p.lower()
+                p for p in unexpected if "ink" not in p.lower() and "price tag" not in p.lower()
             ]
 
             # MODIFIED: Status determination logic with brand check override
