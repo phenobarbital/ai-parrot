@@ -23,10 +23,12 @@ class TextComplianceResult(BaseModel):
     match_type: str
 
 class BrandComplianceResult(BaseModel):
+    """Result of brand logo compliance checking"""
     expected_brand: str
     found_brand: Optional[str] = None
     found: bool = False
     confidence: float = 0.0
+
 class ComplianceResult(BaseModel):
     """Final compliance check result"""
     shelf_level: str = Field(description="Shelf level being checked")
