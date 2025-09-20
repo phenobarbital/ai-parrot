@@ -3275,7 +3275,7 @@ Your job is to produce a final summary from the following text and identify the 
         session_id: Optional[str] = None,
     ) -> List[IdentifiedProduct]:
         """
-        Step 2: Identify products using detected boxes, reference images, and Gemini Vision.
+        Identify products using detected boxes, reference images, and Gemini Vision.
 
         This method sends the full image, reference images, and individual crops of each
         detection to Gemini for precise identification, returning a structured list of
@@ -3298,6 +3298,7 @@ Your job is to produce a final summary from the following text and identify the 
         # --- 1. Prepare Images and Metadata ---
         main_image_pil = self._get_image_from_input(image)
         detection_details = []
+        id_to_details = {}
         for i, det in enumerate(detections, start=1):
             shelf, pos = self._shelf_and_position(det, shelf_regions)
             detection_details.append({
@@ -3307,6 +3308,7 @@ Your job is to produce a final summary from the following text and identify the 
                 "position": pos,
                 "crop": self._crop_box(main_image_pil, det),
             })
+            id_to_details[i] = {"shelf": shelf, "position": pos, "detection": det}
 
         # --- 2. Construct the Multi-Modal Prompt for Gemini ---
         # The prompt is a list of parts: text instructions, reference images,
@@ -3334,6 +3336,9 @@ Your job is to produce a final summary from the following text and identify the 
         # Add each cropped detection image
         for item in detection_details:
             contents.append(item['crop'])
+
+        for i, det in enumerate(detections, 1):
+            contents.append(self._crop_box(main_image_pil, det))
 
         # Manually generate the JSON schema from the Pydantic model
         raw_schema = IdentificationResponse.model_json_schema()
@@ -3369,19 +3374,32 @@ Your job is to produce a final summary from the following text and identify the 
 
             # --- 5. Link LLM results back to original detections ---
             final_products = []
-            id_to_detection = {i: det for i, det in enumerate(detections, 1)}
-
             for item in identified_items:
                 # Case 1: Item was pre-detected (has a positive ID)
-                if item.detection_id > 0 and item.detection_id in id_to_details:
+                if item.detection_id is not None and item.detection_id > 0 and item.detection_id in id_to_details:
                     details = id_to_details[item.detection_id]
                     item.detection_box = details["detection"]
-                    # SAFETY NET: ALWAYS use our own logic for shelf and position
-                    item.shelf_location = details["shelf"]
-                    item.position_on_shelf = details["position"]
+                    if not item.shelf_location:
+                        self.logger.warning(
+                            f"LLM did not provide shelf_location for ID {item.detection_id}. Using geometric fallback."
+                        )
+                        item.shelf_location = details["shelf"]
+                    if not item.position_on_shelf:
+                        item.position_on_shelf = details["position"]
                     final_products.append(item)
 
-                # Case 2: Item was newly found by the LLM (has a negative ID from our validator)
+                # Case 2: Item was newly found by the LLM
+                elif item.detection_id is None:
+                    if item.detection_box:
+                        shelf, pos = self._shelf_and_position(item.detection_box, shelf_regions)
+                        item.shelf_location = shelf
+                        item.position_on_shelf = pos
+                        self.logger.info(
+                            f"Adding new object found by LLM: {item.product_type} on shelf '{shelf}'"
+                        )
+                        final_products.append(item)
+
+                # Case 3: Item was newly found by the LLM (has a negative ID from our validator)
                 elif item.detection_id < 0:
                     if item.detection_box:
                         # SAFETY NET: ALWAYS use our own logic for shelf and position
@@ -3391,8 +3409,9 @@ Your job is to produce a final summary from the following text and identify the 
                         self.logger.info(f"Adding new object found by LLM: {item.product_type} on shelf '{shelf}'")
                         final_products.append(item)
                     else:
-                        self.logger.warning(f"LLM-found item with ID '{item.detection_id}' is missing a detection_box, skipping.")
-
+                        self.logger.warning(
+                            f"LLM-found item with ID '{item.detection_id}' is missing a detection_box, skipping."
+                        )
 
                 # Catch any other weird cases
                 else:

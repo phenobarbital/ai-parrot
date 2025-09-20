@@ -8,14 +8,12 @@ import asyncio
 import os
 from typing import List, Dict, Any, Optional, Union, Tuple
 from collections import defaultdict, Counter
-from enum import Enum
+from datetime import datetime
 import unicodedata
 import re
 import traceback
 from pathlib import Path
-from datetime import datetime
 import math
-import io
 import pytesseract
 from PIL import (
     Image,
@@ -28,19 +26,17 @@ import numpy as np
 from pydantic import BaseModel, Field
 import cv2
 import torch
-from transformers import CLIPProcessor, CLIPModel
 from google.genai.errors import ServerError
-from navconfig.logging import logging
 from .abstract import AbstractPipeline
 from ..models.detections import (
     DetectionBox,
+    Detection,
     Detections,
     ShelfRegion,
     IdentifiedProduct,
     PlanogramDescription,
     PlanogramDescriptionFactory,
 )
-from ..clients.google import GoogleGenAIClient, GoogleModel
 from ..models.compliance import (
     ComplianceResult,
     ComplianceStatus,
@@ -48,33 +44,8 @@ from ..models.compliance import (
     TextMatcher,
     BrandComplianceResult
 )
-try:
-    from ultralytics import YOLO  # yolo12m works with this API
-except Exception:
-    YOLO = None
-from .models import ObjectType, VerificationResult, PROMO_NAMES
+from .detector import AbstractDetector
 
-
-def clean_ocr_text(text: str) -> str:
-    """
-    Cleans an OCR string by removing non-alphanumeric characters (except spaces)
-    and normalizing whitespace.
-
-    Args:
-        text: The raw OCR output string.
-
-    Returns:
-        A cleaned-up string.
-    """
-    if not text:
-        return ""
-
-    # 1. Remove all characters that are NOT letters, numbers, or whitespace
-    #    [^a-zA-Z0-9\s] means "match any character that is not in this set"
-    only_alnum_and_space = re.sub(r'[^a-zA-Z0-9\s-]', '', text)
-    # 2. Normalize whitespace: collapse multiple spaces into one, and trim ends
-    cleaned_text = " ".join(only_alnum_and_space.split())
-    return cleaned_text
 
 CID = {
     "promotional_candidate": 103,
@@ -86,14 +57,7 @@ CID = {
     "poster_text": 106,
 }
 
-
-def _clamp(W,H,x1,y1,x2,y2):
-    x1,x2 = int(max(0,min(W-1,min(x1,x2)))), int(max(0,min(W-1,max(x1,x2))))
-    y1,y2 = int(max(0,min(H-1,min(y1,y2)))), int(max(0,min(H-1,max(y1,y2))))
-    return x1, y1, x2, y2
-
-
-class RetailDetector:
+class RetailDetector(AbstractDetector):
     """
     Reference-guided Phase-1 detector.
 
@@ -112,151 +76,62 @@ class RetailDetector:
     def __init__(
         self,
         yolo_model: str = "yolo12l.pt",
-        llm: Any = None,
         conf: float = 0.15,
         iou: float = 0.5,
         device: str = "cuda" if torch.cuda.is_available() else "cpu",
         reference_images: Optional[List[str]] = None,  # first is the poster
         **kwargs
     ):
-        if isinstance(yolo_model, str):
-            assert YOLO is not None, "ultralytics is required"
-            self.yolo = YOLO(yolo_model)
-        else:
-            self.yolo = yolo_model
-        self.conf = conf
-        self.iou = iou
-        self.device = device
-        self.llm = llm
-        self.google = GoogleGenAIClient(
-            model=GoogleModel.GEMINI_2_5_FLASH,
-            temperature=0.0,
-            max_retries=2,
-            timeout=20
+        super().__init__(
+            yolo_model=yolo_model,
+            conf=conf,
+            iou=iou,
+            device=device,
+            **kwargs
         )
-        # Endcap geometry defaults (can be tuned per program)
-        self.endcap_aspect_ratio = 1.35   # width / height
-        self.left_margin_ratio   = kwargs.get('left_margin_ratio', 0.01)
-        self.right_margin_ratio  = kwargs.get('right_margin_ratio', 0.03)
-        self.top_margin_ratio    = kwargs.get('top_margin_ratio', 0.02)
-
         # Shelf split defaults: header/middle/bottom
         self.shelf_split = (0.40, 0.25, 0.35)  # sums to ~1.0
         # Useful elsewhere (price tag guardrails, etc.)
         self.label_strip_ratio = 0.06
-
-        # CLIP for open-vocab and ref matching
-        self.clip = CLIPModel.from_pretrained(
-            "openai/clip-vit-base-patch32"
-        ).to(device)
-        self.proc = CLIPProcessor.from_pretrained(
-            "openai/clip-vit-base-patch32"
-        )
-        self.logger = logging.getLogger('parrot.pipelines.planogram.RetailDetector')
-
         self.ref_paths = reference_images or []
         self.ref_ad = self.ref_paths[0] if self.ref_paths else None
         self.ref_products = self.ref_paths[1:] if len(self.ref_paths) > 1 else []
-
         self.ref_ad_feat = self._embed_image(self.ref_ad) if self.ref_ad else None
-        self.ref_prod_feats = [self._embed_image(p) for p in self.ref_products] if self.ref_products else []
+        self.ref_prod_feats = [
+            self._embed_image(p) for p in self.ref_products
+        ] if self.ref_products else []
 
+    # -------------------------- Main Detection Entry ---------------------------------
+    async def detect(
+        self,
+        image: Image.Image,
+        image_array: np.array,
+        endcap: Detection,
+        ad: Detection,
+        planogram: Optional[PlanogramDescription] = None,
+        debug_yolo: Optional[str] = None,
+        debug_phase1: Optional[str] = None,
+        debug_phases: Optional[str] = None,
+    ):
+        h, w = image_array.shape[:2]
         # text prompts (backup if no product refs)
-        self.text_tokens = self.proc(text=[
-            "retail promotional poster lightbox",
-            "Printer device",
-            "Epson Product cardboard box",
-            "Price Tag",
-            "Cartridge ink bottle",
-        ], return_tensors="pt", padding=True).to(self.device)
+        text = [f"a photo of a {t}" for t in planogram.text_tokens if t]
+        if not text:
+            text = [
+                "a photo of a retail promotional poster lightbox",
+                "a photo of a product box",
+                "a photo of a product cartridge bottle",
+                "a photo of a price tag"
+            ]
+        self.text_tokens = self.proc(
+            text=text,
+            return_tensors="pt",
+            padding=True
+        ).to(self.device)
         with torch.no_grad():
             self.text_feats = self.clip.get_text_features(**self.text_tokens)
             self.text_feats = self.text_feats / self.text_feats.norm(dim=-1, keepdim=True)
 
-    def _iou(self, a: DetectionBox, b: DetectionBox) -> float:
-        ix1, iy1 = max(a.x1, b.x1), max(a.y1, b.y1)
-        ix2, iy2 = min(a.x2, b.x2), min(a.y2, b.y2)
-        iw, ih = max(0, ix2 - ix1), max(0, iy2 - iy1)
-        inter = iw * ih
-        if inter <= 0:
-            return 0.0
-        ua = a.area + b.area - inter
-        return inter / float(max(1, ua))
-
-    def _iou_box_tuple(self, d: "DetectionBox", box: tuple[int,int,int,int]) -> float:
-        ax1, ay1, ax2, ay2 = box
-        ix1, iy1 = max(d.x1, ax1), max(d.y1, ay1)
-        ix2, iy2 = min(d.x2, ax2), min(d.y2, ay2)
-        if ix2 <= ix1 or iy2 <= iy1:
-            return 0.0
-        inter = (ix2 - ix1) * (iy2 - iy1)
-        return inter / float(d.area + (ax2-ax1)*(ay2-ay1) - inter + 1e-6)
-
-    def _consolidate_promos(
-        self,
-        dets: List["DetectionBox"],
-        ad_box: Optional[tuple[int,int,int,int]],
-    ) -> tuple[List["DetectionBox"], Optional[tuple[int,int,int,int]]]:
-        """Keep a single promotional candidate, remove the rest.
-        If none, synthesize one from ad_box.
-        """
-        promos = [d for d in dets if d.class_name == "promotional_candidate"]
-        keep = [d for d in dets if d.class_name != "promotional_candidate"]
-
-        # if YOLO didn’t produce a promo, synthesize one from ad_box
-        if not promos and ad_box:
-            x1, y1, x2, y2 = ad_box
-            promos = [
-                DetectionBox(
-                    x1=x1, y1=y1, x2=x2, y2=y2,
-                    confidence=0.95,
-                    class_id=103,
-                    class_name="promotional_candidate",
-                    area=(x2-x1)*(y2-y1)
-                )
-            ]
-
-        if not promos:
-            return keep, ad_box
-
-        # cluster by IoU and keep the biggest in the biggest cluster
-        promos = sorted(promos, key=lambda d: d.area, reverse=True)
-        clusters: list[list["DetectionBox"]] = []
-        for d in promos:
-            placed = False
-            for cl in clusters:
-                if any(self._iou(d, e) >= 0.5 for e in cl):
-                    cl.append(d)
-                    placed = True
-                    break
-            if not placed:
-                clusters.append([d])
-        best_cluster = max(clusters, key=lambda cl: sum(x.area for x in cl))
-        main = max(best_cluster, key=lambda d: d.area)
-        keep.append(main)
-        return keep, (main.x1, main.y1, main.x2, main.y2)
-
-    # -------------------------- public entry ---------------------------------
-    async def detect(
-        self,
-        image: Image.Image,
-        planogram: Optional[PlanogramDescription] = None,
-        debug_raw: Optional[str] = None,
-        debug_phase1: Optional[str] = None,
-        debug_phases: Optional[str] = None,
-    ):
-        # 0) PIL -> enhanced -> numpy
-        pil = image.convert("RGB") if isinstance(image, Image.Image) else Image.open(image).convert("RGB")
-        enhanced = self._enhance(pil)
-        img_array = np.array(enhanced)  # RGB
-
-        h, w = img_array.shape[:2]
-
-        # 1) Find the poster:
-        debug_poster_path = debug_raw.replace(".png", "_poster_debug.png") if debug_raw else None
-        endcap, ad, brand, panel_text = await self._find_poster(
-            enhanced, planogram, debug_poster_path
-        )
         # Check if detections are valid before proceeding
         if not endcap or not ad:
             print("ERROR: Failed to get required detections.")
@@ -269,7 +144,7 @@ class RetailDetector:
         # Unpack the Pixel coordinates
         rx1, ry1, rx2, ry2 = roi_box
 
-        roi = img_array[ry1:ry2, rx1:rx2]
+        roi = image_array[ry1:ry2, rx1:rx2]
 
         # 4) YOLO inside ROI
         yolo_props = self._yolo_props(roi, rx1, ry1)
@@ -308,63 +183,29 @@ class RetailDetector:
             roi_h = max(1, ry2 - ry1)
             header_limit_y = ry1 + int(0.4 * roi_h)
 
-        if debug_raw:
-            dbg = self._draw_phase_areas(img_array.copy(), yolo_props, roi_box)
+        if debug_yolo:
+            dbg = self._draw_phase_areas(image_array.copy(), yolo_props, roi_box)
             if debug_phases:
                 cv2.imwrite(
                     debug_phases,
                     cv2.cvtColor(dbg, cv2.COLOR_RGB2BGR)
                 )
-            dbg = self._draw_yolo(img_array.copy(), yolo_props, roi_box, shelf_lines)
+            dbg = self._draw_yolo(image_array.copy(), yolo_props, roi_box, shelf_lines)
             cv2.imwrite(
-                debug_raw,
+                debug_yolo,
                 cv2.cvtColor(dbg, cv2.COLOR_RGB2BGR)
             )
 
         # 5) classify YOLO → proposals (works w/ bands={}, header_limit_y above)
         proposals = await self._classify_proposals(
-            img_array,
+            image_array,
             yolo_props,
             bands,
             header_limit_y,
             ad_box
         )
         # 6) shrink -> merge -> remove those fully inside the poster
-        # proposals = self._shrink(img_array, proposals)
-        # proposals = self._merge(proposals, iou_same=0.45)
-
-        if brand:
-            bx1, by1, bx2, by2 = brand.bbox.get_pixel_coordinates(width=w, height=h)
-            proposals.append(
-                DetectionBox(
-                    x1=bx1, y1=by1, x2=bx2, y2=by2,
-                    confidence=brand.confidence,
-                    class_id=CID["brand_logo"],
-                    class_name="brand_logo",
-                    area=(bx2 - bx1) * (by2 - by1),
-                    ocr_text=brand.content
-                )
-            )
-            print(f"  + Injected brand_logo: '{brand.content}'")
-
-        if panel_text:
-            tx1, ty1, tx2, ty2 = panel_text.bbox.get_pixel_coordinates(width=w, height=h)
-            proposals.append(
-                DetectionBox(
-                    x1=tx1, y1=ty1, x2=tx2, y2=ty2,
-                    confidence=panel_text.confidence,
-                    class_id=CID["poster_text"],
-                    class_name="poster_text",
-                    area=(tx2 - tx1) * (ty2 - ty1),
-                    ocr_text=panel_text.content.replace('.', ' ')
-                )
-            )
-            print(f"  + Injected poster_text: '{panel_text.content}'")
-
-        # 7) keep exactly ONE promo & align ROI to it
-        # proposals, promo_roi = self._consolidate_promos(proposals, ad_box)
-        # if promo_roi is not None:
-        #     ad_box = promo_roi
+        proposals = self._merge(proposals, iou_same=0.45)
 
         # shelves dict to satisfy callers; in flat mode keep it empty
         shelves = {
@@ -379,7 +220,13 @@ class RetailDetector:
 
         # (OPTIONAL) draw Phase-1 debug
         if debug_phase1:
-            dbg = self._draw_phase1(img_array.copy(), roi_box, shelf_lines, proposals, ad_box)
+            dbg = self._draw_phase1(
+                image_array.copy(),
+                roi_box,
+                shelf_lines,
+                proposals,
+                ad_box
+            )
             cv2.imwrite(
                 debug_phase1,
                 cv2.cvtColor(dbg, cv2.COLOR_RGB2BGR)
@@ -399,303 +246,6 @@ class RetailDetector:
             )
 
         return {"shelves": shelves, "proposals": proposals}
-
-    # ----------------------- enhancement & CLIP -------------------------------
-    def _enhance(self, pil_img: "Image.Image") -> "Image.Image":
-        """Enhance a PIL image and return PIL."""
-        # Brightness/contrast + autocontrast; tweak if needed
-        pil = ImageEnhance.Brightness(pil_img).enhance(1.10)
-        pil = ImageEnhance.Contrast(pil).enhance(1.20)
-        pil = ImageOps.autocontrast(pil)
-        return pil
-
-    def _embed_image(self, path: Optional[str]):
-        if not path:
-            return None
-        im = Image.open(path).convert("RGB")
-        with torch.no_grad():
-            inputs = self.proc(images=im, return_tensors="pt").to(self.device)
-            feat = self.clip.get_image_features(**inputs)
-            feat = feat / feat.norm(dim=-1, keepdim=True)
-        return feat
-
-    def _coerce_bbox(self, bbox, W, H):
-        if bbox is None:
-            return None
-        if isinstance(bbox, (list, tuple)) and len(bbox) == 4:
-            x1, y1, x2, y2 = map(float, bbox)
-        elif isinstance(bbox, dict):
-            if {"x1","y1","x2","y2"} <= bbox.keys():
-                x1, y1, x2, y2 = map(float, (bbox["x1"], bbox["y1"], bbox["x2"], bbox["y2"]))
-            elif {"x","y","w","h"} <= bbox.keys():
-                x1, y1 = float(bbox["x"]), float(bbox["y"])
-                x2, y2 = x1 + float(bbox["w"]), y1 + float(bbox["h"])
-            else:
-                return None
-        else:
-            return None
-        def to_px(v, M):
-            return int(round(v * M)) if v <= 1.5 else int(round(v))
-        x1, y1, x2, y2 = to_px(x1, W), to_px(y1, H), to_px(x2, W), to_px(y2, H)
-        if x2 < x1:
-            x1, x2 = x2, x1
-        if y2 < y1:
-            y1, y2 = y2, y1
-        x1 = max(0, min(W-1, x1))
-        x2 = max(0, min(W-1, x2))
-        y1 = max(0, min(H-1, y1))
-        y2 = max(0, min(H-1, y2))
-        if (x2-x1) < 4 or (y2-y1) < 4:
-            return None
-        return (x1, y1, x2, y2)
-
-    def _downscale_image(self, img: Image.Image, max_side=1024, quality=82) -> Image.Image:
-        if img.mode != "RGB":
-            img = img.convert("RGB")
-        w, h = img.size
-        s = max(w, h)
-        if s > max_side:
-            scale = max_side / float(s)
-            img = img.resize((int(w*scale), int(h*scale)), Image.LANCZOS)
-        # (Optional) strip metadata by re-encoding
-        bio = io.BytesIO()
-        img.save(bio, format="JPEG", quality=quality, optimize=True)
-        bio.seek(0)
-        return Image.open(bio)
-
-    # ---------------------- poster localization -------------------------------
-    async def _find_poster(
-        self,
-        image: Image.Image,
-        planogram: PlanogramDescription,
-        debug_path: Optional[str] = None
-    ) -> tuple[Detections, Detections, Detections, Detections]:
-        """
-        Ask the vision model to find the main promotional graphic for the given brand/tags.
-        Returns (x1,y1,x2,y2) in absolute pixels, and the parsed JSON for logging.
-        """
-        w, _ = image.size
-        brand = (getattr(planogram, "brand", "") or "").strip()
-        tags = [t.strip() for t in getattr(planogram, "tags", []) or []]
-        endcap = getattr(planogram, "advertisement_endcap", None)
-        if endcap and getattr(endcap, "text_requirements", None):
-            for tr in endcap.text_requirements:
-                if getattr(tr, "required_text", None):
-                    tags.append(tr.required_text)
-        tag_hint = ", ".join(sorted(set(f"'{t}'" for t in tags if t)))
-
-        # downscale for LLM
-        image_small = self._downscale_image(image, max_side=1024, quality=78)
-        prompt = f"""
-Analyze the image to identify the entire retail endcap display and its key components.
-
-Your response must be a single JSON object with a 'detections' list. Each detection must have a 'label', 'confidence', a 'content' with any detected text, and a 'bbox' with normalized coordinates (x1, y1, x2, y2).
-
-Useful phrases to look for inside the lightbox: {tag_hint}
-
-Return exactly FIVE detections with the following strict criteria:
-
-1. **'brand_logo'**: A bounding box for the '{brand}' brand logo at the top of the sign.
-
-2. **'poster_text'**: A bounding box for the main marketing text on the sign, must include phrases like {tag_hint}.
-
-3. **'promotional_graphic'**: A bounding box for the main promotional graphic on the sign, which may include images of products, people (e.g. A man pointing up), or other marketing visuals. The box should tightly enclose the graphic area without cutting off any important elements. For this detection, 'content' should be null.
-
-4. **'poster_panel'**: A bounding box that **tightly encloses the entire backlit sign, The box must **tightly enclose the sign's outer silver/gray frame on all four sides.** For this detection, 'content' should be null.
-
-5. **'endcap'**: A bounding box for the entire retail endcap display structure. It must start at the top of the sign and extend down to the **base of the lowest shelf**, including price tags and products boxes. The box must be wide enough to **include all products and product boxes on all shelves without cropping.** For this detection, 'content' should be null.
-
-"""
-        max_attempts = 2  # Initial attempt + 1 retry
-        retry_delay_seconds = 10
-        msg = None
-        for attempt in range(max_attempts):
-            try:
-                async with self.google as client:
-                    msg = await client.ask_to_image(
-                        image=image_small,
-                        prompt=prompt,
-                        model="gemini-2.5-flash",
-                        no_memory=True,
-                        structured_output=Detections,
-                    )
-                # If the call succeeds, break out of the loop
-                break
-            except ServerError as e:
-                # Check if this was the last attempt
-                if attempt < max_attempts - 1:
-                    print(
-                        f"WARNING: Model is overloaded. Retrying in {retry_delay_seconds} seconds... (Attempt {attempt + 1}/{max_attempts})"
-                    )
-                    await asyncio.sleep(retry_delay_seconds)
-                else:
-                    print(
-                        f"ERROR: Model is still overloaded after {max_attempts} attempts. Failing."
-                    )
-                    # Re-raise the exception if the last attempt fails
-                    raise e
-        # Evaluate the Output:
-        data = msg.structured_output or msg.output or {}
-        dets = data.detections or []
-        if not dets:
-            return None, data
-        # print('detections > ', dets)
-        # pick detections
-        panel_det = next(
-            (d for d in dets if d.label == "poster_panel"), None) \
-            or next((d for d in dets if d.label == "poster"), None) \
-            or (max(dets, key=lambda x: float(x.confidence)) if dets else None
-        )
-        # poster text:
-        text_det = next((d for d in dets if d.label == "poster_text"), None)
-        # brand logo:
-        brand_det = next((d for d in dets if d.label == "brand_logo"), None)
-        if not panel_det:
-            self.logger.error("Critical failure: Could not detect the poster_panel.")
-            return None, None, None, None
-
-        # promotional graphic (inside the panel):
-        promo_graphic_det = next((d for d in dets if d.label == "promotional_graphic"), None)
-
-        # check if promo_graphic is contained by panel_det, if not, increase the panel:
-        if promo_graphic_det and panel_det:
-            # If promo graphic is outside panel, expand panel to include it
-            if not (
-                promo_graphic_det.bbox.x1 >= panel_det.bbox.x1 and
-                promo_graphic_det.bbox.x2 <= panel_det.bbox.x2
-            ):
-                self.logger.info("Expanding poster_panel to include promotional_graphic.")
-                panel_det.bbox.x1 = min(panel_det.bbox.x1, promo_graphic_det.bbox.x1)
-                panel_det.bbox.x2 = max(panel_det.bbox.x2, promo_graphic_det.bbox.x2)
-
-        # Get planogram advertisement config with safe defaults
-        advertisement_config = getattr(planogram, "advertisement", {})
-        # Default values if not in planogram, normalized to image (not ROI)
-        config_width_percent = advertisement_config.get('width_percent', 0.45)
-        config_height_percent = advertisement_config.get('height_percent', 0.33)
-        config_top_margin_percent = advertisement_config.get('top_margin_percent', 0.02)
-        # E.g., 5% of panel width
-        side_margin_percent = advertisement_config.get('side_margin_percent', 0.05)
-
-        # --- Refined Panel Padding ---
-        # Apply padding to the panel_det itself to ensure it captures the full visual area
-        panel_det.bbox.x1 = max(0.0, panel_det.bbox.x1 - side_margin_percent)
-        panel_det.bbox.x2 = min(1.0, panel_det.bbox.x2 + side_margin_percent)
-
-        if panel_det and text_det:
-            print(
-                "INFO: Found both panel and text. Applying boundary correction."
-            )
-            # Get the bottom of the text box
-            text_bottom_y2 = text_det.bbox.y2
-            # Optional: Add a small amount of padding (e.g., 8% of image height)
-            padding = 0.08
-            new_panel_y2 = min(text_bottom_y2 + padding, 1.0) # Ensure it doesn't exceed 1.0
-            panel_det.bbox.y2 = new_panel_y2
-
-        # --- endcap Detected:
-        endcap_det = next((d for d in dets if d.label == "endcap"), None)
-        # compares if endcap x2 and x1 are equal to panel x2 and x1
-        # panel (yellow)
-        px1, py1, px2, py2 = panel_det.bbox.x1, panel_det.bbox.y1, panel_det.bbox.x2, panel_det.bbox.y2
-        panel_w = px2 - px1
-        panel_h  = py2 - py1
-
-        # panel_height : endcap_height ratio, e.g., 0.33 if panel ~33% of endcap height
-        ratio = max(1e-6, float(config_height_percent))
-        top_margin = float(config_top_margin_percent)  # e.g., 0.01
-        x_tol = 0.003 * panel_w                        # ~0.3% of panel width
-        y_tol = 0.005                                  # ~0.5% absolute; tune to taste
-
-        # --- Target Y from panel + config ---
-        target_y1 = max(0.0, py1 - top_margin)
-        target_y2 = min(0.98, target_y1 + panel_h / ratio)    # cap a little above floor
-
-        # If no endcap or Y is off-target, override Y with target values
-        if (endcap_det is None or
-            abs(endcap_det.bbox.y1 - target_y1) > y_tol or
-            abs(endcap_det.bbox.y2 - target_y2) > y_tol):
-            ex1, ex2 = (px1, px2) if endcap_det is None else (endcap_det.bbox.x1, endcap_det.bbox.x2)
-            ey1, ey2 = target_y1, target_y2
-        else:
-            ex1, ex2 = endcap_det.bbox.x1, endcap_det.bbox.x2
-            ey1, ey2 = endcap_det.bbox.y1, endcap_det.bbox.y2
-
-        # --- X correction: expand only when inside the panel band ---
-        if ex1 > px1 + x_tol:
-            ex1 = px1 - self.left_margin_ratio  * panel_w
-        if ex2 < px2 - x_tol:
-            ex2 = px2 + self.right_margin_ratio * panel_w
-
-        # Clamp & monotonic
-        ex1 = max(0.0, ex1)
-        ex2 = min(1.0, ex2)
-        if ex2 <= ex1:
-            ex2 = ex1 + 1e-6
-
-        endcap_det.bbox.x1, endcap_det.bbox.x2 = ex1, ex2
-        endcap_det.bbox.y1, endcap_det.bbox.y2 = ey1, ey2
-
-        if debug_path:
-            panel_px = panel_det.bbox.get_coordinates()
-            self._save_poster_debug(image, panel_px, dets, debug_path)
-
-        return endcap_det, panel_det, brand_det, text_det
-
-    def _save_poster_debug(
-        self,
-        pil_image: Image.Image,
-        poster_bounds: Tuple[int, int, int, int],
-        detections: List[dict],
-        save_path: str
-    ) -> None:
-        """Save debug image showing poster detection results"""
-        try:
-            debug_img = pil_image.copy()
-            draw = ImageDraw.Draw(debug_img)
-            # draw the detections:
-            for det in detections:
-                label = det.label
-                conf = float(det.confidence or 0.0)
-                bbox = det.bbox
-                x1 = int(bbox.x1 * debug_img.width)
-                y1 = int(bbox.y1 * debug_img.height)
-                x2 = int(bbox.x2 * debug_img.width)
-                y2 = int(bbox.y2 * debug_img.height)
-                x1, y1, x2, y2 = _clamp(debug_img.width, debug_img.height, x1, y1, x2, y2)
-
-                color = (255, 165, 0) if label == "poster_panel" else (0, 255, 255)
-                draw.rectangle(
-                    [(x1, y1), (x2, y2)],
-                    outline=color,
-                    width=3
-                )
-                draw.text(
-                    (x1, y1 - 20),
-                    f"{label} {conf:.2f}",
-                    fill=color
-                )
-
-            # Draw final poster bounds in bright green
-            x1, y1, x2, y2 = poster_bounds
-            draw.rectangle(
-                [(x1, y1), (x2, y2)],
-                outline=(0, 255, 0),
-                width=4
-            )
-            draw.text(
-                (x1, y1 - 45),
-                f"POSTER: {x2-x1}x{y2-y1}",
-                fill=(0, 255, 0)
-            )
-
-            # Save debug image
-            Path(save_path).parent.mkdir(parents=True, exist_ok=True)
-            debug_img.save(save_path, quality=95)
-            self.logger.debug(f"Saved poster debug image to {save_path}")
-
-        except Exception as e:
-            self.logger.error(f"Failed to save debug image: {e}")
 
     # --------------------------- shelves -------------------------------------
     def _find_shelves(
@@ -845,106 +395,6 @@ Return exactly FIVE detections with the following strict criteria:
     # ---------------------------- YOLO ---------------------------------------
     def _preprocess_roi_for_detection(self, roi: np.ndarray) -> np.ndarray:
         """
-        Gentle, adaptive preprocessing that only enhances when needed.
-        Preserves well-contrasted images and applies minimal enhancement.
-        """
-        try:
-            # Convert BGR to RGB if needed
-            if len(roi.shape) == 3 and roi.shape[2] == 3:
-                rgb_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2RGB)
-            else:
-                rgb_roi = roi.copy()
-
-            # Analyze image quality to determine if preprocessing is needed
-            gray = cv2.cvtColor(rgb_roi, cv2.COLOR_RGB2GRAY)
-
-            # Calculate contrast metrics
-            contrast = gray.std()  # Standard deviation as contrast measure
-            mean_brightness = gray.mean()
-
-            # Calculate edge density (measure of detail/sharpness)
-            edges = cv2.Canny(gray, 50, 150)
-            edge_density = np.sum(edges > 0) / edges.size
-
-            # Determine if image needs enhancement
-            needs_contrast_boost = contrast < 45  # Low contrast threshold
-            needs_brightness_adjustment = mean_brightness < 80 or mean_brightness > 180
-            needs_edge_enhancement = edge_density < 0.02  # Very few edges detected
-
-            # If image quality is already good, apply minimal or no processing
-            if not (needs_contrast_boost or needs_brightness_adjustment or needs_edge_enhancement):
-                # Image is already well-contrasted, return with minimal enhancement
-                result = rgb_roi.copy().astype(np.float32)
-
-                # Very subtle sharpening only
-                kernel = np.array([[-0.1, -0.1, -0.1],
-                                [-0.1,  1.8, -0.1],
-                                [-0.1, -0.1, -0.1]])
-                for i in range(3):
-                    result[:,:,i] = cv2.filter2D(result[:,:,i], -1, kernel)
-
-                result = np.clip(result, 0, 255).astype(np.uint8)
-
-                # Convert back to BGR if needed
-                if len(roi.shape) == 3 and roi.shape[2] == 3:
-                    result = cv2.cvtColor(result, cv2.COLOR_RGB2BGR)
-
-                return result
-
-            # Apply gentle enhancement for images that need it
-            result = rgb_roi.copy()
-
-            # Gentle contrast enhancement only if needed
-            if needs_contrast_boost:
-                lab = cv2.cvtColor(result, cv2.COLOR_RGB2LAB)
-
-                # Very mild CLAHE
-                clahe = cv2.createCLAHE(clipLimit=1.5, tileGridSize=(12,12))
-                lab[:,:,0] = clahe.apply(lab[:,:,0])
-
-                result = cv2.cvtColor(lab, cv2.COLOR_LAB2RGB)
-
-            # Gentle brightness adjustment only if needed
-            if needs_brightness_adjustment:
-                if mean_brightness < 80:
-                    # Slightly brighten dark images
-                    result = cv2.convertScaleAbs(result, alpha=1.0, beta=15)
-                elif mean_brightness > 180:
-                    # Slightly darken bright images
-                    result = cv2.convertScaleAbs(result, alpha=0.95, beta=-10)
-
-            # Very subtle edge enhancement only if edges are weak
-            if needs_edge_enhancement:
-                gray_enhanced = cv2.cvtColor(result, cv2.COLOR_RGB2GRAY)
-                edges_weak = cv2.Canny(gray_enhanced, 30, 100)
-
-                # Create very mild edge mask
-                kernel_small = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 1))
-                edges_weak = cv2.dilate(edges_weak, kernel_small, iterations=1)
-
-                edge_mask = edges_weak > 0
-                result_float = result.astype(np.float32)
-
-                # Very gentle edge enhancement
-                for i in range(3):
-                    channel = result_float[:,:,i]
-                    channel[edge_mask] = np.clip(channel[edge_mask] * 1.1, 0, 255)
-                    result_float[:,:,i] = channel
-
-                result = result_float.astype(np.uint8)
-
-            # Convert back to BGR if needed
-            if len(roi.shape) == 3 and roi.shape[2] == 3:
-                result = cv2.cvtColor(result, cv2.COLOR_RGB2BGR)
-
-            return result
-
-        except Exception as e:
-            self.logger.warning(f"ROI preprocessing failed: {e}")
-            return roi
-
-    def _preprocess_roi_for_detection_minimal(self, roi: np.ndarray) -> np.ndarray:
-        """
         Ultra-minimal preprocessing - only applies when absolutely necessary.
         Use this version if you want maximum preservation of original image quality.
         """
@@ -1077,7 +527,7 @@ Return exactly FIVE detections with the following strict criteria:
                 return False, f"failed_{yolo_class}: {'; '.join(reasons)}"
 
         # Preprocess ROI to enhance detection of similar-colored objects
-        enhanced_roi = self._preprocess_roi_for_detection_minimal(roi)
+        enhanced_roi = self._preprocess_roi_for_detection(roi)
 
         if detection_phases is None:
             detection_phases = [
@@ -1233,7 +683,6 @@ Return exactly FIVE detections with the following strict criteria:
 
                                 # Clean up the text
                                 ocr_text = " ".join(raw_text.strip().split())
-                                ocr_text = clean_ocr_text(ocr_text)
                             except Exception as ocr_error:
                                 self.logger.warning(
                                     f"OCR failed for a proposal: {ocr_error}"
@@ -1254,7 +703,7 @@ Return exactly FIVE detections with the following strict criteria:
                         "ocr_text": ocr_text,
                         "phase": phase_name
                     }
-                    print('PROPOSAL > ', proposal)
+                    # print('PROPOSAL > ', proposal)
                     all_proposals.append(proposal)
                     stats["total_detections"] += 1
                     phase_count += 1
@@ -1320,7 +769,8 @@ Return exactly FIVE detections with the following strict criteria:
         """Light retail candidate mapping - let classification do the heavy work"""
         mapping = {
             "microwave": ["printer", "product_box"],
-            "tv": ["promotional_graphic"],
+            "tv": ["promotional_graphic", "tv"],
+            "television": ["tv"],
             "monitor": ["promotional_graphic"],
             "laptop": ["promotional_graphic"],
             "book": ["product_box"],
@@ -1462,53 +912,6 @@ Return exactly FIVE detections with the following strict criteria:
         union = area1 + area2 - intersection
 
         return intersection / max(union, 1)
-
-    def _safe_extract_crop(self, img: np.ndarray, x1: int, y1: int, x2: int, y2: int) -> Optional[Image.Image]:
-        """
-        Safely extract a crop from an image with full validation
-        Returns None if crop would be invalid
-        """
-        H, W = img.shape[:2]
-
-        # Clamp coordinates to image bounds
-        x1_safe = max(0, min(W-1, int(x1)))
-        x2_safe = max(x1_safe + 8, min(W, int(x2)))
-        y1_safe = max(0, min(H-1, int(y1)))
-        y2_safe = max(y1_safe + 8, min(H, int(y2)))
-
-        # Validate final dimensions
-        crop_width = x2_safe - x1_safe
-        crop_height = y2_safe - y1_safe
-
-        if crop_width <= 0 or crop_height <= 0 or crop_width < 8 or crop_height < 8:
-            return None
-
-        try:
-            crop_array = img[y1_safe:y2_safe, x1_safe:x2_safe]
-            if crop_array.size == 0:
-                return None
-
-            crop = Image.fromarray(crop_array)
-
-            if crop.width == 0 or crop.height == 0:
-                return None
-
-            return crop
-
-        except Exception:
-            return None
-
-    def _iou_xyxy(self, a, b) -> float:
-        ax1, ay1, ax2, ay2 = a
-        bx1, by1, bx2, by2 = b
-        ix1, iy1 = max(ax1, bx1), max(ay1, by1)
-        ix2, iy2 = min(ax2, bx2), min(ay2, by2)
-        if ix2 <= ix1 or iy2 <= iy1:
-            return 0.0
-        inter = (ix2 - ix1) * (iy2 - iy1)
-        aarea = (ax2 - ax1) * (ay2 - ay1)
-        barea = (bx2 - bx1) * (by2 - by1)
-        return inter / max(1.0, aarea + barea - inter)
 
     # ------------------- OCR + CLIP preselection -----------------------------
     def _analyze_crop_visuals(self, crop_bgr: np.ndarray) -> dict:
@@ -1664,36 +1067,8 @@ Return exactly FIVE detections with the following strict criteria:
 
         return final_proposals
 
-    # --------------------- shrink/merge/cleanup ------------------------------
-    def _shrink(self, img, dets: List[DetectionBox]) -> List[DetectionBox]:
-        H,W = img.shape[:2]
-        out=[]
-        for d in dets:
-            roi=img[d.y1:d.y2, d.x1:d.x2]
-            if roi.size==0:
-                continue
-            g=cv2.cvtColor(roi, cv2.COLOR_RGB2GRAY)
-            e=cv2.Canny(g,40,120)
-            e=cv2.morphologyEx(e, cv2.MORPH_CLOSE, np.ones((5,5),np.uint8),1)
-            cnts,_=cv2.findContours(e, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            if not cnts:
-                out.append(d)
-                continue
-            c=max(cnts, key=cv2.contourArea)
-            x,y,w,h=cv2.boundingRect(c)
-            x1,y1,x2,y2=_clamp(W,H,d.x1+x,d.y1+y,d.x1+x+w,d.y1+y+h)
-            out.append(
-                DetectionBox(
-                    x1=x1,y1=y1,x2=x2,y2=y2,
-                    confidence=d.confidence,
-                    class_id=d.class_id,
-                    class_name=d.class_name,
-                    area=(x2-x1)*(y2-y1)
-                )
-            )
-        return out
-
-    def _merge(self, dets: List[DetectionBox], iou_same=0.3) -> List[DetectionBox]:  # Reduced from 0.45 to 0.3
+    # --------------------- merge/cleanup ------------------------------
+    def _merge(self, dets: List[DetectionBox], iou_same=0.3) -> List[DetectionBox]:
         """Enhanced merge with size-aware logic"""
         dets = sorted(dets, key=lambda d: (d.class_name, -d.confidence, -d.area))
         out = []
@@ -1839,6 +1214,8 @@ Return exactly FIVE detections with the following strict criteria:
         candidate_colors = {
             "promotional_graphic": (255, 0, 255),   # Magenta
             "printer": (255, 140, 0),               # Orange
+            "tv": (0, 200, 0),                     # Green
+            "product_candidate": (200, 200, 0),     # Yellow
             "product_box": (0, 140, 255),           # Blue
             "small_object": (128, 128, 128),        # Gray
             "ink_bottle": (160, 0, 200),            # Purple
@@ -1947,6 +1324,11 @@ class PlanogramCompliancePipeline(AbstractPipeline):
         """
         self.detection_model_name = detection_model
         self.factory = PlanogramDescriptionFactory()
+        # Endcap geometry defaults (can be tuned per program)
+        self.endcap_aspect_ratio = kwargs.get('endcap_aspect_ratio', 1.35)   # width / height
+        self.left_margin_ratio   = kwargs.get('left_margin_ratio', 0.01)
+        self.right_margin_ratio  = kwargs.get('right_margin_ratio', 0.03)
+        self.top_margin_ratio    = kwargs.get('top_margin_ratio', 0.02)
         super().__init__(
             llm=llm,
             llm_provider=llm_provider,
@@ -1969,17 +1351,25 @@ class PlanogramCompliancePipeline(AbstractPipeline):
 
     async def detect_objects_and_shelves(
         self,
-        image,
+        image: Image,
+        image_array: np.ndarray,
+        endcap: Detection,
+        ad: Optional[Detection] = None,
+        brand: Optional[Detection] = None,
+        panel_text: Optional[Detection] = None,
         planogram_description: Optional[PlanogramDescription] = None
     ):
-        self.logger.debug("Step 1: Detecting generic shapes and boundaries...")
-
-        pil_image = Image.open(image) if isinstance(image, (str, Path)) else image
+        self.logger.debug(
+            "Step 1: Detecting generic shapes and boundaries..."
+        )
 
         det_out = await self.shape_detector.detect(
-            image=pil_image,
+            image=image,
+            image_array=image_array,
+            endcap=endcap,
+            ad=ad,
             planogram=planogram_description,
-            debug_raw="/tmp/data/yolo_raw_debug.png",
+            debug_yolo="/tmp/data/yolo_raw.png",
             debug_phase1="/tmp/data/yolo_phase1_debug.png",
             debug_phases="/tmp/data/yolo_phases_debug.png",
         )
@@ -1987,27 +1377,46 @@ class PlanogramCompliancePipeline(AbstractPipeline):
         shelves = det_out["shelves"]          # {'top': DetectionBox(...), 'middle': ...}
         proposals    = det_out["proposals"]        # List[DetectionBox]
 
-        # print("PROPOSALS:", proposals)
-        # print("SHELVES:", shelves)
+        print("PROPOSALS:", proposals)
+        print("SHELVES:", shelves)
+
+        h, w = image_array.shape[:2]
+        if brand:
+            bx1, by1, bx2, by2 = brand.bbox.get_pixel_coordinates(width=w, height=h)
+            proposals.append(
+                DetectionBox(
+                    x1=bx1, y1=by1, x2=bx2, y2=by2,
+                    confidence=brand.confidence,
+                    class_id=CID["brand_logo"],
+                    class_name="brand_logo",
+                    area=(bx2 - bx1) * (by2 - by1),
+                    ocr_text=brand.content
+                )
+            )
+            print(f"  + Injected brand_logo: '{brand.content}'")
+
+        if panel_text:
+            tx1, ty1, tx2, ty2 = panel_text.bbox.get_pixel_coordinates(width=w, height=h)
+            proposals.append(
+                DetectionBox(
+                    x1=tx1, y1=ty1, x2=tx2, y2=ty2,
+                    confidence=panel_text.confidence,
+                    class_id=CID["poster_text"],
+                    class_name="poster_text",
+                    area=(tx2 - tx1) * (ty2 - ty1),
+                    ocr_text=panel_text.content.replace('.', ' ')
+                )
+            )
+            print(f"  + Injected poster_text: '{panel_text.content}'")
 
         # --- IMPORTANT: use Phase-1 shelf bands (not %-of-image buckets) ---
-        shelf_regions = self._materialize_shelf_regions(shelves, proposals)
+        shelf_regions = self._materialize_shelf_regions(shelves, proposals, planogram_description)
 
         detections = list(proposals)
 
         self.logger.debug(
             "Found %d objects in %d shelf regions", len(detections), len(shelf_regions)
         )
-
-        # Recover price tags and re-map to the same Phase-1 shelves
-        try:
-            tag_dets = self._recover_price_tags(pil_image, shelf_regions)
-            if tag_dets:
-                detections.extend(tag_dets)
-                shelf_regions = self._materialize_shelf_regions(shelves, detections)
-                self.logger.debug("Recovered %d fact tags on shelf edges", len(tag_dets))
-        except Exception as e:
-            self.logger.warning(f"Tag recovery failed: {e}")
 
         self.logger.debug("Found %d objects in %d shelf regions",
                         len(detections), len(shelf_regions))
@@ -2016,7 +1425,8 @@ class PlanogramCompliancePipeline(AbstractPipeline):
     def _materialize_shelf_regions(
         self,
         shelves_dict: Dict[str, DetectionBox],
-        dets: List[DetectionBox]
+        dets: List[DetectionBox],
+        planogram_description: Optional[PlanogramDescription] = None
     ) -> List[ShelfRegion]:
         """Turn Phase-1 shelf bands into ShelfRegion objects and assign detections by y-overlap."""
         def y_overlap(a1, a2, b1, b2) -> int:
@@ -2024,183 +1434,53 @@ class PlanogramCompliancePipeline(AbstractPipeline):
 
         regions: List[ShelfRegion] = []
 
-        # Header: anything fully above the header shelf band
-        if "header" in shelves_dict:
-            cut_y = shelves_dict["header"].y1
-            # Anything fully above the top band OR any promotional that touches the header area.
-            header_objs = [
-                d for d in dets
-                if (d.y2 <= cut_y) or (d.class_name == "promotional_candidate" and d.y1 < cut_y + 5)
-            ]
-            if header_objs:
-                x1 = min(o.x1 for o in header_objs)
-                y1 = min(o.y1 for o in header_objs)
-                x2 = max(o.x2 for o in header_objs)
-                y2 = cut_y
-                bbox = DetectionBox(
-                    x1=x1, y1=y1, x2=x2, y2=y2,
-                    confidence=1.0,
-                    class_id=190,
-                    class_name="shelf_region",
-                    area=(x2-x1)*(y2-y1)
-                )
-                regions.append(
-                    ShelfRegion(
-                        shelf_id="header",
-                        bbox=bbox,
-                        level="header",
-                        objects=header_objs
-                    )
-                )
+        # Iterate through the shelves defined in the planogram config, in their specified order.
+        for shelf_config in planogram_description.shelves:
+            level = shelf_config.level
 
-        for level in ["header", "middle", "bottom"]:
-            if level not in shelves_dict:
+            # Get the detected bounding box for the current shelf level.
+            band = shelves_dict.get(level)
+            if not band:
+                self.logger.warning(
+                    f"Shelf '{level}' is defined in the planogram but was not detected in the image."
+                )
                 continue
-            band = shelves_dict[level]
+
+            # Find all object proposals that vertically overlap with this shelf's detected band.
+            # An object belongs to the shelf if any part of it is within the shelf's y-range.
             objs = [d for d in dets if y_overlap(d.y1, d.y2, band.y1, band.y2) > 0]
+
+            # If no objects were found on this shelf, we don't need to create a region for it.
             if not objs:
                 continue
+
+            # Create a new bounding box for the ShelfRegion.
+            # The Y coordinates are fixed by the detected shelf band.
+            # The X coordinates are calculated as the min/max extent of the objects on that shelf.
             x1 = min(o.x1 for o in objs)
             y1 = band.y1
             x2 = max(o.x2 for o in objs)
             y2 = band.y2
-            bbox = DetectionBox(x1=x1, y1=y1, x2=x2, y2=y2,
-                                confidence=1.0, class_id=190,
-                                class_name="shelf_region", area=(x2-x1)*(y2-y1))
-            regions.append(ShelfRegion(shelf_id=f"{level}_shelf", bbox=bbox, level=level, objects=objs))
+
+            bbox = DetectionBox(
+                x1=x1, y1=y1, x2=x2, y2=y2,
+                confidence=1.0,
+                class_id=CID["shelf_region"],
+                class_name="shelf_region",
+                area=(x2 - x1) * (y2 - y1)
+            )
+
+            # Create the final ShelfRegion object.
+            regions.append(
+                ShelfRegion(
+                    shelf_id=f"{level}_shelf",
+                    bbox=bbox,
+                    level=level,
+                    objects=objs
+                )
+            )
 
         return regions
-
-
-    def _recover_price_tags(
-        self,
-        image: Union[str, Path, Image.Image],
-        shelf_regions: List[ShelfRegion],
-        *,
-        min_width: int = 40,
-        max_width: int = 280,
-        min_height: int = 14,
-        max_height: int = 100,
-        iou_suppress: float = 0.2,
-    ) -> List[DetectionBox]:
-        """
-        Heuristic price-tag recovery:
-        - For each shelf region, scan a thin horizontal strip at the *front edge*.
-        - Use morphology (blackhat + gradients) to pick up dark text on light tags.
-        - Return small rectangular boxes classified as 'fact_tag'.
-        """
-        if isinstance(image, (str, Path)):
-            pil = Image.open(image).convert("RGB")
-        else:
-            pil = image.convert("RGB")
-
-        img = np.array(pil)  # RGB
-        H, W = img.shape[:2]
-        tags: List[DetectionBox] = []
-
-        for sr in shelf_regions:
-            # Only look where tags actually live
-            if sr.level not in {"top", "middle", "bottom"}:
-                continue
-
-            # Build a strip hugging the shelf's lower edge
-            y_top = sr.bbox.y1
-            y_bot = sr.bbox.y2
-            shelf_h = max(1, y_bot - y_top)
-
-            # Tag strip: bottom ~12% of shelf + a little margin below
-            strip_h = int(np.clip(0.12 * shelf_h, 24, 90))
-            y1 = max(0, y_bot - strip_h - int(0.02 * shelf_h))
-            y2 = min(H - 1, y_bot + int(0.04 * shelf_h))
-            x1 = max(0, sr.bbox.x1)
-            x2 = min(W - 1, sr.bbox.x2)
-            if y2 <= y1 or x2 <= x1:
-                continue
-
-            roi = img[y1:y2, x1:x2]  # RGB
-            gray = cv2.cvtColor(roi, cv2.COLOR_RGB2GRAY)
-
-            # Highlight dark text on light tag
-            rectK = cv2.getStructuringElement(cv2.MORPH_RECT, (13, 5))
-            blackhat = cv2.morphologyEx(gray, cv2.MORPH_BLACKHAT, rectK)
-
-            # Horizontal gradient to emphasize tag edges
-            gradX = cv2.Sobel(blackhat, ddepth=cv2.CV_32F, dx=1, dy=0, ksize=-1)
-            gradX = cv2.convertScaleAbs(gradX)
-
-            # Close gaps & threshold
-            closeK = cv2.getStructuringElement(cv2.MORPH_RECT, (15, 5))
-            closed = cv2.morphologyEx(gradX, cv2.MORPH_CLOSE, closeK, iterations=2)
-            th = cv2.threshold(closed, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1]
-
-            # Clean up
-            th = cv2.morphologyEx(th, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_RECT, (5, 3)))
-            th = cv2.dilate(th, None, iterations=1)
-
-            cnts, _ = cv2.findContours(th, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            for c in cnts:
-                x, y, w, h = cv2.boundingRect(c)
-                if w < min_width or w > max_width or h < min_height or h > max_height:
-                    continue
-                ar = w / float(h)
-                if ar < 1.2 or ar > 6.5:
-                    continue
-
-                # rectangularity = how "tag-like" the contour is
-                rect_area = w * h
-                cnt_area = max(1.0, cv2.contourArea(c))
-                rectangularity = cnt_area / rect_area
-                if rectangularity < 0.45:
-                    continue
-
-                # Score → confidence
-                confidence = float(min(0.95, 0.55 + 0.4 * rectangularity))
-
-                # Map to full-image coords
-                gx1, gy1 = x1 + x, y1 + y
-                gx2, gy2 = gx1 + w, gy1 + h
-
-                tags.append(
-                    DetectionBox(
-                        x1=int(gx1), y1=int(gy1), x2=int(gx2), y2=int(gy2),
-                        confidence=confidence,
-                        class_id=102,
-                        class_name="price_tag",
-                        area=int(rect_area),
-                    )
-                )
-
-        # Light NMS to avoid duplicates
-        def iou(a: DetectionBox, b: DetectionBox) -> float:
-            ix1, iy1 = max(a.x1, b.x1), max(a.y1, b.y1)
-            ix2, iy2 = min(a.x2, b.x2), min(a.y2, b.y2)
-            if ix2 <= ix1 or iy2 <= iy1:
-                return 0.0
-            inter = (ix2 - ix1) * (iy2 - iy1)
-            return inter / float(a.area + b.area - inter)
-
-        tags_sorted = sorted(tags, key=lambda d: (d.confidence, d.area), reverse=True)
-        kept: List[DetectionBox] = []
-        for d in tags_sorted:
-            if all(iou(d, k) <= iou_suppress for k in kept):
-                kept.append(d)
-        return kept
-
-    def _debug_dump_crops(self, img: Image.Image, dets, tag="step1"):
-        os.makedirs("/tmp/data/debug", exist_ok=True)
-        h, w = img.size[1], img.size[0]
-        img = np.array(img)  # RGB
-        for i, d in enumerate(dets, 1):
-            b = d.detection_box if hasattr(d, "detection_box") else d
-            x1 = max(0, min(w-1, int(min(b.x1, b.x2))))
-            x2 = max(0, min(w-1, int(max(b.x1, b.x2))))
-            y1 = max(0, min(h-1, int(min(b.y1, b.y2))))
-            y2 = max(0, min(h-1, int(max(b.y1, b.y2))))
-            crop = img[y1:y2, x1:x2]
-            cv2.imwrite(
-                f"/tmp/data/debug/{tag}_{i}_{b.class_name}_{x1}_{y1}_{x2}_{y2}.png",
-                cv2.cvtColor(crop, cv2.COLOR_RGB2BGR)
-            )
 
     async def identify_objects_with_references(
         self,
@@ -2234,12 +1514,10 @@ class PlanogramCompliancePipeline(AbstractPipeline):
         pil_image = self._get_image(image)
 
         # Create annotated image showing detection boxes
-        effective_dets = [d for d in detections if d.class_name not in {"slot", "shelf_region", "price_tag", "fact_tag"}]
-        self._debug_dump_crops(pil_image, effective_dets, tag="effective")
-        self._debug_dump_crops(pil_image, detections, tag="raw")
-
+        effective_dets = [
+            d for d in detections if d.class_name not in {"slot", "shelf_region", "price_tag", "fact_tag"}
+        ]
         annotated_image = self._create_annotated_image(pil_image, effective_dets)
-        # annotated_image = self._create_annotated_image(image, detections)
 
         async with self.llm as client:
             try:
@@ -2372,10 +1650,10 @@ class PlanogramCompliancePipeline(AbstractPipeline):
                         # Normalize to your scheme:
                         #  - printers: "ET-4950"
                         #  - boxes:    "ET-4950 box"
-                        if p.product_type == "product_box":
-                            target = f"{model.upper()} box"
-                        else:
-                            target = model.upper()
+                        # if p.product_type == "product_box":
+                        #     target = f"{model.upper()} box"
+                        # else:
+                        target = model.upper()
 
                         # If missing or mismatched, replace
                         if not p.product_model:
@@ -2507,7 +1785,6 @@ class PlanogramCompliancePipeline(AbstractPipeline):
     ) -> str:
         """Builds a more detailed prompt to help Gemini differentiate similar products."""
 
-        # --- Part 1: Describe Existing Detections ---
         detection_lines = ["\nDETECTED OBJECTS (with pre-assigned IDs):"]
         if detections:
             for i, detection in enumerate(detections, 1):
@@ -2517,19 +1794,15 @@ class PlanogramCompliancePipeline(AbstractPipeline):
         else:
             detection_lines.append("None")
 
-        # --- Part 2: Define the Ground-Truth Shelf Layout ---
         shelf_definitions = ["\n**VALID SHELF NAMES & LOCATIONS (Ground Truth):**"]
         valid_shelf_names = []
         for shelf in shelf_regions:
-            # Only include the main shelves in the list of options for the LLM
-            if shelf.level in ['header', 'middle', 'bottom']:
-                valid_shelf_names.append(f"'{shelf.level}'")
-                shelf_definitions.append(f"- Shelf '{shelf.level}': Covers the vertical pixel range from y={shelf.bbox.y1} to y={shelf.bbox.y2}.")
-
+            # if shelf.level in ['header', 'middle', 'bottom']:
+            valid_shelf_names.append(f"'{shelf.level}'")
+            shelf_definitions.append(f"- Shelf '{shelf.level}': Covers the vertical pixel range from y={shelf.bbox.y1} to y={shelf.bbox.y2}.")
         shelf_definitions.append(f"\n**RULE:** For the `shelf_location` field, you MUST use one of these exact names: {', '.join(valid_shelf_names)}.")
 
-
-        # --- NEW: Enhanced Instructions ---
+        # REVISED: Enhanced prompt with new rules
         prompt = f"""
 You are an expert at identifying retail products in planogram displays.
 I have provided an image of a retail endcap, labeled reference images, and a list of {len(detections)} pre-detected objects.
@@ -2537,47 +1810,57 @@ I have provided an image of a retail endcap, labeled reference images, and a lis
 {''.join(detection_lines)}
 {''.join(shelf_definitions)}
 
-**YOUR TWO-PART TASK:**
-
-1.  **IDENTIFY PRE-DETECTED OBJECTS:** For each object with an ID, identify it using the rules and visual guide below.
-2.  **FIND MISSED OBJECTS:** Carefully find any other prominent products (especially printers or large boxes) that DO NOT have an ID. For these new items, set `detection_id` to `null` and provide an approximate `detection_box` array `[x1, y1, x2, y2]`.
+**YOUR TASK:**
+For each distinct product, you must first analyze its visual features according to the guide, state your reasoning, and then provide the final identification.
 
 ---
 **!! IMPORTANT VISUAL GUIDE FOR PRINTERS !!**
-REFERENCE IMAGES show Epson printer models - compare visual design, control panels, ink systems.
+You MUST use the control panel or size of screen to tell the printer models apart. This is the most important rule.
+* **ET-2980:** Has a **simple control panel** with a tiny screen and arrow buttons.
+* **ET-3950:** Has a **larger control panel LED screen and several buttons (11 buttons)**.
+* **ET-4950:** Has a **large color TOUCHSCREEN** with no more than 3 physical buttons.
 
-The printer models are visually similar. You MUST use the control panel to tell them apart.
-* **ET-2980:** Has a **simple control panel** with a small screen and arrow buttons. **NO number pad.**
-* **ET-3950:** Has a **larger control panel with a physical number pad (0-9)** to the right of the screen.
-* **ET-4950:** Has a **large color touchscreen** and very few physical buttons.
-
-**Use these specific features to make your final decision on the printer model.**
 ---
+**!! CRITICAL IDENTIFICATION RULES !!**
 
-**IDENTIFICATION RULES:**
-1.  **PRINTERS (Devices):** White/gray devices. Use the visual guide above to determine the correct `product_model` ('ET-2980', 'ET-3950', or 'ET-4950').
-2.  **BOXES (Packaging):** Blue packaging. `product_type` is 'product_box'. `product_model` is 'ET-XXXX box'.
-3.  **PROMOTIONAL GRAPHICS:** Large signs/posters. `product_type` is 'promotional_graphic'.
+1.  **ANALYZE EACH PRINTER INDEPENDENTLY:** DO NOT assume all printers are the same model. You must analyze the control panel of EACH printer individually.
 
+2. **CONSOLIDATION (To Avoid Duplicates):**
+   - If multiple detection IDs refer to the same single object, provide **only ONE entry** for that object. Choose the ID that best represents the entire object.
+
+3. **PRODUCT TYPES & PLACEMENT HEURISTICS:**
+   - **PRINTERS (Devices):** White/gray devices, typically on 'middle' shelves.
+   - **BOXES (Packaging):** Blue packaging, typically on 'bottom' shelves.
+   - **PROMOTIONAL GRAPHICS:** Large signs/posters, typically on the 'header'.
+
+4. **UNREADABLE MODELS:**
+   - If a model number on a box is obscured, set `product_model` to **'Unreadable Box'**.
+
+5. **NEWLY FOUND OBJECTS (MANDATORY):**
+   - If you identify a prominent product that was NOT pre-detected (e.g., a large box missed by the first pass), set its `detection_id` to `null`.
+   - For these newly found items, you **MUST** also provide an estimated `detection_box` field with an array of four pixel coordinates `[x1, y1, x2, y2]`. **This field is NOT optional for new items.**
+
+---
 **JSON OUTPUT FORMAT:**
-Respond with a single JSON object. For each product you identify (both pre-detected and newly found), provide an entry in the 'detections' list with all the required fields.
+Respond with a single JSON object. For each **distinct product** you identify, provide an entry in the 'detections' list.
 
-For each detection (ID 1-{len(detections)}), provide:
-- detection_id: The exact ID number from the red bounding box (1-{len(detections)}), or null if newly found.
-- product_type: printer, product_box, fact_tag, promotional_graphic, or ink_bottle
-- product_model: Follow naming rules above based on product_type
-- confidence: Your confidence (0.0-1.0)
-- visual_features: List of visual features
-- reference_match: Which reference image matches (or "none")
-- shelf_location: header, top, middle, or bottom
-- position_on_shelf: left, center, or right
-- Remove any duplicates - only one entry per detection_id
+- **detection_id**: The pre-detected ID number, or `null` for newly found items.
+- **detection_box**: **REQUIRED** if `detection_id` is `null`. An array of four numbers `[x1, y1, x2, y2]`.
+- **product_type**: printer, product_box, fact_tag, promotional_graphic, or ink_bottle.
+- **product_model**: Follow naming rules above.
+- **confidence**: Your confidence (0.0-1.0).
+- **visual_features**: List of key visual features.
+-   **reasoning**: **(MANDATORY FOR PRINTERS)** A brief sentence explaining your identification based on the visual guide. Example: "Reasoning: The control panel has a physical number pad, which matches the ET-3950 guide."
+-   **reference_match**: Which reference image name matches (or "none").
+- **shelf_location**: {', '.join(valid_shelf_names)}.
+- **position_on_shelf**: 'left', 'center', or 'right'.
 
 **!! FINAL CHECK !!**
-Before responding, ensure **every single object** in the 'detections' list includes all required fields, especially `confidence`, `shelf_location`, and `position_on_shelf`. Do not omit any fields.
+- Ensure your response contains **NO DUPLICATE** entries for the same physical object.
+- **CRITICAL**: Verify that any item with `detection_id: null` also includes a `detection_box`.
 
 Analyze all provided images and return the complete JSON response.
-    """
+"""
         return prompt
 
     def _build_identification_prompt(
@@ -2697,188 +1980,37 @@ Respond with the structured data for all {len(detections)} objects.
 
         return prompt
 
-    # STEP 3: Planogram Compliance Check
-    # def check_planogram_compliance(
-    #     self,
-    #     identified_products: List[IdentifiedProduct],
-    #     planogram_description: PlanogramDescription,
-    # ) -> List[ComplianceResult]:
-    #     """Check compliance of identified products against the planogram
-
-    #     Args:
-    #         identified_products (List[IdentifiedProduct]): The products identified in the image
-    #         planogram_description (PlanogramDescription): The expected planogram layout
-
-    #     Returns:
-    #         List[ComplianceResult]: The compliance results for each shelf
-    #     """
-    #     results: List[ComplianceResult] = []
-
-    #     # Group found products by shelf level
-    #     by_shelf = defaultdict(list)
-    #     for p in identified_products:
-    #         by_shelf[p.shelf_location].append(p)
-
-    #     # Iterate through expected shelves
-    #     for shelf_cfg in planogram_description.shelves:
-    #         shelf_level = shelf_cfg.level
-
-    #         # Build expected product list (excluding tags)
-    #         expected = []
-    #         for sp in shelf_cfg.products:
-    #             if sp.product_type in ("fact_tag", "price_tag", "slot"):
-    #                 continue
-    #             nm = self._normalize_product_name((sp.name or sp.product_type) or "unknown")
-    #             expected.append(nm)
-
-    #         # Gather found products on this shelf
-    #         found, promos = [], []
-    #         for p in by_shelf.get(shelf_level, []):
-    #             if p.product_type in ("fact_tag", "price_tag", "slot"):
-    #                 continue
-    #             nm = self._normalize_product_name(p.product_model or p.product_type)
-    #             found.append(nm)
-    #             if p.product_type == "promotional_graphic":
-    #                 promos.append(p)
-
-    #         # Calculate basic product compliance
-    #         missing = [e for e in expected if e not in found]
-    #         unexpected = [] if shelf_cfg.allow_extra_products else [f for f in found if f not in expected]
-    #         basic_score = (sum(1 for e in expected if e in found) / (len(expected) or 1))
-
-    #         # FIX 3: Enhanced text compliance handling
-    #         text_results, text_score, overall_text_ok = [], 1.0, True
-
-    #         # Check for advertisement endcap on this shelf
-    #         endcap = planogram_description.advertisement_endcap
-    #         if endcap and endcap.enabled and endcap.position == shelf_level:
-    #             if endcap.text_requirements:
-    #                 # Combine visual features from all promotional items
-    #                 all_features = []
-    #                 ocr_blocks = []
-    #                 for promo in promos:
-    #                     if getattr(promo, "visual_features", None):
-    #                         all_features.extend(promo.visual_features)
-    #                         for feat in promo.visual_features:
-    #                             if isinstance(feat, str) and feat.startswith("ocr:"):
-    #                                 ocr_blocks.append(feat[4:].strip())
-
-    #                 if ocr_blocks:
-    #                     ocr_norm = self._normalize_ocr_text(" ".join(ocr_blocks))
-    #                     if ocr_norm:
-    #                         all_features.append(ocr_norm)
-
-    #                 # If no promotional graphics found but text required, create default failure
-    #                 if not promos and shelf_level == "header":
-    #                     self.logger.warning(
-    #                         f"No promotional graphics found on {shelf_level} shelf but text requirements exist"
-    #                     )
-    #                     overall_text_ok = False
-    #                     for text_req in endcap.text_requirements:
-    #                         text_results.append(TextComplianceResult(
-    #                             required_text=text_req.required_text,
-    #                             found=False,
-    #                             matched_features=[],
-    #                             confidence=0.0,
-    #                             match_type=text_req.match_type
-    #                         ))
-    #                 else:
-    #                     # Check text requirements against found features
-    #                     for text_req in endcap.text_requirements:
-    #                         result = TextMatcher.check_text_match(
-    #                             required_text=text_req.required_text,
-    #                             visual_features=all_features,
-    #                             match_type=text_req.match_type,
-    #                             case_sensitive=text_req.case_sensitive,
-    #                             confidence_threshold=text_req.confidence_threshold
-    #                         )
-    #                         text_results.append(result)
-
-    #                         if not result.found and text_req.mandatory:
-    #                             overall_text_ok = False
-
-    #                 # Calculate text compliance score
-    #                 if text_results:
-    #                     text_score = sum(r.confidence for r in text_results if r.found) / len(text_results)
-
-    #         # For non-header shelves without text requirements, don't penalize
-    #         elif shelf_level != "header":
-    #             overall_text_ok = True  # Don't require text compliance on product shelves
-    #             text_score = 1.0
-
-    #         # Determine compliance threshold
-    #         threshold = getattr(
-    #             shelf_cfg,
-    #             "compliance_threshold",
-    #             planogram_description.global_compliance_threshold or 0.8
-    #         )
-
-    #         # FIX 4: Better status determination logic
-    #         # Allow minor unexpected (ink bottles, price tags)
-    #         major_unexpected = [
-    #             p for p in unexpected if not any(
-    #                 word in p.lower() for word in ["ink bottle", "price tag", "502"]
-    #             )
-    #         ]
-    #         # For product shelves (non-header), focus on product compliance
-    #         if shelf_level != "header":
-    #             if basic_score >= threshold and not major_unexpected:
-    #                 status = ComplianceStatus.COMPLIANT
-    #             elif basic_score == 0.0:
-    #                 status = ComplianceStatus.MISSING
-    #             else:
-    #                 status = ComplianceStatus.NON_COMPLIANT
-    #         else:
-    #             overall_text_ok = bool(overall_text_ok)
-    #             # For header shelf, require both product and text compliance
-    #             if basic_score >= threshold and not major_unexpected and overall_text_ok:
-    #                 status = ComplianceStatus.COMPLIANT
-    #             elif basic_score == 0.0:
-    #                 status = ComplianceStatus.MISSING
-    #             elif not overall_text_ok:
-    #                 status = ComplianceStatus.NON_COMPLIANT
-    #             else:
-    #                 status = ComplianceStatus.NON_COMPLIANT
-
-    #         # Calculate combined score with appropriate weighting
-    #         if shelf_level == "header":
-    #             # Header: Balance product and text compliance
-    #             endcap = planogram_description.advertisement_endcap
-    #             weights = {
-    #                 "product_compliance": endcap.product_weight,
-    #                 "text_compliance": endcap.text_weight
-    #             }
-    #         else:
-    #             # Product shelves: Emphasize product compliance
-    #             weights = {"product_compliance": 0.9, "text_compliance": 0.1}
-
-    #         combined_score = (basic_score * weights["product_compliance"] +
-    #                         text_score * weights["text_compliance"])
-
-    #         results.append(
-    #             ComplianceResult(
-    #                 shelf_level=shelf_level,
-    #                 expected_products=expected,
-    #                 found_products=found,
-    #                 missing_products=missing,
-    #                 unexpected_products=unexpected,
-    #                 compliance_status=status,
-    #                 compliance_score=combined_score,
-    #                 text_compliance_results=text_results,
-    #                 text_compliance_score=text_score,
-    #                 overall_text_compliant=overall_text_ok
-    #             )
-    #         )
-
-    #     return results
-
     def check_planogram_compliance(
         self,
         identified_products: List[IdentifiedProduct],
         planogram_description: PlanogramDescription,
     ) -> List[ComplianceResult]:
         """Check compliance of identified products against the planogram."""
+        def _matches(ek, fk) -> bool:
+            (e_ptype, e_base), (f_ptype, f_base) = ek, fk
+            if e_ptype != f_ptype:
+                return False
+            if not e_base:  # planogram didn’t specify a model, accept type-only match
+                return True
+            if f_base == e_base:
+                return True
+            # containment: allow 'et-4950' inside 'epson et-4950 bundle' etc.
+            return e_base in f_base or f_base in e_base
+
         results: List[ComplianceResult] = []
+
+        planogram_brand = planogram_description.brand.lower()
+        found_brand_product = next((
+            p for p in identified_products if p.brand and p.brand.lower() == planogram_brand
+        ), None)
+
+        brand_compliance_result = BrandComplianceResult(
+            expected_brand=planogram_description.brand,
+            found_brand=found_brand_product.brand if found_brand_product else None,
+            found=bool(found_brand_product),
+            confidence=found_brand_product.confidence if found_brand_product else 0.0
+        )
+        brand_check_ok = brand_compliance_result.found
 
         by_shelf = defaultdict(list)
         for p in identified_products:
@@ -2889,31 +2021,71 @@ Respond with the structured data for all {len(detections)} objects.
             products_on_shelf = by_shelf.get(shelf_level, [])
 
             expected = []
+            # --- 1. Main matching loop for expected products ---
             for sp in shelf_cfg.products:
                 if sp.product_type in ("fact_tag", "price_tag", "slot"):
                     continue
-                nm = self._normalize_product_name((sp.name or sp.product_type) or "unknown")
-                expected.append(nm)
 
-            found, promos = [], []
+                e_ptype, e_base = self._canonical_expected_key(sp)
+                expected.append((e_ptype, e_base))
+
+            # --- Build canonical FOUND keys for this shelf (and keep refs for reporting) ---
+            found_keys = []      # list[(ptype, base_model)]
+            found_lookup = []    # parallel to found_keys to map back to strings for reporting
+            promos = []
             for p in products_on_shelf:
-                if p.product_type in ("fact_tag", "price_tag", "slot", "brand_logo"): # Exclude brand_logo from product counts
+                if p.product_type in ("fact_tag", "price_tag", "slot", "brand_logo"):
                     continue
-                nm = self._normalize_product_name(p.product_model or p.product_type)
-                found.append(nm)
+                f_ptype, f_base, f_conf = self._canonical_found_key(p)
+                found_keys.append((f_ptype, f_base))
                 if p.product_type == "promotional_graphic":
                     promos.append(p)
 
-            missing = [e for e in expected if e not in found]
-            unexpected = [] if shelf_cfg.allow_extra_products else [f for f in found if f not in expected]
-            basic_score = (sum(1 for e in expected if e in found) / (len(expected) or 1))
+                # for human-readable 'found_products' list later:
+                label = p.product_model or p.product_type or "unknown"
+                found_lookup.append((f_ptype, f_base, label))
+
+            # --- Matching: (ptype must match) AND (base_model equal OR base_model contained in planogram name) ---
+            matched = [False] * len(expected)
+            consumed = [False] * len(found_keys)
+
+            # Greedy 1:1 matching
+            for i, ek in enumerate(expected):
+                for j, fk in enumerate(found_keys):
+                    if matched[i] or consumed[j]:
+                        continue
+                    if _matches(ek, fk):
+                        matched[i] = True
+                        consumed[j] = True
+
+            # Compute lists for reporting/scoring
+            expected_readable = [
+                f"{e_ptype}:{e_base}" if e_base else f"{e_ptype}" for (e_ptype, e_base) in expected
+            ]
+            found_readable = []
+            for (used, (f_ptype, f_base), (_, _, original_label)) in zip(consumed, found_keys, found_lookup):
+                # Keep the original label for readability but also show our canonicalization
+                tag = original_label
+                if f_base:
+                    tag = f"{original_label} [{f_ptype}:{f_base}]"
+                found_readable.append(tag)
+
+            missing = [expected_readable[i] for i, ok in enumerate(matched) if not ok]
+
+            # If extras not allowed, mark unexpected any unconsumed found
+            unexpected = []
+            if not shelf_cfg.allow_extra_products:
+                for used, (f_ptype, f_base), (_, _, original_label) in zip(consumed, found_keys, found_lookup):
+                    if not used:
+                        lbl = original_label
+                        if f_base:
+                            lbl = f"{original_label} [{f_ptype}:{f_base}]"
+                        unexpected.append(lbl)
+
+            # Product score = fraction of expected matched
+            basic_score = (sum(1 for ok in matched if ok) / (len(expected) or 1.0))
 
             text_results, text_score, overall_text_ok = [], 1.0, True
-
-            # NEW: Initialize variables for brand compliance
-            brand_compliance_result: Optional[BrandComplianceResult] = None
-            brand_score = 0.0
-            brand_check_ok = True # Assume OK unless mandatory check fails
 
             endcap = planogram_description.advertisement_endcap
             if endcap and endcap.enabled and endcap.position == shelf_level:
@@ -2966,37 +2138,6 @@ Respond with the structured data for all {len(detections)} objects.
                     if text_results:
                         text_score = sum(r.confidence for r in text_results if r.found) / len(text_results)
 
-                # NEW: Implement the brand logo check for the header shelf
-                brand_reqs = planogram_description.brand or None
-                if brand_reqs:
-                    expected_brand = planogram_description.brand
-                    # Find the detected brand_logo object on this shelf
-                    brand_logo_product = next(
-                        (p for p in products_on_shelf if p.product_type == 'brand_logo'), None
-                    )
-
-                    found_brand = None
-                    is_match = False
-                    logo_confidence = 0.0
-
-                    if brand_logo_product and brand_logo_product.brand:
-                        found_brand = brand_logo_product.brand
-                        logo_confidence = brand_logo_product.confidence
-                        # Case-insensitive comparison for robustness
-                        if expected_brand.lower() in found_brand.lower():
-                            is_match = True
-                            brand_score = 1.0
-
-                    brand_compliance_result = BrandComplianceResult(
-                        expected_brand=expected_brand,
-                        found_brand=found_brand,
-                        found=is_match,
-                        confidence=logo_confidence
-                    )
-
-                    # Apply the mandatory rule
-                    brand_check_ok = is_match
-
             elif shelf_level != "header":
                 overall_text_ok = True
                 text_score = 1.0
@@ -3005,7 +2146,9 @@ Respond with the structured data for all {len(detections)} objects.
                 shelf_cfg, "compliance_threshold", planogram_description.global_compliance_threshold or 0.8
             )
 
-            major_unexpected = [p for p in unexpected if "ink bottle" not in p.lower() and "price tag" not in p.lower()]
+            major_unexpected = [
+                p for p in unexpected if "ink bottle" not in p.lower() and "price tag" not in p.lower()
+            ]
 
             # MODIFIED: Status determination logic with brand check override
             status = ComplianceStatus.NON_COMPLIANT # Default status
@@ -3035,12 +2178,17 @@ Respond with the structured data for all {len(detections)} objects.
                 combined_score = (
                     (basic_score * weights["product"]) +
                     (text_score * weights["text"]) +
-                    (brand_score * weights["brand"])
+                    (brand_compliance_result.confidence * weights["brand"])
                 )
             else:
                 weights = {"product_compliance": 0.9, "text_compliance": 0.1}
-                combined_score = (basic_score * weights["product_compliance"] + text_score * weights["text_compliance"])
+                combined_score = (
+                    basic_score * weights["product_compliance"] + text_score * weights["text_compliance"]
+                )
 
+            # Prepare human-readable outputs
+            expected = expected_readable
+            found = found_readable
             results.append(
                 ComplianceResult(
                     shelf_level=shelf_level,
@@ -3059,105 +2207,228 @@ Respond with the structured data for all {len(detections)} objects.
 
         return results
 
-    def _normalize_product_name(self, product_name: str) -> str:
-        """Normalize product names for comparison"""
-        if not product_name:
-            return "unknown"
+    def _base_model_from_str(self, s: str) -> str:
+        """Extract normalized base model like 'et-4950' from any text."""
+        if not s:
+            return ""
+        t = s.lower()
+        # normalize separators
+        t = t.replace("—", "-").replace("–", "-").replace(" ", "")
+        m = re.search(r"(et)[- ]?(\d{4})", t)
+        if not m:
+            return ""
+        return f"{m.group(1)}-{m.group(2)}"  # et-4950
 
-        name = product_name.lower().strip()
+    def _looks_like_box(self, visual_features: list[str] | None) -> bool:
+        """Heuristic: does the detection look like packaging?"""
+        if not visual_features:
+            return False
+        keywords = {"packaging", "package", "cardboard", "box", "blue packaging", "printer image on box"}
+        norm = " ".join(visual_features).lower()
+        return any(k in norm for k in keywords)
 
-        # Just handle the essential mappings
-        if "promotional" in name or "advertisement" in name or "graphic" in name:
-            return "promotional_graphic"
+    def _canonical_expected_key(self, sp) -> tuple[str, str]:
+        """
+        From planogram product spec -> (product_type, base_model).
+        Example: name='ET-4950', product_type='product_box' -> ('product_box','et-4950')
+        """
+        ptype = (sp.product_type or "").strip().lower()
+        # model from sp.name if present; fall back to ptype
+        base = self._base_model_from_str(getattr(sp, "name", "") or "")
+        return ptype or "unknown", base or ""
 
-        # Map various representations to standard names
-        # TODO: get the product list from planogram_config
-        # example: "ET-2980", "ET-2980 box", "Epson EcoTank Advertisement", "price tag", etc.
-        mapping = {
-            # Printer models (device only)
-            "et-2980": "et_2980",
-            "et2980": "et_2980",
-            "et-3950": "et_3950",
-            "et3950": "et_3950",
-            "et-4950": "et_4950",
-            "et4950": "et_4950",
+    def _canonical_found_key(self, p) -> tuple[str, str, float]:
+        """
+        From IdentifiedProduct -> (resolved_product_type, base_model, adjusted_confidence).
+        If visual features scream 'box', coerce/confirm product_type as 'product_box' and boost conf a bit.
+        """
+        ptype = (p.product_type or "").strip().lower()
+        base = self._base_model_from_str(p.product_model or p.product_type)
+        conf = float(getattr(p, "confidence", 0.0) or 0.0)
 
-            # Box versions (explicit box naming)
-            "et-2980 box": "et_2980_box",
-            "et2980 box": "et_2980_box",
-            "et-3950 box": "et_3950_box",
-            "et3950 box": "et_3950_box",
-            "et-4950 box": "et_4950_box",
-            "et4950 box": "et_4950_box",
+        if self._looks_like_box(getattr(p, "visual_features", None)):
+            if ptype != "product_box":
+                ptype = "product_box"
+            conf = min(1.0, conf + 0.05)  # gentle nudge for box evidence
+        return ptype or "unknown", base or "", conf
 
-            # Alternative box patterns
-            "et-2980 product box": "et_2980_box",
-            "et-3950 product box": "et_3950_box",
-            "et-4950 product box": "et_4950_box",
+    async def _find_poster(
+        self,
+        image: Image.Image,
+        planogram: PlanogramDescription
+    ) -> tuple[Detections, Detections, Detections, Detections]:
+        """
+        Ask VISION Model to find the main promotional graphic for the given brand/tags.
+        Returns (x1,y1,x2,y2) in absolute pixels, and the parsed JSON for logging.
+        """
+        brand = (getattr(planogram, "brand", "") or "").strip()
+        tags = [t.strip() for t in getattr(planogram, "tags", []) or []]
+        endcap = getattr(planogram, "advertisement_endcap", None)
+        if endcap and getattr(endcap, "text_requirements", None):
+            for tr in endcap.text_requirements:
+                if getattr(tr, "required_text", None):
+                    tags.append(tr.required_text)
+        tag_hint = ", ".join(sorted(set(f"'{t}'" for t in tags if t)))
 
-            # Generic terms
-            "printer": "device",
-            "product_box": "box",
-            "fact_tag": "price_tag",
-            "price_tag": "price_tag",
-            "fact tag": "price_tag",
-            "price tag": "price_tag",
-            "promotional_graphic": "promotional_graphic",
-            "epson ecotank advertisement": "promotional_graphic",
-            "backlit_graphic": "promotional_graphic",
+        # downscale for LLM
+        image_small = self._downscale_image(image, max_side=1024, quality=78)
+        prompt = f"""
+Analyze the image to identify the entire retail endcap display and its key components.
 
-            # Handle promotional graphics correctly
-            "promotional_graphic": "promotional_graphic",
-            "epson ecotank advertisement": "promotional_graphic",
-            "backlit_graphic": "promotional_graphic",
-            "advertisement": "promotional_graphic",
-            "graphic": "promotional_graphic",
-            "promo": "promotional_graphic",
-            "banner": "promotional_graphic",
-            "sign": "promotional_graphic",
-            "poster": "promotional_graphic",
-            "display": "promotional_graphic",
-            # Handle None values for promotional graphics
-            "none": "promotional_graphic"
-        }
+Your response must be a single JSON object with a 'detections' list. Each detection must have a 'label', 'confidence', a 'content' with any detected text, and a 'bbox' with normalized coordinates (x1, y1, x2, y2).
 
-        # First try exact matches
-        if name in mapping:
-            return mapping[name]
+Useful phrases to look for inside the lightbox: {tag_hint}
 
-        promotional_keywords = ['advertisement', 'graphic', 'promo', 'banner', 'sign', 'poster', 'display', 'ecotank']
-        if any(keyword in name for keyword in promotional_keywords):
-            return "promotional_graphic"
+Return all detections with the following strict criteria:
 
-        # Then try pattern matching for boxes
-        for pattern in ["et-2980", "et2980"]:
-            if pattern in name and "box" in name:
-                return "et_2980_box"
-        for pattern in ["et-3950", "et3950"]:
-            if pattern in name and "box" in name:
-                return "et_3950_box"
-        for pattern in ["et-4950", "et4950"]:
-            if pattern in name and "box" in name:
-                return "et_4950_box"
+1. **'brand_logo'**: A bounding box for the '{brand}' brand logo at the top of the sign.
 
-        # Pattern matching for printers (without box)
-        for pattern in ["et-2980", "et2980"]:
-            if pattern in name and "box" not in name:
-                return "et_2980"
-        for pattern in ["et-3950", "et3950"]:
-            if pattern in name and "box" not in name:
-                return "et_3950"
-        for pattern in ["et-4950", "et4950"]:
-            if pattern in name and "box" not in name:
-                return "et_4950"
+2. **'poster_text'**: A bounding box for the main marketing text on the sign, must include phrases like {tag_hint}.
 
-        return name
+3. **'promotional_graphic'**: A bounding box for the main promotional graphic on the sign, which may include images of products and other marketing visuals. The box should tightly enclose the graphic area without cutting off any important elements.
+
+4. **'poster_panel'**: A bounding box that **tightly encloses the entire backlit sign, The box must **tightly enclose the sign's outer silver/gray frame on all four sides.** For this detection, 'content' should be null.
+
+5. **'endcap'**: A bounding box for the entire retail endcap display structure. It must start at the top of the sign and extend down to the **base of the lowest shelf**, including price tags and products boxes. The box must be wide enough to **include all products and product boxes on all shelves without cropping.** For this detection, 'content' should be null.
+
+"""
+        max_attempts = 2  # Initial attempt + 1 retry
+        retry_delay_seconds = 10
+        msg = None
+        for attempt in range(max_attempts):
+            try:
+                async with self.roi_client as client:
+                    msg = await client.ask_to_image(
+                        image=image_small,
+                        prompt=prompt,
+                        model="gemini-2.5-flash",
+                        no_memory=True,
+                        structured_output=Detections,
+                    )
+                # If the call succeeds, break out of the loop
+                break
+            except ServerError as e:
+                # Check if this was the last attempt
+                if attempt < max_attempts - 1:
+                    print(
+                        f"WARNING: Model is overloaded. Retrying in {retry_delay_seconds} seconds... (Attempt {attempt + 1}/{max_attempts})"
+                    )
+                    await asyncio.sleep(retry_delay_seconds)
+                else:
+                    print(
+                        f"ERROR: Model is still overloaded after {max_attempts} attempts. Failing."
+                    )
+                    # Re-raise the exception if the last attempt fails
+                    raise e
+        # Evaluate the Output:
+        data = msg.structured_output or msg.output or {}
+        dets = data.detections or []
+        if not dets:
+            return None, data
+        # pick detections
+        panel_det = next(
+            (d for d in dets if d.label == "poster_panel"), None) \
+            or next((d for d in dets if d.label == "poster"), None) \
+            or (max(dets, key=lambda x: float(x.confidence)) if dets else None
+        )
+        # poster text:
+        text_det = next((d for d in dets if d.label == "poster_text"), None)
+        # brand logo:
+        brand_det = next((d for d in dets if d.label == "brand_logo"), None)
+        if not panel_det:
+            self.logger.error("Critical failure: Could not detect the poster_panel.")
+            return None, None, None, None
+
+        # promotional graphic (inside the panel):
+        promo_graphic_det = next(
+            (d for d in dets if d.label == "promotional_graphic"), None
+        )
+
+        # check if promo_graphic is contained by panel_det, if not, increase the panel:
+        if promo_graphic_det and panel_det:
+            # If promo graphic is outside panel, expand panel to include it
+            if not (
+                promo_graphic_det.bbox.x1 >= panel_det.bbox.x1 and
+                promo_graphic_det.bbox.x2 <= panel_det.bbox.x2
+            ):
+                self.logger.info("Expanding poster_panel to include promotional_graphic.")
+                panel_det.bbox.x1 = min(panel_det.bbox.x1, promo_graphic_det.bbox.x1)
+                panel_det.bbox.x2 = max(panel_det.bbox.x2, promo_graphic_det.bbox.x2)
+
+        # Get planogram advertisement config with safe defaults
+        advertisement_config = getattr(planogram, "advertisement_endcap", {})
+        # Default values if not in planogram, normalized to image (not ROI)
+        config_width_percent = advertisement_config.width_margin_percent
+        config_height_percent = advertisement_config.height_margin_percent
+        config_top_margin_percent = advertisement_config.top_margin_percent
+        # E.g., 5% of panel width
+        side_margin_percent = advertisement_config.side_margin_percent
+
+        # --- Refined Panel Padding ---
+        # Apply padding to the panel_det itself to ensure it captures the full visual area
+        panel_det.bbox.x1 = max(0.0, panel_det.bbox.x1 - side_margin_percent)
+        panel_det.bbox.x2 = min(1.0, panel_det.bbox.x2 + side_margin_percent)
+
+        if panel_det and text_det:
+            text_bottom_y2 = text_det.bbox.y2
+            padding = 0.08
+            new_panel_y2 = min(text_bottom_y2 + padding, 1.0)
+            panel_det.bbox.y2 = new_panel_y2
+
+        # --- endcap Detected:
+        endcap_det = next((d for d in dets if d.label == "endcap"), None)
+
+        # panel
+        px1, py1, px2, py2 = panel_det.bbox.x1, panel_det.bbox.y1, panel_det.bbox.x2, panel_det.bbox.y2
+
+        # Initial endcap box: Use the LLM's endcap detection if it exists, otherwise fall back to the panel
+        if endcap_det:
+            ex1, ey1, ex2, ey2 = endcap_det.bbox.x1, endcap_det.bbox.y1, endcap_det.bbox.x2, endcap_det.bbox.y2
+        else:
+            ex1, ey1, ex2, ey2 = px1, py1, px2, py2
+
+        if endcap_det is None:
+            panel_h = py2 - py1
+            ratio = max(1e-6, float(config_height_percent))
+            top_margin = float(config_top_margin_percent)
+            ey1 = max(0.0, py1 - top_margin)
+            ey2 = min(1.0, ey1 + panel_h / ratio)
+
+        x_buffer = max(self.left_margin_ratio * (px2-px1), self.right_margin_ratio * (px2-px1))
+        ex1 = min(ex1, px1 - x_buffer)
+        ex2 = max(ex2, px2 + x_buffer)
+
+        # Clamp & monotonic
+        ex1 = max(0.0, ex1)
+        ex2 = min(1.0, ex2)
+        if ex2 <= ex1:
+            ex2 = ex1 + 1e-6
+        ey1 = max(0.0, ey1)
+        ey2 = min(1.0, ey2)
+        if ey2 <= ey1:
+            ey2 = ey1 + 1e-6
+
+        # Update the endcap_det bbox with the corrected values
+        if endcap_det is None:
+            endcap_det = DetectionBox(
+                x1=ex1, y1=ey1, x2=ex2, y2=ey2,
+                confidence=0.9, # Assign a default confidence
+                label="endcap"
+            )
+        else:
+            endcap_det.bbox.x1 = ex1
+            endcap_det.bbox.x2 = ex2
+            endcap_det.bbox.y1 = ey1
+            endcap_det.bbox.y2 = ey2
+
+        return endcap_det, panel_det, brand_det, text_det, dets
 
     # Complete Pipeline
     async def run(
         self,
         image: Union[str, Path, Image.Image],
         planogram_description: PlanogramDescription,
+        debug_raw="/tmp/data/yolo_raw_debug.png",
         return_overlay: Optional[str] = None,  # "identified" | "detections" | "both" | None
         overlay_save_path: Optional[Union[str, Path]] = None,
     ) -> Dict[str, Any]:
@@ -3167,10 +2438,37 @@ Respond with the structured data for all {len(detections)} objects.
         Returns:
             Complete analysis results including all steps
         """
+        self.logger.debug("Step 1: Find Region of Interest...")
+        # Optimize Image for Classification:
+        img = self.open_image(image)
 
-        self.logger.debug("Step 1: Detecting objects and shelves...")
+        # ROI detection:
+        img_array = np.array(img)  # RGB
+
+        # 1) Find the poster:
+        endcap, ad, brand, panel_text, dets = await self._find_poster(
+            img, planogram_description
+        )
+        if return_overlay == 'detections' or return_overlay == 'both':
+            debug_poster_path = debug_raw.replace(".png", "_poster_debug.png") if debug_raw else None
+            panel_px = ad.bbox.get_coordinates()
+            self._save_detections(
+                image, panel_px, dets, debug_poster_path
+            )
+        # Check if detections are valid before proceeding
+        if not endcap or not ad:
+            print("ERROR: Failed to get required detections.")
+            return # or raise an exception
+
+        # Locate Shelves and Objects:
         shelf_regions, detections = await self.detect_objects_and_shelves(
-            image, planogram_description
+            image,
+            img_array,
+            endcap=endcap,
+            ad=ad,
+            brand=brand,
+            panel_text=panel_text,
+            planogram_description=planogram_description
         )
 
         self.logger.debug(
@@ -3210,7 +2508,7 @@ Respond with the structured data for all {len(detections)} objects.
             )
         overlay_image = None
         overlay_path = None
-        if return_overlay:
+        if return_overlay == 'identified' or return_overlay == 'both':
             overlay_image = self.render_evaluated_image(
                 image,
                 shelf_regions=shelf_regions,

@@ -196,13 +196,17 @@ class TextRequirement(BaseModel):
 
 class AdvertisementEndcap(BaseModel):
     """Configuration for advertisement endcap"""
-    enabled: bool = Field(default=False, description="Whether endcap advertisement is present")
+    enabled: bool = Field(default=True, description="Whether endcap advertisement is present")
     promotional_type: Literal["backlit_graphic", "endcap_poster", "shelf_talker", "banner", "digital_display"] = Field(
         default="backlit_graphic", description="Type of promotional display"
     )
     position: Literal["header", "top", "middle", "bottom", "side"] = Field(default="header", description="Position of endcap")
     product_weight: float = Field(default=0.8, description="Weight of product compliance in overall score")
     text_weight: float = Field(default=0.2, description="Weight of text compliance in overall score")
+    top_margin_percent: float = Field(default=0.02, description="Top margin percent of image for panel detection")
+    width_margin_percent: float = Field(default=0.45, description="Width percent of image for panel detection")
+    height_margin_percent: float = Field(default=0.33, description="Height percent of image for panel detection")
+    side_margin_percent: float = Field(default=0.05, description="Side margin percent for panel detection")
     brand_requirements: List[str] = Field(default_factory=list, description="Required brand elements")
     text_requirements: List[TextRequirement] = Field(default_factory=list, description="Required text elements")
     reference_image_path: Optional[str] = Field(default=None, description="Path to reference image for comparison")
@@ -226,7 +230,7 @@ class PlanogramDescription(BaseModel):
     aisle: AisleConfig = Field(description="Aisle configuration")
     tags: List[str] = Field(default_factory=list, description="Tags for special features or promotions")
     advertisement: Dict[str, Any] = Field(default_factory=dict, description="Advertisement sizing and positioning")
-
+    text_tokens: List[str] = Field(default_factory=list, description="Additional text tokens for detection")
     # Detection configuration
     brand_detection: BrandDetectionConfig = Field(default_factory=BrandDetectionConfig, description="Brand detection settings")
     category_detection: CategoryDetectionConfig = Field(default_factory=CategoryDetectionConfig, description="Category detection settings")
@@ -405,6 +409,7 @@ class PlanogramDescriptionFactory:
             brand=config_dict["brand"],
             category=config_dict["category"],
             aisle=aisle_config,
+            text_tokens=config_dict.get("text_tokens", []),
             advertisement=config_dict.get("advertisement", {}),
             tags=config_dict.get("tags", []),
             brand_detection=brand_detection_config,
