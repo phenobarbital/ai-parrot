@@ -37,6 +37,13 @@ async def main():
             "name": "Electronics > Printers & Printer Boxes and Supplies",
             "lighting_conditions": "bright"
         },
+        "text_tokens": [
+            "retail promotional poster lightbox",
+            "Printer device",
+            "Epson Product cardboard box",
+            "Price Tag",
+            "Cartridge ink bottle"
+        ],
         "shelves": [
             {
                 "level": "header",
@@ -80,22 +87,23 @@ async def main():
                 "level": "bottom", # No height_ratio = remaining space
                 "products": [
                     {
-                        "name": "ET-2980 box",
-                        "product_type": "printer_box",
+                        "name": "ET-2980",
+                        "product_type": "product_box",
                         "quantity_range": [1, 2]
                     },
                     {
-                        "name": "ET-3950 box",
-                        "product_type": "printer_box",
+                        "name": "ET-3950",
+                        "product_type": "product_box",
                         "quantity_range": [1, 2]
                     },
                     {
-                        "name": "ET-4950 box",
-                        "product_type": "printer_box",
+                        "name": "ET-4950",
+                        "product_type": "product_box",
                         "quantity_range": [1, 2]
                     }
                 ],
-                "compliance_threshold": 0.8 # More flexibility for boxes
+                "compliance_threshold": 0.8, # More flexibility for boxes
+                "allow_extra_products": True
             }
         ],
         "advertisement_endcap": {
@@ -123,6 +131,105 @@ async def main():
         }
     }
 
+    # planogram_config = {
+    #     "brand": "Hisense",
+    #     "category": "TVs",
+    #     "aisle": {
+    #         "name": "Electronics > TVs & Home Theater",
+    #         "lighting_conditions": "dim"
+    #     },
+    #     "shelves": [
+    #         {
+    #             "level": "header",
+    #             "height_ratio": 0.15,
+    #             "products": [
+    #                 {
+    #                     "name": "Hisense Header Advertisement",
+    #                     "product_type": "promotional_graphic",
+    #                     "mandatory": True
+    #                 }
+    #             ],
+    #             "allow_extra_products": True,
+    #             "compliance_threshold": 0.95
+    #         },
+    #         {
+    #             "level": "top_tv",
+    #             "height_ratio": 0.25,
+    #             "products": [
+    #                 {
+    #                     "name": "Hisense TV",
+    #                     "product_type": "tv",
+    #                     "quantity_range": [1, 1],
+    #                     "position_preference": "center"
+    #                 }
+    #             ],
+    #             "compliance_threshold": 0.9
+    #         },
+    #         {
+    #             "level": "middle_tv",
+    #             "height_ratio": 0.25,
+    #             "products": [
+    #                 {
+    #                     "name": "Hisense TV",
+    #                     "product_type": "tv",
+    #                     "quantity_range": [1, 1],
+    #                     "position_preference": "center"
+    #                 }
+    #             ],
+    #             "compliance_threshold": 0.9
+    #         },
+    #         {
+    #             "level": "bottom_tv",
+    #             "height_ratio": 0.25,
+    #             "products": [
+    #                 {
+    #                     "name": "Hisense TV",
+    #                     "product_type": "tv",
+    #                     "quantity_range": [1, 1],
+    #                     "position_preference": "center"
+    #                 }
+    #             ],
+    #             "compliance_threshold": 0.9
+    #         },
+    #         {
+    #             "level": "bottom_promo",
+    #             "height_ratio": 0.10,
+    #             "products": [
+    #                 {
+    #                     "name": "Hisense Bottom Advertisement",
+    #                     "product_type": "promotional_graphic",
+    #                     "mandatory": True
+    #                 }
+    #             ],
+    #             "allow_extra_products": True,
+    #             "compliance_threshold": 0.9
+    #         }
+    #     ],
+    #     "advertisement_endcap": {
+    #         "enabled": True,
+    #         "promotional_type": "endcap_poster",
+    #         "position": "header",
+    #         "product_weight": 0.8,
+    #         "text_weight": 0.2,
+    #         "side_margin_percent": 0.05,
+    #         "text_requirements": [
+    #             {
+    #                 "required_text": "Hisense",
+    #                 "match_type": "contains",
+    #                 "mandatory": True
+    #             },
+    #             {
+    #                 "required_text": "OFFICIAL PARTNER",
+    #                 "match_type": "contains",
+    #                 "mandatory": True
+    #             }
+    #         ],
+    #         "size_constraints": {
+    #             "backlit_height_ratio": 0.25
+    #         }
+    #     }
+    # }
+
     planogram = pipeline.create_planogram_description(
         config=planogram_config
     )
@@ -138,6 +245,8 @@ async def main():
     # image_path = BASE_DIR / "examples" / "pipelines" / "f7b45f4c-c33f-4312-9afb-e01af138e6f8-recap.jpeg"
     # check if compliance:
     # image_path = BASE_DIR / "examples" / "pipelines" / "check-compliance.jpeg"
+    # Other Brand?
+    # image_path = BASE_DIR / "examples" / "pipelines" / "hisense-2.jpg"
 
     # Run complete pipeline
     results = await pipeline.run(
