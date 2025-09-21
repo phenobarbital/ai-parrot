@@ -175,6 +175,7 @@ class ShelfProduct(BaseModel):
     quantity_range: tuple[int, int] = Field(default=(1, 1), description="Min and max quantity expected")
     position_preference: Optional[Literal["left", "center", "right"]] = Field(default=None, description="Preferred position on shelf")
     mandatory: bool = Field(default=True, description="Whether this product is required")
+    visual_features: Optional[List[str]] = Field(default=None, description="Expected key visual identifiers and features for this product")
 
 class ShelfConfig(BaseModel):
     """Configuration for a single shelf"""
@@ -197,7 +198,7 @@ class TextRequirement(BaseModel):
 class AdvertisementEndcap(BaseModel):
     """Configuration for advertisement endcap"""
     enabled: bool = Field(default=True, description="Whether endcap advertisement is present")
-    promotional_type: Literal["backlit_graphic", "endcap_poster", "shelf_talker", "banner", "digital_display"] = Field(
+    promotional_type: Literal["backlit_graphic", "endcap_poster", "shelf_talker", "banner", "digital_display", "integrated_display"] = Field(
         default="backlit_graphic", description="Type of promotional display"
     )
     position: Literal["header", "top", "middle", "bottom", "side"] = Field(default="header", description="Position of endcap")
@@ -216,7 +217,7 @@ class AisleConfig(BaseModel):
     """Configuration for aisle-specific settings"""
     name: str = Field(description="Aisle name (electronics, furniture, etc.)")
     category_hints: List[str] = Field(default_factory=list, description="Product category hints for this aisle")
-    lighting_conditions: Literal["bright", "normal", "dim"] = Field(default="normal", description="Expected lighting")
+    lighting_conditions: Literal["bright", "normal", "dim", "retail_standard"] = Field(default="normal", description="Expected lighting")
     shelf_spacing: Optional[float] = Field(default=None, description="Expected spacing between shelves")
 
 
