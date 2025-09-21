@@ -34,8 +34,7 @@ from ..models.detections import (
     Detections,
     ShelfRegion,
     IdentifiedProduct,
-    PlanogramDescription,
-    PlanogramDescriptionFactory,
+    PlanogramDescription
 )
 from ..models.compliance import (
     ComplianceResult,
@@ -45,6 +44,7 @@ from ..models.compliance import (
     BrandComplianceResult
 )
 from .detector import AbstractDetector
+from .models import PlanogramConfig
 
 
 CID = {
@@ -1305,12 +1305,10 @@ class PlanogramCompliancePipeline(AbstractPipeline):
     """
     def __init__(
         self,
+        planogram_config: PlanogramConfig,
         llm: Any = None,
-        llm_provider: str = "claude",
+        llm_provider: str = "google",
         llm_model: Optional[str] = None,
-        detection_model: str = "yolov8n",
-        reference_images: Dict[str, Path] = None,
-        confidence_threshold: float = 0.25,
         **kwargs: Any
     ):
         """
@@ -1322,32 +1320,34 @@ class PlanogramCompliancePipeline(AbstractPipeline):
             api_key: API key
             detection_model: Object detection model to use
         """
-        self.detection_model_name = detection_model
-        self.factory = PlanogramDescriptionFactory()
         # Endcap geometry defaults (can be tuned per program)
         self.endcap_aspect_ratio = kwargs.get('endcap_aspect_ratio', 1.35)   # width / height
         self.left_margin_ratio   = kwargs.get('left_margin_ratio', 0.01)
         self.right_margin_ratio  = kwargs.get('right_margin_ratio', 0.03)
         self.top_margin_ratio    = kwargs.get('top_margin_ratio', 0.02)
+        # saving the planogram config for later use
+        self.planogram_config = planogram_config
         super().__init__(
             llm=llm,
             llm_provider=llm_provider,
             llm_model=llm_model,
             **kwargs
         )
+        reference_images = planogram_config.reference_images
+        references = list(reference_images.values()) if reference_images else None
         # Initialize the generic shape detector
         self.shape_detector = RetailDetector(
-            yolo_model=detection_model,
-            conf=confidence_threshold,
+            yolo_model=planogram_config.detection_model,
+            conf=planogram_config.confidence_threshold,
             llm=self.llm,
             device="cuda" if torch.cuda.is_available() else "cpu",
-            reference_images=list(reference_images.values())
+            reference_images=references
         )
         self.logger.debug(
-            f"Initialized RetailDetector with {detection_model}"
+            f"Initialized RetailDetector with {planogram_config.detection_model}"
         )
         self.reference_images = reference_images or {}
-        self.confidence_threshold = confidence_threshold
+        self.confidence_threshold = planogram_config.confidence_threshold
 
     async def detect_objects_and_shelves(
         self,
@@ -1487,7 +1487,8 @@ class PlanogramCompliancePipeline(AbstractPipeline):
         image: Union[str, Path, Image.Image],
         detections: List[DetectionBox],
         shelf_regions: List[ShelfRegion],
-        reference_images: List[Union[str, Path, Image.Image]]
+        reference_images: List[Union[str, Path, Image.Image]],
+        prompt: str
     ) -> List[IdentifiedProduct]:
         """
         Step 2: Use LLM to identify detected objects using reference images
@@ -1497,6 +1498,7 @@ class PlanogramCompliancePipeline(AbstractPipeline):
             detections: Object detections from Step 1
             shelf_regions: Shelf regions from Step 1
             reference_images: Reference product images
+            prompt: Prompt for object identification
 
         Returns:
             List of identified products
@@ -1521,36 +1523,22 @@ class PlanogramCompliancePipeline(AbstractPipeline):
 
         async with self.llm as client:
             try:
-                if self.llm_provider == "google":
-                    extra_refs = {
-                        "annotated_image": annotated_image,
-                        **reference_images
-                    }
-                    identified_products = await client.image_identification(
-                        prompt=self._build_gemini_identification_prompt(effective_dets, shelf_regions),
-                        image=image,
-                        detections=effective_dets,
-                        shelf_regions=shelf_regions,
-                        reference_images=extra_refs,
-                        temperature=0.0
-                    )
-                elif self.llm_provider == "openai":
-                    # Build identification prompt (without structured output request)
-                    prompt = self._build_identification_prompt(effective_dets, shelf_regions)
-                    extra_refs = [annotated_image] + (list(reference_images.values()) or [])
-                    identified_products = await client.image_identification(
-                        image=image,
-                        prompt=prompt,
-                        detections=effective_dets,
-                        shelf_regions=shelf_regions,
-                        reference_images=extra_refs,
-                        temperature=0.0,
-                        ocr_hints=True
-                    )
-                else:
-                    # Fallback to your existing logic for other clients like OpenAI
-                    self.logger.warning("Using legacy identification logic.")
-                    return [] # Placeholder for your other client logic
+                extra_refs = {
+                    "annotated_image": annotated_image,
+                    **reference_images
+                }
+                identified_products = await client.image_identification(
+                    prompt=self._build_gemini_identification_prompt(
+                        effective_dets,
+                        shelf_regions,
+                        partial_prompt=prompt
+                    ),
+                    image=image,
+                    detections=effective_dets,
+                    shelf_regions=shelf_regions,
+                    reference_images=extra_refs,
+                    temperature=0.0
+                )
                 identified_products = await self._augment_products_with_box_ocr(
                     image,
                     identified_products
@@ -1781,7 +1769,8 @@ class PlanogramCompliancePipeline(AbstractPipeline):
     def _build_gemini_identification_prompt(
         self,
         detections: List[DetectionBox],
-        shelf_regions: List[ShelfRegion]
+        shelf_regions: List[ShelfRegion],
+        partial_prompt: str
     ) -> str:
         """Builds a more detailed prompt to help Gemini differentiate similar products."""
 
@@ -1796,6 +1785,7 @@ class PlanogramCompliancePipeline(AbstractPipeline):
 
         shelf_definitions = ["\n**VALID SHELF NAMES & LOCATIONS (Ground Truth):**"]
         valid_shelf_names = []
+        num_detections = len(detections)
         for shelf in shelf_regions:
             # if shelf.level in ['header', 'middle', 'bottom']:
             valid_shelf_names.append(f"'{shelf.level}'")
@@ -1805,7 +1795,7 @@ class PlanogramCompliancePipeline(AbstractPipeline):
         # REVISED: Enhanced prompt with new rules
         prompt = f"""
 You are an expert at identifying retail products in planogram displays.
-I have provided an image of a retail endcap, labeled reference images, and a list of {len(detections)} pre-detected objects.
+I have provided an image of a retail endcap, labeled reference images, and a list of {num_detections} pre-detected objects.
 
 {''.join(detection_lines)}
 {''.join(shelf_definitions)}
@@ -1813,44 +1803,24 @@ I have provided an image of a retail endcap, labeled reference images, and a lis
 **YOUR TASK:**
 For each distinct product, you must first analyze its visual features according to the guide, state your reasoning, and then provide the final identification.
 
----
-**!! IMPORTANT VISUAL GUIDE FOR PRINTERS !!**
-You MUST use the control panel or size of screen to tell the printer models apart. This is the most important rule.
-* **ET-2980:** Has a **simple control panel** with a tiny screen and arrow buttons.
-* **ET-3950:** Has a **larger control panel LED screen and several buttons (11 buttons)**.
-* **ET-4950:** Has a **large color TOUCHSCREEN** with no more than 3 physical buttons.
-
----
-**!! CRITICAL IDENTIFICATION RULES !!**
-
-1.  **ANALYZE EACH PRINTER INDEPENDENTLY:** DO NOT assume all printers are the same model. You must analyze the control panel of EACH printer individually.
-
-2. **CONSOLIDATION (To Avoid Duplicates):**
-   - If multiple detection IDs refer to the same single object, provide **only ONE entry** for that object. Choose the ID that best represents the entire object.
-
-3. **PRODUCT TYPES & PLACEMENT HEURISTICS:**
-   - **PRINTERS (Devices):** White/gray devices, typically on 'middle' shelves.
-   - **BOXES (Packaging):** Blue packaging, typically on 'bottom' shelves.
-   - **PROMOTIONAL GRAPHICS:** Large signs/posters, typically on the 'header'.
-
-4. **UNREADABLE MODELS:**
-   - If a model number on a box is obscured, set `product_model` to **'Unreadable Box'**.
-
-5. **NEWLY FOUND OBJECTS (MANDATORY):**
-   - If you identify a prominent product that was NOT pre-detected (e.g., a large box missed by the first pass), set its `detection_id` to `null`.
-   - For these newly found items, you **MUST** also provide an estimated `detection_box` field with an array of four pixel coordinates `[x1, y1, x2, y2]`. **This field is NOT optional for new items.**
-
+"""
+        partial_prompt = partial_prompt.strip().format(
+            num_detections=num_detections,
+            shelf_names=", ".join(valid_shelf_names)
+        )
+        prompt += partial_prompt + "\n"
+        prompt += f"""
 ---
 **JSON OUTPUT FORMAT:**
 Respond with a single JSON object. For each **distinct product** you identify, provide an entry in the 'detections' list.
 
 - **detection_id**: The pre-detected ID number, or `null` for newly found items.
 - **detection_box**: **REQUIRED** if `detection_id` is `null`. An array of four numbers `[x1, y1, x2, y2]`.
-- **product_type**: printer, product_box, fact_tag, promotional_graphic, or ink_bottle.
+- **product_type**: printer, tv, product_box, fact_tag, promotional_graphic, or ink_bottle.
 - **product_model**: Follow naming rules above.
 - **confidence**: Your confidence (0.0-1.0).
-- **visual_features**: List of key visual features.
--   **reasoning**: **(MANDATORY FOR PRINTERS)** A brief sentence explaining your identification based on the visual guide. Example: "Reasoning: The control panel has a physical number pad, which matches the ET-3950 guide."
+- **visual_features**: List of key visual features as if device is turned on, color, size, brightness or any other visual features.
+-   **reasoning**: A brief sentence explaining your identification based on the visual guide. Example: "Reasoning: The control panel has a physical key pad, which matches the ET-3950 guide."
 -   **reference_match**: Which reference image name matches (or "none").
 - **shelf_location**: {', '.join(valid_shelf_names)}.
 - **position_on_shelf**: 'left', 'center', or 'right'.
@@ -1863,122 +1833,33 @@ Analyze all provided images and return the complete JSON response.
 """
         return prompt
 
-    def _build_identification_prompt(
-        self,
-        detections: List[DetectionBox],
-        shelf_regions: List[ShelfRegion]
-    ) -> str:
-        """Build prompt for LLM object identification"""
+    def _calculate_visual_feature_match(self, expected_features: List[str], detected_features: List[str]) -> float:
+        """
+        Simple visual feature matching - returns score between 0.0 and 1.0
+        """
+        if not expected_features:
+            return 1.0  # No requirements = full match
 
-        prompt = f"""
+        if not detected_features:
+            return 0.0  # No detected features but requirements exist
 
-You are an expert at identifying retail products in planogram displays.
+        # Normalize strings for comparison
+        def normalize(text):
+            return text.lower().strip()
 
-I've provided an annotated image showing {len(detections)} detected objects with red bounding boxes and ID numbers.
+        expected_norm = [normalize(f) for f in expected_features]
+        detected_norm = [normalize(f) for f in detected_features]
 
-DETECTED OBJECTS:
-"""
+        # Count matches using simple string containment
+        matches = 0
+        for expected in expected_norm:
+            for detected in detected_norm:
+                if expected in detected or detected in expected:
+                    matches += 1
+                    break  # Found a match for this expected feature
 
-        for i, detection in enumerate(detections, 1):
-            prompt += f"ID {i}: {detection.class_name} at ({detection.x1},{detection.y1},{detection.x2},{detection.y2})\n"
-
-        # Add shelf organization
-        prompt += "\nSHELF ORGANIZATION:\n"
-        for shelf in shelf_regions:
-            object_ids = []
-            for obj in shelf.objects:
-                for i, detection in enumerate(detections, 1):
-                    if (obj.x1 == detection.x1 and obj.y1 == detection.y1):
-                        object_ids.append(str(i))
-                        break
-            prompt += f"{shelf.level.upper()}: Objects {', '.join(object_ids)}\n"
-
-        prompt += f"""
-TASK: Identify each detected object using the reference images.
-
-IMPORTANT NAMING RULES:
-1. **PRINTERS (actual devices)**: Use model name only (e.g., "ET-2980", "ET-3950", "ET-4950")
-   - Look for: White/gray color, compact square shape, LCD screens, physical ink tanks, control panels
-   - Typically positioned on shelves, not stacked
-
-2. **PRODUCT BOXES**: Use model name + " box" (e.g., "ET-2980 box", "ET-3950 box", "ET-4950 box")
-   - Look for: Blue packaging, product images on box, stacked arrangement, larger rectangular shape
-   - Contains pictures of the printer device, not the device itself
-
-3. **KEY DISTINCTION**: If you see the actual printer device (white/gray with visible controls/tanks) = "printer"
-   If you see packaging with printer images on it = "product_box"
-
-4. For promotional graphics: Use descriptive name (e.g., "Epson EcoTank Advertisement") and look for promotional text.
-5. For price/fact tags: Use "price tag" or "fact tag"
-6. always set product_type accordingly: printer, product_box, promotional_graphic, fact_tag, no matter if was classified differently.
-7. If two objects overlap, but are the same product_type, ignore the smaller one (likely a duplicate detection).
-
-VISUAL IDENTIFICATION GUIDE:
-- **Blue rectangular objects with product imagery** → product_box
-- **White/gray compact devices with control panels** → printer
-- **Large colorful banners with text/people** → promotional_graphic
-- **Small white rectangular labels** → fact_tag
-
-
-For each detection (ID 1-{len(detections)}), provide:
-- detection_id: The exact ID number from the red bounding box (1-{len(detections)})
-- product_type: printer, product_box, fact_tag, promotional_graphic, or ink_bottle
-- product_model: Follow naming rules above based on product_type
-- confidence: Your confidence (0.0-1.0)
-- visual_features: List of visual features
-- reference_match: Which reference image matches (or "none")
-- shelf_location: header, top, middle, or bottom
-- position_on_shelf: left, center, or right
-- Remove any duplicates - only one entry per detection_id
-
-EXAMPLES:
-- If you see a printer device: product_type="printer", product_model="ET-2980"
-- If you see a product box: product_type="product_box", product_model="ET-2980 box"
-- If you see a price tag: product_type="fact_tag", product_model="price tag"
-
-Example format:
-{{
-  "detections": [
-    {{
-      "detection_id": 1,
-      "product_type": "printer",
-      "product_model": "ET-2980",
-      "confidence": 0.95,
-      "visual_features": ["white printer", "LCD screen", "ink tanks visible"],
-      "reference_match": "first reference image",
-      "shelf_location": "top",
-      "position_on_shelf": "left"
-    }},
-    {{
-      "detection_id": 2,
-      "product_type": "product_box",
-      "product_model": "ET-2980 box",
-      "confidence": 0.90,
-      "visual_features": ["blue box", "printer image", "Epson branding"],
-      "reference_match": "box reference image",
-      "shelf_location": "bottom",
-      "position_on_shelf": "left"
-    }}
-  ]
-}}
-
-REFERENCE IMAGES show Epson printer models - compare visual design, control panels, ink systems.
-
-CLASSIFICATION RULES FOR ADS
-- Large horizontal banners/displays with brand logo and/or slogan, should be classified as promotional_graphic.
-- If you detect any poster/graphic/signage, set product_type="promotional_graphic".
-- Always fill:
-  brand := the logo or text brand on the asset (e.g., "Epson"). Use OCR hints.
-  advertisement_type := one of ["backlit_graphic","endcap_poster","shelf_talker","banner","digital_display"].
-- Heuristics:
-  * If the graphic is in shelf_location="header" and appears illuminated or framed, use advertisement_type="backlit_graphic".
-  * If the OCR includes "Epson" or "EcoTank", set brand="Epson".
-- If the brand or type cannot be determined, keep them as null (not empty strings).
-
-Respond with the structured data for all {len(detections)} objects.
-"""
-
-        return prompt
+        # Return ratio of matched features
+        return matches / len(expected_features)
 
     def check_planogram_compliance(
         self,
@@ -1990,7 +1871,7 @@ Respond with the structured data for all {len(detections)} objects.
             (e_ptype, e_base), (f_ptype, f_base) = ek, fk
             if e_ptype != f_ptype:
                 return False
-            if not e_base:  # planogram didn’t specify a model, accept type-only match
+            if not e_base:  # planogram didn't specify a model, accept type-only match
                 return True
             if f_base == e_base:
                 return True
@@ -2048,6 +1929,7 @@ Respond with the structured data for all {len(detections)} objects.
             # --- Matching: (ptype must match) AND (base_model equal OR base_model contained in planogram name) ---
             matched = [False] * len(expected)
             consumed = [False] * len(found_keys)
+            visual_feature_scores = []  # Track visual feature matching scores
 
             # Greedy 1:1 matching
             for i, ek in enumerate(expected):
@@ -2057,6 +1939,29 @@ Respond with the structured data for all {len(detections)} objects.
                     if _matches(ek, fk):
                         matched[i] = True
                         consumed[j] = True
+
+                        # ADD VISUAL FEATURE MATCHING HERE
+                        # Find the corresponding ShelfProduct and IdentifiedProduct
+                        shelf_product = shelf_cfg.products[i]  # Get the shelf product config
+                        identified_product = products_on_shelf[j]  # Get the identified product
+
+                        # Calculate visual feature match score
+                        if hasattr(shelf_product, 'visual_features') and shelf_product.visual_features:
+                            detected_features = getattr(identified_product, 'visual_features', []) or []
+                            vf_score = self._calculate_visual_feature_match(
+                                shelf_product.visual_features,
+                                detected_features
+                            )
+                            visual_feature_scores.append(vf_score)
+
+                            # Log the matching for debugging
+                            self.logger.debug(
+                                f"Visual feature match for {shelf_product.name}: "
+                                f"Expected: {shelf_product.visual_features}, "
+                                f"Detected: {detected_features}, "
+                                f"Score: {vf_score:.2f}"
+                            )
+                        break
 
             # Compute lists for reporting/scoring
             expected_readable = [
@@ -2084,6 +1989,11 @@ Respond with the structured data for all {len(detections)} objects.
 
             # Product score = fraction of expected matched
             basic_score = (sum(1 for ok in matched if ok) / (len(expected) or 1.0))
+
+            # ADD VISUAL FEATURE SCORING
+            visual_feature_score = 1.0
+            if visual_feature_scores:
+                visual_feature_score = sum(visual_feature_scores) / len(visual_feature_scores)
 
             text_results, text_score, overall_text_ok = [], 1.0, True
 
@@ -2134,9 +2044,9 @@ Respond with the structured data for all {len(detections)} objects.
                             if not result.found and text_req.mandatory:
                                 overall_text_ok = False
 
-                    # Calculate text compliance score
-                    if text_results:
-                        text_score = sum(r.confidence for r in text_results if r.found) / len(text_results)
+                        # Calculate text compliance score
+                        if text_results:
+                            text_score = sum(r.confidence for r in text_results if r.found) / len(text_results)
 
             elif shelf_level != "header":
                 overall_text_ok = True
@@ -2168,23 +2078,34 @@ Respond with the structured data for all {len(detections)} objects.
                 else:
                     status = ComplianceStatus.NON_COMPLIANT
 
-            # MODIFIED: Combined score calculation with brand weight
+            # MODIFIED: Combined score calculation with visual features
+            # Use the existing visual_features_weight from CategoryDetectionConfig
+            visual_weight = getattr(
+                planogram_description,
+                'visual_features_weight',
+                0.2
+            )  # Default 20%
+
             if shelf_level == "header" and endcap:
-                weights = {
-                    "product": endcap.product_weight,
-                    "text": endcap.text_weight,
-                    "brand": getattr(endcap, "brand_weight", 0.0) # Use 0 if not defined
-                }
+                # Adjust product weight to make room for visual features
+                adjusted_product_weight = endcap.product_weight * (1 - visual_weight)
+                visual_feature_weight = endcap.product_weight * visual_weight
                 combined_score = (
-                    (basic_score * weights["product"]) +
-                    (text_score * weights["text"]) +
-                    (brand_compliance_result.confidence * weights["brand"])
+                    (basic_score * adjusted_product_weight) +
+                    (text_score * endcap.text_weight) +
+                    (brand_compliance_result.confidence * getattr(endcap, "brand_weight", 0.0)) +
+                    (visual_feature_score * visual_feature_weight)
                 )
             else:
-                weights = {"product_compliance": 0.9, "text_compliance": 0.1}
                 combined_score = (
-                    basic_score * weights["product_compliance"] + text_score * weights["text_compliance"]
+                    basic_score * (1 - visual_weight) +
+                    text_score * 0.1 +
+                    visual_feature_score * visual_weight
                 )
+
+            # Ensure score never exceeds 1.0
+            combined_score = min(1.0, max(0.0, combined_score))
+            text_score = min(1.0, max(0.0, text_score))
 
             # Prepare human-readable outputs
             expected = expected_readable
@@ -2255,7 +2176,8 @@ Respond with the structured data for all {len(detections)} objects.
     async def _find_poster(
         self,
         image: Image.Image,
-        planogram: PlanogramDescription
+        planogram: PlanogramDescription,
+        partial_prompt: str
     ) -> tuple[Detections, Detections, Detections, Detections]:
         """
         Ask VISION Model to find the main promotional graphic for the given brand/tags.
@@ -2272,26 +2194,12 @@ Respond with the structured data for all {len(detections)} objects.
 
         # downscale for LLM
         image_small = self._downscale_image(image, max_side=1024, quality=78)
-        prompt = f"""
-Analyze the image to identify the entire retail endcap display and its key components.
-
-Your response must be a single JSON object with a 'detections' list. Each detection must have a 'label', 'confidence', a 'content' with any detected text, and a 'bbox' with normalized coordinates (x1, y1, x2, y2).
-
-Useful phrases to look for inside the lightbox: {tag_hint}
-
-Return all detections with the following strict criteria:
-
-1. **'brand_logo'**: A bounding box for the '{brand}' brand logo at the top of the sign.
-
-2. **'poster_text'**: A bounding box for the main marketing text on the sign, must include phrases like {tag_hint}.
-
-3. **'promotional_graphic'**: A bounding box for the main promotional graphic on the sign, which may include images of products and other marketing visuals. The box should tightly enclose the graphic area without cutting off any important elements.
-
-4. **'poster_panel'**: A bounding box that **tightly encloses the entire backlit sign, The box must **tightly enclose the sign's outer silver/gray frame on all four sides.** For this detection, 'content' should be null.
-
-5. **'endcap'**: A bounding box for the entire retail endcap display structure. It must start at the top of the sign and extend down to the **base of the lowest shelf**, including price tags and products boxes. The box must be wide enough to **include all products and product boxes on all shelves without cropping.** For this detection, 'content' should be null.
-
-"""
+        prompt = partial_prompt.format(
+            brand=brand,
+            tag_hint=tag_hint,
+            tags=tags,
+            image_size=image_small.size
+        )
         max_attempts = 2  # Initial attempt + 1 retry
         retry_delay_seconds = 10
         msg = None
@@ -2427,7 +2335,6 @@ Return all detections with the following strict criteria:
     async def run(
         self,
         image: Union[str, Path, Image.Image],
-        planogram_description: PlanogramDescription,
         debug_raw="/tmp/data/yolo_raw_debug.png",
         return_overlay: Optional[str] = None,  # "identified" | "detections" | "both" | None
         overlay_save_path: Optional[Union[str, Path]] = None,
@@ -2446,8 +2353,11 @@ Return all detections with the following strict criteria:
         img_array = np.array(img)  # RGB
 
         # 1) Find the poster:
+        planogram_description = self.planogram_config.get_planogram_description()
         endcap, ad, brand, panel_text, dets = await self._find_poster(
-            img, planogram_description
+            img,
+            planogram_description,
+            partial_prompt=self.planogram_config.roi_detection_prompt
         )
         if return_overlay == 'detections' or return_overlay == 'both':
             debug_poster_path = debug_raw.replace(".png", "_poster_debug.png") if debug_raw else None
@@ -2477,7 +2387,11 @@ Return all detections with the following strict criteria:
 
         self.logger.notice("Step 2: Identifying objects with LLM...")
         identified_products = await self.identify_objects_with_references(
-            image, detections, shelf_regions, self.reference_images
+            image,
+            detections,
+            shelf_regions,
+            self.reference_images,
+            prompt=self.planogram_config.object_identification_prompt
         )
 
         self.logger.debug(
@@ -2646,19 +2560,3 @@ Return all detections with the following strict criteria:
             base.save(save_to, quality=90)
 
         return base
-
-    def create_planogram_description(
-        self,
-        config: Dict[str, Any]
-    ) -> PlanogramDescription:
-        """
-        Create a planogram description from a dictionary configuration.
-        This replaces the hardcoded method with a fully configurable approach.
-
-        Args:
-            config: Complete planogram configuration dictionary
-
-        Returns:
-            PlanogramDescription object ready for compliance checking
-        """
-        return self.factory.create_planogram_description(config)

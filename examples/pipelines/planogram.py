@@ -1,7 +1,7 @@
 import asyncio
 from navconfig import BASE_DIR
 from parrot.pipelines.planogram import PlanogramCompliancePipeline
-from parrot.clients.gpt import OpenAIClient, OpenAIModel
+from parrot.pipelines.models import PlanogramConfig
 from parrot.clients.google import (
     GoogleGenAIClient,
     GoogleModel
@@ -9,10 +9,7 @@ from parrot.clients.google import (
 
 async def main():
     """Example usage of the 3-step pipeline"""
-    # llm = OpenAIClient(model=OpenAIModel.GPT_4O_MINI)
     llm = GoogleGenAIClient(model=GoogleModel.GEMINI_2_5_PRO)
-    # llm = ClaudeClient(model=ClaudeModel.SONNET_4)  # Uncomment to use Claude
-
     # Reference images for product identification
     reference_images = {
         "ET-3950 BOX": BASE_DIR / "examples" / "pipelines" / "ET-3950-BOX.jpg",
@@ -21,15 +18,6 @@ async def main():
         "ET-3950 Printer": BASE_DIR / "examples" / "pipelines" / "ET-3950.jpg",
         "ET-4950 Printer": BASE_DIR / "examples" / "pipelines" / "ET-4950.jpg"
     }
-    # Initialize pipeline
-    pipeline = PlanogramCompliancePipeline(
-        llm=llm,
-        # detection_model="yolov9m.pt"  # or "yolov8s", "yolov8m", etc.
-        detection_model="yolo11l.pt",
-        reference_images=reference_images,
-        confidence_threshold=0.15,
-    )
-
     planogram_config = {
         "brand": "Epson",
         "category": "Printers",
@@ -131,107 +119,65 @@ async def main():
         }
     }
 
-    # planogram_config = {
-    #     "brand": "Hisense",
-    #     "category": "TVs",
-    #     "aisle": {
-    #         "name": "Electronics > TVs & Home Theater",
-    #         "lighting_conditions": "dim"
-    #     },
-    #     "shelves": [
-    #         {
-    #             "level": "header",
-    #             "height_ratio": 0.15,
-    #             "products": [
-    #                 {
-    #                     "name": "Hisense Header Advertisement",
-    #                     "product_type": "promotional_graphic",
-    #                     "mandatory": True
-    #                 }
-    #             ],
-    #             "allow_extra_products": True,
-    #             "compliance_threshold": 0.95
-    #         },
-    #         {
-    #             "level": "top_tv",
-    #             "height_ratio": 0.25,
-    #             "products": [
-    #                 {
-    #                     "name": "Hisense TV",
-    #                     "product_type": "tv",
-    #                     "quantity_range": [1, 1],
-    #                     "position_preference": "center"
-    #                 }
-    #             ],
-    #             "compliance_threshold": 0.9
-    #         },
-    #         {
-    #             "level": "middle_tv",
-    #             "height_ratio": 0.25,
-    #             "products": [
-    #                 {
-    #                     "name": "Hisense TV",
-    #                     "product_type": "tv",
-    #                     "quantity_range": [1, 1],
-    #                     "position_preference": "center"
-    #                 }
-    #             ],
-    #             "compliance_threshold": 0.9
-    #         },
-    #         {
-    #             "level": "bottom_tv",
-    #             "height_ratio": 0.25,
-    #             "products": [
-    #                 {
-    #                     "name": "Hisense TV",
-    #                     "product_type": "tv",
-    #                     "quantity_range": [1, 1],
-    #                     "position_preference": "center"
-    #                 }
-    #             ],
-    #             "compliance_threshold": 0.9
-    #         },
-    #         {
-    #             "level": "bottom_promo",
-    #             "height_ratio": 0.10,
-    #             "products": [
-    #                 {
-    #                     "name": "Hisense Bottom Advertisement",
-    #                     "product_type": "promotional_graphic",
-    #                     "mandatory": True
-    #                 }
-    #             ],
-    #             "allow_extra_products": True,
-    #             "compliance_threshold": 0.9
-    #         }
-    #     ],
-    #     "advertisement_endcap": {
-    #         "enabled": True,
-    #         "promotional_type": "endcap_poster",
-    #         "position": "header",
-    #         "product_weight": 0.8,
-    #         "text_weight": 0.2,
-    #         "side_margin_percent": 0.05,
-    #         "text_requirements": [
-    #             {
-    #                 "required_text": "Hisense",
-    #                 "match_type": "contains",
-    #                 "mandatory": True
-    #             },
-    #             {
-    #                 "required_text": "OFFICIAL PARTNER",
-    #                 "match_type": "contains",
-    #                 "mandatory": True
-    #             }
-    #         ],
-    #         "size_constraints": {
-    #             "backlit_height_ratio": 0.25
-    #         }
-    #     }
-    # }
+    planogram = PlanogramConfig(
+        planogram_config=planogram_config,
+        reference_images=reference_images,
+        detection_model="yolo11l.pt",
+        confidence_threshold=0.15,
+        roi_detection_prompt="""
+Analyze the image to identify the entire retail endcap display and its key components.
 
-    planogram = pipeline.create_planogram_description(
-        config=planogram_config
+Your response must be a single JSON object with a 'detections' list. Each detection must have a 'label', 'confidence', a 'content' with any detected text, and a 'bbox' with normalized coordinates (x1, y1, x2, y2).
+
+Useful phrases to look for inside the lightbox: {tag_hint}
+
+Return all detections with the following strict criteria:
+
+1. **'brand_logo'**: A bounding box for the '{brand}' brand logo at the top of the sign.
+
+2. **'poster_text'**: A bounding box for the main marketing text on the sign, must include phrases like {tag_hint}.
+
+3. **'promotional_graphic'**: A bounding box for the main promotional graphic on the sign, which may include images of products and other marketing visuals. The box should tightly enclose the graphic area without cutting off any important elements.
+
+4. **'poster_panel'**: A bounding box that **tightly encloses the entire backlit sign, The box must **tightly enclose the sign's outer silver/gray frame on all four sides.** For this detection, 'content' should be null.
+
+5. **'endcap'**: A bounding box for the entire retail endcap display structure. It must start at the top of the sign and extend down to the **base of the lowest shelf**, including price tags and products boxes. The box must be wide enough to **include all products and product boxes on all shelves without cropping.** For this detection, 'content' should be null.
+
+""",
+        object_identification_prompt="""
+---
+**!! IMPORTANT VISUAL GUIDE FOR PRINTERS !!**
+You MUST use the control panel or size of screen to tell the printer models apart. This is the most important rule.
+* **ET-2980:** Has a **simple control panel** with a tiny screen and arrow buttons.
+* **ET-3950:** Has a **larger control panel LED screen and several buttons (11 buttons)**.
+* **ET-4950:** Has a **large color TOUCHSCREEN** with no more than 3 physical buttons.
+
+---
+**!! CRITICAL IDENTIFICATION RULES !!**
+
+1.  **ANALYZE EACH PRINTER INDEPENDENTLY:** DO NOT assume all printers are the same model. You must analyze the control panel of EACH printer individually.
+
+2. **CONSOLIDATION (To Avoid Duplicates):**
+   - If multiple detection IDs refer to the same single object, provide **only ONE entry** for that object. Choose the ID that best represents the entire object.
+
+3. **PRODUCT TYPES & PLACEMENT HEURISTICS:**
+   - **PRINTERS (Devices):** White/gray devices, typically on 'middle' shelves.
+   - **BOXES (Packaging):** Blue packaging, typically on 'bottom' shelves.
+   - **PROMOTIONAL GRAPHICS:** Large signs/posters, typically on the 'header'.
+
+4. **UNREADABLE MODELS:**
+   - If a model number on a box is obscured, set `product_model` to **'Unreadable Box'**.
+
+5. **NEWLY FOUND OBJECTS (MANDATORY):**
+   - If you identify a prominent product that was NOT pre-detected (e.g., a large box missed by the first pass), set its `detection_id` to `null`.
+   - For these newly found items, you **MUST** also provide an estimated `detection_box` field with an array of four pixel coordinates `[x1, y1, x2, y2]`. **This field is NOT optional for new items.**
+""",
+    )
+
+    # Initialize pipeline
+    pipeline = PlanogramCompliancePipeline(
+        llm=llm,
+        planogram_config=planogram,
     )
 
     # Endcap photo:
@@ -251,7 +197,6 @@ async def main():
     # Run complete pipeline
     results = await pipeline.run(
         image=image_path,
-        planogram_description=planogram,
         return_overlay="identified",
         overlay_save_path="/tmp/planogram_overlay.jpg",
     )
