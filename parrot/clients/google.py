@@ -3360,7 +3360,17 @@ Your job is to produce a final summary from the following text and identify the 
                 contents=contents,
                 config=generation_config,
             )
+        except Exception as e:
+            # if is 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'The model is overloaded. Please try again later.', 'status': 'UNAVAILABLE'}}
+            # then, retry with a short delay but chaing to use gemini-2,5-flash instead pro.
+            await asyncio.sleep(1.5)
+            response = await self.client.aio.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=contents,
+                config=generation_config,
+            )
 
+        try:
             response_text = self._safe_extract_text(response)
             if not response_text:
                 raise ValueError(

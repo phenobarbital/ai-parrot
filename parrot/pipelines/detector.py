@@ -59,6 +59,11 @@ class AbstractDetector(ABC):
         ua = a.area + b.area - inter
         return inter / float(max(1, ua))
 
+    def _normalized_y(self, b, h: int) -> Tuple[float, float, float]:
+        y1n, y2n = b.y1 / h, b.y2 / h
+        yc = 0.5 * (y1n + y2n)
+        return y1n, yc, y2n
+
     def _iou_box_tuple(self, d: DetectionBox, box: tuple[int,int,int,int]) -> float:
         ax1, ay1, ax2, ay2 = box
         ix1, iy1 = max(d.x1, ax1), max(d.y1, ay1)

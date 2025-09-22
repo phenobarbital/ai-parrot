@@ -12,15 +12,17 @@ async def main():
     llm = GoogleGenAIClient(model=GoogleModel.GEMINI_2_5_PRO)
 
     firetv_endcap_geometry = EndcapGeometry(
-        aspect_ratio=0.65,
-        left_margin_ratio=0.01,
-        right_margin_ratio=0.01,
-        top_margin_ratio=0.02,
+        aspect_ratio=0.75,          # ~1200x1600 image → 0.75, fits this endcap well
+        left_margin_ratio=0.015,    # the side wood posts are thin
+        right_margin_ratio=0.015,
+        top_margin_ratio=0.03,      # canopy overhang; give it a bit more room
         bottom_margin_ratio=0.02,
-        inter_shelf_padding=0.01,
-        width_margin_percent=0.10,
-        height_margin_percent=0.15,
-        top_margin_percent=0.02,
+        inter_shelf_padding=0.012,  # tiny gutters between bands
+
+        # secondary margins used by your ROI builder
+        width_margin_percent=0.08,
+        height_margin_percent=0.12,
+        top_margin_percent=0.03,
         side_margin_percent=0.02
     )
 
@@ -44,7 +46,7 @@ async def main():
         "shelves": [
             {
                 "level": "header",
-                "height_ratio": 0.20,
+                "height_ratio": 0.22,
                 "products": [
                     {
                         "name": "FireTV Header Branding",
@@ -63,7 +65,7 @@ async def main():
             },
             {
                 "level": "middle",
-                "height_ratio": 0.45,
+                "height_ratio": 0.50,
                 "products": [
                     {
                         "name": "Hisense Fire TV",
@@ -97,7 +99,7 @@ async def main():
             },
             {
                 "level": "bottom_promo",
-                "height_ratio": 0.25,
+                "height_ratio": 0.20,
                 "products": [
                     {
                         "name": "Fire TV Promotional Display",
@@ -118,7 +120,7 @@ async def main():
             },
             {
                 "level": "bottom_brand",
-                "height_ratio": 0.10,  # 10% for bottom brand placement
+                "height_ratio": 0.08,  # 10% for bottom brand placement
                 "products": [
                     {
                         "name": "FireTV Bottom Branding",
@@ -142,6 +144,7 @@ async def main():
             "position": "header",
             "product_weight": 0.8,
             "text_weight": 0.2,
+            "brand_weight": 0.00, # brand is not critical here
             "text_requirements": [
                 {
                     "required_text": "fire tv",
@@ -152,10 +155,10 @@ async def main():
                 }
             ],
             "size_constraints": {
-                "header_height_ratio": 0.20,
-                "tv_display_ratio": 0.45,
-                "promo_shelf_ratio": 0.25,
-                "brand_base_ratio": 0.10
+                "header_height_ratio": 0.22,
+                "tv_display_ratio":   0.50,
+                "promo_shelf_ratio":  0.20,
+                "brand_base_ratio":   0.08
             }
         }
     }
@@ -183,9 +186,7 @@ Look carefully for text in these areas and include ALL visible text in the 'cont
 
 Return all detections with the following criteria:
 
-1. **'brand_logo'**: The illuminated "firetv" logo at the top
-   - Must include 'content': Extract text like "firetv" or "fire tv"
-   - Focus on blue illuminated text on wood background
+1. **'brand_logo'**: A bounding box for the '{brand}' brand logo at the top of the sign with wooden background and white text, return the brand text in 'content'.
 2. **'poster_text'**: Main promotional text on TV displays
    - Must include 'content': Extract "Bring your entertainment to life" or similar
    - Look at the text overlay on both TV screens

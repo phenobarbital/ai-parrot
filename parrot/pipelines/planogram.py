@@ -1970,9 +1970,6 @@ Analyze all provided images and return the complete JSON response.
 
         brand = getattr(planogram_description, 'brand', planogram_brand)
 
-        print('FOUND BRAND PRODUCT < ', found_brand_product)
-        print('HERE > ', brand)
-
         brand_compliance_result = BrandComplianceResult(
             expected_brand=planogram_description.brand,
             found_brand=found_brand_product.brand if found_brand_product else None,

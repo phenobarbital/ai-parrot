@@ -43,7 +43,7 @@ async def main():
         "shelves": [
             {
                 "level": "header",
-                "height_ratio": 0.16,  # 15% for top Hisense branding
+                "height_ratio": 0.15,  # 15% for top Hisense branding
                 "products": [
                     {
                         "name": "Hisense Logo",
@@ -61,7 +61,7 @@ async def main():
             },
             {
                 "level": "middle",
-                "height_ratio": 0.50,  # 55% for the main TV display
+                "height_ratio": 0.40,  # 40% for the main TV display
                 "products": [
                     {
                         "name": "Hisense Canvas TV 85-inch",
@@ -85,7 +85,7 @@ async def main():
             },
             {
                 "level": "promo_shelf",
-                "height_ratio": 0.24,  # 20% for promotional materials area
+                "height_ratio": 0.30,
                 "products": [
                     {
                         "name": "Canvas TV",
