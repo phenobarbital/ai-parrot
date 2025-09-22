@@ -12,20 +12,20 @@ async def main():
     llm = GoogleGenAIClient(model=GoogleModel.GEMINI_2_5_PRO)
 
     firetv_endcap_geometry = EndcapGeometry(
-        aspect_ratio=0.75,  # Taller display ratio for vertical TV stacking
-        left_margin_ratio=0.02,
-        right_margin_ratio=0.02,
-        top_margin_ratio=0.01,
-        bottom_margin_ratio=0.03,
-        inter_shelf_padding=0.015,  # Tight spacing for clean look
-        width_margin_percent=0.15,
-        height_margin_percent=0.20,
+        aspect_ratio=0.65,
+        left_margin_ratio=0.01,
+        right_margin_ratio=0.01,
+        top_margin_ratio=0.02,
+        bottom_margin_ratio=0.02,
+        inter_shelf_padding=0.01,
+        width_margin_percent=0.10,
+        height_margin_percent=0.15,
         top_margin_percent=0.02,
-        side_margin_percent=0.03
+        side_margin_percent=0.02
     )
 
     planogram_config = {
-        "brand": "Amazon",
+        "brand": "Fire TV",
         "category": "Fire TV",
         "aisle": {
             "name": "Electronics > Smart TVs & Streaming Devices",
@@ -37,13 +37,14 @@ async def main():
             "bring your entertainment to life",
             "streaming device",
             "smart tv",
+            "amazon",
             "hisense",
-            "amazon"
+            "insignia",
         ],
         "shelves": [
             {
                 "level": "header",
-                "height_ratio": 0.15,  # 15% of ROI height for top branding
+                "height_ratio": 0.20,
                 "products": [
                     {
                         "name": "FireTV Header Branding",
@@ -57,19 +58,12 @@ async def main():
                         ]
                     }
                 ],
-                "text_requirements": [
-                    {
-                        "required_text": "firetv",
-                        "match_type": "contains",
-                        "mandatory": True
-                    }
-                ],
                 "allow_extra_products": False,
                 "compliance_threshold": 0.95
             },
             {
                 "level": "middle",
-                "height_ratio": 0.55,  # 55% of ROI height for TV displays
+                "height_ratio": 0.45,
                 "products": [
                     {
                         "name": "Hisense Fire TV",
@@ -81,24 +75,19 @@ async def main():
                             "active display",
                             "colorful content showing",
                             "hisense branding visible",
-                            "fire tv interface",
-                            "dynamic graphics",
-                            "entertainment content"
                         ]
                     },
                     {
-                        "name": "Generic Fire TV",
-                        "product_type": "tv",
+                        "name": "Insignia Fire TV",
+                        "product_type": "tv",  # FIXED: Use standard type
                         "quantity_range": [1, 1],
                         "position_preference": "center",
                         "mandatory": True,
                         "visual_features": [
                             "active display",
                             "colorful content showing",
-                            "fire tv interface",
-                            "dynamic graphics",
-                            "entertainment content",
-                            "bring your entertainment to life text"
+                            "insignia branding visible",
+                            "fire tv interface"
                         ]
                     }
                 ],
@@ -108,17 +97,18 @@ async def main():
             },
             {
                 "level": "bottom_promo",
-                "height_ratio": 0.20,  # 20% for promotional materials shelf
+                "height_ratio": 0.25,
                 "products": [
                     {
-                        "name": "Fire TV Promotional Materials",
-                        "product_type": "promotional_materials",
+                        "name": "Fire TV Promotional Display",
+                        "product_type": "product_materials",
                         "quantity_range": [3, 6],
                         "mandatory": True,
                         "visual_features": [
-                            "colorful promotional cards",
-                            "fire tv branding",
-                            "product information",
+                            "promotional cards",
+                            "fire tv cube display",
+                            "interactive display",
+                            "educational materials",
                             "retail signage"
                         ]
                     }
@@ -132,7 +122,7 @@ async def main():
                 "products": [
                     {
                         "name": "FireTV Bottom Branding",
-                        "product_type": "promotional_base",
+                        "product_type": "promotional_graphic",
                         "mandatory": True,
                         "visual_features": [
                             "fire tv text on black background",
@@ -150,33 +140,22 @@ async def main():
             "enabled": True,
             "promotional_type": "integrated_display",
             "position": "header",
-            "product_weight": 0.7,
-            "text_weight": 0.3,
+            "product_weight": 0.8,
+            "text_weight": 0.2,
             "text_requirements": [
-                {
-                    "required_text": "firetv",
-                    "match_type": "contains",
-                    "mandatory": True,
-                    "case_sensitive": False
-                },
                 {
                     "required_text": "fire tv",
                     "match_type": "contains",
                     "mandatory": True,
-                    "case_sensitive": False
-                },
-                {
-                    "required_text": "bring your entertainment to life",
-                    "match_type": "contains",
-                    "mandatory": False,
-                    "case_sensitive": False
+                    "case_sensitive": False,
+                    "confidence_threshold": 0.5
                 }
             ],
             "size_constraints": {
-                "header_height_ratio": 0.15,  # Header branding area
-                "tv_display_ratio": 0.55,     # Combined TV area
-                "promo_shelf_ratio": 0.20,    # Promotional materials
-                "brand_base_ratio": 0.10      # Bottom branding
+                "header_height_ratio": 0.20,
+                "tv_display_ratio": 0.45,
+                "promo_shelf_ratio": 0.25,
+                "brand_base_ratio": 0.10
             }
         }
     }
@@ -196,56 +175,67 @@ Your response must be a single JSON object with a 'detections' list. Each detect
 
 Useful phrases to look for: {tag_hint}
 
+**MANDATORY TEXT EXTRACTION:**
+Look carefully for text in these areas and include ALL visible text in the 'content' field:
+- Header area: Look for "firetv", "fire tv", or similar branding text
+- TV displays: Look for "Bring your entertainment to life" or similar promotional text
+- Bottom area: Look for "firetv", "fire tv" branding text
+
 Return all detections with the following criteria:
 
-1. **'brand_logo'**: A bounding box for the 'FireTV' or 'fire tv' brand logo at the top of the display.
-2. **'tv_display'**: Bounding boxes for each active TV screen showing content. These should tightly enclose the visible screen area.
-3. **'promotional_graphic'**: A bounding box for any promotional signage or graphics, including the "Bring your entertainment to life" messaging.
-4. **'promotional_materials'**: A bounding box for the shelf area containing promotional cards, brochures, or informational materials.
-5. **'promotional_base'**: A bounding box for the bottom branding area with 'fire tv' text on the black base.
+1. **'brand_logo'**: The illuminated "firetv" logo at the top
+   - Must include 'content': Extract text like "firetv" or "fire tv"
+   - Focus on blue illuminated text on wood background
+2. **'poster_text'**: Main promotional text on TV displays
+   - Must include 'content': Extract "Bring your entertainment to life" or similar
+   - Look at the text overlay on both TV screens
+3. **'tv_display'**: Both TV screens - identify each separately
+4. **'promotional_material'**: A bounding box for the shelf area containing promotional cards, brochures, or informational materials.
+5. **'promotional_graphic'**: The "fire tv" text on the black base at bottom (also promotional signage)
 6. **'poster_panel'**: A bounding box that encompasses the entire upper display area including both TV screens and any surrounding framework.
 7. **'endcap'**: A bounding box for the complete endcap structure from top branding to the base, including all shelves and displays.
 
         """,
         object_identification_prompt="""
 ---
-**!! IMPORTANT VISUAL GUIDE FOR FIRE TV DISPLAYS !!**
-You MUST identify TV brands by looking for visible brand logos and distinctive design elements.
-* **Hisense Fire TV:** Look for 'HISENSE' branding on the TV bezel or in the corner of the display.
-* **Generic Fire TV:** TVs without clear brand identification but showing Fire TV interface.
-* **Active Display:** TVs must be powered on and showing content (not black screens).
+**!! MANDATORY SHELF ASSIGNMENT RULES !!**
+You MUST assign objects to the correct shelf using these EXACT mappings:
+
+- **Header (top 20%)**: "Fire TV Header Branding" → product_type="promotional_graphic" → shelf_location="header"
+- **Middle TVs (20-65%)**:
+  * "Hisense Fire TV" → product_type="tv" → shelf_location="middle"
+  * "Insignia Fire TV" → product_type="tv" → shelf_location="middle"
+- **Promotional Shelf (65-90%)**: All cards/cube/displays → product_type="product_box" → shelf_location="bottom_promo"
+- **Bottom Base (90-100%)**: "Fire TV Base Branding" → product_type="promotional_graphic" → shelf_location="bottom_brand"
 
 ---
-**!! CRITICAL IDENTIFICATION RULES !!**
+**!! TV IDENTIFICATION GUIDE !!**
+- **Hisense Fire TV**: Look for "HISENSE | firetv" logo on bezel
+- **Insignia Fire TV**: Look for "INSIGNIA | firetv" logo on bezel
+- Both TVs MUST show active displays with colorful content
 
-1. **ANALYZE EACH TV INDEPENDENTLY:** Each TV display should be identified separately based on brand markings and display content.
+---
+**!! CRITICAL RULES !!**
 
-2. **VISUAL FEATURE REQUIREMENTS:**
-   - **Active Display:** TV must be showing colorful content, not blank/black screen
-   - **Fire TV Interface:** Look for Fire TV-specific UI elements or content
-   - **Brand Identification:** Check for manufacturer logos (Hisense, etc.)
+1. **EXPLICIT SHELF ASSIGNMENT**: Every object must be assigned to exactly one shelf level based on its Y-coordinate position in the image.
 
-3. **PRODUCT TYPES & PLACEMENT:**
-   - **tv_demonstration:** Active TV displays showing content
-   - **promotional_graphic:** Header branding and signage
-   - **promotional_materials:** Shelf items, cards, brochures
-   - **promotional_base:** Bottom branding on black surface
+2. **PRODUCT TYPE MAPPING**: Use only these exact product_type values:
+   - "promotional_graphic" (for top FireTV logo AND bottom FireTV text)
+   - "tv" (for both TVs)
+   - "product_box" (for all shelf promotional items - cards, cube, displays)
 
-4. **POSITIONING HIERARCHY:**
-   - **Header:** Fire TV branding at top
-   - **Upper TV:** Top television display
-   - **Lower TV:** Bottom television display
-   - **Promotional Shelf:** Middle shelf with materials
-   - **Base:** Bottom branding area
+3. **VISUAL FEATURES VALIDATION**:
+   - TVs must have "active display" and brand identification
+   - Header must have "illuminated text" or "blue text"
+   - Base must have "white text on black background"
 
-5. **MANDATORY ELEMENTS:**
-   - At least one TV must be identifiable as Hisense brand
-   - Both TVs must show active content (visual_features: "active display")
-   - FireTV branding must be visible in header and base areas
+4. **POSITION ENFORCEMENT**:
+   - If Y-coordinate < 0.2: shelf_location="header"
+   - If 0.2 ≤ Y-coordinate < 0.65: shelf_location="middle"
+   - If 0.65 ≤ Y-coordinate < 0.9: shelf_location="bottom_promo"
+   - If Y-coordinate ≥ 0.9: shelf_location="bottom_brand"
 
-6. **NEW OBJECT HANDLING:**
-   - If you find a prominent TV or promotional element not pre-detected, set `detection_id` to `null`
-   - Provide `detection_box` coordinates `[x1, y1, x2, y2]` for new items
+5. **visual_features**: Each detected object must include relevant visual features, e.g., "active display" for TVs, "illuminated text" for header, returned as a list of strings.
     """
 )
     # Initialize pipeline

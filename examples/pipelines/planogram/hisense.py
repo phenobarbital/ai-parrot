@@ -143,14 +143,11 @@ Useful phrases to look for: {tag_hint}, 'Hisense', 'Official Partner', 'U7', 'U8
 Return all detections with the following strict criteria:
 
 1. **'brand_logo'**: A bounding box for the '{brand}' brand logo at the top of the display (illuminated white text).
-
 2. **'poster_text'**: A bounding box for any visible text elements including model numbers (U7, U8, U6) and partner certifications.
-
 3. **'promotional_graphic'**: A bounding box for the main TV demonstration area showing the three active TV screens with content.
-
 4. **'poster_panel'**: A bounding box that encompasses the main TV display area containing all three television screens arranged vertically.
-
 5. **'endcap'**: A bounding box for the entire Hisense display structure including the illuminated logo at top, three TV screens in middle, and partner branding at bottom.
+
     """,
         object_identification_prompt="""
 ---

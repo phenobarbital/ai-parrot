@@ -1590,10 +1590,14 @@ class PlanogramCompliancePipeline(AbstractPipeline):
         if not text:
             return None
         t = text.lower()
-        if "epson" in t:
+        if "epson" in t or "ecotank" in t:
             return "Epson"
-        if "ecotank" in t:
-            return "Epson"  # brand inference via line
+        if 'hisense' in t or "canvastv" in t:
+            return "Hisense"
+        if "firetv" in t or "fire tv" in t:
+            return "Amazon"
+        if "google tv" in t or "chromecast" in t:
+            return "Google"
         return None
 
     def _normalize_ocr_text(self, s: str) -> str:
@@ -1626,6 +1630,17 @@ class PlanogramCompliancePipeline(AbstractPipeline):
         for p in products:
             if not p.detection_box:
                 continue
+            # normalize product brand logo with OCR or content from detection if is null:
+            if getattr(p.detection_box, 'class_name', None) == 'brand_logo' and not getattr(p, 'brand', None):
+                if p.detection_box.ocr_text:
+                    brand = self._maybe_brand_from_text(p.detection_box.ocr_text)
+                    if brand:
+                        try:
+                            p.brand = brand  # only if IdentifiedProduct has 'brand'
+                        except Exception:
+                            if not p.visual_features:
+                                p.visual_features = []
+                            p.visual_features.append(f"brand:{brand}")
             if p.product_type in {"product_box", "printer"}:
                 lines = await self._extract_text_from_region(image, p.detection_box, mode="model")
                 if lines:
@@ -1648,13 +1663,7 @@ class PlanogramCompliancePipeline(AbstractPipeline):
                     model = self._guess_et_model_from_text(snippet)
                     if model:
                         # Normalize to your scheme:
-                        #  - printers: "ET-4950"
-                        #  - boxes:    "ET-4950 box"
-                        # if p.product_type == "product_box":
-                        #     target = f"{model.upper()} box"
-                        # else:
                         target = model.upper()
-
                         # If missing or mismatched, replace
                         if not p.product_model:
                             p.product_model = target
@@ -1667,13 +1676,22 @@ class PlanogramCompliancePipeline(AbstractPipeline):
                 if lines := await self._extract_text_from_region(image, p.detection_box):
                     snippet = " ".join(lines)[:160]
                     p.visual_features = (p.visual_features or []) + [f"ocr:{snippet}"]
+                    # keep a normalized text blob
                     joined = " ".join(lines)
                     if norm := self._normalize_ocr_text(joined):
                         p.visual_features.append(norm)
-                        # also feed per-line normals (helps 'contains' on shorter phrases)
                         for ln in lines:
                             if ln and (nln := self._normalize_ocr_text(ln)) and nln not in p.visual_features:
                                 p.visual_features.append(nln)
+
+                    # NEW: infer brand from OCR/features if missing
+                    if not getattr(p, "brand", None):
+                        brand = self._maybe_brand_from_text(joined)
+                        if not brand and p.visual_features:
+                            vf_blob = " ".join(p.visual_features)
+                            brand = self._maybe_brand_from_text(vf_blob)
+                        if brand:
+                            p.brand = brand
         return products
 
     async def _extract_text_from_region(
@@ -1923,21 +1941,23 @@ Analyze all provided images and return the complete JSON response.
         planogram_description: PlanogramDescription,
     ) -> List[ComplianceResult]:
         """Check compliance of identified products against the planogram."""
-
-        # print(f"\n🔍 DEBUG: Starting compliance check with {len(identified_products)} products")
-
-        # # Debug: Print all identified products
-        # for i, p in enumerate(identified_products):
-        #     print(f"  Product {i}: type='{p.product_type}', model='{p.product_model}', shelf='{p.shelf_location}'")
         def _matches(ek, fk) -> bool:
             (e_ptype, e_base), (f_ptype, f_base) = ek, fk
             if e_ptype != f_ptype:
                 return False
+            if not e_base or not f_base:
+                return True
             # If no base model specified in planogram, accept type-only match
             if not e_base:
                 return True
+            if f_base == e_base or e_base in f_base or f_base in e_base:
+                return True
             if f_base == e_base:
                 return True
+            # NEW: allow cross-slug promo matching if synonyms overlap
+            if e_ptype == "promotional_graphic":
+                fam = lambda s: "canvas-tv" if "canvas-tv" in s else s
+                return fam(e_base) == fam(f_base)
             # containment: allow 'et-4950' inside 'epson et-4950 bundle' etc.
             return e_base in f_base or f_base in e_base
 
@@ -1949,6 +1969,9 @@ Analyze all provided images and return the complete JSON response.
         ), None)
 
         brand = getattr(planogram_description, 'brand', planogram_brand)
+
+        print('FOUND BRAND PRODUCT < ', found_brand_product)
+        print('HERE > ', brand)
 
         brand_compliance_result = BrandComplianceResult(
             expected_brand=planogram_description.brand,
@@ -2064,6 +2087,10 @@ Analyze all provided images and return the complete JSON response.
                             for feat in promo.visual_features:
                                 if isinstance(feat, str) and feat.startswith("ocr:"):
                                     ocr_blocks.append(feat[4:].strip())
+                            # if promo have ocr_text, add that too
+                            ocr_text = getattr(promo.detection_box, 'ocr_text', '')
+                            if ocr_text:
+                                ocr_blocks.append(ocr_text.strip())
 
                     if ocr_blocks:
                         ocr_norm = self._normalize_ocr_text(" ".join(ocr_blocks))
@@ -2211,6 +2238,10 @@ Analyze all provided images and return the complete JSON response.
         elif brand and brand.lower() == "hisense":
             # HISENSE TV models: U6, U7, U8, plus potential series numbers
             # Patterns: U7, U8, U6, 55U8, U7K, etc.
+            if re.search(r"canvas[\s-]*tv", t):
+                return "canvas-tv"
+            if re.search(r"canvas", t):
+                return "canvas"
             patterns = [
                 r"(\d*)(u\d+)([a-z]*)",  # 55U8K, U7, U8K, etc.
                 r"(u\d+)",               # Simple U6, U7, U8
@@ -2267,6 +2298,7 @@ Analyze all provided images and return the complete JSON response.
             "promotional_graphic": "promotional_graphic",
             "product_box": "product_box",
             "printer": "printer",
+            "promotional_materials": "promotional_materials"
         }
         ptype = type_mappings.get(ptype, ptype)
         model_str = getattr(sp, "name", "") or getattr(sp, "product_model", "") or ""
@@ -2285,6 +2317,8 @@ Analyze all provided images and return the complete JSON response.
             "promotional_graphic": "promotional_graphic",
             "product_box": "product_box",
             "printer": "printer",
+            "promotional_material": "promotional_graphic",
+            "promotional_display": "promotional_display"
         }
         ptype = type_mappings.get(ptype, ptype)
         model_str = p.product_model or p.product_type or ""
@@ -2322,7 +2356,6 @@ Analyze all provided images and return the complete JSON response.
         prompt = partial_prompt.format(
             brand=brand,
             tag_hint=tag_hint,
-            tags=tags,
             image_size=image_small.size
         )
         max_attempts = 2  # Initial attempt + 1 retry
@@ -2334,9 +2367,10 @@ Analyze all provided images and return the complete JSON response.
                     msg = await client.ask_to_image(
                         image=image_small,
                         prompt=prompt,
-                        model="gemini-2.5-pro",
+                        model="gemini-2.5-flash",
                         no_memory=True,
                         structured_output=Detections,
+                        max_tokens=8192
                     )
                 # If the call succeeds, break out of the loop
                 break
@@ -2354,6 +2388,8 @@ Analyze all provided images and return the complete JSON response.
                     # Re-raise the exception if the last attempt fails
                     raise e
         # Evaluate the Output:
+        # print('MSG >> ', msg)
+        # print('OUTPUT > ', msg.output)
         data = msg.structured_output or msg.output or {}
         dets = data.detections or []
         if not dets:
