@@ -43,7 +43,7 @@ async def main():
         "shelves": [
             {
                 "level": "header_branding",
-                "height_ratio": 0.12,
+                "height_ratio": 0.10,
                 "products": [
                     {
                         "name": "Hisense Brand Logo",
@@ -59,7 +59,7 @@ async def main():
             },
             {
                 "level": "top_tv_u7",
-                "height_ratio": 0.20,
+                "height_ratio": 0.25,
                 "products": [
                     {
                         "name": "Hisense U7 TV",
@@ -73,7 +73,7 @@ async def main():
             },
             {
                 "level": "middle_tv_u8",
-                "height_ratio": 0.20,
+                "height_ratio": 0.25,
                 "products": [
                     {
                         "name": "Hisense U8 TV",
@@ -87,7 +87,7 @@ async def main():
             },
             {
                 "level": "bottom_tv_u6",
-                "height_ratio": 0.20,
+                "height_ratio": 0.25,
                 "products": [
                     {
                         "name": "Hisense U6 TV",
