@@ -120,6 +120,7 @@ async def main():
     }
 
     planogram = PlanogramConfig(
+        config_name="Epson EcoTank Printers Planogram",
         planogram_config=planogram_config,
         reference_images=reference_images,
         detection_model="yolo11l.pt",

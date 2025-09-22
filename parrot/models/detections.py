@@ -198,7 +198,7 @@ class TextRequirement(BaseModel):
 class AdvertisementEndcap(BaseModel):
     """Configuration for advertisement endcap"""
     enabled: bool = Field(default=True, description="Whether endcap advertisement is present")
-    promotional_type: Literal["backlit_graphic", "endcap_poster", "shelf_talker", "banner", "digital_display", "integrated_display"] = Field(
+    promotional_type: Literal["backlit_graphic", "endcap_poster", "shelf_talker", "banner", "digital_display", "integrated_display", "promotional_base"] = Field(
         default="backlit_graphic", description="Type of promotional display"
     )
     position: Literal["header", "top", "middle", "bottom", "side"] = Field(default="header", description="Position of endcap")

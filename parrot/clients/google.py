@@ -3379,6 +3379,8 @@ Your job is to produce a final summary from the following text and identify the 
                 if item.detection_id is not None and item.detection_id > 0 and item.detection_id in id_to_details:
                     details = id_to_details[item.detection_id]
                     item.detection_box = details["detection"]
+
+                    # Only use geometric fallback if LLM didn't provide shelf_location
                     if not item.shelf_location:
                         self.logger.warning(
                             f"LLM did not provide shelf_location for ID {item.detection_id}. Using geometric fallback."
@@ -3391,33 +3393,46 @@ Your job is to produce a final summary from the following text and identify the 
                 # Case 2: Item was newly found by the LLM
                 elif item.detection_id is None:
                     if item.detection_box:
-                        shelf, pos = self._shelf_and_position(item.detection_box, shelf_regions)
-                        item.shelf_location = shelf
-                        item.position_on_shelf = pos
+                        # TRUST the LLM's assignment, only use geometric fallback if missing
+                        if not item.shelf_location:
+                            self.logger.info(f"LLM didn't provide shelf_location, calculating geometrically")
+                            shelf, pos = self._shelf_and_position(item.detection_box, shelf_regions)
+                            item.shelf_location = shelf
+                            item.position_on_shelf = pos
+                        else:
+                            # LLM provided shelf_location, trust it but calculate position if missing
+                            self.logger.info(f"Using LLM-assigned shelf_location: {item.shelf_location}")
+                            if not item.position_on_shelf:
+                                _, pos = self._shelf_and_position(item.detection_box, shelf_regions)
+                                item.position_on_shelf = pos
+
                         self.logger.info(
-                            f"Adding new object found by LLM: {item.product_type} on shelf '{shelf}'"
+                            f"Adding new object found by LLM: {item.product_type} on shelf '{item.shelf_location}'"
                         )
                         final_products.append(item)
 
                 # Case 3: Item was newly found by the LLM (has a negative ID from our validator)
                 elif item.detection_id < 0:
                     if item.detection_box:
-                        # SAFETY NET: ALWAYS use our own logic for shelf and position
-                        shelf, pos = self._shelf_and_position(item.detection_box, shelf_regions)
-                        item.shelf_location = shelf
-                        item.position_on_shelf = pos
-                        self.logger.info(f"Adding new object found by LLM: {item.product_type} on shelf '{shelf}'")
+                        # TRUST the LLM's assignment, only use geometric fallback if missing
+                        if not item.shelf_location:
+                            self.logger.info(f"LLM didn't provide shelf_location, calculating geometrically")
+                            shelf, pos = self._shelf_and_position(item.detection_box, shelf_regions)
+                            item.shelf_location = shelf
+                            item.position_on_shelf = pos
+                        else:
+                            # LLM provided shelf_location, trust it but calculate position if missing
+                            self.logger.info(f"Using LLM-assigned shelf_location: {item.shelf_location}")
+                            if not item.position_on_shelf:
+                                _, pos = self._shelf_and_position(item.detection_box, shelf_regions)
+                                item.position_on_shelf = pos
+
+                        self.logger.info(f"Adding new object found by LLM: {item.product_type} on shelf '{item.shelf_location}'")
                         final_products.append(item)
                     else:
                         self.logger.warning(
                             f"LLM-found item with ID '{item.detection_id}' is missing a detection_box, skipping."
                         )
-
-                # Catch any other weird cases
-                else:
-                    self.logger.warning(
-                        f"LLM returned an item with an invalid ID '{item.detection_id}', skipping."
-                    )
 
             self.logger.info(
                 f"Successfully identified {len(final_products)} products."
