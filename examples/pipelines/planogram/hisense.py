@@ -11,10 +11,30 @@ async def main():
     """Example usage of the 3-step pipeline"""
     llm = GoogleGenAIClient(model=GoogleModel.GEMINI_2_5_PRO)
 
+    hisense_geometry = EndcapGeometry(
+        aspect_ratio=0.78,           # ~3:4 portrait; fits this unit well
+        left_margin_ratio=0.03,      # wood slat + bezel
+        right_margin_ratio=0.03,
+        top_margin_ratio=0.015,      # thin gap above header cap
+        bottom_margin_ratio=0.03,    # kicker base space
+        inter_shelf_padding=0.014,   # tiny gutters between bands
+
+        # ROI margins used by your detector/LLM ROI
+        width_margin_percent=0.10,
+        height_margin_percent=0.22,
+        top_margin_percent=0.015,
+        side_margin_percent=0.03
+    )
+
     # Hisense planogram configuration
     hisense_planogram_config = {
         "brand": "Hisense",
         "category": "TVs",
+        "category": "TV Endcap Tower",
+        "text_tokens": [
+            "hisense", "google tv", "u8", "u7", "u6",
+            "official partner", "fifa", "learn more"
+        ],
         "visual_features_weight": 0.3,
         "aisle": {
             "name": "Electronics > TVs & Home Theater",
@@ -23,7 +43,7 @@ async def main():
         "shelves": [
             {
                 "level": "header_branding",
-                "height_ratio": 0.15,
+                "height_ratio": 0.12,
                 "products": [
                     {
                         "name": "Hisense Brand Logo",
@@ -39,7 +59,7 @@ async def main():
             },
             {
                 "level": "top_tv_u7",
-                "height_ratio": 0.25,
+                "height_ratio": 0.20,
                 "products": [
                     {
                         "name": "Hisense U7 TV",
@@ -53,7 +73,7 @@ async def main():
             },
             {
                 "level": "middle_tv_u8",
-                "height_ratio": 0.25,
+                "height_ratio": 0.20,
                 "products": [
                     {
                         "name": "Hisense U8 TV",
@@ -67,7 +87,7 @@ async def main():
             },
             {
                 "level": "bottom_tv_u6",
-                "height_ratio": 0.25,
+                "height_ratio": 0.20,
                 "products": [
                     {
                         "name": "Hisense U6 TV",
@@ -79,28 +99,48 @@ async def main():
                 ],
                 "compliance_threshold": 0.9
             },
+            # 3) Promo shelf (tablet/cards/price strips)
             {
-                "level": "bottom_branding",
-                "height_ratio": 0.16,
+                "level": "promo_shelf",
+                "height_ratio": 0.20,      # ~20%
                 "products": [
                     {
-                        "name": "Official Partner Branding",
+                        "name": "Hisense Promo Materials",
+                        "product_type": "promotional_graphic",  # normalize for your matcher
+                        "quantity_range": [3, 8],
+                        "mandatory": True,
+                        "visual_features": [
+                            "tablet learn more display",
+                            "product cards",
+                            "price tags"
+                        ]
+                    }
+                ],
+                "allow_extra_products": True,
+                "compliance_threshold": 0.80
+            },
+            # 4) Bottom brand kicker ("Hisense" + OFFICIAL PARTNER + FIFA emblem)
+            {
+                "level": "bottom_brand",
+                "height_ratio": 0.12,      # ~12% (kicker plus base)
+                "products": [
+                    {
+                        "name": "Bottom Official Partner Branding",
                         "product_type": "promotional_graphic",
                         "mandatory": True,
                         "visual_features": [
-                            "hisense official partner"  # Matches: "Text 'Hisense OFFICIAL PARTNER' with a circular logo on the base of the display."
+                            "hisense logo",
+                            "official partner text",
+                            "fifa emblem"
                         ],
                         "text_requirements": [
-                            {
-                                "required_text": "OFFICIAL PARTNER",
-                                "match_type": "contains",
-                                "mandatory": True
-                            }
-                        ],
+                            {"required_text": "Hisense", "match_type": "contains", "mandatory": True},
+                            {"required_text": "OFFICIAL PARTNER", "match_type": "contains", "mandatory": True}
+                        ]
                     }
                 ],
                 "allow_extra_products": False,
-                "compliance_threshold": 0.9
+                "compliance_threshold": 0.95
             }
         ],
         "advertisement_endcap": {
@@ -199,21 +239,7 @@ Valid shelf locations: {shelf_names}
 
 For each detected object, carefully check its Y-coordinate and assign the appropriate shelf_location from the 5 options above.
 """,
-        endcap_geometry=EndcapGeometry(
-            # Hisense display proportions - taller and narrower than EPSON
-            aspect_ratio=1.2,           # Slightly taller aspect ratio
-            left_margin_ratio=0.02,     # Minimal left margin
-            right_margin_ratio=0.02,    # Minimal right margin
-            top_margin_ratio=0.01,      # Very small top margin (logo close to top)
-            bottom_margin_ratio=0.10,   # Larger bottom margin for partner branding
-            inter_shelf_padding=0.03,   # Moderate padding between TV shelves
-
-            # ROI detection margins - tighter crop for Hisense
-            width_margin_percent=0.15,   # Reduced width margin (tighter horizontal crop)
-            height_margin_percent=0.40,  # Increased height margin (capture bottom branding)
-            top_margin_percent=0.01,     # Minimal top margin
-            side_margin_percent=0.02     # Reduced side margins
-        )
+        endcap_geometry=hisense_geometry,
     )
 
     # Initialize pipeline

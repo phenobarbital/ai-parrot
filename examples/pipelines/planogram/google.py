@@ -11,6 +11,23 @@ async def main():
     """Example usage of the 3-step pipeline"""
     llm = GoogleGenAIClient(model=GoogleModel.GEMINI_2_5_PRO)
 
+    # Corresponding EndcapGeometry for Google TV displays
+    google_tv_endcap_geometry = EndcapGeometry(
+        # Google TV displays tend to be taller with more vertical content
+        aspect_ratio=0.9,           # Taller aspect ratio for vertical stacking
+        left_margin_ratio=0.02,
+        right_margin_ratio=0.02,
+        top_margin_ratio=0.01,      # Minimal top margin for header text
+        bottom_margin_ratio=0.05,   # Space for partner branding
+        inter_shelf_padding=0.02,   # Padding between display sections
+
+        # ROI detection margins - adjusted for Google TV layout
+        width_margin_percent=0.20,   # Moderate width margin
+        height_margin_percent=0.35,  # More height to capture all vertical elements
+        top_margin_percent=0.01,     # Minimal top margin
+        side_margin_percent=0.03     # Balanced side margins
+    )
+
     google_tv_planogram_config = {
         "brand": "Google",
         "category": "Smart TV Platform",
@@ -118,23 +135,6 @@ async def main():
         },
         "global_compliance_threshold": 0.8
     }
-
-    # Corresponding EndcapGeometry for Google TV displays
-    google_tv_endcap_geometry = EndcapGeometry(
-        # Google TV displays tend to be taller with more vertical content
-        aspect_ratio=0.9,           # Taller aspect ratio for vertical stacking
-        left_margin_ratio=0.02,
-        right_margin_ratio=0.02,
-        top_margin_ratio=0.01,      # Minimal top margin for header text
-        bottom_margin_ratio=0.05,   # Space for partner branding
-        inter_shelf_padding=0.02,   # Padding between display sections
-
-        # ROI detection margins - adjusted for Google TV layout
-        width_margin_percent=0.20,   # Moderate width margin
-        height_margin_percent=0.35,  # More height to capture all vertical elements
-        top_margin_percent=0.01,     # Minimal top margin
-        side_margin_percent=0.03     # Balanced side margins
-    )
 
     # Usage example for Google TV configuration
     google_tv_config = PlanogramConfig(
