@@ -135,13 +135,9 @@ Useful phrases to look for inside the lightbox: {tag_hint}
 Return all detections with the following strict criteria:
 
 1. **'brand_logo'**: A bounding box for the '{brand}' brand logo at the top of the sign.
-
 2. **'poster_text'**: A bounding box for the main marketing text on the sign, must include phrases like {tag_hint}.
-
 3. **'promotional_graphic'**: A bounding box for the main promotional graphic on the sign, which may include images of products and other marketing visuals. The box should tightly enclose the graphic area without cutting off any important elements.
-
 4. **'poster_panel'**: A bounding box that **tightly encloses the entire backlit sign, The box must **tightly enclose the sign's outer silver/gray frame on all four sides.** For this detection, 'content' should be null.
-
 5. **'endcap'**: A bounding box for the entire retail endcap display structure. It must start at the top of the sign and extend down to the **base of the lowest shelf**, including price tags and products boxes. The box must be wide enough to **include all products and product boxes on all shelves without cropping.** For this detection, 'content' should be null.
 
 """,

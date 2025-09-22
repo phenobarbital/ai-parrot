@@ -65,7 +65,7 @@ async def main():
                 "products": [
                     {
                         "name": "Product Information Materials",
-                        "product_type": "informational_materials",
+                        "product_type": "product_materials",
                         "mandatory": False,
                         "visual_features": [
                             "product brochures pamphlets on wooden shelf"
@@ -146,13 +146,13 @@ Analyze the image to identify the entire Google TV retail endcap display and its
 
 Your response must be a single JSON object with a 'detections' list. Each detection must have a 'label', 'confidence', a 'content' with any detected text, and a 'bbox' with normalized coordinates (x1, y1, x2, y2).
 
-Useful phrases to look for: 'Google TV', 'Google', 'Hisense', 'TCL', 'Sony', smart TV interface content
+Useful phrases to look for: 'Google TV', 'Google', 'Hisense' smart TV interface content
 
 Return all detections with the following strict criteria:
 
 1. **'brand_logo'**: A bounding box for the 'Google TV' brand logo at the top of the display (white text on black background).
-2. **'poster_text'**: A bounding box for any visible text elements including manufacturer names (Hisense, TCL, Sony) and Google branding.
-3. **'promotional_graphic'**: A bounding box for the main TV demonstration area showing the active TV screens with Google TV interface content.
+2. **'poster_text'**: A bounding box for any visible text elements including manufacturer names (Hisense, TCL) and Google branding.
+3. **'promotional_graphic'**: A bounding box for the main TV demonstration area showing the active TV screens.
 4. **'poster_panel'**: A bounding box that encompasses the main display area containing the TV screens and interactive content.
 5. **'endcap'**: A bounding box for the entire Google TV display structure including the header logo, TV screens, product information area, and bottom partner branding.
 
