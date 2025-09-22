@@ -2721,3 +2721,249 @@ Analyze all provided images and return the complete JSON response.
                 print(f"Warning: Could not save overlay: {e}")
 
         return base
+
+    def generate_compliance_json(self, results: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Generate comprehensive JSON report from pipeline results.
+
+        Args:
+            results: Complete results object from pipeline.run()
+
+        Returns:
+            Dictionary containing comprehensive compliance report
+        """
+        compliance_results = results['step3_compliance_results']
+
+        def serialize_compliance_result(result) -> Dict[str, Any]:
+            """Convert ComplianceResult to serializable dictionary."""
+            result_dict = {
+                "shelf_level": result.shelf_level,
+                "compliance_status": result.compliance_status.value,
+                "compliance_score": round(result.compliance_score, 3),
+                "expected_products": result.expected_products,
+                "found_products": result.found_products,
+                "missing_products": result.missing_products,
+                "unexpected_products": result.unexpected_products,
+                "text_compliance": {
+                    "score": round(result.text_compliance_score, 3),
+                    "overall_compliant": result.overall_text_compliant,
+                    "requirements": []
+                }
+            }
+
+            # Add text compliance details
+            for text_result in result.text_compliance_results:
+                text_dict = {
+                    "required_text": text_result.required_text,
+                    "found": text_result.found,
+                    "confidence": round(text_result.confidence, 3),
+                    "match_type": text_result.match_type,
+                    "matched_features": text_result.matched_features
+                }
+                result_dict["text_compliance"]["requirements"].append(text_dict)
+
+            # Add brand compliance if present
+            if hasattr(result, 'brand_compliance_result') and result.brand_compliance_result:
+                result_dict["brand_compliance"] = {
+                    "expected_brand": result.brand_compliance_result.expected_brand,
+                    "found_brand": result.brand_compliance_result.found_brand,
+                    "found": result.brand_compliance_result.found,
+                    "confidence": round(result.brand_compliance_result.confidence, 3)
+                }
+
+            return result_dict
+
+        # Build the main report structure
+        report = {
+            "metadata": {
+                "analysis_timestamp": results['analysis_timestamp'].isoformat(),
+                "report_version": "1.0",
+                "total_shelves_analyzed": len(compliance_results)
+            },
+            "overall_compliance": {
+                "compliant": results['overall_compliant'],
+                "score": round(results['overall_compliance_score'], 3),
+                "percentage": f"{results['overall_compliance_score']:.1%}"
+            },
+            "shelf_results": [serialize_compliance_result(result) for result in compliance_results],
+            "summary": {
+                "compliant_shelves": sum(1 for r in compliance_results if r.compliance_status.value == "compliant"),
+                "non_compliant_shelves": sum(1 for r in compliance_results if r.compliance_status.value == "non_compliant"),
+                "missing_shelves": sum(1 for r in compliance_results if r.compliance_status.value == "missing"),
+                "average_shelf_score": round(sum(r.compliance_score for r in compliance_results) / len(compliance_results), 3) if compliance_results else 0.0
+            }
+        }
+
+        # Add overlay path if provided
+        if 'overlay_path' in results and results['overlay_path']:
+            report["artifacts"] = {
+                "overlay_image_path": str(results['overlay_path'])
+            }
+
+        return report
+
+    def generate_compliance_markdown(
+        self,
+        results: Dict[str, Any],
+        brand_name: Optional[str] = None,
+        additional_notes: Optional[str] = None
+    ) -> str:
+        """
+        Generate comprehensive Markdown report from pipeline results.
+
+        Args:
+            results: Complete results object from pipeline.run()
+            brand_name: Brand being analyzed (optional)
+            additional_notes: Additional notes to include (optional)
+
+        Returns:
+            Formatted Markdown string
+        """
+        compliance_results = results['step3_compliance_results']
+        overall_compliance_score = results['overall_compliance_score']
+        overall_compliant = results['overall_compliant']
+        analysis_timestamp = results['analysis_timestamp']
+        overlay_path = results.get('overlay_path')
+
+        def status_emoji(status: str) -> str:
+            """Get emoji for compliance status."""
+            status_map = {
+                "compliant": "✅",
+                "non_compliant": "❌",
+                "missing": "⚠️",
+                "misplaced": "🔄"
+            }
+            return status_map.get(status, "❓")
+
+        def format_percentage(score: float) -> str:
+            """Format score as percentage."""
+            return f"{score:.1%}"
+
+        # Start building the markdown
+        lines = []
+
+        # Header
+        brand_title = f" - {brand_name}" if brand_name else ""
+        lines.append(f"# Planogram Compliance Report{brand_title}")
+        lines.append("")
+        lines.append(
+            f"**Analysis Date:** {analysis_timestamp.strftime('%Y-%m-%d %H:%M:%S')}"
+        )
+        lines.append("")
+
+        # Overall Compliance Section
+        overall_emoji = "✅" if overall_compliant else "❌"
+        lines.append("## Overall Compliance")
+        lines.append("")
+        lines.append(f"**Status:** {overall_emoji} {'COMPLIANT' if overall_compliant else 'NON-COMPLIANT'}")
+        lines.append(f"**Score:** {format_percentage(overall_compliance_score)}")
+        lines.append("")
+
+        # Summary Statistics
+        compliant_count = sum(1 for r in compliance_results if r.compliance_status.value == "compliant")
+        total_count = len(compliance_results)
+
+        lines.append("## Summary")
+        lines.append("")
+        lines.append(f"- **Total Shelves:** {total_count}")
+        lines.append(f"- **Compliant Shelves:** {compliant_count}/{total_count}")
+        lines.append(f"- **Non-Compliant Shelves:** {total_count - compliant_count}/{total_count}")
+
+        if compliance_results:
+            avg_score = sum(r.compliance_score for r in compliance_results) / len(compliance_results)
+            lines.append(f"- **Average Shelf Score:** {format_percentage(avg_score)}")
+        lines.append("")
+
+        # Detailed Shelf Results
+        lines.append("## Detailed Results by Shelf")
+        lines.append("")
+
+        for result in compliance_results:
+            shelf_emoji = status_emoji(result.compliance_status.value)
+            lines.append(f"### {result.shelf_level.upper().replace('_', ' ')}")
+            lines.append("")
+            lines.append(f"**Status:** {shelf_emoji} {result.compliance_status.value.upper()}")
+            lines.append(f"**Score:** {format_percentage(result.compliance_score)}")
+            lines.append("")
+
+            # Products
+            lines.append("**Expected Products:**")
+            for product in result.expected_products:
+                lines.append(f"- {product}")
+            lines.append("")
+
+            lines.append("**Found Products:**")
+            if result.found_products:
+                for product in result.found_products:
+                    lines.append(f"- {product}")
+            else:
+                lines.append("- *(None)*")
+            lines.append("")
+
+            # Missing/Unexpected
+            if result.missing_products:
+                lines.append("**Missing Products:**")
+                for product in result.missing_products:
+                    lines.append(f"- ❌ {product}")
+                lines.append("")
+
+            if result.unexpected_products:
+                lines.append("**Unexpected Products:**")
+                for product in result.unexpected_products:
+                    lines.append(f"- ⚠️ {product}")
+                lines.append("")
+
+            # Text Compliance
+            if result.text_compliance_results:
+                text_emoji = "✅" if result.overall_text_compliant else "❌"
+                lines.append(f"**Text Compliance:** {text_emoji} {format_percentage(result.text_compliance_score)}")
+                lines.append("")
+
+                for text_result in result.text_compliance_results:
+                    req_emoji = "✅" if text_result.found else "❌"
+                    lines.append(f"- {req_emoji} '{text_result.required_text}' (confidence: {text_result.confidence:.2f})")
+                    if text_result.matched_features:
+                        lines.append(f"  - Matched: {', '.join(text_result.matched_features)}")
+                lines.append("")
+
+            # Brand Compliance - only show on promotional graphic shelves
+            if (hasattr(result, 'brand_compliance_result') and
+                result.brand_compliance_result and
+                'promotional_graphic' in str(result.expected_products).lower()):
+                brand_emoji = "✅" if result.brand_compliance_result.found else "❌"
+                lines.append(f"**Brand Compliance:** {brand_emoji}")
+                lines.append(f"- Expected: {result.brand_compliance_result.expected_brand}")
+                if result.brand_compliance_result.found_brand:
+                    lines.append(f"- Found: {result.brand_compliance_result.found_brand}")
+                    lines.append(f"- Confidence: {result.brand_compliance_result.confidence:.2f}")
+                else:
+                    lines.append("- Found: *(None)*")
+                lines.append("")
+
+            lines.append("---")
+            lines.append("")
+
+        # Artifacts Section
+        if overlay_path:
+            lines.append("## Analysis Artifacts")
+            lines.append("")
+            lines.append(f"**Overlay Image:** `{overlay_path}`")
+            lines.append("")
+
+            # Add image link if it's a web-accessible path
+            if str(overlay_path).startswith(('http://', 'https://')):
+                lines.append(f"![Compliance Overlay]({overlay_path})")
+            lines.append("")
+
+        # Additional Notes
+        if additional_notes:
+            lines.append("## Additional Notes")
+            lines.append("")
+            lines.append(additional_notes)
+            lines.append("")
+
+        # Footer
+        lines.append("---")
+        lines.append("*Report generated by AI-Parrot Planogram Compliance Pipeline*")
+
+        return '\n'.join(lines)

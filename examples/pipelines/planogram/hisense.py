@@ -131,7 +131,7 @@ async def main():
     hisense_planogram = PlanogramConfig(
         planogram_config=hisense_planogram_config,
         reference_images=hisense_reference_images,
-        detection_model="yolo11l.pt",
+        detection_model="yolo11m.pt",
         confidence_threshold=0.15,
         roi_detection_prompt="""
 Analyze the image to identify the entire Hisense TV retail endcap display and its key components.
@@ -234,6 +234,18 @@ For each detected object, carefully check its Y-coordinate and assign the approp
         return_overlay="identified",
         overlay_save_path="/tmp/data/planogram_overlay.jpg",
     )
+
+    # Generate reports
+    json_report = pipeline.generate_compliance_json(
+        results=results
+    )
+
+    markdown_report = pipeline.generate_compliance_markdown(
+        results=results
+    )
+
+    print(f"JSON: {json_report}")
+    print(f"Markdown: {markdown_report}")
 
     # Print results
     print("\n" + "="*60)
