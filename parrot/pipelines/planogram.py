@@ -2334,7 +2334,7 @@ Analyze all provided images and return the complete JSON response.
                     msg = await client.ask_to_image(
                         image=image_small,
                         prompt=prompt,
-                        model="gemini-2.5-flash",
+                        model="gemini-2.5-pro",
                         no_memory=True,
                         structured_output=Detections,
                     )
