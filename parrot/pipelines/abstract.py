@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional, List, Tuple
+from typing import Any, Dict, Optional, List, Tuple, Union
 from pathlib import Path
 import io
 from PIL import (
@@ -83,11 +83,15 @@ class AbstractPipeline(ABC):
         self.llm_provider = client.client_name.lower()
         return client
 
-    def open_image(self, image_path: str) -> Image.Image:
+    def open_image(self, image_path: Union[Path, Image.Image]) -> Image.Image:
         """Open an image from a file path."""
         try:
-            img = Image.open(image_path)
-            img = img.convert("RGB")
+            if isinstance(image_path, (str, Path)):
+                img = Image.open(str(image_path))
+            else:
+                img = image_path
+            if img.mode != "RGB":
+                img = img.convert("RGB")
             img = self._enhance_image(img)
             self.logger.debug(
                 f"Opened image {image_path} with size {img.size} and mode {img.mode}"
