@@ -249,11 +249,12 @@ class RetailDetector(AbstractDetector):
 
     # --------------------------- shelves -------------------------------------
     def _find_shelves(
-            self,
-            roi_box: tuple[int, int, int, int],
-            ad_box: tuple[int, int, int, int],
-            h: int, w: int,
-            planogram_config: dict = None
+        self,
+        roi_box: tuple[int, int, int, int],
+        ad_box: tuple[int, int, int, int],
+        h: int,
+        w: int,
+        planogram_config: dict = None
     ) -> tuple[List[int], dict]:
         """
         Detects shelf bands based on planogram configuration, prioritizing the
@@ -320,6 +321,13 @@ class RetailDetector(AbstractDetector):
             # For the very last shelf, ensure it extends to the bottom of the ROI
             if i == len(remaining_configs) - 1:
                 shelf_bottom = ry2
+
+            # VALIDATION: Ensure valid bounding box
+            if shelf_bottom <= current_y:
+                print(
+                    f"WARNING: Invalid shelf {shelf_level}: y1={current_y}, y2={shelf_bottom}"
+                )
+                shelf_bottom = current_y + 50  # Minimum height
 
             bands[shelf_level] = (current_y, shelf_bottom)
             current_y = shelf_bottom
@@ -1321,10 +1329,14 @@ class PlanogramCompliancePipeline(AbstractPipeline):
             detection_model: Object detection model to use
         """
         # Endcap geometry defaults (can be tuned per program)
-        self.endcap_aspect_ratio = kwargs.get('endcap_aspect_ratio', 1.35)   # width / height
-        self.left_margin_ratio   = kwargs.get('left_margin_ratio', 0.01)
-        self.right_margin_ratio  = kwargs.get('right_margin_ratio', 0.03)
-        self.top_margin_ratio    = kwargs.get('top_margin_ratio', 0.02)
+        geometry = planogram_config.endcap_geometry
+        self.endcap_aspect_ratio = geometry.aspect_ratio
+        self.left_margin_ratio = geometry.left_margin_ratio
+        self.right_margin_ratio = geometry.right_margin_ratio
+        self.top_margin_ratio = geometry.top_margin_ratio
+        self.bottom_margin_ratio = geometry.bottom_margin_ratio
+        self.inter_shelf_padding = geometry.inter_shelf_padding
+
         # saving the planogram config for later use
         self.planogram_config = planogram_config
         super().__init__(
@@ -1437,8 +1449,6 @@ class PlanogramCompliancePipeline(AbstractPipeline):
         # Iterate through the shelves defined in the planogram config, in their specified order.
         for shelf_config in planogram_description.shelves:
             level = shelf_config.level
-
-            # Get the detected bounding box for the current shelf level.
             band = shelves_dict.get(level)
             if not band:
                 self.logger.warning(
@@ -1451,15 +1461,17 @@ class PlanogramCompliancePipeline(AbstractPipeline):
             objs = [d for d in dets if y_overlap(d.y1, d.y2, band.y1, band.y2) > 0]
 
             # If no objects were found on this shelf, we don't need to create a region for it.
-            if not objs:
-                continue
+            if objs:
+                x1 = min(o.x1 for o in objs)
+                x2 = max(o.x2 for o in objs)
+            else:
+                # Use band boundaries if no objects
+                x1, x2 = band.x1, band.x2
 
             # Create a new bounding box for the ShelfRegion.
             # The Y coordinates are fixed by the detected shelf band.
             # The X coordinates are calculated as the min/max extent of the objects on that shelf.
-            x1 = min(o.x1 for o in objs)
             y1 = band.y1
-            x2 = max(o.x2 for o in objs)
             y2 = band.y2
 
             bbox = DetectionBox(
@@ -1682,6 +1694,13 @@ class PlanogramCompliancePipeline(AbstractPipeline):
             y1 = max(0, detection_box.y1 - pad)
             x2 = min(pil_image.width - 1, detection_box.x2 + pad)
             y2 = min(pil_image.height - 1, detection_box.y2 + pad)
+
+            # ENSURE VALID CROP COORDINATES
+            if x1 >= x2:
+                x2 = x1 + 10
+            if y1 >= y2:
+                y2 = y1 + 10
+
             crop_rgb = pil_image.crop((x1, y1, x2, y2)).convert("RGB")
 
             def _prep(arr):
@@ -1773,7 +1792,6 @@ class PlanogramCompliancePipeline(AbstractPipeline):
         partial_prompt: str
     ) -> str:
         """Builds a more detailed prompt to help Gemini differentiate similar products."""
-
         detection_lines = ["\nDETECTED OBJECTS (with pre-assigned IDs):"]
         if detections:
             for i, detection in enumerate(detections, 1):
@@ -1808,9 +1826,10 @@ For each distinct product, you must first analyze its visual features according 
             num_detections=num_detections,
             shelf_names=", ".join(valid_shelf_names)
         )
-        prompt += partial_prompt + "\n"
+        prompt += partial_prompt
         prompt += f"""
 ---
+
 **JSON OUTPUT FORMAT:**
 Respond with a single JSON object. For each **distinct product** you identify, provide an entry in the 'detections' list.
 
@@ -1835,7 +1854,7 @@ Analyze all provided images and return the complete JSON response.
 
     def _calculate_visual_feature_match(self, expected_features: List[str], detected_features: List[str]) -> float:
         """
-        Simple visual feature matching - returns score between 0.0 and 1.0
+        Enhanced visual feature matching with semantic understanding
         """
         if not expected_features:
             return 1.0  # No requirements = full match
@@ -1843,23 +1862,60 @@ Analyze all provided images and return the complete JSON response.
         if not detected_features:
             return 0.0  # No detected features but requirements exist
 
-        # Normalize strings for comparison
-        def normalize(text):
-            return text.lower().strip()
+        # Normalize and create keyword sets for semantic matching
+        def extract_keywords(text):
+            """Extract meaningful keywords from feature text"""
+            text = text.lower().strip()
+            # Remove common words that don't add meaning
+            stop_words = {'a', 'an', 'the', 'is', 'are', 'on', 'of', 'in', 'at', 'to', 'for', 'with', 'visible', 'displayed', 'showing'}
+            words = [w for w in text.split() if w not in stop_words and len(w) > 1]
+            return set(words)
 
-        expected_norm = [normalize(f) for f in expected_features]
-        detected_norm = [normalize(f) for f in detected_features]
+        # Special semantic mappings for common concepts
+        semantic_mappings = {
+            'active': ['active', 'on', 'powered', 'illuminated', 'lit'],
+            'display': ['display', 'screen', 'tv', 'television', 'monitor'],
+            'illuminated': ['illuminated', 'backlit', 'lit', 'bright', 'glowing'],
+            'logo': ['logo', 'text', 'branding', 'brand'],
+            'dynamic': ['dynamic', 'colorful', 'graphics', 'content'],
+            'official': ['official', 'partner'],
+            'white': ['white', 'large']
+        }
 
-        # Count matches using simple string containment
+        def semantic_match(expected_word, detected_keywords):
+            """Check if expected word semantically matches any detected keywords"""
+            if expected_word in detected_keywords:
+                return True
+
+            # Check semantic mappings
+            if expected_word in semantic_mappings:
+                synonyms = semantic_mappings[expected_word]
+                return any(syn in detected_keywords for syn in synonyms)
+
+            # Check if any detected keyword contains the expected word
+            return any(expected_word in keyword for keyword in detected_keywords)
+
         matches = 0
-        for expected in expected_norm:
-            for detected in detected_norm:
-                if expected in detected or detected in expected:
-                    matches += 1
-                    break  # Found a match for this expected feature
+        for expected in expected_features:
+            expected_keywords = extract_keywords(expected)
 
-        # Return ratio of matched features
-        return matches / len(expected_features)
+            # Combine all detected feature keywords
+            all_detected_keywords = set()
+            for detected in detected_features:
+                all_detected_keywords.update(extract_keywords(detected))
+
+            # Check if any expected keyword has a semantic match
+            feature_matched = False
+            for exp_keyword in expected_keywords:
+                if semantic_match(exp_keyword, all_detected_keywords):
+                    feature_matched = True
+                    break
+
+            if feature_matched:
+                matches += 1
+
+        score = matches / len(expected_features)
+        return score
 
     def check_planogram_compliance(
         self,
@@ -1867,11 +1923,18 @@ Analyze all provided images and return the complete JSON response.
         planogram_description: PlanogramDescription,
     ) -> List[ComplianceResult]:
         """Check compliance of identified products against the planogram."""
+
+        # print(f"\n🔍 DEBUG: Starting compliance check with {len(identified_products)} products")
+
+        # # Debug: Print all identified products
+        # for i, p in enumerate(identified_products):
+        #     print(f"  Product {i}: type='{p.product_type}', model='{p.product_model}', shelf='{p.shelf_location}'")
         def _matches(ek, fk) -> bool:
             (e_ptype, e_base), (f_ptype, f_base) = ek, fk
             if e_ptype != f_ptype:
                 return False
-            if not e_base:  # planogram didn't specify a model, accept type-only match
+            # If no base model specified in planogram, accept type-only match
+            if not e_base:
                 return True
             if f_base == e_base:
                 return True
@@ -1885,6 +1948,8 @@ Analyze all provided images and return the complete JSON response.
             p for p in identified_products if p.brand and p.brand.lower() == planogram_brand
         ), None)
 
+        brand = getattr(planogram_description, 'brand', planogram_brand)
+
         brand_compliance_result = BrandComplianceResult(
             expected_brand=planogram_description.brand,
             found_brand=found_brand_product.brand if found_brand_product else None,
@@ -1892,22 +1957,21 @@ Analyze all provided images and return the complete JSON response.
             confidence=found_brand_product.confidence if found_brand_product else 0.0
         )
         brand_check_ok = brand_compliance_result.found
-
         by_shelf = defaultdict(list)
+
         for p in identified_products:
             by_shelf[p.shelf_location].append(p)
 
         for shelf_cfg in planogram_description.shelves:
             shelf_level = shelf_cfg.level
             products_on_shelf = by_shelf.get(shelf_level, [])
-
             expected = []
             # --- 1. Main matching loop for expected products ---
             for sp in shelf_cfg.products:
                 if sp.product_type in ("fact_tag", "price_tag", "slot"):
                     continue
 
-                e_ptype, e_base = self._canonical_expected_key(sp)
+                e_ptype, e_base = self._canonical_expected_key(sp, brand=brand)
                 expected.append((e_ptype, e_base))
 
             # --- Build canonical FOUND keys for this shelf (and keep refs for reporting) ---
@@ -1917,7 +1981,7 @@ Analyze all provided images and return the complete JSON response.
             for p in products_on_shelf:
                 if p.product_type in ("fact_tag", "price_tag", "slot", "brand_logo"):
                     continue
-                f_ptype, f_base, f_conf = self._canonical_found_key(p)
+                f_ptype, f_base, f_conf = self._canonical_found_key(p, brand=brand)
                 found_keys.append((f_ptype, f_base))
                 if p.product_type == "promotional_graphic":
                     promos.append(p)
@@ -1953,14 +2017,6 @@ Analyze all provided images and return the complete JSON response.
                                 detected_features
                             )
                             visual_feature_scores.append(vf_score)
-
-                            # Log the matching for debugging
-                            self.logger.debug(
-                                f"Visual feature match for {shelf_product.name}: "
-                                f"Expected: {shelf_product.visual_features}, "
-                                f"Detected: {detected_features}, "
-                                f"Score: {vf_score:.2f}"
-                            )
                         break
 
             # Compute lists for reporting/scoring
@@ -1976,7 +2032,6 @@ Analyze all provided images and return the complete JSON response.
                 found_readable.append(tag)
 
             missing = [expected_readable[i] for i, ok in enumerate(matched) if not ok]
-
             # If extras not allowed, mark unexpected any unconsumed found
             unexpected = []
             if not shelf_cfg.allow_extra_products:
@@ -2128,17 +2183,69 @@ Analyze all provided images and return the complete JSON response.
 
         return results
 
-    def _base_model_from_str(self, s: str) -> str:
-        """Extract normalized base model like 'et-4950' from any text."""
+    def _base_model_from_str(self, s: str, brand: str = None) -> str:
+        """
+        Extract normalized base model from any text, supporting multiple brands.
+
+        Args:
+            s: String to extract model from
+            brand: Optional brand hint to improve extraction
+
+        Returns:
+            Normalized model string or empty string if no model found
+        """
         if not s:
             return ""
-        t = s.lower()
+
+        t = s.lower().strip()
         # normalize separators
-        t = t.replace("—", "-").replace("–", "-").replace(" ", "")
-        m = re.search(r"(et)[- ]?(\d{4})", t)
-        if not m:
-            return ""
-        return f"{m.group(1)}-{m.group(2)}"  # et-4950
+        t = t.replace("—", "-").replace("–", "-").replace("_", "-")
+
+        # Brand-specific patterns
+        if brand and brand.lower() == "epson":
+            # EPSON EcoTank models: ET-2980, ET-3950, ET-4950
+            m = re.search(r"(et)[- ]?(\d{4})", t)
+            if m:
+                return f"{m.group(1)}-{m.group(2)}"
+
+        elif brand and brand.lower() == "hisense":
+            # HISENSE TV models: U6, U7, U8, plus potential series numbers
+            # Patterns: U7, U8, U6, 55U8, U7K, etc.
+            patterns = [
+                r"(\d*)(u\d+)([a-z]*)",  # 55U8K, U7, U8K, etc.
+                r"(u\d+)",               # Simple U6, U7, U8
+            ]
+            for pattern in patterns:
+                m = re.search(pattern, t)
+                if m:
+                    if len(m.groups()) >= 2:
+                        # Extract size + series + variant if available
+                        size = m.group(1) if m.group(1) else ""
+                        series = m.group(2)
+                        variant = m.group(3) if len(m.groups()) > 2 and m.group(3) else ""
+                        return f"{size}{series}{variant}".lower()
+                    else:
+                        return m.group(1).lower()
+
+        # Generic patterns for any brand
+        generic_patterns = [
+            # Model with dashes: ABC-1234, XYZ-567
+            r"([a-z]+)[- ]?(\d{3,4})",
+            # Series patterns: U7, U8, A6, etc.
+            r"([a-z]\d+)",
+            # Number-letter combinations: 4950, 2980 (for fallback)
+            r"(\d{4})",
+        ]
+
+        for pattern in generic_patterns:
+            m = re.search(pattern, t)
+            if m:
+                if len(m.groups()) >= 2:
+                    return f"{m.group(1)}-{m.group(2)}"
+                else:
+                    return m.group(1).lower()
+
+        return ""
 
     def _looks_like_box(self, visual_features: list[str] | None) -> bool:
         """Heuristic: does the detection look like packaging?"""
@@ -2148,23 +2255,40 @@ Analyze all provided images and return the complete JSON response.
         norm = " ".join(visual_features).lower()
         return any(k in norm for k in keywords)
 
-    def _canonical_expected_key(self, sp) -> tuple[str, str]:
+    def _canonical_expected_key(self, sp: str, brand: str) -> tuple[str, str]:
         """
         From planogram product spec -> (product_type, base_model).
         Example: name='ET-4950', product_type='product_box' -> ('product_box','et-4950')
         """
         ptype = (sp.product_type or "").strip().lower()
-        # model from sp.name if present; fall back to ptype
-        base = self._base_model_from_str(getattr(sp, "name", "") or "")
+        # Normalize product types
+        type_mappings = {
+            "tv_demonstration": "tv",
+            "promotional_graphic": "promotional_graphic",
+            "product_box": "product_box",
+            "printer": "printer",
+        }
+        ptype = type_mappings.get(ptype, ptype)
+        model_str = getattr(sp, "name", "") or getattr(sp, "product_model", "") or ""
+        base = self._base_model_from_str(model_str, brand=brand)
         return ptype or "unknown", base or ""
 
-    def _canonical_found_key(self, p) -> tuple[str, str, float]:
+    def _canonical_found_key(self, p: str, brand: str) -> tuple[str, str, float]:
         """
         From IdentifiedProduct -> (resolved_product_type, base_model, adjusted_confidence).
         If visual features scream 'box', coerce/confirm product_type as 'product_box' and boost conf a bit.
         """
         ptype = (p.product_type or "").strip().lower()
-        base = self._base_model_from_str(p.product_model or p.product_type)
+        # Normalize product types
+        type_mappings = {
+            "tv_demonstration": "tv",
+            "promotional_graphic": "promotional_graphic",
+            "product_box": "product_box",
+            "printer": "printer",
+        }
+        ptype = type_mappings.get(ptype, ptype)
+        model_str = p.product_model or p.product_type or ""
+        base = self._base_model_from_str(model_str, brand=brand)
         conf = float(getattr(p, "confidence", 0.0) or 0.0)
 
         if self._looks_like_box(getattr(p, "visual_features", None)):
@@ -2186,6 +2310,7 @@ Analyze all provided images and return the complete JSON response.
         brand = (getattr(planogram, "brand", "") or "").strip()
         tags = [t.strip() for t in getattr(planogram, "tags", []) or []]
         endcap = getattr(planogram, "advertisement_endcap", None)
+        geometry = self.planogram_config.endcap_geometry
         if endcap and getattr(endcap, "text_requirements", None):
             for tr in endcap.text_requirements:
                 if getattr(tr, "required_text", None):
@@ -2265,12 +2390,17 @@ Analyze all provided images and return the complete JSON response.
 
         # Get planogram advertisement config with safe defaults
         advertisement_config = getattr(planogram, "advertisement_endcap", {})
-        # Default values if not in planogram, normalized to image (not ROI)
-        config_width_percent = advertisement_config.width_margin_percent
-        config_height_percent = advertisement_config.height_margin_percent
-        config_top_margin_percent = advertisement_config.top_margin_percent
-        # E.g., 5% of panel width
-        side_margin_percent = advertisement_config.side_margin_percent
+        # # Default values if not in planogram, normalized to image (not ROI)
+        # config_width_percent = advertisement_config.width_margin_percent
+        # config_height_percent = advertisement_config.height_margin_percent
+        # config_top_margin_percent = advertisement_config.top_margin_percent
+        # # E.g., 5% of panel width
+        # side_margin_percent = advertisement_config.side_margin_percent
+
+        config_width_percent = geometry.width_margin_percent
+        config_height_percent = geometry.height_margin_percent
+        config_top_margin_percent = geometry.top_margin_percent
+        side_margin_percent = geometry.side_margin_percent
 
         # --- Refined Panel Padding ---
         # Apply padding to the panel_det itself to ensure it captures the full visual area
@@ -2398,14 +2528,6 @@ Analyze all provided images and return the complete JSON response.
             f"Identified Products: {identified_products}"
         )
 
-        # De-duplicate promotional_graphic (keep the largest)
-        promos = [p for p in identified_products if p.product_type == "promotional_graphic" and p.detection_box]
-        if len(promos) > 1:
-            keep = max(promos, key=lambda p: p.detection_box.area)
-            identified_products = [
-                p for p in identified_products if p.product_type != "promotional_graphic"
-            ] + [keep]
-
         compliance_results = self.check_planogram_compliance(
             identified_products, planogram_description
         )
@@ -2423,17 +2545,23 @@ Analyze all provided images and return the complete JSON response.
         overlay_image = None
         overlay_path = None
         if return_overlay == 'identified' or return_overlay == 'both':
-            overlay_image = self.render_evaluated_image(
-                image,
-                shelf_regions=shelf_regions,
-                detections=detections,
-                identified_products=identified_products,
-                mode=return_overlay,
-                show_shelves=True,
-                save_to=overlay_save_path,
-            )
-            if overlay_save_path:
-                overlay_path = str(Path(overlay_save_path))
+            try:
+                overlay_image = self.render_evaluated_image(
+                    image,
+                    shelf_regions=shelf_regions,
+                    detections=detections,
+                    identified_products=identified_products,
+                    mode=return_overlay,
+                    show_shelves=True,
+                    save_to=overlay_save_path,
+                )
+                if overlay_save_path:
+                    overlay_path = str(Path(overlay_save_path))
+            except Exception as e:
+                self.logger.error(f"Failed to render overlay image: {e}")
+                # is not mandatory to fail the whole pipeline
+                overlay_image = None
+                overlay_path = None
 
         return {
             "step1_detections": detections,
@@ -2454,25 +2582,33 @@ Analyze all provided images and return the complete JSON response.
         shelf_regions: Optional[List[ShelfRegion]] = None,
         detections: Optional[List[DetectionBox]] = None,
         identified_products: Optional[List[IdentifiedProduct]] = None,
-        mode: str = "identified",            # "identified" | "detections" | "both"
+        mode: str = "identified",
         show_shelves: bool = True,
         save_to: Optional[Union[str, Path]] = None,
     ) -> Image.Image:
         """
-        Draw an overlay of shelves + boxes.
-
-        - mode="detections": draw Step-1 boxes with IDs and confidences.
-        - mode="identified": draw Step-2 products color-coded by type with model/shelf labels.
-        - mode="both": draw detections (thin) + identified (thick).
-        If `save_to` is provided, the image is saved there.
-        Returns a PIL.Image either way.
+        Enhanced render with safe coordinate handling
         """
         def _norm_box(x1, y1, x2, y2):
-            x1, x2 = (int(x1), int(x2))
-            y1, y2 = (int(y1), int(y2))
-            return min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2)
+            """Normalize box coordinates to ensure valid rectangle"""
+            x1, x2 = int(x1), int(x2)
+            y1, y2 = int(y1), int(y2)
 
-        # --- get base image ---
+            # Ensure coordinates are in correct order
+            if x1 > x2:
+                x1, x2 = x2, x1
+            if y1 > y2:
+                y1, y2 = y2, y1
+
+            # Ensure minimum size
+            if x2 - x1 < 1:
+                x2 = x1 + 1
+            if y2 - y1 < 1:
+                y2 = y1 + 1
+
+            return x1, y1, x2, y2
+
+        # Get base image
         if isinstance(image, (str, Path)):
             base = Image.open(image).convert("RGB").copy()
         else:
@@ -2486,77 +2622,102 @@ Analyze all provided images and return the complete JSON response.
 
         W, H = base.size
 
-        # --- helpers ---
         def _clip(x1, y1, x2, y2):
+            """Clip coordinates to image bounds"""
             return max(0, x1), max(0, y1), min(W-1, x2), min(H-1, y2)
 
         def _txt(draw_obj, xy, text, fill, bg=None):
-            if not font:
-                draw_obj.text(xy, text, fill=fill)
-                return
-            # background
-            bbox = draw_obj.textbbox(xy, text, font=font)
-            if bg is not None:
-                draw_obj.rectangle(bbox, fill=bg)
-            draw_obj.text(xy, text, fill=fill, font=font)
+            """Safe text drawing with error handling"""
+            try:
+                if not font:
+                    draw_obj.text(xy, text, fill=fill)
+                    return
+                bbox = draw_obj.textbbox(xy, text, font=font)
+                if bg is not None:
+                    draw_obj.rectangle(bbox, fill=bg)
+                draw_obj.text(xy, text, fill=fill, font=font)
+            except Exception:
+                # Fallback to simple text if there's any error
+                try:
+                    draw_obj.text(xy, text, fill=fill)
+                except Exception:
+                    pass  # Skip this text if it still fails
 
-        # colors per product type
+        # Colors per product type
         colors = {
-            "printer": (255, 0, 0),              # red
-            "product_box": (255, 128, 0),        # orange
-            "fact_tag": (0, 128, 255),           # blue
-            "promotional_graphic": (0, 200, 0),  # green
-            "sign": (0, 200, 0),
-            "ink_bottle": (160, 0, 200),
-            "element": (180, 180, 180),
-            "unknown": (200, 200, 200),
+            "tv_demonstration": (0, 255, 0),      # green for TVs
+            "promotional_graphic": (255, 0, 255), # magenta for logos
+            "promotional_base": (0, 0, 255),      # blue for partner branding
+            "fact_tag": (255, 255, 0),            # yellow for info displays
+            "product_box": (255, 128, 0),         # orange
+            "printer": (255, 0, 0),               # red
+            "unknown": (200, 200, 200),           # gray
         }
 
-        # --- shelves ---
+        # Draw shelves
         if show_shelves and shelf_regions:
             for sr in shelf_regions:
-                x1, y1, x2, y2 = _clip(sr.bbox.x1, sr.bbox.y1, sr.bbox.x2, sr.bbox.y2)
-                x1, y1, x2, y2 = _norm_box(x1, y1, x2, y2)
-                draw.rectangle([x1, y1, x2, y2], outline=(255, 255, 0), width=3)
-                _txt(draw, (x1+3, max(0, y1-14)), f"SHELF {sr.level}", fill=(0, 0, 0), bg=(255, 255, 0))
+                try:
+                    x1, y1, x2, y2 = _clip(sr.bbox.x1, sr.bbox.y1, sr.bbox.x2, sr.bbox.y2)
+                    x1, y1, x2, y2 = _norm_box(x1, y1, x2, y2)
+                    draw.rectangle([x1, y1, x2, y2], outline=(255, 255, 0), width=3)
+                    _txt(draw, (x1+3, max(0, y1-14)), f"SHELF {sr.level}", fill=(0, 0, 0), bg=(255, 255, 0))
+                except Exception as e:
+                    print(f"Warning: Could not draw shelf {sr.level}: {e}")
 
-        # --- detections (thin) ---
+        # Draw detections (thin)
         if mode in ("detections", "both") and detections:
             for i, d in enumerate(detections, start=1):
-                x1, y1, x2, y2 = _clip(d.x1, d.y1, d.x2, d.y2)
-                x1, y1, x2, y2 = _norm_box(x1, y1, x2, y2)
-                draw.rectangle([x1, y1, x2, y2], outline=(255, 0, 0), width=2)
-                lbl = f"ID:{i} {d.class_name} {d.confidence:.2f}"
-                _txt(draw, (x1+2, max(0, y1-12)), lbl, fill=(0, 0, 0), bg=(255, 0, 0))
+                try:
+                    x1, y1, x2, y2 = _clip(d.x1, d.y1, d.x2, d.y2)
+                    x1, y1, x2, y2 = _norm_box(x1, y1, x2, y2)
+                    draw.rectangle([x1, y1, x2, y2], outline=(255, 0, 0), width=2)
+                    lbl = f"ID:{i} {d.class_name} {d.confidence:.2f}"
+                    _txt(draw, (x1+2, max(0, y1-12)), lbl, fill=(0, 0, 0), bg=(255, 0, 0))
+                except Exception as e:
+                    print(f"Warning: Could not draw detection {i}: {e}")
 
-        # --- identified products (thick) ---
+        # Draw identified products (thick)
         if mode in ("identified", "both") and identified_products:
-            # Draw larger boxes first (helps labels remain readable)
             for p in sorted(identified_products, key=lambda x: (x.detection_box.area if x.detection_box else 0), reverse=True):
                 if not p.detection_box:
                     continue
-                x1, y1, x2, y2 = _clip(p.detection_box.x1, p.detection_box.y1, p.detection_box.x2, p.detection_box.y2)
-                c = colors.get(p.product_type, (255, 0, 255))
-                draw.rectangle([x1, y1, x2, y2], outline=c, width=5)
+                try:
+                    x1, y1, x2, y2 = _clip(p.detection_box.x1, p.detection_box.y1, p.detection_box.x2, p.detection_box.y2)
+                    x1, y1, x2, y2 = _norm_box(x1, y1, x2, y2)
 
-                # label: #id type model (conf) [shelf/pos]
-                pid = p.detection_id if p.detection_id is not None else "–"
-                mm = f" {p.product_model}" if p.product_model else ""
-                lab = f"#{pid} {p.product_type}{mm} ({p.confidence:.2f}) [{p.shelf_location}/{p.position_on_shelf}]"
-                _txt(draw, (x1+3, max(0, y1-14)), lab, fill=(0, 0, 0), bg=c)
+                    c = colors.get(p.product_type, (255, 0, 255))
+                    draw.rectangle([x1, y1, x2, y2], outline=c, width=5)
 
-        # --- legend (optional, tiny) ---
+                    # Label
+                    pid = p.detection_id if p.detection_id is not None else "NEW"
+                    mm = f" {p.product_model}" if p.product_model else ""
+                    lab = f"#{pid} {p.product_type}{mm} ({p.confidence:.2f})"
+                    _txt(draw, (x1+3, max(0, y1-14)), lab, fill=(0, 0, 0), bg=c)
+
+                except Exception as e:
+                    print(f"Warning: Could not draw product {p.product_model}: {e}")
+
+        # Add legend
         legend_y = 8
-        for key in ("printer","product_box","fact_tag","promotional_graphic"):
-            c = colors[key]
-            draw.rectangle([8, legend_y, 28, legend_y+10], fill=c)
-            _txt(draw, (34, legend_y-2), key, fill=(255,255,255), bg=None)
-            legend_y += 14
+        for key in ("tv_demonstration", "promotional_graphic", "promotional_base", "fact_tag"):
+            if key in colors:
+                try:
+                    c = colors[key]
+                    draw.rectangle([8, legend_y, 28, legend_y+10], fill=c)
+                    _txt(draw, (34, legend_y-2), key, fill=(255,255,255))
+                    legend_y += 14
+                except Exception:
+                    pass
 
-        # save if requested
+        # Save if requested
         if save_to:
-            save_to = Path(save_to)
-            save_to.parent.mkdir(parents=True, exist_ok=True)
-            base.save(save_to, quality=90)
+            try:
+                save_to = Path(save_to)
+                save_to.parent.mkdir(parents=True, exist_ok=True)
+                base.save(save_to, quality=90)
+                print(f"Overlay saved to: {save_to}")
+            except Exception as e:
+                print(f"Warning: Could not save overlay: {e}")
 
         return base

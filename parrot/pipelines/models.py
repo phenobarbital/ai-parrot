@@ -8,11 +8,33 @@ from ..models.detections import (
     PlanogramDescriptionFactory,
 )
 
+class EndcapGeometry(BaseModel):
+    """Configurable endcap geometry parameters"""
+    aspect_ratio: float = Field(default=1.35, description="Endcap width/height ratio")
+    left_margin_ratio: float = Field(default=0.01, description="Left margin as ratio of panel width")
+    right_margin_ratio: float = Field(default=0.03, description="Right margin as ratio of panel width")
+    top_margin_ratio: float = Field(default=0.02, description="Top margin as ratio of panel height")
+
+    # NEW: Additional margin controls for better shelf separation
+    bottom_margin_ratio: float = Field(default=0.05, description="Bottom margin as ratio of panel height")
+    inter_shelf_padding: float = Field(default=0.02, description="Padding between shelves as ratio of ROI height")
+
+    # ROI detection specific margins
+    width_margin_percent: float = Field(default=0.25, description="Panel width margin percentage")
+    height_margin_percent: float = Field(default=0.30, description="Panel height margin percentage")
+    top_margin_percent: float = Field(default=0.05, description="Panel top margin percentage")
+    side_margin_percent: float = Field(default=0.05, description="Panel side margin percentage")
+
 class PlanogramConfig(BaseModel):
     """
     Complete configuration for planogram analysis pipeline.
     Contains planogram description, prompts, and reference images.
     """
+
+    config_name: str = Field(
+        default="default_planogram_config",
+        description="Name of the planogram configuration"
+    )
 
     # Core planogram configuration
     planogram_config: Dict[str, Any] = Field(
@@ -21,12 +43,12 @@ class PlanogramConfig(BaseModel):
 
     # ROI Detection prompt
     roi_detection_prompt: str = Field(
-        description="Prompt for ROI detection phase (_find_poster method)"
+        description="Prompt for ROI detection phase (used by _find_poster method)"
     )
 
     # Object identification prompt
     object_identification_prompt: str = Field(
-        description="Prompt for Phase 2 object identification"
+        description="Prompt for Phase 2 object identification (used by _identify_objects method)"
     )
 
     # Reference images
@@ -44,6 +66,11 @@ class PlanogramConfig(BaseModel):
     detection_model: str = Field(
         default="yolo11l.pt",
         description="YOLO model to use for detection"
+    )
+
+    endcap_geometry: EndcapGeometry = Field(
+        default_factory=EndcapGeometry,
+        description="Endcap geometry and margin configuration"
     )
 
     class Config:
