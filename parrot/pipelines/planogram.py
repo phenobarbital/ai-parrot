@@ -2314,7 +2314,7 @@ Analyze all provided images and return the complete JSON response.
             "promotional_graphic": "promotional_graphic",
             "product_box": "product_box",
             "printer": "printer",
-            "promotional_material": "promotional_graphic",
+            "promotional_material": "promotional_material",
             "promotional_display": "promotional_display"
         }
         ptype = type_mappings.get(ptype, ptype)
