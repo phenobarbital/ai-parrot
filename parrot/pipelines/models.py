@@ -30,6 +30,10 @@ class PlanogramConfig(BaseModel):
     Complete configuration for planogram analysis pipeline.
     Contains planogram description, prompts, and reference images.
     """
+    planogram_id: Optional[int] = Field(
+        default=None,
+        description="Optional unique identifier for the planogram (if any)"
+    )
 
     config_name: str = Field(
         default="default_planogram_config",
@@ -76,7 +80,6 @@ class PlanogramConfig(BaseModel):
     class Config:
         """Pydantic configuration."""
         arbitrary_types_allowed = True
-
 
     def get_planogram_description(self) -> PlanogramDescription:
         """
