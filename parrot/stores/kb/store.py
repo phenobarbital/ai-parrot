@@ -27,6 +27,10 @@ class KnowledgeBaseStore:
         self.category_index = defaultdict(list)  # Fast category lookup
         self.entity_index = defaultdict(list)    # Entity-based retrieval
 
+    async def add_fact(self, fact: Dict[str, Any]):
+        """Add a single validated fact to the KB."""
+        await self.add_facts([fact])
+
     async def add_facts(self, facts: List[Dict[str, Any]]):
         """Add validated facts to the KB."""
         if not facts:
