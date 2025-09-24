@@ -4,7 +4,7 @@ Abstract Bot interface.
 from abc import ABC
 import contextlib
 import importlib
-from typing import Any, Dict, List, Union, Optional, AsyncIterator
+from typing import Any, Dict, List, Tuple, Union, Optional, AsyncIterator
 from collections.abc import Callable
 from contextlib import asynccontextmanager
 import uuid
@@ -19,9 +19,9 @@ from parrot.tools.math import MathTool  # pylint: disable=E0611
 from ..interfaces import DBInterface
 from ..exceptions import ConfigError  # pylint: disable=E0611
 from ..conf import (
-    EMBEDDING_DEFAULT_MODEL
+    EMBEDDING_DEFAULT_MODEL,
+    KB_DEFAULT_MODEL
 )
-from ..utils import SafeDict
 from .prompts import (
     BASIC_SYSTEM_PROMPT,
     BASIC_HUMAN_PROMPT,
@@ -35,10 +35,9 @@ from ..models import (
     AIMessage,
     SourceDocument
 )
-from ..stores import AbstractStore, supported_stores
-from ..stores.models import Document
+from ..stores import AbstractStore, supported_stores, KnowledgeBaseStore
 from ..tools import AbstractTool
-from ..tools.manager import ToolManager, ToolFormat, ToolDefinition
+from ..tools.manager import ToolManager, ToolDefinition
 from ..memory import (
     ConversationMemory,
     ConversationTurn,
@@ -47,46 +46,11 @@ from ..memory import (
     FileConversationMemory,
     RedisConversation,
 )
-
+from ..utils.helpers import RequestContext
 
 logging.getLogger(name='primp').setLevel(logging.INFO)
 logging.getLogger(name='rquest').setLevel(logging.INFO)
 logging.getLogger("grpc").setLevel(logging.CRITICAL)
-
-
-class RequestContext:
-    """RequestContext.
-
-    This class is a context manager for handling request-specific data.
-    It is designed to be used with the `async with` statement to ensure
-    proper setup and teardown of resources.
-
-    Attributes:
-        request (web.Request): The incoming web request.
-        app (Optional[Any]): An optional application context.
-        llm (Optional[Any]): An optional language model instance.
-        kwargs (dict): Additional keyword arguments for customization.
-    """
-
-    def __init__(
-        self,
-        request: web.Request = None,
-        app: Optional[Any] = None,
-        llm: Optional[Any] = None,
-        **kwargs
-    ):
-        """Initialize the RequestContext with the given parameters."""
-        self.request = request
-        self.app = app
-        self.llm = llm
-        self.kwargs = kwargs
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, exc_type, exc_value, traceback):
-        pass
-
 
 class RequestBot:
     """RequestBot.
@@ -148,6 +112,7 @@ class AbstractBot(DBInterface, ABC):
         use_tools: bool = False,
         tools: List[Union[str, AbstractTool, ToolDefinition]] = None,
         tool_threshold: float = 0.7,  # Confidence threshold for tool usage,
+        use_kb: bool = False,
         debug: bool = False,
         **kwargs
     ):
@@ -262,8 +227,14 @@ class AbstractBot(DBInterface, ABC):
         # Operational Mode:
         self.operation_mode: str = kwargs.get('operation_mode', 'adaptive')
         # Knowledge base:
-        self.kb = None
-        self.knowledge_base: List[str] = []
+        self.kb_store: KnowledgeBaseStore = None
+        self._kb: List[Dict[str, Any]] = kwargs.get('kb', [])
+        self.use_kb: bool = use_kb
+        if use_kb:
+            self.kb_store = KnowledgeBaseStore(
+                embedding_model=kwargs.get('kb_embedding_model', KB_DEFAULT_MODEL),
+                dimension=kwargs.get('kb_dimension', 384)
+            )
         self._documents_: list = []
         # Models, Embed and collections
         # Vector information:
@@ -647,26 +618,17 @@ class AbstractBot(DBInterface, ABC):
         )
         self.system_prompt_template = final_prompt
 
-    def create_kb(self, documents: list):
-        new_docs = []
-        for doc in documents:
-            content = doc.pop('content')
-            source = doc.pop('source', 'knowledge-base')
-            if doc:
-                meta = {
-                    'source': source,
-                    **doc
-                }
-            else:
-                meta = {'source': source}
-            if content:
-                new_docs.append(
-                    Document(
-                        page_content=content,
-                        metadata=meta
-                    )
-                )
-        return new_docs
+    async def configure_kb(self):
+        """Configure Knowledge Base."""
+        if not self.kb_store:
+            return
+        try:
+            await self.kb_store.add_facts(self._kb)
+            self.logger.info("Knowledge Base Store initialized")
+        except Exception as e:
+            raise ConfigError(
+                f"Error initializing Knowledge Base Store: {e}"
+            )
 
     async def configure(self, app=None) -> None:
         """Basic Configuration of Bot.
@@ -683,6 +645,14 @@ class AbstractBot(DBInterface, ABC):
 
         # Configure conversation memory FIRST
         self.configure_conversation_memory()
+
+        # Configure Knowledge Base
+        try:
+            await self.configure_kb()
+        except Exception as e:
+            self.logger.error(
+                f"Error configuring Knowledge Base: {e}"
+            )
 
         # Configure LLM:
         try:
@@ -1214,6 +1184,7 @@ class AbstractBot(DBInterface, ABC):
         user_context: str = "",
         vector_context: str = "",
         conversation_context: str = "",
+        kb_context: str = "",
         metadata: Optional[Dict[str, Any]] = None,
         **kwargs
     ) -> str:
@@ -1224,15 +1195,21 @@ class AbstractBot(DBInterface, ABC):
             user_context: User-specific context for the database interaction
             vector_context: Vector store context
             conversation_context: Previous conversation context
+            kb_context: Knowledge base context (KB Facts)
             metadata: Additional metadata
             **kwargs: Additional template variables
         """
         # Process conversation and vector contexts
         context_parts = []
+        # Add KB facts first (highest priority)
+        if kb_context:
+            context_parts.append(kb_context)
+        # Then vector context
         if vector_context:
+            context_parts.append("\n# Document Context:")
             context_parts.append(vector_context)
         if metadata:
-            metadata_text = "**Search Metadata:**\n"
+            metadata_text = "**Metadata:**\n"
             for key, value in metadata.items():
                 if key == 'sources' and isinstance(value, list):
                     metadata_text += f"- {key}: {', '.join(value[:3])}{'...' if len(value) > 3 else ''}\n"
@@ -1279,6 +1256,120 @@ Based on the user context above, please tailor your response to their specific:
             str: User-specific context
         """
         return ""
+
+    async def _get_kb_context(
+        self,
+        query: str,
+        k: int = 5,
+        score_threshold: float = 0.7
+    ) -> Tuple[List[Dict], Dict]:
+        """Get relevant facts from KB."""
+
+        facts = await self.kb_store.search_facts(
+            query=query,
+            k=k,
+            score_threshold=score_threshold
+        )
+
+        metadata = {
+            'facts_found': len(facts),
+            'avg_score': sum(f['score'] for f in facts) / len(facts) if facts else 0
+        }
+
+        return facts, metadata
+
+    def _format_kb_facts(self, facts: List[Dict]) -> str:
+        """Format facts for prompt injection."""
+        if not facts:
+            return ""
+
+        fact_lines = []
+        fact_lines.append("# Knowledge Base Facts:")
+
+        for fact in facts:
+            # Group by category if available
+            category = fact.get('metadata', {}).get('category', 'General')
+            fact_lines.append(f"* {fact['fact']}")
+
+        return "\n".join(fact_lines)
+
+    async def _build_context(
+        self,
+        question: str,
+        use_vectors: bool = True,
+        search_type: str = 'similarity',
+        search_kwargs: dict = None,
+        ensemble_config: dict = None,
+        metric_type: str = 'COSINE',
+        limit: int = 10,
+        score_threshold: float = None,
+        return_sources: bool = True,
+        **kwargs
+    ) -> Tuple[str, str, Dict[str, Any]]:
+        """Parallel retrieval from KB and Vector stores."""
+        kb_context = ""
+        vector_context = ""
+        metadata = {}
+
+        tasks = []
+
+        if self.use_kb and self.kb_store:
+            tasks.append(
+                self._get_kb_context(
+                    query=question,
+                    k=5,
+                    score_threshold=self.context_score_threshold
+                )
+            )
+        else:
+            tasks.append(asyncio.sleep(0, result=([], {})))  # Dummy task for KB
+
+        # Prepare vector search task
+        if use_vectors and self.store:
+            if search_type == 'ensemble' and not ensemble_config:
+                ensemble_config = {
+                    'similarity_limit': 6,      # Get 6 results from similarity
+                    'mmr_limit': 4,             # Get 4 results from MMR
+                    'final_limit': 5,           # Return top 5 combined
+                    'similarity_weight': 0.6,   # Similarity results weight
+                    'mmr_weight': 0.4,          # MMR results weight
+                    'rerank_method': 'weighted_score'  # or 'rrf' or 'interleave'
+                }
+            tasks.append(
+                self.get_vector_context(
+                    question,
+                    search_type=search_type,
+                    search_kwargs=search_kwargs,
+                    metric_type=metric_type,
+                    limit=limit,
+                    score_threshold=score_threshold,
+                    ensemble_config=ensemble_config,
+                    return_sources=return_sources
+                )
+            )
+        else:
+            tasks.append(asyncio.sleep(0, result=([], {})))
+
+        if tasks:
+            # Execute in parallel
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            # Process KB results
+            with contextlib.suppress(IndexError):
+                if results[0] and not isinstance(results[0], Exception):
+                    kb_facts, kb_meta = results[0]
+                    if kb_facts:
+                        kb_context = self._format_kb_facts(kb_facts)
+                        metadata['kb'] = kb_meta
+
+
+            # Process vector results
+            with contextlib.suppress(IndexError):
+                if results[1] and not isinstance(results[1], Exception):
+                    vector_context, vector_meta = results[1]
+                    metadata['vector'] = vector_meta
+
+        return kb_context, vector_context, metadata
 
     async def conversation(
         self,
@@ -1347,29 +1438,18 @@ Based on the user context above, please tailor your response to their specific:
                 conversation_context = self.build_conversation_context(conversation_history)
 
             # Get vector context if store exists and enabled
-            vector_context = ""
-            vector_metadata = {}
-            if use_vector_context and self.store:
-                # Custom ensemble configuration
-                if search_type == 'ensemble' and not ensemble_config:
-                    ensemble_config = {
-                        'similarity_limit': 6,      # Get 6 results from similarity
-                        'mmr_limit': 4,             # Get 4 results from MMR
-                        'final_limit': 5,           # Return top 5 combined
-                        'similarity_weight': 0.6,   # Similarity results weight
-                        'mmr_weight': 0.4,          # MMR results weight
-                        'rerank_method': 'weighted_score'  # or 'rrf' or 'interleave'
-                    }
-                vector_context, vector_metadata = await self.get_vector_context(
-                    question,
-                    search_type=search_type,
-                    search_kwargs=search_kwargs,
-                    metric_type=metric_type,
-                    limit=limit,
-                    score_threshold=score_threshold,
-                    ensemble_config=ensemble_config,
-                    return_sources=return_sources
-                )
+            kb_context, vector_context, vector_metadata = await self._build_context(
+                question,
+                use_vectors=use_vector_context,
+                search_type=search_type,
+                search_kwargs=search_kwargs,
+                ensemble_config=ensemble_config,
+                metric_type=metric_type,
+                limit=limit,
+                score_threshold=score_threshold,
+                return_sources=return_sources,
+                **kwargs
+            )
 
             # Determine if tools should be used
             use_tools = self._use_tools(question)
@@ -1391,6 +1471,7 @@ Based on the user context above, please tailor your response to their specific:
             user_context = await self.get_user_context(user_id, session_id)
             # Create system prompt
             system_prompt = await self.create_system_prompt(
+                kb_context=kb_context,
                 vector_context=vector_context,
                 conversation_context=conversation_context,
                 metadata=vector_metadata,

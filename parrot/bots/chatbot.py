@@ -13,9 +13,11 @@ from asyncdb.exceptions import NoDataFound
 from ..conf import (
     default_dsn,
     EMBEDDING_DEFAULT_MODEL,
+    KB_DEFAULT_MODEL
 )
 from ..handlers.models import BotModel
 from .abstract import AbstractBot
+from ..stores.kb import KnowledgeBaseStore
 from ..tools import (
     AbstractTool,
 )
@@ -265,7 +267,7 @@ class Chatbot(AbstractBot):
 
         # LLM Configuration
         self._llm = self._from_db(bot, 'llm', default='google')
-        self._llm_model = self._from_db(bot, 'model_name', default='gemini-2.0-flash-001')
+        self._llm_model = self._from_db(bot, 'model_name', default='gemini-2.5-flash')
         self._llm_temp = self._from_db(bot, 'temperature', default=0.1)
         self._max_tokens = self._from_db(bot, 'max_tokens', default=1024)
         self._top_k = self._from_db(bot, 'top_k', default=41)
@@ -310,6 +312,15 @@ class Chatbot(AbstractBot):
         _default = self.default_permissions()
         _permissions = self._from_db(bot, 'permissions', default={})
         self._permissions = {**_default, **_permissions}
+
+        # Knowledge Base:
+        self.use_kb = self._from_db(bot, 'use_kb', default=False)
+        self._kb = self._from_db(bot, 'kb', default=[])
+        if self.use_kb:
+            self.kb_store = KnowledgeBaseStore(
+                embedding_model=KB_DEFAULT_MODEL,
+                dimension=384
+            )
 
         # Other settings
         self.language = self._from_db(bot, 'language', default='en')

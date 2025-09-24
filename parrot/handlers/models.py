@@ -85,6 +85,10 @@ class BotModel(Model):
         -- Security and permissions
         permissions JSONB DEFAULT '{}'::JSONB,
 
+        --- knowledge base:
+        use_kb BOOLEAN DEFAULT FALSE,
+        kb JSONB DEFAULT '[]'::JSONB,
+
         -- Metadata
         language VARCHAR DEFAULT 'en',
         disclaimer TEXT,
@@ -182,6 +186,17 @@ class BotModel(Model):
     tools: List[str] = Field(default_factory=list, required=False, ui_help="The bot’s tools.")
     operation_mode: str = Field(default='adaptive', required=False, ui_help="The bot’s operation mode.")  # 'conversational', 'agentic', 'adaptive'
 
+    # Knowledge Base
+    use_kb: bool = Field(
+        default=False,
+        required=False,
+        ui_help="Whether the bot’s knowledge base is enabled or not."
+    )
+    kb: List[dict] = Field(
+        default_factory=list,
+        required=False,
+        ui_help="The bot’s knowledge base facts."
+    )
     # Vector store and retrieval configuration
     use_vector: bool = Field(
         default=False,

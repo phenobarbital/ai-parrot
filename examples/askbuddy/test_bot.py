@@ -1,9 +1,44 @@
 import asyncio
 from parrot.bots.basic import BasicBot
 
+facts = [
+    {
+        "content": "Our CEO is Buddy White",
+        "metadata": {
+            "category": "organization",
+            "entity_type": "person",
+            "role": "leadership",
+            "validated_date": "2024-01-15",
+            "confidence": 1.0,
+            "source": "HR_database",
+            "tags": ["ceo", "executive", "buddy", "leadership"]
+        }
+    },
+    {
+        "content": "The company headquarters is located in Doral, Florida",
+        "metadata": {
+            "category": "organization",
+            "entity_type": "location",
+            "confidence": 1.0,
+            "tags": ["headquarters", "location", "doral", "florida"]
+        }
+    },
+    {
+        "content": "Our fiscal year ends on December 31st",
+        "metadata": {
+            "category": "finance",
+            "entity_type": "policy",
+            "confidence": 1.0,
+            "tags": ["fiscal", "finance", "calendar"]
+        }
+    }
+]
+
 async def get_agent():
     agent = BasicBot(
-        name='AskBuddy'
+        name='AskBuddy',
+        use_kb=True,
+        kb=facts
     )
     embed_model = {
         "model": "thenlper/gte-base",
