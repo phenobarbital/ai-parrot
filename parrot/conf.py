@@ -106,6 +106,10 @@ EMBEDDING_DEFAULT_MODEL = config.get(
     'EMBEDDING_DEFAULT_MODEL',
     fallback='sentence-transformers/all-MiniLM-L12-v2'
 )
+KB_DEFAULT_MODEL = config.get(
+    'KB_DEFAULT_MODEL',
+    fallback='sentence-transformers/paraphrase-MiniLM-L3-v2'
+)
 HUGGINGFACE_EMBEDDING_CACHE_DIR = config.get(
     'HUGGINGFACE_EMBEDDING_CACHE_DIR',
     fallback=BASE_DIR.joinpath('model_cache', 'huggingface')
