@@ -741,7 +741,11 @@ class AbstractBot(DBInterface, ABC):
         """Create new conversation history using unified memory system."""
         if not self.conversation_memory:
             raise RuntimeError("Conversation memory not configured")
-        return await self.conversation_memory.create_history(user_id, session_id, metadata)
+        return await self.conversation_memory.create_history(
+            user_id,
+            session_id,
+            metadata
+        )
 
     async def save_conversation_turn(
         self,
@@ -887,11 +891,22 @@ class AbstractBot(DBInterface, ABC):
                 'score_threshold': score_threshold,
                 'metric_type': metric_type
             }
-            self.logger.notice(
-                f"Retrieving vector context for question: {question} "
-                f"using {search_type} search with limit {limit} "
-                f"and score threshold {score_threshold}"
+
+            # Template for logging message
+            log_template = Template(
+                "Retrieving vector context for question: $question "
+                "using $search_type search with limit $limit "
+                "and score threshold $score_threshold"
             )
+            self.logger.notice(
+                log_template.safe_substitute(
+                    question=question,
+                    search_type=search_type,
+                    limit=limit,
+                    score_threshold=score_threshold
+                )
+            )
+
             async with self.store as store:
                 # Use the similarity_search method from PgVectorStore
                 if search_type == 'mmr':
@@ -949,11 +964,18 @@ class AbstractBot(DBInterface, ABC):
                     metadata['enhanced_sources'] = []
                 return "", metadata
 
-            # Format the context from search results
+            # Format the context from search results using Template to avoid JSON conflicts
             context_parts = []
             sources = []
+            context_template = Template("[Context $index]: $content")
+
             for i, result in enumerate(search_results):
-                context_parts.append(f"[Context {i+1}]: {result.content}")
+                # Use Template to safely format context with potentially JSON-containing content
+                formatted_context = context_template.safe_substitute(
+                    index=i+1,
+                    content=result.content
+                )
+                context_parts.append(formatted_context)
 
                 # Extract source information
                 if hasattr(result, 'metadata') and result.metadata:
@@ -979,21 +1001,174 @@ class AbstractBot(DBInterface, ABC):
                 'sources': sources
             })
 
+            # Template for final logging message
+            final_log_template = Template(
+                "Retrieved $count context items using $search_type search"
+            )
             self.logger.info(
-                f"Retrieved {len(search_results)} context items using {search_type} search"
+                final_log_template.safe_substitute(
+                    count=len(search_results),
+                    search_type=search_type
+                )
             )
 
             return context, metadata
 
         except Exception as e:
+            # Template for error logging
+            error_log_template = Template("Error retrieving vector context: $error")
             self.logger.error(
-                f"Error retrieving vector context: {e}"
+                error_log_template.safe_substitute(error=str(e))
             )
             return "", {
                 'search_results_count': 0,
                 'search_type': search_type,
                 'error': str(e)
             }
+
+    # async def get_vector_context(
+    #     self,
+    #     question: str,
+    #     search_type: str = 'similarity',  # 'similarity', 'mmr', 'ensemble'
+    #     search_kwargs: dict = None,
+    #     metric_type: str = 'COSINE',
+    #     limit: int = 10,
+    #     score_threshold: float = None,
+    #     ensemble_config: dict = None,
+    #     return_sources: bool = False,
+    # ) -> str:
+    #     """Get relevant context from vector store.
+    #     Args:
+    #         question (str): The user's question to search context for.
+    #         search_type (str): Type of search to perform ('similarity', 'mmr', 'ensemble').
+    #         search_kwargs (dict): Additional parameters for the search.
+    #         metric_type (str): Metric type for vector search (e.g., 'COSINE', 'EUCLIDEAN').
+    #         limit (int): Maximum number of context items to retrieve.
+    #         score_threshold (float): Minimum score for context relevance.
+    #         ensemble_config (dict): Configuration for ensemble search.
+    #         return_sources (bool): Whether to extract enhanced source information
+    #     Returns:
+    #         tuple: (context_string, metadata_dict)
+    #     """
+    #     if not self.store:
+    #         return "", {}
+
+    #     try:
+    #         limit = limit or self.context_search_limit
+    #         score_threshold = score_threshold or self.context_score_threshold
+    #         search_results = None
+    #         metadata = {
+    #             'search_type': search_type,
+    #             'score_threshold': score_threshold,
+    #             'metric_type': metric_type
+    #         }
+    #         self.logger.notice(
+    #             f"Retrieving vector context for question: {question} "
+    #             f"using {search_type} search with limit {limit} "
+    #             f"and score threshold {score_threshold}"
+    #         )
+    #         async with self.store as store:
+    #             # Use the similarity_search method from PgVectorStore
+    #             if search_type == 'mmr':
+    #                 if search_kwargs is None:
+    #                     search_kwargs = {
+    #                         "k": limit,
+    #                         "fetch_k": limit * 2,
+    #                         "lambda_mult": 0.4,
+    #                     }
+    #                 search_results = await store.mmr_search(
+    #                     query=question,
+    #                     score_threshold=score_threshold,
+    #                     **(search_kwargs or {})
+    #                 )
+    #             elif search_type == 'ensemble':
+    #                 # Default ensemble configuration
+    #                 if ensemble_config is None:
+    #                     ensemble_config = {
+    #                         'similarity_limit': max(6, int(limit * 1.2)),  # Get more from similarity
+    #                         'mmr_limit': max(4, int(limit * 0.8)),         # Get fewer but more diverse from MMR
+    #                         'final_limit': limit,                          # Final number to return
+    #                         'similarity_weight': 0.6,                      # Weight for similarity scores
+    #                         'mmr_weight': 0.4,                            # Weight for MMR scores
+    #                         'dedup_threshold': 0.9,                       # Similarity threshold for deduplication
+    #                         'rerank_method': 'weighted_score'             # 'weighted_score', 'rrf', 'interleave'
+    #                     }
+    #                 search_results = await self._ensemble_search(
+    #                     store,
+    #                     question,
+    #                     ensemble_config,
+    #                     score_threshold,
+    #                     metric_type,
+    #                     search_kwargs
+    #                 )
+    #                 metadata.update({
+    #                     'ensemble_config': ensemble_config,
+    #                     'similarity_results_count': len(search_results.get('similarity_results', [])),
+    #                     'mmr_results_count': len(search_results.get('mmr_results', [])),
+    #                     'final_results_count': len(search_results.get('final_results', []))
+    #                 })
+    #                 search_results = search_results['final_results']
+    #             else:
+    #                 # doing a similarity search by default
+    #                 search_results = await store.similarity_search(
+    #                     query=question,
+    #                     limit=limit,
+    #                     score_threshold=score_threshold,
+    #                     metric=metric_type,
+    #                     **(search_kwargs or {})
+    #                 )
+
+    #         if not search_results:
+    #             metadata['search_results_count'] = 0
+    #             if return_sources:
+    #                 metadata['enhanced_sources'] = []
+    #             return "", metadata
+
+    #         # Format the context from search results
+    #         context_parts = []
+    #         sources = []
+    #         for i, result in enumerate(search_results):
+    #             context_parts.append(f"[Context {i+1}]: {result.content}")
+
+    #             # Extract source information
+    #             if hasattr(result, 'metadata') and result.metadata:
+    #                 source_id = result.metadata.get('source', f"result_{i}")
+    #                 sources.append(source_id)
+
+    #         context = "\n\n".join(context_parts)
+
+    #         if return_sources:
+    #             source_documents = self._extract_sources_documents(search_results)
+    #             metadata['source_documents'] = [source.to_dict() for source in source_documents]
+    #             metadata['context_sources'] = [source.filename for source in source_documents]
+    #         else:
+    #             # Keep original behavior for backward compatibility
+    #             metadata['context_sources'] = sources
+    #             metadata.update({
+    #                 'search_results_count': len(search_results),
+    #                 'sources': sources
+    #             })
+
+    #         metadata.update({
+    #             'search_results_count': len(search_results),
+    #             'sources': sources
+    #         })
+
+    #         self.logger.info(
+    #             f"Retrieved {len(search_results)} context items using {search_type} search"
+    #         )
+
+    #         return context, metadata
+
+    #     except Exception as e:
+    #         self.logger.error(
+    #             f"Error retrieving vector context: {e}"
+    #         )
+    #         return "", {
+    #             'search_results_count': 0,
+    #             'search_type': search_type,
+    #             'error': str(e)
+    #         }
 
     def build_conversation_context(
         self,
@@ -1003,7 +1178,7 @@ class AbstractBot(DBInterface, ABC):
         include_turn_timestamps: bool = False,
         smart_truncation: bool = True
     ) -> str:
-        """Build conversation context from history."""
+        """Build conversation context from history using Template to avoid f-string conflicts."""
         if not history or not history.turns:
             return ""
 
@@ -1014,6 +1189,12 @@ class AbstractBot(DBInterface, ABC):
 
         context_parts = []
         total_chars = 0
+
+        # Template for turn formatting
+        turn_header_template = Template("=== Turn $turn_number ===")
+        timestamp_template = Template("Time: $timestamp")
+        user_message_template = Template("👤 User: $message")
+        assistant_message_template = Template("🤖 Assistant: $message")
 
         for i, turn in enumerate(recent_turns):
             turn_number = len(recent_turns) - i
@@ -1031,15 +1212,17 @@ class AbstractBot(DBInterface, ABC):
                 max_chars_per_message
             )
 
-            # Build turn with optional timestamp
-            turn_parts = [f"=== Turn {turn_number} ==="]
+            # Build turn with optional timestamp using templates
+            turn_parts = [turn_header_template.safe_substitute(turn_number=turn_number)]
 
             if include_turn_timestamps and hasattr(turn, 'timestamp'):
-                turn_parts.append(f"Time: {turn.timestamp.strftime('%H:%M')}")
+                timestamp_str = turn.timestamp.strftime('%H:%M')
+                turn_parts.append(timestamp_template.safe_substitute(timestamp=timestamp_str))
 
+            # Add user and assistant messages using templates
             turn_parts.extend([
-                f"👤 User: {user_msg}",
-                f"🤖 Assistant: {assistant_msg}"
+                user_message_template.safe_substitute(message=user_msg),
+                assistant_message_template.safe_substitute(message=assistant_msg)
             ])
 
             turn_text = "\n".join(turn_parts)
@@ -1062,9 +1245,16 @@ class AbstractBot(DBInterface, ABC):
         # Reverse to chronological order
         context_parts.reverse()
 
-        # Add header
-        header = f"📋 Recent Conversation ({len(context_parts)} turns):"
-        return f"{header}\n\n" + "\n\n".join(context_parts)
+        # Create final context using Template to avoid f-string issues with JSON content
+        header_template = Template("📋 Recent Conversation ($num_turns turns):")
+        header = header_template.safe_substitute(num_turns=len(context_parts))
+
+        # Final template for the complete context
+        final_template = Template("$header\n\n$content")
+        return final_template.safe_substitute(
+            header=header,
+            content="\n\n".join(context_parts)
+        )
 
     def _smart_truncate(self, text: str, max_length: int) -> str:
         """Truncate text at sentence boundaries when possible."""
@@ -1251,8 +1441,8 @@ Use the following information about user's data to guide your responses:
             user_context=u_context,
             **kwargs
         )
-        # print('SYSTEM PROMPT:')
-        # print(system_prompt)
+        print('SYSTEM PROMPT:')
+        print(system_prompt)
         return system_prompt
 
     async def get_user_context(self, user_id: str, session_id: str) -> str:
