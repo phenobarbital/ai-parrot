@@ -1,9 +1,10 @@
 import asyncio
 from parrot.bots.basic import BasicBot
+from parrot.stores.kb.user import UserInfo, UserProfileKB
 
 facts = [
     {
-        "content": "Our CEO is Buddy White",
+        "content": "Our CEO is Brett Beveridge",
         "metadata": {
             "category": "organization",
             "entity_type": "person",
@@ -11,7 +12,7 @@ facts = [
             "validated_date": "2024-01-15",
             "confidence": 1.0,
             "source": "HR_database",
-            "tags": ["ceo", "executive", "buddy", "leadership"]
+            "tags": ["ceo", "executive", "Brett", "leadership"]
         }
     },
     {
@@ -40,6 +41,9 @@ async def get_agent():
         use_kb=True,
         kb=facts
     )
+    # adding an specialized KB (user information)
+    agent.register_kb(UserInfo())
+    agent.register_kb(UserProfileKB())
     embed_model = {
         "model": "thenlper/gte-base",
         "model_type": "huggingface"
@@ -57,7 +61,7 @@ async def get_agent():
 
 
 async def ask_agent(agent, question, memory):
-    user_id= "user_123"  # Example user ID
+    user_id= 35  # Example user ID
     session_id= "session_456"  # Example session ID
     return await agent.conversation(
         user_id=user_id,
