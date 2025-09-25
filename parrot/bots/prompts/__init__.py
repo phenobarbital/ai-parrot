@@ -70,6 +70,8 @@ I am here to help with $goal.
 $pre_context
 $context
 
+$user_context
+
 $chat_history
 
 for more information please refer to the company information below:
