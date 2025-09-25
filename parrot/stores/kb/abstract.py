@@ -10,6 +10,7 @@ class AbstractKnowledgeBase(ABC):
         self,
         name: str,
         category: str,
+        description: str = None,
         activation_patterns: List[str] = None,
         always_active: bool = False,
         priority: int = 0
@@ -17,6 +18,7 @@ class AbstractKnowledgeBase(ABC):
         self.name = name
         self.category = category
         self.activation_patterns = activation_patterns or []
+        self.description = description or f"{name} knowledge base"
         self.always_active = always_active
         self.priority = priority  # Higher = included first
 

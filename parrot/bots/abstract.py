@@ -47,48 +47,13 @@ from ..memory import (
     FileConversationMemory,
     RedisConversation,
 )
-
-from ..utils.helpers import RequestContext
+from .kb import KBSelector
+from ..utils.helpers import RequestContext, RequestBot
 
 logging.getLogger(name='primp').setLevel(logging.INFO)
 logging.getLogger(name='rquest').setLevel(logging.INFO)
 logging.getLogger("grpc").setLevel(logging.CRITICAL)
 
-class RequestBot:
-    """RequestBot.
-
-    This class is a wrapper around the AbstractBot to provide request-specific context.
-    """
-    def __init__(self, delegate: 'AbstractBot', context: RequestContext):
-        self.delegate = delegate
-        self.ctx = context
-
-    def __getattr__(self, name: str):
-        attr = getattr(self.delegate, name)
-        # If the attribute is a callable method (and not just a property)
-        if callable(attr):
-            # Check if the original method is async
-            if inspect.iscoroutinefunction(attr):
-                # Return a new ASYNC function that wraps the original
-                async def async_wrapper(*args, **kwargs):
-                    # Inject the context into the call
-                    if 'ctx' not in kwargs:
-                        kwargs['ctx'] = self.ctx
-                    # Await the original async method with the modified arguments
-                    return await attr(*args, **kwargs)
-                return async_wrapper
-            else:
-                # Return a new SYNC function that wraps the original
-                def sync_wrapper(*args, **kwargs):
-                    # Inject the context into the call
-                    if 'ctx' not in kwargs:
-                        kwargs['ctx'] = self.ctx
-                    # Call the original sync method with the modified arguments
-                    return attr(*args, **kwargs)
-                return sync_wrapper
-        else:
-            # If it's a simple attribute (e.g., self.delegate.name), return it directly
-            return attr
 
 class AbstractBot(DBInterface, ABC):
     """AbstractBot.
@@ -233,6 +198,8 @@ class AbstractBot(DBInterface, ABC):
         self.knowledge_bases: List[AbstractKnowledgeBase] = []
         self._kb: List[Dict[str, Any]] = kwargs.get('kb', [])
         self.use_kb: bool = use_kb
+        self.kb_selector: Optional[KBSelector] = None
+        self.use_kb_selector: bool = kwargs.get('use_kb_selector', False)
         if use_kb:
             self.kb_store = KnowledgeBaseStore(
                 embedding_model=kwargs.get('kb_embedding_model', KB_DEFAULT_MODEL),
@@ -702,6 +669,30 @@ class AbstractBot(DBInterface, ABC):
             except Exception as e:
                 self.logger.error(
                     f"Error configuring VectorStore: {e}"
+                )
+                raise
+        # Initialize the KB Selector if enabled:
+        if self.use_kb and self.use_kb_selector:
+            if not self.kb_store:
+                raise ConfigError(
+                    "KB Store must be configured to use KB Selector"
+                )
+            if not self._llm:
+                raise ConfigError(
+                    "LLM must be configured to use KB Selector"
+                )
+            try:
+                self.kb_selector = KBSelector(
+                    llm_client=self._llm,
+                    min_confidence=0.6,
+                    kbs=self.knowledge_bases
+                )
+                self.logger.info(
+                    "KB Selector initialized"
+                )
+            except Exception as e:
+                self.logger.error(
+                    f"Error initializing KB Selector: {e}"
                 )
                 raise
 
@@ -1529,18 +1520,40 @@ Use the following information about user's data to guide your responses:
 
         # Second: determine which KBs needs to be activate:
         activation_tasks = []
-        for kb in self.knowledge_bases:
-            activation_tasks.append(
-                kb.should_activate(
-                    question, {
-                        'user_id': user_id,
-                        'session_id': session_id,
-                        'ctx': ctx
-                    }
-                )
+        activations = []
+        if self.use_kb_selector and self.knowledge_bases:
+            self.logger.debug(
+                "Using knowledge base selector to determine relevant KBs."
             )
+            kbs = await self.kb_selector.select_kbs(
+                question,
+                available_kbs=self.knowledge_bases
+            )
+            if not kbs.selected_kbs:
+                reason = kbs.reasoning or "No reason provided"
+                self.logger.debug(
+                    f"No KBs selected by the selector, reason: {reason}"
+                )
+            for kb in self.knowledge_bases:
+                for k in kbs.selected_kbs:
+                    if kb.name == k.name:
+                        activations.append((True, k.confidence))
+        else:
+            self.logger.debug(
+                "Using fallback activation for all knowledge bases."
+            )
+            for kb in self.knowledge_bases:
+                activation_tasks.append(
+                    kb.should_activate(
+                        question, {
+                            'user_id': user_id,
+                            'session_id': session_id,
+                            'ctx': ctx
+                        }
+                    )
+                )
 
-        activations = await asyncio.gather(*activation_tasks)
+            activations = await asyncio.gather(*activation_tasks)
         # Search in activated KBs (parallel)
         search_tasks = []
         active_kbs = []
