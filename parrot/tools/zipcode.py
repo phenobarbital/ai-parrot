@@ -12,21 +12,21 @@ from .toolkit import AbstractToolkit, tool_schema
 class BasicZipcodeInput(BaseModel):
     """Basic input schema for zipcode operations."""
     zipcode: Union[str, int] = Field(description="The zipcode")
-    unit: Optional[str] = Field(description="The unit of measurement", default="mile")
+    unit: Optional[str] = Field(description="Unit for coordinates (degrees, radians)", default="degrees")
 
 
 class ZipcodeDistanceInput(BaseModel):
     """Input schema for zipcode distance calculation."""
     zipcode1: Union[str, int] = Field(description="The first zipcode")
     zipcode2: Union[str, int] = Field(description="The second zipcode")
-    unit: Optional[str] = Field(description="The unit of distance", default="mile")
+    unit: Optional[str] = Field(description="Unit for coordinates (degrees, radians)", default="degrees")
 
 
 class ZipcodeRadiusInput(BaseModel):
     """Input schema for zipcode radius search."""
     zipcode: Union[str, int] = Field(description="The center zipcode")
     radius: int = Field(description="The radius in miles", default=5)
-    unit: Optional[str] = Field(description="The unit of distance", default="mile")
+    unit: Optional[str] = Field(description="Unit for coordinates (degrees, radians)", default="degrees")
 
 
 class CityToZipcodesInput(BaseModel):

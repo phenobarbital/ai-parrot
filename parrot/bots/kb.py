@@ -30,6 +30,7 @@ class KBSelector:
         kbs: List[AbstractKnowledgeBase] = None,
         **kwargs: Any
     ):
+        # TODO: migrate to faster LLM (e.g. Groq)
         self.llm: AbstractClient = llm_client
         self.min_confidence = min_confidence
         self.knowledge_bases: List[AbstractKnowledgeBase] = kbs or []

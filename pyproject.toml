@@ -78,7 +78,11 @@ agents = [
     "pomegranate==1.1.0",
     "autoviz==0.1.905",
     "spacy==3.8.6",
-    "html2text==2025.4.15"
+    "html2text==2025.4.15",
+    "httpx-sse==0.4.1",
+    "mcp==1.15.0",
+    "sse-starlette==3.0.2",
+    "requests-oauthlib==2.0.0",
 ]
 
 loaders = [

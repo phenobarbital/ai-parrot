@@ -197,6 +197,7 @@ class BotModel(Model):
         required=False,
         ui_help="The bot’s knowledge base facts."
     )
+    custom_kbs: List[str] = Field(nullable=True, default=None)
     # Vector store and retrieval configuration
     use_vector: bool = Field(
         default=False,
