@@ -5,7 +5,10 @@ from parrot.bots.database.models import UserRole
 
 
 async def test_agent():
-    agent = AbstractDBAgent(dsn=async_default_dsn, allowed_schemas=["auth","public"])
+    agent = AbstractDBAgent(
+        dsn=async_default_dsn,
+        allowed_schemas=["auth","public"]
+    )
     await agent.configure()
 
     async with agent:
@@ -19,7 +22,6 @@ async def test_agent():
 async def sql_agent():
 
     print('Generating SQLAgent...')
-
     sql_agent = SQLAgent(
         dsn=async_default_dsn,
         allowed_schemas=["auth", "hisense"],
@@ -33,15 +35,15 @@ async def sql_agent():
             # "Return for documentation in markdown format the metadata of table inventory in schema hisense",
             # "get all superusers in users",
             # 'Get top-10 products by pricing',
-            # 'Get top-10 TV LEDs products by pricing',
+            'Get top-10 TV LEDs products by pricing',
             # 'which products have better review average?',
             # 'how many products have Lowest Price below 300?',
             # "show me the most expensive products from products table",
-            "get last 5 records from form_data table",
+            # "get last 5 records from form_data table",
             # 'which is the highest price of a product_type LED TV from table products?, important: pricing is a varchar column with format like $1,999.00',
             user_role=
-                # UserRole.DATA_ANALYST
-                UserRole.BUSINESS_USER
+                UserRole.DATA_ANALYST
+                # UserRole.BUSINESS_USER
                 # UserRole.DATA_ENGINEER
                 # UserRole.DATABASE_ADMIN
                 # UserRole.DEVELOPER

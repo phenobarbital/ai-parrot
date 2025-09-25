@@ -1,5 +1,8 @@
 from parrot.registry import register_agent
 from parrot.bots.agent import BasicAgent
+# from parrot.tools.excel import ExcelTool
+# from parrot.tools.google import GoogleSearchTool, GoogleLocationTool
+from parrot.tools.zipcode import ZipcodeAPIToolkit
 
 
 @register_agent(name="TestAgent", priority=10, singleton=True, tags=["reporting", "pdf", "speech"])
@@ -12,6 +15,9 @@ class TestAgent(BasicAgent):
 
 
     def __init__(self, **kwargs):
+        kwargs['tools'] = [
+            ZipcodeAPIToolkit().get_tools()
+        ]
         super().__init__(**kwargs)
         self.name = "Test Agent"
         self.description = "An agent designed for testing and demonstration purposes."
