@@ -35,7 +35,8 @@ from ..models import (
     AIMessage,
     SourceDocument
 )
-from ..stores import AbstractStore, supported_stores, KnowledgeBaseStore
+from ..stores import AbstractStore, supported_stores
+from ..stores.kb import KnowledgeBaseStore, AbstractKnowledgeBase
 from ..tools import AbstractTool
 from ..tools.manager import ToolManager, ToolDefinition
 from ..memory import (
@@ -46,6 +47,7 @@ from ..memory import (
     FileConversationMemory,
     RedisConversation,
 )
+
 from ..utils.helpers import RequestContext
 
 logging.getLogger(name='primp').setLevel(logging.INFO)
@@ -228,6 +230,7 @@ class AbstractBot(DBInterface, ABC):
         self.operation_mode: str = kwargs.get('operation_mode', 'adaptive')
         # Knowledge base:
         self.kb_store: KnowledgeBaseStore = None
+        self.knowledge_bases: List[AbstractKnowledgeBase] = []
         self._kb: List[Dict[str, Any]] = kwargs.get('kb', [])
         self.use_kb: bool = use_kb
         if use_kb:
@@ -319,6 +322,15 @@ class AbstractBot(DBInterface, ABC):
 
     def get_vector_store(self):
         return self._vector_store
+
+    def register_kb(self, kb: AbstractKnowledgeBase):
+        """Register a new knowledge base."""
+        self.knowledge_bases.append(kb)
+        # Sort by priority
+        self.knowledge_bases.sort(key=lambda x: x.priority, reverse=True)
+        self.logger.debug(
+            f"Registered KB: {kb.name} with priority {kb.priority}"
+        )
 
     def default_permissions(self) -> dict:
         """
@@ -1226,13 +1238,10 @@ class AbstractBot(DBInterface, ABC):
         u_context = ""
         if user_context:
             u_context = (f"""
-Use the following information about user's data to guide your responses:
 **User Context:**
+Use the following information about user's data to guide your responses:
+
 {user_context}
-Based on the user context above, please tailor your response to their specific:
-- Role and responsibilities
-- Technical expertise level
-- Business objectives
         """)
         # Apply template substitution
         tmpl = Template(self.system_prompt_template)
@@ -1242,6 +1251,8 @@ Based on the user context above, please tailor your response to their specific:
             user_context=u_context,
             **kwargs
         )
+        # print('SYSTEM PROMPT:')
+        # print(system_prompt)
         return system_prompt
 
     async def get_user_context(self, user_id: str, session_id: str) -> str:
@@ -1260,15 +1271,13 @@ Based on the user context above, please tailor your response to their specific:
     async def _get_kb_context(
         self,
         query: str,
-        k: int = 5,
-        score_threshold: float = 0.7
+        k: int = 5
     ) -> Tuple[List[Dict], Dict]:
         """Get relevant facts from KB."""
 
         facts = await self.kb_store.search_facts(
             query=query,
-            k=k,
-            score_threshold=score_threshold
+            k=k
         )
 
         metadata = {
@@ -1287,15 +1296,16 @@ Based on the user context above, please tailor your response to their specific:
         fact_lines.append("# Knowledge Base Facts:")
 
         for fact in facts:
-            # Group by category if available
-            category = fact.get('metadata', {}).get('category', 'General')
-            fact_lines.append(f"* {fact['fact']}")
+            content = fact['fact']['content']
+            fact_lines.append(f"* {content}")
 
         return "\n".join(fact_lines)
 
     async def _build_context(
         self,
         question: str,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
         use_vectors: bool = True,
         search_type: str = 'similarity',
         search_kwargs: dict = None,
@@ -1304,25 +1314,64 @@ Based on the user context above, please tailor your response to their specific:
         limit: int = 10,
         score_threshold: float = None,
         return_sources: bool = True,
+        ctx: Optional[RequestContext] = None,
         **kwargs
-    ) -> Tuple[str, str, Dict[str, Any]]:
+    ) -> Tuple[str, str, str, Dict[str, Any]]:
         """Parallel retrieval from KB and Vector stores."""
         kb_context = ""
+        user_context = ""
         vector_context = ""
-        metadata = {}
+        context_parts = []
+        metadata = {'activated_kbs': []}
 
         tasks = []
 
+        # First: get KB context if enabled
         if self.use_kb and self.kb_store:
             tasks.append(
                 self._get_kb_context(
                     query=question,
-                    k=5,
-                    score_threshold=self.context_score_threshold
+                    k=5
                 )
             )
         else:
             tasks.append(asyncio.sleep(0, result=([], {})))  # Dummy task for KB
+
+        # Second: determine which KBs needs to be activate:
+        activation_tasks = []
+        for kb in self.knowledge_bases:
+            activation_tasks.append(
+                kb.should_activate(
+                    question, {
+                        'user_id': user_id,
+                        'session_id': session_id,
+                        'ctx': ctx
+                    }
+                )
+            )
+
+        activations = await asyncio.gather(*activation_tasks)
+        # Search in activated KBs (parallel)
+        search_tasks = []
+        active_kbs = []
+
+        for kb, (should_activate, confidence) in zip(self.knowledge_bases, activations):
+            if should_activate and confidence > 0.5:
+                active_kbs.append(kb)
+                search_tasks.append(
+                    kb.search(
+                        query=question,
+                        user_id=user_id,
+                        session_id=session_id,
+                        ctx=ctx,
+                        k=5,
+                        score_threshold=0.7
+                    )
+                )
+                metadata['activated_kbs'].append({
+                    'name': kb.name,
+                    'confidence': confidence
+                })
 
         # Prepare vector search task
         if use_vectors and self.store:
@@ -1350,10 +1399,17 @@ Based on the user context above, please tailor your response to their specific:
         else:
             tasks.append(asyncio.sleep(0, result=([], {})))
 
+        if search_tasks:
+            results = await asyncio.gather(*search_tasks)
+            for kb, kb_results in zip(active_kbs, results):
+                if kb_results:
+                    context_parts.append(kb.format_context(kb_results))
+
+            user_context = "\n\n".join(context_parts)
+
         if tasks:
             # Execute in parallel
             results = await asyncio.gather(*tasks, return_exceptions=True)
-
             # Process KB results
             with contextlib.suppress(IndexError):
                 if results[0] and not isinstance(results[0], Exception):
@@ -1369,7 +1425,7 @@ Based on the user context above, please tailor your response to their specific:
                     vector_context, vector_meta = results[1]
                     metadata['vector'] = vector_meta
 
-        return kb_context, vector_context, metadata
+        return kb_context, user_context, vector_context, metadata
 
     async def conversation(
         self,
@@ -1438,8 +1494,11 @@ Based on the user context above, please tailor your response to their specific:
                 conversation_context = self.build_conversation_context(conversation_history)
 
             # Get vector context if store exists and enabled
-            kb_context, vector_context, vector_metadata = await self._build_context(
+            kb_context, user_context, vector_context, vector_metadata = await self._build_context(
                 question,
+                user_id=user_id,
+                session_id=session_id,
+                ctx=ctx,
                 use_vectors=use_vector_context,
                 search_type=search_type,
                 search_kwargs=search_kwargs,
@@ -1467,8 +1526,6 @@ Based on the user context above, please tailor your response to their specific:
                 f"Tool usage decision: use_tools={use_tools}, mode={mode}, "
                 f"effective_mode={effective_mode}, available_tools={self.tool_manager.tool_count()}"
             )
-            # get user context:
-            user_context = await self.get_user_context(user_id, session_id)
             # Create system prompt
             system_prompt = await self.create_system_prompt(
                 kb_context=kb_context,
