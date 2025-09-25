@@ -292,6 +292,8 @@ class AbstractBot(DBInterface, ABC):
 
     def register_kb(self, kb: AbstractKnowledgeBase):
         """Register a new knowledge base."""
+        if not isinstance(kb, AbstractKnowledgeBase):
+            raise ValueError("kb must be an instance of AbstractKnowledgeBase")
         self.knowledge_bases.append(kb)
         # Sort by priority
         self.knowledge_bases.sort(key=lambda x: x.priority, reverse=True)
@@ -1322,15 +1324,16 @@ class AbstractBot(DBInterface, ABC):
 
         # For adaptive mode, use heuristics
         if self.operation_mode == 'adaptive':
+            if self.has_tools():
+                return True
             # Simple heuristics based on question content
-            tool_keywords = [
-                'calculate', 'compute', 'analyze', 'search', 'find',
-                'create', 'generate', 'plot', 'chart', 'graph',
-                'execute', 'run', 'process', 'convert', 'transform'
+            conversational_indicators = [
+                'how are you', 'what\'s up', 'thanks', 'thank you',
+                'hello', 'hi', 'hey', 'bye', 'goodbye',
+                'good morning', 'good evening', 'good night',
             ]
-
             question_lower = question.lower()
-            return any(keyword in question_lower for keyword in tool_keywords)
+            return not any(keyword in question_lower for keyword in conversational_indicators)
 
         return False
 

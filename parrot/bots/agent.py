@@ -82,6 +82,7 @@ class BasicAgent(Chatbot):
         self.system_prompt_template = prompt_template or AGENT_PROMPT
         self._system_prompt_base = system_prompt or ''
         self.enable_tools = True  # Enable tools by default
+        self.operation_mode = 'agentic' # Default operation mode
         self.auto_tool_detection = True  # Enable auto tool detection by default
         ##  Logging:
         self.logger = logging.getLogger(
