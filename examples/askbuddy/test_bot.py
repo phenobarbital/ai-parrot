@@ -39,7 +39,8 @@ async def get_agent():
     agent = BasicBot(
         name='AskBuddy',
         use_kb=True,
-        kb=facts
+        kb=facts,
+        use_kb_selector=True,
     )
     # adding an specialized KB (user information)
     agent.register_kb(UserInfo())

@@ -824,7 +824,6 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
         model = model.value if isinstance(model, GoogleModel) else model
         # If use_tools is None, use the instance default
         _use_tools = use_tools if use_tools is not None else self.enable_tools
-
         if not model:
             model = self.model
         # Generate unique turn ID for tracking
