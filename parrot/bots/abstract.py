@@ -1435,8 +1435,8 @@ Use the following information about user's data to guide your responses:
             user_context=u_context,
             **kwargs
         )
-        print('SYSTEM PROMPT:')
-        print(system_prompt)
+        # print('SYSTEM PROMPT:')
+        # print(system_prompt)
         return system_prompt
 
     async def get_user_context(self, user_id: str, session_id: str) -> str:
