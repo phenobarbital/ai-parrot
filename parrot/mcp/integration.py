@@ -5,7 +5,7 @@ This version includes all the features from your original implementation
 while maintaining the stability of our working stdio transport.
 """
 import os
-from typing import Dict, List, Any, Optional, Union
+from typing import Callable, Dict, List, Any, Optional, Union
 import asyncio
 import logging
 from dataclasses import dataclass, field
@@ -16,6 +16,7 @@ import aiohttp
 # AI-Parrot imports
 from ..tools.abstract import AbstractTool, ToolResult
 from ..tools.manager import ToolManager
+from .oauth import OAuthManager, InMemoryTokenStore, RedisTokenStore
 
 
 @dataclass
@@ -32,6 +33,8 @@ class MCPServerConfig:
     # Authentication
     auth_type: Optional[str] = None  # "oauth", "bearer", "basic", "api_key", "none"
     auth_config: Dict[str, Any] = field(default_factory=dict)
+    # A token supplier hook the HTTP client will call to add headers (set by OAuthManager)
+    token_supplier: Optional[Callable[[], Optional[str]]] = None
 
     # Transport type
     transport: str = "auto"  # "auto", "stdio", "http", "sse"
@@ -807,23 +810,59 @@ def create_http_mcp_server(
         **kwargs
     )
 
-
-def create_fireflies_mcp_server(
-    access_token: str,
-    server_name: str = "fireflies",
-    url: str = "https://api.fireflies.ai/mcp"
+def create_oauth_mcp_server(
+    *,
+    name: str,
+    url: str,
+    user_id: str,
+    client_id: str,
+    auth_url: str,
+    token_url: str,
+    scopes: list[str],
+    client_secret: str | None = None,
+    redis=None,  # pass an aioredis client if you have it; else None -> in-memory
+    redirect_host: str = "127.0.0.1",
+    redirect_port: int = 8765,
+    redirect_path: str = "/mcp/oauth/callback",
+    extra_token_params: dict | None = None,
+    headers: dict | None = None,
 ) -> MCPServerConfig:
-    """Create configuration for Fireflies.ai MCP server."""
-    return create_http_mcp_server(
-        name=server_name,
-        url=url,
-        auth_type="bearer",
-        auth_config={"access_token": access_token},
-        headers={
-            "Content-Type": "application/json",
-            "User-Agent": "AI-Parrot-MCP-Client/1.0"
-        }
+    token_store = RedisTokenStore(redis) if redis else InMemoryTokenStore()
+    oauth = OAuthManager(
+        user_id=user_id,
+        server_name=name,
+        client_id=client_id,
+        client_secret=client_secret,
+        auth_url=auth_url,
+        token_url=token_url,
+        scopes=scopes,
+        redirect_host=redirect_host,
+        redirect_port=redirect_port,
+        redirect_path=redirect_path,
+        token_store=token_store,
+        extra_token_params=extra_token_params,
     )
+
+    cfg = MCPServerConfig(
+        name=name,
+        transport="http",
+        url=url,
+        headers=headers or {"Content-Type": "application/json"},
+        auth_type="oauth",
+        auth_config={
+            "auth_url": auth_url,
+            "token_url": token_url,
+            "scopes": scopes,
+            "client_id": client_id,
+            "client_secret": bool(client_secret),
+            "redirect_uri": oauth.redirect_uri,
+        },
+        token_supplier=oauth.token_supplier,  # this is called before each request
+    )
+
+    # Attach a small helper so the client can ensure token before using the server.
+    cfg._ensure_oauth_token = oauth.ensure_token  # attribute on purpose
+    return cfg
 
 
 def create_api_key_mcp_server(
@@ -845,6 +884,33 @@ def create_api_key_mcp_server(
         **kwargs
     )
 
+
+def create_fireflies_mcp_server(
+    *,
+    user_id: str,
+    client_id: str,
+    auth_url: str = "https://api.fireflies.ai/oauth/authorize",
+    token_url: str = "https://api.fireflies.ai/oauth/token",
+    scopes: list[str] = ("meetings:read", "transcripts:read"),
+    api_base: str = "https://api.fireflies.ai/mcp",
+    client_secret: str | None = None,      # if Fireflies requires secret with auth code exchange
+    redis=None,                             # aioredis client or None
+) -> MCPServerConfig:
+    return create_oauth_mcp_server(
+        name="fireflies",
+        url=api_base,
+        user_id=user_id,
+        client_id=client_id,
+        client_secret=client_secret,
+        auth_url=auth_url,
+        token_url=token_url,
+        scopes=list(scopes),
+        redis=redis,
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": "AI-Parrot-MCP-Client/1.0",
+        },
+    )
 
 # Extension for BaseAgent
 class MCPEnabledMixin:
@@ -880,15 +946,6 @@ class MCPEnabledMixin:
     ) -> List[str]:
         """Add an HTTP MCP server."""
         config = create_http_mcp_server(name, url, auth_type, auth_config, headers, **kwargs)
-        return await self.add_mcp_server(config)
-
-    async def add_fireflies_mcp_server(
-        self,
-        access_token: str,
-        server_name: str = "fireflies"
-    ) -> List[str]:
-        """Add Fireflies.ai MCP server."""
-        config = create_fireflies_mcp_server(access_token, server_name)
         return await self.add_mcp_server(config)
 
     async def remove_mcp_server(self, server_name: str):
