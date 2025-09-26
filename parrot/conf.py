@@ -208,3 +208,6 @@ AWS_CREDENTIALS = {
         "bucket_name": aws_bucket,
     },
 }
+
+## Tools:
+OPENWEATHER_APPID = config.get('OPENWEATHER_APPID')

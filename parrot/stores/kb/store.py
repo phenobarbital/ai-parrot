@@ -79,7 +79,6 @@ class KnowledgeBaseStore:
 
         results = []
         for score, idx in zip(scores[0], indices[0]):
-            print('SCORE, IDX:', score, idx, self.facts[idx])  # DEBUG
             if idx == -1:
                 continue
             if float(score) >= threshold:
