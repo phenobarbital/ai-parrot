@@ -1,5 +1,8 @@
 from parrot.registry import register_agent
 from parrot.bots.agent import BasicAgent
+from parrot.tools.excel import ExcelTool
+from parrot.tools.google import GoogleSearchTool, GoogleLocationTool
+from parrot.tools.zipcode import ZipcodeAPIToolkit
 
 
 @register_agent(name="TestAgent", priority=10, singleton=True, tags=["reporting", "pdf", "speech"])
@@ -20,3 +23,13 @@ class TestAgent(BasicAgent):
         self.logger.debug(
             f"{self.name} initialized with model {self.default_model}"
         )
+
+    def agent_tools(self):
+        """Return the agent-specific tools."""
+        tools = [
+            ExcelTool(),
+            GoogleSearchTool(),
+            GoogleLocationTool()
+        ] + ZipcodeAPIToolkit().get_tools()
+
+        return tools

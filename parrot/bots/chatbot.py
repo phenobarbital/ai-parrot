@@ -5,6 +5,7 @@ from typing import Any, Union, Dict, List
 from pathlib import Path
 import uuid
 from string import Template
+import importlib
 # Navconfig
 from datamodel.exceptions import ValidationError # pylint: disable=E0611
 from navconfig import BASE_DIR
@@ -120,6 +121,18 @@ class Chatbot(AbstractBot):
     def _from_db(self, botobj, key, default = None) -> Any:
         value = getattr(botobj, key, default)
         return value if value else default
+
+    def import_kb_class(self, kb_path: str):
+        try:
+            # Split the path to get module and class name
+            module_path, class_name = kb_path.rsplit('.', 1)
+            module = importlib.import_module(module_path)
+            return getattr(module, class_name)
+        except (ValueError, ImportError, AttributeError) as e:
+            self.logger.error(
+                f"Failed to import KB class from {kb_path}: {e}"
+            )
+            return None
 
     async def from_manual_config(self) -> None:
         """
@@ -321,6 +334,14 @@ class Chatbot(AbstractBot):
                 embedding_model=KB_DEFAULT_MODEL,
                 dimension=384
             )
+
+        # Custom Knowledge Bases
+        self.custom_kbs = self._from_db(bot, 'custom_kbs', default=[])
+        if self.custom_kbs:
+            for kb_path in self.custom_kbs:
+                kb_class = self.import_kb_class(kb_path)
+                if kb_class:
+                    self.register_kb(kb_class)
 
         # Other settings
         self.language = self._from_db(bot, 'language', default='en')
