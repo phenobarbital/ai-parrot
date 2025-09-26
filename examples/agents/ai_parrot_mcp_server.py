@@ -16,32 +16,40 @@ import sys
 import argparse
 import logging
 from pathlib import Path
-# Import the MCP server implementation (from previous artifact)
-from parrot.mcp.server import MCPServer, MCPServerConfig
-# Import your existing AI-Parrot tools
+from contextlib import redirect_stdout
+import io
+original_stdout = sys.stdout
+sys.stdout = io.StringIO()
 try:
-    from parrot.tools.openweather import OpenWeatherTool
-    OPENWEATHER_AVAILABLE = True
-except ImportError:
-    OPENWEATHER_AVAILABLE = False
+    # Import the MCP server implementation (from previous artifact)
+    from parrot.mcp.server import MCPServer, MCPServerConfig
+    # Import your existing AI-Parrot tools
+    try:
+        from parrot.tools.openweather import OpenWeatherTool
+        OPENWEATHER_AVAILABLE = True
+    except ImportError:
+        OPENWEATHER_AVAILABLE = False
 
-try:
-    from parrot.tools.asdb import DatabaseQueryTool
-    DATABASE_AVAILABLE = True
-except ImportError:
-    DATABASE_AVAILABLE = False
+    try:
+        from parrot.tools.asdb import DatabaseQueryTool
+        DATABASE_AVAILABLE = True
+    except ImportError:
+        DATABASE_AVAILABLE = False
 
-try:
-    from parrot.tools.google import GoogleLocationTool, GoogleSearchTool
-    GOOGLE_AVAILABLE = True
-except ImportError:
-    GOOGLE_AVAILABLE = False
+    try:
+        from parrot.tools.google import GoogleLocationTool, GoogleSearchTool
+        GOOGLE_AVAILABLE = True
+    except ImportError:
+        GOOGLE_AVAILABLE = False
 
-try:
-    from parrot.tools.pythonpandas import PythonPandasTool
-    PANDAS_AVAILABLE = True
-except ImportError:
-    PANDAS_AVAILABLE = False
+    try:
+        from parrot.tools.pythonpandas import PythonPandasTool
+        PANDAS_AVAILABLE = True
+    except ImportError:
+        PANDAS_AVAILABLE = False
+finally:
+    # Restore stdout
+    sys.stdout = original_stdout
 
 
 def setup_logging(level: str = "INFO"):
@@ -56,44 +64,46 @@ def setup_logging(level: str = "INFO"):
 def create_available_tools(safe_mode: bool = False) -> list:
     """Create list of available tools based on imports and configuration."""
     tools = []
+    with redirect_stdout(sys.stderr):
+        # Weather tool
+        if OPENWEATHER_AVAILABLE:
+            api_key = os.getenv('OPENWEATHER_APPID') or os.getenv('OPENWEATHER_API_KEY')
+            if api_key:
+                weather_tool = OpenWeatherTool(
+                    api_key=api_key,
+                    default_units='metric'
+                )
+                tools.append(weather_tool)
+                print(f"✅ Added OpenWeatherTool", file=sys.stderr)
+            else:
+                print(f"⚠️  OpenWeatherTool available but no API key (set OPENWEATHER_API_KEY)", file=sys.stderr)
 
-    # Weather tool
-    if OPENWEATHER_AVAILABLE:
-        api_key = os.getenv('OPENWEATHER_APPID') or os.getenv('OPENWEATHER_API_KEY')
-        if api_key:
-            weather_tool = OpenWeatherTool(
-                api_key=api_key,
-                default_units='metric'
-            )
-            tools.append(weather_tool)
-            print(f"✅ Added OpenWeatherTool", file=sys.stderr)
-        else:
-            print(f"⚠️  OpenWeatherTool available but no API key (set OPENWEATHER_API_KEY)", file=sys.stderr)
+        # Google tools
+        if GOOGLE_AVAILABLE:
+            try:
+                location_tool = GoogleLocationTool()
+                search_tool = GoogleSearchTool()
+                tools.append(search_tool)
+                tools.append(location_tool)
+                print(f"✅ Added GoogleLocationTool", file=sys.stderr)
+            except Exception as e:
+                print(f"⚠️  GoogleLocationTool failed to initialize: {e}", file=sys.stderr)
 
-    # Google tools
-    if GOOGLE_AVAILABLE:
-        try:
-            location_tool = GoogleLocationTool()
-            tools.append(location_tool)
-            print(f"✅ Added GoogleLocationTool", file=sys.stderr)
-        except Exception as e:
-            print(f"⚠️  GoogleLocationTool failed to initialize: {e}", file=sys.stderr)
+        # Database tool (only in non-safe mode)
+        if DATABASE_AVAILABLE and not safe_mode:
+            db_tool = DatabaseQueryTool()
+            tools.append(db_tool)
+            print(f"✅ Added DatabaseQueryTool", file=sys.stderr)
+        elif DATABASE_AVAILABLE and safe_mode:
+            print(f"⚠️  DatabaseQueryTool skipped in safe mode", file=sys.stderr)
 
-    # Database tool (only in non-safe mode)
-    if DATABASE_AVAILABLE and not safe_mode:
-        db_tool = DatabaseQueryTool()
-        tools.append(db_tool)
-        print(f"✅ Added DatabaseQueryTool", file=sys.stderr)
-    elif DATABASE_AVAILABLE and safe_mode:
-        print(f"⚠️  DatabaseQueryTool skipped in safe mode", file=sys.stderr)
-
-    # Python/Pandas tool (only in non-safe mode)
-    if PANDAS_AVAILABLE and not safe_mode:
-        pandas_tool = PythonPandasTool()
-        tools.append(pandas_tool)
-        print(f"✅ Added PythonPandasTool", file=sys.stderr)
-    elif PANDAS_AVAILABLE and safe_mode:
-        print(f"⚠️  PythonPandasTool skipped in safe mode", file=sys.stderr)
+        # Python/Pandas tool (only in non-safe mode)
+        if PANDAS_AVAILABLE and not safe_mode:
+            pandas_tool = PythonPandasTool()
+            tools.append(pandas_tool)
+            print(f"✅ Added PythonPandasTool", file=sys.stderr)
+        elif PANDAS_AVAILABLE and safe_mode:
+            print(f"⚠️  PythonPandasTool skipped in safe mode", file=sys.stderr)
 
     if not tools:
         print(f"❌ No tools available! Check your imports and API keys.", file=sys.stderr)

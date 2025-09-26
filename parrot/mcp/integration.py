@@ -198,7 +198,6 @@ class StdioMCPSession:
             raise MCPConnectionError(f"Session initialization failed: {e}") from e
 
     async def _send_request(self, method: str, params: dict = None) -> dict:
-        """Send JSON-RPC request and get response."""
         if not self._process or self._process.returncode is not None:
             raise MCPConnectionError("Process is not running")
 
@@ -207,29 +206,44 @@ class StdioMCPSession:
         if params:
             request["params"] = params
 
-        try:
-            request_line = json.dumps(request) + "\n"
-            self.logger.debug(f"Stdio sending: {request_line.strip()}")
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + self.config.timeout
 
-            self._stdin.write(request_line.encode('utf-8'))
+        try:
+            line = (json.dumps(request) + "\n").encode("utf-8")
+            self.logger.debug(f"Stdio sending: {line.decode().strip()}")
+            self._stdin.write(line)
             await self._stdin.drain()
 
-            response_line = await asyncio.wait_for(
-                self._stdout.readline(),
-                timeout=self.config.timeout
-            )
+            response = None
+            while True:
+                timeout = max(0.1, deadline - loop.time())
+                response_line = await asyncio.wait_for(self._stdout.readline(), timeout=timeout)
+                if not response_line:
+                    raise MCPConnectionError("Empty response - connection closed")
 
-            if not response_line:
-                raise MCPConnectionError("Empty response - connection closed")
+                response_str = response_line.decode("utf-8", errors="replace").strip()
+                if not response_str:
+                    continue
+                self.logger.debug(f"Stdio received: {response_str}")
 
-            response_str = response_line.decode('utf-8', errors='replace').strip()
-            self.logger.debug(f"Stdio received: {response_str}")
+                # Skip non-JSON garbage
+                try:
+                    candidate = json.loads(response_str)
+                except json.JSONDecodeError:
+                    self.logger.debug(f"Ignoring non-JSON stdout: {response_str!r}")
+                    continue
 
-            response = json.loads(response_str)
+                # Only accept responses with our request id; ignore notifications/others
+                if candidate.get("id") != request_id:
+                    # could be a notification or another message; ignore
+                    continue
+
+                response = candidate
+                break
 
             if "error" in response:
-                error = response["error"]
-                raise MCPConnectionError(f"Server error: {error}")
+                raise MCPConnectionError(f"Server error: {response['error']}")
 
             return response.get("result", {})
 

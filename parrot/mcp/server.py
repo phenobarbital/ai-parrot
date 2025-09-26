@@ -4,7 +4,7 @@ MCP Server Implementation - Expose AI-Parrot Tools via MCP Protocol
 This creates an MCP server that exposes your existing AbstractTool instances
 as MCP tools that can be consumed by any MCP client.
 """
-from typing import Dict, List, Any, Optional, Union
+from typing import Dict, List, Any, Optional
 from abc import ABC, abstractmethod
 import asyncio
 import json
@@ -12,6 +12,7 @@ import logging
 import sys
 import argparse
 from dataclasses import dataclass
+import io
 from pathlib import Path
 import traceback
 import aiohttp
@@ -19,6 +20,11 @@ from aiohttp import web
 # AI-Parrot imports
 from parrot.tools.abstract import AbstractTool, ToolResult
 
+# Suppress noisy loggers
+logging.getLogger('matplotlib').setLevel(logging.ERROR)
+logging.getLogger('PIL').setLevel(logging.ERROR)
+logging.getLogger('urllib3').setLevel(logging.ERROR)
+logging.getLogger('requests').setLevel(logging.ERROR)
 
 @dataclass
 class MCPServerConfig:
@@ -147,14 +153,14 @@ class MCPServerBase(ABC):
     def __init__(self, config: MCPServerConfig):
         self.config = config
         self.tools: Dict[str, MCPToolAdapter] = {}
-        self.logger = logging.getLogger(f"MCPServer.{config.name}")
-
-        # Configure logging
+        # Setup logging to stderr ONLY
         logging.basicConfig(
-            level=getattr(logging, config.log_level.upper()),
+            level=logging.ERROR,  # Reduce noise
             format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            stream=sys.stderr  # Log to stderr to avoid interfering with stdio JSON-RPC
+            stream=sys.stderr,  # Critical: only stderr
+            force=True  # Override any existing logging config
         )
+        self.logger = logging.getLogger(f"MCPServer.{config.name}")
 
     def register_tool(self, tool: AbstractTool):
         """Register an AI-Parrot tool with the MCP server."""
@@ -436,7 +442,9 @@ class MCPServer:
         elif config.transport == "http":
             self.server = HttpMCPServer(config)
         else:
-            raise ValueError(f"Unsupported transport: {config.transport}")
+            raise ValueError(
+                f"Unsupported transport: {config.transport}"
+            )
 
     def register_tool(self, tool: AbstractTool):
         """Register a tool."""
