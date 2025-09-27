@@ -181,3 +181,6 @@ class VideoLocalLoader(BaseVideoLoader):
                 docs.append(doc)
             documents.extend(docs)
         return documents
+
+    async def load_video(self, url: str, video_title: str, transcript: str) -> list:
+        pass
