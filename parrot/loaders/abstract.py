@@ -262,38 +262,48 @@ class AbstractLoader(ABC):
         device_type: str = None,
         cuda_number: int = 0
     ):
-        """Get Default device for Torch and transformers.
-
         """
-        dev = torch.device("cpu")
-        pipe_dev = -1
+        Get device configuration for Torch and transformers.
+
+        Returns:
+            tuple: (pipeline_device_idx, torch_device, dtype)
+            - pipeline_device_idx: int for HuggingFace pipeline (-1 for CPU, 0+ for GPU)
+            - torch_device: torch.device object for model loading
+            - dtype: torch data type for model weights
+        """
+        # Default values for CPU usage
+        pipeline_idx = -1  # This is what HuggingFace pipeline expects for CPU
+        torch_dev = torch.device("cpu")
         dtype = torch.float32
-        if device_type == 'cpu':
-            pipe_dev = torch.device('cpu')
-        if CUDA_DEFAULT_DEVICE == 'cpu':
-            # Use CPU forced
-            pipe_dev = torch.device('cpu')
+
+        # Check if we're forcing CPU usage globally
+        if CUDA_DEFAULT_DEVICE == 'cpu' or device_type == 'cpu':
+            # CPU is explicitly requested
+            return -1, torch.device('cpu'), torch.float32
+
+        # Check for CUDA availability and use it if possible
         if torch.cuda.is_available():
-            dev = torch.device("cuda")
-            pipe_dev = 0  # first GPU
-            # prefer bf16 if supported; else fp16
+            # For GPU, pipeline wants an integer index
+            pipeline_idx = cuda_number  # 0 for first GPU, 1 for second, etc.
+            torch_dev = torch.device(f"cuda:{cuda_number}")
+
+            # Choose the best dtype for this GPU
             if torch.cuda.is_bf16_supported():
                 dtype = torch.bfloat16
             else:
                 dtype = torch.float16
-            pipe_dev = torch.device(f'cuda:{cuda_number}')
-        if device_type == 'cuda':
-            if torch.cuda.is_bf16_supported():
-                dtype = torch.bfloat16
-            else:
-                dtype = torch.float16
-            pipe_dev = torch.device(f'cuda:{cuda_number}')
+
+            return pipeline_idx, torch_dev, dtype
+
+        # Check for Apple Silicon GPU (MPS)
         if torch.backends.mps.is_available():
-            # Use CUDA Multi-Processing Service if available
-            dev = torch.device("mps")
-            pipe_dev = torch.device("mps")
-            dtype = torch.float32  # fp16 on MPS is still flaky
-        return pipe_dev, dev, dtype
+            # MPS is tricky - HuggingFace pipelines don't always support it well
+            # We return "mps" as a string for pipeline, and torch.device for model
+            # Note: You might need to handle this specially in your pipeline code
+            return "mps", torch.device("mps"), torch.float32
+
+        # Fallback to CPU if nothing else is available
+        return -1, torch.device("cpu"), torch.float32
 
     def clear_cuda(self):
         self.tokenizer = None  # Reset the tokenizer
