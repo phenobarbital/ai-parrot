@@ -97,6 +97,8 @@ loaders = [
     "python-pptx==1.0.2",
     "yt-dlp==2025.8.22",
     "ebooklib>=0.19",
+    "whisperx==3.4.2",
+    "resemblyzer==0.1.4",
 ]
 
 images = [

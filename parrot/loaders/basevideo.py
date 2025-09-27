@@ -1,9 +1,16 @@
-from collections.abc import Callable
 from typing import Any, Union, List, Optional
+from collections.abc import Callable
 from abc import abstractmethod
+import gc
+import os
+import logging
 from pathlib import Path
 from moviepy.editor import VideoFileClip
 from pydub import AudioSegment
+import soundfile as sf
+import numpy as np
+from resemblyzer import VoiceEncoder, preprocess_wav
+from sklearn.cluster import AgglomerativeClustering
 import torch
 from transformers import (
     pipeline,
@@ -11,15 +18,47 @@ from transformers import (
     AutoProcessor,
     AutoModelForSeq2SeqLM,
     AutoTokenizer,
+    WhisperProcessor,
+    WhisperForConditionalGeneration
 )
+from navconfig import config
 from ..stores.models import Document
 from .abstract import AbstractLoader
 
+
+logging.getLogger(name='numba').setLevel(logging.WARNING)
+logging.getLogger(name='pydub.converter').setLevel(logging.WARNING)
 
 def extract_video_id(url):
     parts = url.split("?v=")
     video_id = parts[1].split("&")[0]
     return video_id
+
+def _collapse_labels_to_segments(times_sec: np.ndarray, labels: np.ndarray):
+    """
+    Collapse frame-level labels into contiguous (start, end, label) segments.
+    times_sec is the center time of each frame (shape: [N]).
+    """
+    if len(labels) == 0:
+        return []
+    segs = []
+    cur_label = labels[0]
+    start_t = times_sec[0]
+    for i in range(1, len(labels)):
+        if labels[i] != cur_label:
+            end_t = times_sec[i-1]
+            segs.append((float(start_t), float(end_t), int(cur_label)))
+            cur_label = labels[i]
+            start_t = times_sec[i]
+    # tail
+    segs.append((float(start_t), float(times_sec[-1]), int(cur_label)))
+    return segs
+
+def _fmt_srt_time(t: float) -> str:
+    hrs, rem = divmod(int(t), 3600)
+    mins, secs = divmod(rem, 60)
+    ms = int((t - int(t)) * 1000)
+    return f"{hrs:02}:{mins:02}:{secs:02},{ms:03}"
 
 
 class BaseVideoLoader(AbstractLoader):
@@ -38,9 +77,11 @@ class BaseVideoLoader(AbstractLoader):
         language: str = "en",
         video_path: Union[str, Path] = None,
         download_video: bool = True,
+        diarization: bool = False,
         **kwargs
     ):
         self._download_video: bool = download_video
+        self._diarization: bool = diarization
         super().__init__(
             source,
             tokenizer=tokenizer,
@@ -55,7 +96,7 @@ class BaseVideoLoader(AbstractLoader):
         self._task = kwargs.get('task', "automatic-speech-recognition")
         # Topics:
         self.topics: list = kwargs.get('topics', [])
-        self._model_size: str = kwargs.get('model_size', 'medium')
+        self._model_size: str = kwargs.get('model_size', 'small')
         self.summarization_model = "facebook/bart-large-cnn"
         self._model_name: str = kwargs.get('model_name', 'whisper')
         device, _, dtype = self._get_device()
@@ -103,6 +144,145 @@ class BaseVideoLoader(AbstractLoader):
         except Exception as exc:
             print(f"Error saving VTT file: {exc}")
         return vtt
+
+    def audio_to_srt(
+        self,
+        audio_path: Path,
+        asr: dict | None = None,
+        speaker_names: Optional[List[str]] = None,
+        output_srt_path: Optional[Path] = None,
+        frame_hop_s: float = 0.75,
+        distance_threshold: float = 0.35,   # cosine distance; 0.25–0.4 often works well
+        min_spk_seg_s: float = 0.8,         # merge diarization segments shorter than this
+        collar_s: float = 0.2               # merge tiny gaps between same-speaker segments
+    ) -> str:
+        """
+        Generate SRT with speaker labels using Resemblyzer diarization + Whisper ASR.
+        - Assumes `asr` is the HF pipeline output with `chunks` each having ("timestamp": (start, end), "text": ...).
+        - Uses cosine distance hierarchical clustering for diarization.
+        """
+        # 1) Resemblyzer embeddings over sliding windows ----------
+        wav16k = preprocess_wav(audio_path)  # -> 16k mono float32
+        encoder = VoiceEncoder()
+
+        # Frames per second for partials (= 1 / frame_hop_s)
+        assert frame_hop_s > 0, "frame_hop_s must be > 0"
+        rate = max(1, int(round(1.0 / frame_hop_s)))
+        _, partial_embeds, wav_splits = encoder.embed_utterance(
+            wav16k, return_partials=True, rate=rate
+        )
+        if partial_embeds is None:
+            raise RuntimeError("Could not compute partial embeddings for diarization.")
+
+        partial_embeds = np.asarray(partial_embeds, dtype=np.float32)  # [N, 256]
+        if partial_embeds.size == 0:
+            raise RuntimeError("Empty partial embeddings from diarization.")
+        # Frame centers (seconds) at 16kHz
+        sr = 16000.0
+        times_sec = np.array([(s + e) / 2.0 / sr for (s, e) in wav_splits], dtype=np.float32)
+
+        # ---------- 2) HAC diarization (cosine distance) ----------
+        # NOTE: In recent scikit-learn versions use `metric`, not `affinity`.
+        # `metric="cosine"` needs linkage "average" or "complete".
+        clustering = AgglomerativeClustering(
+            n_clusters=None,
+            metric="cosine",
+            linkage="average",
+            distance_threshold=distance_threshold,
+            compute_full_tree=True,
+        )
+        labels = clustering.fit_predict(partial_embeds)
+
+        # ---------- 3) Collapse frame-level labels to contiguous segments ----------
+        def _collapse_labels_to_segments(t: np.ndarray, y: np.ndarray) -> list[tuple[float,float,int]]:
+            segs = []
+            if len(t) == 0:
+                return segs
+            start = t[0]
+            cur = int(y[0])
+            for i in range(1, len(t)):
+                if int(y[i]) != cur:
+                    end = t[i-1]
+                    segs.append((float(start), float(end), int(cur)))
+                    start = t[i]
+                    cur = int(y[i])
+            segs.append((float(start), float(t[-1]), int(cur)))
+            return segs
+
+        diar_segments = _collapse_labels_to_segments(times_sec, labels)
+
+        # Optional smoothing: merge very short segments and tiny gaps
+        def _merge_short_and_collared(segs: list[tuple[float,float,int]]) -> list[tuple[float,float,int]]:
+            if not segs:
+                return segs
+            merged = [segs[0]]
+            for (s, e, spk) in segs[1:]:
+                ps, pe, pspk = merged[-1]
+                # merge if same speaker and close in time, or previous is too short
+                if spk == pspk and (s - pe) <= collar_s:
+                    merged[-1] = (ps, max(pe, e), pspk)
+                elif (pe - ps) < min_spk_seg_s and (
+                    spk == pspk or (s - pe) <= collar_s
+                ):
+                    # absorb short prev into current when reasonable
+                    merged[-1] = (ps, e, pspk if spk == pspk else spk)
+                else:
+                    merged.append((s, e, spk))
+            return merged
+
+        diar_segments = _merge_short_and_collared(diar_segments)
+
+        # For quick lookup: majority speaker inside an interval
+        times_sec_arr = times_sec  # alias
+        labels_arr = labels
+
+        def majority_label(start_t: float, end_t: float) -> int:
+            mask = (times_sec_arr >= start_t) & (times_sec_arr <= end_t)
+            if not np.any(mask):
+                # fallback: nearest frame center
+                nearest = int(np.argmin(np.abs(times_sec_arr - (0.5 * (start_t + end_t)))))
+                return int(labels_arr[nearest])
+            ls = labels_arr[mask]
+            vals, counts = np.unique(ls, return_counts=True)
+            return int(vals[np.argmax(counts)])
+
+        # ---------- 4) Build SRT lines ----------
+        def _fmt_srt_time(t: float) -> str:
+            # HH:MM:SS,mmm
+            ms = int(round((t % 1) * 1000))
+            s = int(t) % 60
+            m = (int(t) // 60) % 60
+            h = int(t) // 3600
+            return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
+
+        if asr is None or "chunks" not in asr or not isinstance(asr["chunks"], list) or len(asr["chunks"]) == 0:
+            raise ValueError("`asr` must be an HF ASR output dict with a non-empty 'chunks' list.")
+
+        srt_lines = []
+        idx = 1
+        for ch in asr["chunks"]:
+            ts = ch.get("timestamp")
+            text = (ch.get("text") or "").strip().replace("\n", " ")
+            if not ts or ts[0] is None or ts[1] is None or not text:
+                continue
+            start, end = float(ts[0]), float(ts[1])
+            if end <= start:
+                continue
+
+            spk_id = majority_label(start, end)
+            speaker_label = f"Speaker {spk_id + 1}"
+            if speaker_names and 0 <= spk_id < len(speaker_names):
+                speaker_label = speaker_names[spk_id]
+
+            srt_lines.append(
+                f"{idx}\n{_fmt_srt_time(start)} --> { _fmt_srt_time(end)}\n{speaker_label}: {text}\n"
+            )
+            idx += 1
+
+        srt = "\n".join(srt_lines) + ("\n" if srt_lines else "")
+        if output_srt_path:
+            Path(output_srt_path).write_text(srt, encoding="utf-8")
+        return srt
 
     def format_timestamp(self, seconds):
         # This helper function takes the total seconds and formats it into hh:mm:ss,ms
@@ -210,85 +390,520 @@ class BaseVideoLoader(AbstractLoader):
         else:
             print(f"Audio extracted: {audio_path}")
 
+    def ensure_wav_16k_mono(self, src_path: Path) -> Path:
+        """
+        Ensure `src_path` is a 16 kHz mono PCM WAV. Returns the WAV path.
+        - If src is not a .wav, write <stem>.wav
+        - If src is already .wav, write <stem>.16k.wav to avoid in-place overwrite
+        """
+        src_path = Path(src_path)
+        if src_path.suffix.lower() == ".wav":
+            out_path = src_path.with_name(f"{src_path.stem}.16k.wav")
+        else:
+            out_path = src_path.with_suffix(".wav")
+
+        # Always (re)encode to guarantee 16k mono PCM s16le
+        audio = AudioSegment.from_file(src_path)
+        audio = (
+            audio.set_frame_rate(16000)   # 16 kHz
+            .set_channels(1)         # mono
+            .set_sample_width(2)     # s16le
+        )
+        audio.export(str(out_path), format="wav")
+        print(f"Transcoded to 16k mono WAV: {out_path}")
+        return out_path
+
     def get_whisper_transcript(
         self,
         audio_path: Path,
         chunk_length: int = 30,
-        word_timestamps: bool = False
+        word_timestamps: bool = False,
+        manual_chunk: bool = True,  # New parameter to enable manual chunking
+        max_chunk_duration: int = 60  # Maximum seconds per chunk for GPU processing
     ):
         """
-        Transcribe `audio_path` with Hugging Face Transformers Whisper pipeline, returning
-        chunk timestamps (and optionally word-level timestamps).
+        Enhanced Whisper transcription with manual chunking for GPU memory management.
 
-        Returns a dict like:
-        {
-            "text": "...",
-            "chunks": [{"text": "...", "timestamp": (start, end)}, ...]
-        }
-        so your existing transcript_to_vtt/SRT functions keep working.
+        The key insight: We process smaller audio segments independently on GPU,
+        then merge results with corrected timestamps based on each chunk's offset.
         """
-        # 1) Resolve model id
-        # Default to multilingual Large v3 if nothing explicit is provided.
-        # Use English-only checkpoints when asked for EN and <= medium size.
+        # Model selection (keeping your existing logic)
         lang = (self._language or "en").lower()
-
         if self._model_name in (None, "", "whisper", "openai/whisper"):
-            size = (self._model_size or "medium").lower()
+            size = (self._model_size or "small").lower()
             if lang == "en" and size in {"tiny", "base", "small", "medium"}:
                 model_id = f"openai/whisper-{size}.en"
-            elif size == 'turbo':
+            elif size == "turbo":
                 model_id = "openai/whisper-large-v3-turbo"
             else:
-                # Large-v3 (or turbo) are multilingual and strong defaults.
-                # If you want maximum speed, switch to "-v3-turbo".
                 model_id = "openai/whisper-large-v3"
         else:
             model_id = self._model_name
 
-        # 2) Safety checks
+        # Load audio once
         audio_path = Path(audio_path)
         if not (audio_path.exists() and audio_path.stat().st_size > 0):
             return None
 
-        # 3) Device + dtype
-        device_idx, dev, torch_dtype = self._get_device()  # expect -1 (CPU) or 0/1/...
+        wav, sr = sf.read(str(audio_path), always_2d=False)
+        if wav.ndim == 2:
+            wav = wav.mean(axis=1)
+        wav = wav.astype(np.float32, copy=False)
 
-        # 4) Load model & processor
-        model = AutoModelForSpeechSeq2Seq.from_pretrained(
+        total_duration = len(wav) / float(sr)
+        print(f"[Whisper] Total audio duration: {total_duration:.2f} seconds")
+
+        # Device configuration
+        device_idx, dev, torch_dtype = self._get_device()
+        # Special handling for MPS or other non-standard devices
+        if isinstance(device_idx, str):
+            # MPS or other special case - treat as CPU for pipeline purposes
+            pipeline_device_idx = -1
+            print(
+                f"[Whisper] Using {device_idx} device (will use CPU pipeline mode)"
+            )
+        else:
+            pipeline_device_idx = device_idx
+
+        # Determine if we need manual chunking
+        # Rule of thumb: whisper-medium needs ~6GB for 60s of audio
+        needs_manual_chunk = (
+            manual_chunk and
+            isinstance(device_idx, int) and device_idx >= 0 and  # Using GPU
+            total_duration > max_chunk_duration  # Audio is long
+        )
+
+        print('[Whisper] Using model:', model_id, 'Chunking needed: ', needs_manual_chunk)
+
+        if needs_manual_chunk:
+            print(
+                f"[Whisper] Using manual chunking strategy (chunks of {max_chunk_duration}s)"
+            )
+            return self._process_chunks(
+                wav, sr, model_id, lang, pipeline_device_idx, dev, torch_dtype,
+                max_chunk_duration, word_timestamps
+            )
+        else:
+            # Use the standard pipeline for short audio or CPU processing
+            return self._process_pipeline(
+                wav, sr, model_id, lang, pipeline_device_idx, dev, torch_dtype,
+                chunk_length, word_timestamps
+            )
+
+    def _process_pipeline(
+        self,
+        wav: np.ndarray,
+        sr: int,
+        model_id: str,
+        lang: str,
+        device_idx: int,
+        torch_dev: str,
+        torch_dtype,
+        chunk_length: int,
+        word_timestamps: bool
+    ):
+        """Use HF pipeline's built-in chunking & timestamping."""
+        is_english_only = (
+            model_id.endswith('.en') or
+            '-en' in model_id.split('/')[-1] or
+            model_id.endswith('-en')
+        )
+
+        model = WhisperForConditionalGeneration.from_pretrained(
             model_id,
+            attn_implementation="eager",   # silence SDPA warning + future-proof
             torch_dtype=torch_dtype,
             low_cpu_mem_usage=True,
-            use_safetensors=True
-        ).to(dev)
+        ).to(torch_dev)
+        processor = WhisperProcessor.from_pretrained(model_id)
 
-        processor = AutoProcessor.from_pretrained(model_id)
+        chunk_length = int(chunk_length) if chunk_length else 30
+        stride = 6 if chunk_length >= 8 else max(1, chunk_length // 5)
 
-        # 5) Properly set language/task via forced decoder prompt ids
-        generate_kwargs = {}
-        try:
-            forced_ids = processor.get_decoder_prompt_ids(language=lang, task="transcribe")
-            if forced_ids:
-                generate_kwargs["forced_decoder_ids"] = forced_ids
-        except Exception:
-            # Some community checkpoints might not expose this utility; it's fine to skip.
-            pass
-
-        # 6) Build the pipeline
         asr = pipeline(
             task="automatic-speech-recognition",
             model=model,
             tokenizer=processor.tokenizer,
             feature_extractor=processor.feature_extractor,
-            device=device_idx,
-            chunk_length_s=chunk_length,  # long-form chunking
-            torch_dtype=torch_dtype,      # <-- fp16/bf16 on CUDA
-            batch_size=8,                 # adjust for your VRAM
+            device=device_idx if device_idx >= 0 else -1,
+            torch_dtype=torch_dtype,
+            chunk_length_s=chunk_length,
+            stride_length_s=stride,
+            batch_size=1
         )
 
-        # 7) Run — choose chunk timestamps (default) or word-level timestamps
-        ts_param = "word" if word_timestamps else True  # returns `chunks` either way
-        return asr(str(audio_path), return_timestamps=ts_param, generate_kwargs=generate_kwargs)
+        # Timestamp mode
+        ts_mode = "word" if word_timestamps else True
 
+        generate_kwargs = {
+            "temperature": 0.0,
+            "compression_ratio_threshold": 2.4,
+            "logprob_threshold": -1.0,
+            "no_speech_threshold": 0.6,
+        }
+        # Language forcing only when not English-only
+        if not is_english_only and lang:
+            try:
+                generate_kwargs["language"] = lang
+                generate_kwargs["task"] = "transcribe"
+            except Exception:
+                pass
+
+        # Let the pipeline handle attention_mask/padding
+        out = asr(
+            {"raw": wav, "sampling_rate": sr},
+            return_timestamps=ts_mode,
+            generate_kwargs=generate_kwargs,
+        )
+
+        chunks = out.get("chunks", [])
+        # normalize to your return shape
+        out['text'] = out.get("text") or " ".join(c["text"] for c in chunks)
+        return out
+
+    def _process_chunks(
+        self,
+        wav: np.ndarray,
+        sr: int,
+        model_id: str,
+        lang: str,
+        device_idx: int,
+        torch_dev: str,
+        torch_dtype,
+        max_chunk_duration: int,
+        word_timestamps: bool,
+        chunk_length: int = 60
+    ):
+        """
+        Robust audio chunking with better error handling and memory management.
+
+        This version addresses several key issues:
+        1. The 'input_ids' error by properly configuring the pipeline
+        2. The audio format issue in fallbacks
+        3. Memory management for smaller GPUs
+        4. Chunk processing stability
+        """
+        # For whisper-small on a 5.6GB GPU, we can use slightly larger chunks than medium
+        # whisper-small uses ~1.5GB, leaving ~4GB for processing
+        actual_chunk_duration = min(45, max_chunk_duration)  # Can handle 45s chunks with small
+
+        # Set environment variable for better memory management
+        os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
+
+        # English-only models end with '.en' or contain '-en' in their name
+        is_english_only = (
+            model_id.endswith('.en') or
+            '-en' in model_id.split('/')[-1] or
+            model_id.endswith('-en')
+        )
+
+        print(f"[Whisper] Model type: {'English-only' if is_english_only else 'Multilingual'}")
+        print(f"[Whisper] Using model: {model_id}")
+
+        chunk_samples = actual_chunk_duration * sr
+        overlap_duration = 2  # 2 seconds overlap to avoid cutting words
+        overlap_samples = overlap_duration * sr
+
+        print(f"[Whisper] Processing {len(wav)/sr:.1f}s audio in {actual_chunk_duration}s chunks")
+
+        all_results = []
+        offset = 0
+        chunk_idx = 0
+
+        # Load model once for all chunks (whisper-small fits comfortably in memory)
+        print(f"[Whisper] Loading {model_id} model...")
+        model = WhisperForConditionalGeneration.from_pretrained(
+            model_id,
+            attn_implementation="eager",           # <= fixes SDPA warning
+            torch_dtype=torch_dtype,
+            low_cpu_mem_usage=True,
+            use_safetensors=True,
+        ).to(torch_dev)
+        processor = WhisperProcessor.from_pretrained(model_id)
+
+        # Base generation kwargs - we'll be careful about what we pass
+        base_generate_kwargs = {
+            "temperature": 0.0,  # Deterministic to reduce hallucinations
+            "compression_ratio_threshold": 2.4,  # Detect repetitive text
+            "logprob_threshold": -1.0,
+            "no_speech_threshold": 0.6,
+        }
+
+        # Only add language forcing if it's properly supported
+        if not is_english_only:
+            try:
+                forced_ids = processor.get_decoder_prompt_ids(
+                    language=lang,
+                    task="transcribe"
+                )
+                if forced_ids:
+                    base_generate_kwargs["language"] = lang
+                    base_generate_kwargs["task"] = "transcribe"
+                    # Note: We don't pass forced_decoder_ids directly as it can cause issues
+            except Exception:
+                # If the processor doesn't support this, that's fine
+                pass
+
+        while offset < len(wav):
+            # Extract chunk
+            end_sample = min(offset + chunk_samples, len(wav))
+            chunk_wav = wav[offset:end_sample]
+
+            # Calculate timing for this chunk
+            time_offset = offset / float(sr)
+            chunk_duration = len(chunk_wav) / float(sr)
+
+            print(f"[Whisper] Processing chunk {chunk_idx + 1} "
+                f"({time_offset:.1f}s - {time_offset + chunk_duration:.1f}s)")
+
+            # Process this chunk with careful error handling
+            chunk_processed = False
+            attempts = [
+                ("standard", word_timestamps),
+                ("chunk_timestamps", False),  # Fallback to chunk timestamps
+                ("basic", False)  # Most basic mode
+            ]
+            chunk_length = int(chunk_length) if chunk_length else 30
+            stride = 6 if chunk_length >= 8 else max(1, chunk_length // 5)
+
+            for attempt_name, use_word_timestamps in attempts:
+                if chunk_processed:
+                    break
+
+                try:
+                    # Create a fresh pipeline for each chunk to avoid state issues
+                    # This is important for avoiding the 'input_ids' error
+                    asr = pipeline(
+                        task="automatic-speech-recognition",
+                        model=model,
+                        tokenizer=processor.tokenizer,
+                        feature_extractor=processor.feature_extractor,
+                        device=device_idx if device_idx >= 0 else -1,
+                        chunk_length_s=chunk_length,
+                        stride_length_s=stride,
+                        batch_size=1,
+                        torch_dtype=torch_dtype,
+                    )
+
+                    # Prepare audio input with the CORRECT format
+                    # This is crucial - the pipeline expects "raw" not "array"
+                    audio_input = {
+                        "raw": chunk_wav,
+                        "sampling_rate": sr
+                    }
+
+                    # Determine timestamp mode based on current attempt
+                    if use_word_timestamps:
+                        timestamp_param = "word"
+                    else:
+                        timestamp_param = True  # Chunk-level timestamps
+
+                    # Use a clean copy of generate_kwargs for each attempt
+                    # This prevents accumulation of incompatible parameters
+                    generate_kwargs = base_generate_kwargs.copy()
+
+                    # Process the chunk
+                    chunk_result = asr(
+                        audio_input,
+                        return_timestamps=timestamp_param,
+                        generate_kwargs=generate_kwargs
+                    )
+
+                    # Successfully processed - now handle the results
+                    if chunk_result and "chunks" in chunk_result:
+                        for item in chunk_result["chunks"]:
+                            # Adjust timestamps for this chunk's position
+                            if "timestamp" in item and item["timestamp"]:
+                                start, end = item["timestamp"]
+                                if start is not None:
+                                    start += time_offset
+                                if end is not None:
+                                    end += time_offset
+                                item["timestamp"] = (start, end)
+
+                            # Add metadata for merging
+                            item["_chunk_idx"] = chunk_idx
+                            item["_is_word"] = use_word_timestamps
+
+                        all_results.extend(chunk_result["chunks"])
+                        print(f"  ✓ Chunk {chunk_idx + 1}: {len(chunk_result['chunks'])} items "
+                            f"(mode: {attempt_name})")
+                        chunk_processed = True
+
+                    # Clean up the pipeline to free memory
+                    del asr
+                    gc.collect()
+                    if device_idx >= 0:
+                        torch.cuda.empty_cache()
+
+                except Exception as e:
+                    error_msg = str(e)
+                    print(f"  ✗ Attempt '{attempt_name}' failed: {error_msg[:100]}")
+
+                    # Clean up on error
+                    if 'asr' in locals():
+                        del asr
+                    gc.collect()
+                    if device_idx >= 0:
+                        torch.cuda.empty_cache()
+
+                    # Continue to next attempt
+                    continue
+
+            if not chunk_processed:
+                print(f"  ⚠ Chunk {chunk_idx + 1} could not be processed, skipping")
+
+            # Move to next chunk
+            if end_sample < len(wav):
+                offset += chunk_samples - overlap_samples
+            else:
+                break
+
+            chunk_idx += 1
+
+        # Clean up model after all chunks
+        del model
+        del processor
+        gc.collect()
+        if device_idx >= 0:
+            torch.cuda.empty_cache()
+
+        # Merge results based on whether we got word or chunk timestamps
+        # Check what we actually got (might be mixed if some chunks fell back)
+        has_word_timestamps = any(item.get("_is_word", False) for item in all_results)
+
+        if has_word_timestamps:
+            print("[Whisper] Merging word-level timestamps...")
+            final_chunks = self._merge_word_chunks(all_results, overlap_duration)
+        else:
+            print("[Whisper] Merging chunk-level timestamps...")
+            final_chunks = self._merge_overlapping_chunks(all_results, overlap_duration)
+
+        # Clean the results to remove any garbage/hallucinations
+        cleaned_chunks = []
+        for chunk in final_chunks:
+            text = chunk.get("text", "").strip()
+
+            # Filter out common hallucination patterns
+            if not text:
+                continue
+            if len(set(text)) < 3 and len(text) > 10:  # Repetitive characters
+                continue
+            if text.count("$") > len(text) * 0.5:  # Too many special characters
+                continue
+            if text.count("�") > 0:  # Unicode errors
+                continue
+
+            chunk["text"] = text
+            cleaned_chunks.append(chunk)
+
+        # Build the final result
+        result = {
+            "chunks": cleaned_chunks,
+            "text": " ".join(ch["text"] for ch in cleaned_chunks),
+            "word_timestamps": has_word_timestamps
+        }
+
+        print(f"[Whisper] Transcription complete: {len(cleaned_chunks)} segments, "
+            f"{len(result['text'].split())} words")
+
+        return result
+
+    def _merge_overlapping_chunks(self, chunks: List[dict], overlap_duration: float) -> List[dict]:
+        """
+        Intelligently merge chunks that might have overlapping content.
+
+        When we process overlapping audio segments, we might get duplicate
+        transcriptions at the boundaries. This function:
+        1. Detects potential duplicates based on timestamp overlap
+        2. Keeps the best version (usually from the chunk where it's not at the edge)
+        3. Maintains temporal order
+        """
+        if not chunks:
+            return []
+
+        # Sort by start time
+        chunks.sort(key=lambda x: x.get("timestamp", (0,))[0] or 0)
+
+        merged = []
+        for chunk in chunks:
+            if not chunk.get("text", "").strip():
+                continue
+
+            timestamp = chunk.get("timestamp", (None, None))
+            if not timestamp or timestamp[0] is None:
+                continue
+
+            # Check if this chunk overlaps significantly with the last merged chunk
+            if merged:
+                last = merged[-1]
+                last_ts = last.get("timestamp", (None, None))
+
+                if last_ts and last_ts[1] and timestamp[0]:
+                    # If timestamps overlap significantly
+                    overlap = last_ts[1] - timestamp[0]
+                    if overlap > 0.5:  # More than 0.5 second overlap
+                        # Compare text similarity to detect duplicates
+                        last_text = last.get("text", "").strip().lower()
+                        curr_text = chunk.get("text", "").strip().lower()
+
+                        # Simple duplicate detection
+                        if last_text == curr_text:
+                            # Skip this duplicate
+                            continue
+
+                        # If texts are very similar (e.g., one is subset of another)
+                        if len(last_text) > 10 and len(curr_text) > 10:
+                            if last_text in curr_text or curr_text in last_text:
+                                # Keep the longer version
+                                if len(curr_text) > len(last_text):
+                                    merged[-1] = chunk
+                                continue
+
+            merged.append(chunk)
+
+        return merged
+
+    def _merge_word_chunks(self, chunks: List[dict], overlap_duration: float) -> List[dict]:
+        """
+        Special merging logic for word-level timestamps.
+
+        Word-level chunks need more careful handling because:
+        1. Words at boundaries might appear in multiple chunks
+        2. Timestamp precision is more important
+        3. We need to maintain word order exactly
+        """
+        if not chunks:
+            return []
+
+        # Sort by start timestamp
+        chunks.sort(key=lambda x: (x.get("timestamp", (0,))[0] or 0, x.get("_chunk_idx", 0)))
+
+        merged = []
+        seen_words = set()  # Track (word, approximate_time) to avoid duplicates
+
+        for chunk in chunks:
+            word = chunk.get("text", "").strip()
+            if not word:
+                continue
+
+            timestamp = chunk.get("timestamp", (None, None))
+            if not timestamp or timestamp[0] is None:
+                continue
+
+            # Create a key for duplicate detection
+            # Round timestamp to nearest 0.1s for fuzzy matching
+            time_key = round(timestamp[0], 1)
+            word_key = (word.lower(), time_key)
+
+            # Skip if we've seen this word at approximately this time
+            if word_key in seen_words:
+                continue
+
+            seen_words.add(word_key)
+            merged.append(chunk)
+
+        return merged
 
     @abstractmethod
     async def _load(self, source: str, **kwargs) -> List[Document]:

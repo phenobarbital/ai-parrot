@@ -14,7 +14,7 @@ class AudioLoader(BaseVideoLoader):
     def load_video(self, path):
         return
 
-    def load_audio(self, path: PurePath) -> list:
+    async def load_audio(self, path: PurePath) -> list:
         metadata = {
             "source": f"{path}",
             "url": f"{path.name}",
@@ -28,27 +28,59 @@ class AudioLoader(BaseVideoLoader):
             }
         }
         documents = []
-        transcript_path = path.with_suffix('.vtt')
+
+        # Paths for outputs
+        vtt_path = path.with_suffix(".vtt")
+        txt_path = path.with_suffix(".txt")
+        srt_path = path.with_suffix(".srt")
+
+        # ensure a clean 16k Hz mono wav file for whisper
+        wav_path = self.ensure_wav_16k_mono(path)
         # get the Whisper parser
-        transcript_whisper = self.get_whisper_transcript(path)
-        if transcript_whisper:
-            transcript = transcript_whisper['text']
-        else:
-            transcript = ''
+        transcript_whisper = self.get_whisper_transcript(wav_path, manual_chunk=False, word_timestamps=False)
+        transcript = transcript_whisper.get('text', '') if transcript_whisper else ''
+        try:
+            self.saving_file(txt_path, transcript.encode("utf-8"))
+            print(f"Saved TXT transcript to: {txt_path}")
+        except Exception as exc:
+            print(f"Error saving TXT transcript: {exc}")
+        # diarization:
+        if self._diarization:
+            srt = self.audio_to_srt(
+                audio_path=wav_path,
+                asr=transcript_whisper,
+                speaker_names=["Bot", "Agent", "Customer"],
+                output_srt_path=srt_path,
+                distance_threshold=0.6
+            )
+            if srt:
+                doc = Document(
+                    page_content=srt,
+                    metadata={
+                        "source": f"{srt_path}",
+                        "url": f"{srt_path.name}",
+                        "filename": f"{path}",
+                        'type': 'audio_transcript',
+                        "source_type": 'AUDIO',
+                    }
+                )
         # Summarize the transcript
         if transcript:
-            summary = self.summary_from_text(transcript)
-            # Create Two Documents, one is for transcript, second is VTT:
-            doc = Document(
-                page_content=summary,
-                metadata=metadata
-            )
-            documents.append(doc)
+            try:
+                summary = await self.summary_from_text(transcript)
+                # Create Two Documents, one is for transcript, second is VTT:
+                doc = Document(
+                    page_content=summary,
+                    metadata=metadata
+                )
+                documents.append(doc)
+            except Exception as exc:
+                print(f"Error generating summary: {exc}")
         if transcript_whisper:
             # VTT version:
-            transcript = self.transcript_to_vtt(transcript_whisper, transcript_path)
+            vtt_text = self.transcript_to_vtt(transcript_whisper, vtt_path)
             doc = Document(
-                page_content=transcript,
+                page_content=vtt_text,
                 metadata=metadata
             )
             documents.append(doc)
@@ -76,7 +108,7 @@ class AudioLoader(BaseVideoLoader):
             documents.extend(docs)
         return documents
 
-    def extract_audio(self, path: PurePath) -> list:
+    async def extract_audio(self, path: PurePath) -> list:
         metadata = {
             "source": f"{path}",
             "url": f"{path.name}",
@@ -100,7 +132,7 @@ class AudioLoader(BaseVideoLoader):
         # Summarize the transcript
         self.saving_file(transcript_path, transcript.encode('utf-8'))
         if transcript:
-            summary = self.summary_from_text(transcript)
+            summary = await self.summary_from_text(transcript)
             # Create Two Documents, one is for transcript, second is VTT:
             metadata['summary'] = summary
             self.saving_file(summary_path, summary.encode('utf-8'))
@@ -109,4 +141,4 @@ class AudioLoader(BaseVideoLoader):
         return metadata
 
     async def _load(self, source, **kwargs) -> List[Document]:
-        return self.load_audio(source)
+        return await self.load_audio(source)
