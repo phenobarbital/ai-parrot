@@ -484,6 +484,9 @@ class BaseVideoLoader(AbstractLoader):
         ).to(torch_dev)
         processor = WhisperProcessor.from_pretrained(model_id)
 
+        chunk_length = int(chunk_length) if chunk_length else 30
+        stride = 6 if chunk_length >= 8 else max(1, chunk_length // 5)
+
         asr = pipeline(
             task="automatic-speech-recognition",
             model=model,
@@ -492,7 +495,7 @@ class BaseVideoLoader(AbstractLoader):
             device=device_idx if device_idx >= 0 else -1,
             torch_dtype=torch_dtype,
             chunk_length_s=chunk_length,
-            stride_length_s=6,
+            stride_length_s=stride,
             batch_size=1
         )
 
@@ -576,13 +579,6 @@ class BaseVideoLoader(AbstractLoader):
 
         # Load model once for all chunks (whisper-small fits comfortably in memory)
         print(f"[Whisper] Loading {model_id} model...")
-        # model = AutoModelForSpeechSeq2Seq.from_pretrained(
-        #     model_id,
-        #     torch_dtype=torch_dtype,
-        #     low_cpu_mem_usage=True,
-        #     use_safetensors=True,
-        #     attn_implementation="eager"  # Avoid SDPA issues
-        # ).to(torch_dev)
         model = WhisperForConditionalGeneration.from_pretrained(
             model_id,
             attn_implementation="eager",           # <= fixes SDPA warning
@@ -590,8 +586,6 @@ class BaseVideoLoader(AbstractLoader):
             low_cpu_mem_usage=True,
             use_safetensors=True,
         ).to(torch_dev)
-
-        # processor = AutoProcessor.from_pretrained(model_id)
         processor = WhisperProcessor.from_pretrained(model_id)
 
         # Base generation kwargs - we'll be careful about what we pass
@@ -636,6 +630,8 @@ class BaseVideoLoader(AbstractLoader):
                 ("chunk_timestamps", False),  # Fallback to chunk timestamps
                 ("basic", False)  # Most basic mode
             ]
+            chunk_length = int(chunk_length) if chunk_length else 30
+            stride = 6 if chunk_length >= 8 else max(1, chunk_length // 5)
 
             for attempt_name, use_word_timestamps in attempts:
                 if chunk_processed:
@@ -651,7 +647,7 @@ class BaseVideoLoader(AbstractLoader):
                         feature_extractor=processor.feature_extractor,
                         device=device_idx if device_idx >= 0 else -1,
                         chunk_length_s=chunk_length,
-                        stride_length_s=6,
+                        stride_length_s=stride,
                         batch_size=1,
                         torch_dtype=torch_dtype,
                     )
