@@ -148,108 +148,141 @@ class BaseVideoLoader(AbstractLoader):
     def audio_to_srt(
         self,
         audio_path: Path,
-        asr: Any = None,
+        asr: dict | None = None,
         speaker_names: Optional[List[str]] = None,
         output_srt_path: Optional[Path] = None,
         frame_hop_s: float = 0.75,
-        distance_threshold: float = 0.6,
+        distance_threshold: float = 0.35,   # cosine distance; 0.25–0.4 often works well
+        min_spk_seg_s: float = 0.8,         # merge diarization segments shorter than this
+        collar_s: float = 0.2               # merge tiny gaps between same-speaker segments
     ) -> str:
         """
         Generate SRT with speaker labels using Resemblyzer diarization + Whisper ASR.
-
-        Steps:
-        - ensure 16k mono WAV
-        - Whisper transcription -> chunk timestamps + text
-        - Resemblyzer partial embeddings -> Agglomerative clustering with distance threshold
-        - Assign the majority speaker label to each ASR chunk
-        - Render SRT ("Speaker N:" or mapped names)
-
-        Args:
-            speaker_names: Optional list like ["Agent", "Customer", ...] to map 0,1,2...
-            distance_threshold: Lower -> more speakers; higher -> fewer.
+        - Assumes `asr` is the HF pipeline output with `chunks` each having ("timestamp": (start, end), "text": ...).
+        - Uses cosine distance hierarchical clustering for diarization.
         """
-        # 1) Make sure we have 16k mono WAV for robust/consistent embeddings
-        wav_path = self.ensure_wav_16k_mono(audio_path)
-
-        # 3) Resemblyzer embeddings over sliding windows
-        wav = preprocess_wav(wav_path)  # resampled to 16k internally
+        # 1) Resemblyzer embeddings over sliding windows ----------
+        wav16k = preprocess_wav(audio_path)  # -> 16k mono float32
         encoder = VoiceEncoder()
 
-        # We want partials/frames to diarize over time
+        # Frames per second for partials (= 1 / frame_hop_s)
+        assert frame_hop_s > 0, "frame_hop_s must be > 0"
+        rate = max(1, int(round(1.0 / frame_hop_s)))
         _, partial_embeds, wav_splits = encoder.embed_utterance(
-            wav, return_partials=True, rate=int(1 / frame_hop_s)
+            wav16k, return_partials=True, rate=rate
         )
-        # partial_embeds: [N, 256], wav_splits: list of (start_sample, end_sample)
-        if len(partial_embeds) == 0:
+        if partial_embeds is None:
             raise RuntimeError("Could not compute partial embeddings for diarization.")
-        partial_embeds = np.asarray(partial_embeds)
 
-        # 4) Frame centers (seconds) based on wav_splits at 16k
+        partial_embeds = np.asarray(partial_embeds, dtype=np.float32)  # [N, 256]
+        if partial_embeds.size == 0:
+            raise RuntimeError("Empty partial embeddings from diarization.")
+        # Frame centers (seconds) at 16kHz
         sr = 16000.0
         times_sec = np.array([(s + e) / 2.0 / sr for (s, e) in wav_splits], dtype=np.float32)
 
-        # 5) Cluster with automatic number of speakers (via distance_threshold)
+        # ---------- 2) HAC diarization (cosine distance) ----------
+        # NOTE: In recent scikit-learn versions use `metric`, not `affinity`.
+        # `metric="cosine"` needs linkage "average" or "complete".
         clustering = AgglomerativeClustering(
             n_clusters=None,
-            affinity="euclidean",
+            metric="cosine",
             linkage="average",
-            distance_threshold=distance_threshold
+            distance_threshold=distance_threshold,
+            compute_full_tree=True,
         )
         labels = clustering.fit_predict(partial_embeds)
 
-        # 6) Collapse frame-level labels to contiguous segments (helps later lookup)
-        diar_segments = _collapse_labels_to_segments(times_sec, labels)
-        # (start, end, speaker_id) with end < next start by construction
+        # ---------- 3) Collapse frame-level labels to contiguous segments ----------
+        def _collapse_labels_to_segments(t: np.ndarray, y: np.ndarray) -> list[tuple[float,float,int]]:
+            segs = []
+            if len(t) == 0:
+                return segs
+            start = t[0]
+            cur = int(y[0])
+            for i in range(1, len(t)):
+                if int(y[i]) != cur:
+                    end = t[i-1]
+                    segs.append((float(start), float(end), int(cur)))
+                    start = t[i]
+                    cur = int(y[i])
+            segs.append((float(start), float(t[-1]), int(cur)))
+            return segs
 
-        # Helper to find majority label for an interval
+        diar_segments = _collapse_labels_to_segments(times_sec, labels)
+
+        # Optional smoothing: merge very short segments and tiny gaps
+        def _merge_short_and_collared(segs: list[tuple[float,float,int]]) -> list[tuple[float,float,int]]:
+            if not segs:
+                return segs
+            merged = [segs[0]]
+            for (s, e, spk) in segs[1:]:
+                ps, pe, pspk = merged[-1]
+                # merge if same speaker and close in time, or previous is too short
+                if spk == pspk and (s - pe) <= collar_s:
+                    merged[-1] = (ps, max(pe, e), pspk)
+                elif (pe - ps) < min_spk_seg_s and (
+                    spk == pspk or (s - pe) <= collar_s
+                ):
+                    # absorb short prev into current when reasonable
+                    merged[-1] = (ps, e, pspk if spk == pspk else spk)
+                else:
+                    merged.append((s, e, spk))
+            return merged
+
+        diar_segments = _merge_short_and_collared(diar_segments)
+
+        # For quick lookup: majority speaker inside an interval
+        times_sec_arr = times_sec  # alias
+        labels_arr = labels
+
         def majority_label(start_t: float, end_t: float) -> int:
-            # Select frames whose centers fall inside [start_t, end_t]
-            mask = (times_sec >= start_t) & (times_sec <= end_t)
+            mask = (times_sec_arr >= start_t) & (times_sec_arr <= end_t)
             if not np.any(mask):
-                # fallback: nearest frame
-                nearest = int(np.argmin(np.abs(times_sec - (0.5 * (start_t + end_t)))))
-                return int(labels[nearest])
-            ls = labels[mask]
-            # majority vote
+                # fallback: nearest frame center
+                nearest = int(np.argmin(np.abs(times_sec_arr - (0.5 * (start_t + end_t)))))
+                return int(labels_arr[nearest])
+            ls = labels_arr[mask]
             vals, counts = np.unique(ls, return_counts=True)
             return int(vals[np.argmax(counts)])
 
-        # 7) Build SRT lines by assigning a speaker to each ASR chunk
+        # ---------- 4) Build SRT lines ----------
+        def _fmt_srt_time(t: float) -> str:
+            # HH:MM:SS,mmm
+            ms = int(round((t % 1) * 1000))
+            s = int(t) % 60
+            m = (int(t) // 60) % 60
+            h = int(t) // 3600
+            return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
+
+        if asr is None or "chunks" not in asr or not isinstance(asr["chunks"], list) or len(asr["chunks"]) == 0:
+            raise ValueError("`asr` must be an HF ASR output dict with a non-empty 'chunks' list.")
+
         srt_lines = []
         idx = 1
         for ch in asr["chunks"]:
-            # Whisper HF pipeline returns chunk dicts with ("timestamp": (start, end), "text": ...)
             ts = ch.get("timestamp")
-            if (not ts) or (ts[0] is None) or (ts[1] is None):
+            text = (ch.get("text") or "").strip().replace("\n", " ")
+            if not ts or ts[0] is None or ts[1] is None or not text:
                 continue
             start, end = float(ts[0]), float(ts[1])
             if end <= start:
                 continue
 
-            # tiny guard: ensure interval has some diar frames (or pick nearest)
             spk_id = majority_label(start, end)
-
             speaker_label = f"Speaker {spk_id + 1}"
-            if speaker_names and spk_id < len(speaker_names):
+            if speaker_names and 0 <= spk_id < len(speaker_names):
                 speaker_label = speaker_names[spk_id]
 
-            text = ch.get("text", "").strip().replace("\n", " ")
-            if not text:
-                continue
-
-            start_s = _fmt_srt_time(start)
-            end_s = _fmt_srt_time(end)
-            srt_lines.append(f"{idx}\n{start_s} --> {end_s}\n{speaker_label}: {text}\n")
+            srt_lines.append(
+                f"{idx}\n{_fmt_srt_time(start)} --> { _fmt_srt_time(end)}\n{speaker_label}: {text}\n"
+            )
             idx += 1
 
         srt = "\n".join(srt_lines) + ("\n" if srt_lines else "")
-
         if output_srt_path:
-            output_srt_path = Path(output_srt_path)
-            output_srt_path.write_text(srt, encoding="utf-8")
-
+            Path(output_srt_path).write_text(srt, encoding="utf-8")
         return srt
-
 
     def format_timestamp(self, seconds):
         # This helper function takes the total seconds and formats it into hh:mm:ss,ms
