@@ -4,26 +4,28 @@ from abc import abstractmethod
 import gc
 import os
 import logging
+import math
 from pathlib import Path
 from moviepy.editor import VideoFileClip
 from pydub import AudioSegment
 import soundfile as sf
 import numpy as np
-from resemblyzer import VoiceEncoder, preprocess_wav
-from sklearn.cluster import AgglomerativeClustering
+import whisperx
 import torch
 from transformers import (
     pipeline,
-    AutoModelForSpeechSeq2Seq,
-    AutoProcessor,
     AutoModelForSeq2SeqLM,
     AutoTokenizer,
     WhisperProcessor,
     WhisperForConditionalGeneration
 )
-from navconfig import config
+from ..conf import HUGGINGFACEHUB_API_TOKEN
 from ..stores.models import Document
 from .abstract import AbstractLoader
+
+
+torch.backends.cuda.matmul.allow_tf32 = True
+torch.backends.cudnn.allow_tf32 = True
 
 
 logging.getLogger(name='numba').setLevel(logging.WARNING)
@@ -33,26 +35,6 @@ def extract_video_id(url):
     parts = url.split("?v=")
     video_id = parts[1].split("&")[0]
     return video_id
-
-def _collapse_labels_to_segments(times_sec: np.ndarray, labels: np.ndarray):
-    """
-    Collapse frame-level labels into contiguous (start, end, label) segments.
-    times_sec is the center time of each frame (shape: [N]).
-    """
-    if len(labels) == 0:
-        return []
-    segs = []
-    cur_label = labels[0]
-    start_t = times_sec[0]
-    for i in range(1, len(labels)):
-        if labels[i] != cur_label:
-            end_t = times_sec[i-1]
-            segs.append((float(start_t), float(end_t), int(cur_label)))
-            cur_label = labels[i]
-            start_t = times_sec[i]
-    # tail
-    segs.append((float(start_t), float(times_sec[-1]), int(cur_label)))
-    return segs
 
 def _fmt_srt_time(t: float) -> str:
     hrs, rem = divmod(int(t), 3600)
@@ -148,141 +130,570 @@ class BaseVideoLoader(AbstractLoader):
     def audio_to_srt(
         self,
         audio_path: Path,
-        asr: dict | None = None,
-        speaker_names: Optional[List[str]] = None,
-        output_srt_path: Optional[Path] = None,
-        frame_hop_s: float = 0.75,
-        distance_threshold: float = 0.35,   # cosine distance; 0.25–0.4 often works well
-        min_spk_seg_s: float = 0.8,         # merge diarization segments shorter than this
-        collar_s: float = 0.2               # merge tiny gaps between same-speaker segments
-    ) -> str:
+        asr=None,                        # expects output of get_whisper_transcript() above
+        speaker_names=None,              # e.g. ["Bot","Agent","Customer"]
+        output_srt_path=None,
+        pyannote_token: str = None,
+        max_gap_s: float = 0.5,
+        max_chars: int = 90,
+        max_duration_s: float = 8.0,
+        min_speakers: int = 1,
+        max_speakers: int = 2,
+        speaker_corrections: dict = None,  # Manual corrections for specific segments
+        merge_short_segments: bool = True,  # Merge very short adjacent segments
+        min_segment_duration: float = 0.5,  # Minimum duration for a segment
+    ):
         """
-        Generate SRT with speaker labels using Resemblyzer diarization + Whisper ASR.
-        - Assumes `asr` is the HF pipeline output with `chunks` each having ("timestamp": (start, end), "text": ...).
-        - Uses cosine distance hierarchical clustering for diarization.
+        Build an SRT subtitle string from a call recording using WhisperX-aligned words and
+        Pyannote-based diarization (speaker attribution). Optionally writes the result to disk.
+
+        This function consumes a WhisperX-style transcript (with word-level timestamps),
+        performs speaker diarization (optionally constrained to a given speaker count),
+        assigns speakers to words, and groups words into readable subtitle segments with
+        length, gap, and duration constraints.
+
+        Parameters
+        ----------
+        audio_path : pathlib.Path
+            Path to the audio file used for diarization (e.g., preconverted mono 16 kHz WAV).
+            Even if `asr` is provided, this file is required to run the diarization pipeline.
+        asr : dict, optional
+            WhisperX transcript object containing aligned segments and words.
+            Expected schema:
+                {
+                "text": "...",
+                "language": "en",
+                "chunks": [
+                    {
+                    "text": "utterance text",
+                    "timestamp": (start: float, end: float),
+                    "words": [
+                        {"word": "Hello", "start": 0.50, "end": 0.72},
+                        ...
+                    ]
+                    },
+                    ...
+                ]
+                }
+            If None or missing `chunks`, a ValueError is raised.
+        speaker_names : list[str] | tuple[str] | None, optional
+            Friendly labels to apply to speakers in **first-appearance order** after diarization.
+            For example, `["Bot", "Agent", "Customer"]`. If not provided, WhisperX/Pyannote
+            speaker IDs (e.g., "SPEAKER_00") are used as-is. If the number of detected
+            speakers exceeds this list, remaining speakers retain their original IDs.
+        output_srt_path : str | pathlib.Path | None, optional
+            If provided, the generated SRT text is written to this path (UTF-8). If omitted,
+            nothing is written to disk.
+        pyannote_token : str | None, optional
+            Hugging Face access token used by Pyannote diarization models. If not provided,
+            the function attempts to read it from the `PYANNOTE_AUDIO_AUTH` environment variable.
+            Required for diarization.
+        max_gap_s : float, default=0.5
+            Maximum allowed *silence* between consecutive words when aggregating them into a
+            single SRT subtitle line. A larger value yields longer lines; a smaller value
+            creates more, shorter lines.
+        max_chars : int, default=90
+            Soft limit on the number of characters per SRT subtitle line. When adding the next
+            word would exceed this threshold, a new subtitle block is started.
+        max_duration_s : float, default=8.0
+            Maximum duration (seconds) permitted for a single subtitle block. If adding the next
+            word would exceed this duration, a new block is started.
+        min_speakers : int, default=1
+            Lower bound on the number of speakers provided to the diarization pipeline.
+            Useful to avoid the "everything merges into one speaker" failure mode.
+        max_speakers : int, default=2
+            Upper bound on the number of speakers provided to the diarization pipeline.
+            Set both `min_speakers` and `max_speakers` to the exact expected number (e.g., 3)
+            to force a fixed speaker count.
+        speaker_corrections : dict | None, optional
+            Mapping to apply manual, deterministic speaker fixes after diarization and before
+            SRT grouping. The expected shape is flexible, but a common pattern is:
+                {
+                # remap entire diarized IDs
+                "SPEAKER_00": "Bot",
+                # or time-bounded corrections
+                (start_s, end_s): "Customer"
+                }
+            When keys are tuples (start, end), any words whose timestamps fall within that
+            interval are reassigned to the specified label/ID.
+        merge_short_segments : bool, default=True
+            If True, very short adjacent subtitle segments (e.g., created by rapid speaker
+            switches or punctuation) may be merged when safe (same speaker, small gap, within
+            `max_chars` and `max_duration_s`), improving readability.
+        min_segment_duration : float, default=0.5
+            Minimum duration (seconds) target when merging very short segments. Only applies
+            if `merge_short_segments=True`.
+
+        Returns
+        -------
+        str
+            A UTF-8 string containing the SRT-formatted transcript with speaker labels, where
+            each subtitle block follows the standard:
+                <index>
+                HH:MM:SS,mmm --> HH:MM:SS,mmm
+                <Speaker>: <text>
+            If `output_srt_path` is provided, the same content is also written to that file.
+
+        Raises
+        ------
+        ValueError
+            If `asr` is None or does not contain a `chunks` list with valid timestamps.
+        RuntimeError
+            If the diarization pipeline cannot be initialized (e.g., missing `pyannote_token`)
+            or if internal alignment/speaker assignment fails unexpectedly.
+        FileNotFoundError
+            If `audio_path` does not exist.
+
+        Notes
+        -----
+        - **Word-level accuracy**: Speaker assignment happens per word (not per sentence),
+        allowing accurate handling of interruptions and fast turn-taking.
+        - **Speaker mapping**: If `speaker_names` is provided, the first diarized speaker to
+        appear in time is mapped to `speaker_names[0]`, the second to `[1]`, etc.
+        - **Determinism**: Pyannote diarization can be non-deterministic across environments.
+        Pinning dependency versions and disabling/controlling TF32 may help reproducibility.
+        - **Performance**: On low-VRAM systems, consider running diarization on CPU while
+        keeping ASR/alignment on GPU. The function itself is agnostic to device placement
+        as long as the underlying pipeline is configured accordingly.
+
+        Examples
+        --------
+        Basic usage with forced 3 speakers and file output:
+
+        >>> srt = self.audio_to_srt(
+        ...     audio_path=Path("call_16k_mono.wav"),
+        ...     asr=transcript,  # from get_whisper_transcript() / WhisperX
+        ...     speaker_names=["Bot", "Agent", "Customer"],
+        ...     output_srt_path="call.srt",
+        ...     pyannote_token=os.environ["PYANNOTE_AUDIO_AUTH"],
+        ...     min_speakers=3, max_speakers=3,
+        ... )
+
+        Apply manual speaker correction for the first 8 seconds as "Bot":
+
+        >>> srt = self.audio_to_srt(
+        ...     audio_path=Path("call.wav"),
+        ...     asr=transcript,
+        ...     pyannote_token=token,
+        ...     speaker_corrections={(0.0, 8.0): "Bot"},
+        ... )
+
+        Tighter line grouping (shorter blocks):
+
+        >>> srt = self.audio_to_srt(
+        ...     audio_path=Path("call.wav"),
+        ...     asr=transcript,
+        ...     pyannote_token=token,
+        ...     max_gap_s=0.35, max_chars=70, max_duration_s=6.0,
+        ... )
         """
-        # 1) Resemblyzer embeddings over sliding windows ----------
-        wav16k = preprocess_wav(audio_path)  # -> 16k mono float32
-        encoder = VoiceEncoder()
+        def _safe_float(x):
+            try:
+                xf = float(x)
+                if math.isfinite(xf):
+                    return xf
+            except Exception:
+                pass
+            return None
 
-        # Frames per second for partials (= 1 / frame_hop_s)
-        assert frame_hop_s > 0, "frame_hop_s must be > 0"
-        rate = max(1, int(round(1.0 / frame_hop_s)))
-        _, partial_embeds, wav_splits = encoder.embed_utterance(
-            wav16k, return_partials=True, rate=rate
+        if not asr or not asr.get("chunks"):
+            raise ValueError(
+                "audio_to_srt requires the WhisperX transcript (chunks with words)."
+            )
+
+        # Use the existing _get_device method
+        pipeline_idx, _, _ = self._get_device()
+        # Determine device string for WhisperX/pyannote
+        if isinstance(pipeline_idx, str):
+            # MPS or other special device
+            device = pipeline_idx
+        elif pipeline_idx >= 0:
+            # CUDA device
+            device = f"cuda:{pipeline_idx}"
+        else:
+            # CPU
+            device = "cpu"
+
+        token = pyannote_token or HUGGINGFACEHUB_API_TOKEN
+        if not token:
+            raise RuntimeError(
+                "Missing PYANNOTE token. Set PYANNOTE_AUDIO_AUTH or pass pyannote_token=..."
+            )
+
+        # 1) Run WhisperX diarization on the file
+        try:
+            diarizer = whisperx.diarize.DiarizationPipeline(
+                use_auth_token=token,
+                device=device
+            )
+        except Exception as e:
+            if "mps" in str(e).lower() and device == "mps":
+                print(f"[WhisperX] MPS diarization failed ({e}), falling back to CPU")
+                device = "cpu"
+                diarizer = whisperx.diarize.DiarizationPipeline(
+                    use_auth_token=token,
+                    device=device
+                )
+            else:
+                raise
+
+        if speaker_names and len(speaker_names) > 1:
+            min_speakers = max(2, len(speaker_names) - 1)
+            max_speakers = len(speaker_names) + 1
+        diar = diarizer(
+            str(audio_path),
+            min_speakers=min_speakers,
+            max_speakers=max_speakers,
         )
-        if partial_embeds is None:
-            raise RuntimeError("Could not compute partial embeddings for diarization.")
+        # 2) Build segments for speaker assignment
+        segments = []
+        for ch in asr["chunks"]:
+            s, e = ch.get("timestamp") or (None, None)
+            s = _safe_float(s)
+            e = _safe_float(e)
+            if s is None or e is None or e <= s:
+                continue
+            seg_words = []
+            for w in ch.get("words") or []:
+                ws = _safe_float(w.get("start"))
+                we = _safe_float(w.get("end"))
+                token = (w.get("word") or "").strip()
+                if ws is None or we is None or we <= ws or not token:
+                    continue
+                seg_words.append({"word": token, "start": ws, "end": we})
+            segments.append({
+                "start": s,
+                "end": e,
+                "text": ch.get("text") or "",
+                "words": seg_words
+            })
 
-        partial_embeds = np.asarray(partial_embeds, dtype=np.float32)  # [N, 256]
-        if partial_embeds.size == 0:
-            raise RuntimeError("Empty partial embeddings from diarization.")
-        # Frame centers (seconds) at 16kHz
-        sr = 16000.0
-        times_sec = np.array([(s + e) / 2.0 / sr for (s, e) in wav_splits], dtype=np.float32)
+        # Assign speakers to words
+        assigned = whisperx.assign_word_speakers(diar, {"segments": segments})
+        segments = assigned.get("segments", [])
 
-        # ---------- 2) HAC diarization (cosine distance) ----------
-        # NOTE: In recent scikit-learn versions use `metric`, not `affinity`.
-        # `metric="cosine"` needs linkage "average" or "complete".
-        clustering = AgglomerativeClustering(
-            n_clusters=None,
-            metric="cosine",
-            linkage="average",
-            distance_threshold=distance_threshold,
-            compute_full_tree=True,
+        # 3) Detect speaker changes and apply corrections
+        speaker_segments = self._detect_speaker_segments(segments, min_segment_duration)
+
+        # Apply manual corrections if provided
+        if speaker_corrections:
+            speaker_segments = self._apply_speaker_corrections(
+                speaker_segments,
+                speaker_corrections
+            )
+
+        # 4) Map speakers to names
+        sp_map = self._create_speaker_mapping(
+            speaker_segments,
+            speaker_names
         )
-        labels = clustering.fit_predict(partial_embeds)
 
-        # ---------- 3) Collapse frame-level labels to contiguous segments ----------
-        def _collapse_labels_to_segments(t: np.ndarray, y: np.ndarray) -> list[tuple[float,float,int]]:
-            segs = []
-            if len(t) == 0:
-                return segs
-            start = t[0]
-            cur = int(y[0])
-            for i in range(1, len(t)):
-                if int(y[i]) != cur:
-                    end = t[i-1]
-                    segs.append((float(start), float(end), int(cur)))
-                    start = t[i]
-                    cur = int(y[i])
-            segs.append((float(start), float(t[-1]), int(cur)))
-            return segs
+        # 5) Generate SRT with improved speaker labels
+        srt_lines = self._generate_srt_lines(
+            speaker_segments,
+            sp_map,
+            max_gap_s,
+            max_chars,
+            max_duration_s,
+            merge_short_segments
+        )
 
-        diar_segments = _collapse_labels_to_segments(times_sec, labels)
+        srt_text = ("\n".join(srt_lines) + "\n") if srt_lines else ""
 
-        # Optional smoothing: merge very short segments and tiny gaps
-        def _merge_short_and_collared(segs: list[tuple[float,float,int]]) -> list[tuple[float,float,int]]:
-            if not segs:
-                return segs
-            merged = [segs[0]]
-            for (s, e, spk) in segs[1:]:
-                ps, pe, pspk = merged[-1]
-                # merge if same speaker and close in time, or previous is too short
-                if spk == pspk and (s - pe) <= collar_s:
-                    merged[-1] = (ps, max(pe, e), pspk)
-                elif (pe - ps) < min_spk_seg_s and (
-                    spk == pspk or (s - pe) <= collar_s
-                ):
-                    # absorb short prev into current when reasonable
-                    merged[-1] = (ps, e, pspk if spk == pspk else spk)
+        if output_srt_path:
+            Path(output_srt_path).write_text(srt_text, encoding="utf-8")
+
+        # Cleanup
+        gc.collect()
+        if device.startswith("cuda"):
+            torch.cuda.empty_cache()
+
+        return srt_text
+
+    def _detect_speaker_segments(self, segments: list, min_duration: float = 0.5) -> list:
+        """
+        Detect speaker segments with better change detection.
+
+        Groups consecutive words by the same speaker and detects speaker changes
+        based on gaps in speech or explicit speaker labels.
+        """
+        if not segments:
+            return []
+
+        speaker_segments = []
+        current_speaker = None
+        current_start = None
+        current_end = None
+        current_words = []
+        current_text = []
+
+        for seg in segments:
+            for w in seg.get("words") or []:
+                word = w.get("word", "").strip()
+                if not word:
+                    continue
+
+                start = w.get("start")
+                end = w.get("end")
+                speaker = w.get("speaker")
+
+                if start is None or end is None:
+                    continue
+
+                # Detect speaker change
+                speaker_changed = (current_speaker is not None and speaker != current_speaker)
+
+                # Detect significant gap (might indicate speaker change)
+                significant_gap = False
+                if current_end is not None:
+                    gap = start - current_end
+                    significant_gap = gap > 0.9
+
+                # Start new segment if speaker changed or significant gap
+                if speaker_changed or significant_gap or current_speaker is None:
+                    # Save current segment if it exists
+                    if current_words and current_start is not None and current_end is not None:
+                        duration = current_end - current_start
+                        if duration >= min_duration or len(current_words) > 3:
+                            speaker_segments.append({
+                                "speaker": current_speaker,
+                                "start": current_start,
+                                "end": current_end,
+                                "words": current_words,
+                                "text": " ".join(current_text)
+                            })
+
+                    # Start new segment
+                    current_speaker = speaker
+                    current_start = start
+                    current_end = end
+                    current_words = [w]
+                    current_text = [word]
                 else:
-                    merged.append((s, e, spk))
-            return merged
+                    # Continue current segment
+                    current_end = max(current_end, end)
+                    current_words.append(w)
+                    current_text.append(word)
 
-        diar_segments = _merge_short_and_collared(diar_segments)
+        # Don't forget the last segment
+        if current_words and current_start is not None and current_end is not None:
+            speaker_segments.append({
+                "speaker": current_speaker,
+                "start": current_start,
+                "end": current_end,
+                "words": current_words,
+                "text": " ".join(current_text)
+            })
 
-        # For quick lookup: majority speaker inside an interval
-        times_sec_arr = times_sec  # alias
-        labels_arr = labels
+        return speaker_segments
 
-        def majority_label(start_t: float, end_t: float) -> int:
-            mask = (times_sec_arr >= start_t) & (times_sec_arr <= end_t)
-            if not np.any(mask):
-                # fallback: nearest frame center
-                nearest = int(np.argmin(np.abs(times_sec_arr - (0.5 * (start_t + end_t)))))
-                return int(labels_arr[nearest])
-            ls = labels_arr[mask]
-            vals, counts = np.unique(ls, return_counts=True)
-            return int(vals[np.argmax(counts)])
+    def _apply_speaker_corrections(self, segments: list, corrections: dict) -> list:
+        """
+        Apply manual speaker corrections to specific segments.
 
-        # ---------- 4) Build SRT lines ----------
+        Args:
+            segments: List of speaker segments
+            corrections: Dict mapping segment index to correct speaker name
+        """
+        for idx, correction_speaker in corrections.items():
+            if 0 <= idx < len(segments):
+                segments[idx]["speaker"] = correction_speaker
+                print(f"[Speaker Correction] Segment {idx}: -> {correction_speaker}")
+
+        return segments
+
+    def _create_speaker_mapping(self, segments: list, speaker_names: list = None) -> dict:
+        """
+        Create mapping from speaker IDs to names.
+
+        Improved logic that better handles the initial recording message
+        and subsequent speakers.
+        """
+        # Identify unique speakers by order of appearance
+        seen_speakers = []
+        for seg in segments:
+            sp = seg.get("speaker")
+            if sp and sp not in seen_speakers:
+                seen_speakers.append(sp)
+
+        sp_map = {}
+
+        if speaker_names:
+            # Special handling for recordings with initial disclaimer
+            # Check if first segment is very early (< 10 seconds) and might be recording
+            if segments and segments[0]["start"] < 10:
+                first_text = segments[0]["text"].lower()
+                # Common recording disclaimer patterns
+                recording_patterns = [
+                    "this call is being recorded",
+                    "call may be recorded",
+                    "recording for quality",
+                    "this conversation is being recorded"
+                ]
+
+                is_recording = any(pattern in first_text for pattern in recording_patterns)
+
+                if is_recording and len(speaker_names) > len(seen_speakers):
+                    # First speaker is likely the recording, use first name for it
+                    if seen_speakers:
+                        sp_map[seen_speakers[0]] = speaker_names[0]  # "Recording" or similar
+                    # Map remaining speakers starting from second name
+                    for i, sp in enumerate(seen_speakers[1:], start=1):
+                        if i < len(speaker_names):
+                            sp_map[sp] = speaker_names[i]
+                        else:
+                            sp_map[sp] = f"Speaker{i}"
+                else:
+                    # Standard mapping
+                    for i, sp in enumerate(seen_speakers):
+                        if i < len(speaker_names):
+                            sp_map[sp] = speaker_names[i]
+                        else:
+                            sp_map[sp] = f"Speaker{i+1}"
+            else:
+                # Standard mapping for normal conversations
+                for i, sp in enumerate(seen_speakers):
+                    if i < len(speaker_names):
+                        sp_map[sp] = speaker_names[i]
+                    else:
+                        sp_map[sp] = f"Speaker{i+1}"
+        else:
+            # No names provided, use generic labels
+            for i, sp in enumerate(seen_speakers):
+                sp_map[sp] = f"Speaker{i+1}"
+
+        # Handle None speaker
+        sp_map[None] = "Unknown"
+
+        return sp_map
+
+    def _generate_srt_lines(
+        self,
+        segments: list,
+        sp_map: dict,
+        max_gap_s: float,
+        max_chars: int,
+        max_duration_s: float,
+        merge_short: bool
+    ) -> list:
+        """
+        Generate SRT lines from speaker segments.
+        """
         def _fmt_srt_time(t: float) -> str:
-            # HH:MM:SS,mmm
-            ms = int(round((t % 1) * 1000))
-            s = int(t) % 60
-            m = (int(t) // 60) % 60
-            h = int(t) // 3600
+            if t is None or not math.isfinite(t) or t < 0:
+                t = 0.0
+            ms = int(round(t * 1000.0))
+            h, ms = divmod(ms, 3600000)
+            m, ms = divmod(ms,   60000)
+            s, ms = divmod(ms,    1000)
             return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
-
-        if asr is None or "chunks" not in asr or not isinstance(asr["chunks"], list) or len(asr["chunks"]) == 0:
-            raise ValueError("`asr` must be an HF ASR output dict with a non-empty 'chunks' list.")
 
         srt_lines = []
         idx = 1
-        for ch in asr["chunks"]:
-            ts = ch.get("timestamp")
-            text = (ch.get("text") or "").strip().replace("\n", " ")
-            if not ts or ts[0] is None or ts[1] is None or not text:
-                continue
-            start, end = float(ts[0]), float(ts[1])
-            if end <= start:
+
+        for seg in segments:
+            speaker = sp_map.get(seg["speaker"], seg["speaker"] or "Unknown")
+            text = seg["text"].strip()
+
+            if not text:
                 continue
 
-            spk_id = majority_label(start, end)
-            speaker_label = f"Speaker {spk_id + 1}"
-            if speaker_names and 0 <= spk_id < len(speaker_names):
-                speaker_label = speaker_names[spk_id]
+            # Split long segments if needed
+            words = seg["words"]
+            if len(text) > max_chars or (seg["end"] - seg["start"]) > max_duration_s:
+                # Need to split this segment
+                sub_segments = self._split_long_segment(
+                    words,
+                    max_chars,
+                    max_duration_s,
+                    max_gap_s
+                )
 
-            srt_lines.append(
-                f"{idx}\n{_fmt_srt_time(start)} --> { _fmt_srt_time(end)}\n{speaker_label}: {text}\n"
+                for sub_seg in sub_segments:
+                    if sub_seg["text"].strip():
+                        srt_lines.append(
+                            f"{idx}\n"
+                            f"{_fmt_srt_time(sub_seg['start'])} --> {_fmt_srt_time(sub_seg['end'])}\n"
+                            f"{speaker}: {sub_seg['text']}\n"
+                        )
+                        idx += 1
+            else:
+                # Use segment as is
+                srt_lines.append(
+                    f"{idx}\n"
+                    f"{_fmt_srt_time(seg['start'])} --> {_fmt_srt_time(seg['end'])}\n"
+                    f"{speaker}: {text}\n"
+                )
+                idx += 1
+
+        return srt_lines
+
+    def _split_long_segment(
+        self,
+        words: list,
+        max_chars: int,
+        max_duration: float,
+        max_gap: float
+    ) -> list:
+        """
+        Split a long segment into smaller chunks for better readability.
+        """
+        sub_segments = []
+        current_words = []
+        current_start = None
+        current_end = None
+        current_text = []
+
+        for w in words:
+            word = w.get("word", "").strip()
+            start = w.get("start")
+            end = w.get("end")
+
+            if not word or start is None or end is None:
+                continue
+
+            # Check if adding this word would exceed limits
+            would_exceed_chars = len(" ".join(current_text + [word])) > max_chars
+            would_exceed_duration = (
+                current_start is not None and
+                (end - current_start) > max_duration
             )
-            idx += 1
 
-        srt = "\n".join(srt_lines) + ("\n" if srt_lines else "")
-        if output_srt_path:
-            Path(output_srt_path).write_text(srt, encoding="utf-8")
-        return srt
+            # Check for natural break point (gap)
+            is_natural_break = False
+            if current_end is not None:
+                gap = start - current_end
+                is_natural_break = gap > max_gap
+
+            if (would_exceed_chars or would_exceed_duration or is_natural_break) and current_text:
+                # Save current sub-segment
+                sub_segments.append({
+                    "start": current_start,
+                    "end": current_end,
+                    "text": " ".join(current_text)
+                })
+                # Start new sub-segment
+                current_words = [w]
+                current_start = start
+                current_end = end
+                current_text = [word]
+            else:
+                # Add to current sub-segment
+                if current_start is None:
+                    current_start = start
+                current_end = end
+                current_words.append(w)
+                current_text.append(word)
+
+        # Don't forget the last sub-segment
+        if current_text:
+            sub_segments.append({
+                "start": current_start,
+                "end": current_end,
+                "text": " ".join(current_text)
+            })
+
+        return sub_segments
 
     def format_timestamp(self, seconds):
         # This helper function takes the total seconds and formats it into hh:mm:ss,ms
@@ -313,21 +724,6 @@ class BaseVideoLoader(AbstractLoader):
             current_window['text'] = text
             blocks.append(current_window)
         return blocks
-
-    def transcript_to_srt(self, transcript: str) -> str:
-        """
-        Convert a transcript to SRT format.
-        """
-        # lines = transcript.split("\n")
-        srt = ""
-        for i, chunk in enumerate(transcript['chunks'], start=1):
-            start, end = chunk['timestamp']
-            text = chunk['text'].replace("\n", " ")  # Replace newlines in text with spaces
-            # Convert start and end times to SRT format HH:MM:SS,MS
-            start_srt = f"{start // 3600:02}:{start % 3600 // 60:02}:{start % 60:02},{int(start * 1000 % 1000):03}"
-            end_srt = f"{end // 3600:02}:{end % 3600 // 60:02}:{end % 60:02},{int(end * 1000 % 1000):03}"
-            srt += f"{i}\n{start_srt} --> {end_srt}\n{text}\n\n"
-        return srt
 
     def chunk_text(self, text, chunk_size, tokenizer):
         # Tokenize the text and get the number of tokens
@@ -413,6 +809,151 @@ class BaseVideoLoader(AbstractLoader):
         print(f"Transcoded to 16k mono WAV: {out_path}")
         return out_path
 
+    def _get_whisperx_name(self, language: str = 'en', model_size: str = 'small', version: str = 'v3'):
+        """
+        Get the appropriate WhisperX model name based on language and size.
+
+        WhisperX model naming conventions:
+        - English-only models: "tiny.en", "base.en", "small.en", "medium.en"
+        - Multilingual models: "tiny", "base", "small", "medium", "large", "large-v1", "large-v2", "large-v3", "turbo"
+
+        Args:
+            language: Language code (e.g., "en", "es", "fr")
+            model_size: Model size ("tiny", "base", "small", "medium", "large", "turbo")
+            model_name: Explicit model name to use (overrides size selection)
+
+        Returns:
+            tuple: (model_name, detected_language)
+        """
+        if language.lower() == 'en' and model_size.lower() in {'tiny', 'base', 'small', 'medium'}:
+            return f"{model_size}.en"
+        elif model_size.lower() in {'tiny', 'base', 'small', 'medium'}:
+            return f"{model_size}"
+        else:
+            return f"{model_size}-{version}"
+
+    def get_whisperx_transcript(
+        self,
+        audio_path: Path,
+        language: str = "en",
+        model_name: str = None,
+        batch_size: int = 8,
+        compute_type_gpu: str = "float16",
+        compute_type_cpu: str = "int8"
+    ):
+        """
+        WhisperX-based transcription with word-level timestamps.
+        Returns:
+        {
+        "text": "...",
+        "chunks": [
+            {
+            "text": "...",
+            "timestamp": (start, end),
+            "words": [{"word":"...", "start":..., "end":...}, ...]
+            },
+            ...
+        ],
+        "language": "en"
+        }
+        """
+        def _safe_float(x):
+            try:
+                xf = float(x)
+                if math.isfinite(xf):
+                    return xf
+            except Exception:
+                pass
+            return None
+
+        # Use the existing _get_device method
+        pipeline_idx, _, _ = self._get_device()
+        # Determine device string for WhisperX
+        if isinstance(pipeline_idx, str):
+            # MPS or other special device
+            device = pipeline_idx
+        elif pipeline_idx >= 0:
+            # CUDA device
+            device = "cuda"
+        else:
+            # CPU
+            device = "cpu"
+
+        # Select compute type based on device
+        if device.startswith("cuda"):
+            compute_type = compute_type_gpu
+        elif device == "mps":
+            # MPS typically works better with float32
+            compute_type = "float32"
+        else:
+            compute_type = compute_type_cpu
+
+        # Model selection
+        lang = (language or self._language).lower()
+
+        if model_name:
+            model_id = model_name
+        else:
+            model_id = self._get_whisperx_name(lang, self._model_size)
+
+        # 1) ASR
+        model = whisperx.load_model(
+            model_id,
+            device=device,
+            compute_type=compute_type,
+            language=language
+        )
+        audio = whisperx.load_audio(str(audio_path))
+        asr_result = model.transcribe(audio, batch_size=batch_size)
+        lang = asr_result.get("language", language)
+        segs = asr_result.get("segments", []) or []
+
+        # 2) Alignment → precise word times
+        align_model, align_meta = whisperx.load_align_model(
+            language_code=asr_result.get("language", language), device=device
+        )
+        aligned = whisperx.align(
+            segs,
+            align_model,
+            align_meta,
+            audio,
+            device=device,
+            return_char_alignments=False
+        )
+
+        # build the return payload in your existing schema
+        chunks = []
+        full_text_parts = []
+        for seg in aligned.get("segments", []):
+            s = _safe_float(seg.get("start"))
+            e = _safe_float(seg.get("end"))
+            if s is None or e is None or e <= s:
+                continue
+            text = (seg.get("text") or "").strip()
+            words_out = []
+            for w in seg.get("words") or []:
+                ws = _safe_float(w.get("start"))
+                we = _safe_float(w.get("end"))
+                token = (w.get("word") or "").strip()
+                if ws is None or we is None or we <= ws or not token:
+                    continue
+                words_out.append({"word": token, "start": ws, "end": we})
+            chunks.append({"text": text, "timestamp": (s, e), "words": words_out})
+            if text:
+                full_text_parts.append(text)
+
+        # Cleanup
+        del model
+        del align_model
+        gc.collect()
+        try:
+            if device.startswith("cuda"):
+                torch.cuda.empty_cache()
+        except Exception:
+            pass
+
+        return {"text": " ".join(full_text_parts).strip(), "chunks": chunks, "language": lang}
+
     def get_whisper_transcript(
         self,
         audio_path: Path,
@@ -427,7 +968,7 @@ class BaseVideoLoader(AbstractLoader):
         The key insight: We process smaller audio segments independently on GPU,
         then merge results with corrected timestamps based on each chunk's offset.
         """
-        # Model selection (keeping your existing logic)
+        # Model selection
         lang = (self._language or "en").lower()
         if self._model_name in (None, "", "whisper", "openai/whisper"):
             size = (self._model_size or "small").lower()
@@ -441,7 +982,6 @@ class BaseVideoLoader(AbstractLoader):
             model_id = self._model_name
 
         # Load audio once
-        audio_path = Path(audio_path)
         if not (audio_path.exists() and audio_path.stat().st_size > 0):
             return None
 

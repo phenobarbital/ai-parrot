@@ -9,6 +9,18 @@ PYTHON_VERSION := 3.11
 # Auto-detect available tools
 HAS_UV := $(shell command -v uv 2> /dev/null)
 HAS_PIP := $(shell command -v pip 2> /dev/null)
+HAS_NVIDIA := $(shell command -v nvidia-smi 2> /dev/null)
+HAS_FFMPEG := $(shell command -v ffmpeg 2> /dev/null)
+
+# Detect OS
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Linux)
+    OS_TYPE := Linux
+    DISTRO := $(shell lsb_release -si 2>/dev/null || echo "Unknown")
+endif
+ifeq ($(UNAME_S),Darwin)
+    OS_TYPE := MacOS
+endif
 
 # Install uv for faster workflows
 install-uv:
@@ -20,6 +32,70 @@ install-uv:
 venv:
 	uv venv --python $(PYTHON_VERSION) .venv
 	@echo 'run `source .venv/bin/activate` to start develop with Parrot'
+
+# Check system dependencies for WhisperX
+check-deps:
+	@echo "Checking system dependencies..."
+	@echo "OS: $(OS_TYPE)"
+ifdef HAS_NVIDIA
+	@echo "✓ NVIDIA GPU detected"
+	@nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv
+else
+	@echo "✗ No NVIDIA GPU detected (CPU mode will be used)"
+endif
+ifdef HAS_FFMPEG
+	@echo "✓ FFmpeg installed"
+else
+	@echo "✗ FFmpeg not installed (required for audio processing)"
+endif
+	@echo ""
+	@echo "CUDA/cuDNN status:"
+	@ldconfig -p | grep -E "libcudnn|libcuda" || echo "No CUDA/cuDNN libraries found in ldconfig"
+
+# Install system dependencies for WhisperX (Ubuntu/Debian)
+install-system-deps:
+ifeq ($(OS_TYPE),Linux)
+	@echo "Installing system dependencies for WhisperX..."
+	# Install FFmpeg
+ifndef HAS_FFMPEG
+	sudo apt-get update && sudo apt-get install -y ffmpeg libavutil-dev libavformat-dev libavcodec-dev
+endif
+	# Install CUDA dependencies if NVIDIA GPU is present
+ifdef HAS_NVIDIA
+	@echo "Installing CUDA dependencies..."
+	# Check if libcudnn8 is already installed
+	@if ! ldconfig -p | grep -q libcudnn; then \
+		echo "Installing libcudnn8..."; \
+		wget -q https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/cuda-ubuntu2004.pin; \
+		sudo mv cuda-ubuntu2004.pin /etc/apt/preferences.d/cuda-repository-pin-600; \
+		export last_public_key=3bf863cc; \
+		sudo apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/$$last_public_key.pub; \
+		sudo add-apt-repository "deb https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/ /"; \
+		sudo apt-get update; \
+		sudo apt-get install -y libcudnn8 libcudnn8-dev; \
+	else \
+		echo "libcudnn8 already installed"; \
+	fi
+endif
+else ifeq ($(OS_TYPE),MacOS)
+	@echo "Installing system dependencies for MacOS..."
+ifndef HAS_FFMPEG
+	brew install ffmpeg
+endif
+else
+	@echo "Unsupported OS. Please install FFmpeg and CUDA/cuDNN manually."
+endif
+
+# Install WhisperX with all dependencies
+install-whisperx: install-system-deps
+	@echo "Installing WhisperX and dependencies..."
+	uv sync --extra whisperx
+	@echo ""
+	@echo "WhisperX installation complete!"
+	@echo "Testing installation..."
+	@python -c "import whisperx; print('✓ WhisperX imported successfully')" || echo "✗ WhisperX import failed"
+	@python -c "import torch; print(f'✓ PyTorch {torch.__version__} with CUDA {torch.version.cuda if torch.cuda.is_available() else \"not available\"}')"
+	@python -c "import torchaudio; print(f'✓ Torchaudio {torchaudio.__version__}')"
 
 # Install production dependencies using lock file
 install:
@@ -43,7 +119,7 @@ develop:
 
 # Alternative: install without lock file (faster for development)
 develop-fast:
-	uv pip install -e .[all,dev,vectors,images,loaders,openai,anthropic,groq,google,agents]
+	uv pip install -e .[all,dev,vectors,images,loaders,openai,anthropic,groq,google,agents,whisperx]
 
 # Setup development environment from requirements file (if you still have one)
 setup:
@@ -53,6 +129,41 @@ setup:
 dev:
 	uv pip install flit
 	flit install --symlink
+
+# Test WhisperX installation
+test-whisperx:
+	@echo "Testing WhisperX installation..."
+	@python -c "\
+import sys; \
+try: \
+    import whisperx; \
+    import torch; \
+    import torchaudio; \
+    print('✓ All WhisperX dependencies imported successfully'); \
+    print(f'  PyTorch version: {torch.__version__}'); \
+    print(f'  CUDA available: {torch.cuda.is_available()}'); \
+    if torch.cuda.is_available(): \
+        print(f'  CUDA version: {torch.version.cuda}'); \
+        print(f'  cuDNN version: {torch.backends.cudnn.version()}'); \
+    print(f'  Torchaudio version: {torchaudio.__version__}'); \
+    sys.exit(0); \
+except ImportError as e: \
+    print(f'✗ Import error: {e}'); \
+    sys.exit(1); \
+except Exception as e: \
+    print(f'✗ Error: {e}'); \
+    sys.exit(1)"
+
+# Run a simple WhisperX transcription test
+test-whisperx-transcribe:
+	@echo "Testing WhisperX transcription (requires an audio file)..."
+	@python -c "\
+import whisperx; \
+import torch; \
+device = 'cuda' if torch.cuda.is_available() else 'cpu'; \
+print(f'Using device: {device}'); \
+model = whisperx.load_model('tiny', device, compute_type='float16' if device == 'cuda' else 'float32'); \
+print('✓ WhisperX model loaded successfully')"
 
 # Build and publish release
 release: lint test clean
@@ -120,6 +231,26 @@ update:
 info:
 	uv tree
 
+# Show GPU/CUDA info
+cuda-info:
+ifdef HAS_NVIDIA
+	@echo "NVIDIA GPU Information:"
+	@nvidia-smi
+	@echo ""
+	@echo "CUDA/cuDNN Libraries:"
+	@python -c "\
+import torch; \
+print(f'PyTorch CUDA available: {torch.cuda.is_available()}'); \
+if torch.cuda.is_available(): \
+    print(f'CUDA version: {torch.version.cuda}'); \
+    print(f'cuDNN version: {torch.backends.cudnn.version()}'); \
+    print(f'Number of GPUs: {torch.cuda.device_count()}'); \
+    for i in range(torch.cuda.device_count()): \
+        print(f'GPU {i}: {torch.cuda.get_device_name(i)}')"
+else
+	@echo "No NVIDIA GPU detected"
+endif
+
 # Clean build artifacts
 clean:
 	rm -rf build/
@@ -177,16 +308,23 @@ bump-major:
 
 help:
 	@echo "Available targets:"
-	@echo "  venv         - Create virtual environment"
-	@echo "  install      - Install production dependencies"
-	@echo "  develop      - Install development dependencies"
-	@echo "  build        - Build package"
-	@echo "  release      - Build and publish package"
-	@echo "  test         - Run tests"
-	@echo "  format       - Format code"
-	@echo "  lint         - Lint code"
-	@echo "  clean        - Clean build artifacts"
-	@echo "  detect-tools - Show detected tools"
-	@echo "  install-uv   - Install uv for faster workflows"
+	@echo "  venv              - Create virtual environment"
+	@echo "  install           - Install production dependencies"
+	@echo "  develop           - Install development dependencies"
+	@echo "  install-whisperx  - Install WhisperX with system dependencies"
+	@echo "  test-whisperx     - Test WhisperX installation"
+	@echo "  check-deps        - Check system dependencies"
+	@echo "  cuda-info         - Show GPU/CUDA information"
+	@echo "  build             - Build package"
+	@echo "  release           - Build and publish package"
+	@echo "  test              - Run tests"
+	@echo "  format            - Format code"
+	@echo "  lint              - Lint code"
+	@echo "  clean             - Clean build artifacts"
+	@echo "  install-uv        - Install uv for faster workflows"
 	@echo ""
-	@echo "Current setup: $(TOOL_INFO)"
+	@echo "WhisperX specific:"
+	@echo "  install-system-deps    - Install FFmpeg and CUDA dependencies"
+	@echo "  test-whisperx-transcribe - Test WhisperX model loading"
+	@echo ""
+	@echo "Current setup: Python $(PYTHON_VERSION)"
