@@ -114,6 +114,7 @@ HUGGINGFACE_EMBEDDING_CACHE_DIR = config.get(
     'HUGGINGFACE_EMBEDDING_CACHE_DIR',
     fallback=BASE_DIR.joinpath('model_cache', 'huggingface')
 )
+HUGGINGFACEHUB_API_TOKEN = config.get('HUGGINGFACEHUB_API_TOKEN')
 MAX_VRAM_AVAILABLE = config.get('MAX_VRAM_AVAILABLE', fallback=20000)
 RAM_AVAILABLE = config.get('RAM_AVAILABLE', fallback=819200)
 CUDA_DEFAULT_DEVICE = config.get('CUDA_DEFAULT_DEVICE', fallback='cpu')
