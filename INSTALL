@@ -48,3 +48,20 @@ review: https://github.com/Urias-T/SEC-copilot
 docker pull marqoai/marqo:latest
 docker rm -f marqo
 docker run --name marqo -it --privileged -p 8882:8882 --add-host host.docker.internal:host-gateway marqoai/marqo:latest
+
+
+# For WhisperX installation:
+# Check current system dependencies
+make check-deps
+
+# Install WhisperX with all system dependencies
+make install-whisperx
+
+# Test the installation
+make test-whisperx
+
+# Check CUDA/GPU info
+make cuda-info
+
+# For development with WhisperX
+make develop-fast
