@@ -119,7 +119,7 @@ vectors = [
     "accelerate==0.34.2",
     "llama-index==0.12.39",
     "llama_cpp_python==0.2.56",
-    "bitsandbytes==0.44.1",
+    "bitsandbytes==0.47.0",
     "datasets>=3.0.2",
     "safetensors>=0.4.3",
     "transformers>=4.51.1,<=4.51.3",
