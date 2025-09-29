@@ -2,8 +2,10 @@
 WebScrapingTool for AI-Parrot
 Combines Selenium/Playwright automation with LLM-directed scraping
 """
+import sys
 from typing import Dict, List, Any, Optional, Union, Literal
 from dataclasses import dataclass, field
+import select
 import time
 import asyncio
 import logging
@@ -30,8 +32,18 @@ from .driver import SeleniumSetup
 @dataclass
 class ScrapingStep:
     """Represents a single step in the scraping process"""
-    action: Literal['navigate', 'click', 'fill', 'wait', 'scroll', 'authenticate']
-    target: str  # URL, selector, or identifier
+    action: Literal[
+        'navigate',
+        'click',
+        'fill',
+        'wait',
+        'scroll',
+        'authenticate',
+        'await_human',
+        'await_keypress',
+        'await_browser_event'
+    ]
+    target: Optional[str] = ""
     value: Optional[str] = None  # For fill actions
     wait_condition: Optional[str] = None  # Condition to wait for
     timeout: int = 10
@@ -156,7 +168,7 @@ class WebScrapingTool(AbstractTool):
         self.results = []
 
         try:
-            await self.initialize_driver()
+            await self.initialize_driver(config_overrides=browser_config)
 
             # Convert dictionaries to dataclasses
             scraping_steps = [ScrapingStep(**step) for step in steps]
@@ -199,10 +211,10 @@ class WebScrapingTool(AbstractTool):
                 }
             }
 
-    async def initialize_driver(self):
+    async def initialize_driver(self, config_overrides: Optional[Dict[str, Any]] = None):
         """Initialize the web driver based on configuration"""
         if self.driver_type == 'selenium':
-            await self._setup_selenium()
+            await self._setup_selenium(config_overrides)
         elif self.driver_type == 'playwright' and PLAYWRIGHT_AVAILABLE:
             await self._setup_playwright()
         else:
@@ -315,8 +327,20 @@ class WebScrapingTool(AbstractTool):
             elif step.action == 'fill':
                 await self._fill_element(step.target, step.value or "")
 
+            elif step.action == 'await_human':
+                await self._await_human(step)
+
+            elif step.action == 'await_keypress':
+                await self._await_keypress(step)
+
+            elif step.action == 'await_browser_event':
+                await self._await_browser_event(step)
+
             elif step.action == 'wait':
-                await self._wait_for_condition(step.wait_condition or step.target, step.timeout or self.default_timeout)
+                await self._wait_for_condition(
+                    step.wait_condition or step.target,
+                    step.timeout or self.default_timeout
+                )
 
             elif step.action == 'scroll':
                 await self._scroll_page(step.target)
@@ -628,6 +652,277 @@ class WebScrapingTool(AbstractTool):
         except Exception as e:
             self.logger.error(f"Authentication failed: {str(e)}")
             raise
+
+    async def _await_browser_event(self, step: ScrapingStep):
+        """
+        Pause automation until a user triggers a browser-side event.
+
+        Config (put in step.wait_condition or step.target as dict):
+        - key_combo: one of ["ctrl_enter", "cmd_enter", "alt_shift_s"]  (default: "ctrl_enter")
+        - show_overlay_button: bool (default False) → injects a floating "Resume" button
+        - local_storage_key: str (default "__scrapeResume")
+        - predicate_js: str (optional) → JS snippet returning boolean; if true, resume
+        - custom_event_name: str (optional) → window.dispatchEvent(new Event(name)) resumes
+
+        Any of these will resume:
+        1) Pressing the configured key combo in the page
+        2) Clicking the optional overlay "Resume" button
+        3) Dispatching the custom event:  window.dispatchEvent(new Event('scrape-resume'))
+        4) Setting localStorage[local_storage_key] = "1"
+        5) predicate_js() evaluates to true
+        """
+        cfg = step.wait_condition or step.target or {}
+        if isinstance(cfg, str):
+            cfg = {"key_combo": cfg}
+
+        key_combo = (cfg.get("key_combo") or "ctrl_enter").lower()
+        show_overlay = bool(cfg.get("show_overlay_button", False))
+        ls_key = cfg.get("local_storage_key", "__scrapeResume")
+        predicate_js = cfg.get("predicate_js")  # e.g., "return !!document.querySelector('.dashboard');"
+        custom_event = cfg.get("custom_event_name", "scrape-resume")
+        timeout = int(step.timeout or 300)
+
+        # 1) Inject listener once
+        inject_script = f"""
+    (function() {{
+    if (window.__scrapeSignal && window.__scrapeSignal._bound) return 0;
+    window.__scrapeSignal = window.__scrapeSignal || {{ ready:false, _bound:false }};
+    function signal() {{
+        try {{ localStorage.setItem('{ls_key}', '1'); }} catch(e) {{}}
+        window.__scrapeSignal.ready = true;
+    }}
+
+    // Key combos
+    window.addEventListener('keydown', function(e) {{
+        try {{
+        var k = '{key_combo}';
+        if (k === 'ctrl_enter' && (e.ctrlKey || e.metaKey) && e.key === 'Enter') {{ e.preventDefault(); signal(); }}
+        else if (k === 'cmd_enter' && e.metaKey && e.key === 'Enter') {{ e.preventDefault(); signal(); }}
+        else if (k === 'alt_shift_s' && e.altKey && e.shiftKey && (e.key.toLowerCase() === 's')) {{ e.preventDefault(); signal(); }}
+        }} catch(_e) {{}}
+    }}, true);
+
+    // Custom DOM event
+    try {{
+        window.addEventListener('{custom_event}', function() {{ signal(); }}, false);
+    }} catch(_e) {{}}
+
+    // Optional overlay button
+    if ({'true' if show_overlay else 'false'}) {{
+        try {{
+        if (!document.getElementById('__scrapeResumeBtn')) {{
+            var btn = document.createElement('button');
+            btn.id = '__scrapeResumeBtn';
+            btn.textContent = 'Resume scraping';
+            Object.assign(btn.style, {{
+            position: 'fixed',
+            right: '16px',
+            bottom: '16px',
+            zIndex: 2147483647,
+            padding: '10px 14px',
+            fontSize: '14px',
+            borderRadius: '8px',
+            border: 'none',
+            cursor: 'pointer',
+            background: '#2563eb',
+            color: '#fff',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
+            }});
+            btn.addEventListener('click', function(e) {{ e.preventDefault(); signal(); }});
+            document.body.appendChild(btn);
+        }}
+        }} catch(_e) {{}}
+    }}
+
+    window.__scrapeSignal._bound = true;
+    return 1;
+    }})();
+    """
+
+        def _inject_and_check_ready():
+            # Return True if already signaled
+            try:
+                if self.driver_type == 'selenium':
+                    # inject
+                    try:
+                        self.driver.execute_script(inject_script)
+                    except Exception:
+                        pass
+                    # check any of the resume signals
+                    if predicate_js:
+                        try:
+                            ok = self.driver.execute_script(predicate_js)
+                            if bool(ok):
+                                return True
+                        except Exception:
+                            pass
+                    try:
+                        # localStorage flag
+                        val = self.driver.execute_script(f"try{{return localStorage.getItem('{ls_key}')}}catch(e){{return null}}")
+                        if val == "1":
+                            return True
+                    except Exception:
+                        pass
+                    try:
+                        # in-memory flag
+                        ready = self.driver.execute_script("return !!(window.__scrapeSignal && window.__scrapeSignal.ready);")
+                        if bool(ready):
+                            return True
+                    except Exception:
+                        pass
+                    return False
+                else:
+                    # Playwright branch (optional): basic injection + predicate check
+                    try:
+                        self.page.evaluate(inject_script)
+                    except Exception:
+                        pass
+                    if predicate_js:
+                        try:
+                            ok = self.page.evaluate(predicate_js)
+                            if bool(ok):
+                                return True
+                        except Exception:
+                            pass
+                    try:
+                        val = self.page.evaluate(f"try{{return localStorage.getItem('{ls_key}')}}catch(e){{return null}}")
+                        if val == "1":
+                            return True
+                    except Exception:
+                        pass
+                    try:
+                        ready = self.page.evaluate("() => !!(window.__scrapeSignal && window.__scrapeSignal.ready)")
+                        if bool(ready):
+                            return True
+                    except Exception:
+                        pass
+                    return False
+            except Exception:
+                return False
+
+        loop = asyncio.get_running_loop()
+        self.logger.info(
+            "🛑 Awaiting browser event: press the configured key combo in the page, click the floating button, dispatch the custom event, or set the localStorage flag to resume."
+        )
+
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if await loop.run_in_executor(None, _inject_and_check_ready):
+                # Clear the LS flag so future waits don't auto-trigger
+                try:
+                    if self.driver_type == 'selenium':
+                        self.driver.execute_script(f"try{{localStorage.removeItem('{ls_key}')}}catch(e){{}}")
+                        self.driver.execute_script("if(window.__scrapeSignal){window.__scrapeSignal.ready=false}")
+                    else:
+                        self.page.evaluate(f"() => {{ try{{localStorage.removeItem('{ls_key}')}}catch(e){{}}; if(window.__scrapeSignal) window.__scrapeSignal.ready=false; }}")
+                except Exception:
+                    pass
+                self.logger.info("✅ Browser event received. Resuming automation.")
+                return
+            await asyncio.sleep(0.3)
+
+        raise TimeoutError("await_browser_event timed out.")
+
+    async def _await_human(self, step: ScrapingStep):
+        """
+        Let a human drive the already-open browser, then resume when a condition is met.
+        'wait_condition' or 'target' may contain:
+        - selector: CSS selector to appear (presence)
+        - url_contains: substring expected in current URL
+        - title_contains: substring expected in document.title
+        """
+        timeout = int(step.timeout or 300)
+        cond = step.wait_condition or step.target or {}
+        if isinstance(cond, str):
+            # simple shorthand: treat as CSS selector
+            cond = {"selector": cond}
+
+        selector = cond.get("selector")
+        url_contains = cond.get("url_contains")
+        title_contains = cond.get("title_contains")
+
+        loop = asyncio.get_running_loop()
+
+        def _check_sync() -> bool:
+            try:
+                if self.driver_type == 'selenium':
+                    cur_url = self.driver.current_url
+                    cur_title = self.driver.title
+                    if url_contains and (url_contains not in cur_url):
+                        return False
+                    if title_contains and (title_contains not in cur_title):
+                        return False
+                    if selector:
+                        try:
+                            count = self.driver.execute_script(
+                                "return document.querySelectorAll(arguments[0]).length;", selector
+                            )
+                            if int(count) <= 0:
+                                return False
+                        except Exception:
+                            return False
+                    return True
+                else:
+                    cur_url = self.page.url
+                    if url_contains and (url_contains not in cur_url):
+                        return False
+                    if selector:
+                        try:
+                            # tiny, non-blocking check
+                            el = self.page.query_selector(selector)
+                            if not el:
+                                return False
+                        except Exception:
+                            return False
+                    return True
+            except Exception:
+                return False
+
+        self.logger.info(
+            "🛑 Awaiting human interaction in the browser window..."
+        )
+        self.logger.info(
+            "ℹ️  I’ll resume automatically when the expected page/element is present."
+        )
+
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            ok = await loop.run_in_executor(None, _check_sync)
+            if ok:
+                self.logger.info(
+                    "✅ Human step condition satisfied. Resuming automation."
+                )
+                return
+            await asyncio.sleep(0.5)
+
+        raise TimeoutError(
+            "await_human timed out waiting for the specified condition."
+        )
+
+    async def _await_keypress(self, step: ScrapingStep):
+        """
+        Pause until the operator presses ENTER in the console.
+        Useful when there is no reliable selector to wait on.
+        """
+        timeout = int(step.timeout or 300)
+        prompt = step.description or "Press ENTER to continue..."
+
+        self.logger.info(f"🛑 {prompt}")
+        start = time.monotonic()
+
+        loop = asyncio.get_running_loop()
+        while time.monotonic() - start < timeout:
+            ready, _, _ = await loop.run_in_executor(
+                None, lambda: select.select([sys.stdin], [], [], 0.5)
+            )
+            if ready:
+                try:
+                    _ = sys.stdin.readline()
+                except Exception:
+                    pass
+                self.logger.info("✅ Continuing after keypress.")
+                return
+        raise TimeoutError("await_keypress timed out.")
 
     async def _extract_content(
         self,

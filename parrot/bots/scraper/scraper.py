@@ -23,9 +23,6 @@ from .templates import (
     EBAY_TEMPLATE
 )
 from .models import (
-    ScrapingStepSchema,
-    ScrapingSelectorSchema,
-    BrowserConfigSchema,
     ScrapingPlanSchema
 )
 
@@ -187,6 +184,9 @@ class ScrapingAgent(AbstractBot):
 - wait: Wait for specific conditions or elements
 - scroll: Scroll to load dynamic content
 - authenticate: Handle login/authentication flows
+- await_human: Pause automation; a human completes login/SSO/MFA in the browser. Resume when a selector/URL/title condition is met.
+- await_keypress: Pause until the operator presses ENTER in the console.
+- await_browser_event: Wait for a real page event (keyboard/overlay button/custom event/localStorage/predicate)
 
 **Selector Types:**
 - CSS selectors: Standard CSS syntax (.class, #id, element[attribute])
@@ -253,8 +253,8 @@ When given a scraping task, analyze the requirements thoroughly and create a com
                             break
 
                 if template:
-                    template_guidance = f"\n\n**SITE-SPECIFIC GUIDANCE FOR {domain.upper()}:**\n{template.get('guidance', '')}"
-
+                    template_guidance = f"\n\n**MANDATORY TEMPLATE FOR {domain.upper()}:**"
+                    template_guidance += "\n**IMPORTANT:** These selectors are VERIFIED and TESTED. You MUST use these exact values.\n"
                     # Customize template steps with actual search term
                     if 'search_steps' in template and any(term in objective.lower() for term in ['search', 'product', 'find', 'extract']):
                         search_term = self._extract_search_term_from_objective(objective)
@@ -270,9 +270,10 @@ When given a scraping task, analyze the requirements thoroughly and create a com
 
                     if 'product_selectors' in template:
                         suggested_selectors = template['product_selectors']
-                        template_guidance += f"\n\n**SUGGESTED SELECTORS:**\n"
+                        template_guidance += f"\n\n** SELECTORS:**\n"
                         for sel in suggested_selectors:
                             template_guidance += f"- {sel['name']}: {sel['selector']}\n"
+                    template_guidance += "\n⚠️ CRITICAL: Use the exact 'target' values above. Do not substitute with '#gh-search-input' or other guesses.\n"
         elif steps:
             # use suggested steps from user:
             template_guidance += f"\n\n**SUGGESTED STEPS:**\n"
@@ -307,6 +308,7 @@ Please provide:
 3. NEVER use natural language descriptions as targets (e.g., "the search box" is WRONG, "#search-input" is CORRECT)
 4. If template steps are provided above, use those EXACT targets - they are proven to work
 5. Steps must be in logical order: navigate → wait → fill → click → wait for results
+6. Never invent or hallucinate details about the page structure or content.
 
 Provide your response as a structured plan following the ScrapingPlanSchema.
         """
@@ -324,14 +326,31 @@ Provide your response as a structured plan following the ScrapingPlanSchema.
 
         if isinstance(response.output, ScrapingPlanSchema):
             response = response.output
+            merged_steps = []
+            for i, template_step in enumerate(suggested_steps):
+                merged = template_step.copy()
+                # If LLM generated a corresponding step, take its metadata
+                if i < len(response.steps):
+                    llm_step = response.steps[i].model_dump()
+                    # Keep template's target (proven to work)
+                    # But use LLM's wait_condition and description if present
+                    if llm_step.get('wait_condition'):
+                        merged['wait_condition'] = llm_step['wait_condition']
+                    if llm_step.get('description') and len(llm_step['description']) > len(merged.get('description', '')):
+                        merged['description'] = llm_step['description']
+                    # Use higher timeout if LLM suggests it
+                    if llm_step.get('timeout', 10) > merged.get('timeout', 10):
+                        merged['timeout'] = llm_step['timeout']
+                merged_steps.append(merged)
             plan = {
-                'steps': [step.model_dump() for step in response.steps],
-                'selectors': [sel.model_dump() for sel in response.selectors],
+                'steps': merged_steps,
+                'selectors': suggested_selectors or [sel.model_dump() for sel in response.selectors],
                 'browser_config': response.browser_config.model_dump(),
                 'analysis': response.analysis,
                 'risks': response.risks,
                 'fallback_strategy': response.fallback_strategy,
-                'parsed_successfully': True
+                'parsed_successfully': True,
+                'used_template': True
             }
         else:
             # Fallback if structured output not available
@@ -434,6 +453,14 @@ Provide your response as a structured plan following the ScrapingPlanSchema.
         try:
             # Step 1: Analyze and plan
             plan = await self.analyze_scraping_request(request)
+            # some sanitization
+            plan = self._sanitize_plan(plan, request)
+            self.logger.debug(
+                "Plan steps: %s", json.dumps(plan["steps"], indent=2)
+            )
+            self.logger.debug(
+                "Sanitized selectors: %s", json.dumps(plan["selectors"], indent=2)
+            )
 
             if not plan.get('steps'):
                 self.logger.error("No scraping plan generated")
@@ -545,7 +572,7 @@ Provide your response as a structured plan following the ScrapingPlanSchema.
     def _create_scraping_step(self, step_data: Dict[str, Any]) -> ScrapingStep:
         return ScrapingStep(
             action=self._normalize_action(step_data.get('action')),
-            target=self._normalize_target(step_data.get('target')),
+            target=self._normalize_target(step_data.get('target', '')),
             value=self._normalize_value(step_data.get('value')),
             wait_condition=step_data.get('wait_condition'),
             timeout=step_data.get('timeout', 10),
@@ -804,6 +831,129 @@ Keep your analysis concise but comprehensive.
                     self.logger.warning(f"Content analysis failed: {str(e)}")
 
         return results
+
+    def _looks_like_url(self, s: str) -> bool:
+        try:
+            s = (s or "").strip()
+            if not s:
+                return False
+            return s.startswith(("http://", "https://")) or ('.' in s and ' ' not in s)
+        except Exception:
+            return False
+
+    def _coerce_list_of_dicts(self, maybe_list):
+        if maybe_list is None:
+            return []
+        if isinstance(maybe_list, dict):
+            out = []
+            for k, v in maybe_list.items():
+                if isinstance(v, dict):
+                    vv = v.copy()
+                    vv.setdefault("name", k)
+                    out.append(vv)
+                else:
+                    out.append({"name": str(k), "selector": str(v)})
+            return out
+        if isinstance(maybe_list, (list, tuple, set)):
+            out = []
+            for item in maybe_list:
+                out.append(item if isinstance(item, dict) else {"selector": str(item)})
+            return out
+        return [{"selector": str(maybe_list)}]
+
+    def _sanitize_steps(self, steps_raw, request_url: str) -> list[dict]:
+        allowed = {"navigate", "click", "fill", "wait", "scroll", "authenticate", "await_human", "await_keypress", "await_browser_event"}
+        steps: list[dict] = []
+        for s in self._coerce_list_of_dicts(steps_raw):
+            action = self._normalize_action(s.get("action"))
+            if action not in allowed:
+                continue
+            target = self._normalize_target(s.get("target"))
+            value = self._normalize_value(s.get("value"))
+
+            # If navigate target isn't a real URL, force it to request_url
+            if action == "navigate" and (not target or not self._looks_like_url(target)):
+                target = request_url or target
+
+            # For non-navigate actions, ensure target is a plausible CSS selector
+            if action in {"click", "fill", "wait"}:
+                # pick the first of comma-separated list if present
+                if target and "," in target:
+                    target = target.split(",")[0].strip()
+                # reject blatant prose targets
+                if target and (len(target) > 150 or " the " in target.lower()):
+                    target = ""  # will be filtered below
+
+            steps.append({
+                "action": action,
+                "target": target or "",
+                "value": value,
+                "wait_condition": s.get("wait_condition"),
+                "timeout": s.get("timeout", 10),
+                "description": s.get("description", "")
+            })
+
+        # Ensure we start with a valid navigate
+        has_nav = any(st["action"] == "navigate" for st in steps)
+        if not has_nav and request_url:
+            steps.insert(0, {
+                "action": "navigate",
+                "target": request_url,
+                "value": None,
+                "wait_condition": None,
+                "timeout": 15,
+                "description": "Navigate to target URL"
+            })
+        else:
+            for st in steps:
+                if st["action"] == "navigate":
+                    if not self._looks_like_url(st["target"]) and request_url:
+                        st["target"] = request_url
+                    break
+        return steps
+
+    def _sanitize_selectors(self, selectors_raw) -> list[dict]:
+        cleaned: list[dict] = []
+        bad_prefixes = (".0", "#0")  # guard against things like ".0.0.1"
+        ip_like = re.compile(r'^\d{1,3}(?:\.\d{1,3}){3}$')
+
+        for sel in self._coerce_list_of_dicts(selectors_raw):
+            selector = sel.get("selector") or sel.get("css") or sel.get("target")
+            name = sel.get("name") or selector
+            if not selector:
+                continue
+            selector = str(selector).strip()
+            name = str(name)
+
+            # Drop IPs or clearly invalid CSS like ".0.0.1"
+            if selector.startswith(bad_prefixes) or ip_like.match(selector):
+                continue
+            # Very weak CSS plausibility check
+            if not any(ch in selector for ch in ('.', '#', '[', '>', ':')) and ' ' not in selector:
+                # allow tag-only selectors like 'a', 'h2' by whitelisting when short
+                if selector.lower() not in {"a", "h1", "h2", "h3", "p", "span", "div"}:
+                    continue
+
+            cleaned.append({
+                "name": name,
+                "selector": selector,
+                "selector_type": str(sel.get("selector_type", "css")),
+                "extract_type": str(sel.get("extract_type", "text")),
+                "attribute": (str(sel["attribute"]) if sel.get("attribute") is not None else None),
+                "multiple": bool(sel.get("multiple", True))
+            })
+        return cleaned
+
+    def _sanitize_plan(self, plan: dict, request: dict) -> dict:
+        url = request.get("target_url") or request.get("base_url") or ""
+        plan = dict(plan or {})
+        plan["steps"] = self._sanitize_steps(plan.get("steps") or [], url)
+        plan["selectors"] = self._sanitize_selectors(plan.get("selectors") or [])
+        bcfg = plan.get("browser_config")
+        if not isinstance(bcfg, dict):
+            bcfg = {}
+        plan["browser_config"] = bcfg
+        return plan
 
     def _parse_scraping_plan(self, llm_response: str) -> Dict[str, Any]:
         """

@@ -1,14 +1,15 @@
 from typing import Dict, List, Any, Optional, Literal
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, field_validator
 
 class ScrapingStepSchema(BaseModel):
     """Schema for a single scraping step"""
-    action: Literal['navigate', 'click', 'fill', 'wait', 'scroll', 'authenticate']
-    target: str = Field(
-        ...,
+    action: Literal['navigate', 'click', 'fill', 'wait', 'scroll', 'authenticate', 'await_human', 'await_keypress', 'await_browser_event']
+    target: Optional[str] = Field(
+        None,
         description="For navigate: full URL (e.g., 'https://example.com'). "
                     "For click/fill/wait: CSS selector (e.g., '#search-box', '.button'). "
-                    "Must be a concrete selector or URL, not a description."
+                    "Must be a concrete selector or URL, not a description. "
+                    "When action is a await, target can be None."
     )
     value: Optional[str] = Field(
         None,
@@ -28,6 +29,26 @@ class ScrapingStepSchema(BaseModel):
         ...,
         description="Human-readable description of what this step does"
     )
+
+    @field_validator('target')
+    @classmethod
+    def validate_target(cls, v: str, info) -> str:
+        action = info.data.get('action')
+
+        if action == 'navigate':
+            if not (v.startswith('http://') or v.startswith('https://')):
+                raise ValueError(f"Navigate target must be a full URL, got: {v}")
+
+        elif action in ['fill', 'click', 'wait']:
+            # Check if it looks like a selector (not natural language)
+            if len(v) > 150 or ' the ' in v.lower() or ' and ' in v.lower():
+                raise ValueError(f"Target looks like natural language, not a selector: {v}")
+
+            # Must contain selector patterns
+            if not any(char in v for char in ['.', '#', '[', ':', '>']):
+                raise ValueError(f"Target doesn't look like a CSS selector: {v}")
+
+        return v
 
 class ScrapingSelectorSchema(BaseModel):
     """Schema for content extraction selector"""

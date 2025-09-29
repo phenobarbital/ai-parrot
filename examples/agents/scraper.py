@@ -1,18 +1,19 @@
 import asyncio
+from pathlib import Path
 from parrot.bots.scraper import ScrapingAgent
 
 
 async def check_scrapping_agent():
     """Example of using the ScrapingAgent with adaptive configuration"""
     agent = ScrapingAgent(
-        browser='undetected',  # Use undetected-chromedriver
+        browser='chrome',  # Use undetected-chromedriver
         headless=False,        # For debugging
         mobile=False,           # For mobile testing
         driver_type='selenium', # Using Selenium
         max_tokens=8192,
-        temperature=0.2,
-        # llm="openai",
-        # model="gpt-5-nano"
+        temperature=0,
+        user_data_dir=str(Path.home() / ".selenium/profiles/myshop"),
+        debugger_address="127.0.0.1:9222",
     )
     await agent.configure()
 

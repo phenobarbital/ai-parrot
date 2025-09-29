@@ -5,7 +5,7 @@ Quick Start Test for WebScrapingTool
 
 Minimal test script to quickly verify the tool works.
 """
-
+from pathlib import Path
 import asyncio
 
 # You'll need to adjust these imports based on your actual AI-Parrot structure
@@ -126,11 +126,181 @@ async def test_product_scraping():
     except Exception as e:
         print(f"❌ Exception: {str(e)}")
 
+async def test_human_interaction():
+    """Test human interaction simulation"""
+
+    print("\n🧑‍🤝‍🧑 Human Interaction Test")
+    print("=" * 40)
+
+    # Remember to start Chrome with --remote-debugging-port=9222 for this test
+
+    tool = WebScrapingTool(
+        headless=False,
+        user_data_dir=str(Path.home() / ".selenium/profiles/myshop"),
+        # detach=True,                     # keep window open; humans can click/type
+        debugger_address="127.0.0.1:9222",
+    )
+
+    # Test with a scraping-friendly site
+    test_args = {
+        "steps": [
+            {
+                "action": "navigate",
+                "target": "https://navigator.trocglobal.com/login",
+                "description": "Navigate to login page"
+            },
+            {
+                "action": "await_human",
+                "timeout": 600,
+                "wait_condition": {
+                    "selector": "#content-area",
+                    "url_contains": "trocglobal.com"
+                },
+                "description": "Finish SSO/MFA; resume on dashboard"
+            },
+            {
+                "action": "await_browser_event",
+                "timeout": 600,
+                "wait_condition": {
+                    "key_combo": "ctrl_enter",
+                    "show_overlay_button": True,         # optional floating “Resume” button
+                    "local_storage_key": "__scrapeResume",       # optional; defaults to this
+                    # Optional custom predicate (any truthy JS result resumes):
+                    # "predicate_js": "return !!document.querySelector('.app-shell')",
+                    # Optional custom DOM event name:
+                    # "custom_event_name": "scrape-resume"
+                },
+                "description": "User completes SSO/MFA in the open browser; press Ctrl+Enter or click Resume."
+            },
+            {
+                "action": "wait",
+                "target": "#content-area",
+                "timeout": 10,
+                "description": "Ensure app is loaded"
+            }
+        ],
+        "selectors": [
+            {
+                "name": "program",
+                "selector": ".item-details",
+                "extract_type": "text",
+                "multiple": True
+            }
+        ]
+    }
+
+    try:
+        print("🔄 Testing program extraction...")
+        result = await tool._execute(**test_args)
+
+        if result['status']:
+            data = result['result'][0]['extracted_data']
+            programs = data['program']
+
+            print(f"✅ Success! Found {len(programs)} programs")
+            print("\n💭 Sample program:")
+            if programs:
+                print(f"Program: {programs[0]}")
+        else:
+            print("❌ Test failed")
+
+    except Exception as e:
+        print(f"❌ Exception: {str(e)}")
+
+async def test_bestbuy_scraping():
+    print("\n🛍️ BestBuy Scraping Test")
+    print("=" * 40)
+
+    tool = WebScrapingTool(
+        headless=False,
+        user_data_dir=str(Path.home() / ".selenium/profiles/myshop"),
+        # detach=True,                     # keep window open; humans can click/type
+        debugger_address="127.0.0.1:9222",
+    )
+
+    # Best Buy Scraping Test:
+    test_args = {
+        "steps": [
+            {
+                'action': 'navigate',
+                'target': 'https://www.bestbuy.com/?intl=nosplash',
+                'description': 'Best Buy home'
+            },
+            {
+                'action': 'wait',
+                'target': 'presence_of_element_located:textarea[id="autocomplete-search-bar"], input[aria-label*="Search"]',
+                'timeout': 5,
+                'description': 'Wait for Text Area input to be present'
+            },
+            {
+                'action': 'fill',
+                'target': 'textarea[id="autocomplete-search-bar"], input[aria-label*="Search"]',
+                'value': 'Google Pixel Pro 128GB',
+                'description': 'Type product'
+            },
+            {
+                'action': 'click',
+                'target': 'button[id="autocomplete-search-button"], button[aria-label="Search-Button"]',
+                'description': 'Submit search'
+            },
+            {
+                'action': 'wait',
+                'target': 'div[id="main-results"]',
+                'timeout': 10,
+                'description': 'Wait For Results'
+            }
+        ],
+        'selectors': [
+            {
+                'name':'product_title',
+                'selector': 'h2.product-title',
+                'extract_type':'text',
+                'multiple':True
+            },
+            {
+                'name':'product_price',
+                'selector': 'div[data-testid="price-block-customer-price"], span',
+                'extract_type':'text',
+                'multiple':True
+            },
+            {
+                'name':'product_link',
+                'selector': '.sku-block-content-title a.product-list-item-link',
+                'extract_type':'attribute',
+                'attribute':'href',
+                'multiple':True
+            }
+        ]
+    }
+
+    try:
+        print("🔄 Testing Best Buy extraction...")
+        result = await tool._execute(**test_args)
+
+        if result['status']:
+            data = result['result'][0]['extracted_data']
+            product_titles = data['product_title']
+            product_prices = data['product_price']
+            product_links = data['product_link']
+
+            print(f"✅ Success! Found {len(product_titles)} products")
+            print("\n💭 Sample product:")
+            if product_titles:
+                print(f"Product Title: {product_titles[0]}")
+                print(f"Product Price: {product_prices[0]}")
+                print(f"Product Link: {product_links[0]}")
+        else:
+            print("❌ Test failed")
+
+    except Exception as e:
+        print(f"❌ Exception: {str(e)}")
 
 async def main():
     """Run all quick tests"""
-    await quick_test()
-    await test_product_scraping()
+    # await quick_test()
+    # await test_product_scraping()
+    # await test_human_interaction()
+    await test_bestbuy_scraping()
 
     print("\n" + "=" * 50)
     print("🎉 Quick tests completed!")
