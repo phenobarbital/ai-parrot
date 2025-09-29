@@ -30,6 +30,7 @@ __all__ = (
     "CompletionUsage",
     "AIMessage",
     "AIMessageFactory",
+    "SourceDocument",
     "MessageResponse",
     "StreamChunk",
     "StructuredOutputConfig",
