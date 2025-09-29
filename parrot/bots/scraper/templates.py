@@ -7,9 +7,9 @@ BESTBUY_TEMPLATE = {
     },
     {
         'action': 'wait',
-        'target': 'invisibility_of_element:.c-overlay-backdrop',
+        'target': 'presence_of_element_located:textarea[id="autocomplete-search-bar"], input[aria-label*="Search"]',
         'timeout': 5,
-        'description': 'Wait for overlay to disappear (best-effort)'
+        'description': 'Wait for Text Area input to be present'
     },
     {
         'action': 'fill',
@@ -24,27 +24,27 @@ BESTBUY_TEMPLATE = {
     },
     {
         'action': 'wait',
-        'target': '.sku-item, .sku-item-list, .sr-item',
+        'target': '.sku-block',
         'timeout': 15,
-        'description': 'Wait results'
+        'description': 'Wait For Results'
     }
     ],
     'product_selectors': [
     {
         'name':'product_titles',
-        'selector': '.sku-item .sku-title a, .sr-item .sr-item-title a',
+        'selector': 'h2.product-title',
         'extract_type':'text',
         'multiple':True
     },
     {
         'name':'product_prices',
-        'selector': '.pricing-price .sr-only, .pricing-price .off-screen, .priceView-hero-price span',
+        'selector': 'div[data-testid="price-block-customer-price"], span',
         'extract_type':'text',
         'multiple':True
     },
     {
         'name':'product_links',
-        'selector': '.sku-item .sku-title a, .sr-item .sr-item-title a',
+        'selector': '.sku-block-content-title a.product-list-item-link',
         'extract_type':'attribute',
         'attribute':'href',
         'multiple':True

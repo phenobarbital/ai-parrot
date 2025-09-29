@@ -60,6 +60,8 @@ class SeleniumSetup:
         user_data_dir: Optional[str] = None,
         enable_logging: bool = True,
         timeout: int = 10,
+        detach: bool = False,
+        debugger_address: Optional[str] = None,
         **kwargs
     ):
         """
@@ -94,7 +96,9 @@ class SeleniumSetup:
         self.disable_javascript = kwargs.get('disable_javascript', False)
         self.custom_user_agent = kwargs.get('custom_user_agent')
         self.window_size = kwargs.get('window_size', (1920, 1080))
-
+        # Debugging options
+        self.detach = detach
+        self.debugger_address = debugger_address
         # Setup logging
         self.logger = logging.getLogger(
             f"WebScrapingTool.{self.browser}"
@@ -157,9 +161,18 @@ class SeleniumSetup:
             options.add_experimental_option("prefs", {"disable-http2": True})
 
         # Anti-detection measures
-        options.add_experimental_option("excludeSwitches", ["enable-automation"])
-        options.add_experimental_option('useAutomationExtension', False)
+        # options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        # options.add_experimental_option('useAutomationExtension', False)
         options.page_load_strategy = 'eager'
+
+        # Keep the window open for human interaction after the script ends
+        if self.detach:
+            options.add_experimental_option("detach", True)
+
+        # Attach to an existing Chrome started with --remote-debugging-port
+        if self.debugger_address:
+            options.debugger_address = self.debugger_address
+            self.logger.info(f"Connecting to debugger at {self.debugger_address}")
 
         return options
 
