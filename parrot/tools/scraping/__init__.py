@@ -6,7 +6,9 @@ from typing import Dict, List, Any, Optional, Union, Literal
 from dataclasses import dataclass, field
 import time
 import asyncio
+import logging
 import json
+from urllib.parse import urlparse, urljoin
 from pydantic import BaseModel, Field
 from bs4 import BeautifulSoup
 # Selenium imports
@@ -130,6 +132,7 @@ class WebScrapingTool(AbstractTool):
         self.default_timeout = kwargs.get('default_timeout', 30)
         self.retry_attempts = kwargs.get('retry_attempts', 3)
         self.delay_between_actions = kwargs.get('delay_between_actions', 1)
+        logging.getLogger("urllib3.connectionpool").setLevel(logging.ERROR)
 
     async def _execute(
         self,
@@ -399,9 +402,15 @@ class WebScrapingTool(AbstractTool):
             loop = asyncio.get_running_loop()
             await loop.run_in_executor(None, self.driver.get, url)
             if self.overlay_housekeeping:
-                # Never let this stall navigation
                 try:
-                    await asyncio.wait_for(self._post_navigate_housekeeping(), timeout=1.25)
+                    current = self.driver.current_url
+                    host = (urlparse(current).hostname or "").lower()
+                    # TODO create a whitelist of hosts where overlays are common
+                    if host and any(x in host for x in ['bestbuy', 'amazon', 'ebay', 'walmart', 'target']):
+                        try:
+                            await asyncio.wait_for(self._post_navigate_housekeeping(), timeout=1.25)
+                        except Exception:
+                            pass
                 except Exception:
                     pass
         else:
