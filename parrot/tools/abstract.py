@@ -207,7 +207,9 @@ class AbstractTool(ABC):
             if isinstance(result, ToolResult):
                 return result
             if result is None:
-                raise ValueError("Tool execution returned None, expected a result.")
+                raise ValueError(
+                    "Tool execution returned None, expected a result."
+                )
 
             self.logger.info(f"Tool {self.name} executed successfully")
 
