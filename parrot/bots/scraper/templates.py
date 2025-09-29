@@ -1,21 +1,54 @@
 BESTBUY_TEMPLATE = {
     'search_steps': [
-    {'action': 'navigate', 'target': 'https://www.bestbuy.com/?intl=nosplash', 'description': 'Best Buy home'},
+    {
+        'action': 'navigate',
+        'target': 'https://www.bestbuy.com/?intl=nosplash',
+        'description': 'Best Buy home'
+    },
     {
         'action': 'wait',
         'target': 'invisibility_of_element:.c-overlay-backdrop',
-        'timeout': 4,
+        'timeout': 5,
         'description': 'Wait for overlay to disappear (best-effort)'
     },
-    {'action': 'wait', 'target': 'input[name="st"], input[aria-label*="Search"], input[type="search"]', 'timeout': 15, 'description': 'Wait for search box'},
-    {'action': 'fill', 'target': 'input[name="st"], input[aria-label*="Search"], input[type="search"]', 'value': '{search_term}', 'description': 'Type product'},
-    {'action': 'click', 'target': 'button.header-search-button, button[type="submit"]', 'description': 'Submit search'},
-    {'action': 'wait', 'target': '.sku-item, .sku-item-list, .sr-item', 'timeout': 15, 'description': 'Wait results'}
+    {
+        'action': 'fill',
+        'target': 'textarea[id="autocomplete-search-bar"], input[aria-label*="Search"]',
+        'value': '{search_term}',
+        'description': 'Type product'
+    },
+    {
+        'action': 'click',
+        'target': 'button[id="autocomplete-search-button"], button[aria-label="Search-Button"]',
+        'description': 'Submit search'
+    },
+    {
+        'action': 'wait',
+        'target': '.sku-item, .sku-item-list, .sr-item',
+        'timeout': 15,
+        'description': 'Wait results'
+    }
     ],
     'product_selectors': [
-    {'name':'product_titles','selector': '.sku-item .sku-title a, .sr-item .sr-item-title a','extract_type':'text','multiple':True},
-    {'name':'product_prices','selector': '.pricing-price .sr-only, .pricing-price .off-screen, .priceView-hero-price span','extract_type':'text','multiple':True},
-    {'name':'product_links','selector': '.sku-item .sku-title a, .sr-item .sr-item-title a','extract_type':'attribute','attribute':'href','multiple':True}
+    {
+        'name':'product_titles',
+        'selector': '.sku-item .sku-title a, .sr-item .sr-item-title a',
+        'extract_type':'text',
+        'multiple':True
+    },
+    {
+        'name':'product_prices',
+        'selector': '.pricing-price .sr-only, .pricing-price .off-screen, .priceView-hero-price span',
+        'extract_type':'text',
+        'multiple':True
+    },
+    {
+        'name':'product_links',
+        'selector': '.sku-item .sku-title a, .sr-item .sr-item-title a',
+        'extract_type':'attribute',
+        'attribute':'href',
+        'multiple':True
+    }
     ],
     'guidance': 'Best Buy uses dynamic loading and specific CSS classes for products. Search results appear in .sku-item-list containers.'
 }

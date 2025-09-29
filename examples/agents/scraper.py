@@ -5,7 +5,7 @@ from parrot.bots.scraper import ScrapingAgent
 async def check_scrapping_agent():
     """Example of using the ScrapingAgent with adaptive configuration"""
     agent = ScrapingAgent(
-        browser='chrome',
+        browser='undetected',  # Use undetected-chromedriver
         headless=False,        # For debugging
         mobile=False,           # For mobile testing
         driver_type='selenium', # Using Selenium
@@ -18,12 +18,14 @@ async def check_scrapping_agent():
 
     # Get recommendations for a site
     # recommendations = await agent.get_site_recommendations('https://www.bestbuy.com/?intl=nosplash')
+    # print('Site Recommendations:', recommendations)
 
     # Execute intelligent scraping with adaptive configuration
     request = {
         'target_url': 'https://www.bestbuy.com/?intl=nosplash',
         'objective': 'Extract Product Price and product URL for Google Pixel 10 Pro 128GB',
         'constraints': 'Respect rate limits',
+        'use_template': True,
         # 'steps': [
         #     'write the product into <textarea> with placeholder "Search Best Buy"',
         #     'click on button "autocomplete-search-button"',

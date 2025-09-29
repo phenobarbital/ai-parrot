@@ -259,11 +259,14 @@ class WebScrapingTool(AbstractTool):
             # Execute each step in sequence
             for i, step in enumerate(steps):
                 self.logger.info(f"Executing step {i+1}/{len(steps)}: {step.description}")
+                print(' DEBUG STEP > ', step, base_url)
                 success = await self._execute_step(step, base_url)
 
                 if not success and step.action in ['navigate', 'authenticate']:
                     # Critical steps - abort if they fail
-                    self.logger.error(f"Critical step failed: {step.description}")
+                    self.logger.error(
+                        f"Critical step failed: {step.description}"
+                    )
                     break
 
                 # Add delay between actions

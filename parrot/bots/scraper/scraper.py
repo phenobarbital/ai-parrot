@@ -3,13 +3,12 @@ ScrapingAgent for AI-Parrot
 LLM-powered agent that makes intelligent decisions about web scraping
 Updated to better integrate with current WebScrapingTool architecture
 """
-from typing import Dict, List, Any, Optional, Union, Literal
+from typing import Dict, List, Any, Optional, Literal
 import json
 import re
 import logging
 from datetime import datetime
 from urllib.parse import urlparse
-
 from bs4 import BeautifulSoup
 from ..abstract import AbstractBot
 from ...tools.scraping import (
@@ -22,6 +21,12 @@ from .templates import (
     BESTBUY_TEMPLATE,
     AMAZON_TEMPLATE,
     EBAY_TEMPLATE
+)
+from .models import (
+    ScrapingStepSchema,
+    ScrapingSelectorSchema,
+    BrowserConfigSchema,
+    ScrapingPlanSchema
 )
 
 
@@ -296,13 +301,14 @@ Please provide:
 **Browser Capabilities Available:**
 {json.dumps(self.browser_capabilities, indent=2)}
 
-**IMPORTANT:**
-- If site-specific guidance is provided above, strongly consider using those suggested steps and selectors as they are tested patterns
-- You can modify the suggested steps/selectors if needed, but they provide a good starting point
-- Always ensure steps are in the correct order: navigate -> fill -> click -> wait
-- Use appropriate wait conditions to handle dynamic content loading
+**CRITICAL INSTRUCTIONS:**
+1. For 'navigate' actions: target MUST be a complete URL starting with http:// or https://
+2. For 'click', 'fill', 'wait' actions: target MUST be a CSS selector (e.g., '#id', '.class', 'button[type="submit"]')
+3. NEVER use natural language descriptions as targets (e.g., "the search box" is WRONG, "#search-input" is CORRECT)
+4. If template steps are provided above, use those EXACT targets - they are proven to work
+5. Steps must be in logical order: navigate → wait → fill → click → wait for results
 
-Format your response with clear sections and JSON blocks for steps, selectors, and browser config.
+Provide your response as a structured plan following the ScrapingPlanSchema.
         """
 
         async with self._llm as client:
@@ -313,11 +319,24 @@ Format your response with clear sections and JSON blocks for steps, selectors, a
                 max_tokens=self._max_tokens,
                 temperature=self._llm_temp,
                 use_tools=True,
+                structured_output=ScrapingPlanSchema
             )
 
-        # Parse the response to extract structured plan
-        content = self._safe_extract_text(response)
-        plan = self._parse_scraping_plan(content)
+        if isinstance(response.output, ScrapingPlanSchema):
+            response = response.output
+            plan = {
+                'steps': [step.model_dump() for step in response.steps],
+                'selectors': [sel.model_dump() for sel in response.selectors],
+                'browser_config': response.browser_config.model_dump(),
+                'analysis': response.analysis,
+                'risks': response.risks,
+                'fallback_strategy': response.fallback_strategy,
+                'parsed_successfully': True
+            }
+        else:
+            # Fallback if structured output not available
+            content = self._safe_extract_text(response)
+            plan = self._parse_scraping_plan(content)
 
         # If LLM didn't generate steps but we have template suggestions, use them as fallback
         if not plan.get('steps') and suggested_steps:
@@ -534,14 +553,21 @@ Format your response with clear sections and JSON blocks for steps, selectors, a
         )
 
     def _create_scraping_selector(self, selector_data: Dict[str, Any]) -> ScrapingSelector:
-        """Create ScrapingSelector object from dictionary, handling missing fields"""
+        """Create ScrapingSelector object from dictionary, handling missing/odd fields"""
+        name = selector_data.get('name', 'unnamed')
+        selector = selector_data.get('selector', 'body')
+        selector_type = selector_data.get('selector_type', 'css')
+        extract_type = selector_data.get('extract_type', 'text')
+        attribute = selector_data.get('attribute')
+        multiple = selector_data.get('multiple', False)
+
         return ScrapingSelector(
-            name=selector_data.get('name', 'unnamed'),
-            selector=selector_data.get('selector', 'body'),
-            selector_type=selector_data.get('selector_type', 'css'),
-            extract_type=selector_data.get('extract_type', 'text'),
-            attribute=selector_data.get('attribute'),
-            multiple=selector_data.get('multiple', False)
+            name=str(name),
+            selector=str(selector),
+            selector_type=str(selector_type),
+            extract_type=str(extract_type),
+            attribute=(str(attribute) if attribute is not None else None),
+            multiple=bool(multiple)
         )
 
     async def recommend_browser_for_site(self, url: str) -> Dict[str, Any]:
