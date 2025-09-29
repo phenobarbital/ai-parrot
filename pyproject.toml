@@ -83,6 +83,9 @@ agents = [
     "mcp==1.15.0",
     "sse-starlette==3.0.2",
     "requests-oauthlib==2.0.0",
+    "undetected-chromedriver==3.5.5",
+    "selenium==4.35.0",
+    "playwright==1.52.0",
 ]
 
 # Update the loaders optional dependency section with pinned versions

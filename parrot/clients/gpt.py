@@ -181,11 +181,13 @@ class OpenAIClient(AbstractClient):
                 }
 
         # Make initial request
+        if not model_str == 'gpt-5-nano':
+            # there is not max_tokens param for gpt-5-nano
+            args['max_tokens'] = max_tokens or self.max_tokens
+            args['temperature'] = temperature or self.temperature
         response = await self._chat_completion(
             model=model_str,
             messages=messages,
-            max_tokens=max_tokens or self.max_tokens,
-            temperature=temperature or self.temperature,
             stream=False,
             **args
         )
@@ -245,8 +247,6 @@ class OpenAIClient(AbstractClient):
             response = await self._chat_completion(
                 model=model_str,
                 messages=messages,
-                max_tokens=max_tokens or self.max_tokens,
-                temperature=temperature or self.temperature,
                 stream=False,
                 **args
             )
