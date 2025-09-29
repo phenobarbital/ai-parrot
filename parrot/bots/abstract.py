@@ -2407,3 +2407,32 @@ Use the following information about user's data to guide your responses:
                 validation_results['validation_errors'].append(f"{tool_name}: {str(e)}")
 
         return validation_results
+
+    def _safe_extract_text(self, response) -> str:
+        """
+        Safely extract text from AIMessage response
+        """
+        try:
+            # First try the to_text property
+            if hasattr(response, 'to_text'):
+                return response.to_text
+
+            # Then try output attribute
+            if hasattr(response, 'output'):
+                if isinstance(response.output, str):
+                    return response.output
+                else:
+                    return str(response.output)
+
+            # Fallback to response attribute
+            if hasattr(response, 'response') and response.response:
+                return response.response
+
+            # Final fallback
+            return str(response)
+
+        except Exception as e:
+            self.logger.warning(
+                f"Failed to extract text from response: {str(e)}"
+            )
+            return ""
