@@ -23,6 +23,7 @@ class GoogleModel(Enum):
     GEMINI_2_5_FLASH_IMAGE_PREVIEW = "gemini-2.5-flash-image-preview"
     VEO_3_0 = "veo-3.0-generate-preview"
     VEO_2_0 = "veo-2.0-generate-001"
+    VEO_3_0_FAST = "veo-3.0-fast-generate-001"
 
 # NEW: Enum for all valid TTS voice names
 class TTSVoice(str, Enum):
