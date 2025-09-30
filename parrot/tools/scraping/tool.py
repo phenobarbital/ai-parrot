@@ -18,7 +18,7 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import NoSuchElementException
+from selenium.common.exceptions import NoSuchElementException, TimeoutException
 # For Playwright alternative
 try:
     from playwright.async_api import async_playwright, Page, Browser
@@ -46,6 +46,9 @@ class ScrapingStep:
     target: Optional[str] = ""
     value: Optional[str] = None  # For fill actions
     wait_condition: Optional[str] = None  # Condition to wait for
+    wait_after_click: Optional[str] = None  # Element to wait for after click
+    wait_after_timeout: int = 2  # Timeout for post-click wait
+    no_wait: bool = False  # Skip any waiting after click
     timeout: int = 10
     description: str = ""
 
@@ -141,7 +144,7 @@ class WebScrapingTool(AbstractTool):
         # Allow turning overlay housekeeping on/off (default ON)
         self.overlay_housekeeping: bool = kwargs.get('overlay_housekeeping', True)
         # Configuration
-        self.default_timeout = kwargs.get('default_timeout', 30)
+        self.default_timeout = kwargs.get('default_timeout', 10)
         self.retry_attempts = kwargs.get('retry_attempts', 3)
         self.delay_between_actions = kwargs.get('delay_between_actions', 1)
         logging.getLogger("urllib3.connectionpool").setLevel(logging.ERROR)
@@ -316,42 +319,63 @@ class WebScrapingTool(AbstractTool):
 
     async def _execute_step(self, step: ScrapingStep, base_url: str = "") -> bool:
         """Execute a single scraping step with a hard timeout per step."""
+        # Actions that should have enforced timeout
+        TIMEOUT_ACTIONS = {'await_human', 'await_keypress', 'await_browser_event'}
+
         async def _do():
             if step.action == 'navigate':
                 url = urljoin(base_url, step.target) if base_url else step.target
                 await self._navigate_to(url)
 
             elif step.action == 'click':
-                await self._click_element(step.target, timeout=step.timeout or self.default_timeout)
+                await self._click_element(
+                    step.target,
+                    timeout=step.timeout or self.default_timeout,
+                    step=step
+                )
+                return True
 
             elif step.action == 'fill':
                 await self._fill_element(step.target, step.value or "")
+                return True
 
             elif step.action == 'await_human':
                 await self._await_human(step)
+                return True
 
             elif step.action == 'await_keypress':
                 await self._await_keypress(step)
+                return True
 
             elif step.action == 'await_browser_event':
                 await self._await_browser_event(step)
+                return True
 
             elif step.action == 'wait':
                 await self._wait_for_condition(
                     step.wait_condition or step.target,
                     step.timeout or self.default_timeout
                 )
-
+                return True
             elif step.action == 'scroll':
                 await self._scroll_page(step.target)
+                return True
 
             elif step.action == 'authenticate':
                 await self._handle_authentication(step)
+                return True
+            else:
+                self.logger.warning(f"Unknown action: {step.action}")
+                return False
 
         try:
-            # Small buffer (0.75s) to account for scheduling/JS execution overhead
-            cap = max(1, (step.timeout or self.default_timeout)) + 1
-            await asyncio.wait_for(_do(), timeout=cap)
+            if step.action in TIMEOUT_ACTIONS:
+                cap = max(1, (step.timeout or self.default_timeout)) + 1
+                await asyncio.wait_for(_do(), timeout=cap)
+            else:
+                # Execute without wrapper timeout
+                await _do()
+
             return True
         except asyncio.TimeoutError:
             self.logger.error(f"Step timed out: {step.description or step.action} (cap={cap}s)")
@@ -456,16 +480,33 @@ class WebScrapingTool(AbstractTool):
         except Exception:
             return False
 
-    async def _click_element(self, selector: str, timeout: Optional[int] = None):
-        """Click an element"""
+    async def _click_element(
+        self,
+        selector: str,
+        timeout: Optional[int] = None,
+        step: Optional[ScrapingStep] = None
+    ):
+        """Click an element.
+
+        Args:
+            selector: CSS selector for element to click
+            timeout: Timeout for finding the element
+            step: Optional ScrapingStep with additional config
+        """
         if self.driver_type == 'selenium':
             loop = asyncio.get_running_loop()
             def click_sync():
-                wait = WebDriverWait(self.driver, timeout or self.default_timeout, poll_frequency=0.25)
+                wait = WebDriverWait(
+                    self.driver,
+                    timeout or self.default_timeout,
+                    poll_frequency=0.25
+                )
                 # If an overlay is present, wait for it to disappear
                 try:
                     el = wait.until(
-                        EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                        EC.presence_of_element_located(
+                            (By.CSS_SELECTOR, selector)
+                        )
                     )
                     try:
                         el.click()
@@ -478,18 +519,66 @@ class WebScrapingTool(AbstractTool):
                 except Exception:
                     pass  # continue anyway; we'll try JS fallback
 
+                # Perform the click
                 element = wait.until(
                     EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
                 )
                 try:
                     element.click()
+                    self.logger.debug(f"Click performed on: {selector}")
                 except Exception:
                     # Scroll into view and JS-click as a fallback
                     self.js_click(self.driver, element)
 
+                if step:
+                    if step.no_wait:
+                        # Skip any waiting - immediately return
+                        return
+                    elif step.wait_after_click:
+                        # Wait for specified element to appear
+                        try:
+                            WebDriverWait(
+                                self.driver,
+                                step.wait_after_timeout or self.default_timeout,
+                                poll_frequency=0.25
+                            ).until(
+                                EC.presence_of_element_located(
+                                    (By.CSS_SELECTOR, step.wait_after_click)
+                                )
+                            )
+                        except Exception:
+                            self.logger.warning(
+                                f"Post-click wait element not found: {step.wait_after_click}"
+                            )
+                            return
+                    else:
+                        # Default: small sleep to allow any navigation/JS to start
+                        time.sleep(0.5)
+                else:
+                    return
+
             await loop.run_in_executor(None, click_sync)
+            return True
         else:  # Playwright
             await self.page.click(selector, timeout=self.default_timeout * 1000)
+            # Handle post-click waiting for Playwright
+            if step:
+                if step.no_wait:
+                    self.logger.debug("no_wait=True, skipping post-click wait")
+                    return
+                elif step.wait_after_click:
+                    try:
+                        await self.page.wait_for_selector(
+                            step.wait_after_click,
+                            timeout=(step.wait_after_timeout or self.default_timeout) * 1000
+                        )
+                        self.logger.debug(
+                            f"Post-click element found: {step.wait_after_click}"
+                        )
+                    except Exception:
+                        self.logger.warning(
+                            f"Post-click wait timed out: {step.wait_after_click}"
+                        )
 
     async def _fill_element(self, selector: str, value: str):
         """Fill an input element"""
@@ -502,11 +591,15 @@ class WebScrapingTool(AbstractTool):
                 element.clear()
                 element.send_keys(value)
             await loop.run_in_executor(None, fill_sync)
+            return True
         else:  # Playwright
             await self.page.fill(selector, value)
 
     async def _wait_for_condition(self, condition: str, timeout: int = 5):
-        """Wait for a specific condition to be met"""
+        """
+        Wait for a specific condition to be met.
+        Handles multiple selectors separated by commas.
+        """
         if self.driver_type == 'selenium':
             loop = asyncio.get_running_loop()
 
@@ -515,66 +608,124 @@ class WebScrapingTool(AbstractTool):
                 try:
                     _ = self.driver.current_url
                 except Exception as e:
-                    raise RuntimeError(f"Selenium session not alive: {e}")
+                    raise RuntimeError(
+                        f"Selenium session not alive: {e}"
+                    ) from e
 
-                deadline = time.monotonic() + timeout
-                # Prefixed conditions -> use EC (direct WebDriver waits; no asyncio)
+                # Handle prefixed conditions
                 if condition.startswith('presence_of_element_located:'):
-                    selector = condition.split(':', 1)[1]
-                    WebDriverWait(self.driver, timeout, poll_frequency=0.25).until(
-                        EC.presence_of_element_located((By.CSS_SELECTOR, selector))
-                    )
-                    return
+                    selectors_str = condition.split(':', 1)[1]
+                    selectors = [s.strip() for s in selectors_str.split(',')]
 
-                if condition.startswith('element_to_be_clickable:'):
-                    selector = condition.split(':', 1)[1]
-                    WebDriverWait(self.driver, timeout).until(
-                        EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
-                    )
-                    return
+                    # Try each selector until one works
+                    for selector in selectors:
+                        try:
+                            WebDriverWait(self.driver, timeout, poll_frequency=0.25).until(
+                                EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                            )
+                            self.logger.debug(f"Element found: {selector}")
+                            return True  # IMPORTANT: Return immediately when found
+                        except TimeoutException:
+                            if selector == selectors[-1]:  # Last selector
+                                raise TimeoutException(f"None of the selectors found: {selectors}")
+                            continue  # Try next selector
 
-                if condition.startswith('text_to_be_present:'):
+                elif condition.startswith('element_to_be_clickable:'):
+                    selectors_str = condition.split(':', 1)[1]
+                    selectors = [s.strip() for s in selectors_str.split(',')]
+
+                    for selector in selectors:
+                        try:
+                            WebDriverWait(self.driver, timeout).until(
+                                EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
+                            )
+                            self.logger.debug(f"Clickable element found: {selector}")
+                            return True  # Return immediately
+                        except TimeoutException:
+                            if selector == selectors[-1]:
+                                raise TimeoutException(f"None of the selectors clickable: {selectors}")
+                            continue
+
+                elif condition.startswith('text_to_be_present:'):
                     text = condition.split(':', 1)[1]
                     WebDriverWait(self.driver, timeout, poll_frequency=0.25).until(
                         EC.text_to_be_present_in_element((By.TAG_NAME, "body"), text)
                     )
-                    return
+                    self.logger.debug(f"Text found: {text}")
+                    return True  # Return immediately
 
-                if condition.startswith('invisibility_of_element:'):
+                elif condition.startswith('invisibility_of_element:'):
                     selector = condition.split(':', 1)[1]
                     WebDriverWait(self.driver, timeout).until(
                         EC.invisibility_of_element_located((By.CSS_SELECTOR, selector))
                     )
-                    return
+                    self.logger.debug(f"Element invisible: {selector}")
+                    return True  # Return immediately
 
-                # DEFAULT: CSS selector -> fast JS polling (no /elements)
-                selector = condition
-                while True:
+                else:
+                    # DEFAULT: Plain CSS selector(s) - use fast JS polling
+                    selectors = [s.strip() for s in condition.split(',')]
+                    deadline = time.monotonic() + timeout
+
+                    while time.monotonic() < deadline:
+                        for selector in selectors:
+                            try:
+                                count = self.driver.execute_script(
+                                    "return document.querySelectorAll(arguments[0]).length;",
+                                    selector
+                                )
+                                if isinstance(count, int) and count > 0:
+                                    self.logger.debug(f"Element found via JS: {selector}")
+                                    return True  # Return immediately when found
+                            except Exception:
+                                pass
+
+                        time.sleep(0.15)  # Small delay before retry
+
+                    # Timeout reached
+                    raise TimeoutException(f"Timeout waiting for selectors: {selectors}")
+
+            # Execute and return result
+            result = await loop.run_in_executor(None, wait_sync)
+            return result
+
+        else:  # Playwright
+            if condition.startswith('presence_of_element_located:'):
+                selectors_str = condition.replace('presence_of_element_located:', '')
+                selectors = [s.strip() for s in selectors_str.split(',')]
+
+                # Try each selector
+                for selector in selectors:
                     try:
-                        count = self.driver.execute_script(
-                            "return document.querySelectorAll(arguments[0]).length;", selector
-                        )
-                        if isinstance(count, int) and count > 0:
-                            return
+                        await self.page.wait_for_selector(selector, timeout=timeout * 1000)
+                        self.logger.debug(f"Playwright found: {selector}")
+                        return True
                     except Exception:
-                        pass
+                        if selector == selectors[-1]:
+                            raise
+                        continue
 
-                    if time.monotonic() >= deadline:
-                        raise TimeoutError(f"Timeout waiting for selector: {selector}")
-
-                    time.sleep(0.15)
-
-            await loop.run_in_executor(None, wait_sync)
-        else:
-            # Playwright branch unchanged
-            if condition.startswith('presence_of_element_located'):
-                selector = condition.replace('presence_of_element_located:', '')
-                await self.page.wait_for_selector(selector, timeout=timeout * 1000)
-            elif condition.startswith('text_to_be_present'):
+            elif condition.startswith('text_to_be_present:'):
                 text = condition.replace('text_to_be_present:', '')
-                await self.page.wait_for_function(f"document.body.textContent.includes('{text}')", timeout=timeout * 1000)
+                await self.page.wait_for_function(
+                    f"document.body.textContent.includes('{text}')",
+                    timeout=timeout * 1000
+                )
+                return True
+
             else:
-                await self.page.wait_for_selector(condition, timeout=timeout * 1000)
+                # Try multiple selectors if comma-separated
+                selectors = [s.strip() for s in condition.split(',')]
+                for selector in selectors:
+                    try:
+                        await self.page.wait_for_selector(selector, timeout=timeout * 1000)
+                        return True
+                    except Exception:
+                        if selector == selectors[-1]:
+                            raise
+                        continue
+
+            return True
 
     async def _scroll_page(self, target: str):
         """Scroll the page"""

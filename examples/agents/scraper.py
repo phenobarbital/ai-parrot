@@ -1,7 +1,7 @@
 import asyncio
 from pathlib import Path
 from parrot.bots.scraper import ScrapingAgent
-
+from parrot.models.google import GoogleModel
 
 async def check_scrapping_agent():
     """Example of using the ScrapingAgent with adaptive configuration"""
@@ -12,6 +12,7 @@ async def check_scrapping_agent():
         driver_type='selenium', # Using Selenium
         max_tokens=8192,
         temperature=0,
+        model=GoogleModel.GEMINI_2_5_FLASH_PREVIEW,
         user_data_dir=str(Path.home() / ".selenium/profiles/myshop"),
         debugger_address="127.0.0.1:9222",
     )
