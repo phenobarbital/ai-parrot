@@ -86,6 +86,17 @@ class WebScrapingTool(AbstractTool):
     - Flexible content extraction
     - Intermediate result storage
     - Error handling and retry logic
+
+    Supported Actions:
+        * Navigation: navigate, back, refresh
+        * Interaction: click, fill, press_key, scroll
+        * Data Extraction: get_text, get_html, get_cookies
+        * Authentication: authenticate
+        * File Operations: upload_file, wait_for_download, screenshot
+        * State Management: set_cookies
+        * Waiting: wait, await_human, await_keypress, await_browser_event
+        * Evaluation: evaluate
+        * Control Flow: loop
     """
 
     name = "WebScrapingTool"
@@ -1179,6 +1190,41 @@ authenticate or waiting for events or human intervention actions."""
 
     async def _handle_authentication(self, action: Authenticate):
         """Handle authentication flows"""
+        if action.method == 'bearer':
+            if not action.token:
+                self.logger.error("Bearer token authentication requires a 'token' value.")
+                return False
+            # Construct the header from the provided format and token
+            header_value = action.header_value_format.format(action.token)
+            headers = {action.header_name: header_value}
+            if self.driver_type == 'selenium':
+                # For Selenium, we use the Chrome DevTools Protocol (CDP) to set headers.
+                # This requires a Chromium-based browser (Chrome, Edge).
+                if not hasattr(self.driver, 'execute_cdp_cmd'):
+                    self.logger.error(
+                        "Bearer token injection for Selenium is only supported on Chromium-based browsers."
+                    )
+                    return False
+                self.logger.info(f"Setting extra HTTP headers for Selenium session: {list(headers.keys())}")
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(
+                    None,
+                    lambda: self.driver.execute_cdp_cmd(
+                        'Network.setExtraHTTPHeaders', {'headers': headers}
+                    )
+                )
+
+            elif self.driver_type == 'playwright' and PLAYWRIGHT_AVAILABLE:
+                # Playwright has a direct and simple method for this.
+                self.logger.info(f"Setting extra HTTP headers for Playwright session: {list(headers.keys())}")
+                await self.page.set_extra_http_headers(headers)
+
+            else:
+                self.logger.error(f"Bearer token authentication is not implemented for driver type: {self.driver_type}")
+                return False
+
+            self.logger.info("Bearer token authentication configured. All subsequent requests will include the specified header.")
+            return True
         username = action.username
         password = action.password
         username_selector = action.username_selector or '#username'

@@ -157,6 +157,18 @@ class Authenticate(BrowserAction):
         default=None,
         description="Custom action sequence for complex authentication"
     )
+    token: Optional[str] = Field(
+        default=None,
+        description="The bearer token value (for 'bearer' method)"
+    )
+    header_name: str = Field(
+        default="Authorization",
+        description="The name of the HTTP header to set, e.g., 'Authorization' or 'X-API-Key' (for 'bearer' method)"
+    )
+    header_value_format: str = Field(
+        default="Bearer {}",
+        description="Format for the header value, where '{}' will be replaced by the token (for 'bearer' method)"
+    )
 
 
 class AwaitHuman(BrowserAction):

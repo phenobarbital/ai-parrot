@@ -18,7 +18,7 @@ async def test_consumer_scraping():
         "steps": [
             {
                 'action': 'navigate',
-                'target': 'https://www.consumeraffairs.com/homeowners/service-protection-advantage.html',
+                'url': 'https://www.consumeraffairs.com/homeowners/service-protection-advantage.html',
                 'description': 'Consumer Affairs home'
             },
             {
