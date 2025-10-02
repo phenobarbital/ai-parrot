@@ -16,6 +16,7 @@ from bs4 import BeautifulSoup
 # Selenium imports
 from selenium import webdriver
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import NoSuchElementException, TimeoutException
@@ -27,42 +28,27 @@ except ImportError:
     PLAYWRIGHT_AVAILABLE = False
 from ..abstract import AbstractTool
 from .driver import SeleniumSetup
-
-
-@dataclass
-class ScrapingStep:
-    """Represents a single step in the scraping process"""
-    action: Literal[
-        'navigate',
-        'click',
-        'fill',
-        'wait',
-        'scroll',
-        'authenticate',
-        'await_human',
-        'await_keypress',
-        'await_browser_event'
-    ]
-    target: Optional[str] = ""
-    value: Optional[str] = None  # For fill actions
-    wait_condition: Optional[str] = None  # Condition to wait for
-    wait_after_click: Optional[str] = None  # Element to wait for after click
-    wait_after_timeout: int = 2  # Timeout for post-click wait
-    no_wait: bool = False  # Skip any waiting after click
-    timeout: int = 10
-    description: str = ""
-
-
-@dataclass
-class ScrapingSelector:
-    """Defines what content to extract from a page"""
-    name: str  # Friendly name for the content
-    selector: str  # CSS selector, XPath, or 'body' for full content
-    selector_type: Literal['css', 'xpath', 'tag'] = 'css'
-    extract_type: Literal['text', 'html', 'attribute'] = 'text'
-    attribute: Optional[str] = None  # For attribute extraction
-    multiple: bool = False  # Whether to extract all matching elements
-
+from .models import (
+    BrowserAction,
+    Navigate,
+    Click,
+    Fill,
+    Evaluate,
+    PressKey,
+    Refresh,
+    Back,
+    Wait,
+    Scroll,
+    Authenticate,
+    GetCookies,
+    SetCookies,
+    AwaitHuman,
+    AwaitKeyPress,
+    AwaitBrowserEvent,
+    Loop,
+    ScrapingStep,
+    ScrapingSelector
+)
 
 @dataclass
 class ScrapingResult:
@@ -109,7 +95,9 @@ class WebScrapingTool(AbstractTool):
     """
 
     name = "WebScrapingTool"
-    description = "Execute automated web scraping with step-by-step navigation and content extraction. Supports navigate, click, fill, wait, scroll, and authenticate actions."
+    description = """Execute automated web scraping with step-by-step navigation and content extraction.
+Supports navigate, click, fill, wait, scroll, set and get cookies, refresh page, back, press keys,
+authenticate or waiting for events or human intervention actions."""
     args_schema = WebScrapingToolArgs
 
     def __init__(
@@ -319,70 +307,132 @@ class WebScrapingTool(AbstractTool):
 
     async def _execute_step(self, step: ScrapingStep, base_url: str = "") -> bool:
         """Execute a single scraping step with a hard timeout per step."""
-        # Actions that should have enforced timeout
-        TIMEOUT_ACTIONS = {'await_human', 'await_keypress', 'await_browser_event'}
-
-        async def _do():
-            if step.action == 'navigate':
-                url = urljoin(base_url, step.target) if base_url else step.target
-                await self._navigate_to(url)
-
-            elif step.action == 'click':
-                await self._click_element(
-                    step.target,
-                    timeout=step.timeout or self.default_timeout,
-                    step=step
+        action = step.action
+        action_type = step.get_action_type()
+        result = None
+        try:
+            if action_type == 'navigate':
+                result = await self._navigate_to(action, base_url)
+            elif action_type == 'click':
+                result = await self._click(
+                    action,
+                    timeout=action.timeout or self.default_timeout
                 )
-                return True
-
-            elif step.action == 'fill':
-                await self._fill_element(step.target, step.value or "")
-                return True
-
-            elif step.action == 'await_human':
-                await self._await_human(step)
-                return True
-
-            elif step.action == 'await_keypress':
-                await self._await_keypress(step)
-                return True
-
-            elif step.action == 'await_browser_event':
-                await self._await_browser_event(step)
-                return True
-
-            elif step.action == 'wait':
-                await self._wait_for_condition(
-                    step.wait_condition or step.target,
+            elif action_type == 'fill':
+                result = await self._fill(action)
+            elif action_type == 'evaluate':
+                result = await self._evaluate_js(action)
+            elif action_type == 'await_human':
+                result = await self._await_human(action)
+            elif action_type == 'press_key':
+                result = await self._press_key(action)
+            elif action_type == 'refresh':
+                result = await self._handle_refresh(action)
+            elif action_type == 'back':
+                result = await self._handle_back(action)
+            elif action_type == 'get_cookies':
+                result = await self._get_cookies(action)
+            elif action_type == 'set_cookies':
+                result = await self._set_cookies(action)
+            elif action_type == 'await_keypress':
+                result = await self._await_keypress(action)
+            elif action_type == 'await_browser_event':
+                result = await self._await_browser_event(action)
+            elif action_type == 'wait':
+                result = await self._wait_for_condition(
+                    action,
                     step.timeout or self.default_timeout
                 )
-                return True
-            elif step.action == 'scroll':
-                await self._scroll_page(step.target)
-                return True
-
-            elif step.action == 'authenticate':
-                await self._handle_authentication(step)
-                return True
+            elif action_type == 'scroll':
+                result = await self._scroll_page(action)
+            elif action_type == 'authenticate':
+                result = await self._handle_authentication(action)
             else:
                 self.logger.warning(f"Unknown action: {step.action}")
                 return False
-
-        try:
-            if step.action in TIMEOUT_ACTIONS:
-                cap = max(1, (step.timeout or self.default_timeout)) + 1
-                await asyncio.wait_for(_do(), timeout=cap)
-            else:
-                # Execute without wrapper timeout
-                await _do()
-
-            return True
+            return result
         except asyncio.TimeoutError:
-            self.logger.error(f"Step timed out: {step.description or step.action} (cap={cap}s)")
+            self.logger.error(f"Step timed out: {step.description or step.action}")
             return False
         except Exception as e:
             self.logger.error(f"Step execution failed: {step.action} - {str(e)}")
             return False
+
+    async def _evaluate_js(self, action: Evaluate) -> Any:
+        """Handle Evaluate action"""
+        script = action.script
+
+        # Load script from file if specified
+        if action.script_file:
+            with open(action.script_file, 'r') as f:
+                script = f.read()
+
+        if not script:
+            self.logger.warning(
+                "No script provided for Evaluate action"
+            )
+            return False
+
+        if self.driver_type == 'selenium':
+            loop = asyncio.get_running_loop()
+            result = await loop.run_in_executor(
+                None,
+                lambda: self.driver.execute_script(script, *action.args)
+            )
+        else:  # Playwright
+            result = await self.page.evaluate(script, *action.args)
+
+        return result if action.return_value else True
+
+    async def _press_key(self, action: PressKey) -> bool:
+        """Handle PressKey action"""
+        # Focus on target element if specified
+        if action.target:
+            if self.driver_type == 'selenium':
+                element = self.driver.find_element(By.CSS_SELECTOR, action.target)
+                element.click()
+            else:
+                await self.page.focus(action.target)
+
+        # Press keys
+        for key in action.keys:
+            if self.driver_type == 'selenium':
+                key_obj = getattr(Keys, key.upper(), key)
+                if action.target:
+                    element.send_keys(key_obj)
+                else:
+                    self.driver.switch_to.active_element.send_keys(key_obj)
+            else:  # Playwright
+                await self.page.keyboard.press(key)
+
+        return True
+
+    async def _handle_refresh(self, action: Refresh) -> bool:
+        """Handle Refresh action"""
+        if self.driver_type == 'selenium':
+            loop = asyncio.get_running_loop()
+            if action.hard:
+                await loop.run_in_executor(
+                    None,
+                    lambda: self.driver.execute_script("location.reload(true)")
+                )
+            else:
+                await loop.run_in_executor(None, self.driver.refresh)
+        else:  # Playwright
+            await self.page.reload(wait_until='domcontentloaded')
+
+        return True
+
+    async def _handle_back(self, action: Back) -> bool:
+        """Handle Back action"""
+        for _ in range(action.steps):
+            if self.driver_type == 'selenium':
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(None, self.driver.back)
+            else:  # Playwright
+                await self.page.go_back()
+
+        return True
 
     async def _post_navigate_housekeeping(self):
         """Best-effort, non-blocking overlay dismissal. Never stalls navigation."""
@@ -448,7 +498,8 @@ class WebScrapingTool(AbstractTool):
         except Exception:
             return False
 
-    async def _navigate_to(self, url: str):
+    async def _navigate_to(self, action: Navigate, base_url: str):
+        url = urljoin(base_url, action.url) if base_url else action.url
         if self.driver_type == 'selenium':
             loop = asyncio.get_running_loop()
             await loop.run_in_executor(None, self.driver.get, url)
@@ -459,7 +510,9 @@ class WebScrapingTool(AbstractTool):
                     # TODO create a whitelist of hosts where overlays are common
                     if host and any(x in host for x in ['bestbuy', 'amazon', 'ebay', 'walmart', 'target']):
                         try:
-                            await asyncio.wait_for(self._post_navigate_housekeeping(), timeout=1.25)
+                            await asyncio.wait_for(
+                                self._post_navigate_housekeeping(), timeout=1.25
+                            )
                         except Exception:
                             pass
                 except Exception:
@@ -471,6 +524,7 @@ class WebScrapingTool(AbstractTool):
                     await asyncio.wait_for(self._post_navigate_housekeeping(), timeout=1.25)
                 except Exception:
                     pass
+        return True
 
     def js_click(self, driver, element):
         try:
@@ -483,8 +537,32 @@ class WebScrapingTool(AbstractTool):
     async def _click_element(
         self,
         selector: str,
-        timeout: Optional[int] = None,
-        step: Optional[ScrapingStep] = None
+        timeout: Optional[int] = None
+    ):
+        """Click an element by selector."""
+        wait = WebDriverWait(
+            self.driver,
+            timeout or self.default_timeout,
+            poll_frequency=0.25
+        )
+        try:
+            el = wait.until(
+                EC.presence_of_element_located(
+                    (By.CSS_SELECTOR, selector)
+                )
+            )
+            el.click()
+        except Exception:
+            # fallback to JS click
+            try:
+                self.js_click(self.driver, el)
+            except Exception:
+                return False
+
+    async def _click(
+        self,
+        action: Click,
+        timeout: Optional[int] = None
     ):
         """Click an element.
 
@@ -493,6 +571,7 @@ class WebScrapingTool(AbstractTool):
             timeout: Timeout for finding the element
             step: Optional ScrapingStep with additional config
         """
+        selector = action.selector
         if self.driver_type == 'selenium':
             loop = asyncio.get_running_loop()
             def click_sync():
@@ -530,27 +609,26 @@ class WebScrapingTool(AbstractTool):
                     # Scroll into view and JS-click as a fallback
                     self.js_click(self.driver, element)
 
-                if step:
-                    if step.no_wait:
-                        # Skip any waiting - immediately return
+                if action.no_wait:
+                    # Skip any waiting - immediately return
+                    return
+                elif action.wait_after_click:
+                    # Wait for specified element to appear
+                    try:
+                        WebDriverWait(
+                            self.driver,
+                            action.wait_after_timeout or self.default_timeout,
+                            poll_frequency=0.25
+                        ).until(
+                            EC.presence_of_element_located(
+                                (By.CSS_SELECTOR, action.wait_after_click)
+                            )
+                        )
+                    except Exception:
+                        self.logger.warning(
+                            f"Post-click wait element not found: {action.wait_after_click}"
+                        )
                         return
-                    elif step.wait_after_click:
-                        # Wait for specified element to appear
-                        try:
-                            WebDriverWait(
-                                self.driver,
-                                step.wait_after_timeout or self.default_timeout,
-                                poll_frequency=0.25
-                            ).until(
-                                EC.presence_of_element_located(
-                                    (By.CSS_SELECTOR, step.wait_after_click)
-                                )
-                            )
-                        except Exception:
-                            self.logger.warning(
-                                f"Post-click wait element not found: {step.wait_after_click}"
-                            )
-                            return
                     else:
                         # Default: small sleep to allow any navigation/JS to start
                         time.sleep(0.5)
@@ -562,31 +640,32 @@ class WebScrapingTool(AbstractTool):
         else:  # Playwright
             await self.page.click(selector, timeout=self.default_timeout * 1000)
             # Handle post-click waiting for Playwright
-            if step:
-                if step.no_wait:
-                    self.logger.debug("no_wait=True, skipping post-click wait")
-                    return
-                elif step.wait_after_click:
-                    try:
-                        await self.page.wait_for_selector(
-                            step.wait_after_click,
-                            timeout=(step.wait_after_timeout or self.default_timeout) * 1000
-                        )
-                        self.logger.debug(
-                            f"Post-click element found: {step.wait_after_click}"
-                        )
-                    except Exception:
-                        self.logger.warning(
-                            f"Post-click wait timed out: {step.wait_after_click}"
-                        )
+            if action.no_wait:
+                self.logger.debug("no_wait=True, skipping post-click wait")
+                return
+            elif action.wait_after_click:
+                try:
+                    await self.page.wait_for_selector(
+                        action.wait_after_click,
+                        timeout=(action.wait_after_timeout or self.default_timeout) * 1000
+                    )
+                    self.logger.debug(
+                        f"Post-click element found: {action.wait_after_click}"
+                    )
+                except Exception:
+                    self.logger.warning(
+                        f"Post-click wait timed out: {action.wait_after_click}"
+                    )
 
-    async def _fill_element(self, selector: str, value: str):
+    async def _fill_element(self, selector: Any, value: str) -> bool:
         """Fill an input element"""
         if self.driver_type == 'selenium':
             loop = asyncio.get_running_loop()
             def fill_sync():
                 element = WebDriverWait(self.driver, self.default_timeout, poll_frequency=0.25).until(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                    EC.presence_of_element_located(
+                        (By.CSS_SELECTOR, selector)
+                    )
                 )
                 element.clear()
                 element.send_keys(value)
@@ -594,6 +673,12 @@ class WebScrapingTool(AbstractTool):
             return True
         else:  # Playwright
             await self.page.fill(selector, value)
+
+    async def _fill(self, action: Fill):
+        """Fill an input element"""
+        selector = action.selector
+        value = action.value
+        return await self._fill_element(selector, value)
 
     async def _wait_for_condition(self, condition: str, timeout: int = 5):
         """
@@ -727,55 +812,91 @@ class WebScrapingTool(AbstractTool):
 
             return True
 
-    async def _scroll_page(self, target: str):
+    async def _scroll_page(self, action: Scroll):
         """Scroll the page"""
         if self.driver_type == 'selenium':
+            target = f"document.querySelector('{action.selector}')" if action.selector else "window"
+            behavior = "'smooth'" if action.smooth else "'auto'"
             loop = asyncio.get_running_loop()
             def scroll_sync():
-                if target.lower() == 'bottom':
-                    self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                elif target.lower() == 'top':
-                    self.driver.execute_script("window.scrollTo(0, 0);")
-                elif target.isdigit():
-                    # Scroll by pixels
-                    self.driver.execute_script(f"window.scrollBy(0, {target});")
-                else:
+                if action.direction == "top":
+                    return f"{target}.scrollTo({{top: 0, behavior: {behavior}}});"
+                elif action.direction == "bottom":
+                    return f"{target}.scrollTo({{top: {target}.scrollHeight, behavior: {behavior}}});"
+                elif action.direction == "up":
+                    amount = action.amount or 300
+                    return f"{target}.scrollBy({{top: -{amount}, behavior: {behavior}}});"
+                elif action.direction == "down":
+                    amount = action.amount or 300
+                    return f"{target}.scrollBy({{top: {amount}, behavior: {behavior}}});"
+                elif action.amount:
+                    self.driver.execute_script(f"window.scrollBy(0, {action.amount});")
+                elif action.selector:
                     # Scroll to element
                     try:
-                        element = self.driver.find_element(By.CSS_SELECTOR, target)
+                        element = self.driver.find_element(By.CSS_SELECTOR, action.selector)
                         self.driver.execute_script("arguments[0].scrollIntoView();", element)
                     except NoSuchElementException:
-                        self.logger.warning(f"Element not found for scrolling: {target}")
+                        self.logger.warning(
+                            f"Element not found for scrolling: {action.selector}"
+                        )
 
             await loop.run_in_executor(None, scroll_sync)
         else:  # Playwright
-            if target.lower() == 'bottom':
+            if action.direction == "bottom":
                 await self.page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-            elif target.lower() == 'top':
+            elif action.direction == "top":
                 await self.page.evaluate("window.scrollTo(0, 0)")
-            elif target.isdigit():
-                await self.page.evaluate(f"window.scrollBy(0, {target})")
+            elif action.amount:
+                await self.page.evaluate(f"window.scrollBy(0, {action.amount})")
             else:
                 # Scroll to element
                 try:
-                    await self.page.locator(target).scroll_into_view_if_needed()
+                    await self.page.locator(action.selector).scroll_into_view_if_needed()
                 except:
-                    self.logger.warning(f"Element not found for scrolling: {target}")
+                    self.logger.warning(f"Element not found for scrolling: {action.selector}")
 
-    async def _handle_authentication(self, step: ScrapingStep):
+    async def _get_cookies(self, action: GetCookies) -> Dict[str, Any]:
+        """Handle GetCookies action"""
+        if self.driver_type == 'selenium':
+            loop = asyncio.get_running_loop()
+            cookies = await loop.run_in_executor(None, self.driver.get_cookies)
+        else:  # Playwright
+            cookies = await self.page.context.cookies()
+
+        # Filter by names if specified
+        if action.names:
+            cookies = [c for c in cookies if c.get('name') in action.names]
+
+        # Filter by domain if specified
+        if action.domain:
+            cookies = [c for c in cookies if action.domain in c.get('domain', '')]
+
+        self.logger.info(f"Retrieved {len(cookies)} cookies")
+        return {"cookies": cookies}
+
+    async def _set_cookies(self, action: SetCookies) -> bool:
+        """Handle SetCookies action"""
+        if self.driver_type == 'selenium':
+            loop = asyncio.get_running_loop()
+            for cookie in action.cookies:
+                await loop.run_in_executor(
+                    None,
+                    lambda c=cookie: self.driver.add_cookie(c)
+                )
+        else:  # Playwright
+            await self.page.context.add_cookies(action.cookies)
+
+        self.logger.info(f"Set {len(action.cookies)} cookies")
+        return True
+
+    async def _handle_authentication(self, action: Authenticate):
         """Handle authentication flows"""
-        # Parse authentication data from step value (JSON format expected)
-        try:
-            auth_data = json.loads(step.value) if step.value else {}
-        except json.JSONDecodeError:
-            self.logger.error("Authentication step requires valid JSON in value field")
-            return
-
-        username = auth_data.get('username', '')
-        password = auth_data.get('password', '')
-        username_selector = auth_data.get('username_selector', '#username')
-        password_selector = auth_data.get('password_selector', '#password')
-        submit_selector = auth_data.get('submit_selector', 'input[type="submit"], button[type="submit"]')
+        username = action.username
+        password = action.password
+        username_selector = action.username_selector or '#username'
+        password_selector = action.password_selector or '#password'
+        submit_selector = action.submit_selector or 'input[type="submit"], button[type="submit"]'
 
         if not username or not password:
             self.logger.error(
@@ -974,7 +1095,7 @@ class WebScrapingTool(AbstractTool):
 
         raise TimeoutError("await_browser_event timed out.")
 
-    async def _await_human(self, step: ScrapingStep):
+    async def _await_human(self, action: AwaitHuman):
         """
         Let a human drive the already-open browser, then resume when a condition is met.
         'wait_condition' or 'target' may contain:
@@ -982,15 +1103,28 @@ class WebScrapingTool(AbstractTool):
         - url_contains: substring expected in current URL
         - title_contains: substring expected in document.title
         """
-        timeout = int(step.timeout or 300)
-        cond = step.wait_condition or step.target or {}
-        if isinstance(cond, str):
-            # simple shorthand: treat as CSS selector
-            cond = {"selector": cond}
+        timeout = int(action.timeout or 300)
+        selector = None
+        url_contains = None
+        title_contains = None
 
-        selector = cond.get("selector")
-        url_contains = cond.get("url_contains")
-        title_contains = cond.get("title_contains")
+        if action.condition_type == 'selector':
+            selector = action.target
+        elif action.condition_type == 'url_contains':
+            selector = None
+            url_contains = action.target
+        elif action.condition_type == 'title_contains':
+            selector = None
+            title_contains = action.target
+        else:
+            # Default: expect a dict in target or wait_condition
+            cond = action.wait_condition or action.target or {}
+            if isinstance(cond, str):
+                cond = {"selector": cond}
+            selector = cond.get("selector")
+            if not selector:
+                self.logger.error("await_human requires at least one condition (selector, url_contains, title_contains)")
+                return
 
         loop = asyncio.get_running_loop()
 
@@ -1030,7 +1164,7 @@ class WebScrapingTool(AbstractTool):
                 return False
 
         self.logger.info(
-            "🛑 Awaiting human interaction in the browser window..."
+            f"🛑 {action.message} in the browser window..."
         )
         self.logger.info(
             "ℹ️  I’ll resume automatically when the expected page/element is present."
