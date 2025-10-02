@@ -11,6 +11,7 @@ import asyncio
 import logging
 import base64
 from urllib.parse import urlparse, urljoin
+import aiofiles
 from pydantic import BaseModel, Field
 from bs4 import BeautifulSoup
 # Selenium imports
@@ -364,6 +365,8 @@ authenticate or waiting for events or human intervention actions."""
                 result = await self._scroll_page(action)
             elif action_type == 'authenticate':
                 result = await self._handle_authentication(action)
+            elif action_type == 'loop':
+                result = await self._exec_loop(action, base_url)
             else:
                 self.logger.warning(f"Unknown action: {step.action}")
                 return False
@@ -1008,6 +1011,9 @@ authenticate or waiting for events or human intervention actions."""
         try:
             screenshot_data = None
             output_path = action.output_path
+            if isinstance(output_path, str):
+                output_path = Path(output_path).resolve()
+            screenshot_name = action.get_filename()
 
             if self.driver_type == 'selenium':
                 loop = asyncio.get_running_loop()
@@ -1015,7 +1021,6 @@ authenticate or waiting for events or human intervention actions."""
                 def take_screenshot_sync():
                     if action.selector:
                         # Screenshot of specific element
-                        from selenium.webdriver.common.by import By
                         element = self.driver.find_element(By.CSS_SELECTOR, action.selector)
                         screenshot_bytes = element.screenshot_as_png
                     else:
@@ -1027,19 +1032,21 @@ authenticate or waiting for events or human intervention actions."""
                             # Viewport screenshot only
                             screenshot_bytes = self.driver.get_screenshot_as_png()
 
-                    # Save to file if path provided
-                    if output_path:
-                        with open(output_path, 'wb') as f:
-                            f.write(screenshot_bytes)
-                        self.logger.info(f"Screenshot saved to: {output_path}")
+                    return screenshot_bytes
 
-                    # Return base64 if requested
-                    if action.return_base64:
-                        return base64.b64encode(screenshot_bytes).decode('utf-8')
+                screenshot_bytes = await loop.run_in_executor(None, take_screenshot_sync)
 
-                    return True
+                # Save to file if path provided
+                filename = output_path.joinpath(screenshot_name)
+                async with aiofiles.open(filename, 'wb') as f:
+                    await f.write(screenshot_bytes)
+                self.logger.info(f"Screenshot saved to: {filename}")
 
-                screenshot_data = await loop.run_in_executor(None, take_screenshot_sync)
+                # Return base64 if requested
+                if action.return_base64:
+                    return base64.b64encode(screenshot_bytes).decode('utf-8')
+
+                return True
 
             else:  # Playwright
                 screenshot_options = {}
