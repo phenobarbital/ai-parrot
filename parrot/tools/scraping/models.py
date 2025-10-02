@@ -3,9 +3,10 @@ Browser Action System for AI-Parrot WebScrapingTool
 Object-oriented action hierarchy for LLM-directed browser automation
 """
 from typing import Optional, List, Dict, Any, Union, Literal
-from abc import ABC, abstractmethod
+from abc import ABC
 from dataclasses import dataclass, field
 from pydantic import BaseModel, Field, field_validator
+from bs4 import BeautifulSoup
 
 
 class BrowserAction(BaseModel, ABC):
@@ -420,3 +421,15 @@ class ScrapingSelector:
     extract_type: Literal['text', 'html', 'attribute'] = 'text'
     attribute: Optional[str] = None  # For attribute extraction
     multiple: bool = False  # Whether to extract all matching elements
+
+@dataclass
+class ScrapingResult:
+    """Stores results from a single page scrape"""
+    url: str
+    content: str  # Raw HTML content
+    bs_soup: BeautifulSoup  # Parsed BeautifulSoup object
+    extracted_data: Dict[str, Any] = field(default_factory=dict)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    timestamp: str = ""
+    success: bool = True
+    error_message: Optional[str] = None
