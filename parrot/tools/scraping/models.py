@@ -4,6 +4,7 @@ Object-oriented action hierarchy for LLM-directed browser automation
 """
 from typing import Optional, List, Dict, Any, Union, Literal
 from abc import ABC
+import time
 from dataclasses import dataclass, field
 from pydantic import BaseModel, Field, field_validator
 from bs4 import BeautifulSoup
@@ -238,9 +239,17 @@ class Screenshot(BrowserAction):
     description: str = Field(default="Take screenshot", description="Taking a screenshot")
     selector: Optional[str] = Field(default=None, description="CSS selector of element to screenshot (None = full page)")
     full_page: bool = Field(default=True, description="Capture full scrollable page")
-    output_path: Optional[str] = Field(default=None, description="File path to save screenshot (e.g., 'screenshot.png')")
+    output_path: Optional[str] = Field(default=None, description="Directory path to save screenshot (e.g., 'screenshots/') ")
+    output_name: Optional[str] = Field(default=None, description="Filename for the screenshot (e.g., 'page.png'). If None, a timestamped name will be used.")
     return_base64: bool = Field(default=False, description="Return screenshot as base64 string in results")
 
+    def get_filename(self) -> str:
+        """Generate a filename for the screenshot"""
+        if self.output_name:
+            if not self.output_name.lower().endswith('.png'):  # pylint: disable=E1101 # noqa
+                return f"{self.output_name}.png"
+            return self.output_name
+        return f"screenshot_{int(time.time())}.png"
 
 class GetHTML(BrowserAction):
     """Extract complete HTML content from elements matching selector"""
@@ -382,6 +391,9 @@ class ScrapingStep:
         action = action_class(**action_data)
         obj = cls(action=action)
         obj.description = data.get('description', action.description)
+        if action_type == 'loop' and 'actions' in data:
+            # Recursively convert nested actions
+            obj.action.actions = [cls.from_dict(a).action for a in data['actions']]
         return obj
 
 
