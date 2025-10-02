@@ -657,7 +657,7 @@ authenticate or waiting for events or human intervention actions."""
                         f"Post-click wait timed out: {action.wait_after_click}"
                     )
 
-    async def _fill_element(self, selector: Any, value: str) -> bool:
+    async def _fill_element(self, selector: Any, value: str, clear_first: bool = False, press_enter: bool = False) -> bool:
         """Fill an input element"""
         if self.driver_type == 'selenium':
             loop = asyncio.get_running_loop()
@@ -667,8 +667,11 @@ authenticate or waiting for events or human intervention actions."""
                         (By.CSS_SELECTOR, selector)
                     )
                 )
-                element.clear()
+                if clear_first:
+                    element.clear()
                 element.send_keys(value)
+                if press_enter:
+                    element.send_keys(Keys.ENTER)
             await loop.run_in_executor(None, fill_sync)
             return True
         else:  # Playwright
@@ -678,13 +681,16 @@ authenticate or waiting for events or human intervention actions."""
         """Fill an input element"""
         selector = action.selector
         value = action.value
-        return await self._fill_element(selector, value)
+        clear_first = action.clear_first
+        press_enter = action.press_enter
+        return await self._fill_element(selector, value, clear_first=clear_first, press_enter=press_enter)
 
-    async def _wait_for_condition(self, condition: str, timeout: int = 5):
+    async def _wait_for_condition(self, action: Wait, timeout: int = 5):
         """
         Wait for a specific condition to be met.
         Handles multiple selectors separated by commas.
         """
+        condition = action.condition
         if self.driver_type == 'selenium':
             loop = asyncio.get_running_loop()
 
@@ -696,6 +702,21 @@ authenticate or waiting for events or human intervention actions."""
                     raise RuntimeError(
                         f"Selenium session not alive: {e}"
                     ) from e
+
+                if action.condition_type == 'selector':
+                    # Check if selector is present.
+                    selectors = [s.strip() for s in condition.split(',')]
+                    for selector in selectors:
+                        try:
+                            WebDriverWait(self.driver, timeout, poll_frequency=0.25).until(
+                                EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                            )
+                            self.logger.debug(f"Element found: {selector}")
+                            return True
+                        except TimeoutException:
+                            if selector == selectors[-1]:  # Last selector
+                                raise TimeoutException(f"None of the selectors found: {selectors}")
+                            continue  # Try next selector
 
                 # Handle prefixed conditions
                 if condition.startswith('presence_of_element_located:'):
@@ -751,7 +772,6 @@ authenticate or waiting for events or human intervention actions."""
                     # DEFAULT: Plain CSS selector(s) - use fast JS polling
                     selectors = [s.strip() for s in condition.split(',')]
                     deadline = time.monotonic() + timeout
-
                     while time.monotonic() < deadline:
                         for selector in selectors:
                             try:
@@ -764,9 +784,7 @@ authenticate or waiting for events or human intervention actions."""
                                     return True  # Return immediately when found
                             except Exception:
                                 pass
-
                         time.sleep(0.15)  # Small delay before retry
-
                     # Timeout reached
                     raise TimeoutException(f"Timeout waiting for selectors: {selectors}")
 
@@ -925,7 +943,7 @@ authenticate or waiting for events or human intervention actions."""
             self.logger.error(f"Authentication failed: {str(e)}")
             raise
 
-    async def _await_browser_event(self, step: ScrapingStep):
+    async def _await_browser_event(self, action: AwaitBrowserEvent) -> bool:
         """
         Pause automation until a user triggers a browser-side event.
 
@@ -943,7 +961,7 @@ authenticate or waiting for events or human intervention actions."""
         4) Setting localStorage[local_storage_key] = "1"
         5) predicate_js() evaluates to true
         """
-        cfg = step.wait_condition or step.target or {}
+        cfg = action.wait_condition or action.target or {}
         if isinstance(cfg, str):
             cfg = {"key_combo": cfg}
 
@@ -952,7 +970,7 @@ authenticate or waiting for events or human intervention actions."""
         ls_key = cfg.get("local_storage_key", "__scrapeResume")
         predicate_js = cfg.get("predicate_js")  # e.g., "return !!document.querySelector('.dashboard');"
         custom_event = cfg.get("custom_event_name", "scrape-resume")
-        timeout = int(step.timeout or 300)
+        timeout = int(action.timeout or 300)
 
         # 1) Inject listener once
         inject_script = f"""
@@ -1184,13 +1202,14 @@ authenticate or waiting for events or human intervention actions."""
             "await_human timed out waiting for the specified condition."
         )
 
-    async def _await_keypress(self, step: ScrapingStep):
+    async def _await_keypress(self, action: AwaitKeyPress):
         """
         Pause until the operator presses ENTER in the console.
         Useful when there is no reliable selector to wait on.
         """
-        timeout = int(step.timeout or 300)
-        prompt = step.description or "Press ENTER to continue..."
+        timeout = int(action.timeout or 300)
+        prompt = action.message or "Press ENTER to continue..."
+        expected_key = action.key
 
         self.logger.info(f"🛑 {prompt}")
         start = time.monotonic()
@@ -1202,12 +1221,56 @@ authenticate or waiting for events or human intervention actions."""
             )
             if ready:
                 try:
-                    _ = sys.stdin.readline()
+                    keypress = sys.stdin.readline().strip()
+                    if expected_key is None or keypress == expected_key:
+                        self.logger.info("✅ Continuing after keypress.")
+                        return
                 except Exception:
                     pass
-                self.logger.info("✅ Continuing after keypress.")
-                return
         raise TimeoutError("await_keypress timed out.")
+
+    async def _exec_loop(self, action: Loop, base_url: str) -> bool:
+        """Handle Loop action - execute actions repeatedly"""
+        iteration = 0
+        max_iter = action.iterations or action.max_iterations
+
+        while iteration < max_iter:
+            # Check condition if provided
+            if action.condition:
+                should_continue = await self._evaluate_condition(action.condition)
+                if not should_continue:
+                    break
+
+            # Execute all actions in the loop
+            for loop_action in action.actions:
+                step = ScrapingStep(action=loop_action)
+                success = await self._execute_step(step, base_url)
+
+                if not success and action.break_on_error:
+                    self.logger.warning(f"Loop stopped at iteration {iteration} due to error")
+                    return False
+
+            iteration += 1
+
+            # Break if we've reached specified iterations
+            if action.iterations and iteration >= action.iterations:
+                break
+
+        self.logger.info(f"Loop completed {iteration} iterations")
+        return True
+
+    async def _evaluate_condition(self, condition: str) -> bool:
+        """Evaluate a JavaScript condition"""
+        if self.driver_type == 'selenium':
+            loop = asyncio.get_running_loop()
+            result = await loop.run_in_executor(
+                None,
+                lambda: self.driver.execute_script(f"return Boolean({condition})")
+            )
+        else:  # Playwright
+            result = await self.page.evaluate(f"() => Boolean({condition})")
+
+        return bool(result)
 
     async def _extract_content(
         self,
@@ -1340,7 +1403,12 @@ authenticate or waiting for events or human intervention actions."""
                             "items": {
                                 "type": "object",
                                 "properties": {
-                                    "action": {"type": "string", "enum": ["navigate", "click", "fill", "wait", "scroll", "authenticate"]},
+                                    "action": {"type": "string", "enum": [
+                                        "navigate", "click", "fill", "evaluate", "press_key",
+                                        "refresh", "back", "scroll", "get_cookies", "set_cookies",
+                                        "wait", "authenticate", "await_human", "await_key_press",
+                                        "await_browser_event", "loop"
+                                    ]},
                                     "target": {"type": "string"},
                                     "value": {"type": "string"},
                                     "description": {"type": "string"}
