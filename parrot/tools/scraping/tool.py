@@ -2,9 +2,9 @@
 WebScrapingTool for AI-Parrot
 Combines Selenium/Playwright automation with LLM-directed scraping
 """
+from pathlib import Path
 import sys
 from typing import Dict, List, Any, Optional, Union, Literal
-from dataclasses import dataclass, field
 import select
 import time
 import asyncio
@@ -45,31 +45,22 @@ from .models import (
     GetText,
     GetHTML,
     Screenshot,
+    WaitForDownload,
+    UploadFile,
     AwaitHuman,
     AwaitKeyPress,
     AwaitBrowserEvent,
     Loop,
     ScrapingStep,
-    ScrapingSelector
+    ScrapingSelector,
+    ScrapingResult
 )
-
-@dataclass
-class ScrapingResult:
-    """Stores results from a single page scrape"""
-    url: str
-    content: str  # Raw HTML content
-    bs_soup: BeautifulSoup  # Parsed BeautifulSoup object
-    extracted_data: Dict[str, Any] = field(default_factory=dict)
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    timestamp: str = ""
-    success: bool = True
-    error_message: Optional[str] = None
 
 
 class WebScrapingToolArgs(BaseModel):
     """Arguments schema for WebScrapingTool."""
     steps: List[Dict[str, Any]] = Field(
-        description="List of navigation and interaction steps. Each step should have 'action', 'target', and optional 'value', 'description'"
+        description="List of navigation and interaction steps. Each step should have 'action' and 'description'"
     )
     selectors: Optional[List[Dict[str, Any]]] = Field(
         default=None,
@@ -345,6 +336,10 @@ authenticate or waiting for events or human intervention actions."""
                 result = await self._get_html(action)
             elif action_type == 'screenshot':
                 result = await self._take_screenshot(action)
+            elif action_type == 'wait_for_download':
+                result = await self._wait_for_download(action)
+            elif action_type == 'upload_file':
+                result = await self._upload_file(action)
             elif action_type == 'await_keypress':
                 result = await self._await_keypress(action)
             elif action_type == 'await_browser_event':
@@ -1502,6 +1497,262 @@ authenticate or waiting for events or human intervention actions."""
                 except Exception:
                     pass
         raise TimeoutError("await_keypress timed out.")
+
+    async def _wait_for_download(self, action: WaitForDownload) -> bool:
+        """
+        Wait for a file download to complete.
+
+        Args:
+            action: WaitForDownload action with download monitoring options
+
+        Returns:
+            bool: True if download detected successfully
+        """
+        try:
+            # Determine download directory
+            if action.download_path:
+                download_dir = Path(action.download_path)
+            else:
+                # Try to get default download directory from browser
+                if self.driver_type == 'selenium':
+                    # Check Chrome prefs for download directory
+                    try:
+                        prefs = self.driver.execute_cdp_cmd(
+                            'Page.getDownloadInfo', {}
+                        )
+                        download_dir = Path(prefs.get('behavior', {}).get('downloadPath', '.'))
+                    except:
+                        # Fallback to common default locations
+                        download_dir = Path.home() / 'Downloads'
+                else:  # Playwright
+                    # Playwright typically uses its own download handling
+                    download_dir = Path.cwd() / 'downloads'
+
+            if not download_dir.exists():
+                download_dir.mkdir(parents=True, exist_ok=True)
+
+            self.logger.info(f"Monitoring for downloads in: {download_dir}")
+
+            # Get initial files in directory
+            initial_files = set(download_dir.glob('*'))
+
+            # Wait for new file to appear
+            timeout = action.timeout
+            start_time = time.time()
+            downloaded_file = None
+
+            while time.time() - start_time < timeout:
+                current_files = set(download_dir.glob('*'))
+                new_files = current_files - initial_files
+
+                # Filter by pattern if specified
+                if action.filename_pattern:
+                    matching_files = [
+                        f for f in new_files
+                        if f.match(action.filename_pattern)
+                    ]
+                else:
+                    matching_files = list(new_files)
+
+                # Check if any new files are complete (not .tmp, .crdownload, .part, etc.)
+                for file_path in matching_files:
+                    # Skip temporary download files
+                    if any(ext in file_path.suffix.lower() for ext in ['.tmp', '.crdownload', '.part', '.download']):
+                        continue
+
+                    # Check if file is still being written (size changing)
+                    try:
+                        size1 = file_path.stat().st_size
+                        await asyncio.sleep(0.5)
+                        size2 = file_path.stat().st_size
+
+                        if size1 == size2 and size1 > 0:
+                            # File size stable and non-zero - download complete
+                            downloaded_file = file_path
+                            break
+                    except:
+                        continue
+
+                if downloaded_file:
+                    break
+
+                await asyncio.sleep(1)
+
+            if not downloaded_file:
+                self.logger.error(
+                    f"Download not detected within {timeout} seconds"
+                )
+                return False
+
+            self.logger.info(f"Download complete: {downloaded_file.name}")
+
+            # Move file if requested
+            if action.move_to:
+                move_to_path = Path(action.move_to)
+                if move_to_path.is_dir():
+                    final_path = move_to_path / downloaded_file.name
+                else:
+                    final_path = move_to_path
+
+                final_path.parent.mkdir(parents=True, exist_ok=True)
+                downloaded_file.rename(final_path)
+                self.logger.info(f"Moved download to: {final_path}")
+                downloaded_file = final_path
+
+            # Store download info in results
+            current_url = await self._get_current_url()
+            result = ScrapingResult(
+                url=current_url,
+                content="",
+                bs_soup=BeautifulSoup("", 'html.parser'),
+                extracted_data={
+                    "downloaded_file": str(downloaded_file),
+                    "file_name": downloaded_file.name,
+                    "file_size": downloaded_file.stat().st_size
+                },
+                metadata={
+                    "download_path": str(download_dir),
+                    "filename_pattern": action.filename_pattern,
+                    "moved_to": action.move_to
+                },
+                timestamp=str(time.time()),
+                success=True
+            )
+            self.results.append(result)
+
+            # Delete file if requested
+            if action.delete_after:
+                downloaded_file.unlink()
+                self.logger.info(f"Deleted file: {downloaded_file.name}")
+
+            return True
+
+        except Exception as e:
+            self.logger.error(f"WaitForDownload action failed: {str(e)}")
+            return False
+
+
+    async def _upload_file(self, action: UploadFile) -> bool:
+        """
+        Upload a file to a file input element.
+
+        Args:
+            action: UploadFile action with file path and selector
+
+        Returns:
+            bool: True if upload successful
+        """
+        try:
+            # Determine file paths
+            if action.multiple_files and action.file_paths:
+                file_paths = [Path(fp).resolve() for fp in action.file_paths]
+            else:
+                file_paths = [Path(action.file_path).resolve()]
+
+            # Verify files exist
+            for file_path in file_paths:
+                if not file_path.exists():
+                    self.logger.error(f"File not found: {file_path}")
+                    return False
+
+            self.logger.info(f"Uploading {len(file_paths)} file(s)")
+
+            if self.driver_type == 'selenium':
+                loop = asyncio.get_running_loop()
+
+                def upload_sync():
+                    # Find the file input element
+                    file_input = WebDriverWait(
+                        self.driver,
+                        action.timeout or self.default_timeout
+                    ).until(
+                        EC.presence_of_element_located(
+                            (By.CSS_SELECTOR, action.selector)
+                        )
+                    )
+
+                    # Send file paths to input
+                    if len(file_paths) == 1:
+                        file_input.send_keys(str(file_paths[0]))
+                    else:
+                        # Multiple files - join with newline
+                        file_input.send_keys('\n'.join(str(fp) for fp in file_paths))
+
+                    self.logger.info("File(s) uploaded successfully")
+
+                    # Wait for post-upload element if specified
+                    if action.wait_after_upload:
+                        try:
+                            WebDriverWait(
+                                self.driver,
+                                action.wait_timeout
+                            ).until(
+                                EC.presence_of_element_located(
+                                    (By.CSS_SELECTOR, action.wait_after_upload)
+                                )
+                            )
+                            self.logger.info(
+                                f"Post-upload element found: {action.wait_after_upload}"
+                            )
+                        except Exception as e:
+                            self.logger.warning(
+                                f"Post-upload wait timed out: {action.wait_after_upload}"
+                            )
+
+                await loop.run_in_executor(None, upload_sync)
+
+            else:  # Playwright
+                # For Playwright, set the files directly
+                if len(file_paths) == 1:
+                    await self.page.set_input_files(action.selector, str(file_paths[0]))
+                else:
+                    await self.page.set_input_files(
+                        action.selector,
+                        [str(fp) for fp in file_paths]
+                    )
+
+                self.logger.info("File(s) uploaded successfully")
+
+                # Wait for post-upload element if specified
+                if action.wait_after_upload:
+                    try:
+                        await self.page.wait_for_selector(
+                            action.wait_after_upload,
+                            timeout=action.wait_timeout * 1000
+                        )
+                        self.logger.info(
+                            f"Post-upload element found: {action.wait_after_upload}"
+                        )
+                    except Exception:
+                        self.logger.warning(
+                            f"Post-upload wait timed out: {action.wait_after_upload}"
+                        )
+
+            # Store upload info in results
+            current_url = await self._get_current_url()
+            result = ScrapingResult(
+                url=current_url,
+                content="",
+                bs_soup=BeautifulSoup("", 'html.parser'),
+                extracted_data={
+                    "uploaded_files": [fp.name for fp in file_paths],
+                    "file_count": len(file_paths)
+                },
+                metadata={
+                    "selector": action.selector,
+                    "file_paths": [str(fp) for fp in file_paths],
+                    "multiple_files": action.multiple_files
+                },
+                timestamp=str(time.time()),
+                success=True
+            )
+            self.results.append(result)
+
+            return True
+
+        except Exception as e:
+            self.logger.error(f"UploadFile action failed: {str(e)}")
+            return False
 
     async def _exec_loop(self, action: Loop, base_url: str) -> bool:
         """Handle Loop action - execute actions repeatedly"""
