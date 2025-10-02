@@ -129,10 +129,10 @@ class Wait(BrowserAction):
     """Wait for a condition to be met"""
     name: str = "wait"
     description: str = Field(default="Wait for a condition", description="Waiting for a specific condition")
+    condition: str = Field(description="Value for the condition (selector, URL substring, etc.)")
     condition_type: Literal["selector", "url_contains", "title_contains", "custom"] = Field(
         description="Type of condition to wait for"
     )
-    condition_value: str = Field(description="Value for the condition (selector, URL substring, etc.)")
     custom_script: Optional[str] = Field(
         default=None,
         description="JavaScript that returns true when condition is met (for custom type)"
@@ -194,7 +194,14 @@ class AwaitKeyPress(BrowserAction):
 class AwaitBrowserEvent(BrowserAction):
     """Wait for human interaction in the browser"""
     name: str = "await_browser_event"
-    description: str = Field(default="Wait for browser event", description="Waiting for user to trigger a browser event")
+    target: Optional[Union[str, Dict[str, Any]]] = Field(
+        default=None,
+        description="Target or condition value to detect completion (e.g., key combo, local storage key)"
+    )
+    description: str = Field(
+        default="Wait for browser event",
+        description="Waiting for user to trigger a browser event"
+    )
     wait_condition: Dict[str, Any] = Field(
         default_factory=dict,
         description="Condition to detect human completion (e.g., key combo, button or local storage key)"
