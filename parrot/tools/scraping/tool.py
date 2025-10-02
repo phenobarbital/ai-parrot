@@ -9,7 +9,7 @@ import select
 import time
 import asyncio
 import logging
-import json
+import base64
 from urllib.parse import urlparse, urljoin
 from pydantic import BaseModel, Field
 from bs4 import BeautifulSoup
@@ -42,6 +42,9 @@ from .models import (
     Authenticate,
     GetCookies,
     SetCookies,
+    GetText,
+    GetHTML,
+    Screenshot,
     AwaitHuman,
     AwaitKeyPress,
     AwaitBrowserEvent,
@@ -150,7 +153,7 @@ authenticate or waiting for events or human intervention actions."""
 
         Args:
             steps: List of navigation/interaction steps
-            selectors: List of content selectors to extract
+            selectors: List of content selectors to do extraction
             base_url: Base URL for relative links
 
         Returns:
@@ -159,10 +162,12 @@ authenticate or waiting for events or human intervention actions."""
         self.results = []
 
         try:
-            await self.initialize_driver(config_overrides=browser_config)
+            await self.initialize_driver(
+                config_overrides=browser_config
+            )
 
             # Convert dictionaries to dataclasses
-            scraping_steps = [ScrapingStep(**step) for step in steps]
+            scraping_steps = [ScrapingStep.from_dict(step) for step in steps]
             scraping_selectors = [ScrapingSelector(**sel) for sel in selectors] if selectors else None
 
             # Execute scraping workflow
@@ -308,7 +313,7 @@ authenticate or waiting for events or human intervention actions."""
     async def _execute_step(self, step: ScrapingStep, base_url: str = "") -> bool:
         """Execute a single scraping step with a hard timeout per step."""
         action = step.action
-        action_type = step.get_action_type()
+        action_type = action.get_action_type()
         result = None
         try:
             if action_type == 'navigate':
@@ -334,6 +339,12 @@ authenticate or waiting for events or human intervention actions."""
                 result = await self._get_cookies(action)
             elif action_type == 'set_cookies':
                 result = await self._set_cookies(action)
+            elif action_type == 'get_text':
+                result = await self._get_text(action)
+            elif action_type == 'get_html':
+                result = await self._get_html(action)
+            elif action_type == 'screenshot':
+                result = await self._take_screenshot(action)
             elif action_type == 'await_keypress':
                 result = await self._await_keypress(action)
             elif action_type == 'await_browser_event':
@@ -829,6 +840,269 @@ authenticate or waiting for events or human intervention actions."""
                         continue
 
             return True
+
+    async def _get_text(self, action: GetText) -> bool:
+        """
+        Extract pure text content from elements and save to results.
+
+        Args:
+            action: GetText action with selector and options
+
+        Returns:
+            bool: True if extraction successful
+        """
+        try:
+            # Get current URL
+            current_url = await self._get_current_url()
+
+            # Get page source
+            if self.driver_type == 'selenium':
+                loop = asyncio.get_running_loop()
+                page_source = await loop.run_in_executor(None, lambda: self.driver.page_source)
+            else:  # Playwright
+                page_source = await self.page.content()
+
+            # Parse with BeautifulSoup
+            soup = BeautifulSoup(page_source, 'html.parser')
+
+            # Find elements by selector
+            elements = soup.select(action.selector)
+
+            if not elements:
+                self.logger.warning(f"No elements found for selector: {action.selector}")
+                extracted_text = None
+            elif action.multiple:
+                # Extract text from all matching elements
+                extracted_text = [elem.get_text(strip=True) for elem in elements]
+            else:
+                # Extract text from first element only
+                extracted_text = elements[0].get_text(strip=True)
+
+            # Create ScrapingResult and append to results
+            result = ScrapingResult(
+                url=current_url,
+                content=page_source,
+                bs_soup=soup,
+                extracted_data={action.extract_name: extracted_text},
+                metadata={
+                    "selector": action.selector,
+                    "multiple": action.multiple,
+                    "elements_found": len(elements)
+                },
+                timestamp=str(time.time()),
+                success=extracted_text is not None
+            )
+
+            self.results.append(result)
+            self.logger.info(
+                f"Extracted text from {len(elements)} element(s) using selector: {action.selector}"
+            )
+
+            return True
+
+        except Exception as e:
+            self.logger.error(f"GetText action failed: {str(e)}")
+            # Create error result
+            error_result = ScrapingResult(
+                url=await self._get_current_url() if hasattr(self, 'driver') or hasattr(self, 'page') else "",
+                content="",
+                bs_soup=BeautifulSoup("", 'html.parser'),
+                extracted_data={action.extract_name: None},
+                success=False,
+                error_message=str(e),
+                timestamp=str(time.time())
+            )
+            self.results.append(error_result)
+            return False
+
+
+    async def _get_html(self, action: GetHTML) -> bool:
+        """
+        Extract complete HTML content from elements and save to results.
+
+        Args:
+            action: GetHTML action with selector and options
+
+        Returns:
+            bool: True if extraction successful
+        """
+        try:
+            # Get current URL
+            current_url = await self._get_current_url()
+
+            # Get page source
+            if self.driver_type == 'selenium':
+                loop = asyncio.get_running_loop()
+                page_source = await loop.run_in_executor(None, lambda: self.driver.page_source)
+            else:  # Playwright
+                page_source = await self.page.content()
+
+            # Parse with BeautifulSoup
+            soup = BeautifulSoup(page_source, 'html.parser')
+
+            # Find elements by selector
+            elements = soup.select(action.selector)
+
+            if not elements:
+                self.logger.warning(f"No elements found for selector: {action.selector}")
+                extracted_html = None
+            elif action.multiple:
+                # Extract HTML from all matching elements
+                extracted_html = [str(elem) for elem in elements]
+            else:
+                # Extract HTML from first element only
+                extracted_html = str(elements[0])
+
+            # Create ScrapingResult and append to results
+            result = ScrapingResult(
+                url=current_url,
+                content=page_source,
+                bs_soup=soup,
+                extracted_data={action.extract_name: extracted_html},
+                metadata={
+                    "selector": action.selector,
+                    "multiple": action.multiple,
+                    "elements_found": len(elements)
+                },
+                timestamp=str(time.time()),
+                success=extracted_html is not None
+            )
+
+            self.results.append(result)
+            self.logger.info(f"Extracted HTML from {len(elements)} element(s) using selector: {action.selector}")
+
+            return True
+
+        except Exception as e:
+            self.logger.error(f"GetHTML action failed: {str(e)}")
+            # Create error result
+            error_result = ScrapingResult(
+                url=await self._get_current_url() if hasattr(self, 'driver') or hasattr(self, 'page') else "",
+                content="",
+                bs_soup=BeautifulSoup("", 'html.parser'),
+                extracted_data={action.extract_name: None},
+                success=False,
+                error_message=str(e),
+                timestamp=str(time.time())
+            )
+            self.results.append(error_result)
+            return False
+
+
+    async def _take_screenshot(self, action: Screenshot) -> bool:
+        """
+        Take a screenshot of the page or specific element.
+
+        Args:
+            action: Screenshot action with options
+
+        Returns:
+            bool: True if screenshot successful
+        """
+        try:
+            screenshot_data = None
+            output_path = action.output_path
+
+            if self.driver_type == 'selenium':
+                loop = asyncio.get_running_loop()
+
+                def take_screenshot_sync():
+                    if action.selector:
+                        # Screenshot of specific element
+                        from selenium.webdriver.common.by import By
+                        element = self.driver.find_element(By.CSS_SELECTOR, action.selector)
+                        screenshot_bytes = element.screenshot_as_png
+                    else:
+                        # Full page screenshot
+                        if action.full_page:
+                            # Full page screenshot (requires scrolling for some drivers)
+                            screenshot_bytes = self.driver.get_screenshot_as_png()
+                        else:
+                            # Viewport screenshot only
+                            screenshot_bytes = self.driver.get_screenshot_as_png()
+
+                    # Save to file if path provided
+                    if output_path:
+                        with open(output_path, 'wb') as f:
+                            f.write(screenshot_bytes)
+                        self.logger.info(f"Screenshot saved to: {output_path}")
+
+                    # Return base64 if requested
+                    if action.return_base64:
+                        return base64.b64encode(screenshot_bytes).decode('utf-8')
+
+                    return True
+
+                screenshot_data = await loop.run_in_executor(None, take_screenshot_sync)
+
+            else:  # Playwright
+                screenshot_options = {}
+
+                if action.full_page:
+                    screenshot_options['full_page'] = True
+
+                if action.selector:
+                    # Screenshot of specific element
+                    element = self.page.locator(action.selector)
+                    screenshot_bytes = await element.screenshot(**screenshot_options)
+                else:
+                    # Page screenshot
+                    screenshot_bytes = await self.page.screenshot(**screenshot_options)
+
+                # Save to file if path provided
+                if output_path:
+                    with open(output_path, 'wb') as f:
+                        f.write(screenshot_bytes)
+                    self.logger.info(f"Screenshot saved to: {output_path}")
+
+                # Return base64 if requested
+                if action.return_base64:
+                    screenshot_data = base64.b64encode(screenshot_bytes).decode('utf-8')
+                else:
+                    screenshot_data = True
+
+            # Create ScrapingResult with screenshot data
+            current_url = await self._get_current_url()
+
+            result = ScrapingResult(
+                url=current_url,
+                content="",  # No HTML content for screenshots
+                bs_soup=BeautifulSoup("", 'html.parser'),
+                extracted_data={
+                    "screenshot": screenshot_data if action.return_base64 else output_path,
+                    "screenshot_base64": screenshot_data if action.return_base64 else None
+                },
+                metadata={
+                    "selector": action.selector,
+                    "full_page": action.full_page,
+                    "output_path": output_path,
+                    "returned_base64": action.return_base64
+                },
+                timestamp=str(time.time()),
+                success=True
+            )
+
+            self.results.append(result)
+            self.logger.info(
+                f"Screenshot taken: {'element ' + action.selector if action.selector else 'full page'}"
+            )
+
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Screenshot action failed: {str(e)}")
+            # Create error result
+            error_result = ScrapingResult(
+                url=await self._get_current_url() if hasattr(self, 'driver') or hasattr(self, 'page') else "",
+                content="",
+                bs_soup=BeautifulSoup("", 'html.parser'),
+                extracted_data={"screenshot": None},
+                success=False,
+                error_message=str(e),
+                timestamp=str(time.time())
+            )
+            self.results.append(error_result)
+            return False
 
     async def _scroll_page(self, action: Scroll):
         """Scroll the page"""
@@ -1388,46 +1662,400 @@ authenticate or waiting for events or human intervention actions."""
             self.logger.error(f"Cleanup failed: {str(e)}")
 
     def get_tool_schema(self) -> Dict[str, Any]:
-        """Define the tool for LLM interaction"""
+        """
+        Define the tool schema for LLM interaction.
+        Provides comprehensive documentation of all available actions and their parameters.
+        """
         return {
             "type": "function",
             "function": {
                 "name": "web_scraping_tool",
-                "description": "Execute automated web scraping with step-by-step navigation and content extraction",
+                "description": """Execute automated web scraping with step-by-step navigation and content extraction.
+    Supports navigation, interaction, authentication, content extraction, screenshots, file uploads, and download monitoring.
+    Works with both Selenium and Playwright drivers.""",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "steps": {
                             "type": "array",
-                            "description": "List of navigation and interaction steps",
+                            "description": "List of navigation and interaction steps to execute in sequence",
                             "items": {
                                 "type": "object",
+                                "required": ["action"],
                                 "properties": {
-                                    "action": {"type": "string", "enum": [
-                                        "navigate", "click", "fill", "evaluate", "press_key",
-                                        "refresh", "back", "scroll", "get_cookies", "set_cookies",
-                                        "wait", "authenticate", "await_human", "await_key_press",
-                                        "await_browser_event", "loop"
-                                    ]},
-                                    "target": {"type": "string"},
-                                    "value": {"type": "string"},
-                                    "description": {"type": "string"}
+                                    "action": {
+                                        "type": "string",
+                                        "enum": [
+                                            "navigate",
+                                            "click",
+                                            "fill",
+                                            "evaluate",
+                                            "press_key",
+                                            "refresh",
+                                            "back",
+                                            "scroll",
+                                            "get_cookies",
+                                            "set_cookies",
+                                            "wait",
+                                            "authenticate",
+                                            "await_human",
+                                            "await_keypress",
+                                            "await_browser_event",
+                                            "loop",
+                                            "get_text",
+                                            "get_html",
+                                            "screenshot",
+                                            "wait_for_download",
+                                            "upload_file"
+                                        ],
+                                        "description": "Type of action to perform"
+                                    },
+                                    "description": {
+                                        "type": "string",
+                                        "description": "Human-readable description of what this action does"
+                                    },
+                                    "timeout": {
+                                        "type": "integer",
+                                        "description": "Maximum time to wait for action completion (seconds)"
+                                    },
+
+                                    # Navigate action
+                                    "url": {
+                                        "type": "string",
+                                        "description": "URL to navigate to (for 'navigate' action)"
+                                    },
+
+                                    # Click action
+                                    "selector": {
+                                        "type": "string",
+                                        "description": "CSS selector for element (for 'click', 'fill', 'get_text', 'get_html', 'screenshot', 'upload_file' actions)"
+                                    },
+                                    "click_type": {
+                                        "type": "string",
+                                        "enum": ["single", "double", "right"],
+                                        "description": "Type of click (for 'click' action)"
+                                    },
+                                    "wait_after_click": {
+                                        "type": "string",
+                                        "description": "CSS selector of element to wait for after clicking (for 'click' action)"
+                                    },
+                                    "wait_timeout": {
+                                        "type": "integer",
+                                        "description": "Timeout for post-click wait in seconds (for 'click' action)"
+                                    },
+                                    "no_wait": {
+                                        "type": "boolean",
+                                        "description": "Skip waiting after click (for 'click' action)"
+                                    },
+
+                                    # Fill action
+                                    "value": {
+                                        "type": "string",
+                                        "description": "Text value to enter (for 'fill' action)"
+                                    },
+                                    "clear_first": {
+                                        "type": "boolean",
+                                        "description": "Clear existing content before filling (for 'fill' action)"
+                                    },
+                                    "press_enter": {
+                                        "type": "boolean",
+                                        "description": "Press Enter after filling (for 'fill' action)"
+                                    },
+
+                                    # Evaluate action
+                                    "script": {
+                                        "type": "string",
+                                        "description": "JavaScript code to execute (for 'evaluate' action)"
+                                    },
+                                    "script_file": {
+                                        "type": "string",
+                                        "description": "Path to JavaScript file to execute (for 'evaluate' action)"
+                                    },
+                                    "args": {
+                                        "type": "array",
+                                        "description": "Arguments to pass to script (for 'evaluate' action)",
+                                        "items": {"type": "string"}
+                                    },
+                                    "return_value": {
+                                        "type": "boolean",
+                                        "description": "Whether to return script result (for 'evaluate' action)"
+                                    },
+
+                                    # PressKey action
+                                    "keys": {
+                                        "type": "array",
+                                        "description": "Keys to press, e.g., ['Tab', 'Enter'] (for 'press_key' action)",
+                                        "items": {"type": "string"}
+                                    },
+                                    "sequential": {
+                                        "type": "boolean",
+                                        "description": "Press keys sequentially vs as combination (for 'press_key' action)"
+                                    },
+                                    "target": {
+                                        "type": "string",
+                                        "description": "CSS selector to focus before pressing keys (for 'press_key' action)"
+                                    },
+
+                                    # Refresh action
+                                    "hard": {
+                                        "type": "boolean",
+                                        "description": "Perform hard refresh clearing cache (for 'refresh' action)"
+                                    },
+
+                                    # Back action
+                                    "steps": {
+                                        "type": "integer",
+                                        "description": "Number of steps to go back in history (for 'back' action)"
+                                    },
+
+                                    # Scroll action
+                                    "direction": {
+                                        "type": "string",
+                                        "enum": ["up", "down", "top", "bottom"],
+                                        "description": "Scroll direction (for 'scroll' action)"
+                                    },
+                                    "amount": {
+                                        "type": "integer",
+                                        "description": "Pixels to scroll (for 'scroll' action)"
+                                    },
+                                    "smooth": {
+                                        "type": "boolean",
+                                        "description": "Use smooth scrolling animation (for 'scroll' action)"
+                                    },
+
+                                    # GetCookies action
+                                    "names": {
+                                        "type": "array",
+                                        "description": "Specific cookie names to retrieve (for 'get_cookies' action)",
+                                        "items": {"type": "string"}
+                                    },
+                                    "domain": {
+                                        "type": "string",
+                                        "description": "Filter cookies by domain (for 'get_cookies' action)"
+                                    },
+
+                                    # SetCookies action
+                                    "cookies": {
+                                        "type": "array",
+                                        "description": "List of cookie objects to set (for 'set_cookies' action)",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "name": {"type": "string"},
+                                                "value": {"type": "string"},
+                                                "domain": {"type": "string"},
+                                                "path": {"type": "string"},
+                                                "secure": {"type": "boolean"},
+                                                "httpOnly": {"type": "boolean"}
+                                            }
+                                        }
+                                    },
+
+                                    # Wait action
+                                    "condition": {
+                                        "type": "string",
+                                        "description": "Condition value - CSS selector, URL substring, etc. (for 'wait' action)"
+                                    },
+                                    "condition_type": {
+                                        "type": "string",
+                                        "enum": ["selector", "url_contains", "title_contains", "custom"],
+                                        "description": "Type of condition to wait for (for 'wait' action)"
+                                    },
+                                    "custom_script": {
+                                        "type": "string",
+                                        "description": "JavaScript returning boolean for custom wait (for 'wait' action)"
+                                    },
+
+                                    # Authenticate action
+                                    "method": {
+                                        "type": "string",
+                                        "enum": ["form", "basic", "oauth", "custom"],
+                                        "description": "Authentication method (for 'authenticate' action)"
+                                    },
+                                    "username": {
+                                        "type": "string",
+                                        "description": "Username or email (for 'authenticate' action)"
+                                    },
+                                    "password": {
+                                        "type": "string",
+                                        "description": "Password (for 'authenticate' action)"
+                                    },
+                                    "username_selector": {
+                                        "type": "string",
+                                        "description": "CSS selector for username field (for 'authenticate' action)"
+                                    },
+                                    "password_selector": {
+                                        "type": "string",
+                                        "description": "CSS selector for password field (for 'authenticate' action)"
+                                    },
+                                    "submit_selector": {
+                                        "type": "string",
+                                        "description": "CSS selector for submit button (for 'authenticate' action)"
+                                    },
+
+                                    # AwaitHuman action
+                                    "message": {
+                                        "type": "string",
+                                        "description": "Message to display while waiting (for 'await_human', 'await_keypress' actions)"
+                                    },
+
+                                    # AwaitKeyPress action
+                                    "expected_key": {
+                                        "type": "string",
+                                        "description": "Specific key to wait for (for 'await_keypress' action)"
+                                    },
+
+                                    # AwaitBrowserEvent action
+                                    "wait_condition": {
+                                        "type": "object",
+                                        "description": "Condition configuration for browser event (for 'await_browser_event' action)"
+                                    },
+
+                                    # Loop action
+                                    "actions": {
+                                        "type": "array",
+                                        "description": "List of actions to repeat (for 'loop' action)",
+                                        "items": {"type": "object"}
+                                    },
+                                    "iterations": {
+                                        "type": "integer",
+                                        "description": "Number of times to repeat (for 'loop' action)"
+                                    },
+                                    "break_on_error": {
+                                        "type": "boolean",
+                                        "description": "Stop loop if action fails (for 'loop' action)"
+                                    },
+                                    "max_iterations": {
+                                        "type": "integer",
+                                        "description": "Safety limit for condition-based loops (for 'loop' action)"
+                                    },
+
+                                    # GetText action
+                                    "multiple": {
+                                        "type": "boolean",
+                                        "description": "Extract from all matching elements (for 'get_text', 'get_html' actions)"
+                                    },
+                                    "extract_name": {
+                                        "type": "string",
+                                        "description": "Name for extracted data in results (for 'get_text', 'get_html' actions)"
+                                    },
+
+                                    # Screenshot action
+                                    "full_page": {
+                                        "type": "boolean",
+                                        "description": "Capture full scrollable page (for 'screenshot' action)"
+                                    },
+                                    "output_path": {
+                                        "type": "string",
+                                        "description": "File path to save screenshot (for 'screenshot' action)"
+                                    },
+                                    "return_base64": {
+                                        "type": "boolean",
+                                        "description": "Return screenshot as base64 (for 'screenshot' action)"
+                                    },
+
+                                    # WaitForDownload action
+                                    "filename_pattern": {
+                                        "type": "string",
+                                        "description": "Filename pattern to match, e.g., '*.pdf' (for 'wait_for_download' action)"
+                                    },
+                                    "download_path": {
+                                        "type": "string",
+                                        "description": "Directory to monitor for downloads (for 'wait_for_download' action)"
+                                    },
+                                    "move_to": {
+                                        "type": "string",
+                                        "description": "Path to move downloaded file (for 'wait_for_download' action)"
+                                    },
+                                    "delete_after": {
+                                        "type": "boolean",
+                                        "description": "Delete file after detection (for 'wait_for_download' action)"
+                                    },
+
+                                    # UploadFile action
+                                    "file_path": {
+                                        "type": "string",
+                                        "description": "Path to file to upload (for 'upload_file' action)"
+                                    },
+                                    "wait_after_upload": {
+                                        "type": "string",
+                                        "description": "CSS selector to wait for after upload (for 'upload_file' action)"
+                                    },
+                                    "multiple_files": {
+                                        "type": "boolean",
+                                        "description": "Whether uploading multiple files (for 'upload_file' action)"
+                                    },
+                                    "file_paths": {
+                                        "type": "array",
+                                        "description": "List of file paths for multiple uploads (for 'upload_file' action)",
+                                        "items": {"type": "string"}
+                                    }
                                 }
                             }
                         },
                         "selectors": {
                             "type": "array",
-                            "description": "Content selectors for extraction",
+                            "description": "Content selectors for extraction (legacy - prefer using get_text/get_html actions)",
                             "items": {
                                 "type": "object",
+                                "required": ["name", "selector"],
                                 "properties": {
-                                    "name": {"type": "string"},
-                                    "selector": {"type": "string"},
-                                    "extract_type": {"type": "string", "enum": ["text", "html", "attribute"]}
+                                    "name": {
+                                        "type": "string",
+                                        "description": "Friendly name for the extracted content"
+                                    },
+                                    "selector": {
+                                        "type": "string",
+                                        "description": "CSS selector for the content"
+                                    },
+                                    "selector_type": {
+                                        "type": "string",
+                                        "enum": ["css", "xpath", "tag"],
+                                        "description": "Type of selector"
+                                    },
+                                    "extract_type": {
+                                        "type": "string",
+                                        "enum": ["text", "html", "attribute"],
+                                        "description": "What to extract from matched elements"
+                                    },
+                                    "attribute": {
+                                        "type": "string",
+                                        "description": "Attribute name (when extract_type is 'attribute')"
+                                    },
+                                    "multiple": {
+                                        "type": "boolean",
+                                        "description": "Extract from all matching elements"
+                                    }
                                 }
                             }
                         },
-                        "base_url": {"type": "string", "description": "Base URL for relative links"}
+                        "base_url": {
+                            "type": "string",
+                            "description": "Base URL for resolving relative links"
+                        },
+                        "browser_config": {
+                            "type": "object",
+                            "description": "Browser configuration overrides",
+                            "properties": {
+                                "browser": {
+                                    "type": "string",
+                                    "enum": ["chrome", "firefox", "edge", "safari", "undetected"],
+                                    "description": "Browser to use"
+                                },
+                                "headless": {
+                                    "type": "boolean",
+                                    "description": "Run browser in headless mode"
+                                },
+                                "mobile": {
+                                    "type": "boolean",
+                                    "description": "Emulate mobile device"
+                                },
+                                "mobile_device": {
+                                    "type": "string",
+                                    "description": "Specific mobile device to emulate"
+                                }
+                            }
+                        }
                     },
                     "required": ["steps"]
                 }

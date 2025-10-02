@@ -211,6 +211,70 @@ class AwaitBrowserEvent(BrowserAction):
     def get_action_type(self) -> str:
         return "await_browser_event"
 
+class GetText(BrowserAction):
+    """Extract pure text content from elements matching selector"""
+    name: str = "get_text"
+    description: str = Field(default="Extract text content", description="Extracting text from elements")
+    selector: str = Field(description="CSS selector to identify elements to extract text from")
+    multiple: bool = Field(default=False, description="Extract from all matching elements or just first")
+    extract_name: str = Field(default="extracted_text", description="Name for the extracted data in results")
+
+class Screenshot(BrowserAction):
+    """Take a screenshot of the page or a specific element"""
+    name: str = "screenshot"
+    description: str = Field(default="Take screenshot", description="Taking a screenshot")
+    selector: Optional[str] = Field(default=None, description="CSS selector of element to screenshot (None = full page)")
+    full_page: bool = Field(default=True, description="Capture full scrollable page")
+    output_path: Optional[str] = Field(default=None, description="File path to save screenshot (e.g., 'screenshot.png')")
+    return_base64: bool = Field(default=False, description="Return screenshot as base64 string in results")
+
+
+class GetHTML(BrowserAction):
+    """Extract complete HTML content from elements matching selector"""
+    name: str = "get_html"
+    description: str = Field(default="Extract HTML content", description="Extracting HTML from elements")
+    selector: str = Field(description="CSS selector to identify elements to extract HTML from")
+    multiple: bool = Field(default=False, description="Extract from all matching elements or just first")
+    extract_name: str = Field(default="extracted_html", description="Name for the extracted data in results")
+
+
+class WaitForDownload(BrowserAction):
+    """Wait for a file download to complete"""
+    name: str = "wait_for_download"
+    description: str = Field(default="Wait for download", description="Waiting for file download to complete")
+    filename_pattern: Optional[str] = Field(
+        default=None,
+        description="Filename pattern to match (e.g., '*.pdf', 'report*.xlsx'). None = any file"
+    )
+    download_path: Optional[str] = Field(
+        default=None,
+        description="Directory to monitor for downloads (None = browser default download directory)"
+    )
+    timeout: int = Field(default=60, description="Maximum time to wait for download (seconds)")
+    move_to: Optional[str] = Field(
+        default=None,
+        description="Optional path to move the downloaded file after completion"
+    )
+    delete_after: bool = Field(default=False, description="Delete the file after successful download detection")
+
+
+class UploadFile(BrowserAction):
+    """Upload a file to a file input element"""
+    name: str = "upload_file"
+    description: str = Field(default="Upload file", description="Uploading a file to an input element")
+    selector: str = Field(description="CSS selector for the file input element")
+    file_path: str = Field(description="Absolute or relative path to the file to upload")
+    wait_after_upload: Optional[str] = Field(
+        default=None,
+        description="Optional CSS selector to wait for after upload (e.g., confirmation message)"
+    )
+    wait_timeout: int = Field(default=10, description="Timeout for post-upload wait (seconds)")
+    multiple_files: bool = Field(default=False, description="Whether uploading multiple files")
+    file_paths: Optional[List[str]] = Field(
+        default=None,
+        description="List of file paths for multiple file upload"
+    )
+
 
 class Loop(BrowserAction):
     """Repeat a sequence of actions multiple times"""
@@ -249,6 +313,7 @@ class ScrapingStep:
         },
     """
     action: BrowserAction
+    description: str = field(default="")
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization"""
@@ -288,6 +353,11 @@ class ScrapingStep:
             "await_keypress": AwaitKeyPress,
             "await_browser_event": AwaitBrowserEvent,
             "loop": Loop,
+            "get_text": GetText,
+            "get_html": GetHTML,
+            "wait_for_download": WaitForDownload,
+            "upload_file": UploadFile,
+            "screenshot": Screenshot,
         }
 
         action_class = action_map.get(action_type)
@@ -297,7 +367,9 @@ class ScrapingStep:
             )
 
         action = action_class(**action_data)
-        return cls(action=action)
+        obj = cls(action=action)
+        obj.description = data.get('description', action.description)
+        return obj
 
 
 # Convenience function for LLM integration
@@ -322,6 +394,11 @@ def create_action(action_type: str, **kwargs) -> BrowserAction:
         "await_human": AwaitHuman,
         "await_keypress": AwaitKeyPress,
         "await_browser_event": AwaitBrowserEvent,
+        "get_text": GetText,
+        "get_html": GetHTML,
+        "wait_for_download": WaitForDownload,
+        "upload_file": UploadFile,
+        "screenshot": Screenshot,
         "loop": Loop,
     }
 
