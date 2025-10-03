@@ -183,6 +183,10 @@ class AIMessage(BaseModel):
         default=None,
         description="Structured output if applicable (e.g. JSON, DataFrame)"
     )
+    metadata: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Additional metadata associated with the response"
+    )
 
     class Config:
         """Pydantic configuration for AIMessage."""
