@@ -9,11 +9,12 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
-from .scraping_agent import ScrapingAgent
-from .web_scraping_tool import WebScrapingTool, ScrapingStep, ScrapingSelector, ScrapingResult
-from ..stores.kb import KnowledgeBaseStore
-from ..loaders.text import TextLoader
-from ..models.responses import AgentResponse
+from ...bots.scraper import ScrapingAgent
+from .tool import WebScrapingTool
+from .models import ScrapingStep, ScrapingSelector, ScrapingResult
+from ...stores.kb import KnowledgeBaseStore
+from ...loaders.text import TextLoader
+from ...models.responses import AgentResponse
 
 
 class ScrapingOrchestrator:
