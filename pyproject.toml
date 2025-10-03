@@ -113,6 +113,8 @@ loaders = [
     "pytorch-lightning==2.5.5",
     "pytorch-metric-learning==2.9.0",
     "nvidia-cudnn-cu12==9.1.0.70",
+    "moviepy==2.2.1",
+    "ffmpeg==1.4",
 ]
 
 vectors = [

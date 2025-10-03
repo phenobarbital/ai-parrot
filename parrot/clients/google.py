@@ -3692,3 +3692,362 @@ Text:
                 raise SpeechGenerationError(
                     f"Speech generation failed: {str(e)}"
                 ) from e
+
+    async def video_generation(
+        self,
+        prompt_data: Union[str, VideoGenerationPrompt],
+        model: Union[str, GoogleModel] = GoogleModel.VEO_3_0,
+        reference_image: Optional[Path] = None,
+        generate_image_first: bool = False,
+        image_prompt: Optional[str] = None,
+        image_generation_model: str = "imagen-4.0-generate-001",
+        aspect_ratio: Optional[str] = None,
+        resolution: Optional[str] = None,
+        negative_prompt: Optional[str] = None,
+        output_directory: Optional[Path] = None,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        stateless: bool = True,
+        poll_interval: int = 10
+    ) -> AIMessage:
+        """
+        Generates videos based on a text prompt using Veo models.
+
+        Args:
+            prompt_data: Text prompt or VideoGenerationPrompt object
+            model: Video generation model (VEO_2_0 or VEO_3_0)
+            reference_image: Optional path to reference image. If provided, this takes precedence.
+            generate_image_first: If True and no reference_image, generates an image with Imagen first
+            image_generation_model: Model to use for image generation (default: imagen-4.0-generate-001)
+            aspect_ratio: Video aspect ratio (e.g., "16:9", "9:16"). Overrides prompt_data setting.
+            resolution: Video resolution (e.g., "720p", "1080p"). Overrides prompt_data setting.
+            negative_prompt: What to avoid in the video. Overrides prompt_data setting.
+            output_directory: Directory to save generated videos
+            user_id: User ID for conversation tracking
+            session_id: Session ID for conversation tracking
+            stateless: If True, no conversation memory is saved
+            poll_interval: Seconds between polling checks (default: 10)
+
+        Returns:
+            AIMessage containing the generated video
+        """
+        # Parse prompt data
+        if isinstance(prompt_data, str):
+            prompt_data = VideoGenerationPrompt(
+                prompt=prompt_data,
+                model=model.value if isinstance(model, GoogleModel) else model,
+            )
+
+        # Validate and set model
+        if prompt_data.model:
+            model = prompt_data.model
+        model = model.value if isinstance(model, GoogleModel) else model
+
+        if model not in [GoogleModel.VEO_2_0.value, GoogleModel.VEO_3_0.value, GoogleModel.VEO_3_0_FAST.value]:
+            raise ValueError(
+                f"Video generation only supported with VEO 2.0 or VEO 3.0 models. Got: {model}"
+            )
+
+        # Setup output directory
+        if output_directory:
+            if isinstance(output_directory, str):
+                output_directory = Path(output_directory).resolve()
+            output_directory.mkdir(parents=True, exist_ok=True)
+        else:
+            output_directory = BASE_DIR.joinpath('static', 'generated_videos')
+            output_directory.mkdir(parents=True, exist_ok=True)
+
+        turn_id = str(uuid.uuid4())
+
+        self.logger.info(
+            f"Starting video generation with model: {model}"
+        )
+
+        # Prepare conversation context if not stateless
+        if not stateless:
+            messages, conversation_session, _ = await self._prepare_conversation_context(
+                prompt_data.prompt, None, user_id, session_id, None
+            )
+        else:
+            messages = None
+            conversation_session = None
+
+        # Override prompt settings with explicit parameters
+        final_aspect_ratio = aspect_ratio or prompt_data.aspect_ratio or "16:9"
+        final_resolution = resolution or getattr(prompt_data, 'resolution', None) or "720p"
+        final_negative_prompt = negative_prompt or prompt_data.negative_prompt or ""
+
+        # Step 1: Handle image input (reference or generate)
+        generated_image = None
+        image_for_video = None
+
+        if reference_image:
+            self.logger.info(
+                f"Using reference image: {reference_image}"
+            )
+            if not reference_image.exists():
+                raise FileNotFoundError(f"Reference image not found: {reference_image}")
+
+            # VEO 3.0 doesn't support reference images, fall back to VEO 2.0
+            # if model == GoogleModel.VEO_3_0.value:
+            #     self.logger.warning(
+            #         "VEO 3.0 does not support reference images. Switching to VEO 2.0."
+            #     )
+            #     model = GoogleModel.VEO_3_0_FAST
+
+            # Load reference image
+            ref_image_pil = Image.open(reference_image)
+            # Convert PIL Image to bytes for Google GenAI API
+            img_byte_arr = io.BytesIO()
+            ref_image_pil.save(img_byte_arr, format=ref_image_pil.format or 'JPEG')
+            img_byte_arr.seek(0)
+            image_bytes = img_byte_arr.getvalue()
+
+            image_for_video = types.Image(
+                image_bytes=image_bytes,
+                mime_type=f"image/{(ref_image_pil.format or 'jpeg').lower()}"
+            )
+
+        elif generate_image_first:
+            self.logger.info(
+                f"Generating image first with {image_generation_model} before video generation"
+            )
+
+            try:
+                # Generate image using Imagen
+                image_config = types.GenerateImagesConfig(
+                    number_of_images=1,
+                    output_mime_type="image/jpeg",
+                    aspect_ratio=final_aspect_ratio
+                )
+
+                gen_prompt = image_prompt or prompt_data.prompt
+
+                image_response = await self.client.aio.models.generate_images(
+                    model=image_generation_model,
+                    prompt=gen_prompt,
+                    config=image_config
+                )
+
+                if image_response.generated_images:
+                    generated_image = image_response.generated_images[0]
+                    self.logger.info(
+                        "Successfully generated reference image for video"
+                    )
+
+                    # Convert generated image to format needed for video generation
+                    pil_image = generated_image.image
+                    # can we use directly because is a google.genai.types.Image
+                    image_for_video = pil_image
+                    # Also, save the generated image to output directory:
+                    gen_image_path = output_directory / f"generated_image_{turn_id}.jpg"
+                    pil_image.save(gen_image_path)
+                    self.logger.info(
+                        f"Saved generated reference image to: {gen_image_path}"
+                    )
+
+                    # VEO 3.0 doesn't support reference images
+                    if model == GoogleModel.VEO_3_0.value:
+                        self.logger.warning(
+                            "VEO 3.0 does not support reference images. Switching to VEO 3.0 FAST"
+                        )
+                        model = GoogleModel.VEO_3_0_FAST
+                else:
+                    raise Exception("Image generation returned no images")
+
+            except Exception as e:
+                self.logger.error(f"Image generation failed: {e}")
+                raise Exception(f"Failed to generate reference image: {e}")
+
+        # Step 2: Generate video
+        self.logger.info(f"Generating video with prompt: '{prompt_data.prompt[:100]}...'")
+
+        try:
+            start_time = time.time()
+
+            # Prepare video generation arguments
+            video_args = {
+                "model": model,
+                "prompt": prompt_data.prompt,
+            }
+
+            if image_for_video:
+                video_args["image"] = image_for_video
+
+            # Create config with all parameters
+            video_config = types.GenerateVideosConfig(
+                aspect_ratio=final_aspect_ratio,
+                number_of_videos=prompt_data.number_of_videos or 1,
+            )
+
+            # Add resolution if supported (check model capabilities)
+            if final_resolution:
+                video_config.resolution = final_resolution
+
+            # Add negative prompt if provided
+            if final_negative_prompt:
+                video_config.negative_prompt = final_negative_prompt
+
+            video_args["config"] = video_config
+
+            # Start async video generation operation
+            self.logger.info("Starting async video generation operation...")
+            operation = await self.client.aio.models.generate_videos(**video_args)
+
+            # Step 3: Poll operation status asynchronously
+            self.logger.info(
+                f"Polling video generation status every {poll_interval} seconds..."
+            )
+            spinner_chars = ['|', '/', '-', '\\']
+            spinner_index = 0
+            poll_count = 0
+
+            # This loop checks the job status every poll_interval seconds
+            while not operation.done:
+                poll_count += 1
+                # This inner loop runs the spinner animation for the poll_interval
+                for _ in range(poll_interval):
+                    # Write the spinner character to the console
+                    sys.stdout.write(
+                        f"\rVideo generation job started. Waiting for completion... {spinner_chars[spinner_index]}"
+                    )
+                    sys.stdout.flush()
+                    spinner_index = (spinner_index + 1) % len(spinner_chars)
+                    await asyncio.sleep(1)  # Animate every second (async version)
+
+                # After poll_interval seconds, get the updated operation status
+                operation = await self.client.aio.operations.get(operation)
+
+            print("\rVideo generation job completed.          ", end="")
+            sys.stdout.flush()
+
+            execution_time = time.time() - start_time
+            self.logger.info(
+                f"Video generation completed in {execution_time:.2f}s after {poll_count} polls"
+            )
+
+            # Step 4: Download and save videos using bytes download
+            generated_videos = operation.response.generated_videos
+
+            if not generated_videos:
+                raise Exception("Video generation completed but no videos were returned")
+
+            saved_video_paths = []
+            raw_response = {'generated_videos': []}
+
+            for n, generated_video in enumerate(generated_videos):
+                # Download the video bytes (MP4)
+                # NOTE: Use sync client for file download as aio may not support it
+                mp4_bytes = self.client.files.download(file=generated_video.video)
+
+                # Save video to file using helper method
+                video_path = self._save_video_file(
+                    mp4_bytes,
+                    output_directory,
+                    video_number=n,
+                    mime_format='video/mp4'
+                )
+                saved_video_paths.append(str(video_path))
+
+                self.logger.info(f"Saved video to: {video_path}")
+
+                # Collect metadata
+                raw_response['generated_videos'].append({
+                    'path': str(video_path),
+                    'duration': getattr(generated_video, 'duration', None),
+                    'uri': getattr(generated_video, 'uri', None),
+                })
+
+            # Step 5: Update conversation memory if not stateless
+            usage = CompletionUsage(
+                execution_time=execution_time,
+                # Video API does not return token counts, use approximation
+                input_tokens=len(prompt_data.prompt),
+            )
+
+            if not stateless and conversation_session:
+                await self._update_conversation_memory(
+                    user_id,
+                    session_id,
+                    conversation_session,
+                    messages + [
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": f"[Video Generation]: {prompt_data.prompt}"}
+                            ]
+                        },
+                    ],
+                    None,
+                    turn_id,
+                    prompt_data.prompt,
+                    f"Generated {len(saved_video_paths)} video(s)",
+                    []
+                )
+
+            # Step 6: Create and return AIMessage using the factory
+            ai_message = AIMessageFactory.from_video(
+                output=operation,  # The raw operation response object
+                files=saved_video_paths,  # List of saved video file paths
+                input=prompt_data.prompt,
+                model=model,
+                provider="google_genai",
+                usage=usage,
+                user_id=user_id,
+                session_id=session_id,
+                raw_response=None  # Response object isn't easily serializable
+            )
+
+            # Add metadata about the generation
+            ai_message.metadata = {
+                'aspect_ratio': final_aspect_ratio,
+                'resolution': final_resolution,
+                'negative_prompt': final_negative_prompt,
+                'reference_image_used': reference_image is not None or generate_image_first,
+                'image_generation_used': generate_image_first,
+                'poll_count': poll_count,
+                'execution_time': execution_time
+            }
+
+            self.logger.info(
+                f"Video generation successful: {len(saved_video_paths)} video(s) created"
+            )
+
+            return ai_message
+
+        except Exception as e:
+            self.logger.error(f"Video generation failed: {e}", exc_info=True)
+            raise
+
+    def _save_video_file(
+        self,
+        video_bytes: bytes,
+        output_directory: Path,
+        video_number: int = 0,
+        mime_format: str = "video/mp4"
+    ) -> Path:
+        """
+        Helper method to save video bytes to disk.
+
+        Args:
+            video_bytes: Raw video bytes from the API
+            output_directory: Directory to save the video
+            video_number: Index number for the video filename
+            mime_format: MIME type of the video (default: video/mp4)
+
+        Returns:
+            Path to saved video file
+        """
+        # Generate filename based on timestamp and video number
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"video_{timestamp}_{video_number}.mp4"
+
+        video_path = output_directory / filename
+
+        # Write bytes to file
+        with open(video_path, 'wb') as f:
+            f.write(video_bytes)
+
+        self.logger.info(f"Saved {len(video_bytes)} bytes to {video_path}")
+
+        return video_path
