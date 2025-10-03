@@ -33,8 +33,12 @@ class Navigate(BrowserAction):
 class Click(BrowserAction):
     """Click on a web page element"""
     name: str = "click"
-    selector: str = Field(description="CSS selector to identify the target element")
+    selector: str = Field(description="CSS or XPATH selector to identify the target element")
     description: str = Field(default="Click on an element", description="clicking on a specific element")
+    selector_type: Literal["css", "xpath", "text"] = Field(
+        default="css",
+        description="Type of selector: 'css' for CSS selectors, 'xpath' for XPath, 'text' for text matching"
+    )
     click_type: Literal["single", "double", "right"] = Field(
         default="single",
         description="Type of click action"
@@ -131,14 +135,15 @@ class Wait(BrowserAction):
     """Wait for a condition to be met"""
     name: str = "wait"
     description: str = Field(default="Wait for a condition", description="Waiting for a specific condition")
-    condition: str = Field(description="Value for the condition (selector, URL substring, etc.)")
-    condition_type: Literal["selector", "url_contains", "title_contains", "custom"] = Field(
+    condition: Optional[str] = Field(default=None, description="Value for the condition (selector, URL substring, etc.)")
+    condition_type: Literal["simple", "selector", "url_contains", "url_is", "title_contains", "custom"] = Field(
         description="Type of condition to wait for"
     )
     custom_script: Optional[str] = Field(
         default=None,
         description="JavaScript that returns true when condition is met (for custom type)"
     )
+    timeout: int = Field(default=None, description="Maximum wait time (seconds)")
 
 
 class Authenticate(BrowserAction):
@@ -149,6 +154,10 @@ class Authenticate(BrowserAction):
     username: Optional[str] = Field(default=None, description="Username/email")
     password: Optional[str] = Field(default=None, description="Password")
     username_selector: str = Field(default="#username", description="CSS selector for username field")
+    enter_on_username: bool = Field(
+        default=False,
+        description="Press Enter after filling username (for multi-step logins)"
+    )
     password_selector: str = Field(default="#password", description="CSS selector for password field")
     submit_selector: str = Field(
         default='input[type="submit"], button[type="submit"]',
@@ -255,7 +264,11 @@ class GetHTML(BrowserAction):
     """Extract complete HTML content from elements matching selector"""
     name: str = "get_html"
     description: str = Field(default="Extract HTML content", description="Extracting HTML from elements")
-    selector: str = Field(description="CSS selector to identify elements to extract HTML from")
+    selector: str = Field(description="CSS or XPath selector to identify elements to extract HTML from")
+    selector_type: Literal["css", "xpath"] = Field(
+        default="css",
+        description="Type of selector: 'css' for CSS selectors, 'xpath' for XPath"
+    )
     multiple: bool = Field(default=False, description="Extract from all matching elements or just first")
     extract_name: str = Field(default="extracted_html", description="Name for the extracted data in results")
 
@@ -298,6 +311,33 @@ class UploadFile(BrowserAction):
     )
 
 
+class Conditional(BrowserAction):
+    """Execute actions conditionally based on a JavaScript expression"""
+    name: str = "conditional"
+    description: str = Field(default="Conditional action execution", description="Executing actions based on a condition")
+    target: Optional[str] = Field(
+        default=None,
+        description="Target or condition value (e.g., XPATH or CSS selector) to detect completion"
+    )
+    target_type: Literal["css", "xpath"] = Field(
+        default="css",
+        description="Type of target selector"
+    )
+    condition_type: Literal["text_contains", "exists", "text_equals", "attribute_equals"] = Field(
+        default="text_contains",
+        description="Condition type that determines how to evaluate the target"
+    )
+    expected_value: str = Field(description="Value that evaluates to true or false")
+    timeout: int = Field(default=5, description="Maximum time to wait for condition evaluation (seconds)")
+    actions_if_true: List[BrowserAction] = Field(
+        description="List of actions to execute if condition is true"
+    )
+    actions_if_false: Optional[List[BrowserAction]] = Field(
+        default=None,
+        description="List of actions to execute if condition is false"
+    )
+
+
 class Loop(BrowserAction):
     """Repeat a sequence of actions multiple times"""
     name: str = "loop"
@@ -308,11 +348,21 @@ class Loop(BrowserAction):
         default=None,
         description="JavaScript condition to evaluate; loop continues while true"
     )
+    values: Optional[List[Any]] = Field(
+        default=None,
+        description="List of values to iterate over. When provided, iterations is automatically set to len(values)"
+    )
     break_on_error: bool = Field(default=True, description="Stop loop if any action fails")
     max_iterations: int = Field(default=100, description="Safety limit for condition-based loops")
+    start_index: int = Field(
+        default=0,
+        description="Starting index for iteration counter (default: 0 for 0-based indexing)"
+    )
+    do_replace: bool = Field(
+        default=True,
+        description="Whether to replace {{index}} and {{index_1}} in action parameters"
+    )
 
-    def get_action_type(self) -> str:
-        return "loop"
 
 
 # Update Forward References (required for Loop containing BrowserAction)
@@ -394,6 +444,15 @@ class ScrapingStep:
         if action_type == 'loop' and 'actions' in data:
             # Recursively convert nested actions
             obj.action.actions = [cls.from_dict(a).action for a in data['actions']]
+        if action_type == 'conditional':
+            if 'actions_if_true' in data:
+                obj.action.actions_if_true = [
+                    cls.from_dict(a).action for a in data['actions_if_true']
+                ]
+            if 'actions_if_false' in data and data['actions_if_false'] is not None:
+                obj.action.actions_if_false = [
+                    cls.from_dict(a).action for a in data['actions_if_false']
+                ]
         return obj
 
 
@@ -425,6 +484,7 @@ def create_action(action_type: str, **kwargs) -> BrowserAction:
         "upload_file": UploadFile,
         "screenshot": Screenshot,
         "loop": Loop,
+        "conditional": Conditional
     }
 
     action_class = action_map.get(action_type)

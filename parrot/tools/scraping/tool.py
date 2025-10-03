@@ -3,6 +3,7 @@ WebScrapingTool for AI-Parrot
 Combines Selenium/Playwright automation with LLM-directed scraping
 """
 from pathlib import Path
+import random
 import sys
 from typing import Dict, List, Any, Optional, Union, Literal
 import select
@@ -10,7 +11,9 @@ import time
 import asyncio
 import logging
 import base64
+import re
 from urllib.parse import urlparse, urljoin
+from lxml import html as lxml_html
 import aiofiles
 from pydantic import BaseModel, Field
 from bs4 import BeautifulSoup
@@ -54,7 +57,8 @@ from .models import (
     Loop,
     ScrapingStep,
     ScrapingSelector,
-    ScrapingResult
+    ScrapingResult,
+    Conditional
 )
 
 
@@ -179,7 +183,6 @@ authenticate or waiting for events or human intervention actions."""
                 scraping_selectors,
                 base_url
             )
-
             return {
                 "status": len([r for r in results if r.success]) > 0,
                 "result": [
@@ -188,7 +191,10 @@ authenticate or waiting for events or human intervention actions."""
                         "extracted_data": r.extracted_data,
                         "metadata": r.metadata,
                         "success": r.success,
-                        "error_message": r.error_message
+                        "error_message": r.error_message,
+                        "content": r.content,
+                        'bs': r.bs_soup
+
                     } for r in results
                 ],
                 "metadata": {
@@ -289,12 +295,12 @@ authenticate or waiting for events or human intervention actions."""
                 result = await self._extract_content(current_url, selectors)
                 if result:
                     self.results.append(result)
-            else:
-                # Default: extract full page content
-                current_url = await self._get_current_url()
-                result = await self._extract_full_content(current_url)
-                if result:
-                    self.results.append(result)
+            # else:
+            #     # Default: extract full page content
+            #     current_url = await self._get_current_url()
+            #     result = await self._extract_full_content(current_url)
+            #     if result:
+            #         self.results.append(result)
 
         except Exception as e:
             self.logger.error(f"Scraping workflow failed: {str(e)}")
@@ -359,7 +365,7 @@ authenticate or waiting for events or human intervention actions."""
             elif action_type == 'wait':
                 result = await self._wait_for_condition(
                     action,
-                    step.timeout or self.default_timeout
+                    step.action.timeout or self.default_timeout
                 )
             elif action_type == 'scroll':
                 result = await self._scroll_page(action)
@@ -367,6 +373,8 @@ authenticate or waiting for events or human intervention actions."""
                 result = await self._handle_authentication(action)
             elif action_type == 'loop':
                 result = await self._exec_loop(action, base_url)
+            elif action_type == 'conditional':
+                result = await self._exec_conditional(action)
             else:
                 self.logger.warning(f"Unknown action: {step.action}")
                 return False
@@ -579,113 +587,186 @@ authenticate or waiting for events or human intervention actions."""
             except Exception:
                 return False
 
-    async def _click(
-        self,
-        action: Click,
-        timeout: Optional[int] = None
-    ):
-        """Click an element.
+    async def _click(self, action: Click, timeout: Optional[int] = None) -> bool:
+        """
+        Enhanced click method supporting CSS, XPath, and text-based selection.
 
         Args:
-            selector: CSS selector for element to click
-            timeout: Timeout for finding the element
-            step: Optional ScrapingStep with additional config
+            action: Click action with selector and options
+            timeout: Optional timeout override
+
+        Returns:
+            bool: True if click successful
         """
         selector = action.selector
+        selector_type = action.selector_type
+        timeout = timeout or action.timeout or self.default_timeout
+
         if self.driver_type == 'selenium':
             loop = asyncio.get_running_loop()
+
             def click_sync():
+                # Determine the locator strategy based on selector_type
+                if selector_type == 'xpath':
+                    by_type = By.XPATH
+                    locator = selector
+                elif selector_type == 'text':
+                    # Convert text search to XPath
+                    # Supports exact match, contains, and case-insensitive
+                    if selector.startswith('='):
+                        # Exact match: =Filters
+                        text = selector[1:]
+                        by_type = By.XPATH
+                        locator = f"//*[normalize-space(text())='{text}']"
+                    elif selector.startswith('~'):
+                        # Case-insensitive contains: ~filters
+                        text = selector[1:].lower()
+                        by_type = By.XPATH
+                        locator = f"//*[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{text}')]"
+                    else:
+                        # Default: contains (case-sensitive)
+                        by_type = By.XPATH
+                        locator = f"//*[contains(text(), '{selector}')]"
+                else:  # css (default)
+                    by_type = By.CSS_SELECTOR
+                    locator = selector
+
+                self.logger.debug(f"Clicking element: {by_type}='{locator}'")
+
                 wait = WebDriverWait(
                     self.driver,
-                    timeout or self.default_timeout,
+                    timeout,
                     poll_frequency=0.25
                 )
-                # If an overlay is present, wait for it to disappear
+
+                # Wait for element to be present
                 try:
-                    el = wait.until(
-                        EC.presence_of_element_located(
-                            (By.CSS_SELECTOR, selector)
-                        )
+                    element = wait.until(
+                        EC.presence_of_element_located((by_type, locator))
                     )
-                    try:
-                        el.click()
-                    except Exception:
-                        # fallback to JS click
-                        try:
-                            self.js_click(self.driver, el)
-                        except Exception:
-                            return False
-                except Exception:
-                    pass  # continue anyway; we'll try JS fallback
+                except Exception as e:
+                    self.logger.error(f"Element not found: {by_type}='{locator}'")
+                    raise
 
-                # Perform the click
-                element = wait.until(
-                    EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
-                )
+                # Try regular click first
                 try:
+                    # Wait for element to be clickable
+                    element = wait.until(
+                        EC.element_to_be_clickable((by_type, locator))
+                    )
                     element.click()
-                    self.logger.debug(f"Click performed on: {selector}")
+                    self.logger.debug(f"Click performed on: {locator}")
                 except Exception:
-                    # Scroll into view and JS-click as a fallback
-                    self.js_click(self.driver, element)
+                    # Fallback to JS click
+                    try:
+                        self.logger.debug("Regular click failed, trying JS click")
+                        self.js_click(self.driver, element)
+                    except Exception as e:
+                        self.logger.error(f"Both click methods failed: {str(e)}")
+                        raise
 
+                # Handle post-click waiting
                 if action.no_wait:
-                    # Skip any waiting - immediately return
-                    return
+                    self.logger.debug("no_wait=True, skipping post-click wait")
+                    return True
                 elif action.wait_after_click:
                     # Wait for specified element to appear
                     try:
                         WebDriverWait(
                             self.driver,
-                            action.wait_after_timeout or self.default_timeout,
+                            action.wait_timeout or self.default_timeout,
                             poll_frequency=0.25
                         ).until(
                             EC.presence_of_element_located(
                                 (By.CSS_SELECTOR, action.wait_after_click)
                             )
                         )
+                        self.logger.debug(f"Post-click element found: {action.wait_after_click}")
                     except Exception:
                         self.logger.warning(
                             f"Post-click wait element not found: {action.wait_after_click}"
                         )
-                        return
-                    else:
-                        # Default: small sleep to allow any navigation/JS to start
-                        time.sleep(0.5)
                 else:
-                    return
+                    # Default: small sleep to allow any navigation/JS to start
+                    time.sleep(0.5)
+
+                return True
 
             await loop.run_in_executor(None, click_sync)
             return True
+
         else:  # Playwright
-            await self.page.click(selector, timeout=self.default_timeout * 1000)
+            if selector_type == 'xpath':
+                # Playwright supports XPath directly
+                await self.page.click(f"xpath={selector}", timeout=timeout * 1000)
+            elif selector_type == 'text':
+                # Playwright has native text selection
+                if selector.startswith('='):
+                    # Exact text match
+                    text = selector[1:]
+                    await self.page.click(f"text={text}", timeout=timeout * 1000)
+                elif selector.startswith('~'):
+                    # Case-insensitive (Playwright doesn't have built-in, use XPath)
+                    text = selector[1:].lower()
+                    xpath = f"//*[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{text}')]"
+                    await self.page.click(f"xpath={xpath}", timeout=timeout * 1000)
+                else:
+                    # Contains (partial match)
+                    await self.page.click(f"text={selector}", timeout=timeout * 1000)
+            else:
+                # CSS selector
+                await self.page.click(selector, timeout=timeout * 1000)
+
             # Handle post-click waiting for Playwright
             if action.no_wait:
                 self.logger.debug("no_wait=True, skipping post-click wait")
-                return
             elif action.wait_after_click:
                 try:
                     await self.page.wait_for_selector(
                         action.wait_after_click,
-                        timeout=(action.wait_after_timeout or self.default_timeout) * 1000
+                        timeout=(action.wait_timeout or self.default_timeout) * 1000
                     )
-                    self.logger.debug(
-                        f"Post-click element found: {action.wait_after_click}"
-                    )
+                    self.logger.debug(f"Post-click element found: {action.wait_after_click}")
                 except Exception:
                     self.logger.warning(
                         f"Post-click wait timed out: {action.wait_after_click}"
                     )
 
-    async def _fill_element(self, selector: Any, value: str, clear_first: bool = False, press_enter: bool = False) -> bool:
+            return True
+
+    async def _fill_element(
+        self,
+        selector: Any,
+        value: str,
+        selector_type: str = 'css',
+        clear_first: bool = False,
+        press_enter: bool = False
+    ) -> bool:
         """Fill an input element"""
         if self.driver_type == 'selenium':
             loop = asyncio.get_running_loop()
             def fill_sync():
-                element = WebDriverWait(self.driver, self.default_timeout, poll_frequency=0.25).until(
-                    EC.presence_of_element_located(
-                        (By.CSS_SELECTOR, selector)
-                    )
+                if selector_type == 'xpath':
+                    by_type = By.XPATH
+                    locator = selector
+                elif selector_type == 'text':
+                    # Convert text to XPath for form fields
+                    by_type = By.XPATH
+                    if selector.startswith('='):
+                        text = selector[1:]
+                        # Find input with label containing text
+                        locator = f"//label[contains(text(), '{text}')]/following-sibling::input | //input[@placeholder='{text}']"
+                    else:
+                        locator = f"//label[contains(text(), '{selector}')]/following-sibling::input | //input[@placeholder='{selector}']"
+                else:
+                    by_type = By.CSS_SELECTOR
+                    locator = selector
+                element = WebDriverWait(
+                    self.driver,
+                    self.default_timeout,
+                    poll_frequency=0.25
+                ).until(
+                    EC.presence_of_element_located((by_type, locator))
                 )
                 if clear_first:
                     element.clear()
@@ -695,7 +776,22 @@ authenticate or waiting for events or human intervention actions."""
             await loop.run_in_executor(None, fill_sync)
             return True
         else:  # Playwright
-            await self.page.fill(selector, value)
+            if selector_type == 'xpath':
+                await self.page.fill(f"xpath={selector}", value)
+            elif selector_type == 'text':
+                # Playwright text selector for inputs
+                if selector.startswith('='):
+                    text = selector[1:]
+                    await self.page.fill(f"text={text}", value)
+                else:
+                    await self.page.fill(f"text={selector}", value)
+            else:
+                await self.page.fill(selector, value)
+
+            if press_enter:
+                await self.page.keyboard.press('Enter')
+
+        return True
 
     async def _fill(self, action: Fill):
         """Fill an input element"""
@@ -703,7 +799,13 @@ authenticate or waiting for events or human intervention actions."""
         value = action.value
         clear_first = action.clear_first
         press_enter = action.press_enter
-        return await self._fill_element(selector, value, clear_first=clear_first, press_enter=press_enter)
+        selector_type = getattr(action, 'selector_type', 'css')
+        return await self._fill_element(
+            selector, value,
+            selector_type=selector_type,
+            clear_first=clear_first,
+            press_enter=press_enter
+        )
 
     async def _wait_for_condition(self, action: Wait, timeout: int = 5):
         """
@@ -722,8 +824,23 @@ authenticate or waiting for events or human intervention actions."""
                     raise RuntimeError(
                         f"Selenium session not alive: {e}"
                     ) from e
-
-                if action.condition_type == 'selector':
+                if action.condition_type == 'simple':
+                    # do a simple wait of N.seconds:
+                    time.sleep(int(timeout))
+                    return True
+                elif action.condition_type == 'url_contains':
+                    WebDriverWait(self.driver, timeout, poll_frequency=0.25).until(
+                        EC.url_contains(condition)
+                    )
+                    self.logger.debug(f"URL contains: {condition}")
+                    return True
+                elif action.condition_type == 'url_is':
+                    WebDriverWait(self.driver, timeout, poll_frequency=0.25).until(
+                        EC.url_to_be(condition)
+                    )
+                    self.logger.debug(f"URL is: {condition}")
+                    return True
+                elif action.condition_type == 'selector':
                     # Check if selector is present.
                     selectors = [s.strip() for s in condition.split(',')]
                     for selector in selectors:
@@ -949,36 +1066,69 @@ authenticate or waiting for events or human intervention actions."""
             # Parse with BeautifulSoup
             soup = BeautifulSoup(page_source, 'html.parser')
 
+            # Handle different selector types
+            selector_type = getattr(action, 'selector_type', 'css')
+
             # Find elements by selector
-            elements = soup.select(action.selector)
+            if selector_type == 'xpath':
+                # Use lxml for XPath support
+                tree = lxml_html.fromstring(page_source)
+                elements_lxml = tree.xpath(action.selector)
+
+                # Convert lxml elements back to BeautifulSoup for consistency
+                elements = []
+                for elem in elements_lxml:
+                    html_str = lxml_html.tostring(elem, encoding='unicode')
+                    elements.append(BeautifulSoup(html_str, 'html.parser'))
+            else:
+                # CSS selector (default)
+                elements = soup.select(action.selector)
 
             if not elements:
                 self.logger.warning(f"No elements found for selector: {action.selector}")
                 extracted_html = None
+
+            # Extract HTML from all matching elements
             elif action.multiple:
-                # Extract HTML from all matching elements
-                extracted_html = [str(elem) for elem in elements]
+                for elem in elements:
+                    # generate one scrapping result per element:
+                    elem_bs = elem if isinstance(elem, BeautifulSoup) else BeautifulSoup(str(elem), 'html.parser')
+                    result = ScrapingResult(
+                        url=current_url,
+                        content=page_source,
+                        bs_soup=elem_bs,
+                        extracted_data={action.extract_name: str(elem)},
+                        metadata={
+                            "selector": action.selector,
+                            "selector_type": selector_type,
+                            "multiple": action.multiple,
+                        },
+                        timestamp=str(time.time()),
+                        success=True
+                    )
+                    self.results.append(result)
             else:
-                # Extract HTML from first element only
                 extracted_html = str(elements[0])
+                # Create ScrapingResult and append to results
+                result = ScrapingResult(
+                    url=current_url,
+                    content=page_source,
+                    bs_soup=soup,
+                    extracted_data={action.extract_name: extracted_html},
+                    metadata={
+                        "selector": action.selector,
+                        "selector_type": selector_type,
+                        "multiple": action.multiple,
+                        "elements_found": len(elements)
+                    },
+                    timestamp=str(time.time()),
+                    success=extracted_html is not None
+                )
 
-            # Create ScrapingResult and append to results
-            result = ScrapingResult(
-                url=current_url,
-                content=page_source,
-                bs_soup=soup,
-                extracted_data={action.extract_name: extracted_html},
-                metadata={
-                    "selector": action.selector,
-                    "multiple": action.multiple,
-                    "elements_found": len(elements)
-                },
-                timestamp=str(time.time()),
-                success=extracted_html is not None
+                self.results.append(result)
+            self.logger.info(
+                f"Extracted HTML from {len(elements)} element(s) using selector: {action.selector}"
             )
-
-            self.results.append(result)
-            self.logger.info(f"Extracted HTML from {len(elements)} element(s) using selector: {action.selector}")
 
             return True
 
@@ -1232,6 +1382,8 @@ authenticate or waiting for events or human intervention actions."""
 
             self.logger.info("Bearer token authentication configured. All subsequent requests will include the specified header.")
             return True
+
+        # action form (only programmed until now)
         username = action.username
         password = action.password
         username_selector = action.username_selector or '#username'
@@ -1246,7 +1398,7 @@ authenticate or waiting for events or human intervention actions."""
 
         try:
             # Fill username
-            await self._fill_element(username_selector, username)
+            await self._fill_element(username_selector, username, press_enter=action.enter_on_username)
             await asyncio.sleep(0.5)
 
             # Fill password
@@ -1294,62 +1446,65 @@ authenticate or waiting for events or human intervention actions."""
         custom_event = cfg.get("custom_event_name", "scrape-resume")
         timeout = int(action.timeout or 300)
 
-        # 1) Inject listener once
+        # Inject listener with green button and auto-removal
         inject_script = f"""
-    (function() {{
-    if (window.__scrapeSignal && window.__scrapeSignal._bound) return 0;
-    window.__scrapeSignal = window.__scrapeSignal || {{ ready:false, _bound:false }};
-    function signal() {{
-        try {{ localStorage.setItem('{ls_key}', '1'); }} catch(e) {{}}
-        window.__scrapeSignal.ready = true;
-    }}
+(function() {{
+if (window.__scrapeSignal && window.__scrapeSignal._bound) return 0;
+window.__scrapeSignal = window.__scrapeSignal || {{ ready:false, _bound:false }};
+function signal() {{
+    try {{ localStorage.setItem('{ls_key}', '1'); }} catch(e) {{}}
+    window.__scrapeSignal.ready = true;
+    // Remove the button when clicked
+    var btn = document.getElementById('__scrapeResumeBtn');
+    if (btn) {{ btn.remove(); }}
+}}
 
-    // Key combos
-    window.addEventListener('keydown', function(e) {{
-        try {{
-        var k = '{key_combo}';
-        if (k === 'ctrl_enter' && (e.ctrlKey || e.metaKey) && e.key === 'Enter') {{ e.preventDefault(); signal(); }}
-        else if (k === 'cmd_enter' && e.metaKey && e.key === 'Enter') {{ e.preventDefault(); signal(); }}
-        else if (k === 'alt_shift_s' && e.altKey && e.shiftKey && (e.key.toLowerCase() === 's')) {{ e.preventDefault(); signal(); }}
-        }} catch(_e) {{}}
-    }}, true);
-
-    // Custom DOM event
+// Key combos
+window.addEventListener('keydown', function(e) {{
     try {{
-        window.addEventListener('{custom_event}', function() {{ signal(); }}, false);
+    var k = '{key_combo}';
+    if (k === 'ctrl_enter' && (e.ctrlKey || e.metaKey) && e.key === 'Enter') {{ e.preventDefault(); signal(); }}
+    else if (k === 'cmd_enter' && e.metaKey && e.key === 'Enter') {{ e.preventDefault(); signal(); }}
+    else if (k === 'alt_shift_s' && e.altKey && e.shiftKey && (e.key.toLowerCase() === 's')) {{ e.preventDefault(); signal(); }}
     }} catch(_e) {{}}
+}}, true);
 
-    // Optional overlay button
-    if ({'true' if show_overlay else 'false'}) {{
-        try {{
-        if (!document.getElementById('__scrapeResumeBtn')) {{
-            var btn = document.createElement('button');
-            btn.id = '__scrapeResumeBtn';
-            btn.textContent = 'Resume scraping';
-            Object.assign(btn.style, {{
-            position: 'fixed',
-            right: '16px',
-            bottom: '16px',
-            zIndex: 2147483647,
-            padding: '10px 14px',
-            fontSize: '14px',
-            borderRadius: '8px',
-            border: 'none',
-            cursor: 'pointer',
-            background: '#2563eb',
-            color: '#fff',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
-            }});
-            btn.addEventListener('click', function(e) {{ e.preventDefault(); signal(); }});
-            document.body.appendChild(btn);
-        }}
-        }} catch(_e) {{}}
+// Custom DOM event
+try {{
+    window.addEventListener('{custom_event}', function() {{ signal(); }}, false);
+}} catch(_e) {{}}
+
+// Optional overlay button with green background
+if ({'true' if show_overlay else 'false'}) {{
+    try {{
+    if (!document.getElementById('__scrapeResumeBtn')) {{
+        var btn = document.createElement('button');
+        btn.id = '__scrapeResumeBtn';
+        btn.textContent = 'Resume scraping';
+        Object.assign(btn.style, {{
+        position: 'fixed',
+        right: '16px',
+        bottom: '16px',
+        zIndex: 2147483647,
+        padding: '10px 14px',
+        fontSize: '14px',
+        borderRadius: '8px',
+        border: 'none',
+        cursor: 'pointer',
+        background: '#10b981',
+        color: '#fff',
+        boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
+        }});
+        btn.addEventListener('click', function(e) {{ e.preventDefault(); signal(); }});
+        document.body.appendChild(btn);
     }}
+    }} catch(_e) {{}}
+}}
 
-    window.__scrapeSignal._bound = true;
-    return 1;
-    }})();
-    """
+window.__scrapeSignal._bound = true;
+return 1;
+}})();
+"""
 
         def _inject_and_check_ready():
             # Return True if already signaled
@@ -1807,12 +1962,162 @@ authenticate or waiting for events or human intervention actions."""
             self.logger.error(f"UploadFile action failed: {str(e)}")
             return False
 
+    async def _exec_conditional(self, action: Conditional, base_url: str = "") -> bool:
+        """Handle Conditional action - execute actions based on a condition."""
+
+        CONDITION_TYPES = {
+            'exists': lambda element, expected: element is not None,
+            'not_exists': lambda element, expected: element is None,
+            'text_contains': lambda element, expected: expected in (element.text if element else ''),
+            'text_equals': lambda element, expected: (element.text if element else '') == expected,
+            'attribute_equals': lambda element, expected: element.get_attribute(expected['attr']) == expected['value'] if element else False,
+        }
+
+        target = action.target
+        target_type = action.target_type or 'css'
+        condition_type = action.condition_type
+        expected_value = action.expected_value
+        timeout = action.timeout or 5
+
+        self.logger.info(f"Evaluating conditional: {condition_type} on {target_type}='{target}'")
+
+        # Find the element
+        element = None
+        if self.driver_type == 'selenium':
+            loop = asyncio.get_running_loop()
+
+            def find_element_sync():
+                try:
+                    # Determine locator type
+                    if target_type == 'xpath':
+                        by_type = By.XPATH
+                    else:  # css
+                        by_type = By.CSS_SELECTOR
+
+                    # Try to find element with timeout
+                    try:
+                        el = WebDriverWait(
+                            self.driver,
+                            timeout,
+                            poll_frequency=0.25
+                        ).until(
+                            EC.presence_of_element_located((by_type, target))
+                        )
+                        return el
+                    except (TimeoutException, NoSuchElementException):
+                        return None
+                except Exception as e:
+                    self.logger.debug(f"Error finding element: {str(e)}")
+                    return None
+
+            element = await loop.run_in_executor(None, find_element_sync)
+
+        else:  # Playwright
+            try:
+                if target_type == 'xpath':
+                    selector = f"xpath={target}"
+                else:
+                    selector = target
+
+                element = await self.page.wait_for_selector(
+                    selector,
+                    timeout=timeout * 1000,
+                    state='attached'
+                )
+            except Exception:
+                element = None
+
+        # Evaluate condition
+        condition_func = CONDITION_TYPES.get(condition_type)
+        if not condition_func:
+            self.logger.error(f"Unknown condition type: {condition_type}")
+            return False
+
+        # For attribute_equals, expected_value should be a dict
+        if condition_type == 'attribute_equals' and isinstance(expected_value, str):
+            # Try to parse as "attr=value"
+            if '=' in expected_value:
+                attr, val = expected_value.split('=', 1)
+                expected_value = {'attr': attr.strip(), 'value': val.strip()}
+
+        try:
+            condition_result = condition_func(element, expected_value)
+        except Exception as e:
+            self.logger.error(f"Error evaluating condition: {str(e)}")
+            condition_result = False
+
+        self.logger.info(f"Condition result: {condition_result}")
+
+        # Determine which actions to execute
+        actions_to_execute = (
+            action.actions_if_true if condition_result
+            else (action.actions_if_false or [])
+        )
+
+        if not actions_to_execute:
+            self.logger.info(
+                f"No actions to execute for condition result: {condition_result}"
+            )
+            return True
+
+        self.logger.info(
+            f"Executing {len(actions_to_execute)} action(s) based on condition result"
+        )
+
+        # Execute the actions
+        all_success = True
+        for sub_action in actions_to_execute:
+            step = ScrapingStep(action=sub_action)
+            success = await self._execute_step(step, base_url)
+
+            if not success:
+                self.logger.warning(
+                    f"Conditional sub-action failed: {sub_action.description}"
+                )
+                all_success = False
+                # Continue executing remaining actions even if one fails
+
+        return all_success
+
     async def _exec_loop(self, action: Loop, base_url: str) -> bool:
-        """Handle Loop action - execute actions repeatedly"""
+        """Handle Loop action - execute actions repeatedly.
+
+        Supports:
+        - Fixed iterations
+        - Iterating over a list of values
+        - Template variable substitution
+
+        Template Variables:
+        - {i}, {index}, {iteration} - Current iteration number
+        - {i+1} - 1-based iteration (useful for page numbers)
+        - {i-1}, {i*2}, etc. - Arithmetic expressions
+        - {value} - Current value from values list
+
+        Example:
+            Loop with iterations=3, start_index=1:
+            - First iteration: {i} -> 1, {i+1} -> 2
+            - Second iteration: {i} -> 2, {i+1} -> 3
+            - Third iteration: {i} -> 3, {i+1} -> 4
+        """
         iteration = 0
-        max_iter = action.iterations or action.max_iterations
+        start_index = action.start_index
+
+        if action.values:
+            max_iter = len(action.values)
+            self.logger.info(
+                f"Starting loop over {max_iter} values, start_index={start_index}"
+            )
+        else:
+            max_iter = action.iterations or action.max_iterations
+            self.logger.info(
+                f"Starting loop: {max_iter} iterations, start_index={start_index}"
+            )
 
         while iteration < max_iter:
+            display_index = start_index + iteration
+            # Get current value if iterating over values
+            current_value = action.values[iteration] if action.values else None
+
             # Check condition if provided
             if action.condition:
                 should_continue = await self._evaluate_condition(action.condition)
@@ -1821,7 +2126,18 @@ authenticate or waiting for events or human intervention actions."""
 
             # Execute all actions in the loop
             for loop_action in action.actions:
-                step = ScrapingStep(action=loop_action)
+                # Substitute template variables in the action
+                if action.do_replace:
+                    sub_action = self._substitute_action_vars(
+                        loop_action,
+                        iteration,
+                        start_index,
+                        current_value
+                    )
+                else:
+                    sub_action = loop_action
+
+                step = ScrapingStep(action=sub_action)
                 success = await self._execute_step(step, base_url)
 
                 if not success and action.break_on_error:
@@ -1833,6 +2149,8 @@ authenticate or waiting for events or human intervention actions."""
             # Break if we've reached specified iterations
             if action.iterations and iteration >= action.iterations:
                 break
+            # do a small delay (random) between iterations
+            await asyncio.sleep(random.uniform(0.1, 0.5))
 
         self.logger.info(f"Loop completed {iteration} iterations")
         return True
@@ -2180,6 +2498,10 @@ authenticate or waiting for events or human intervention actions."""
                                         "type": "string",
                                         "description": "Username or email (for 'authenticate' action)"
                                     },
+                                    "enter_on_username": {
+                                        "type": "boolean",
+                                        "description": "Press Enter after filling username (for multi-step logins, 'authenticate' action)"
+                                    },
                                     "password": {
                                         "type": "string",
                                         "description": "Password (for 'authenticate' action)"
@@ -2365,3 +2687,106 @@ authenticate or waiting for events or human intervention actions."""
                 }
             }
         }
+
+    def _substitute_template_vars(
+        self,
+        value: Any,
+        iteration: int,
+        start_index: int = 0,
+        current_value: Any = None
+    ) -> Any:
+        """
+        Recursively substitute template variables in strings.
+
+        Supported variables:
+        - {i}, {index}, {iteration} - Current iteration (0-based by default)
+        - {i+1}, {index+1}, {iteration+1} - Current iteration + 1 (1-based)
+        - {i-1}, {index-1} - Current iteration - 1
+        - {value} - Current value from values list (if provided)
+        - Any arithmetic expression: {i*2}, {i+5}, etc.
+
+        Args:
+            value: Value to substitute (can be str, dict, list, or other)
+            iteration: Current iteration number (internal, 0-based counter)
+            start_index: Starting index for display (default 0)
+            current_value: Current value from the values list (if iterating over values)
+
+        Returns:
+            Value with substituted variables
+        """
+        if isinstance(value, str):
+            # Actual index to expose to user (respects start_index)
+            actual_index = start_index + iteration
+
+            # Replace simple variables first
+            value = value.replace('{i}', str(actual_index))
+            value = value.replace('{index}', str(actual_index))
+            value = value.replace('{iteration}', str(actual_index))
+
+            # Replace {value} with current value from list
+            if current_value is not None:
+                value = value.replace('{value}', str(current_value))
+
+            # Handle arithmetic expressions like {i+1}, {i-1}, {i*2}, etc.
+            def eval_expr(match):
+                expr = match.group(1)
+                # Replace variable names with actual value
+                expr = expr.replace('i', str(actual_index))
+                expr = expr.replace('index', str(actual_index))
+                expr = expr.replace('iteration', str(actual_index))
+                try:
+                    # Safe evaluation of arithmetic
+                    result = eval(expr, {"__builtins__": {}}, {})
+                    return str(result)
+                except:
+                    # If evaluation fails, return original
+                    return match.group(0)
+
+            # Pattern to match {expression} where expression contains i/index/iteration
+            pattern = r'\{([^}]*(?:i|index|iteration)[^}]*)\}'
+            value = re.sub(pattern, eval_expr, value)
+
+            return value
+
+        elif isinstance(value, dict):
+            return {k: self._substitute_template_vars(v, iteration, start_index, current_value) for k, v in value.items()}
+
+        elif isinstance(value, list):
+            return [self._substitute_template_vars(item, iteration, start_index, current_value) for item in value]
+        else:
+            # Return as-is for other types (int, bool, None, etc.)
+            return value
+
+    def _substitute_action_vars(
+        self,
+        action: BrowserAction,
+        iteration: int,
+        start_index: int = 0,
+        current_value: Any = None
+    ) -> BrowserAction:
+        """
+        Create a copy of the action with template variables substituted.
+
+        Args:
+            action: Original action
+            iteration: Current iteration number (0-based internally)
+            start_index: Starting index for display
+            current_value: Current value from values list (if provided)
+
+        Returns:
+            New action instance with substituted values
+        """
+        # Get the action as a dictionary
+        action_dict = action.model_dump()
+
+        # Substitute variables in all string fields
+        substituted_dict = self._substitute_template_vars(
+            action_dict,
+            iteration,
+            start_index,
+            current_value
+        )
+
+        # Create new action instance from substituted dict
+        action_class = type(action)
+        return action_class(**substituted_dict)

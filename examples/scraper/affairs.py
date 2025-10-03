@@ -31,6 +31,41 @@ async def test_consumer_scraping():
                 },
                 "description": "User completes SSO/MFA in the open browser; press Ctrl+Enter or click Resume."
             },
+            {
+                "action": "loop",
+                "iterations": 3,
+                "break_on_error": False,
+                "description": "Iterate through 3 pages",
+                "actions": [
+                    {
+                        "action": "scroll",
+                        "direction": "bottom",
+                        "smooth": False,
+                        "description": "Scroll to bottom of page"
+                    },
+                    {
+                        "action": "click",
+                        "selector": "a[rel='next'], .js-pager-next",
+                        "wait_after_click": "#reviews-container",
+                        "wait_timeout": 5,
+                        "description": "Click next page button"
+                    },
+                    {
+                        'action': 'wait',
+                        'selector': "#reviews-container [itemprop='reviews'], #reviews-container .rvw",
+                        'timeout': 10,
+                        'description': 'Wait for reviews to load'
+                    },
+                    {
+                        'action': 'screenshot',
+                        'selector': None,  # Full page
+                        'full_page': True,
+                        'output_path': 'screenshots/',
+                        'return_base64': False,
+                        'description': 'Take full page screenshot'
+                    },
+                ]
+            }
         ],
         'selectors': [
             {
