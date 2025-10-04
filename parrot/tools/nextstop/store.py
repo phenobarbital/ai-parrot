@@ -5,7 +5,7 @@ from typing import Dict, Any, List, Optional, Union, Literal, Callable
 from datetime import datetime, time
 from pydantic import BaseModel, Field
 import pandas as pd
-from ..toolkit import tool_schema
+from ..decorators import tool_schema
 from .base import BaseNextStop
 
 

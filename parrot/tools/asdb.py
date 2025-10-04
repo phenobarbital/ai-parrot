@@ -7,25 +7,152 @@ import os
 import asyncio
 from typing import Dict, Optional, Any, Tuple, Union, Literal, List
 from datetime import datetime
+from enum import Enum
 from pathlib import Path
 import pandas as pd
 from pydantic import BaseModel, Field, field_validator
 from asyncdb import AsyncDB
 from navconfig import config
-from querysource.conf import default_dsn
+from querysource.conf import default_dsn, INFLUX_TOKEN
 from .abstract import AbstractTool
 
+
+class QueryLanguage(str, Enum):
+    """Supported query languages."""
+    SQL = "sql"
+    FLUX = "flux"  # InfluxDB
+    MQL = "mql"    # MongoDB Query Language (future)
+    CYPHER = "cypher"  # Neo4j (future)
+
+
+class DriverInfo:
+    """Information about database drivers and their characteristics."""
+
+    DRIVER_MAP = {
+        # SQL-based databases
+        'pg': {
+            'name': 'PostgreSQL',
+            'query_language': QueryLanguage.SQL,
+            'description': 'PostgreSQL database',
+            'aliases': ['postgres', 'postgresql']
+        },
+        'mysql': {
+            'name': 'MySQL',
+            'query_language': QueryLanguage.SQL,
+            'description': 'MySQL/MariaDB database',
+            'aliases': ['mariadb']
+        },
+        'bigquery': {
+            'name': 'Google BigQuery',
+            'query_language': QueryLanguage.SQL,
+            'description': 'Google BigQuery data warehouse',
+            'aliases': ['bq']
+        },
+        'sqlite': {
+            'name': 'SQLite',
+            'query_language': QueryLanguage.SQL,
+            'description': 'SQLite embedded database',
+            'aliases': []
+        },
+        'oracle': {
+            'name': 'Oracle Database',
+            'query_language': QueryLanguage.SQL,
+            'description': 'Oracle Database',
+            'aliases': []
+        },
+        'mssql': {
+            'name': 'Microsoft SQL Server',
+            'query_language': QueryLanguage.SQL,
+            'description': 'Microsoft SQL Server database',
+            'aliases': ['sqlserver']
+        },
+        'clickhouse': {
+            'name': 'ClickHouse',
+            'query_language': QueryLanguage.SQL,
+            'description': 'ClickHouse OLAP database',
+            'aliases': []
+        },
+        'duckdb': {
+            'name': 'DuckDB',
+            'query_language': QueryLanguage.SQL,
+            'description': 'DuckDB embedded analytical database',
+            'aliases': []
+        },
+        # Non-SQL databases
+        'influx': {
+            'name': 'InfluxDB',
+            'query_language': QueryLanguage.FLUX,
+            'description': 'InfluxDB time-series database (uses Flux query language)',
+            'aliases': ['influxdb']
+        },
+    }
+
+    @classmethod
+    def normalize_driver(cls, driver: str) -> str:
+        """Normalize driver name from aliases."""
+        driver_lower = driver.lower()
+
+        # Check if it's already a canonical name
+        if driver_lower in cls.DRIVER_MAP:
+            return driver_lower
+
+        # Check aliases
+        for canonical_name, info in cls.DRIVER_MAP.items():
+            if driver_lower in info.get('aliases', []):
+                return canonical_name
+
+        return driver_lower
+
+    @classmethod
+    def get_query_language(cls, driver: str) -> QueryLanguage:
+        """Get the query language for a driver."""
+        driver = cls.normalize_driver(driver)
+        driver_info = cls.DRIVER_MAP.get(driver, {})
+        return driver_info.get('query_language', QueryLanguage.SQL)
+
+    @classmethod
+    def get_driver_info(cls, driver: str) -> Dict[str, Any]:
+        """Get full information about a driver."""
+        driver = cls.normalize_driver(driver)
+        return cls.DRIVER_MAP.get(driver, {
+            'name': driver,
+            'query_language': QueryLanguage.SQL,
+            'description': f'{driver} database',
+            'aliases': []
+        })
+
+    @classmethod
+    def list_drivers(cls) -> List[Dict[str, Any]]:
+        """List all supported drivers with their info."""
+        return [
+            {
+                'driver': driver,
+                **info
+            }
+            for driver, info in cls.DRIVER_MAP.items()
+        ]
 
 class DatabaseQueryArgs(BaseModel):
     """Arguments schema for DatabaseQueryTool."""
 
     driver: str = Field(
         ...,
-        description="Database driver to use (bigquery, pg, mysql, influx, sqlite, oracle, etc.)"
+        description=(
+            "Database driver to use. Supported drivers:\n"
+            "SQL-based: 'pg' (PostgreSQL), 'mysql', 'bigquery', 'sqlite', 'oracle', "
+            "'mssql' (Microsoft SQL Server), 'clickhouse', 'duckdb'\n"
+            "Time-series: 'influx' (InfluxDB - uses Flux query language)\n"
+            "Note: Query syntax must match the driver's query language."
+        )
     )
     query: str = Field(
         ...,
-        description="Query to execute (only allowing statements for data retrieval). Must match the dialect of the specified database driver."
+        description=(
+            "Query to execute for data retrieval. Query syntax depends on the driver:\n"
+            "- SQL drivers (pg, mysql, bigquery, etc.): Use SQL SELECT statements\n"
+            "- InfluxDB (influx): Use Flux query language (e.g., from(bucket:...) |> range(...))\n"
+            "Only data retrieval queries are allowed - no DDL or DML operations."
+        )
     )
     credentials: Optional[Dict[str, Any]] = Field(
         default=None,
@@ -65,13 +192,12 @@ class DatabaseQueryArgs(BaseModel):
     @field_validator('driver')
     @classmethod
     def validate_driver(cls, v):
-        supported_drivers = [
-            'bigquery', 'pg', 'postgresql', 'mysql', 'influx', 'sqlite',
-            'oracle', 'mssql', 'clickhouse', 'duckdb'
-        ]
-        if v.lower() not in supported_drivers:
-            raise ValueError(f"Database driver must be one of: {supported_drivers}")
-        return v.lower()
+        # Normalize and validate driver
+        normalized = DriverInfo.normalize_driver(v)
+        if normalized not in DriverInfo.DRIVER_MAP:
+            supported = list(DriverInfo.DRIVER_MAP.keys())
+            raise ValueError(f"Database driver must be one of: {supported}")
+        return normalized
 
     @field_validator('credentials', mode='before')
     @classmethod
@@ -82,48 +208,12 @@ class DatabaseQueryArgs(BaseModel):
         return v
 
 
-class DatabaseQueryTool(AbstractTool):
-    """
-    Database Query Tool for executing SQL queries across multiple database systems.
+class QueryValidator:
+    """Validates queries based on query language."""
 
-    This tool can execute SELECT queries on various databases including BigQuery, PostgreSQL,
-    MySQL, InfluxDB, SQLite, Oracle, and others supported by asyncdb library.
-
-    IMPORTANT: This tool is designed for data retrieval and analysis queries (SELECT statements).
-    It should NOT be used for:
-    - DDL operations (CREATE, ALTER, DROP tables/schemas)
-    - DML operations (INSERT, UPDATE, DELETE data)
-    - Administrative operations (GRANT, REVOKE permissions)
-    - Database structure modifications
-
-    Use this tool for:
-    - Data exploration and analysis
-    - Generating reports from existing data
-    - Aggregating and summarizing information
-    - Filtering and searching database records
-    - Joining data from multiple tables for analysis
-    """
-
-    name = "database_query"
-    description = (
-        "Execute SQL queries on various databases (BigQuery, PostgreSQL, MySQL, InfluxDB, etc.) "
-        "for data retrieval and analysis. Use this tool to run SELECT queries to explore data, "
-        "generate reports, and perform analytics. AVOID DDL operations (CREATE, ALTER, DROP) "
-        "and data modifications (INSERT, UPDATE, DELETE). Returns data as pandas DataFrame or JSON."
-    )
-    args_schema = DatabaseQueryArgs
-
-    def __init__(self, **kwargs):
-        """Initialize the Database Query tool."""
-        super().__init__(**kwargs)
-        self.default_credentials = {}
-
-    def _default_output_dir(self) -> Optional[Path]:
-        """Get the default output directory for database query results."""
-        return self.static_dir / "database_queries" if self.static_dir else None
-
-    def _validate_query_safety(self, query: str) -> Dict[str, Any]:
-        """Validate that the query is safe and appropriate for this tool."""
+    @staticmethod
+    def validate_sql_query(query: str) -> Dict[str, Any]:
+        """Validate SQL query for safety."""
         query_upper = query.upper().strip()
 
         # Remove comments and extra whitespace
@@ -144,31 +234,152 @@ class DatabaseQueryTool(AbstractTool):
             if re.search(rf'\b{operation}\b', query_cleaned):
                 return {
                     'is_safe': False,
-                    'message': f"Query contains potentially dangerous operation: {operation}",
+                    'message': f"SQL query contains dangerous operation: {operation}",
                     'suggestions': [
                         "Use SELECT statements for data retrieval",
                         "Use aggregate functions (COUNT, SUM, AVG) for analysis",
-                        "Use WHERE clauses to filter data",
-                        "Use JOIN clauses to combine data from multiple tables"
+                        "Use WHERE clauses to filter data"
                     ]
                 }
 
-        # Check if query starts with SELECT (most common safe operation)
-        if not query_cleaned.startswith('SELECT') and not query_cleaned.startswith('WITH'):
-            # Allow some other safe operations
-            safe_starts = ['SHOW', 'DESCRIBE', 'DESC', 'EXPLAIN']
-            if not any(query_cleaned.startswith(safe_op) for safe_op in safe_starts):
+        # Check if query starts with SELECT or other safe operations
+        safe_starts = ['SELECT', 'WITH', 'SHOW', 'DESCRIBE', 'DESC', 'EXPLAIN']
+        if not any(query_cleaned.startswith(safe_op) for safe_op in safe_starts):
+            return {
+                'is_safe': False,
+                'message': "SQL query should start with SELECT, WITH, SHOW, or DESCRIBE",
+                'suggestions': [
+                    "Start queries with SELECT for data retrieval",
+                    "Use WITH clauses for complex queries with CTEs"
+                ]
+            }
+
+        return {'is_safe': True, 'message': 'SQL query validation passed'}
+
+    @staticmethod
+    def validate_flux_query(query: str) -> Dict[str, Any]:
+        """Validate InfluxDB Flux query for safety."""
+        query_lower = query.lower().strip()
+
+        # Flux queries typically start with from() or import
+        if not (query_lower.startswith('from(') or query_lower.startswith('import')):
+            return {
+                'is_safe': False,
+                'message': "Flux query should typically start with from() or import",
+                'suggestions': [
+                    "Use from(bucket: \"...\") to query data",
+                    "Chain with |> range() to specify time range",
+                    "Use |> filter() to filter data"
+                ]
+            }
+
+        # Check for potentially dangerous Flux operations
+        # Flux write operations
+        dangerous_patterns = [
+            r'\bto\s*\(',  # to() function writes data
+            r'\bdelete\s*\(',  # delete() function
+        ]
+
+        for pattern in dangerous_patterns:
+            if re.search(pattern, query_lower):
                 return {
                     'is_safe': False,
-                    'message': "Query should typically start with SELECT for data retrieval",
+                    'message': "Flux query contains write/delete operation",
                     'suggestions': [
-                        "Start queries with SELECT for data retrieval",
-                        "Use WITH clauses for complex queries with CTEs",
-                        "Use SHOW/DESCRIBE for schema exploration"
+                        "Use queries for data retrieval only",
+                        "Use from() |> range() |> filter() for reading data"
                     ]
                 }
 
-        return {'is_safe': True, 'message': 'Query validation passed'}
+        return {'is_safe': True, 'message': 'Flux query validation passed'}
+
+    @classmethod
+    def validate_query(cls, query: str, query_language: QueryLanguage) -> Dict[str, Any]:
+        """Validate query based on its language."""
+        if query_language == QueryLanguage.SQL:
+            return cls.validate_sql_query(query)
+        elif query_language == QueryLanguage.FLUX:
+            return cls.validate_flux_query(query)
+        else:
+            # For unknown query languages, do minimal validation
+            return {
+                'is_safe': True,
+                'message': f'Basic validation passed for {query_language.value}'
+            }
+
+class DatabaseQueryTool(AbstractTool):
+    """
+    Multi-language Database Query Tool for executing queries across multiple database systems.
+
+    This tool can execute SELECT queries on various databases including BigQuery, PostgreSQL,
+    MySQL, InfluxDB, SQLite, Oracle, and others supported by asyncdb library.
+
+    Supports multiple query languages:
+    - SQL: PostgreSQL (pg), MySQL, BigQuery, SQLite, Oracle, MS SQL Server (mssql),
+        ClickHouse, DuckDB
+    - Flux: InfluxDB (influx) - time-series database with Flux query language
+
+    DRIVER REFERENCE:
+    - 'pg' or 'postgres' or 'postgresql' → PostgreSQL
+    - 'mysql' or 'mariadb' → MySQL/MariaDB
+    - 'bigquery' or 'bq' → Google BigQuery
+    - 'mssql' or 'sqlserver' → Microsoft SQL Server
+    - 'influx' or 'influxdb' → InfluxDB (uses Flux, not SQL)
+    - 'sqlite' → SQLite
+    - 'oracle' → Oracle Database
+    - 'clickhouse' → ClickHouse
+    - 'duckdb' → DuckDB
+
+    QUERY LANGUAGE EXAMPLES:
+
+    SQL (pg, mysql, bigquery, etc.):
+        SELECT column1, column2 FROM table WHERE condition
+
+    Flux (influx):
+        from(bucket: "my-bucket")
+        |> range(start: -12h)
+        |> filter(fn: (r) => r["_measurement"] == "temperature")
+        |> filter(fn: (r) => r["location"] == "room1")
+
+
+    IMPORTANT: This tool is designed for data retrieval and analysis queries (SELECT statements).
+    It should NOT be used for:
+    - DDL operations (CREATE, ALTER, DROP tables/schemas)
+    - DML operations (INSERT, UPDATE, DELETE data)
+    - Administrative operations (GRANT, REVOKE permissions)
+    - Database structure modifications
+
+    Use this tool for:
+    - Data exploration and analysis
+    - Generating reports from existing data
+    - Aggregating and summarizing information
+    - Filtering and searching database records
+    - Joining data from multiple tables for analysis
+    """
+
+    name = "database_query"
+    description = (
+        "Execute queries on various databases for data retrieval and analysis. "
+        "Supports SQL databases (PostgreSQL/pg, MySQL, BigQuery, MS SQL Server/mssql, etc.) "
+        "and InfluxDB (influx - uses Flux query language, not SQL). "
+        "Query syntax must match the database driver's query language. "
+        "Returns data as pandas DataFrame or JSON. Read-only operations only."
+    )
+    args_schema = DatabaseQueryArgs
+
+    def __init__(self, **kwargs):
+        """Initialize the Database Query tool."""
+        super().__init__(**kwargs)
+        self.default_credentials = {}
+
+    def _default_output_dir(self) -> Optional[Path]:
+        """Get the default output directory for database query results."""
+        return self.static_dir / "database_queries" if self.static_dir else None
+
+    def _validate_query_safety(self, query: str, driver: str) -> Dict[str, Any]:
+        """Validate query safety based on driver's query language."""
+        query_language = DriverInfo.get_query_language(driver)
+        return QueryValidator.validate_query(query, query_language)
 
     def _get_default_credentials(
         self,
@@ -214,6 +425,8 @@ class DatabaseQueryTool(AbstractTool):
                 'database': config.get('INFLUX_DATABASE', fallback='default'),
                 'username': config.get('INFLUX_USERNAME'),
                 'password': config.get('INFLUX_PASSWORD'),
+                'token': INFLUX_TOKEN,
+                'org': config.get('INFLUX_ORG', fallback='my-org'),
             },
             'oracle': {
                 'host': config.get('ORACLE_HOST', fallback='localhost'),
@@ -260,19 +473,33 @@ class DatabaseQueryTool(AbstractTool):
                 f"No credentials provided and could not get default for {driver}: {e}"
             )
 
-    def _add_row_limit(self, query: str, max_rows: int) -> str:
-        """Add row limit to query if not already present."""
-        query_upper = query.upper().strip()
-
-        # Check if LIMIT is already present
-        if 'LIMIT' in query_upper:
+    def _add_row_limit(self, query: str, max_rows: int, driver: str) -> str:
+        """Add row limit to query based on query language."""
+        if not max_rows or max_rows <= 0:
             return query
 
-        # Add LIMIT clause
-        if max_rows and max_rows > 0:
+        query_language = DriverInfo.get_query_language(driver)
+
+        if query_language == QueryLanguage.SQL:
+            query_upper = query.upper().strip()
+            # Check if LIMIT is already present
+            if 'LIMIT' in query_upper:
+                return query
             return f"{query.rstrip(';')} LIMIT {max_rows}"
 
-        return query
+        elif query_language == QueryLanguage.FLUX:
+            # For Flux, add limit() to the pipeline if not present
+            if '|> limit(' not in query.lower():
+                return f"{query.rstrip()} |> limit(n: {max_rows})"
+            return query
+
+        else:
+            # For unknown query languages, return as-is
+            return query
+
+    def get_driver_info_list(self) -> List[Dict[str, Any]]:
+        """Get detailed information about all supported drivers."""
+        return DriverInfo.list_drivers()
 
     async def _execute_database_query(
         self,
@@ -299,17 +526,24 @@ class DatabaseQueryTool(AbstractTool):
                 conn.output_format(output_format)
 
                 # Add row limit to query if specified and not already present
-                modified_query = self._add_row_limit(query, max_rows)
+                modified_query = self._add_row_limit(query, max_rows, driver)
 
                 self.logger.info(
                     f"Executing query on {driver}: {modified_query[:100]}..."
                 )
 
                 # Execute query with timeout
-                result, errors = await asyncio.wait_for(
-                    conn.query(modified_query),
-                    timeout=timeout
-                )
+                if driver == 'influx':
+                    # InfluxDB requires a different method to execute Flux queries
+                    result, errors = await asyncio.wait_for(
+                        conn.query(modified_query, frmt='recordset'),
+                        timeout=timeout
+                    )
+                else:
+                    result, errors = await asyncio.wait_for(
+                        conn.query(modified_query),
+                        timeout=timeout
+                    )
 
                 if errors:
                     raise Exception(f"Database query errors: {errors}")
@@ -339,49 +573,61 @@ class DatabaseQueryTool(AbstractTool):
         driver: str,
         query: str,
         credentials: Optional[Dict[str, Any]] = None,
+        dsn: Optional[str] = None,
         output_format: str = "pandas",
         query_timeout: int = 300,
         max_rows: int = 10000,
         **kwargs
     ) -> Union[pd.DataFrame, str]:
         """
-        Execute the database query (AbstractTool interface).
+        Execute the database query with multi-language support.
 
         Args:
-            driver: Database driver to use
-            query: SQL query to execute
+            driver: Database driver (pg, mysql, bigquery, influx, mssql, etc.)
+            query: Query to execute (SQL or Flux depending on driver)
             credentials: Optional database credentials
+            dsn: Optional DSN string
             output_format: Output format ('pandas' or 'json')
             query_timeout: Query timeout in seconds
             max_rows: Maximum number of rows to return
             **kwargs: Additional arguments
 
         Returns:
-            pandas DataFrame if output_format='pandas', JSON string if output_format='json'
+            pandas DataFrame if output_format='pandas', JSON string otherwise
         """
         start_time = datetime.now()
 
         try:
+            # Normalize driver name
+            driver = DriverInfo.normalize_driver(driver)
+            driver_info = DriverInfo.get_driver_info(driver)
+
             self.logger.info(
-                f"Starting database query on {driver}"
+                f"Starting query on {driver_info['name']} "
+                f"(language: {driver_info['query_language'].value})"
             )
 
-            # Validate query safety
-            validation_result = self._validate_query_safety(query)
+            # Validate query safety based on query language
+            validation_result = self._validate_query_safety(query, driver)
             if not validation_result['is_safe']:
                 raise ValueError(
-                    f"Query validation failed: {validation_result['message']}"
+                    f"Query validation failed: {validation_result['message']}\n"
+                    f"Suggestions: {', '.join(validation_result.get('suggestions', []))}"
                 )
 
             # Get credentials
-            creds, dsn = self._get_credentials(driver, credentials)
+            creds, resolved_dsn = self._get_credentials(driver, credentials)
+            final_dsn = dsn or resolved_dsn
+
+            # Add row limit if applicable
+            modified_query = self._add_row_limit(query, max_rows, driver)
 
             # Execute query
             result = await self._execute_database_query(
                 driver,
                 creds,
-                dsn,
-                query,
+                final_dsn,
+                modified_query,
                 output_format,
                 query_timeout,
                 max_rows
@@ -394,68 +640,36 @@ class DatabaseQueryTool(AbstractTool):
             if output_format == 'pandas' and isinstance(result, pd.DataFrame):
                 self.logger.info(
                     f"Query executed successfully in {execution_time:.2f}s. "
-                    f"Retrieved {len(result)} rows, {len(result.columns)} columns."
+                    f"Retrieved {len(result)} rows, {len(result.columns)} columns "
+                    f"from {driver_info['name']}."
                 )
             else:
                 self.logger.info(
-                    f"Query executed successfully in {execution_time:.2f}s. "
-                    f"Retrieved JSON result."
+                    f"Query executed successfully in {execution_time:.2f}s "
+                    f"on {driver_info['name']}."
                 )
 
-            return result
+            return {
+                "status": "success",
+                "result": result,
+                'metadata': {
+                    "query": modified_query,
+                    "driver": driver_info['name'],
+                    'rows_returned': len(result) if isinstance(result, pd.DataFrame) else None,
+                    'columns_returned': len(result.columns) if isinstance(result, pd.DataFrame) else None,
+                    'execution_time_seconds': execution_time,
+                    'output_format': output_format
+                }
+            }
 
         except Exception as e:
             end_time = datetime.now()
             execution_time = (end_time - start_time).total_seconds()
 
-            self.logger.error(f"Database query failed after {execution_time:.2f}s: {e}")
+            self.logger.error(
+                f"Query failed on {driver} after {execution_time:.2f}s: {e}"
+            )
             raise
-
-    def execute_sync(
-        self,
-        driver: str,
-        query: str,
-        credentials: Optional[Dict[str, Any]] = None,
-        output_format: str = "pandas",
-        query_timeout: int = 300,
-        max_rows: int = 10000
-    ) -> Union[pd.DataFrame, str]:
-        """
-        Execute database query synchronously.
-
-        Args:
-            driver: Database driver to use
-            query: SQL query to execute
-            credentials: Optional database credentials
-            output_format: Output format ('pandas' or 'json')
-            query_timeout: Query timeout in seconds
-            max_rows: Maximum number of rows to return
-
-        Returns:
-            pandas DataFrame if output_format='pandas', JSON string if output_format='json'
-        """
-        try:
-            loop = asyncio.get_running_loop()
-            # If we're in an async context, create a task
-            task = loop.create_task(self.execute(
-                driver=driver,
-                query=query,
-                credentials=credentials,
-                output_format=output_format,
-                query_timeout=query_timeout,
-                max_rows=max_rows
-            ))
-            return task
-        except RuntimeError:
-            # No running loop, safe to create one
-            return asyncio.run(self.execute(
-                driver=driver,
-                query=query,
-                credentials=credentials,
-                output_format=output_format,
-                query_timeout=query_timeout,
-                max_rows=max_rows
-            ))
 
     def get_supported_drivers(self) -> List[str]:
         """Get list of supported database drivers."""
@@ -464,7 +678,7 @@ class DatabaseQueryTool(AbstractTool):
             'oracle', 'mssql', 'clickhouse', 'snowflake'
         ]
 
-    def test_connection(
+    async def test_connection(
         self,
         driver: str,
         credentials: Optional[Dict[str, Any]] = None
@@ -483,7 +697,7 @@ class DatabaseQueryTool(AbstractTool):
             # Simple test query
             test_query = "SELECT 1 as test_column"
 
-            result = self.execute_sync(
+            result = await self._execute(
                 driver=driver,
                 query=test_query,
                 credentials=credentials,

@@ -2,7 +2,8 @@
 Browser Action System for AI-Parrot WebScrapingTool
 Object-oriented action hierarchy for LLM-directed browser automation
 """
-from typing import Optional, List, Dict, Any, Union, Literal
+from __future__ import annotations
+from typing import Optional, List, Dict, Any, Union, Literal, Annotated
 from abc import ABC
 import time
 from dataclasses import dataclass, field
@@ -13,6 +14,8 @@ from bs4 import BeautifulSoup
 class BrowserAction(BaseModel, ABC):
     """Base class for all browser actions"""
     name: str = Field(default="", description="Optional name for this action")
+    # add a generic action field so the key exists on all models
+    action: str = Field(default="", description="Action opcode used for union discrimination")
     description: str = Field(default="", description="Human-readable description of this action")
     timeout: Optional[int] = Field(
         default=None, description="Maximum time to wait for action completion (seconds), None for no wait."
@@ -25,7 +28,8 @@ class BrowserAction(BaseModel, ABC):
 
 class Navigate(BrowserAction):
     """Navigate to a URL"""
-    name: str = "navigate"
+    name: str = 'navigate'
+    action: Literal["navigate"] = "navigate"
     url: str = Field(description="Target URL to navigate to")
     description: str = Field(default="Navigate to a URL", description="navigating to a specific URL")
 
@@ -33,6 +37,7 @@ class Navigate(BrowserAction):
 class Click(BrowserAction):
     """Click on a web page element"""
     name: str = "click"
+    action: Literal["click"] = "click"
     selector: str = Field(description="CSS or XPATH selector to identify the target element")
     description: str = Field(default="Click on an element", description="clicking on a specific element")
     selector_type: Literal["css", "xpath", "text"] = Field(
@@ -52,17 +57,18 @@ class Click(BrowserAction):
 
 class Fill(BrowserAction):
     """Fill text into an input field"""
-    name: str = "fill"
+    name: str = 'fill'
+    action: Literal['fill'] = 'fill'
     description: str = Field(default="Fill an input field", description="Filling a specific input field")
     selector: str = Field(description="CSS selector to identify the input field")
     value: str = Field(description="Text to enter into the field")
     clear_first: bool = Field(default=True, description="Clear existing content before filling")
     press_enter: bool = Field(default=False, description="Press Enter after filling")
 
-
 class Evaluate(BrowserAction):
     """Execute JavaScript code in the browser context"""
-    name: str = "evaluate"
+    name: str = 'evaluate'
+    action: Literal['evaluate'] = 'evaluate'
     description: str = Field(default="Evaluate JavaScript", description="Executing custom JavaScript code")
     script: Optional[str] = Field(default=None, description="JavaScript code to execute")
     script_file: Optional[str] = Field(default=None, description="Path to JavaScript file to load and execute")
@@ -83,7 +89,8 @@ class Evaluate(BrowserAction):
 
 class PressKey(BrowserAction):
     """Press keyboard keys"""
-    name: str = "press_key"
+    name: str = 'press_key'
+    action: Literal['press_key'] = 'press_key'
     description: str = Field(default="Press keyboard keys", description="Pressing specified keyboard keys")
     keys: List[str] = Field(description="List of keys to press (e.g., ['Tab', 'Enter', 'Escape'])")
     sequential: bool = Field(default=True, description="Press keys sequentially or as a combination")
@@ -92,21 +99,24 @@ class PressKey(BrowserAction):
 
 class Refresh(BrowserAction):
     """Reload the current web page"""
-    name: str = "refresh"
+    name: str = 'refresh'
+    action: Literal['refresh'] = 'refresh'
     description: str = Field(default="Refresh the page", description="Reloading the current page")
     hard: bool = Field(default=False, description="Perform hard refresh (clear cache)")
 
 
 class Back(BrowserAction):
     """Navigate back to the previous page"""
-    name: str = "back"
+    name: str = 'back'
+    action: Literal['back'] = 'back'
     description: str = Field(default="Go back in history", description="Navigating back in browser history")
     steps: int = Field(default=1, description="Number of steps to go back in history")
 
 
 class Scroll(BrowserAction):
     """Scroll the page or an element"""
-    name: str = "scroll"
+    name: str = 'scroll'
+    action: Literal['scroll'] = 'scroll'
     description: str = Field(default="Scroll the page or an element", description="Scrolling the page or a specific element")
     direction: Literal["up", "down", "top", "bottom"] = Field(description="Scroll direction")
     amount: Optional[int] = Field(default=None, description="Pixels to scroll (if not to top/bottom)")
@@ -116,7 +126,8 @@ class Scroll(BrowserAction):
 
 class GetCookies(BrowserAction):
     """Extract and evaluate cookies"""
-    name: str = "get_cookies"
+    name: str = 'get_cookies'
+    action: Literal['get_cookies'] = 'get_cookies'
     description: str = Field(default="Get cookies", description="Extracting cookies from the browser")
     names: Optional[List[str]] = Field(default=None, description="Specific cookie names to retrieve (None = all)")
     domain: Optional[str] = Field(default=None, description="Filter cookies by domain")
@@ -124,7 +135,8 @@ class GetCookies(BrowserAction):
 
 class SetCookies(BrowserAction):
     """Set cookies on the current page or domain"""
-    name: str = "set_cookies"
+    name: str = 'set_cookies'
+    action: Literal['set_cookies'] = 'set_cookies'
     description: str = Field(default="Set cookies", description="Setting cookies in the browser")
     cookies: List[Dict[str, Any]] = Field(
         description="List of cookie objects with 'name', 'value', and optional 'domain', 'path', 'secure', etc."
@@ -133,7 +145,8 @@ class SetCookies(BrowserAction):
 
 class Wait(BrowserAction):
     """Wait for a condition to be met"""
-    name: str = "wait"
+    name: str = 'wait'
+    action: Literal['wait'] = 'wait'
     description: str = Field(default="Wait for a condition", description="Waiting for a specific condition")
     condition: Optional[str] = Field(default=None, description="Value for the condition (selector, URL substring, etc.)")
     condition_type: Literal["simple", "selector", "url_contains", "url_is", "title_contains", "custom"] = Field(
@@ -148,7 +161,8 @@ class Wait(BrowserAction):
 
 class Authenticate(BrowserAction):
     """Handle authentication flows"""
-    name: str = "authenticate"
+    name: str = 'authenticate'
+    action: Literal['authenticate'] = 'authenticate'
     description: str = Field(default="Authenticate user", description="Performing user authentication")
     method: Literal["form", "basic", "oauth", "custom"] = Field(default="form", description="Authentication method")
     username: Optional[str] = Field(default=None, description="Username/email")
@@ -163,7 +177,7 @@ class Authenticate(BrowserAction):
         default='input[type="submit"], button[type="submit"]',
         description="CSS selector for submit button"
     )
-    custom_steps: Optional[List['BrowserAction']] = Field(
+    custom_steps: Optional[List[BrowserAction]] = Field(
         default=None,
         description="Custom action sequence for complex authentication"
     )
@@ -183,7 +197,8 @@ class Authenticate(BrowserAction):
 
 class AwaitHuman(BrowserAction):
     """Pause and wait for human intervention"""
-    name: str = "await_human"
+    name: str = 'await_human'
+    action: Literal['await_human'] = 'await_human'
     description: str = Field(default="Wait for human intervention", description="Waiting for user to complete a task")
     target: Optional[str] = Field(
         default=None,
@@ -202,7 +217,8 @@ class AwaitHuman(BrowserAction):
 
 class AwaitKeyPress(BrowserAction):
     """Wait for human to press a key in console"""
-    name: str = "await_keypress"
+    name: str = 'await_keypress'
+    action: Literal['await_keypress'] = 'await_keypress'
     description: str = Field(default="Wait for key press", description="Waiting for user to press a key")
     expected_key: Optional[str] = Field(
         default=None,
@@ -216,7 +232,8 @@ class AwaitKeyPress(BrowserAction):
 
 class AwaitBrowserEvent(BrowserAction):
     """Wait for human interaction in the browser"""
-    name: str = "await_browser_event"
+    name: str = 'await_browser_event'
+    action: Literal['await_browser_event'] = 'await_browser_event'
     target: Optional[Union[str, Dict[str, Any]]] = Field(
         default=None,
         description="Target or condition value to detect completion (e.g., key combo, local storage key)"
@@ -236,7 +253,8 @@ class AwaitBrowserEvent(BrowserAction):
 
 class GetText(BrowserAction):
     """Extract pure text content from elements matching selector"""
-    name: str = "get_text"
+    name: str = 'get_text'
+    action: Literal['get_text'] = 'get_text'
     description: str = Field(default="Extract text content", description="Extracting text from elements")
     selector: str = Field(description="CSS selector to identify elements to extract text from")
     multiple: bool = Field(default=False, description="Extract from all matching elements or just first")
@@ -244,7 +262,8 @@ class GetText(BrowserAction):
 
 class Screenshot(BrowserAction):
     """Take a screenshot of the page or a specific element"""
-    name: str = "screenshot"
+    name: str = 'screenshot'
+    action: Literal['screenshot'] = 'screenshot'
     description: str = Field(default="Take screenshot", description="Taking a screenshot")
     selector: Optional[str] = Field(default=None, description="CSS selector of element to screenshot (None = full page)")
     full_page: bool = Field(default=True, description="Capture full scrollable page")
@@ -262,7 +281,8 @@ class Screenshot(BrowserAction):
 
 class GetHTML(BrowserAction):
     """Extract complete HTML content from elements matching selector"""
-    name: str = "get_html"
+    name: str = 'get_html'
+    action: Literal['get_html'] = 'get_html'
     description: str = Field(default="Extract HTML content", description="Extracting HTML from elements")
     selector: str = Field(description="CSS or XPath selector to identify elements to extract HTML from")
     selector_type: Literal["css", "xpath"] = Field(
@@ -275,7 +295,8 @@ class GetHTML(BrowserAction):
 
 class WaitForDownload(BrowserAction):
     """Wait for a file download to complete"""
-    name: str = "wait_for_download"
+    name: str = 'wait_for_download'
+    action: Literal['wait_for_download'] = 'wait_for_download'
     description: str = Field(default="Wait for download", description="Waiting for file download to complete")
     filename_pattern: Optional[str] = Field(
         default=None,
@@ -295,7 +316,8 @@ class WaitForDownload(BrowserAction):
 
 class UploadFile(BrowserAction):
     """Upload a file to a file input element"""
-    name: str = "upload_file"
+    name: str = 'upload_file'
+    action: Literal['upload_file'] = 'upload_file'
     description: str = Field(default="Upload file", description="Uploading a file to an input element")
     selector: str = Field(description="CSS selector for the file input element")
     file_path: str = Field(description="Absolute or relative path to the file to upload")
@@ -310,10 +332,10 @@ class UploadFile(BrowserAction):
         description="List of file paths for multiple file upload"
     )
 
-
 class Conditional(BrowserAction):
     """Execute actions conditionally based on a JavaScript expression"""
-    name: str = "conditional"
+    name: str = 'conditional'
+    action: Literal['conditional'] = 'conditional'
     description: str = Field(default="Conditional action execution", description="Executing actions based on a condition")
     target: Optional[str] = Field(
         default=None,
@@ -323,26 +345,27 @@ class Conditional(BrowserAction):
         default="css",
         description="Type of target selector"
     )
-    condition_type: Literal["text_contains", "exists", "text_equals", "attribute_equals"] = Field(
+    condition_type: Literal["text_contains", "exists", "not_exists", "text_equals", "attribute_equals"] = Field(
         default="text_contains",
         description="Condition type that determines how to evaluate the target"
     )
     expected_value: str = Field(description="Value that evaluates to true or false")
     timeout: int = Field(default=5, description="Maximum time to wait for condition evaluation (seconds)")
-    actions_if_true: List[BrowserAction] = Field(
+    actions_if_true: Optional[List["ActionList"]] = Field(
+        default=None,
         description="List of actions to execute if condition is true"
     )
-    actions_if_false: Optional[List[BrowserAction]] = Field(
+    actions_if_false: Optional[List["ActionList"]] = Field(
         default=None,
         description="List of actions to execute if condition is false"
     )
 
-
 class Loop(BrowserAction):
     """Repeat a sequence of actions multiple times"""
     name: str = "loop"
+    action: Literal["loop"] = "loop"
     description: str = Field(default="Loop over actions", description="Repeating a set of actions")
-    actions: List[BrowserAction] = Field(description="List of actions to execute in each iteration")
+    actions: List["ActionList"] = Field(description="List of actions to execute in each iteration")
     iterations: Optional[int] = Field(default=None, description="Number of times to repeat (None = until condition)")
     condition: Optional[str] = Field(
         default=None,
@@ -351,6 +374,10 @@ class Loop(BrowserAction):
     values: Optional[List[Any]] = Field(
         default=None,
         description="List of values to iterate over. When provided, iterations is automatically set to len(values)"
+    )
+    value_name: Optional[str] = Field(
+        default="value",
+        description="Name of the variable to hold the current value in each iteration"
     )
     break_on_error: bool = Field(default=True, description="Stop loop if any action fails")
     max_iterations: int = Field(default=100, description="Safety limit for condition-based loops")
@@ -363,12 +390,21 @@ class Loop(BrowserAction):
         description="Whether to replace {{index}} and {{index_1}} in action parameters"
     )
 
+ActionList = Annotated[
+    Union[
+        Navigate, Click, Fill, Evaluate, PressKey, Refresh, Back, Scroll,
+        GetCookies, SetCookies, Wait, Authenticate,
+        AwaitHuman, AwaitKeyPress, AwaitBrowserEvent,
+        GetText, GetHTML, WaitForDownload, UploadFile, Screenshot, Loop, Conditional
+    ],
+    Field(discriminator='action')
+]
 
 
 # Update Forward References (required for Loop containing BrowserAction)
 Authenticate.model_rebuild()
 Loop.model_rebuild()
-
+Conditional.model_rebuild()
 
 @dataclass
 class ScrapingStep:
@@ -430,7 +466,8 @@ class ScrapingStep:
             "wait_for_download": WaitForDownload,
             "upload_file": UploadFile,
             "screenshot": Screenshot,
-        }
+            "conditional": Conditional
+        } # :contentReference[oaicite:4]{index=4}
 
         action_class = action_map.get(action_type)
         if not action_class:
@@ -441,18 +478,18 @@ class ScrapingStep:
         action = action_class(**action_data)
         obj = cls(action=action)
         obj.description = data.get('description', action.description)
-        if action_type == 'loop' and 'actions' in data:
-            # Recursively convert nested actions
-            obj.action.actions = [cls.from_dict(a).action for a in data['actions']]
-        if action_type == 'conditional':
-            if 'actions_if_true' in data:
-                obj.action.actions_if_true = [
-                    cls.from_dict(a).action for a in data['actions_if_true']
-                ]
-            if 'actions_if_false' in data and data['actions_if_false'] is not None:
-                obj.action.actions_if_false = [
-                    cls.from_dict(a).action for a in data['actions_if_false']
-                ]
+        # if action_type == 'loop' and 'actions' in data:
+        #     # Recursively convert nested actions
+        #     obj.action.actions = [cls.from_dict(a).action for a in data['actions']]
+        # elif action_type == 'conditional':
+        #     if 'actions_if_true' in data:
+        #         obj.action.actions_if_true = [
+        #             cls.from_dict(a).action for a in data['actions_if_true']
+        #         ]
+        #     if 'actions_if_false' in data and data['actions_if_false'] is not None:
+        #         obj.action.actions_if_false = [
+        #             cls.from_dict(a).action for a in data['actions_if_false']
+        #         ]
         return obj
 
 

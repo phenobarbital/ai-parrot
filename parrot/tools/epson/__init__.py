@@ -1,6 +1,6 @@
 from typing import Optional, List, Dict, Union
 from pydantic import BaseModel, Field, ConfigDict
-from ..toolkit import tool_schema
+from ..decorators import tool_schema
 from ..querytoolkit import QueryToolkit
 from ...exceptions import ToolError  # pylint: disable=E0611 # noqa
 

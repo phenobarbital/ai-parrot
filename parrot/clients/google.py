@@ -1177,7 +1177,14 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
 
         if len(all_tool_calls) == 1:
             tc = all_tool_calls[0]
-            if tc.result and isinstance(tc.result, dict) and 'expression' in tc.result:
+            if isinstance(tc.result, Exception):
+                return f"Tool {tc.name} failed with error: {tc.result}"
+            elif isinstance(tc.result, pd.DataFrame):
+                if not tc.result.empty:
+                    return f"Tool {tc.name} returned a DataFrame with {len(tc.result)} rows."
+                else:
+                    return f"Tool {tc.name} returned an empty DataFrame."
+            elif tc.result and isinstance(tc.result, dict) and 'expression' in tc.result:
                 return tc.result['expression']
             elif tc.result and isinstance(tc.result, dict) and 'result' in tc.result:
                 return f"Result: {tc.result['result']}"
