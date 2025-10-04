@@ -274,20 +274,3 @@ class AbstractToolkit(ABC):
             "return_direct": self.return_direct,
             "base_url": self.base_url
         }
-
-
-# Decorator for custom argument schemas
-def tool_schema(schema: Type[BaseModel]):
-    """
-    Decorator to specify a custom argument schema for a toolkit method.
-
-    Usage:
-        @tool_schema(MyCustomSchema)
-        async def my_tool(self, arg1: str, arg2: int) -> str:
-            '''My custom tool.'''
-            return result
-    """
-    def decorator(func):
-        func._args_schema = schema
-        return func
-    return decorator
