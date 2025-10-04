@@ -168,7 +168,6 @@ class QuerySourceTool(AbstractTool):
         """
         Execute a QuerySource query and return structured results.
         """
-        print('HERE > ', query_slug, query, kwargs)
         # Validate input
         if not query_slug and not query:
             return ToolResult(
