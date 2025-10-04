@@ -319,7 +319,7 @@ authenticate or waiting for events or human intervention actions."""
 
         return self.results
 
-    async def _execute_step(self, step: ScrapingStep, base_url: str = "") -> bool:
+    async def _execute_step(self, step: ScrapingStep, base_url: str = "", args: dict = None) -> bool:
         """Execute a single scraping step with a hard timeout per step."""
         action = step.action
         action_type = action.get_action_type()
@@ -351,7 +351,7 @@ authenticate or waiting for events or human intervention actions."""
             elif action_type == 'get_text':
                 result = await self._get_text(action)
             elif action_type == 'get_html':
-                result = await self._get_html(action)
+                result = await self._get_html(action, args)
             elif action_type == 'screenshot':
                 result = await self._take_screenshot(action)
             elif action_type == 'wait_for_download':
@@ -374,7 +374,7 @@ authenticate or waiting for events or human intervention actions."""
             elif action_type == 'loop':
                 result = await self._exec_loop(action, base_url)
             elif action_type == 'conditional':
-                result = await self._exec_conditional(action)
+                result = await self._exec_conditional(action, base_url, args)
             else:
                 self.logger.warning(f"Unknown action: {step.action}")
                 return False
@@ -1042,12 +1042,13 @@ authenticate or waiting for events or human intervention actions."""
             return False
 
 
-    async def _get_html(self, action: GetHTML) -> bool:
+    async def _get_html(self, action: GetHTML, args: dict) -> bool:
         """
         Extract complete HTML content from elements and save to results.
 
         Args:
             action: GetHTML action with selector and options
+            args: Additional arguments for the action
 
         Returns:
             bool: True if extraction successful
@@ -1102,6 +1103,8 @@ authenticate or waiting for events or human intervention actions."""
                             "selector": action.selector,
                             "selector_type": selector_type,
                             "multiple": action.multiple,
+                            "iteration": (args or {}).get("iteration"),
+                            "data": (args or {}),
                         },
                         timestamp=str(time.time()),
                         success=True
@@ -1962,7 +1965,12 @@ return 1;
             self.logger.error(f"UploadFile action failed: {str(e)}")
             return False
 
-    async def _exec_conditional(self, action: Conditional, base_url: str = "") -> bool:
+    async def _exec_conditional(
+        self,
+        action: Conditional,
+        base_url: str = "",
+        args: Optional[dict] = None
+    ) -> bool:
         """Handle Conditional action - execute actions based on a condition."""
 
         CONDITION_TYPES = {
@@ -1979,7 +1987,9 @@ return 1;
         expected_value = action.expected_value
         timeout = action.timeout or 5
 
-        self.logger.info(f"Evaluating conditional: {condition_type} on {target_type}='{target}'")
+        self.logger.info(
+            f"Evaluating conditional: {condition_type} on {target_type}='{target}' with value '*{expected_value}*'"
+        )
 
         # Find the element
         element = None
@@ -2046,7 +2056,9 @@ return 1;
             self.logger.error(f"Error evaluating condition: {str(e)}")
             condition_result = False
 
-        self.logger.info(f"Condition result: {condition_result}")
+        self.logger.notice(
+            f"Condition result: {condition_result}"
+        )
 
         # Determine which actions to execute
         actions_to_execute = (
@@ -2068,7 +2080,7 @@ return 1;
         all_success = True
         for sub_action in actions_to_execute:
             step = ScrapingStep(action=sub_action)
-            success = await self._execute_step(step, base_url)
+            success = await self._execute_step(step, base_url, args)
 
             if not success:
                 self.logger.warning(
@@ -2101,6 +2113,7 @@ return 1;
         """
         iteration = 0
         start_index = action.start_index
+        value_name = action.value_name
 
         if action.values:
             max_iter = len(action.values)
@@ -2138,7 +2151,14 @@ return 1;
                     sub_action = loop_action
 
                 step = ScrapingStep(action=sub_action)
-                success = await self._execute_step(step, base_url)
+                args = {
+                    "iteration": iteration,
+                    "data": {
+                        "index": display_index,
+                        value_name: current_value
+                    }
+                }
+                success = await self._execute_step(step, base_url, args)
 
                 if not success and action.break_on_error:
                     self.logger.warning(f"Loop stopped at iteration {iteration} due to error")

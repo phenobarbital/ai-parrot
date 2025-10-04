@@ -194,6 +194,28 @@ class AIMessage(BaseModel):
         arbitrary_types_allowed = True
 
     @property
+    def content(self) -> str:
+        """
+        Get content as a string. This is an alias for to_text property
+        that provides a more intuitive API and compatibility with standard
+        AI message formats.
+
+        Returns:
+            str: The text representation of the output
+        """
+        return self.to_text
+
+    @content.setter
+    def content(self, value: str) -> None:
+        """
+        Set content by updating the output field.
+
+        Args:
+            value: The content string to set
+        """
+        self.output = value
+
+    @property
     def to_text(self) -> str:
         """Get text representation of output."""
         if isinstance(self.output, str):
