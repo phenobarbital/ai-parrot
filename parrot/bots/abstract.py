@@ -64,8 +64,6 @@ class AbstractBot(DBInterface, ABC):
     """
     # Define system prompt template
     system_prompt_template = BASIC_SYSTEM_PROMPT
-    # Define human prompt template
-    human_prompt_template = BASIC_HUMAN_PROMPT
     _default_llm: str = 'google'
     # LLM:
     llm_client: str = 'google'
@@ -77,7 +75,7 @@ class AbstractBot(DBInterface, ABC):
         self,
         name: str = 'Nav',
         system_prompt: str = None,
-        human_prompt: str = None,
+        instructions: str = None,
         use_tools: bool = False,
         tools: List[Union[str, AbstractTool, ToolDefinition]] = None,
         tool_threshold: float = 0.7,  # Confidence threshold for tool usage,
@@ -89,12 +87,10 @@ class AbstractBot(DBInterface, ABC):
         # System and Human Prompts:
         if system_prompt:
             self.system_prompt_template = system_prompt or self.system_prompt_template
-        if human_prompt:
-            self.human_prompt_template = human_prompt or self.human_prompt_template
-
+        if instructions:
+            self.system_prompt_template += f"\n{instructions}"
         # Debug mode:
         self._debug = debug
-
         # Chatbot ID:
         self.chatbot_id: uuid.UUID = kwargs.get(
             'chatbot_id',
@@ -2452,6 +2448,12 @@ Use the following information about user's data to guide your responses:
                 if output_mode != OutputMode.DEFAULT:
                     formatter = OutputFormatter(mode=output_mode)
                     format_kwargs = format_kwargs or {}
+                    if formatter.has_visualizations(response):
+                        # Will use smart renderer
+                        return formatter.format(
+                            response,
+                            **format_kwargs
+                        )
                     return formatter.format(response, **format_kwargs)
 
                 return response

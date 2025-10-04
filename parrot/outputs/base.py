@@ -24,8 +24,7 @@ except ImportError:
     PLOTLY_AVAILABLE = False
 
 try:
-    import matplotlib.pyplot as plt
-    import matplotlib.figure
+    import matplotlib as mp
     MATPLOTLIB_AVAILABLE = True
 except ImportError:
     MATPLOTLIB_AVAILABLE = False
@@ -105,7 +104,7 @@ class OutputDetector:
                 return OutputType.PLOTLY_CHART
 
         # Matplotlib Figure
-        if MATPLOTLIB_AVAILABLE and isinstance(obj, matplotlib.figure.Figure):
+        if MATPLOTLIB_AVAILABLE and isinstance(obj, mp.figure.Figure):
             return OutputType.MATPLOTLIB_FIGURE
 
         # DataFrame
@@ -146,34 +145,88 @@ class OutputDetector:
         return OutputType.TEXT
 
     @staticmethod
-    def detect_multiple(obj: Any) -> List[RenderableOutput]:
-        """Detect if object contains multiple renderable outputs"""
+    def detect_multiple(obj: Any) -> Optional[List[RenderableOutput]]:
+        """
+        Detect if object contains renderable visualizations.
+
+        Returns:
+            List of RenderableOutput if visualizations found, None otherwise
+        """
         renderables = []
 
         # Check if it's a container with multiple outputs
         if isinstance(obj, (list, tuple)):
             for item in obj:
                 output_type = OutputDetector.detect(item)
-                renderables.append(RenderableOutput(obj=item, output_type=output_type))
+                # Only include if it's a visualization type
+                if output_type in [
+                    OutputType.FOLIUM_MAP,
+                    OutputType.PLOTLY_CHART,
+                    OutputType.MATPLOTLIB_FIGURE,
+                    OutputType.DATAFRAME,
+                    OutputType.ALTAIR_CHART,
+                    OutputType.BOKEH_PLOT,
+                    OutputType.PANEL_DASHBOARD,
+                    OutputType.HTML_WIDGET,
+                    OutputType.IMAGE
+                ]:
+                    renderables.append(RenderableOutput(obj=item, output_type=output_type))
 
         # Check if it's a dict with named outputs
         elif isinstance(obj, dict):
-            for key, value in obj.items():
-                output_type = OutputDetector.detect(value)
-                renderables.append(
-                    RenderableOutput(
-                        obj=value,
-                        output_type=output_type,
-                        title=str(key)
-                    )
-                )
+            # Check if this looks like a response dict vs visualization dict
+            is_visualization_dict = False
 
-        # Single object
+            # Plotly figure dict check
+            if 'data' in obj and 'layout' in obj:
+                is_visualization_dict = True
+                output_type = OutputDetector.detect(obj)
+                if output_type != OutputType.TEXT:
+                    renderables.append(
+                        RenderableOutput(obj=obj, output_type=output_type)
+                    )
+            else:
+                # Check if values are visualizations
+                for key, value in obj.items():
+                    output_type = OutputDetector.detect(value)
+                    if output_type in [
+                        OutputType.FOLIUM_MAP,
+                        OutputType.PLOTLY_CHART,
+                        OutputType.MATPLOTLIB_FIGURE,
+                        OutputType.DATAFRAME,
+                        OutputType.ALTAIR_CHART,
+                        OutputType.BOKEH_PLOT,
+                        OutputType.PANEL_DASHBOARD,
+                        OutputType.HTML_WIDGET,
+                        OutputType.IMAGE
+                    ]:
+                        is_visualization_dict = True
+                        renderables.append(
+                            RenderableOutput(
+                                obj=value,
+                                output_type=output_type,
+                                title=str(key)
+                            )
+                        )
+
+        # Single object - check if it's a visualization type
         else:
             output_type = OutputDetector.detect(obj)
-            renderables.append(RenderableOutput(obj=obj, output_type=output_type))
+            if output_type in [
+                OutputType.FOLIUM_MAP,
+                OutputType.PLOTLY_CHART,
+                OutputType.MATPLOTLIB_FIGURE,
+                OutputType.DATAFRAME,
+                OutputType.ALTAIR_CHART,
+                OutputType.BOKEH_PLOT,
+                OutputType.PANEL_DASHBOARD,
+                OutputType.HTML_WIDGET,
+                OutputType.IMAGE
+            ]:
+                renderables.append(RenderableOutput(obj=obj, output_type=output_type))
 
-        return renderables
+        # Return None if no visualizations found (just text/markdown)
+        return renderables if renderables else None
 
 
 class BaseRenderer:

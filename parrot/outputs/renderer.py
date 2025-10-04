@@ -17,7 +17,7 @@ except ImportError:
     PLOTLY_AVAILABLE = False
 
 try:
-    from matplotlib import figure
+    import matplotlib as mp
     MATPLOTLIB_AVAILABLE = True
 except ImportError:
     MATPLOTLIB_AVAILABLE = False
@@ -120,11 +120,11 @@ class PlotlyRenderer(BaseRenderer):
 class MatplotlibRenderer(BaseRenderer):
     """Renderer for Matplotlib figures"""
 
-    def render_terminal(self, obj: figure.Figure, **kwargs) -> str:
+    def render_terminal(self, obj: mp.figure.Figure, **kwargs) -> str:
         """Terminal representation"""
         return f"📈 Matplotlib Figure\n[View in HTML/Jupyter mode]"
 
-    def render_html(self, obj: figure.Figure, **kwargs) -> str:
+    def render_html(self, obj: mp.figure.Figure, **kwargs) -> str:
         """Convert to base64 embedded image"""
         format = kwargs.get('format', 'png')
         dpi = kwargs.get('dpi', 100)
@@ -138,7 +138,7 @@ class MatplotlibRenderer(BaseRenderer):
         width = kwargs.get('width', '100%')
         return f'<img src="data:image/{format};base64,{img_base64}" style="width: {width}; max-width: 100%;">'
 
-    def render_jupyter(self, obj: figure.Figure, **kwargs) -> Any:
+    def render_jupyter(self, obj: mp.figure.Figure, **kwargs) -> Any:
         """Native Jupyter display"""
         return obj
 
