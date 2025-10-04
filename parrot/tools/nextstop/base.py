@@ -8,7 +8,7 @@ from navconfig import BASE_DIR
 from asyncdb import AsyncDB
 from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611
 from querysource.conf import default_dsn
-from ..toolkit import AbstractToolkit, tool_schema
+from ..toolkit import AbstractToolkit
 
 
 def is_collection_model(structured_obj: type) -> bool:

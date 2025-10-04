@@ -190,6 +190,8 @@ class AbstractTool(ABC):
 
         Returns:
             Standardized ToolResult
+
+        TODO: Use the Global Registry to share data between tools.
         """
         try:
             self.logger.notice(f"Executing tool: {self.name}")
