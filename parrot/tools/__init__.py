@@ -2,6 +2,7 @@
 Tools infrastructure for building Agents.
 """
 from .pythonrepl import PythonREPLTool
+from .pythonpandas import PythonPandasTool
 from .abstract import AbstractTool, ToolResult
 from .math import MathTool
 from .toolkit import AbstractToolkit, ToolkitTool
@@ -13,6 +14,7 @@ from .ddgo import DuckDuckGoToolkit
 
 __all__ = (
     "PythonREPLTool",
+    "PythonPandasTool",
     "AbstractTool",
     "ToolResult",
     "MathTool",

@@ -1,10 +1,10 @@
 from typing import Any, List, Optional, Union
+import os
+import tempfile
 import re
-import markdown
 import json
+import markdown
 from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611 # noqa
-
-
 try:
     from rich.console import Console
     from rich.markdown import Markdown
@@ -56,7 +56,8 @@ except ImportError:
 
 try:
     import matplotlib.pyplot as plt
-    import matplotlib.figure
+    import matplotlib as mp
+    from matplotlib.figure import Figure
     MATPLOTLIB_AVAILABLE = True
 except ImportError:
     MATPLOTLIB_AVAILABLE = False
@@ -87,10 +88,11 @@ class OutputFormatter:
     Formatter for AI responses supporting multiple output modes.
     """
 
-    def __init__(self, mode: OutputMode = OutputMode.DEFAULT):
+    def __init__(self, mode: OutputMode = OutputMode.DEFAULT, use_panel: bool = True):
         self.mode = mode
         self._is_ipython = self._detect_ipython()
         self._is_notebook = self._detect_notebook()
+        self.use_panel = use_panel
 
         # Auto-detect Jupyter and switch to JUPYTER mode if appropriate
         if self.mode == OutputMode.DEFAULT and self._is_notebook:
@@ -188,6 +190,20 @@ class OutputFormatter:
             return self._format_jupyter(response, **kwargs)
         else:
             return response
+
+    def has_visualizations(self, response: Any) -> bool:
+        """
+        Check if response contains renderable visualizations.
+
+        Args:
+            response: Response object to check
+
+        Returns:
+            True if visualizations found, False otherwise
+        """
+        content = self._extract_content(response)
+        renderables = OutputDetector.detect_multiple(content)
+        return renderables is not None and len(renderables) > 0
 
     def _render_terminal(self, renderables: List[RenderableOutput], **kwargs) -> None:
         """Render for terminal"""
@@ -318,7 +334,7 @@ class OutputFormatter:
         if any([
             FOLIUM_AVAILABLE and isinstance(response, folium.Map),
             PLOTLY_AVAILABLE and isinstance(response, go.Figure),
-            MATPLOTLIB_AVAILABLE and isinstance(response, matplotlib.figure.Figure),
+            MATPLOTLIB_AVAILABLE and isinstance(response, Figure),
             PANDAS_AVAILABLE and isinstance(response, pd.DataFrame),
         ]):
             return response
@@ -941,8 +957,7 @@ class OutputFormatter:
             Panel dashboard or HTML string
         """
         if not PANEL_AVAILABLE:
-            content = self._get_content(response)
-            return f"<div>Panel library not available. Install with: pip install panel</div><div>{content}</div>"
+            return self._format_html_simple(response, **kwargs)
 
         show_metadata = kwargs.get('show_metadata', True)
         show_sources = kwargs.get('show_sources', True)
@@ -983,10 +998,150 @@ class OutputFormatter:
         # Create dashboard
         dashboard = Column(*components, sizing_mode='stretch_width')
 
+        # Convert to HTML string if requested
         if return_html:
-            return dashboard.save('response.html', embed=True)
+            # Create temporary file
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False) as tmp:
+                tmp_path = tmp.name
 
+            try:
+                # Save Panel dashboard to HTML file
+                dashboard.save(tmp_path, embed=True)
+
+                # Read the HTML content
+                with open(tmp_path, 'r', encoding='utf-8') as f:
+                    html_content = f.read()
+
+                return html_content
+            finally:
+                # Clean up temporary file
+                if os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
+
+        # Return Panel object for interactive use
         return dashboard
+
+    def _format_html_simple(self, response: Any, **kwargs) -> str:
+        """
+        Format output as HTML without Panel (manual construction).
+        Faster and simpler for basic HTML export.
+
+        Args:
+            response: AIMessage response object
+            **kwargs: Additional options
+
+        Returns:
+            HTML string
+        """
+        show_metadata = kwargs.get('show_metadata', True)
+        show_sources = kwargs.get('show_sources', True)
+        show_tools = kwargs.get('show_tools', False)
+
+        html_parts = []
+
+        # Add CSS
+        html_parts.append('''
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <style>
+                body {
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                    max-width: 1200px;
+                    margin: 20px auto;
+                    padding: 20px;
+                    background-color: #f5f5f5;
+                }
+                .response-container {
+                    background-color: #f0f8ff;
+                    padding: 20px;
+                    border-radius: 5px;
+                    margin-bottom: 20px;
+                }
+                .response-container h2 {
+                    margin-top: 0;
+                    color: #333;
+                }
+                .section {
+                    background-color: white;
+                    padding: 15px;
+                    border-radius: 5px;
+                    margin-bottom: 15px;
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                }
+                .section h3 {
+                    margin-top: 0;
+                    color: #555;
+                }
+                table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    margin-top: 10px;
+                }
+                th, td {
+                    padding: 8px;
+                    text-align: left;
+                    border-bottom: 1px solid #ddd;
+                }
+                th {
+                    background-color: #f0f0f0;
+                    font-weight: bold;
+                }
+                tr:nth-child(even) {
+                    background-color: #f9f9f9;
+                }
+            </style>
+        </head>
+        <body>
+        ''')
+
+        # Main response
+        content = self._get_content(response)
+        if content:
+            # Convert markdown to HTML if needed
+            html_content = self._markdown_to_html(content)
+            html_parts.append(f'''
+            <div class="response-container">
+                <h2>🤖 Response</h2>
+                <div>{html_content}</div>
+            </div>
+            ''')
+
+        # Tool calls section
+        if show_tools and hasattr(response, 'tool_calls') and response.tool_calls:
+            tools_html = self._create_tools_html(response.tool_calls)
+            html_parts.append(f'''
+            <div class="section">
+                <h3>🔧 Tool Calls</h3>
+                {tools_html}
+            </div>
+            ''')
+
+        # Metadata section
+        if show_metadata:
+            metadata_html = self._create_metadata_html(response)
+            html_parts.append(f'''
+            <div class="section">
+                <h3>📊 Metadata</h3>
+                {metadata_html}
+            </div>
+            ''')
+
+        # Sources section
+        if show_sources and hasattr(response, 'source_documents') and response.source_documents:
+            sources_html = self._create_sources_html(response.source_documents)
+            html_parts.append(f'''
+            <div class="section">
+                <h3>📄 Sources</h3>
+                {sources_html}
+            </div>
+            ''')
+
+        html_parts.append('</body></html>')
+
+        return '\n'.join(html_parts)
 
     def _create_tools_html(self, tool_calls: List[Any]) -> str:
         """Create HTML table for tool calls."""
