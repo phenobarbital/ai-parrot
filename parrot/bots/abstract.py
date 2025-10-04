@@ -49,10 +49,12 @@ from ..memory import (
 )
 from .kb import KBSelector
 from ..utils.helpers import RequestContext, RequestBot
+from ..outputs import OutputMode, OutputFormatter
 
 logging.getLogger(name='primp').setLevel(logging.INFO)
 logging.getLogger(name='rquest').setLevel(logging.INFO)
 logging.getLogger("grpc").setLevel(logging.CRITICAL)
+logging.getLogger('markdown_it').setLevel(logging.CRITICAL)
 
 
 class AbstractBot(DBInterface, ABC):
@@ -1018,150 +1020,6 @@ class AbstractBot(DBInterface, ABC):
                 'search_type': search_type,
                 'error': str(e)
             }
-
-    # async def get_vector_context(
-    #     self,
-    #     question: str,
-    #     search_type: str = 'similarity',  # 'similarity', 'mmr', 'ensemble'
-    #     search_kwargs: dict = None,
-    #     metric_type: str = 'COSINE',
-    #     limit: int = 10,
-    #     score_threshold: float = None,
-    #     ensemble_config: dict = None,
-    #     return_sources: bool = False,
-    # ) -> str:
-    #     """Get relevant context from vector store.
-    #     Args:
-    #         question (str): The user's question to search context for.
-    #         search_type (str): Type of search to perform ('similarity', 'mmr', 'ensemble').
-    #         search_kwargs (dict): Additional parameters for the search.
-    #         metric_type (str): Metric type for vector search (e.g., 'COSINE', 'EUCLIDEAN').
-    #         limit (int): Maximum number of context items to retrieve.
-    #         score_threshold (float): Minimum score for context relevance.
-    #         ensemble_config (dict): Configuration for ensemble search.
-    #         return_sources (bool): Whether to extract enhanced source information
-    #     Returns:
-    #         tuple: (context_string, metadata_dict)
-    #     """
-    #     if not self.store:
-    #         return "", {}
-
-    #     try:
-    #         limit = limit or self.context_search_limit
-    #         score_threshold = score_threshold or self.context_score_threshold
-    #         search_results = None
-    #         metadata = {
-    #             'search_type': search_type,
-    #             'score_threshold': score_threshold,
-    #             'metric_type': metric_type
-    #         }
-    #         self.logger.notice(
-    #             f"Retrieving vector context for question: {question} "
-    #             f"using {search_type} search with limit {limit} "
-    #             f"and score threshold {score_threshold}"
-    #         )
-    #         async with self.store as store:
-    #             # Use the similarity_search method from PgVectorStore
-    #             if search_type == 'mmr':
-    #                 if search_kwargs is None:
-    #                     search_kwargs = {
-    #                         "k": limit,
-    #                         "fetch_k": limit * 2,
-    #                         "lambda_mult": 0.4,
-    #                     }
-    #                 search_results = await store.mmr_search(
-    #                     query=question,
-    #                     score_threshold=score_threshold,
-    #                     **(search_kwargs or {})
-    #                 )
-    #             elif search_type == 'ensemble':
-    #                 # Default ensemble configuration
-    #                 if ensemble_config is None:
-    #                     ensemble_config = {
-    #                         'similarity_limit': max(6, int(limit * 1.2)),  # Get more from similarity
-    #                         'mmr_limit': max(4, int(limit * 0.8)),         # Get fewer but more diverse from MMR
-    #                         'final_limit': limit,                          # Final number to return
-    #                         'similarity_weight': 0.6,                      # Weight for similarity scores
-    #                         'mmr_weight': 0.4,                            # Weight for MMR scores
-    #                         'dedup_threshold': 0.9,                       # Similarity threshold for deduplication
-    #                         'rerank_method': 'weighted_score'             # 'weighted_score', 'rrf', 'interleave'
-    #                     }
-    #                 search_results = await self._ensemble_search(
-    #                     store,
-    #                     question,
-    #                     ensemble_config,
-    #                     score_threshold,
-    #                     metric_type,
-    #                     search_kwargs
-    #                 )
-    #                 metadata.update({
-    #                     'ensemble_config': ensemble_config,
-    #                     'similarity_results_count': len(search_results.get('similarity_results', [])),
-    #                     'mmr_results_count': len(search_results.get('mmr_results', [])),
-    #                     'final_results_count': len(search_results.get('final_results', []))
-    #                 })
-    #                 search_results = search_results['final_results']
-    #             else:
-    #                 # doing a similarity search by default
-    #                 search_results = await store.similarity_search(
-    #                     query=question,
-    #                     limit=limit,
-    #                     score_threshold=score_threshold,
-    #                     metric=metric_type,
-    #                     **(search_kwargs or {})
-    #                 )
-
-    #         if not search_results:
-    #             metadata['search_results_count'] = 0
-    #             if return_sources:
-    #                 metadata['enhanced_sources'] = []
-    #             return "", metadata
-
-    #         # Format the context from search results
-    #         context_parts = []
-    #         sources = []
-    #         for i, result in enumerate(search_results):
-    #             context_parts.append(f"[Context {i+1}]: {result.content}")
-
-    #             # Extract source information
-    #             if hasattr(result, 'metadata') and result.metadata:
-    #                 source_id = result.metadata.get('source', f"result_{i}")
-    #                 sources.append(source_id)
-
-    #         context = "\n\n".join(context_parts)
-
-    #         if return_sources:
-    #             source_documents = self._extract_sources_documents(search_results)
-    #             metadata['source_documents'] = [source.to_dict() for source in source_documents]
-    #             metadata['context_sources'] = [source.filename for source in source_documents]
-    #         else:
-    #             # Keep original behavior for backward compatibility
-    #             metadata['context_sources'] = sources
-    #             metadata.update({
-    #                 'search_results_count': len(search_results),
-    #                 'sources': sources
-    #             })
-
-    #         metadata.update({
-    #             'search_results_count': len(search_results),
-    #             'sources': sources
-    #         })
-
-    #         self.logger.info(
-    #             f"Retrieved {len(search_results)} context items using {search_type} search"
-    #         )
-
-    #         return context, metadata
-
-    #     except Exception as e:
-    #         self.logger.error(
-    #             f"Error retrieving vector context: {e}"
-    #         )
-    #         return "", {
-    #             'search_results_count': 0,
-    #             'search_type': search_type,
-    #             'error': str(e)
-    #         }
 
     def build_conversation_context(
         self,
@@ -2436,3 +2294,171 @@ Use the following information about user's data to guide your responses:
                 f"Failed to extract text from response: {str(e)}"
             )
             return ""
+
+    def __call__(self, question: str, **kwargs):
+        """
+        Make the bot instance callable, delegating to ask() method.
+
+        Usage:
+            await bot('hello world')
+            # equivalent to:
+            await bot.ask('hello world')
+
+        Args:
+            question: The user's question
+            **kwargs: Additional arguments passed to ask()
+
+        Returns:
+            Coroutine that resolves to AIMessage
+        """
+        return self.ask(question, **kwargs)
+
+    async def ask(
+        self,
+        question: str,
+        session_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        search_type: str = 'similarity',
+        search_kwargs: dict = None,
+        metric_type: str = 'COSINE',
+        use_vector_context: bool = True,
+        use_conversation_history: bool = True,
+        return_sources: bool = True,
+        memory: Optional[Callable] = None,
+        ensemble_config: dict = None,
+        ctx: Optional[RequestContext] = None,
+        output_mode: OutputMode = OutputMode.DEFAULT,
+        format_kwargs: dict = None,
+        **kwargs
+    ) -> AIMessage:
+        """
+        Ask method with tools always enabled and output formatting support.
+
+        Args:
+            question: The user's question
+            session_id: Session identifier for conversation history
+            user_id: User identifier
+            search_type: Type of search to perform ('similarity', 'mmr', 'ensemble')
+            search_kwargs: Additional search parameters
+            metric_type: Metric type for vector search
+            use_vector_context: Whether to retrieve context from vector store
+            use_conversation_history: Whether to use conversation history
+            return_sources: Whether to return sources in response
+            memory: Optional memory handler
+            ensemble_config: Configuration for ensemble search
+            ctx: Request context
+            output_mode: Output formatting mode ('default', 'terminal', 'html', 'json')
+            format_kwargs: Additional kwargs for formatter (show_metadata, show_sources, etc.)
+            **kwargs: Additional arguments for LLM
+
+        Returns:
+            AIMessage or formatted output based on output_mode
+        """
+        # Generate session ID if not provided
+        if not session_id:
+            session_id = str(uuid.uuid4())
+        turn_id = str(uuid.uuid4())
+
+        # Set default max_tokens to 8192 if not provided
+        max_tokens = kwargs.get('max_tokens', 8192)
+
+        limit = kwargs.get('limit', self.context_search_limit)
+        score_threshold = kwargs.get('score_threshold', self.context_score_threshold)
+
+        try:
+            # Get conversation history
+            conversation_history = None
+            conversation_context = ""
+            memory = memory or self.conversation_memory
+
+            if use_conversation_history and memory:
+                conversation_history = await self.get_conversation_history(user_id, session_id)
+                if not conversation_history:
+                    conversation_history = await self.create_conversation_history(user_id, session_id)
+                conversation_context = self.build_conversation_context(conversation_history)
+
+            # Get vector context
+            kb_context, user_context, vector_context, vector_metadata = await self._build_context(
+                question,
+                user_id=user_id,
+                session_id=session_id,
+                ctx=ctx,
+                use_vectors=use_vector_context,
+                search_type=search_type,
+                search_kwargs=search_kwargs,
+                ensemble_config=ensemble_config,
+                metric_type=metric_type,
+                limit=limit,
+                score_threshold=score_threshold,
+                return_sources=return_sources,
+                **kwargs
+            )
+
+            # Tools are always enabled
+            use_tools = True
+
+            # Create system prompt
+            system_prompt = await self.create_system_prompt(
+                kb_context=kb_context,
+                vector_context=vector_context,
+                conversation_context=conversation_context,
+                metadata=vector_metadata,
+                user_context=user_context,
+                **kwargs
+            )
+
+            # Configure LLM if needed
+            new_llm = kwargs.pop('llm', None)
+            if new_llm:
+                self.configure_llm(llm=new_llm, **kwargs.pop('llm_config', {}))
+
+            # Make the LLM call
+            async with self._llm as client:
+                response = await client.ask(
+                    prompt=question,
+                    system_prompt=system_prompt,
+                    model=kwargs.get('model', self._llm_model),
+                    max_tokens=max_tokens,
+                    temperature=kwargs.get('temperature', self._llm_temp),
+                    user_id=user_id,
+                    session_id=session_id,
+                    use_tools=use_tools,
+                )
+
+                # Enhance response with metadata
+                response.set_vector_context_info(
+                    used=bool(vector_context),
+                    context_length=len(vector_context) if vector_context else 0,
+                    search_results_count=vector_metadata.get('search_results_count', 0),
+                    search_type=search_type if vector_context else None,
+                    score_threshold=score_threshold,
+                    sources=vector_metadata.get('sources', []),
+                    source_documents=vector_metadata.get('source_documents', [])
+                )
+
+                response.set_conversation_context_info(
+                    used=bool(conversation_context),
+                    context_length=len(conversation_context) if conversation_context else 0
+                )
+
+                if return_sources and vector_metadata.get('source_documents'):
+                    response.source_documents = vector_metadata['source_documents']
+                    response.context_sources = vector_metadata.get('context_sources', [])
+
+                response.session_id = session_id
+                response.turn_id = turn_id
+
+                # Format output based on mode
+                if output_mode != OutputMode.DEFAULT:
+                    formatter = OutputFormatter(mode=output_mode)
+                    format_kwargs = format_kwargs or {}
+                    return formatter.format(response, **format_kwargs)
+
+                return response
+
+        except asyncio.CancelledError:
+            self.logger.info("Ask task was cancelled.")
+            raise
+        except Exception as e:
+            self.logger.error(f"Error in ask: {e}")
+            raise

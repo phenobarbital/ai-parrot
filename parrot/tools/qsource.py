@@ -337,7 +337,7 @@ class QuerySourceTool(AbstractTool):
 
         elif return_format == "pandas":
             # Convert to pandas DataFrame
-            if not result:
+            if self._is_empty(result):
                 return pd.DataFrame()
             if isinstance(result, pd.DataFrame):
                 return result

@@ -1,6 +1,5 @@
 import textwrap
 from typing import Dict, List, Tuple, Any, Optional
-from abc import abstractmethod
 from datetime import datetime
 import aiofiles
 from navconfig import BASE_DIR
@@ -10,9 +9,6 @@ from .chatbot import Chatbot
 from .prompts import AGENT_PROMPT
 from ..tools.abstract import AbstractTool
 from ..tools.pythonpandas import PythonPandasTool
-from ..tools.google import GoogleLocationTool
-from ..tools.openweather import OpenWeatherTool
-from ..tools.gvoice import GoogleVoiceTool
 from ..tools.pdfprint import PDFPrintTool
 from ..tools.ppt import PowerPointTool
 from ..models.google import (
@@ -100,14 +96,8 @@ class BasicAgent(Chatbot):
             tools = []
         tools.extend(
             [
-                OpenWeatherTool(default_request='weather'),
                 PythonPandasTool(
                     report_dir=STATIC_DIR.joinpath(self.agent_id, 'documents')
-                ),
-                GoogleLocationTool(),
-                GoogleVoiceTool(
-                    use_long_audio_synthesis=True,
-                    output_dir=STATIC_DIR.joinpath(self.agent_id, 'podcasts')
                 ),
             ]
         )
@@ -481,3 +471,11 @@ class BasicAgent(Chatbot):
             raise RuntimeError(
                 f"Failed to generate speech: {e}"
             )
+
+
+class Agent(BasicAgent):
+    """A general-purpose agent with no additional tools."""
+
+    def agent_tools(self) -> List[AbstractTool]:
+        """Return the agent-specific tools."""
+        return []
