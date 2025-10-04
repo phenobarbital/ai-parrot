@@ -1,7 +1,5 @@
 from collections import defaultdict
 from typing import List, Dict, Any
-from sentence_transformers import SentenceTransformer
-import faiss
 
 class KnowledgeBaseStore:
     """Lightweight in-memory store for validated facts."""
@@ -12,6 +10,13 @@ class KnowledgeBaseStore:
         dimension: int = 384,
         index_type: str = "Flat",  # or "HNSW" for larger KBs
     ):
+        try:
+            from sentence_transformers import SentenceTransformer
+            import faiss
+        except ImportError as e:
+            raise ImportError(
+                "Please install 'sentence-transformers' and 'faiss-cpu' to use KnowledgeBaseStore."
+            ) from e
         self.embeddings = SentenceTransformer(embedding_model)
         self.dimension = dimension
         self.score_threshold = 0.45

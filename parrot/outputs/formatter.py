@@ -26,17 +26,7 @@ except ImportError:
     PANEL_AVAILABLE = False
 
 try:
-    from IPython.display import (
-        display, Markdown as IPyMarkdown, HTML as IPyHTML,
-        Code as ICode, JSON as IPyJSON, Image as IPyImage, Latex
-    )
-    IPYTHON_AVAILABLE = True
-except ImportError:
-    IPYTHON_AVAILABLE = False
-
-try:
     import ipywidgets as widgets
-    from ipywidgets import Layout, Box, VBox, HBox, Tab, Accordion, Button
     IPYWIDGETS_AVAILABLE = True
 except ImportError:
     IPYWIDGETS_AVAILABLE = False
@@ -129,6 +119,9 @@ class OutputFormatter:
     def _detect_ipython(self) -> bool:
         """Detect if running in IPython/Jupyter environment."""
         try:
+            import sys
+            if 'IPython' not in sys.modules:
+                return False
             # Check if IPython is available and active
             from IPython import get_ipython
             return get_ipython() is not None
@@ -290,13 +283,19 @@ class OutputFormatter:
             return html
         else:
             # Display if in IPython
-            if IPYTHON_AVAILABLE:
+            if self._is_ipython:
+                from IPython.display import (
+                    display, HTML as IPyHTML
+                )
                 display(IPyHTML(html))
             else:
                 print("HTML mode requires return_html=True outside of Jupyter")
 
     def _render_jupyter(self, renderables: List[RenderableOutput], **kwargs) -> None:
         """Render for Jupyter notebook"""
+        from IPython.display import (
+            display, Markdown as IPyMarkdown,
+        )
         for renderable in renderables:
             # Title
             if renderable.title:
@@ -364,7 +363,7 @@ class OutputFormatter:
                 - collapsible: Make sections collapsible (default: True)
                 - theme: Color theme ('light' or 'dark', default: 'light')
         """
-        if not IPYTHON_AVAILABLE:
+        if not self._is_ipython:
             print("IPython.display not available. Falling back to plain output.")
             self._plain_print(
                 response,
@@ -379,7 +378,7 @@ class OutputFormatter:
         show_sources = kwargs.get('show_sources', True)
         show_tools = kwargs.get('show_tools', True)
         show_context = kwargs.get('show_context', False)
-        use_widgets = kwargs.get('use_widgets', True) and IPYWIDGETS_AVAILABLE
+        use_widgets = kwargs.get('use_widgets', True)
         collapsible = kwargs.get('collapsible', True)
         theme = kwargs.get('theme', 'light')
 
@@ -412,7 +411,14 @@ class OutputFormatter:
     ) -> None:
         """Display response using ipywidgets for interactive experience."""
 
-        if not IPYWIDGETS_AVAILABLE:
+        try:
+            from IPython.display import (
+                display, HTML as IPyHTML,
+            )
+            import ipywidgets as widgets
+            from ipywidgets import Accordion
+        except ImportError:
+            print("ipywidgets not available. Falling back to simple display.")
             self._display_simple_jupyter(
                 response, content, show_metadata, show_sources,
                 show_tools, show_context, theme
@@ -491,6 +497,9 @@ class OutputFormatter:
     ) -> None:
         """Display response using simple IPython.display elements without widgets."""
 
+        from IPython.display import (
+            display, Markdown as IPyMarkdown, HTML as IPyHTML
+        )
         # Display main response with markdown
         display(IPyMarkdown(f"## 🤖 AI Response\n\n{content}"))
 

@@ -37,14 +37,6 @@ $rationale
 
 """
 
-BASIC_HUMAN_PROMPT = """
-**Chat History:**
-{chat_history}
-
-**Human Question:**
-{question}
-"""
-
 DEFAULT_CAPABILITIES = """
 - Answer factual questions using the knowledge base and provided context.
 - Provide clear explanations and assist with Human-Resources related tasks.

@@ -3,7 +3,6 @@ from typing import List, Optional, Union, Any
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
-import torch
 from navconfig.logging import logging
 from ..conf import (
     EMBEDDING_DEVICE,
@@ -36,6 +35,7 @@ class EmbeddingModel(ABC):
         """Get Default device for Torch and transformers.
 
         """
+        import torch
         dev = torch.device("cpu")
         pipe_dev = -1
         dtype = torch.float32
@@ -133,6 +133,7 @@ class EmbeddingModel(ABC):
         """
         Frees up resources used by the model.
         """
+        import torch
         self.model = None
         if torch.cuda.is_available():
             torch.cuda.empty_cache()

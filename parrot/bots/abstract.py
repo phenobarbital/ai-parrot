@@ -24,7 +24,6 @@ from ..conf import (
 )
 from .prompts import (
     BASIC_SYSTEM_PROMPT,
-    BASIC_HUMAN_PROMPT,
     DEFAULT_GOAL,
     DEFAULT_ROLE,
     DEFAULT_CAPABILITIES,
@@ -36,7 +35,7 @@ from ..models import (
     SourceDocument
 )
 from ..stores import AbstractStore, supported_stores
-from ..stores.kb import KnowledgeBaseStore, AbstractKnowledgeBase
+from ..stores.kb import AbstractKnowledgeBase
 from ..tools import AbstractTool
 from ..tools.manager import ToolManager, ToolDefinition
 from ..memory import (
@@ -192,13 +191,14 @@ class AbstractBot(DBInterface, ABC):
         # Operational Mode:
         self.operation_mode: str = kwargs.get('operation_mode', 'adaptive')
         # Knowledge base:
-        self.kb_store: KnowledgeBaseStore = None
+        self.kb_store: Any = None
         self.knowledge_bases: List[AbstractKnowledgeBase] = []
         self._kb: List[Dict[str, Any]] = kwargs.get('kb', [])
         self.use_kb: bool = use_kb
         self.kb_selector: Optional[KBSelector] = None
         self.use_kb_selector: bool = kwargs.get('use_kb_selector', False)
         if use_kb:
+            from ..stores.kb.store import KnowledgeBaseStore  # pylint: disable=C0415 # noqa
             self.kb_store = KnowledgeBaseStore(
                 embedding_model=kwargs.get('kb_embedding_model', KB_DEFAULT_MODEL),
                 dimension=kwargs.get('kb_dimension', 384)

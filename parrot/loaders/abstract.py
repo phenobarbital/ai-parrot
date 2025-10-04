@@ -6,7 +6,6 @@ import uuid
 from pathlib import Path, PosixPath, PurePath
 import asyncio
 import pandas as pd
-import torch
 from transformers import (
     AutoModelForSeq2SeqLM,
     AutoTokenizer,
@@ -271,6 +270,7 @@ class AbstractLoader(ABC):
             - torch_device: torch.device object for model loading
             - dtype: torch data type for model weights
         """
+        import torch
         # Default values for CPU usage
         pipeline_idx = -1  # This is what HuggingFace pipeline expects for CPU
         torch_dev = torch.device("cpu")
@@ -309,6 +309,7 @@ class AbstractLoader(ABC):
         self.tokenizer = None  # Reset the tokenizer
         self.text_splitter = None  # Reset the text splitter
         try:
+            import torch
             torch.cuda.synchronize()  # Wait for all kernels to finish
             torch.cuda.empty_cache()  # Clear unused memory
         except Exception as e:
