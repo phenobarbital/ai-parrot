@@ -6,7 +6,7 @@ import os
 import logging
 import math
 from pathlib import Path
-from moviepy.editor import VideoFileClip
+from moviepy import VideoFileClip
 from pydub import AudioSegment
 import soundfile as sf
 import numpy as np

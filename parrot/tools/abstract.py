@@ -190,6 +190,8 @@ class AbstractTool(ABC):
 
         Returns:
             Standardized ToolResult
+
+        TODO: Use the Global Registry to share data between tools.
         """
         try:
             self.logger.notice(f"Executing tool: {self.name}")
@@ -206,6 +208,17 @@ class AbstractTool(ABC):
             # if is an toolResult, return it directly
             if isinstance(result, ToolResult):
                 return result
+            elif isinstance(result, dict) and 'status' in result and 'result' in result:
+                try:
+                    return ToolResult(**result)
+                except Exception as e:
+                    self.logger.error(f"Error creating ToolResult from dict: {e}")
+                    return ToolResult(
+                        status="done_with_errors",
+                        result=result.get('result', []),
+                        error=f"Error creating ToolResult: {e}",
+                        metadata=result.get('metadata', {})
+                    )
             if result is None:
                 raise ValueError(
                     "Tool execution returned None, expected a result."

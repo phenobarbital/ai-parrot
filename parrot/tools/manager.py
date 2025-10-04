@@ -1,9 +1,12 @@
+from __future__ import annotations
 from collections.abc import Generator
 import asyncio
 from typing import Dict, List, Any, Union, Optional, Callable
 from dataclasses import dataclass
 import logging
 from enum import Enum
+
+import pandas as pd
 from .math import MathTool
 from .abstract import AbstractTool, ToolResult
 
@@ -184,10 +187,16 @@ class ToolManager:
         Args:
             logger: Logger instance
         """
+        self._shared: Dict[str, Any] = {"dataframes": {}}  # name -> (df, meta)
+        self._result_hooks: List[Callable[[str, Any, Dict[str, Any]], None]] = []
         self.logger = logger or logging.getLogger(self.__class__.__name__)
         self._debug: bool = debug
         self._tools: Dict[str, Union[ToolDefinition, AbstractTool]] = {}
         self._categories: Dict[str, List[str]] = {}
+        # policy (tweak as required)
+        self.auto_share_dataframes: bool = True
+        self.auto_push_to_pandas: bool = True
+        self.pandas_tool_name: str = "python_pandas"
 
     def default_tools(self, tools: list = None) -> List[AbstractTool]:
         if not tools:
@@ -783,7 +792,14 @@ class ToolManager:
                 if isinstance(result, ToolResult):
                     if result.status == "error":
                         raise ValueError(result.error)
-                    return result.result
+                    out = result.result
+                    meta = getattr(result, "metadata", {}) or {}
+                else:
+                    out = result
+                    meta = {}
+                self._postprocess_result(tool_name, out, meta)
+                self._run_result_hooks(tool_name, out, meta)
+                return out
             else:
                 raise ValueError(
                     f"Unknown tool type: {type(tool)}"
@@ -818,6 +834,75 @@ class ToolManager:
                 "content": str(e)
             }
 
+    def _postprocess_result(self, tool_name: str, out: Any, meta: Dict[str, Any]) -> None:
+        """Auto-share DataFrame outputs and push to PythonPandasTool."""
+        try:
+            if not self.auto_share_dataframes:
+                return
+            # Handle single DF
+            if isinstance(out, pd.DataFrame):
+                # Prefer a semantic name when metadata exists
+                base = meta.get("query_slug") or meta.get("name") or tool_name
+                df_name = self._unique_df_name(base)
+                self.share_dataframe(df_name, out, meta)
+                return
+            # Handle tuple or dict containers that embed a DataFrame under 'result'
+            if isinstance(out, dict) and "result" in out and isinstance(out["result"], pd.DataFrame):
+                base = meta.get("query_slug") or meta.get("name") or tool_name
+                df_name = self._unique_df_name(base)
+                self.share_dataframe(df_name, out["result"], meta)
+        except Exception as e:
+            self.logger.debug(f"No DF shared for {tool_name}: {e}")
+
+    def _unique_df_name(self, base: str) -> str:
+        base = (base or "df").replace(" ", "_").lower()
+        name = base
+        i = 1
+        while name in self._shared["dataframes"]:
+            i += 1
+            name = f"{base}_{i}"
+        return name
+
+
     def tool_count(self) -> int:
         """Get the number of registered tools."""
         return len(self._tools)
+
+    def share_dataframe(self, name: str, df: "pd.DataFrame", meta: Dict[str, Any] = None) -> str:
+        """Store df in shared context and push into python_pandas if present."""
+        if not isinstance(df, pd.DataFrame):
+            raise ValueError("share_dataframe expects a pandas.DataFrame")
+        safe = name or f"df_{len(self._shared['dataframes'])+1}"
+        self._shared["dataframes"][safe] = (df, meta or {})
+        # auto-push into python_pandas
+        if self.auto_push_to_pandas:
+            pandas_tool = self.get_tool(self.pandas_tool_name)
+            if pandas_tool:
+                try:
+                    msg = pandas_tool.add_dataframe(safe, df, regenerate_guide=True)
+                    self.logger.debug(f"PandasTool: {msg}")
+                except Exception as e:
+                    self.logger.warning(f"Could not push DF into {self.pandas_tool_name}: {e}")
+        return safe
+
+    def get_shared_dataframe(self, name: str) -> "pd.DataFrame":
+        df, _ = self._shared["dataframes"][name]
+        return df
+
+    def list_shared_dataframes(self) -> List[str]:
+        return list(self._shared["dataframes"].keys())
+
+    def clear_shared(self) -> None:
+        self._shared = {"dataframes": {}}
+
+    # == Hooks ==
+    def add_result_hook(self, fn: Callable[[str, Any, Dict[str, Any]], None]) -> None:
+        """Register a function(tool_name, result, metadata) -> None run after each tool."""
+        self._result_hooks.append(fn)
+
+    def _run_result_hooks(self, tool_name: str, result: Any, metadata: Dict[str, Any]) -> None:
+        for fn in self._result_hooks:
+            try:
+                fn(tool_name, result, metadata)
+            except Exception as e:
+                self.logger.warning(f"Result hook error in {fn}: {e}")
