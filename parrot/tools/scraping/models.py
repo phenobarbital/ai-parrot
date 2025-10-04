@@ -65,6 +65,57 @@ class Fill(BrowserAction):
     clear_first: bool = Field(default=True, description="Clear existing content before filling")
     press_enter: bool = Field(default=False, description="Press Enter after filling")
 
+class Select(BrowserAction):
+    """ Select an option from a dropdown/select element."""
+    name: str = 'select'
+    action: Literal['select'] = 'select'
+    description: str = Field(
+        default="Select dropdown option",
+        description="Selecting an option from a dropdown/select element"
+    )
+    selector: str = Field(description="CSS selector to identify the select element")
+    value: Optional[str] = Field(
+        default=None,
+        description="Value attribute of the option to select"
+    )
+    text: Optional[str] = Field(
+        default=None,
+        description="Visible text of the option to select"
+    )
+    index: Optional[int] = Field(
+        default=None,
+        description="Index of the option to select (0-based)"
+    )
+    by: Literal['value', 'text', 'index'] = Field(
+        default='value',
+        description="Selection method: 'value' (by value attribute), 'text' (by visible text), or 'index' (by position)"
+    )
+    blur_after: bool = Field(
+        default=True,
+        description="Trigger blur/change events after selection (lose focus)"
+    )
+    wait_after_select: Optional[str] = Field(
+        default=None,
+        description="Optional CSS selector to wait for after selecting"
+    )
+    wait_timeout: int = Field(
+        default=2,
+        description="Timeout for post-select wait (seconds)"
+    )
+
+    @field_validator('value', 'text', 'index')
+    @classmethod
+    def validate_selection_params(cls, v, info):
+        """Ensure at least one selection parameter is provided"""
+        if info.data.get('by') == 'value' and not info.data.get('value'):
+            raise ValueError("'value' must be provided when by='value'")
+        if info.data.get('by') == 'text' and not info.data.get('text'):
+            raise ValueError("'text' must be provided when by='text'")
+        if info.data.get('by') == 'index' and info.data.get('index') is None:
+            raise ValueError("'index' must be provided when by='index'")
+        return v
+
+
 class Evaluate(BrowserAction):
     """Execute JavaScript code in the browser context"""
     name: str = 'evaluate'
@@ -392,7 +443,7 @@ class Loop(BrowserAction):
 
 ActionList = Annotated[
     Union[
-        Navigate, Click, Fill, Evaluate, PressKey, Refresh, Back, Scroll,
+        Navigate, Click, Fill, Select, Evaluate, PressKey, Refresh, Back, Scroll,
         GetCookies, SetCookies, Wait, Authenticate,
         AwaitHuman, AwaitKeyPress, AwaitBrowserEvent,
         GetText, GetHTML, WaitForDownload, UploadFile, Screenshot, Loop, Conditional
@@ -405,6 +456,33 @@ ActionList = Annotated[
 Authenticate.model_rebuild()
 Loop.model_rebuild()
 Conditional.model_rebuild()
+
+# Map action types to classes
+ACTION_MAP = {
+    "navigate": Navigate,
+    "click": Click,
+    "fill": Fill,
+    "select": Select,
+    "evaluate": Evaluate,
+    "press_key": PressKey,
+    "refresh": Refresh,
+    "back": Back,
+    "scroll": Scroll,
+    "get_cookies": GetCookies,
+    "set_cookies": SetCookies,
+    "wait": Wait,
+    "authenticate": Authenticate,
+    "await_human": AwaitHuman,
+    "await_keypress": AwaitKeyPress,
+    "await_browser_event": AwaitBrowserEvent,
+    "loop": Loop,
+    "get_text": GetText,
+    "get_html": GetHTML,
+    "wait_for_download": WaitForDownload,
+    "upload_file": UploadFile,
+    "screenshot": Screenshot,
+    "conditional": Conditional
+} # :contentReference[oaicite:4]{index=4}
 
 @dataclass
 class ScrapingStep:
@@ -443,33 +521,7 @@ class ScrapingStep:
         action_type = data.get('action')
         action_data = {k: v for k, v in data.items() if k != 'action'}
 
-        # Map action types to classes
-        action_map = {
-            "navigate": Navigate,
-            "click": Click,
-            "fill": Fill,
-            "evaluate": Evaluate,
-            "press_key": PressKey,
-            "refresh": Refresh,
-            "back": Back,
-            "scroll": Scroll,
-            "get_cookies": GetCookies,
-            "set_cookies": SetCookies,
-            "wait": Wait,
-            "authenticate": Authenticate,
-            "await_human": AwaitHuman,
-            "await_keypress": AwaitKeyPress,
-            "await_browser_event": AwaitBrowserEvent,
-            "loop": Loop,
-            "get_text": GetText,
-            "get_html": GetHTML,
-            "wait_for_download": WaitForDownload,
-            "upload_file": UploadFile,
-            "screenshot": Screenshot,
-            "conditional": Conditional
-        } # :contentReference[oaicite:4]{index=4}
-
-        action_class = action_map.get(action_type)
+        action_class = ACTION_MAP.get(action_type)
         if not action_class:
             raise ValueError(
                 f"Unknown action type: {action_type}"
@@ -478,18 +530,9 @@ class ScrapingStep:
         action = action_class(**action_data)
         obj = cls(action=action)
         obj.description = data.get('description', action.description)
-        # if action_type == 'loop' and 'actions' in data:
-        #     # Recursively convert nested actions
-        #     obj.action.actions = [cls.from_dict(a).action for a in data['actions']]
-        # elif action_type == 'conditional':
-        #     if 'actions_if_true' in data:
-        #         obj.action.actions_if_true = [
-        #             cls.from_dict(a).action for a in data['actions_if_true']
-        #         ]
-        #     if 'actions_if_false' in data and data['actions_if_false'] is not None:
-        #         obj.action.actions_if_false = [
-        #             cls.from_dict(a).action for a in data['actions_if_false']
-        #         ]
+        if action_type == 'loop' and 'actions' in data:
+            # Recursively convert nested actions
+            obj.action.actions = [cls.from_dict(a).action for a in data['actions'] if isinstance(a, dict)]
         return obj
 
 
@@ -499,32 +542,7 @@ def create_action(action_type: str, **kwargs) -> BrowserAction:
     Factory function to create actions by type name
     Useful for LLM-generated action sequences
     """
-    action_map = {
-        "navigate": Navigate,
-        "click": Click,
-        "fill": Fill,
-        "evaluate": Evaluate,
-        "press_key": PressKey,
-        "refresh": Refresh,
-        "back": Back,
-        "scroll": Scroll,
-        "get_cookies": GetCookies,
-        "set_cookies": SetCookies,
-        "wait": Wait,
-        "authenticate": Authenticate,
-        "await_human": AwaitHuman,
-        "await_keypress": AwaitKeyPress,
-        "await_browser_event": AwaitBrowserEvent,
-        "get_text": GetText,
-        "get_html": GetHTML,
-        "wait_for_download": WaitForDownload,
-        "upload_file": UploadFile,
-        "screenshot": Screenshot,
-        "loop": Loop,
-        "conditional": Conditional
-    }
-
-    action_class = action_map.get(action_type)
+    action_class = ACTION_MAP.get(action_type)
     if not action_class:
         raise ValueError(
             f"Unknown action type: {action_type}"

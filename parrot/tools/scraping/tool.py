@@ -37,6 +37,7 @@ from .models import (
     Navigate,
     Click,
     Fill,
+    Select,
     Evaluate,
     PressKey,
     Refresh,
@@ -79,6 +80,14 @@ class WebScrapingToolArgs(BaseModel):
         default=None,
         description="Any Selenium configuration overrides (e.g., headless, mobile, browser type)"
     )
+    full_page: bool = Field(
+        default=False,
+        description="Whether to capture full page content"
+    )
+    headless: bool = Field(
+        default=True,
+        description="Whether to run the browser in headless mode"
+    )
 
 
 class WebScrapingTool(AbstractTool):
@@ -114,6 +123,7 @@ authenticate or waiting for events or human intervention actions."""
         self,
         browser: Literal['chrome', 'firefox', 'edge', 'safari', 'undetected'] = 'chrome',
         driver_type: Literal['selenium', 'playwright'] = 'selenium',
+        full_page: bool = False,
         headless: bool = True,
         mobile: bool = False,
         mobile_device: Optional[str] = None,
@@ -138,6 +148,7 @@ authenticate or waiting for events or human intervention actions."""
         self.driver = None
         self.browser = None  # For Playwright
         self.page = None     # For Playwright
+        self._full_page: bool = full_page
         self.results: List[ScrapingResult] = []
         # Allow turning overlay housekeeping on/off (default ON)
         self.overlay_housekeeping: bool = kwargs.get('overlay_housekeeping', True)
@@ -295,12 +306,12 @@ authenticate or waiting for events or human intervention actions."""
                 result = await self._extract_content(current_url, selectors)
                 if result:
                     self.results.append(result)
-            # else:
-            #     # Default: extract full page content
-            #     current_url = await self._get_current_url()
-            #     result = await self._extract_full_content(current_url)
-            #     if result:
-            #         self.results.append(result)
+            elif self._full_page:
+                # Default: extract full page content
+                current_url = await self._get_current_url()
+                result = await self._extract_full_content(current_url)
+                if result:
+                    self.results.append(result)
 
         except Exception as e:
             self.logger.error(f"Scraping workflow failed: {str(e)}")
@@ -334,6 +345,8 @@ authenticate or waiting for events or human intervention actions."""
                 )
             elif action_type == 'fill':
                 result = await self._fill(action)
+            elif action_type == 'select':
+                result = await self._select(action)
             elif action_type == 'evaluate':
                 result = await self._evaluate_js(action)
             elif action_type == 'await_human':
@@ -385,6 +398,119 @@ authenticate or waiting for events or human intervention actions."""
         except Exception as e:
             self.logger.error(f"Step execution failed: {step.action} - {str(e)}")
             return False
+
+    async def _select_option(
+        self,
+        selector: str,
+        value: Optional[str] = None,
+        text: Optional[str] = None,
+        index: Optional[int] = None,
+        by: str = 'value',
+        blur_after: bool = True,
+        wait_after_select: Optional[str] = None,
+        wait_timeout: int = 2
+    ) -> bool:
+        """Select an option from a dropdown/select element"""
+
+        if self.driver_type == 'selenium':
+            from selenium.webdriver.support.ui import Select as SeleniumSelect
+
+            loop = asyncio.get_running_loop()
+
+            def select_sync():
+                # Wait for select element to be present
+                element = WebDriverWait(
+                    self.driver,
+                    self.default_timeout,
+                    poll_frequency=0.25
+                ).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                )
+
+                # Create Select object
+                select = SeleniumSelect(element)
+
+                # Perform selection based on method
+                if by == 'value':
+                    select.select_by_value(value)
+                elif by == 'text':
+                    select.select_by_visible_text(text)
+                elif by == 'index':
+                    select.select_by_index(index)
+
+                # Trigger blur/change events if requested
+                if blur_after:
+                    # Trigger change event
+                    self.driver.execute_script(
+                        "arguments[0].dispatchEvent(new Event('change', { bubbles: true }));",
+                        element
+                    )
+                    # Trigger blur event
+                    self.driver.execute_script(
+                        "arguments[0].blur();",
+                        element
+                    )
+
+                # Wait for post-select element if specified
+                if wait_after_select:
+                    try:
+                        WebDriverWait(self.driver, wait_timeout).until(
+                            EC.presence_of_element_located((By.CSS_SELECTOR, wait_after_select))
+                        )
+                        self.logger.debug(f"Post-select element found: {wait_after_select}")
+                    except TimeoutException:
+                        self.logger.warning(
+                            f"Post-select wait timed out: {wait_after_select}"
+                        )
+
+            await loop.run_in_executor(None, select_sync)
+            return True
+
+        else:  # Playwright
+            # Playwright has built-in select support
+            if by == 'value':
+                await self.page.select_option(selector, value=value)
+            elif by == 'text':
+                await self.page.select_option(selector, label=text)
+            elif by == 'index':
+                await self.page.select_option(selector, index=index)
+
+            # Trigger blur/change events if requested
+            if blur_after:
+                await self.page.evaluate(f"""
+                    const select = document.querySelector('{selector}');
+                    select.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                    select.blur();
+                """)
+
+            # Wait for post-select element if specified
+            if wait_after_select:
+                try:
+                    await self.page.wait_for_selector(
+                        wait_after_select,
+                        timeout=wait_timeout * 1000
+                    )
+                    self.logger.debug(f"Post-select element found: {wait_after_select}")
+                except Exception:
+                    self.logger.warning(
+                        f"Post-select wait timed out: {wait_after_select}"
+                    )
+
+            return True
+
+
+    async def _select(self, action: Select):
+        """Handle select action"""
+        return await self._select_option(
+            selector=action.selector,
+            value=action.value,
+            text=action.text,
+            index=action.index,
+            by=action.by,
+            blur_after=action.blur_after,
+            wait_after_select=action.wait_after_select,
+            wait_timeout=action.wait_timeout
+        )
 
     async def _evaluate_js(self, action: Evaluate) -> Any:
         """Handle Evaluate action"""
