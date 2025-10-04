@@ -41,11 +41,34 @@ class OutputFormatter:
 
     def __init__(self, mode: OutputMode = OutputMode.DEFAULT):
         self.mode = mode
-        self.console = Console() if RICH_AVAILABLE else None
+        self._is_ipython = self._detect_ipython()
+
+        # Configure Rich Console for the environment
+        if RICH_AVAILABLE:
+            if self._is_ipython:
+                # Use Jupyter-friendly settings
+                self.console = Console(
+                    force_jupyter=True,
+                    force_terminal=False,
+                    width=100  # Fixed width for Jupyter
+                )
+            else:
+                self.console = Console()
+        else:
+            self.console = None
 
         # Initialize Panel if available
         if PANEL_AVAILABLE and mode == OutputMode.HTML:
             pn.extension()
+
+    def _detect_ipython(self) -> bool:
+        """Detect if running in IPython/Jupyter environment."""
+        try:
+            # Check if IPython is available and active
+            from IPython import get_ipython
+            return get_ipython() is not None
+        except (ImportError, NameError):
+            return False
 
     def format(self, response: Any, **kwargs) -> Any:
         """
@@ -113,74 +136,164 @@ class OutputFormatter:
         show_context = kwargs.get('show_context', False)
         show_tools = kwargs.get('show_tools', False)
 
-        # Main response content
+        try:
+            # Main response content
+            content = self._get_content(response)
+            if content:
+                # Try to render as markdown if it looks like markdown
+                if any(marker in content for marker in ['#', '```', '*', '-', '>']):
+                    md = Markdown(content)
+                    self.console.print(RichPanel(md, title="🤖 Response", border_style="blue"))
+                else:
+                    self.console.print(RichPanel(content, title="🤖 Response", border_style="blue"))
+
+            # Show tool calls if requested and available
+            if show_tools and hasattr(response, 'tool_calls') and response.tool_calls:
+                tools_table = self._create_tools_table(response.tool_calls)
+                self.console.print(tools_table)
+
+            # Show metadata if requested
+            if show_metadata:
+                metadata_table = Table(title="📊 Metadata", show_header=True, header_style="bold magenta")
+                metadata_table.add_column("Key", style="cyan", width=20)
+                metadata_table.add_column("Value", style="green")
+
+                if hasattr(response, 'model'):
+                    metadata_table.add_row("Model", str(response.model))
+                if hasattr(response, 'provider'):
+                    metadata_table.add_row("Provider", str(response.provider))
+                if hasattr(response, 'session_id') and response.session_id:
+                    metadata_table.add_row("Session ID", str(response.session_id)[:16] + "...")
+                if hasattr(response, 'turn_id') and response.turn_id:
+                    metadata_table.add_row("Turn ID", str(response.turn_id)[:16] + "...")
+                if hasattr(response, 'usage') and response.usage:
+                    usage = response.usage
+                    if hasattr(usage, 'total_tokens'):
+                        metadata_table.add_row("Total Tokens", str(usage.total_tokens))
+                    if hasattr(usage, 'prompt_tokens'):
+                        metadata_table.add_row("Prompt Tokens", str(usage.prompt_tokens))
+                    if hasattr(usage, 'completion_tokens'):
+                        metadata_table.add_row("Completion Tokens", str(usage.completion_tokens))
+                if hasattr(response, 'response_time') and response.response_time:
+                    metadata_table.add_row("Response Time", f"{response.response_time:.2f}s")
+
+                self.console.print(metadata_table)
+
+            # Show context information
+            if show_context:
+                context_table = Table(title="📚 Context Info", show_header=True, header_style="bold yellow")
+                context_table.add_column("Type", style="cyan", width=20)
+                context_table.add_column("Details", style="green")
+
+                if hasattr(response, 'used_vector_context'):
+                    status = "✓ Used" if response.used_vector_context else "✗ Not used"
+                    context_table.add_row("Vector Context", status)
+                    if response.used_vector_context:
+                        context_table.add_row("  - Length", str(response.vector_context_length))
+                        context_table.add_row("  - Search Type", str(response.search_type or "N/A"))
+                        context_table.add_row("  - Results", str(response.search_results_count))
+
+                if hasattr(response, 'used_conversation_history'):
+                    status = "✓ Used" if response.used_conversation_history else "✗ Not used"
+                    context_table.add_row("Conversation History", status)
+                    if response.used_conversation_history:
+                        context_table.add_row("  - Length", str(response.conversation_context_length))
+
+                self.console.print(context_table)
+
+            # Show sources if available and requested
+            if show_sources and hasattr(response, 'source_documents') and response.source_documents:
+                sources_panel = self._create_sources_panel(response.source_documents)
+                self.console.print(sources_panel)
+
+        except BlockingIOError:
+            # Handle IPython/Jupyter async blocking issues
+            self._fallback_print(response, show_metadata, show_sources, show_context, show_tools)
+        except Exception as e:
+            # Fallback to simple print on any Rich error
+            print(f"Warning: Rich formatting failed ({e}), using fallback display")
+            self._fallback_print(response, show_metadata, show_sources, show_context, show_tools)
+
+    def _fallback_print(self, response: Any, show_metadata: bool, show_sources: bool,
+                       show_context: bool, show_tools: bool) -> None:
+        """
+        Fallback print method when Rich fails (e.g., in IPython async contexts).
+        Uses IPython's display system if available, otherwise plain print.
+        """
         content = self._get_content(response)
-        if content:
-            # Try to render as markdown if it looks like markdown
-            if any(marker in content for marker in ['#', '```', '*', '-', '>']):
-                md = Markdown(content)
-                self.console.print(RichPanel(md, title="🤖 Response", border_style="blue"))
-            else:
-                self.console.print(RichPanel(content, title="🤖 Response", border_style="blue"))
 
-        # Show tool calls if requested and available
-        if show_tools and hasattr(response, 'tool_calls') and response.tool_calls:
-            tools_table = self._create_tools_table(response.tool_calls)
-            self.console.print(tools_table)
+        if self._is_ipython:
+            try:
+                from IPython.display import display, Markdown as IPyMarkdown, HTML
 
-        # Show metadata if requested
+                # Display content
+                if any(marker in content for marker in ['#', '```', '*', '-', '>']):
+                    display(IPyMarkdown(content))
+                else:
+                    print(content)
+
+                # Display metadata
+                if show_metadata:
+                    metadata_lines = ["**Metadata:**"]
+                    if hasattr(response, 'model'):
+                        metadata_lines.append(f"- Model: {response.model}")
+                    if hasattr(response, 'provider'):
+                        metadata_lines.append(f"- Provider: {response.provider}")
+                    if hasattr(response, 'usage') and response.usage:
+                        if hasattr(response.usage, 'total_tokens'):
+                            metadata_lines.append(f"- Total Tokens: {response.usage.total_tokens}")
+                    display(IPyMarkdown("\n".join(metadata_lines)))
+
+                # Display sources
+                if show_sources and hasattr(response, 'source_documents') and response.source_documents:
+                    sources_lines = ["**Sources:**"]
+                    for idx, source in enumerate(response.source_documents, 1):
+                        source_name = getattr(source, 'source', 'Unknown') if hasattr(source, 'source') else source.get('source', 'Unknown')
+                        score = getattr(source, 'score', 'N/A') if hasattr(source, 'score') else source.get('score', 'N/A')
+                        score_str = f"{score:.4f}" if isinstance(score, float) else str(score)
+                        sources_lines.append(f"{idx}. {source_name} (Score: {score_str})")
+                    display(IPyMarkdown("\n".join(sources_lines)))
+
+            except Exception:
+                # If IPython display fails, fall back to plain print
+                self._plain_print(response, show_metadata, show_sources, show_context, show_tools)
+        else:
+            # Not in IPython, use plain print
+            self._plain_print(response, show_metadata, show_sources, show_context, show_tools)
+
+    def _plain_print(self, response: Any, show_metadata: bool, show_sources: bool,
+                    show_context: bool, show_tools: bool) -> None:
+        """Plain text output without any formatting libraries."""
+        content = self._get_content(response)
+
+        print("\n" + "="*80)
+        print("RESPONSE")
+        print("="*80)
+        print(content)
+
         if show_metadata:
-            metadata_table = Table(title="📊 Metadata", show_header=True, header_style="bold magenta")
-            metadata_table.add_column("Key", style="cyan", width=20)
-            metadata_table.add_column("Value", style="green")
-
+            print("\n" + "-"*80)
+            print("METADATA")
+            print("-"*80)
             if hasattr(response, 'model'):
-                metadata_table.add_row("Model", str(response.model))
+                print(f"Model: {response.model}")
             if hasattr(response, 'provider'):
-                metadata_table.add_row("Provider", str(response.provider))
-            if hasattr(response, 'session_id') and response.session_id:
-                metadata_table.add_row("Session ID", str(response.session_id)[:16] + "...")
-            if hasattr(response, 'turn_id') and response.turn_id:
-                metadata_table.add_row("Turn ID", str(response.turn_id)[:16] + "...")
+                print(f"Provider: {response.provider}")
             if hasattr(response, 'usage') and response.usage:
-                usage = response.usage
-                if hasattr(usage, 'total_tokens'):
-                    metadata_table.add_row("Total Tokens", str(usage.total_tokens))
-                if hasattr(usage, 'prompt_tokens'):
-                    metadata_table.add_row("Prompt Tokens", str(usage.prompt_tokens))
-                if hasattr(usage, 'completion_tokens'):
-                    metadata_table.add_row("Completion Tokens", str(usage.completion_tokens))
-            if hasattr(response, 'response_time') and response.response_time:
-                metadata_table.add_row("Response Time", f"{response.response_time:.2f}s")
+                if hasattr(response.usage, 'total_tokens'):
+                    print(f"Total Tokens: {response.usage.total_tokens}")
 
-            self.console.print(metadata_table)
-
-        # Show context information
-        if show_context:
-            context_table = Table(title="📚 Context Info", show_header=True, header_style="bold yellow")
-            context_table.add_column("Type", style="cyan", width=20)
-            context_table.add_column("Details", style="green")
-
-            if hasattr(response, 'used_vector_context'):
-                status = "✓ Used" if response.used_vector_context else "✗ Not used"
-                context_table.add_row("Vector Context", status)
-                if response.used_vector_context:
-                    context_table.add_row("  - Length", str(response.vector_context_length))
-                    context_table.add_row("  - Search Type", str(response.search_type or "N/A"))
-                    context_table.add_row("  - Results", str(response.search_results_count))
-
-            if hasattr(response, 'used_conversation_history'):
-                status = "✓ Used" if response.used_conversation_history else "✗ Not used"
-                context_table.add_row("Conversation History", status)
-                if response.used_conversation_history:
-                    context_table.add_row("  - Length", str(response.conversation_context_length))
-
-            self.console.print(context_table)
-
-        # Show sources if available and requested
         if show_sources and hasattr(response, 'source_documents') and response.source_documents:
-            sources_panel = self._create_sources_panel(response.source_documents)
-            self.console.print(sources_panel)
+            print("\n" + "-"*80)
+            print("SOURCES")
+            print("-"*80)
+            for idx, source in enumerate(response.source_documents, 1):
+                source_name = getattr(source, 'source', 'Unknown') if hasattr(source, 'source') else source.get('source', 'Unknown')
+                score = getattr(source, 'score', 'N/A') if hasattr(source, 'score') else source.get('score', 'N/A')
+                score_str = f"{score:.4f}" if isinstance(score, float) else str(score)
+                print(f"{idx}. {source_name} (Score: {score_str})")
+
+        print("="*80 + "\n")
 
     def _create_tools_table(self, tool_calls: List[Any]) -> Table:
         """Create a Rich table for tool calls."""
