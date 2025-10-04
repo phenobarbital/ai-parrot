@@ -5,7 +5,8 @@ from typing import List, Dict, Any, Optional, Union
 import httpx
 from pydantic import BaseModel, Field
 from navconfig import config
-from .toolkit import AbstractToolkit, tool_schema
+from .toolkit import AbstractToolkit
+from .decorators import tool_schema
 
 
 # Input schemas for different operations

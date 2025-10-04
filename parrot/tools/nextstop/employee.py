@@ -4,7 +4,7 @@ from datetime import datetime, date, time
 import json
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from ...exceptions import ToolError  # pylint: disable=E0611
-from ..toolkit import tool_schema
+from ..decorators import tool_schema
 from .base import BaseNextStop
 
 def today_date() -> date:

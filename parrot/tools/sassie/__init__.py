@@ -6,7 +6,7 @@ from typing_extensions import Annotated
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from datamodel.parsers.json import json_encoder  # noqa  pylint: disable=E0611
 from ...exceptions import ToolError  # pylint: disable=E0611
-from ..toolkit import tool_schema
+from ..decorators import tool_schema
 from ..nextstop.base import BaseNextStop
 
 
