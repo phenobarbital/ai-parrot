@@ -5,6 +5,8 @@ Provides a flexible HTTP interface for talking with agents/bots using the ask() 
 with support for multiple output modes and MCP server integration.
 """
 from typing import Dict, Any
+import tempfile
+import os
 import json
 from aiohttp import web
 from navigator_auth.decorators import is_authenticated, user_session
@@ -332,13 +334,15 @@ class AgentTalk(BaseView):
                 )
 
             # Extract agent name
-            agent_name = data.pop('agent_name', None) or qs.get('agent_name')
+            agent_name = self.request.match_info.get('agent_id', None)
+            if not agent_name:
+                agent_name = data.pop('agent_name', None) or qs.get('agent_name')
             if not agent_name:
                 return self.error(
                     "Missing Agent Name",
                     status=400
                 )
-            query = data.get('query')
+            query = data.pop('query')
             if not query:
                 return self.json_response(
                     {"error": "query is required"},
@@ -361,13 +365,13 @@ class AgentTalk(BaseView):
                 )
 
             # Add MCP servers if provided
-            mcp_servers = data.get('mcp_servers', [])
+            mcp_servers = data.pop('mcp_servers', [])
             if mcp_servers and isinstance(mcp_servers, list):
                 await self._add_mcp_servers(agent, mcp_servers)
 
             # TODO: Get session information
-            session_id = data.get('session_id')
-            user_id = data.get('user_id')
+            session_id = data.pop('session_id', None)
+            user_id = data.pop('user_id', None)
 
             # Try to get from request session if not provided
             try:
@@ -380,9 +384,10 @@ class AgentTalk(BaseView):
                 pass
 
             # Determine output mode
-            output_mode = self._get_output_mode(self.request)
+            # output_mode = self._get_output_mode(self.request)
             # Determine output format
             output_format = self._get_output_format(data, qs)
+            output_mode = self._format_to_output_mode(output_format)
 
             # Extract parameters for ask()
             search_type = data.pop('search_type', 'similarity')
@@ -398,7 +403,7 @@ class AgentTalk(BaseView):
                     pass  # Keep the detected mode
 
             # Prepare ask() parameters
-            format_kwargs = data.get('format_kwargs', {})
+            format_kwargs = data.pop('format_kwargs', {})
 
             async with agent.retrieval(self.request, app=app) as bot:
                 response: AIMessage = await bot.ask(
@@ -507,20 +512,24 @@ class AgentTalk(BaseView):
             })
 
         elif output_format == 'html':
-            # Return HTML response
-            # Use OutputFormatter to create HTML
-            formatter = OutputFormatter(mode=OutputMode.HTML)
-            html_content = formatter.format(response, **format_kwargs)
+            interactive = format_kwargs.get('interactive', False)
+            if interactive:
+                return self._serve_panel_dashboard(response)
 
-            # If format() returns a Panel component, convert to HTML
-            if hasattr(html_content, '_repr_mimebundle_'):
-                # It's a Panel component
-                html_str = html_content._repr_html_()
-            elif isinstance(html_content, str):
+            # Return HTML response
+            html_content = response.content
+            if isinstance(html_content, str):
                 html_str = html_content
+            elif hasattr(html_content, '_repr_html_'):
+                # Panel/IPython displayable object (for HTML mode)
+                html_str = html_content._repr_html_()
+            elif hasattr(html_content, '__str__'):
+                # Other objects with string representation
+                html_str = str(html_content)
             else:
                 html_str = str(html_content)
 
+            print('HTML STR ::> ', html_str)
             # Wrap in complete HTML document
             full_html = self._create_html_document(html_str, response)
 
@@ -533,6 +542,10 @@ class AgentTalk(BaseView):
         else:  # markdown or text
             # Return plain text/markdown response
             content = response.content
+
+            # Ensure it's a string
+            if not isinstance(content, str):
+                content = str(content)
 
             # Optionally append sources
             if format_kwargs.get('include_sources', False) and hasattr(response, 'sources'):
@@ -557,7 +570,11 @@ class AgentTalk(BaseView):
         Returns:
             Complete HTML document string
         """
-        title = f"Agent Response - {getattr(response, 'model', 'AI-Parrot')}"
+        if content.startswith("<!DOCTYPE"):
+            # If content is already a complete HTML document, return it as-is
+            return content
+
+        title = f"Agent Response"
 
         html_template = f"""<!DOCTYPE html>
 <html lang="en">
@@ -628,3 +645,72 @@ class AgentTalk(BaseView):
 </html>"""
 
         return html_template
+
+    def _serve_panel_dashboard(self, response: AIMessage) -> web.Response:
+        """
+        Serve an interactive Panel dashboard.
+
+        This converts the Panel object to a standalone HTML application
+        with embedded JavaScript for interactivity.
+
+        Args:
+            response: AIMessage with Panel object in .content
+
+        Returns:
+            web.Response with interactive HTML
+        """
+        try:
+            panel_obj = response.content
+            # Create temporary file for the Panel HTML
+            with tempfile.NamedTemporaryFile(
+                mode='w',
+                suffix='.html',
+                delete=False
+            ) as tmp:
+                tmp_path = tmp.name
+
+            try:
+                # Save Panel to HTML with all resources embedded
+                panel_obj.save(
+                    tmp_path,
+                    embed=True,  # Embed all JS/CSS resources
+                    title=f"AI Agent Response - {response.session_id[:8] if response.session_id else 'interactive'}",
+                    resources='inline'  # Inline all resources
+                )
+
+                # Read the HTML content
+                with open(tmp_path, 'r', encoding='utf-8') as f:
+                    html_content = f.read()
+
+                # Return as HTML response
+                return web.Response(
+                    text=html_content,
+                    content_type='text/html',
+                    charset='utf-8'
+                )
+
+            finally:
+                # Clean up temporary file
+                if os.path.exists(tmp_path):
+                    try:
+                        os.unlink(tmp_path)
+                    except Exception as e:
+                        self.logger.warning(f"Failed to delete temp file {tmp_path}: {e}")
+
+        except ImportError:
+            self.logger.error(
+                "Panel library not available for interactive dashboards"
+            )
+            # Fallback to static HTML
+            return web.Response(
+                text=str(response.content),
+                content_type='text/html',
+                charset='utf-8'
+            )
+        except Exception as e:
+            self.logger.error(f"Error serving Panel dashboard: {e}", exc_info=True)
+            # Fallback to error response
+            return self.error(
+                f"Error rendering interactive dashboard: {e}",
+                status=500
+            )
