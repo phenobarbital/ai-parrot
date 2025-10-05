@@ -2448,14 +2448,15 @@ Use the following information about user's data to guide your responses:
                 if output_mode != OutputMode.DEFAULT:
                     formatter = OutputFormatter(mode=output_mode)
                     format_kwargs = format_kwargs or {}
-                    if formatter.has_visualizations(response):
-                        # Will use smart renderer
-                        return formatter.format(
-                            response,
-                            **format_kwargs
-                        )
-                    return formatter.format(response, **format_kwargs)
-
+                    # Check if interactive mode is requested
+                    interactive = format_kwargs.get('interactive', False)
+                    # For HTML mode with interactive=False, ensure we get HTML string
+                    if output_mode == OutputMode.HTML and not interactive:
+                        format_kwargs.setdefault('return_html', True)
+                    response.content = formatter.format(response, **format_kwargs)
+                    # Store metadata about formatting
+                    if not hasattr(response, 'output_format'):
+                        response.output_format = output_mode
                 return response
 
         except asyncio.CancelledError:
