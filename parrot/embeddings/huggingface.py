@@ -1,8 +1,6 @@
-from typing import Union, List, Dict, Any
+from typing import List, Any
 from enum import Enum
 import numpy as np
-import torch
-from sentence_transformers import SentenceTransformer
 from .base import EmbeddingModel
 from ..conf import HUGGINGFACE_EMBEDDING_CACHE_DIR
 
@@ -35,7 +33,7 @@ class SentenceTransformerModel(EmbeddingModel):
         )
         self._dimension = self.model.get_sentence_embedding_dimension()
 
-    def _create_embedding(self, model_name: str = None, **kwargs) -> SentenceTransformer:
+    def _create_embedding(self, model_name: str = None, **kwargs) -> Any:
         """
         Creates and returns a SentenceTransformer model instance.
 
@@ -45,6 +43,8 @@ class SentenceTransformerModel(EmbeddingModel):
         Returns:
             An instance of SentenceTransformer.
         """
+        from sentence_transformers import SentenceTransformer
+        import torch
         device, _, _ = self._get_device()
         model_name = model_name or self.model_name
         self.logger.info(

@@ -1,25 +1,36 @@
-from typing import List
-from ..mcp import MCPEnabledMixin, MCPServerConfig
+"""
+Simplified MCPAgent for backward compatibility.
+
+Since BasicAgent now has integrated MCP support, MCPAgent is now just
+an alias to BasicAgent. This file maintains backward compatibility for
+existing code that uses MCPAgent.
+"""
 from .agent import BasicAgent
 
 
-class MCPAgent(MCPEnabledMixin, BasicAgent):
-    """An agent that combines MCP capabilities with basic agent functionality."""
+class MCPAgent(BasicAgent):
+    """
+    An agent with MCP (Model Context Protocol) capabilities.
+
+    DEPRECATED: This class is now just an alias to BasicAgent.
+    All agents (BasicAgent and subclasses) now have MCP support built-in.
+
+    For new code, use BasicAgent directly:
+        agent = BasicAgent(name="my_agent")
+        await agent.add_http_mcp_server(...)
+
+    This class is maintained for backward compatibility only.
+    """
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+        """
+        Initialize MCPAgent.
 
-    async def setup_mcp_servers(self, configurations: List[MCPServerConfig]):
-        """Setup multiple MCP servers during initialization."""
-        for config in configurations:
-            try:
-                tools = await self.add_mcp_server(
-                    config
-                )
-                self.logger.info(
-                    f"Added MCP server '{config.name}' with tools: {tools}"
-                )
-            except Exception as e:
-                self.logger.error(
-                    f"Failed to add MCP server '{config.name}': {e}"
-                )
+        Note: This is now identical to BasicAgent initialization.
+        All MCP functionality is available in BasicAgent.
+        """
+        super().__init__(*args, **kwargs)
+        self.logger.debug(
+            f"MCPAgent '{self.name}' initialized. "
+            "Note: MCPAgent is deprecated, use BasicAgent instead."
+        )

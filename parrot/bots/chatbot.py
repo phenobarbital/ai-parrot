@@ -18,7 +18,6 @@ from ..conf import (
 )
 from ..handlers.models import BotModel
 from .abstract import AbstractBot
-from ..stores.kb import KnowledgeBaseStore
 from ..tools import (
     AbstractTool,
 )
@@ -330,6 +329,7 @@ class Chatbot(AbstractBot):
         self.use_kb = self._from_db(bot, 'use_kb', default=False)
         self._kb = self._from_db(bot, 'kb', default=[])
         if self.use_kb:
+            from ..stores.kb.store import KnowledgeBaseStore
             self.kb_store = KnowledgeBaseStore(
                 embedding_model=KB_DEFAULT_MODEL,
                 dimension=384

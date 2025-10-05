@@ -4058,3 +4058,6 @@ Text:
         self.logger.info(f"Saved {len(video_bytes)} bytes to {video_path}")
 
         return video_path
+
+
+GoogleClient = GoogleGenAIClient  # Alias for easier imports

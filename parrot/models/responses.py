@@ -187,6 +187,10 @@ class AIMessage(BaseModel):
         default_factory=dict,
         description="Additional metadata associated with the response"
     )
+    output_format: Optional[str] = Field(
+        default=None,
+        description="Format of the output (markdown, html, json, etc.)"
+    )
 
     class Config:
         """Pydantic configuration for AIMessage."""
@@ -194,7 +198,7 @@ class AIMessage(BaseModel):
         arbitrary_types_allowed = True
 
     @property
-    def content(self) -> str:
+    def content(self) -> Any:
         """
         Get content as a string. This is an alias for to_text property
         that provides a more intuitive API and compatibility with standard
@@ -203,10 +207,10 @@ class AIMessage(BaseModel):
         Returns:
             str: The text representation of the output
         """
-        return self.to_text
+        return self.output
 
     @content.setter
-    def content(self, value: str) -> None:
+    def content(self, value: Any) -> None:
         """
         Set content by updating the output field.
 
