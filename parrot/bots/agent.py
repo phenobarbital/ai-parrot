@@ -1,9 +1,11 @@
 import textwrap
-from typing import Dict, List, Tuple, Any, Optional
+from typing import Dict, List, Tuple, Any, Optional, Union
 from datetime import datetime
+from pathlib import Path
 import aiofiles
 from navconfig import BASE_DIR
 from navconfig.logging import logging
+from ..models.responses import AIMessage, AgentResponse
 from ..clients.google import GoogleGenAIClient
 from .chatbot import Chatbot
 from .prompts import AGENT_PROMPT
@@ -15,11 +17,19 @@ from ..models.google import (
     ConversationalScriptConfig,
     FictionalSpeaker
 )
-from ..models.responses import AIMessage, AgentResponse
+# MCP Integration
+from ..mcp import (
+    MCPEnabledMixin,
+    MCPServerConfig,
+    MCPToolManager,
+    create_http_mcp_server,
+    create_local_mcp_server,
+    create_api_key_mcp_server
+)
 from ..conf import STATIC_DIR
 
 
-class BasicAgent(Chatbot):
+class BasicAgent(MCPEnabledMixin, Chatbot):
     """Represents an Agent in Navigator.
 
         Agents are chatbots that can access to Tools and execute commands.
@@ -27,6 +37,12 @@ class BasicAgent(Chatbot):
         and an optional language model (llm).
 
         These agents are designed to interact with structured and unstructured data sources.
+
+        Features:
+        - Built-in MCP server support (no separate mixin needed)
+        - Can connect to HTTP, OAuth, API-key authenticated, and local MCP servers
+        - Automatic tool registration from MCP servers
+        - Compatible with all existing agent functionality
     """
     _agent_response = AgentResponse
     speech_context: str = ""
@@ -89,6 +105,10 @@ class BasicAgent(Chatbot):
         # install agent-specific tools:
         self.tools = self.agent_tools()
         self.tool_manager.register_tools(self.tools)
+        # Initialize MCP support
+        self.mcp_manager = MCPToolManager(
+            self.tool_manager
+        )
 
     def _get_default_tools(self, tools: list) -> List[AbstractTool]:
         """Return Agent-specific tools."""
@@ -110,6 +130,35 @@ class BasicAgent(Chatbot):
     def set_response(self, response: AgentResponse):
         """Set the response for the agent."""
         self._agent_response = response
+
+    async def setup_mcp_servers(self, configurations: List[MCPServerConfig]) -> None:
+        """
+        Setup multiple MCP servers during initialization.
+
+        This is useful for configuring an agent with multiple MCP servers
+        at once, typically during agent creation or from configuration files.
+
+        Args:
+            configurations: List of MCPServerConfig objects
+
+        Example:
+            >>> configs = [
+            ...     create_http_mcp_server("weather", "https://api.weather.com/mcp"),
+            ...     create_local_mcp_server("files", "./mcp_servers/files.py")
+            ... ]
+            >>> await agent.setup_mcp_servers(configs)
+        """
+        for config in configurations:
+            try:
+                tools = await self.add_mcp_server(config)
+                self.logger.info(
+                    f"Added MCP server '{config.name}' with tools: {tools}"
+                )
+            except Exception as e:
+                self.logger.error(
+                    f"Failed to add MCP server '{config.name}': {e}",
+                    exc_info=True
+                )
 
     def _create_filename(self, prefix: str = 'report', extension: str = 'pdf') -> str:
         """Create a unique filename for the report."""
@@ -471,6 +520,239 @@ class BasicAgent(Chatbot):
             raise RuntimeError(
                 f"Failed to generate speech: {e}"
             )
+
+    # =================================================================
+    # MCP Server Management Methods
+    # =================================================================
+
+    async def add_mcp_server(self, config: MCPServerConfig) -> List[str]:
+        """
+        Add an MCP server and register its tools.
+
+        Args:
+            config: MCPServerConfig with connection details
+
+        Returns:
+            List of registered tool names
+
+        Example:
+            >>> config = MCPServerConfig(
+            ...     name="weather_api",
+            ...     url="https://api.example.com/mcp",
+            ...     auth_type="api_key",
+            ...     auth_config={"api_key": "xxx"}
+            ... )
+            >>> tools = await agent.add_mcp_server(config)
+        """
+        return await self.mcp_manager.add_mcp_server(config)
+
+    async def add_mcp_server_url(
+        self,
+        name: str,
+        url: str,
+        auth_type: Optional[str] = None,
+        auth_config: Optional[Dict[str, Any]] = None,
+        headers: Optional[Dict[str, str]] = None,
+        allowed_tools: Optional[List[str]] = None,
+        blocked_tools: Optional[List[str]] = None,
+        **kwargs
+    ) -> List[str]:
+        """
+        Convenience method to add a public URL-based MCP server.
+
+        This is a simplified interface for adding HTTP MCP servers
+        without manually creating MCPServerConfig objects.
+
+        Args:
+            name: Unique name for the MCP server
+            url: Base URL of the MCP server
+            auth_type: Optional authentication type ('api_key', 'bearer', 'oauth', 'basic')
+            auth_config: Authentication configuration dict
+            headers: Additional HTTP headers
+            allowed_tools: Whitelist of tool names to register
+            blocked_tools: Blacklist of tool names to skip
+            **kwargs: Additional MCPServerConfig parameters
+
+        Returns:
+            List of registered tool names
+
+        Examples:
+            >>> # Public server with no auth
+            >>> tools = await agent.add_mcp_server_url(
+            ...     "public_api",
+            ...     "https://api.example.com/mcp"
+            ... )
+
+            >>> # API key authenticated server
+            >>> tools = await agent.add_mcp_server_url(
+            ...     "weather",
+            ...     "https://weather.example.com/mcp",
+            ...     auth_type="api_key",
+            ...     auth_config={"api_key": "your-key-here"}
+            ... )
+
+            >>> # Server with custom headers and tool filtering
+            >>> tools = await agent.add_mcp_server_url(
+            ...     "finance",
+            ...     "https://finance.example.com/mcp",
+            ...     headers={"User-Agent": "AI-Parrot/1.0"},
+            ...     allowed_tools=["get_stock_price", "get_market_data"]
+            ... )
+        """
+        config = create_http_mcp_server(
+            name=name,
+            url=url,
+            auth_type=auth_type,
+            auth_config=auth_config,
+            headers=headers,
+            **kwargs
+        )
+
+        # Apply tool filtering if specified
+        if allowed_tools:
+            config.allowed_tools = allowed_tools
+        if blocked_tools:
+            config.blocked_tools = blocked_tools
+
+        return await self.add_mcp_server(config)
+
+    async def add_local_mcp_server(
+        self,
+        name: str,
+        script_path: Union[str, Path],
+        interpreter: str = "python",
+        **kwargs
+    ) -> List[str]:
+        """
+        Add a local stdio MCP server.
+
+        Args:
+            name: Unique name for the MCP server
+            script_path: Path to the MCP server script
+            interpreter: Interpreter to use (default: "python")
+            **kwargs: Additional MCPServerConfig parameters
+
+        Returns:
+            List of registered tool names
+
+        Example:
+            >>> tools = await agent.add_local_mcp_server(
+            ...     "local_tools",
+            ...     "/path/to/mcp_server.py"
+            ... )
+        """
+        config = create_local_mcp_server(name, script_path, interpreter, **kwargs)
+        return await self.add_mcp_server(config)
+
+    async def add_http_mcp_server(
+        self,
+        name: str,
+        url: str,
+        auth_type: Optional[str] = None,
+        auth_config: Optional[Dict[str, Any]] = None,
+        headers: Optional[Dict[str, str]] = None,
+        **kwargs
+    ) -> List[str]:
+        """
+        Add an HTTP MCP server with optional authentication.
+
+        This is an alias for add_mcp_server_url for backward compatibility.
+
+        Args:
+            name: Unique name for the MCP server
+            url: Base URL of the MCP server
+            auth_type: Optional authentication type
+            auth_config: Authentication configuration
+            headers: Additional HTTP headers
+            **kwargs: Additional MCPServerConfig parameters
+
+        Returns:
+            List of registered tool names
+        """
+        config = create_http_mcp_server(
+            name, url, auth_type, auth_config, headers, **kwargs
+        )
+        return await self.add_mcp_server(config)
+
+    async def add_api_key_mcp_server(
+        self,
+        name: str,
+        url: str,
+        api_key: str,
+        header_name: str = "X-API-Key",
+        **kwargs
+    ) -> List[str]:
+        """
+        Add an API-key authenticated MCP server.
+
+        Args:
+            name: Unique name for the MCP server
+            url: Base URL of the MCP server
+            api_key: API key for authentication
+            header_name: Header name for the API key (default: "X-API-Key")
+            **kwargs: Additional MCPServerConfig parameters
+
+        Returns:
+            List of registered tool names
+
+        Example:
+            >>> tools = await agent.add_api_key_mcp_server(
+            ...     "weather_api",
+            ...     "https://api.weather.com/mcp",
+            ...     api_key="your-api-key",
+            ...     header_name="Authorization"
+            ... )
+        """
+        config = create_api_key_mcp_server(
+            name=name,
+            url=url,
+            api_key=api_key,
+            header_name=header_name,
+            **kwargs
+        )
+        return await self.add_mcp_server(config)
+
+    async def remove_mcp_server(self, server_name: str):
+        """
+        Remove an MCP server and unregister its tools.
+
+        Args:
+            server_name: Name of the MCP server to remove
+        """
+        await self.mcp_manager.remove_mcp_server(server_name)
+        self.logger.info(f"Removed MCP server: {server_name}")
+
+    def list_mcp_servers(self) -> List[str]:
+        """
+        List all connected MCP servers.
+
+        Returns:
+            List of MCP server names
+        """
+        return self.mcp_manager.list_mcp_servers()
+
+    def get_mcp_client(self, server_name: str):
+        """
+        Get the MCP client for a specific server.
+
+        Args:
+            server_name: Name of the MCP server
+
+        Returns:
+            MCPClient instance or None
+        """
+        return self.mcp_manager.get_mcp_client(server_name)
+
+    async def shutdown(self, **kwargs):
+        """
+        Shutdown the agent and disconnect all MCP servers.
+        """
+        if hasattr(self, 'mcp_manager'):
+            await self.mcp_manager.disconnect_all()
+            self.logger.info("Disconnected all MCP servers")
+
+        if hasattr(super(), 'shutdown'):
+            await super().shutdown(**kwargs)
 
 
 class Agent(BasicAgent):
