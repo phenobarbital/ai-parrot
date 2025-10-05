@@ -10,11 +10,14 @@ from datamodel.exceptions import ValidationError  # pylint: disable=E0611 # noqa
 # Navigator:
 from navconfig.logging import logging
 from asyncdb.exceptions import NoDataFound
+
+from parrot.bots.database import router
 from ..bots.abstract import AbstractBot
 from ..bots.basic import BasicBot
 from ..bots.chatbot import Chatbot
 from ..bots.agent import BasicAgent
 from ..handlers.chat import ChatHandler, BotHandler
+from ..handlers.agent import AgentTalk
 from ..handlers import ChatbotHandler
 from ..handlers.models import BotModel
 from ..registry import agent_registry, AgentRegistry
@@ -407,6 +410,11 @@ class BotManager:
         router.add_view(
             '/api/v1/chat/{chatbot_name}/{method_name}',
             ChatHandler
+        )
+        # Talk with agents:
+        router.add_view(
+            '/api/v1/agents/chat/{agent_id}',
+            AgentTalk
         )
         # ChatBot Manager
         ChatbotHandler.configure(self.app, '/api/v1/bots')

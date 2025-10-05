@@ -197,6 +197,9 @@ output/*
 
 # Temporary files
 *.tmp
+.xls
+.xlsx
+.csv
 
 # generated presentations:
 presentations/*
@@ -209,3 +212,7 @@ templates/.compiled
 # uv's version file:
 uv.lock
 parrot/_version.py
+
+# ML Training logs
+runs/
+train/
