@@ -288,7 +288,12 @@ authenticate or waiting for events or human intervention actions."""
             for i, step in enumerate(steps):
                 self.logger.info(f"Executing step {i+1}/{len(steps)}: {step.description}")
                 print(' DEBUG STEP > ', step, base_url)
-                success = await self._execute_step(step, base_url)
+                try:
+                    success = await self._execute_step(step, base_url)
+                except TimeoutError:
+                    self.logger.error(f"Step timed out: {step.description}")
+                    success = False
+                    break
 
                 if not success and step.action in ['navigate', 'authenticate']:
                     # Critical steps - abort if they fail
@@ -372,9 +377,15 @@ authenticate or waiting for events or human intervention actions."""
             elif action_type == 'upload_file':
                 result = await self._upload_file(action)
             elif action_type == 'await_keypress':
-                result = await self._await_keypress(action)
+                try:
+                    result = await self._await_keypress(action)
+                except TimeoutError:
+                    raise
             elif action_type == 'await_browser_event':
-                result = await self._await_browser_event(action)
+                try:
+                    result = await self._await_browser_event(action)
+                except TimeoutError:
+                    raise
             elif action_type == 'wait':
                 result = await self._wait_for_condition(
                     action,
@@ -1220,6 +1231,7 @@ authenticate or waiting for events or human intervention actions."""
                 for elem in elements:
                     # generate one scrapping result per element:
                     elem_bs = elem if isinstance(elem, BeautifulSoup) else BeautifulSoup(str(elem), 'html.parser')
+                    data = args.get('data', {}) if args else {}
                     result = ScrapingResult(
                         url=current_url,
                         content=page_source,
@@ -1230,11 +1242,12 @@ authenticate or waiting for events or human intervention actions."""
                             "selector_type": selector_type,
                             "multiple": action.multiple,
                             "iteration": (args or {}).get("iteration"),
-                            "data": (args or {}),
+                            "data": data,
                         },
                         timestamp=str(time.time()),
                         success=True
                     )
+                    # print('DEBUG HTML > ', result)
                     self.results.append(result)
             else:
                 extracted_html = str(elements[0])

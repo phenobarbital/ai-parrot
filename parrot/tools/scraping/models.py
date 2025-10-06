@@ -201,6 +201,7 @@ class Wait(BrowserAction):
     description: str = Field(default="Wait for a condition", description="Waiting for a specific condition")
     condition: Optional[str] = Field(default=None, description="Value for the condition (selector, URL substring, etc.)")
     condition_type: Literal["simple", "selector", "url_contains", "url_is", "title_contains", "custom"] = Field(
+        default="selector",
         description="Type of condition to wait for"
     )
     custom_script: Optional[str] = Field(
