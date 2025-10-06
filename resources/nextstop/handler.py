@@ -109,10 +109,10 @@ class NextStopAgent(AgentHandler):
     agent_id: str = "nextstop"
     _agent_class: type = NextStop
     _agent_response = NextStopResponse
-    _use_llm: str = 'openai'
-    _use_model: str = 'gpt-4.1-mini'
-    # _use_llm: str = 'google'
-    # _use_model: str = 'gemini-2.5-pro'
+    # _use_llm: str = 'openai'
+    # _use_model: str = 'gpt-4.1-mini'
+    _use_llm: str = 'google'
+    _use_model: str = 'gemini-2.5-pro'
     _tools = []
 
     base_route: str = '/api/v1/agents/nextstop'
