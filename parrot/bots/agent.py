@@ -44,6 +44,7 @@ class BasicAgent(MCPEnabledMixin, Chatbot):
         - Automatic tool registration from MCP servers
         - Compatible with all existing agent functionality
     """
+    agent_id: Optional[str] = None
     _agent_response = AgentResponse
     speech_context: str = ""
     speech_system_prompt: str = ""
@@ -79,7 +80,7 @@ class BasicAgent(MCPEnabledMixin, Chatbot):
         use_tools: bool = True,
         **kwargs
     ):
-        self.agent_id = agent_id
+        self.agent_id = self.agent_id or agent_id
         tools = self._get_default_tools(tools)
         super().__init__(
             name=name,
