@@ -44,9 +44,13 @@ For VertexAI, creates a folder on "env" called "google" and copy the JSON creden
    pip install -e .
    ```
 
-## Start http server
+## Start HTTP server (navigator-api)
+This project registers routes via `app.py` and runs under `navigator-api` (aiohttp/ASGI).
+
 ```bash
-python run.py
+python -m navigator run --app app:Main --host 0.0.0.0 --port 5000
+# or (if supported by your navigator version)
+uvicorn app:Main --factory --host 0.0.0.0 --port 5000
 ```
 
 ## Development Setup
@@ -72,22 +76,25 @@ This section explains how to set up your development environment:
    This uses `flit` to install Parrot in editable mode.
 
 
-### Usage (Replace with actual usage instructions)
+### Quick API test
 
-*Once you have set up your development environment, you can start using Parrot.*
+Once running, verify endpoints (authenticated):
+- GET `/api/v1/chat/{chatbot_name}` — metadata
+- POST `/api/v1/chat/{chatbot_name}` — converse (`{"query": "Hello"}`)
+- PUT `/api/v1/chatbots` — create bot
+- POST `/api/v1/chatbots_usage` — record usage
+- GET `/api/v1/agent_tools` — list registered tools
+- NextStop agent: `/api/v1/agents/nextstop`, `/api/v1/agents/nextstop/results/{task_id}`
 
-#### Test with Code ChatBOT
-* Set environment variables for:
- [google]
-   GOOGLE_API_KEY=apikey
-   GOOGLE_CREDENTIALS_FILE=.../credentials.json
-   VERTEX_PROJECT_ID=vertex-project
-   VERTEX_REGION=region
+See `docs/API_ENDPOINTS.md` and `docs/INSTALL.md` for full details.
 
-* Run the chatbot:
-    ```bash
-    python examples/test_agent.py
-    ```
+## Documentation
+
+- [Installation](docs/INSTALL.md)
+- [API Endpoints](docs/API_ENDPOINTS.md)
+- [Classes Catalog](docs/CLASSES.md)
+- [Functions Catalog](docs/FUNCTIONS.md)
+- [Style Guide](docs/STYLE_GUIDE.md)
 
 ### Testing
 

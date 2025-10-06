@@ -33,7 +33,7 @@ class NextStop(BasicAgent):
         self,
         name: str = 'NextStop',
         agent_id: str = 'nextstop',
-        use_llm: str = 'openai',
+        use_llm: str = 'google',
         llm: str = None,
         tools: List[AbstractTool] = None,
         system_prompt: str = None,
