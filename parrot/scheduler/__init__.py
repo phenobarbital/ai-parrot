@@ -520,7 +520,7 @@ class AgentSchedulerManager:
             "Agent Scheduler started successfully"
         )
 
-    async def on_shutdown(self, app: web.Application):
+    async def on_shutdown(self, app: web.Application, conn: Callable):
         """Cleanup on app shutdown."""
         self.logger.info("Shutting down Agent Scheduler...")
 
