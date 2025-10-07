@@ -416,6 +416,10 @@ class BotManager:
             '/api/v1/agents/chat/{agent_id}',
             AgentTalk
         )
+        router.add_view(
+            '/api/v1/agents/chat/{agent_id}/{method_name}',
+            AgentTalk
+        )
         # ChatBot Manager
         ChatbotHandler.configure(self.app, '/api/v1/bots')
         # Bot Handler

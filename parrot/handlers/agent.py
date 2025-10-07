@@ -8,6 +8,7 @@ from typing import Dict, Any
 import tempfile
 import os
 import json
+import inspect
 from aiohttp import web
 from navigator_auth.decorators import is_authenticated, user_session
 from navigator.views import BaseView
@@ -280,6 +281,31 @@ class AgentTalk(BaseView):
             except Exception as e:
                 self.logger.error(f"Failed to add MCP server: {e}")
 
+    def _check_methods(self, bot: AbstractBot, method_name: str):
+        """Check if the method exists in the bot and is callable."""
+        forbidden_methods = {
+            '__init__', '__del__', '__getattribute__', '__setattr__',
+            'configure', '_setup_database_tools', 'save', 'delete',
+            'update', 'insert', '__dict__', '__class__', 'retrieval',
+            '_define_prompt', 'configure_llm', 'configure_store', 'default_tools'
+        }
+        if not method_name:
+            return None
+        if method_name.startswith('_') or method_name in forbidden_methods:
+            raise AttributeError(
+                f"Method {method_name} error, not found or forbidden."
+            )
+        if not hasattr(bot, method_name):
+            raise AttributeError(
+                f"Method {method_name} error, not found or forbidden."
+            )
+        method = getattr(bot, method_name)
+        if not callable(method):
+            raise TypeError(
+                f"Attribute {method_name} is not callable in bot {bot.name}."
+            )
+        return method
+
     async def post(self):
         """
         POST handler for agent interaction.
@@ -318,12 +344,13 @@ class AgentTalk(BaseView):
         try:
             qs = self.query_parameters(self.request)
             app = self.request.app
+            method_name = self.request.match_info.get('method_name', None)
             try:
                 attachments, data = await self.handle_upload()
             except web.HTTPUnsupportedMediaType:
                 # if no file is provided, then is a JSON request:
                 data = await self.request.json()
-                attachments = []
+                attachments = {}
             # Get BotManager
             manager = self.request.app.get('bot_manager')
             if not manager:
@@ -405,18 +432,65 @@ class AgentTalk(BaseView):
             format_kwargs = data.pop('format_kwargs', {})
 
             async with agent.retrieval(self.request, app=app) as bot:
-                response: AIMessage = await bot.ask(
-                    question=query,
-                    session_id=session_id,
-                    user_id=user_id,
-                    search_type=search_type,
-                    return_sources=return_sources,
-                    use_vector_context=use_vector_context,
-                    use_conversation_history=use_conversation_history,
-                    output_mode=output_mode,
-                    format_kwargs=format_kwargs,
-                    **data,
-                )
+                if method:= self._check_methods(bot, method_name):
+                    sig = inspect.signature(method)
+                    method_params = {}
+                    missing_required = []
+                    for param_name, param in sig.parameters.items():
+                        if param_name == 'self' or param_name in 'kwargs':
+                            continue
+                        # Handle different parameter types
+                        if param.kind == inspect.Parameter.VAR_POSITIONAL:
+                            # *args - skip, we don't handle positional args via JSON
+                            continue
+                        elif param.kind == inspect.Parameter.VAR_KEYWORD:
+                            # **kwargs - pass all remaining data that wasn't matched
+                            continue
+                        # Regular parameters
+                        if param_name in data:
+                            method_params[param_name] = data[param_name]
+                        elif param.default == inspect.Parameter.empty:
+                            # Required parameter missing
+                            missing_required.append(param_name)
+                        if param_name in attachments:
+                            # If the parameter is a file upload, handle accordingly
+                            method_params[param_name] = attachments[param_name]
+                    if missing_required:
+                        return self.json_response(
+                            {
+                                "message": f"Required parameters missing: {', '.join(missing_required)}",
+                                "required_params": [p for p in sig.parameters.keys() if p != 'self']
+                            },
+                                status=400
+                            )
+                    try:
+                        method_params = {**method_params, **data}
+                        response = await method(
+                            **method_params
+                        )
+                        if isinstance(response, web.Response):
+                            return response
+                    except Exception as e:
+                        self.logger.error(f"Error calling method {method_name}: {e}", exc_info=True)
+                        return self.json_response(
+                            {
+                                "error": f"Error calling method {method_name}: {e}"
+                            },
+                            status=500
+                        )
+                else:
+                    response: AIMessage = await bot.ask(
+                        question=query,
+                        session_id=session_id,
+                        user_id=user_id,
+                        search_type=search_type,
+                        return_sources=return_sources,
+                        use_vector_context=use_vector_context,
+                        use_conversation_history=use_conversation_history,
+                        output_mode=output_mode,
+                        format_kwargs=format_kwargs,
+                        **data,
+                    )
 
             # Return formatted response
             return self._format_response(
