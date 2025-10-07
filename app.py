@@ -3,6 +3,7 @@ from navigator.handlers.types import AppHandler
 from navigator.background import BackgroundQueue
 from navigator_auth import AuthHandler
 from querysource.services import QuerySource
+from parrot.scheduler import AgentSchedulerManager
 from parrot.manager import BotManager
 from parrot.conf import STATIC_DIR
 from parrot.handlers.bots import (
@@ -50,6 +51,10 @@ class Main(AppHandler):
         # Chatbot System
         self.bot_manager = BotManager()
         self.bot_manager.setup(self.app)
+
+        # Scheduler Manager (after bot manager):
+        self._scheduler = AgentSchedulerManager(bot_manager=self.bot_manager)
+        self._scheduler.setup(app=self.app)
 
         # API of feedback types:
         self.app.router.add_view(

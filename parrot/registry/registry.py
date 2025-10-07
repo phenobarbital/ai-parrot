@@ -518,18 +518,17 @@ class AgentRegistry:
         """
         results = {}
         startup_agents = [bot for bot in self.list_bots_by_priority() if bot.at_startup]
-        # Sort by priority (higher first)
+
         startup_agents.sort(
-            key=lambda name: self._registered_agents[name].priority,
+            key=lambda meta: meta.priority,
             reverse=True
         )
-        for meta in startup_agents:
-            metadata = self._registered_agents[meta]
+        for metadata in startup_agents:  # También cambié "meta" a "metadata" para claridad
             try:
                 instance = await metadata.get_instance(**kwargs)
-                if callable(instance.configure):
+                if callable(getattr(instance, 'configure', None)):
                     await instance.configure(app)
-                results[meta] = {
+                results[metadata.name] = {  # Usa metadata.name aquí
                     "status": "success",
                     "instance": instance,
                     "instance_id": id(instance),
@@ -537,9 +536,9 @@ class AgentRegistry:
                 }
             except Exception as e:
                 self.logger.error(
-                    f"Failed startup instantiate {meta.name}: {e}"
+                    f"Failed startup instantiate {metadata.name}: {e}"
                 )
-                results[meta] = {
+                results[metadata.name] = {
                     "status": "error",
                     "error": str(e)
                 }
