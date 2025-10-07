@@ -8,8 +8,8 @@ async def get_agent(data):
         name='PandasAgent',
         # llm='claude',
         # model='claude-sonnet-4-20250514',
-        # llm='openai',
-        # model='gpt-4.1',
+        llm='openai',
+        model='gpt-4.1',
         df=[data],
         max_tokens=16000
     )
@@ -35,6 +35,7 @@ if __name__ == '__main__':
     Ensure the narrative is concise, professional, and directly relevant to business decision-making.
     """
     # prompt = """Return the total rows and list of store names in provided dataframe."""
+    prompt = "Plot the visit count by visitor, return as a png image"
     response = asyncio.run(
         agent.invoke(prompt)
     )

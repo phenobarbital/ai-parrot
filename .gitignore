@@ -220,3 +220,7 @@ train/
 # Navigator configuration
 settings/
 templates/
+resources/
+logs/
+etc/
+documents/
