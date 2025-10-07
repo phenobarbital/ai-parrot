@@ -96,7 +96,12 @@ class ChatHandler(BaseView):
         name = self.request.match_info.get('chatbot_name', None)
         method_name = self.request.match_info.get('method_name', None)
         qs = self.query_parameters(self.request)
-        data = await self.request.json()
+        try:
+            attachments, data = await self.handle_upload()
+        except web.HTTPUnsupportedMediaType:
+            # if no file is provided, then is a JSON request:
+            data = await self.request.json()
+            attachments = {}
         if 'llm' in qs:
             # passing another LLM to the Chatbot:
             llm = data.pop('llm')
@@ -167,6 +172,9 @@ class ChatHandler(BaseView):
                         elif param.default == inspect.Parameter.empty:
                             # Required parameter missing
                             missing_required.append(param_name)
+                        if param_name in attachments:
+                            # If the parameter is a file upload, handle accordingly
+                            method_params[param_name] = attachments[param_name]
                     if missing_required:
                         return self.json_response(
                             {

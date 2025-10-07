@@ -2,11 +2,8 @@ from __future__ import annotations
 import asyncio
 from typing import List, Dict
 import textwrap
-from datetime import datetime
-from navconfig import BASE_DIR
 from .agent import BasicAgent
 from .prompts.nextstop import (
-    AGENT_PROMPT,
     DEFAULT_BACKHISTORY,
     DEFAULT_CAPABILITIES
 )
@@ -15,7 +12,6 @@ from ..tools.sassie import VisitsToolkit
 from ..tools.pythonpandas import PythonPandasTool
 from ..models.responses import AgentResponse
 from ..conf import STATIC_DIR
-from ..registry import register_agent
 
 SASSIE_PROMPT = """
 Your name is $name, an IA Copilot specialized in providing detailed information Sassie Surveys.
