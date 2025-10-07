@@ -5,6 +5,7 @@ import inspect
 from typing import Dict, List, Type, Optional, Any, get_type_hints
 from abc import ABC
 from pydantic import BaseModel, create_model, Field
+from navconfig.logging import logging
 from datamodel.parsers.json import json_decoder, json_encoder  # noqa  pylint: disable=E0611
 from ..conf import BASE_STATIC_URL
 from .abstract import AbstractTool, AbstractToolArgsSchema
