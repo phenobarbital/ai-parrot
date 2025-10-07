@@ -75,7 +75,10 @@ agents = [
     "duckduckgo-search==7.5.0",
     "google-search-results==2.4.2",
     "google-api-python-client>=2.151.0",
-    "pomegranate==1.1.0",
+    # Ensure compatibility with modern networkx/decorator to avoid downgrading moviepy
+    "pomegranate>=1.1.1",
+    "networkx>=2.6,<3",
+    "decorator>=5",
     "autoviz==0.1.905",
     "spacy==3.8.6",
     "html2text==2025.4.15",
@@ -115,12 +118,16 @@ loaders = [
     "pytorch-metric-learning==2.9.0",
     "nvidia-cudnn-cu12==9.1.0.70",
     "moviepy==2.2.1",
+    # Enforce modern decorator to keep moviepy at 2.x
+    "decorator>=5",
     "ffmpeg==1.4",
 ]
 
 vectors = [
     "torch==2.6.0",  # Pin to working version
     "torchaudio==2.6.0",  # Match torch version
+    # TensorFlow constraints → keep numpy in the compatible 2.1 series
+    "numpy>=2.1,<2.2",
     "tiktoken==0.9.0",
     "accelerate==0.34.2",
     "llama-index==0.12.39",
@@ -217,7 +224,7 @@ eda = [
 
 # Convenience groups
 all = [
-    "ai-parrot[agents,loaders,images,vector,anthropic,openai,google,groq,milvus,chroma]"
+    "ai-parrot[agents,loaders,images,vectors,anthropic,openai,google,groq,milvus,chroma]"
 ]
 
 dev = [
