@@ -6,10 +6,13 @@ from typing import List, Optional
 import pandas as pd
 from bs4 import Tag, NavigableString
 from pydantic import BaseModel, Field
-from parrot.tools.scraping import WebScrapingTool
 from navconfig import BASE_DIR
+from parrot.tools.scraping import WebScrapingTool
+
 
 class Provider(BaseModel):
+    """A service provider from Dispatch.me"""
+    zipcode: Optional[str] = None
     name: Optional[str] = None
     engagement_level: Optional[str] = None
     distance: Optional[str] = None
@@ -141,10 +144,14 @@ def parse_provider_div(card: Tag) -> Provider:
     if contact_container:
         rows = _row_texts_under(contact_container)
         # By position: address, phone, email, website
-        if len(rows) >= 1: address = rows[0]
-        if len(rows) >= 2: phone   = rows[1]
-        if len(rows) >= 3: email   = rows[2]
-        if len(rows) >= 4: website = rows[3]
+        if len(rows) >= 1:
+            address = rows[0]
+        if len(rows) >= 2:
+            phone   = rows[1]
+        if len(rows) >= 3:
+            email   = rows[2]
+        if len(rows) >= 4:
+            website = rows[3]
         if website and website.lower() in {"no website yet", "no website"}:
             website = "No website yet"
 
@@ -253,31 +260,6 @@ async def test_dispatch(output_path: Path, zipcodes: List[str]):
                 "selector_type": "xpath",
                 "description": "Click Filters button"
             },
-            # {
-            #     "action": "click",
-            #     "selector": '//input[@type="checkbox" and @name="5"]',
-            #     "selector_type": "xpath",
-            #     "description": "Select 5 stars recruiters"
-            # },
-            # {
-            #     "action": "click",
-            #     "selector": '//input[@type="checkbox" and @name="4"]',
-            #     "selector_type": "xpath",
-            #     "description": "Select 4 stars recruiters"
-            # },
-            # # <input type="radio" value="last_month" style="display: none;">
-            # {
-            #     "action": "click",
-            #     "selector": '//input[@type="radio" and @value="last_month"]',
-            #     "selector_type": "xpath",
-            #     "description": "Select Last Month"
-            # },
-            # {
-            #     "action": "click",
-            #     "selector": "//button[contains(., 'Apply')]",
-            #     "selector_type": "xpath",
-            #     "description": "Apply Filters"
-            # },
             {
                 "action": "await_browser_event",
                 "timeout": 600,
@@ -293,7 +275,8 @@ async def test_dispatch(output_path: Path, zipcodes: List[str]):
                 "iterations": 0,
                 "break_on_error": False,
                 "description": "Iterate through all zipcodes",
-                "values": zipcodes,
+                "values": zipcodes,  # zipcodes
+                "value_name": "zipcode",
                 "actions": [
                     {
                         "action": "fill",
@@ -314,13 +297,36 @@ async def test_dispatch(output_path: Path, zipcodes: List[str]):
                         "description": "Wait 2 seconds until search finishes"
                     },
                     {
-                        'action': 'get_html',
-                        'selector': '//div[@id and translate(@id, "0123456789", "") = ""]',
-                        'selector_type': 'xpath',
-                        'multiple': True,
-                        'extract_name': 'numeric_id_divs',
-                        'description': 'Extract all divs with numeric IDs'
-                    },
+                        "action": "conditional",
+                        "description": "Check for error and retry if needed",
+                        "target": "div.css-0",
+                        "target_type": "css",
+                        "condition_type": "text_contains",
+                        "expected_value": "There was an error, please refresh the page.",
+                        "timeout": 2,
+                        "actions_if_true": [
+                            {
+                                "action": "refresh",
+                                "description": "Reload page due to error"
+                            },
+                            {
+                                "action": "wait",
+                                "timeout": 3,
+                                "condition_type": "simple",
+                                "description": "Wait after reload"
+                            }
+                        ],
+                        "actions_if_false": [
+                            {
+                                'action': 'get_html',
+                                'selector': '//div[@id and translate(@id, "0123456789", "") = ""]',
+                                'selector_type': 'xpath',
+                                'multiple': True,
+                                'extract_name': 'numeric_id_divs',
+                                'description': 'Extract all divs with numeric IDs'
+                            }
+                        ]  # Continue normally if no error
+                    }
                 ]
             }
         ],
@@ -336,9 +342,11 @@ async def test_dispatch(output_path: Path, zipcodes: List[str]):
 
             for r in result['result']:
                 card = r.get('bs')
+                more_data = r.get('metadata', {}).get('data', {})
                 try:
                     provider = parse_provider_div(card)
                     if provider.name:
+                        provider.zipcode = more_data.get('zipcode', None)
                         results.append(provider.model_dump())
                 except Exception as e:
                     print(f"Error parsing provider div: {str(e)}")
@@ -350,7 +358,7 @@ async def test_dispatch(output_path: Path, zipcodes: List[str]):
             print(df)
             # Save to CSV
             output_file = output_path.joinpath("dispatch_providers.csv")
-            df.to_csv(output_file, index=False)
+            df.to_csv(output_file, index=False, sep='|')
             print(f"\nData saved to {output_file.resolve()}")
     except Exception as e:
         print(f"❌ Exception: {str(e)}")
