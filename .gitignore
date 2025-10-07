@@ -225,6 +225,7 @@ resources/
 logs/
 etc/
 documents/
+work/
 
 # Custom Agents:
 agents/

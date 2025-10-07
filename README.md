@@ -1,162 +1,234 @@
-# AI Parrot: Python package for creating Chatbots
-This is an open-source Python package for creating Chatbots based on Langchain and Navigator.
-This README provides instructions for installation, development, testing, and releasing Parrot.
+# 🦜 AI-Parrot
 
-## Installation
+**A unified Python library for building intelligent agents, chatbots, and LLM-powered applications**
 
-**Creating a virtual environment:**
+AI-Parrot simplifies working with Large Language Models by providing a cohesive framework for creating conversational agents, managing tools, implementing RAG systems, and orchestrating complex AI workflows—all without the bloat of traditional frameworks.
 
-This is recommended for development and isolation from system-wide libraries.
-Run the following command in your terminal:
+## ✨ Key Features
 
-Debian-based systems installation:
-   ```
-   sudo apt install gcc python3.11-venv python3.11-full python3.11-dev libmemcached-dev zlib1g-dev build-essential libffi-dev unixodbc unixodbc-dev libsqliteodbc libev4 libev-dev
-   ```
+### 🤖 Multi-Provider LLM Support
+Connect seamlessly to multiple AI providers through a unified interface:
+- **OpenAI** (GPT-4, GPT-3.5)
+- **Anthropic Claude** (Claude 3.5 Sonnet, Opus)
+- **Google GenAI** (Gemini models)
+- **Groq** (Fast inference)
 
-   For Qdrant installation:
-   ```
-   docker pull qdrant/qdrant
-   docker run -d -p 6333:6333 -p 6334:6334 --name qdrant -v $(pwd)/qdrant_storage:/qdrant/storage:z qdrant/qdrant
-   ```
+### 🛠️ Intelligent Agent System
+Build sophisticated agents with built-in tool support and orchestration:
+- **Tool Manager**: Share tools across multiple agents
+- **Agent Registry**: Decorator-based agent creation and registration
+- **Python Tool Calling**: Native support for calling Python functions as tools
+- **Complex Toolkits**: Compose multiple tools into reusable toolkits
 
-For VertexAI, creates a folder on "env" called "google" and copy the JSON credentials file into it.
+### 💬 Chatbot Creation
+Create production-ready chatbots with minimal code:
+- Conversational context management
+- Multi-turn dialogue support
+- Streaming responses
+- Custom personality and behavior configuration
 
-   ```bash
-   make venv
-   ```
+### 🗄️ Knowledge Base & RAG
+Implement Retrieval-Augmented Generation with enterprise-grade components:
+- **PgVector Integration**: PostgreSQL-based vector storage for semantic search
+- **Document Loaders**: Transform any document format into AI-ready context
+- **Open-Source Embeddings**: Hugging Face Transformers integration
+- **Structured Outputs**: Type-safe responses from your LLMs
 
-   This will create a virtual environment named `.venv`. To activate it, run:
+### 🌐 API & Server Capabilities
+Deploy your AI applications with ease:
+- **Bot Manager**: Centralized management for multiple bot instances
+- **REST API**: Expose your agents and chatbots via HTTP endpoints
+- **MCP Server**: Model Context Protocol support for standardized agent communication
 
-   ```bash
-   source .venv/bin/activate  # Linux/macOS
-   ```
+### ⏰ Task Scheduling
+Orchestrate agent actions over time:
+- Schedule periodic agent tasks
+- Trigger-based automation
+- Asynchronous execution support
+- Task dependency management
 
-   Once activated, install Parrot within the virtual environment:
+## 🚀 Quick Start
 
-   ```bash
-   make install
-   ```
-   The output will remind you to activate the virtual environment before development.
-
-   **Optional** (for developers):
-   ```bash
-   pip install -e .
-   ```
-
-## Start HTTP server (navigator-api)
-This project registers routes via `app.py` and runs under `navigator-api` (aiohttp/ASGI).
-
-```bash
-python -m navigator run --app app:Main --host 0.0.0.0 --port 5000
-# or (if supported by your navigator version)
-uvicorn app:Main --factory --host 0.0.0.0 --port 5000
-```
-
-## Development Setup
-
-This section explains how to set up your development environment:
-
-1. **Install development requirements:**
-
-   ```bash
-   make setup
-   ```
-
-   This installs development dependencies like linters and test runners mentioned in the `docs/requirements-dev.txt` file.
-
-2. **Install Parrot in editable mode:**
-
-   This allows you to make changes to the code and test them without reinstalling:
-
-   ```bash
-   make dev
-   ```
-
-   This uses `flit` to install Parrot in editable mode.
-
-
-### Quick API test
-
-Once running, verify endpoints (authenticated):
-- GET `/api/v1/chat/{chatbot_name}` — metadata
-- POST `/api/v1/chat/{chatbot_name}` — converse (`{"query": "Hello"}`)
-- PUT `/api/v1/chatbots` — create bot
-- POST `/api/v1/chatbots_usage` — record usage
-- GET `/api/v1/agent_tools` — list registered tools
-- NextStop agent: `/api/v1/agents/nextstop`, `/api/v1/agents/nextstop/results/{task_id}`
-
-See `docs/API_ENDPOINTS.md` and `docs/INSTALL.md` for full details.
-
-## Documentation
-
-- [Installation](docs/INSTALL.md)
-- [API Endpoints](docs/API_ENDPOINTS.md)
-- [Classes Catalog](docs/CLASSES.md)
-- [Functions Catalog](docs/FUNCTIONS.md)
-- [Style Guide](docs/STYLE_GUIDE.md)
-
-### Testing
-
-To run the test suite:
+### Installation
 
 ```bash
-make test
+pip install ai-parrot
 ```
 
-This will run tests using `coverage` to report on code coverage.
+### Create Your First Chatbot
 
+```python
+from ai_parrot import ChatBot, OpenAIClient
 
-### Code Formatting
+# Initialize LLM client
+client = OpenAIClient(api_key="your-api-key")
 
-To format the code with black:
+# Create a chatbot
+bot = ChatBot(
+    name="assistant",
+    client=client,
+    system_prompt="You are a helpful AI assistant."
+)
 
-```bash
-make format
+# Have a conversation
+response = bot.chat("What's the weather like today?")
+print(response)
 ```
 
+### Build an Agent with Tools
 
-### Linting
+```python
+from ai_parrot import Agent, tool
+from ai_parrot.registry import agent_registry
 
-To lint the code for style and potential errors:
+@tool
+def calculate_sum(a: int, b: int) -> int:
+    """Add two numbers together."""
+    return a + b
 
-```bash
-make lint
+@tool
+def get_current_time() -> str:
+    """Get the current time."""
+    from datetime import datetime
+    return datetime.now().strftime("%H:%M:%S")
+
+# Register an agent with tools
+@agent_registry.register("math_agent")
+class MathAgent(Agent):
+    def __init__(self):
+        super().__init__(
+            name="Math Helper",
+            tools=[calculate_sum, get_current_time]
+        )
+
+# Use the agent
+agent = agent_registry.get("math_agent")
+result = agent.run("What's 42 plus 58? Also, what time is it?")
 ```
 
-This uses `pylint` and `black` to check for issues.
+### Implement RAG with Vector Store
 
+```python
+from ai_parrot import RAGChatBot, PgVectorStore
+from ai_parrot.loaders import PDFLoader, TextLoader
 
-### Releasing a New Version
+# Initialize vector store
+vector_store = PgVectorStore(
+    connection_string="postgresql://user:pass@localhost/db"
+)
 
-This section outlines the steps for releasing a new version of Parrot:
+# Load and index documents
+loader = PDFLoader()
+documents = loader.load("./docs/manual.pdf")
+vector_store.add_documents(documents)
 
-1. **Ensure everything is clean and tested:**
+# Create RAG-enabled chatbot
+rag_bot = RAGChatBot(
+    client=client,
+    vector_store=vector_store,
+    top_k=5
+)
 
-   ```bash
-   make release
-   ```
-
-   This runs `lint`, `test`, and `clean` tasks before proceeding.
-
-2. **Publish the package:**
-
-   ```bash
-   make release
-   ```
-
-   This uses `flit` to publish the package to a repository like PyPI. You'll need to have publishing credentials configured for `flit`.
-
-
-### Cleaning Up
-
-To remove the virtual environment:
-
-```bash
-make distclean
+# Query with context
+response = rag_bot.chat("How do I configure the settings?")
 ```
 
+### Expose via API
 
-### Contributing
+```python
+from ai_parrot import BotManager, create_api
 
-We welcome contributions to Parrot! Please refer to the CONTRIBUTING.md file for guidelines on how to contribute.
+# Create bot manager
+manager = BotManager()
+manager.register_bot("assistant", bot)
+manager.register_agent("math_helper", agent)
+
+# Create and run API server
+app = create_api(manager)
+
+# Run with: uvicorn main:app --reload
+```
+
+### Schedule Agent Tasks
+
+```python
+from ai_parrot import TaskScheduler
+
+scheduler = TaskScheduler()
+
+# Schedule a daily summary
+@scheduler.schedule(cron="0 9 * * *")  # Every day at 9 AM
+async def daily_summary():
+    summary = await agent.run("Generate a summary of yesterday's activities")
+    send_email(summary)
+
+# Run the scheduler
+scheduler.start()
+```
+
+## 🏗️ Architecture
+
+AI-Parrot is designed with modularity and extensibility in mind:
+
+```
+┌─────────────────────────────────────────┐
+│          Application Layer              │
+│  (Chatbots, Agents, Custom Logic)       │
+└──────────────┬──────────────────────────┘
+               │
+┌──────────────▼──────────────────────────┐
+│         AI-Parrot Core                  │
+│  • Agent Registry  • Tool Manager       │
+│  • Bot Manager    • Task Scheduler      │
+└──────────────┬──────────────────────────┘
+               │
+┌──────────────▼──────────────────────────┐
+│      Provider Integrations              │
+│  • OpenAI    • Claude    • Gemini       │
+│  • Groq      • Hugging Face             │
+└──────────────┬──────────────────────────┘
+               │
+┌──────────────▼──────────────────────────┐
+│      Storage & Infrastructure           │
+│  • PgVector  • Document Loaders         │
+│  • MCP Server • API Layer               │
+└─────────────────────────────────────────┘
+```
+
+## 🎯 Use Cases
+
+- **Customer Support Bots**: Build intelligent support agents with knowledge base integration
+- **Research Assistants**: Create agents that can search, analyze, and synthesize information
+- **Automation Workflows**: Schedule and orchestrate AI-powered tasks
+- **Internal Tools**: Expose LLM capabilities through APIs for your team
+- **Multi-Agent Systems**: Coordinate multiple specialized agents working together
+
+## 🗺️ Roadmap
+
+- ✅ **Langchain Independence**: Removed heavyweight dependencies
+- 🚧 **Complex Toolkits**: Advanced tool composition and chaining
+- 🚧 **Model Interoperability**: Seamless LLM + Hugging Face model integration
+- 📋 **Non-LLM Models**: Support for classification, NER, and other ML models
+- 📋 **MCP Full Integration**: Complete Model Context Protocol implementation
+- 📋 **Graph-Based RAG**: Knowledge graphs with ArangoDB for advanced reasoning
+
+## 🤝 Contributing
+
+Contributions are welcome! Whether it's bug fixes, new features, or documentation improvements, we appreciate your help in making AI-Parrot better.
+
+## 📄 License
+
+[Add your license here]
+
+## 📚 Documentation
+
+For detailed documentation, examples, and API reference, visit [your-docs-url]
+
+## 💬 Community & Support
+
+- **Issues**: [GitHub Issues](your-github-repo/issues)
+- **Discussions**: [GitHub Discussions](your-github-repo/discussions)
+
+---
+
+Built with ❤️ for developers who want powerful AI tools without the complexity.

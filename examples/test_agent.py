@@ -31,8 +31,7 @@ async def create_agent():
     agent = BasicAgent(
         name='BestBuyAgent',
         system_prompt=system_prompt,
-        tools=bby,
-        agent_type='tool_calling'
+        tools=[bby, zp]
     )
     await agent.configure()
     return agent
