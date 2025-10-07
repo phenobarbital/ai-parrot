@@ -27,9 +27,10 @@ from ..mcp import (
     create_api_key_mcp_server
 )
 from ..conf import STATIC_DIR
+from ..notifications import NotificationMixin
 
 
-class BasicAgent(MCPEnabledMixin, Chatbot):
+class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
     """Represents an Agent in Navigator.
 
         Agents are chatbots that can access to Tools and execute commands.
@@ -43,6 +44,7 @@ class BasicAgent(MCPEnabledMixin, Chatbot):
         - Can connect to HTTP, OAuth, API-key authenticated, and local MCP servers
         - Automatic tool registration from MCP servers
         - Compatible with all existing agent functionality
+        - Notification capabilities through various channels (e.g., email, Slack, Teams)
     """
     agent_id: Optional[str] = None
     agent_name: Optional[str] = None
