@@ -24,6 +24,35 @@ STATIC_DIR = config.get('STATIC_DIR', fallback=BASE_DIR.joinpath('static'))
 if isinstance(STATIC_DIR, str):
     STATIC_DIR = Path(STATIC_DIR)
 
+
+# Agents Directory
+AGENTS_DIR = config.get('AGENTS_DIR', fallback=BASE_DIR.joinpath('agents'))
+if isinstance(AGENTS_DIR, str):
+    AGENTS_DIR = Path(AGENTS_DIR).resolve()
+if not AGENTS_DIR.exists():
+    AGENTS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+# MCP Server Directory:
+MCP_SERVER_DIR = config.get(
+    'MCP_SERVER_DIR',
+    fallback=BASE_DIR.joinpath('mcp_servers')
+)
+if isinstance(MCP_SERVER_DIR, str):
+    MCP_SERVER_DIR = Path(MCP_SERVER_DIR).resolve()
+if not MCP_SERVER_DIR.exists():
+    MCP_SERVER_DIR.mkdir(parents=True, exist_ok=True)
+
+# Agents-Bots Prompt directory:
+AGENTS_BOTS_PROMPT_DIR = config.get(
+    'AGENTS_BOTS_PROMPT_DIR',
+    fallback=AGENTS_DIR.joinpath('prompts')
+)
+if isinstance(AGENTS_BOTS_PROMPT_DIR, str):
+    AGENTS_BOTS_PROMPT_DIR = Path(AGENTS_BOTS_PROMPT_DIR).resolve()
+if not AGENTS_BOTS_PROMPT_DIR.exists():
+    AGENTS_BOTS_PROMPT_DIR.mkdir(parents=True, exist_ok=True)
+
 # LLM Model
 DEFAULT_LLM_MODEL_NAME = config.get('LLM_MODEL_NAME', fallback='gemini-pro')
 

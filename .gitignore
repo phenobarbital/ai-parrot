@@ -216,3 +216,7 @@ parrot/_version.py
 # ML Training logs
 runs/
 train/
+
+# Navigator configuration
+settings/
+templates/

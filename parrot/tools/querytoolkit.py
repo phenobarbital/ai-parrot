@@ -17,8 +17,9 @@ from asyncdb import AsyncDB
 from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611
 from querysource.conf import default_dsn
 from querysource.queries.qs import QS
+from ..conf import AGENTS_DIR, AGENTS_BOTS_PROMPT_DIR
 from .toolkit import AbstractToolkit
-from ..exceptions import ToolError
+from ..exceptions import ToolError  # pylint: disable=E0611 # noqa
 
 
 def is_collection_model(structured_obj: type) -> bool:
@@ -100,7 +101,7 @@ class QueryToolkit(AbstractToolkit):
         schema: str = None,
         credentials: Optional[Dict[str, Any]] = None,
         driver: Optional[str] = 'pg',
-        program: Optional[str] = 'navigator',
+        program: Optional[str] = '',
         agent_id: Optional[str] = None,
         **kwargs
     ):
@@ -163,11 +164,11 @@ class QueryToolkit(AbstractToolkit):
 
     async def _get_prompt(self, prompt_file: str) -> str:
         """Fetch the prompt content from the specified file."""
-        prompt_path = BASE_DIR.joinpath(
-            'agents',
+        prompt_path = AGENTS_BOTS_PROMPT_DIR.joinpath(
             self.agent_id,
-            self.program,
-            'prompts', f"{prompt_file}.txt"
+            self.program if self.program else '',
+            'prompts',
+            f"{prompt_file}.txt"
         )
         return await self._open_file(prompt_path)
 
@@ -186,10 +187,9 @@ class QueryToolkit(AbstractToolkit):
         Raises:
             FileNotFoundError: If the query file does not exist
         """
-        query_path = BASE_DIR.joinpath(
-            'agents',
+        query_path = AGENTS_DIR.joinpath(
             self.agent_id,
-            self.program,
+            self.program if self.program else '',
             'queries',
             f"{query_name}.sql"
         )

@@ -145,6 +145,8 @@ class AgentRegistry:
     def __init__(self, agents_dir: Optional[Path] = None):
         self.logger = logging.getLogger('Parrot.AgentRegistry')
         self.agents_dir = agents_dir or BASE_DIR / "agents"
+        # Add Path Agent Dir to Sys path
+        sys.path.append(str(self.agents_dir))
         self._registered_agents: Dict[str, BotMetadata] = {}
         self._config_file: Optional[Path] = None
 
