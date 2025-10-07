@@ -225,3 +225,6 @@ resources/
 logs/
 etc/
 documents/
+
+# Custom Agents:
+agents/
