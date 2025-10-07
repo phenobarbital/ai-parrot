@@ -38,8 +38,8 @@ class PythonPandasTool(PythonREPLTool):
             ]
         },
         'plotly': {
-            'import_as': 'px, go',
-            'import_statement': 'import plotly.express as px\nimport plotly.graph_objects as go',
+            'import_as': 'px, go, pio',
+            'import_statement': 'import plotly.express as px\nimport plotly.graph_objects as go\nimport plotly.io as pio',
             'description': 'Interactive web-based plotting library',
             'best_for': ['interactive plots', 'dashboards', 'web applications'],
             'examples': [

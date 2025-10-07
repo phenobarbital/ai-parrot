@@ -117,13 +117,10 @@ class ClaudeClient(AbstractClient):
         all_tool_calls = []
 
         # Handle tool calls in a loop
-        print(f"Claude ask payload: {json.dumps(payload, indent=2)}")
         while True:
             async with self.session.post(f"{self.base_url}/v1/messages", json=payload) as response:
                 response.raise_for_status()
                 result = await response.json()
-                print(f"Claude response: {result}")
-
                 # Check if Claude wants to use a tool
                 if result.get("stop_reason") == "tool_use":
                     tool_results = []

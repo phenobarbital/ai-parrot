@@ -23,6 +23,7 @@ logging.getLogger(name='matplotlib').setLevel(logging.INFO)
 logging.getLogger(name='h5py').setLevel(logging.INFO)
 logging.getLogger(name='datasets').setLevel(logging.WARNING)
 logging.getLogger(name='numexpr').setLevel(logging.WARNING)
+logging.getLogger(name='pymongo').setLevel(logging.WARNING)
 
 
 class AbstractToolArgsSchema(BaseModel):
