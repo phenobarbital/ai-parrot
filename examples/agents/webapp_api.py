@@ -2,6 +2,7 @@
 Example: REST API endpoint for web app generation
 ====================================================
 """
+
 from aiohttp import web
 from parrot.generators import StreamlitGenerator, ReactGenerator, HTMLGenerator
 from parrot.clients.google import GoogleClient
@@ -74,3 +75,18 @@ def setup_routes(app):
         '/api/generate-webapp',
         generate_webapp
     )
+
+
+if __name__ == '__main__':
+    # Initialize app
+    app = web.Application()
+
+    # Setup LLM client (Google Gemini)
+    llm_client = GoogleClient(api_key='YOUR_GOOGLE_API_KEY')
+    app['llm_client'] = llm_client
+
+    # Setup routes
+    setup_routes(app)
+
+    # Run app
+    web.run_app(app, host='0.0.0.0', port=5000)

@@ -173,8 +173,12 @@ class ChatHandler(BaseView):
                             # Required parameter missing
                             missing_required.append(param_name)
                         if param_name in attachments:
-                            # If the parameter is a file upload, handle accordingly
-                            method_params[param_name] = attachments[param_name]
+                            files = attachments[param_name]
+                            if hasattr(param.annotation, '__origin__'):
+                                # If the parameter is a file upload, handle accordingly
+                                method_params[param_name] = files
+                            else:
+                                method_params[param_name] = files[0] if files else None
                     if missing_required:
                         return self.json_response(
                             {
