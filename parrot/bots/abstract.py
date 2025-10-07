@@ -1467,6 +1467,10 @@ Use the following information about user's data to guide your responses:
 
             user_context = "\n\n".join(context_parts)
 
+        # Get user-specific context if user_id is provided
+        if more_context:= await self.get_user_context(user_id or "", session_id or ""):
+            user_context = f"{user_context}\n\n{more_context}" if user_context else more_context
+
         if tasks:
             # Execute in parallel
             results = await asyncio.gather(*tasks, return_exceptions=True)
