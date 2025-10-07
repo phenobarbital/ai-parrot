@@ -319,12 +319,11 @@ class AgentTalk(BaseView):
             qs = self.query_parameters(self.request)
             app = self.request.app
             try:
+                attachments, data = await self.handle_upload()
+            except web.HTTPUnsupportedMediaType:
+                # if no file is provided, then is a JSON request:
                 data = await self.request.json()
-            except Exception as e:
-                return self.error(
-                    f"Invalid JSON in request body: {e}",
-                    status=400
-                )
+                attachments = []
             # Get BotManager
             manager = self.request.app.get('bot_manager')
             if not manager:
