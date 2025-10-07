@@ -554,7 +554,9 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                 f"Original Request: '{original_prompt}'"
             )
             # Combine the tool results with the re-evaluation prompt
-            next_prompt_parts = function_response_parts + [Part(text=reevaluation_prompt)]
+            # next_prompt_parts = function_response_parts + [Part(text=reevaluation_prompt)]
+            # Don't add extra prompts - just send the tool results back
+            next_prompt_parts = function_response_parts
 
             # Send responses back
             retry_count = 0

@@ -12,7 +12,7 @@ from pathlib import Path
 import pandas as pd
 from pydantic import BaseModel, Field, field_validator
 from asyncdb import AsyncDB
-from navconfig import config
+from navconfig import config, BASE_DIR
 from querysource.conf import default_dsn, INFLUX_TOKEN
 from .abstract import AbstractTool
 
@@ -34,56 +34,90 @@ class DriverInfo:
             'name': 'PostgreSQL',
             'query_language': QueryLanguage.SQL,
             'description': 'PostgreSQL database',
-            'aliases': ['postgres', 'postgresql']
+            'aliases': ['postgres', 'postgresql'],
+            'asyncdb_driver': 'pg'
         },
         'mysql': {
             'name': 'MySQL',
             'query_language': QueryLanguage.SQL,
             'description': 'MySQL/MariaDB database',
-            'aliases': ['mariadb']
+            'aliases': ['mariadb'],
+            'asyncdb_driver': 'mysql'
         },
         'bigquery': {
             'name': 'Google BigQuery',
             'query_language': QueryLanguage.SQL,
             'description': 'Google BigQuery data warehouse',
-            'aliases': ['bq']
+            'aliases': ['bq'],
+            'asyncdb_driver': 'bigquery'
         },
         'sqlite': {
             'name': 'SQLite',
             'query_language': QueryLanguage.SQL,
             'description': 'SQLite embedded database',
-            'aliases': []
+            'aliases': [],
+            'asyncdb_driver': 'sqlite'
         },
         'oracle': {
             'name': 'Oracle Database',
             'query_language': QueryLanguage.SQL,
             'description': 'Oracle Database',
-            'aliases': []
+            'aliases': [],
+            'asyncdb_driver': 'oracle'
         },
         'mssql': {
             'name': 'Microsoft SQL Server',
             'query_language': QueryLanguage.SQL,
             'description': 'Microsoft SQL Server database',
-            'aliases': ['sqlserver']
+            'aliases': ['sqlserver'],
+            'asyncdb_driver': 'mssql'
         },
         'clickhouse': {
             'name': 'ClickHouse',
             'query_language': QueryLanguage.SQL,
             'description': 'ClickHouse OLAP database',
-            'aliases': []
+            'aliases': [],
+            'asyncdb_driver': 'clickhouse'
         },
         'duckdb': {
             'name': 'DuckDB',
             'query_language': QueryLanguage.SQL,
             'description': 'DuckDB embedded analytical database',
-            'aliases': []
+            'aliases': [],
+            'asyncdb_driver': 'duckdb'
         },
         # Non-SQL databases
         'influx': {
             'name': 'InfluxDB',
             'query_language': QueryLanguage.FLUX,
             'description': 'InfluxDB time-series database (uses Flux query language)',
-            'aliases': ['influxdb']
+            'aliases': ['influxdb'],
+            'asyncdb_driver': 'influx'
+        },
+        # MongoDB and compatible databases (both use 'mongo' driver in asyncdb)
+        'mongo': {
+            'name': 'MongoDB',
+            'query_language': QueryLanguage.MQL,
+            'description': 'MongoDB document-oriented database',
+            'aliases': ['mongo'],
+            'asyncdb_driver': 'mongo',
+            'dbtype': 'mongodb'
+        },
+        'atlas': {
+            'name': 'MongoDB Atlas',
+            'query_language': QueryLanguage.MQL,
+            'description': 'MongoDB Atlas cloud database',
+            'aliases': [],
+            'asyncdb_driver': 'mongo',
+            'dbtype': 'atlas'
+        },
+        'documentdb': {
+            'name': 'DocumentDB',
+            'query_language': QueryLanguage.MQL,
+            'description': 'AWS DocumentDB (MongoDB-compatible) document database',
+            'aliases': [],
+            'asyncdb_driver': 'mongo',  # Uses mongo driver with dbtype parameter
+            'dbtype': 'documentdb'
         },
     }
 
@@ -104,6 +138,20 @@ class DriverInfo:
         return driver_lower
 
     @classmethod
+    def get_asyncdb_driver(cls, driver: str) -> str:
+        """Get the actual asyncdb driver name."""
+        driver = cls.normalize_driver(driver)
+        driver_info = cls.DRIVER_MAP.get(driver, {})
+        return driver_info.get('asyncdb_driver', driver)
+
+    @classmethod
+    def get_dbtype(cls, driver: str) -> Optional[str]:
+        """Get the dbtype parameter for drivers that need it (mongo-based)."""
+        driver = cls.normalize_driver(driver)
+        driver_info = cls.DRIVER_MAP.get(driver, {})
+        return driver_info.get('dbtype')
+
+    @classmethod
     def get_query_language(cls, driver: str) -> QueryLanguage:
         """Get the query language for a driver."""
         driver = cls.normalize_driver(driver)
@@ -118,7 +166,8 @@ class DriverInfo:
             'name': driver,
             'query_language': QueryLanguage.SQL,
             'description': f'{driver} database',
-            'aliases': []
+            'aliases': [],
+            'asyncdb_driver': driver
         })
 
     @classmethod
@@ -132,6 +181,7 @@ class DriverInfo:
             for driver, info in cls.DRIVER_MAP.items()
         ]
 
+
 class DatabaseQueryArgs(BaseModel):
     """Arguments schema for DatabaseQueryTool."""
 
@@ -142,21 +192,48 @@ class DatabaseQueryArgs(BaseModel):
             "SQL-based: 'pg' (PostgreSQL), 'mysql', 'bigquery', 'sqlite', 'oracle', "
             "'mssql' (Microsoft SQL Server), 'clickhouse', 'duckdb'\n"
             "Time-series: 'influx' (InfluxDB - uses Flux query language)\n"
+            "Document-based: 'mongo' (MongoDB), 'atlas' (MongoDB Atlas), 'documentdb' (AWS DocumentDB)\n"
             "Note: Query syntax must match the driver's query language."
         )
     )
     query: str = Field(
         ...,
         description=(
-            "Query to execute for data retrieval. Query syntax depends on the driver:\n"
-            "- SQL drivers (pg, mysql, bigquery, etc.): Use SQL SELECT statements\n"
-            "- InfluxDB (influx): Use Flux query language (e.g., from(bucket:...) |> range(...))\n"
+            "Query to execute for data retrieval. Query syntax depends on the driver:\n\n"
+            "SQL drivers (pg, mysql, bigquery, etc.):\n"
+            "  Use SQL SELECT statements, e.g.: SELECT * FROM users WHERE age > 25\n\n"
+            "InfluxDB (influx):\n"
+            "  Use Flux query language, e.g.: from(bucket:\"my-bucket\") |> range(start: -1h)\n\n"
+            "MongoDB/DocumentDB (mongo, atlas, documentdb):\n"
+            "  Provide ONLY the MongoDB query filter as JSON.\n"
+            "  The collection_name must be specified in the 'credentials' parameter.\n"
+            "  Examples:\n"
+            "    - Empty query (get all): {}\n"
+            "    - Filter by field: {\"status\": \"active\"}\n"
+            "    - Complex filter: {\"age\": {\"$gte\": 18}, \"city\": \"New York\"}\n"
+            "    - Nested filter: {\"data.payload.form_id\": 17123}\n\n"
             "Only data retrieval queries are allowed - no DDL or DML operations."
         )
     )
     credentials: Optional[Dict[str, Any]] = Field(
         default=None,
-        description="Dictionary containing database connection credentials (optional if default credentials available), eg. {'dsn': '...'} or {'host': '...', 'port"
+        description=(
+            "Dictionary containing database connection credentials (optional if defaults available).\n\n"
+            "For SQL databases:\n"
+            "  {'host': 'localhost', 'port': 5432, 'database': 'mydb', 'user': 'admin', 'password': 'secret'}\n\n"
+            "For MongoDB/DocumentDB (mongo, atlas, documentdb):\n"
+            "  REQUIRED: 'collection_name' - The collection to query\n"
+            "  Example: {\n"
+            "    'host': 'cluster.docdb.amazonaws.com',\n"
+            "    'port': 27017,\n"
+            "    'database': 'mydb',\n"
+            "    'collection_name': 'users',  # REQUIRED for mongo-based drivers\n"
+            "    'username': 'admin',\n"
+            "    'password': 'secret',\n"
+            "    'ssl': True,  # For DocumentDB\n"
+            "    'tlsCAFile': '/path/to/cert.pem'  # For DocumentDB\n"
+            "  }"
+        )
     )
     dsn: Optional[str] = Field(
         default=None,
@@ -318,6 +395,7 @@ class DatabaseQueryTool(AbstractTool):
     - SQL: PostgreSQL (pg), MySQL, BigQuery, SQLite, Oracle, MS SQL Server (mssql),
         ClickHouse, DuckDB
     - Flux: InfluxDB (influx) - time-series database with Flux query language
+    - DocumentDB: DocumentDB (documentdb) - document-oriented database
 
     DRIVER REFERENCE:
     - 'pg' or 'postgres' or 'postgresql' → PostgreSQL
@@ -329,6 +407,7 @@ class DatabaseQueryTool(AbstractTool):
     - 'oracle' → Oracle Database
     - 'clickhouse' → ClickHouse
     - 'duckdb' → DuckDB
+    - 'documentdb' → DocumentDB (MongoDB-compatible)
 
     QUERY LANGUAGE EXAMPLES:
 
@@ -340,6 +419,9 @@ class DatabaseQueryTool(AbstractTool):
         |> range(start: -12h)
         |> filter(fn: (r) => r["_measurement"] == "temperature")
         |> filter(fn: (r) => r["location"] == "room1")
+
+    DocumentDB:
+        { find: "collection", filter: { field: "value" } }
 
 
     IMPORTANT: This tool is designed for data retrieval and analysis queries (SELECT statements).
@@ -359,11 +441,11 @@ class DatabaseQueryTool(AbstractTool):
 
     name = "database_query"
     description = (
-        "Execute queries on various databases for data retrieval and analysis. "
-        "Supports SQL databases (PostgreSQL/pg, MySQL, BigQuery, MS SQL Server/mssql, etc.) "
-        "and InfluxDB (influx - uses Flux query language, not SQL). "
-        "Query syntax must match the database driver's query language. "
-        "Returns data as pandas DataFrame or JSON. Read-only operations only."
+        "Execute queries on various databases for data retrieval. "
+        "Supports SQL (PostgreSQL, MySQL, BigQuery, etc.), InfluxDB (Flux), "
+        "and MongoDB/DocumentDB (MQL). For MongoDB/DocumentDB: provide collection_name "
+        "in credentials and only the query filter in the query parameter. "
+        "Returns pandas DataFrame or JSON. Read-only operations only."
     )
     args_schema = DatabaseQueryArgs
 
@@ -383,20 +465,22 @@ class DatabaseQueryTool(AbstractTool):
 
     def _get_default_credentials(
         self,
-        driver: str
+        driver: str,
+        provided_credentials: Optional[Dict[str, Any]] = None
     ) -> Tuple[Dict[str, Any], Optional[str]]:
         """
         Get default credentials for the specified database driver.
-        This method should be customized based on your environment and security practices.
-
-        TODO: using default credentials from QuerySource config.
+        Handles mongo-based drivers (mongodb, atlas, documentdb) correctly.
         """
         dsn = None
+        normalized_driver = DriverInfo.normalize_driver(driver)
         if driver == 'postgresql':
             driver = 'pg'
         if driver == 'pg':
             dsn = default_dsn
-        # TODO: Add logic to fetch default credentials from secure storage or environment variables
+
+        # Get dbtype for mongo-based drivers
+        dbtype = DriverInfo.get_dbtype(normalized_driver)
         default_credentials = {
             'bigquery': {
                 'credentials_file': config.get('GOOGLE_APPLICATION_CREDENTIALS'),
@@ -441,19 +525,55 @@ class DatabaseQueryTool(AbstractTool):
                 'database': config.get('MSSQL_DATABASE', fallback='master'),
                 'user': config.get('MSSQL_USER'),
                 'password': config.get('MSSQL_PASSWORD'),
+            },
+            # MongoDB - standard configuration
+            'mongo': {
+                'driver': 'mongo',
+                'host': config.get('MONGODB_HOST', fallback='localhost'),
+                'port': config.get('MONGODB_PORT', fallback='27017'),
+                'database': config.get('MONGODB_DATABASE', fallback='test'),
+                'username': config.get('MONGODB_USER'),
+                'password': config.get('MONGODB_PASSWORD'),
+                'dbtype': 'mongodb'
+            },
+            # MongoDB Atlas - cloud configuration
+            'atlas': {
+                'driver': 'mongo',
+                'host': config.get('ATLAS_HOST'),
+                'port': config.get('ATLAS_PORT', fallback='27017'),
+                'database': config.get('ATLAS_DATABASE', fallback='test'),
+                'username': config.get('ATLAS_USER'),
+                'password': config.get('ATLAS_PASSWORD'),
+                'dbtype': 'atlas'
+            },
+            # AWS DocumentDB - MongoDB-compatible with SSL
+            'documentdb': {
+                'driver': 'mongo',
+                'host': config.get('DOCUMENTDB_HOSTNAME', fallback='localhost'),
+                'port': config.get('DOCUMENTDB_PORT', fallback='27017'),
+                'database': config.get('DOCUMENTDB_DATABASE', fallback='test'),
+                'username': config.get('DOCUMENTDB_USERNAME'),
+                'password': config.get('DOCUMENTDB_PASSWORD'),
+                'tlsCAFile': BASE_DIR.joinpath('env', "global-bundle.pem"),
+                'ssl': config.get('DOCUMENTDB_USE_SSL', fallback=True),
+                'collection_name': config.get('DOCUMENTDB_COLLECTION', fallback='mycollection'),
+                'dbtype': 'documentdb'
             }
         }
 
-        if driver not in default_credentials:
+        if normalized_driver not in default_credentials:
             raise ValueError(
-                f"No default credentials configured for database driver: {driver}"
+                f"No default credentials configured for database driver: {normalized_driver}"
             )
 
-        creds = default_credentials[driver].copy()
+        creds = default_credentials[normalized_driver].copy()
+
+        # Override with provided credentials if any
+        if provided_credentials:
+            creds.update(provided_credentials)
 
         # Remove None values
         creds = {k: v for k, v in creds.items() if v is not None}
-
         return creds, dsn
 
     def _get_credentials(
@@ -462,11 +582,9 @@ class DatabaseQueryTool(AbstractTool):
         provided_credentials: Optional[Dict[str, Any]]
     ) -> Tuple[Dict[str, Any], str]:
         """Get database credentials, either provided or default."""
-        if provided_credentials:
-            return provided_credentials, None
 
         try:
-            default_creds, dsn = self._get_default_credentials(driver)
+            default_creds, dsn = self._get_default_credentials(driver, provided_credentials)
             return default_creds, dsn
         except Exception as e:
             raise ValueError(
@@ -524,6 +642,11 @@ class DatabaseQueryTool(AbstractTool):
             async with await db.connection() as conn:  # pylint: disable=E1101 # noqa
                 # Set output format
                 conn.output_format(output_format)
+                # For mongo-based drivers, ensure we're using the correct database
+                if driver == 'mongo':
+                    database_name = credentials.get('database')
+                    if database_name:
+                        await conn.use(database_name)
 
                 # Add row limit to query if specified and not already present
                 modified_query = self._add_row_limit(query, max_rows, driver)
@@ -538,6 +661,39 @@ class DatabaseQueryTool(AbstractTool):
                     result, errors = await asyncio.wait_for(
                         conn.query(modified_query, frmt='recordset'),
                         timeout=timeout
+                    )
+                elif driver == 'mongo':
+                    # For mongo-based drivers:
+                    # 1. collection_name MUST be in credentials
+                    # 2. query parameter contains ONLY the MongoDB filter (JSON)
+                    collection_name = credentials.get('collection_name')
+                    if not collection_name:
+                        raise ValueError(
+                            "For MongoDB/DocumentDB queries, 'collection_name' must be "
+                            "provided in the 'credentials' parameter. "
+                            "Example: credentials={'collection_name': 'users', ...}"
+                        )
+                    if '::' in modified_query:
+                        # query = 'batches::{"data.payload.form_id": 17123}'
+                        self.logger.warning(
+                            "Detected '::' format in query. For MongoDB/DocumentDB, "
+                            "please provide collection_name in credentials and only "
+                            "the filter in the query parameter."
+                        )
+                        collection_name, json_query = modified_query.split('::', 1)
+                        collection_name = collection_name.strip()
+                        query_dict = json.loads(json_query) if json_query.strip() else {}
+                    if modified_query:
+                        query_dict = json.loads(modified_query.strip())
+                    else:
+                        query_dict = {}
+
+                    self.logger.info(
+                        f"Querying collection '{collection_name}' with filter: {query_dict}"
+                    )
+                    result, errors = await conn.query(
+                        collection_name=collection_name,
+                        query=query_dict
                     )
                 else:
                     result, errors = await asyncio.wait_for(
@@ -617,7 +773,12 @@ class DatabaseQueryTool(AbstractTool):
 
             # Get credentials
             creds, resolved_dsn = self._get_credentials(driver, credentials)
+
+            print('DRIVER > ', driver)
+            print('CREDENTIALS > ', creds)
             final_dsn = dsn or resolved_dsn
+            if 'driver' in creds:
+                driver = creds.pop('driver')
 
             # Add row limit if applicable
             modified_query = self._add_row_limit(query, max_rows, driver)

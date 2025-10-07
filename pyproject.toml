@@ -249,6 +249,11 @@ Funding = "https://paypal.me/phenobarbital"
 [tool.setuptools]
 license-files = ["LICENSE*"]
 
+[tool.uv]
+override-dependencies = [
+    "moviepy==2.2.1",
+]
+
 # Version from parrot/version.py
 [tool.setuptools_scm]
 write_to = "parrot/_version.py"

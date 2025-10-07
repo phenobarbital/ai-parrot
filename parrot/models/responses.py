@@ -589,6 +589,10 @@ class AgentResponse(BaseModel):
         description="Name of the agent that processed the request"
     )
     status: str = Field(default="success", description="Status of the response")
+    question: Optional[str] = Field(
+        default=None,
+        description="Question made by User"
+    )
     response: Optional[AIMessage] = Field(
         ...,
         description="Response returned by the agent"
