@@ -218,11 +218,11 @@ Contributions are welcome! Whether it's bug fixes, new features, or documentatio
 
 ## 📄 License
 
-[Add your license here]
+MIT License.
 
 ## 📚 Documentation
 
-For detailed documentation, examples, and API reference, visit [your-docs-url]
+For detailed documentation, examples, and API reference, see the examples/ folder.
 
 ## 💬 Community & Support
 
