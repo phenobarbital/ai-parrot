@@ -1,586 +1,512 @@
+"""
+PandasAgent - Langchain-free implementation for AI-Parrot
+A specialized agent for data analysis using pandas DataFrames.
+"""
 from pathlib import Path
 from typing import Any, List, Dict, Union, Optional
-import re
 from datetime import datetime, timezone, timedelta
+import uuid
 from string import Template
 import redis.asyncio as aioredis
 import pandas as pd
+import numpy as np
 from aiohttp import web
-from datamodel.typedefs import SafeDict
 from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611 # noqa
-from langchain_core.exceptions import OutputParserException
-from langchain_core.messages import HumanMessage
-from langchain_core.runnables.retry import RunnableRetry
-from langchain_experimental.tools.python.tool import PythonAstREPLTool
-from langchain_experimental.agents.agent_toolkits import create_pandas_dataframe_agent
-from openai import RateLimitError
 from navconfig import BASE_DIR
 from navconfig.logging import logging
 from querysource.queries.qs import QS
 from querysource.queries.multi import MultiQS
 from ..tools import AbstractTool
-from ..tools.msword import DocxGeneratorTool
+from ..tools.pythonpandas import PythonPandasTool
 from .agent import BasicAgent
-from ..models import AgentResponse
-from ..conf import BASE_STATIC_URL, REDIS_HISTORY_URL
-from .prompts import AGENT_PROMPT_SUFFIX, FORMAT_INSTRUCTIONS
-from .prompts.data import (
-    TOOL_CALLING_PROMPT_PREFIX,
-    TOOL_CALLING_PROMPT_SUFFIX,
-    REACT_PROMPT_PREFIX
-)
-
-## Enable Debug:
-from langchain.globals import set_debug, set_verbose
-
-# Enable verbosity for debugging
-set_debug(True)
-set_verbose(True)
+from ..models.responses import AIMessage, AgentResponse
+from ..conf import REDIS_HISTORY_URL, STATIC_DIR
 
 
 def brace_escape(text: str) -> str:
+    """Escape braces for string template formatting."""
     return text.replace('{', '{{').replace('}', '}}')
+
 
 class PandasAgent(BasicAgent):
     """
-    A simple agent that uses the pandas library to perform data analysis tasks.
-    TODO
-    - add notify tool (email, telegram, teams)
-    - specific teams tool to send private messages from agents
+    A specialized agent for data analysis using pandas DataFrames.
+
+    Features:
+    - Multi-dataframe support
+    - Redis caching for data persistence
+    - Automatic EDA (Exploratory Data Analysis)
+    - DataFrame metadata generation
+    - Query source integration
+    - File loading (CSV, Excel)
     """
+
+    PANDAS_SYSTEM_PROMPT = """You are a data analysis expert specializing in pandas DataFrames.
+
+**Your Role:**
+$description
+
+**Available DataFrames:**
+$df_info
+
+**Your Capabilities:**
+$capabilities
+
+**Guidelines:**
+1. Always reference DataFrames using their standardized keys (df1, df2, etc.)
+2. Use the python_repl_pandas tool for all data operations
+3. Create visualizations when helpful for understanding
+4. Explain your analysis clearly
+5. Store important results in execution_results dictionary
+6. Save plots using save_current_plot() for sharing
+
+**Today's Date:** $today_date
+
+$backstory
+"""
 
     def __init__(
         self,
-        name: str = 'Agent',
-        agent_type: str = None,
+        name: str = 'Pandas Agent',
         llm: Optional[str] = None,
         tools: List[AbstractTool] = None,
         system_prompt: str = None,
-        human_prompt: str = None,
-        prompt_template: str = None,
-        df: Union[list[pd.DataFrame], Dict[str, pd.DataFrame]] = None,
+        df: Union[list[pd.DataFrame], Dict[str, pd.DataFrame], pd.DataFrame] = None,
         query: Union[List[str], dict] = None,
+        capabilities: str = None,
+        generate_eda: bool = True,
+        cache_expiration: int = 24,
         **kwargs
     ):
-        self.chatbot_id: str = None
+        """
+        Initialize PandasAgent.
+
+        Args:
+            name: Agent name
+            llm: LLM client name ('google', 'openai', 'claude')
+            tools: Additional tools beyond default
+            system_prompt: Custom system prompt
+            df: DataFrame(s) to analyze
+            query: QuerySource queries to execute
+            capabilities: Agent capabilities description
+            generate_eda: Generate exploratory data analysis
+            cache_expiration: Cache expiration in hours
+            **kwargs: Additional configuration
+        """
         self._queries = query
-        self.df = self._define_dataframe(df)
-        self.df_locals: dict = {}
-        # Agent ID:
-        self._prompt_prefix = None
-        # Must be one of 'tool-calling', 'openai-tools', 'openai-functions', or 'zero-shot-react-description'.
-        self.agent_type = agent_type or "tool-calling"
-        self._capabilities: str = kwargs.get('capabilities', None)
-        self.name = name or "Pandas Agent"
-        self.description = "A simple agent that uses the pandas library to perform data analysis tasks."
-        self._static_path = BASE_DIR.joinpath('static')
-        self.agent_report_dir = self._static_path.joinpath('reports', 'agents')
+        self._capabilities = capabilities
+        self._generate_eda = generate_eda
+        self._cache_expiration = cache_expiration
+
+        # Initialize dataframes
+        self.dataframes = self._define_dataframe(df) if df is not None else {}
+        self.df_metadata = {}
+
+        # Initialize base agent (AbstractBot will set chatbot_id)
         super().__init__(
             name=name,
             llm=llm,
             system_prompt=system_prompt,
-            human_prompt=human_prompt,
             tools=tools,
-            agent_type=self.agent_type,
             **kwargs
         )
-        if self.agent_type == "tool-calling":
-            self.system_prompt_template = prompt_template or TOOL_CALLING_PROMPT_PREFIX
-            self._format_instructions = ''
-        else:
-            self.system_prompt_template = prompt_template or REACT_PROMPT_PREFIX
-            self._format_instructions: str = kwargs.get('format_instructions', FORMAT_INSTRUCTIONS)
+
+        self.description = "A specialized agent for data analysis using pandas DataFrames"
+
+    def _get_default_tools(self, tools: list) -> List[AbstractTool]:
+        """Override to add PythonPandasTool with dataframes."""
+        if not tools:
+            tools = []
+
+        report_dir = STATIC_DIR.joinpath(self.agent_id, 'documents')
+        report_dir.mkdir(parents=True, exist_ok=True)
+
+        # Build a description that includes DataFrame info
+        df_summary = ", ".join([
+            f"{df_key}: {df.shape[0]} rows × {df.shape[1]} cols"
+            for df_key, df in self.dataframes.items()
+        ]) if self.dataframes else "No DataFrames"
+
+        tool_description = (
+            f"Execute Python code with pandas DataFrames. "
+            f"Available data: {df_summary}. "
+            f"Use df1, df2, etc. to access DataFrames."
+        )
+
+        pandas_tool = PythonPandasTool(
+            dataframes=self.dataframes,
+            generate_guide=True,
+            include_summary_stats=False,  # Disable to reduce token usage
+            include_sample_data=False,     # Disable to reduce token usage
+            sample_rows=2,
+            report_dir=report_dir
+        )
+
+        # Override the tool description to include DataFrame info
+        pandas_tool.description = tool_description
+
+        tools.append(pandas_tool)
+
+        return tools
 
     def _define_dataframe(
         self,
-        df: Union[list[pd.DataFrame], Dict[str, pd.DataFrame]]
+        df: Union[list[pd.DataFrame], Dict[str, pd.DataFrame], pd.DataFrame]
     ) -> Dict[str, pd.DataFrame]:
-        """Define the dataframe."""
+        """
+        Normalize dataframe input to dictionary format.
+
+        Args:
+            df: DataFrame(s) in various formats
+
+        Returns:
+            Dictionary mapping names to DataFrames
+        """
         _df = {}
+
         if isinstance(df, pd.DataFrame):
-            # if data is one single dataframe
             _df['df1'] = df
-        elif isinstance(df, list):
-            # if data is a list of dataframes
-            for i, dataframe in enumerate(df):
-                df_name = f"df{i + 1}"
-                _df[df_name] = dataframe.copy()
         elif isinstance(df, pd.Series):
-            # if data is a pandas series
-            # convert it to a dataframe
-            df = pd.DataFrame(df)
-            _df['df1'] = df
+            _df['df1'] = pd.DataFrame(df)
+        elif isinstance(df, list):
+            for i, dataframe in enumerate(df):
+                _df[f"df{i + 1}"] = dataframe.copy()
         elif isinstance(df, dict):
             _df = df
         else:
-            raise ValueError(
-                f"Expected pandas DataFrame, got {type(df)}"
-            )
+            raise ValueError(f"Expected pandas DataFrame, got {type(df)}")
+
         return _df
 
-    def get_query(self) -> Union[List[str], dict]:
-        """Get the query."""
-        return self._queries
-
-    def get_capabilities(self) -> str:
-        """Get the capabilities of the agent."""
-        return self._capabilities
-
-    def pandas_agent(self, **kwargs):
+    def _generate_eda_summary(self, df: pd.DataFrame, df_key: str) -> str:
         """
-        Creates a Pandas Agent.
+        Generate exploratory data analysis summary for a DataFrame.
 
-        This agent uses reasoning and tool execution iteratively to generate responses.
+        Args:
+            df: DataFrame to analyze
+            df_key: DataFrame identifier
 
         Returns:
-            RunnableMultiActionAgent: A Pandas-based agent.
-
-        ✅ Use Case: Best for decision-making and reasoning tasks where the agent must break problems down into multiple steps.
-
+            EDA summary as markdown string
         """
-        # Create the pandas agent
-        dfs = list(self.df.values()) if isinstance(self.df, dict) else self.df
-        # print('DATAFRAMES >> ', dfs)
-        print(' ============ ')
-        # print('PROMPT PREFIX >> ', self._prompt_prefix)
-        # llm = self._llm
-        # llm = self._llm.with_retry(
-        #     retry_if_exception_type=(RateLimitError,),
-        #     wait_exponential_jitter=True,
-        #     stop_after_attempt=4  # Example: retry up to 5 times (initial + 5 retries)
-        # )
-        # bind the tools to the LLM:
-        llm = self._llm.bind_tools(self.tools)
-        agent = create_pandas_dataframe_agent(
-            llm,
-            dfs,
-            verbose=True,
-            agent_type=self.agent_type,
-            allow_dangerous_code=True,
-            prefix=self._prompt_prefix,
-            max_iterations=20,
-            extra_tools=self.tools,
-            agent_executor_kwargs={
-                "memory": self.memory,
-                "handle_parsing_errors": True
-            },
-            return_intermediate_steps=True,
+        summary_parts = []
+
+        # Basic statistics
+        numeric_cols = df.select_dtypes(include=[np.number]).columns
+        categorical_cols = df.select_dtypes(include=['object', 'category']).columns
+
+        summary_parts.append(f"**{df_key} EDA Summary:**")
+        summary_parts.append(f"- Total rows: {len(df):,}")
+        summary_parts.append(f"- Total columns: {len(df.columns)}")
+        summary_parts.append(f"- Numeric columns: {len(numeric_cols)}")
+        summary_parts.append(f"- Categorical columns: {len(categorical_cols)}")
+
+        # Missing data
+        missing = df.isnull().sum()
+        if missing.sum() > 0:
+            summary_parts.append(f"- Missing values: {missing.sum():,} ({missing.sum() / df.size * 100:.1f}%)")
+
+        # Memory usage
+        memory_mb = df.memory_usage(deep=True).sum() / 1024 / 1024
+        summary_parts.append(f"- Memory usage: {memory_mb:.2f} MB")
+
+        return "\n".join(summary_parts)
+
+    def _generate_column_guide(self, df_key: str, df: pd.DataFrame) -> str:
+        """
+        Generate a concise guide for DataFrame columns.
+
+        Args:
+            df_key: DataFrame identifier
+            df: DataFrame to document
+
+        Returns:
+            Column guide as markdown table
+        """
+        guide = f"\n**{df_key} Columns:**\n"
+        guide += "| Column | Type | Sample | Nulls |\n"
+        guide += "|--------|------|--------|-------|\n"
+
+        for col in df.columns[:20]:  # Limit to first 20 columns
+            dtype = str(df[col].dtype)
+            try:
+                sample = str(df[col].dropna().iloc[0])[:30] if len(df[col].dropna()) > 0 else "N/A"
+            except:
+                sample = "N/A"
+            nulls = df[col].isnull().sum()
+            guide += f"| {col} | {dtype} | {sample} | {nulls} |\n"
+
+        if len(df.columns) > 20:
+            guide += f"\n*... and {len(df.columns) - 20} more columns*\n"
+
+        return guide
+
+    def _build_dataframe_info(self) -> str:
+        """
+        Build comprehensive DataFrame information for system prompt.
+
+        Returns:
+            Formatted DataFrame information string
+        """
+        if not self.dataframes:
+            return "No DataFrames loaded."
+
+        df_info_parts = [f"**Total DataFrames:** {len(self.dataframes)}\n"]
+
+        for i, (df_name, df) in enumerate(self.dataframes.items()):
+            df_key = f"df{i + 1}"
+
+            # Basic info
+            df_info_parts.append(f"### {df_key} ('{df_name}')")
+            df_info_parts.append(f"Shape: {df.shape[0]:,} rows × {df.shape[1]} columns\n")
+
+            # EDA summary if enabled
+            if self._generate_eda:
+                df_info_parts.append(self._generate_eda_summary(df, df_key))
+                df_info_parts.append("")
+
+            # Column guide
+            df_info_parts.append(self._generate_column_guide(df_key, df))
+
+            # Sample data (first 3 rows)
+            try:
+                sample = brace_escape(df.head(3).to_markdown())
+                df_info_parts.append(f"\n**Sample Data:**\n```\n{sample}\n```\n")
+            except:
+                df_info_parts.append("*Sample data unavailable*\n")
+
+        return "\n".join(df_info_parts)
+
+    def _define_prompt(self, prompt: str = None, **kwargs):
+        """
+        Define the system prompt with DataFrame context.
+
+        This method is called by BasicAgent.configure() to build the system prompt.
+
+        Args:
+            prompt: Optional base prompt to extend
+            **kwargs: Additional template variables
+        """
+        # Build DataFrame information
+        df_info = self._build_dataframe_info()
+
+        # Default capabilities if not provided
+        capabilities = self._capabilities or """
+- Perform complex data analysis and transformations
+- Create visualizations (matplotlib, seaborn, plotly)
+- Generate statistical summaries
+- Export results to various formats
+- Execute pandas operations efficiently
+"""
+
+        # Get backstory
+        backstory = self.backstory or self.default_backstory()
+
+        # Build prompt using string.Template (not f-strings for JSON compatibility)
+        tmpl = Template(self.PANDAS_SYSTEM_PROMPT)
+        self.system_prompt = tmpl.safe_substitute(
+            description=self.description,
+            df_info=df_info,
+            capabilities=capabilities.strip(),
+            today_date=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+            backstory=backstory,
             **kwargs
         )
-        return agent
 
-    async def configure(self, df: pd.DataFrame = None, app=None) -> None:
-        """Basic Configuration of Pandas Agent.
+    async def configure(
+        self,
+        app: web.Application = None
+    ) -> None:
         """
-        if app:
-            if isinstance(app, web.Application):
-                self.app = app  # register the app into the Extension
-            else:
-                self.app = app.get_app()  # Nav Application
-        # adding this configured chatbot to app:
-        if self.app:
-            self.app[f"{self.name.lower()}_bot"] = self
-        if df is not None:
-            self.df = self._define_dataframe(df)
-        # And define Prompt:
-        self._define_prompt()
-        # Configure LLM:
-        self.configure_llm(use_chat=True)
-        # Configure VectorStore if enabled:
-        if self._use_vector:
-            self.configure_store()
-        # Conversation History:
-        self.memory = self.get_memory(input_key="input", output_key="output")
-        # 1. Initialize the Agent (as the base for RunnableMultiActionAgent)
-        self.agent = self.pandas_agent()
-        # 2. Create Agent Executor - This is where we typically run the agent.
-        self._agent = self.agent
-        # 3. When agent is correctly created, caching the data:
-        await self._cache_data(
-            self.chatbot_id,
-            self.df,
-            cache_expiration=24
+        Configure the PandasAgent.
+
+        Args:
+            df: Optional DataFrame(s) to load
+            app: Optional aiohttp Application
+        """
+        # Load from queries if specified
+        if self._queries and not self.dataframes:
+            self.dataframes = await self.gen_data(
+                query=self._queries,
+                agent_name=self.chatbot_id,
+                cache_expiration=self._cache_expiration
+            )
+
+        # Call parent configure (handles LLM, tools, memory, etc.)
+        await super().configure(app=app)
+        # Cache data after configuration
+        if self.dataframes:
+            await self._cache_data(
+                self.chatbot_id,
+                self.dataframes,
+                cache_expiration=self._cache_expiration
+            )
+
+        self.logger.info(
+            f"PandasAgent '{self.name}' configured with {len(self.dataframes)} DataFrame(s)"
         )
-
-    def mimefromext(self, ext: str) -> str:
-        """Get the mime type from the file extension."""
-        mime_types = {
-            '.csv': 'text/csv',
-            '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            '.xls': 'application/vnd.ms-excel',
-            '.json': 'application/json',
-            '.txt': 'text/plain',
-            '.html': 'text/html',
-            '.htm': 'text/html',
-            '.pdf': 'application/pdf',
-            '.png': 'image/png',
-            '.jpg': 'image/jpeg',
-            '.jpeg': 'image/jpeg',
-            '.gif': 'image/gif',
-            '.svg': 'image/svg+xml',
-            '.md': 'text/markdown',
-            '.ogg': 'audio/ogg',
-            '.wav': 'audio/wav',
-            '.mp3': 'audio/mpeg',
-            '.mp4': 'video/mp4',
-        }
-        return mime_types.get(ext, None)
-
-    def extract_filenames(self, response: AgentResponse) -> List[Path]:
-        """Extract filenames from the content."""
-        # Split the content by lines
-        output_lines = response.output.splitlines()
-        current_filename = ""
-        filenames = {}
-        for line in output_lines:
-            if 'filename:' in line:
-                current_filename = line.split('filename:')[1].strip()
-                if current_filename:
-                    try:
-                        filename_path = Path(current_filename).resolve()
-                        if filename_path.is_file():
-                            content_type = self.mimefromext(filename_path.suffix)
-                            url = str(filename_path).replace(str(self._static_path), BASE_STATIC_URL)
-                            filenames[filename_path.name] = {
-                                'content_type': content_type,
-                                'file_path': filename_path,
-                                'filename': filename_path.name,
-                                'url': url
-                            }
-                        continue
-                    except AttributeError:
-                        pass
-        if filenames:
-            response.filename = filenames
 
     async def invoke(
         self,
-        query: str, llm: Optional[Any] = None,
-        llm_params: Optional[Dict[str, Any]] = None
-    ):
-        """Invoke the agent with optional LLM override.
+        question: str,
+        **kwargs
+    ) -> AgentResponse:
+        """
+        Ask the agent a question about the data.
 
         Args:
-            query (str): The query to ask the chatbot.
-            llm (Optional[Any]): Optional LLM to use for this specific invocation.
-            llm_params (Optional[Dict[str, Any]]): Optional parameters to modify LLM behavior
-                                                (temperature, max_tokens, etc.)
+            question: Question to ask
+            **kwargs: Additional parameters
 
         Returns:
-            str: The response from the chatbot.
-
+            AgentResponse with answer and metadata
         """
-        original_agent = None
-        original_llm = None
-        try:
-            # If a different LLM or parameters are provided, create a temporary agent
-            if llm is not None:
-                # Get the current LLM if we're just updating parameters
-                current_llm = llm if llm is not None else self._llm
-                # Store original LLM for reference
-                original_llm = self._llm
-                # Store original agent for reference
-                original_agent = self._agent
-                # Temporarily update the instance LLM
-                self._llm = current_llm
-                # Create a new agent with the updated LLM
-                self._agent = self.pandas_agent()
-            # Invoke the agent with the query
-            result = await self._agent.ainvoke(
-                {"input": query}
-            )
-        except Exception as e:
-            return None, e
-        try:
-            # Parse tool outputs if present
-            try:
-                if isinstance(result, dict):
-                    output = result.get('output', '')
-                    if '```tool_outputs' in output:
-                        tool_json_match = re.search(r'```tool_outputs\n(.*?)\n```', output, re.DOTALL)
-                        if tool_json_match:
-                            tool_json = tool_json_match.group(1)
-                            # Parse the JSON
-                            tool_data = json_decoder(tool_json)
-                            # Get the actual content
-                            if "python_repl_ast_response" in tool_data:
-                                python_response = tool_data["python_repl_ast_response"]
-                                if isinstance(python_response, dict) and "content" in python_response:
-                                    # Replace the output with just the content
-                                    result['output'] = python_response["content"].strip()
-            except Exception as parse_error:
-                self.logger.error(
-                    f"Error parsing tool output: {parse_error}"
-                )
-            response = AgentResponse(question=query, **result)
-            # check if return is a file:
-            try:
-                self.extract_filenames(response)
-            except Exception as exc:
-                self.logger.error(
-                    f"Unable to extract filenames: {exc}"
-                )
-            # Restore the original agent if any:
-            if original_llm is not None:
-                self._llm = original_llm
-                self._agent = original_agent
-            try:
-                return self.as_markdown(
-                    response
-                ), response
-            except Exception as exc:
-                self.logger.exception(
-                    f"Error on response: {exc}"
-                )
-                return result.get('output', None), None
-        except Exception as e:
-            return result, e
-
-    def _configure_python_tool(self, df_locals: dict, **kwargs) -> PythonAstREPLTool:
-        """Configure the Python tool."""
-        # Create the Python tool with the given locals and globals
-        df_locals['execution_results'] = {}
-        # Create the Python REPL tool
-        PythonAstREPLTool_init = PythonAstREPLTool.__init__
-
-        def PythonAstREPLTool_init_wrapper(self, *args, **kwargs):
-            PythonAstREPLTool_init(self, *args, **kwargs)
-            self.globals = self.locals
-
-        PythonAstREPLTool.__init__ = PythonAstREPLTool_init_wrapper
-        python_tool = PythonAstREPLTool(
-            locals=df_locals,
-            globals=kwargs.get('globals', {}),
-            verbose=True,
+        # Use the conversation method from BasicAgent
+        response = await self.conversation(
+            question=question,
+            use_conversation_history=kwargs.get('use_conversation_history', True),
             **kwargs
         )
+        if isinstance(response, AgentResponse):
+            return response
 
-        # Add essential library imports and helper functions
-        setup_code = """
-# Ensure essential libraries are imported
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
-from collections import Counter, defaultdict
-from parrot.bots.tools import quick_eda, generate_eda_report, list_available_dataframes, create_plot, generate_pdf_from_html
-
-# Set plotting style
-plt.style.use('seaborn-v0_8-whitegrid')
-sns.set_palette('Set2')
-
-# Verify pandas is loaded correctly
-print(f"Pandas version: {pd.__version__}")
-"""
-        try:
-            python_tool.run(setup_code)
-        except Exception as e:
-            self.logger.error(
-                f"Error setting up python tool: {e}"
+        # Convert to AgentResponse if needed
+        if isinstance(response, AIMessage):
+            return AgentResponse(
+                agent_id=self.agent_id,
+                agent_name=self.agent_name,
+                status='success',
+                response=response,  # original AIMessage
+                question=question,
+                data=response.content,
+                output=response.output,
+                metadata=response.metadata,
+                turn_id=response.turn_id
             )
-        return python_tool
 
-    def _metrics_guide(self, df_key: str, df_name: str, columns: list) -> str:
-        """Generate a guide for the dataframe columns."""
-        # Create a markdown table with column category, column name, type and with dataframe is present:
-        table = "\n| Category | Column Name | Type | DataFrame | Dataframe Name |\n"
-        table += "|------------------|-------------|------|-----------|\n"
-        for column in columns:
-            # Get the column name
-            column_name = column
-            # split by "_" and first element is the category (if any):
-            # Get the column category
-            try:
-                column_category = column.split('_')[0]
-            except IndexError:
-                column_category = df_name
-            # Get the type of the column
-            column_type = str(self.df[df_name][column].dtype)
-            # Add the row to the table
-            table += f"| {column_category} | {column_name} | {column_type} | {df_key} | {df_name} |\n\n\n"
-        # Add a note about the dataframe
-        table += f"\nNote: {df_key} is also available as {df_name}\n"
-        return table
-
-    def _define_prompt(self, prompt: str = None, **kwargs):
-        now = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        self.agent_report_dir = self._static_path.joinpath(str(self.chatbot_id))
-        if self.agent_report_dir.exists() is False:
-            self.agent_report_dir.mkdir(parents=True, exist_ok=True)
-        # Add dataframe information
-        num_dfs = len(self.df)
-        self.df_locals['agent_report_dir'] = self.agent_report_dir
-        df_info = ''
-        for i, (df_name, df) in enumerate(self.df.items()):
-            df_key = f"df{i + 1}"
-            self.df_locals[df_name] = df
-            self.df_locals[df_key] = df
-            row_count = len(df)
-            self.df_locals[f"{df_key}_row_count"] = row_count
-            # Get basic dataframe info
-            df_shape = f"DataFrame Shape: {df.shape[0]} rows × {df.shape[1]} columns"
-            df_columns = self._metrics_guide(df_key, df_name, df.columns.tolist())
-            # Generate summary statistics
-            summary_stats = brace_escape(df.describe(include='all').to_markdown())
-            df_head = brace_escape(df.head(4).to_markdown())
-            # Create df_info block
-            if self.agent_type == "tool-calling":
-                df_info += f"""
-                ## Dataframe Name: {df_key}:
-                ## DataFrame: {df_key} (also accessible as {df_name} in Python code)
-
-                **Shape {df_key}**: {df_shape}
-
-                **Column Details (Name, Type, Category)**:
-                {df_columns}
-
-                **First 4 Rows (`print({df_key}.head(4).to_markdown())`)**:
-                {df_head}
-
-                **Summary Statistics (`print({df_key}.describe(include='all').to_markdown())`)**:
-                {summary_stats}
-                """
-            else:
-                df_info += f"""
-                ## DataFrame {df_key}:
-
-                ### {df_key} Shape:
-                {df_shape}
-
-                ### {df_key} Info:
-                {df_columns}
-
-                ### {df_key} Summary Statistics:
-                {summary_stats}
-                """
-        # Configure Python tool:
-        python_tool = self._configure_python_tool(
-            df_locals=self.df_locals,
-            **kwargs
-        )
-        # Add the Python tool to the tools list
-        self.tools.append(python_tool)
-        # List of Tools:
-        list_of_tools = ""
-        for tool in self.tools:
-            name = tool.name
-            description = tool.description  # noqa  pylint: disable=E1101
-            list_of_tools += f'- {name}: {description}\n'
-        list_of_tools += "\n"
-        tools_names = [tool.name for tool in self.tools]
-        capabilities = ''
-        if self._capabilities:
-            capabilities = "**Your Capabilities:**\n"
-            capabilities += self.sanitize_prompt_text(self._capabilities) + "\n"
-        # Create the prompt
-        sanitized_backstory = ''
-        if self.backstory:
-            sanitized_backstory = self.sanitize_prompt_text(self.backstory)
-        tmpl = Template(self.system_prompt_template)
-        self._prompt_prefix = tmpl.safe_substitute(
-            name=self.name,
-            description=self.description,
-            list_of_tools=list_of_tools,
-            backstory=sanitized_backstory,
-            capabilities=capabilities,
-            today_date=now,
-            system_prompt_base=prompt,
-            tools=", ".join(tools_names),
-            format_instructions=self._format_instructions.format(
-                tool_names=", ".join(tools_names)),
-            df_info=df_info,
-            num_dfs=num_dfs,
-            rationale=self.rationale,
-            agent_report_dir=self.agent_report_dir,
-            **kwargs
-        )
-        if self.agent_type == "tool-calling":
-            tmpl = Template(TOOL_CALLING_PROMPT_SUFFIX)
-            self._prompt_suffix = tmpl.safe_substitute(
-                df_info=df_info,
-                num_dfs=num_dfs
-            )
-        else:
-            self._prompt_suffix = AGENT_PROMPT_SUFFIX
+        return response
 
     def default_backstory(self) -> str:
-        return "You are a helpful assistant built to provide comprehensive guidance and support on data calculations and data analysis working with pandas dataframes."
+        """Return default backstory for the agent."""
+        return (
+            "You are a helpful data analysis assistant. "
+            "You provide accurate insights and clear visualizations "
+            "to help users understand their data."
+        )
 
-    @staticmethod
-    async def call_qs(queries: list) -> Dict[str, pd.DataFrame]:
+    # ===== Data Loading Methods =====
+
+    @classmethod
+    async def call_qs(cls, queries: List[str]) -> Dict[str, pd.DataFrame]:
         """
-        call_qs.
-        description: Call the QuerySource queries.
+        Execute QuerySource queries.
 
-        This method is used to execute multiple queries and files on the QueryObject.
-        It returns a dictionary with the results.
+        Args:
+            queries: List of query slugs
+
+        Returns:
+            Dictionary of DataFrames
         """
         dfs = {}
         for query in queries:
             if not isinstance(query, str):
-                raise ValueError(
-                    f"Query {query} is not a string."
-                )
-            # now, the only query accepted is a slug:
+                raise ValueError(f"Query {query} is not a string")
+
             try:
-                qy = QS(
-                    slug=query
-                )
+                qy = QS(slug=query)
                 df, error = await qy.query(output_format='pandas')
+
                 if error:
-                    raise ValueError(
-                        f"Query {query} fail with error {error}."
-                    )
+                    raise ValueError(f"Query {query} failed: {error}")
+
                 if not isinstance(df, pd.DataFrame):
-                    raise ValueError(
-                        f"Query {query} is not returning a dataframe."
-                    )
+                    raise ValueError(f"Query {query} did not return a DataFrame")
+
                 dfs[query] = df
-            except ValueError:
-                raise
+
             except Exception as e:
-                raise ValueError(
-                    f"Error executing Query {query}: {e}"
-                )
+                raise ValueError(f"Error executing query {query}: {e}")
+
         return dfs
 
-    @staticmethod
-    async def call_multiquery(query: dict) -> Dict[str, pd.DataFrame]:
+    @classmethod
+    async def call_multiquery(cls, query: dict) -> Dict[str, pd.DataFrame]:
         """
-        call_multiquery.
-        description: Call the MultiQuery queries.
+        Execute MultiQuery queries.
 
-        This method is used to execute multiple queries and files on the QueryObject.
-        It returns a dictionary with the results.
+        Args:
+            query: Query configuration dict
+
+        Returns:
+            Dictionary of DataFrames
         """
-        data = {}
         _queries = query.pop('queries', {})
         _files = query.pop('files', {})
+
         if not _queries and not _files:
-            raise ValueError(
-                "Queries or files are required."
-            )
+            raise ValueError("Queries or files are required")
+
         try:
-            ## Step 1: Running all Queries and Files on QueryObject
             qs = MultiQS(
                 slug=[],
                 queries=_queries,
                 files=_files,
                 query=query,
-                conditions=data,
+                conditions={},
                 return_all=True
             )
             result, _ = await qs.execute()
+
         except Exception as e:
-            raise ValueError(
-                f"Error executing MultiQuery: {e}"
-            )
+            raise ValueError(f"Error executing MultiQuery: {e}")
+
         if not isinstance(result, dict):
-            raise ValueError(
-                "MultiQuery is not returning a dictionary."
-            )
-        # MultiQuery returns a dictionary with the results
+            raise ValueError("MultiQuery did not return a dictionary")
+
         return result
+
+    @classmethod
+    async def load_from_files(
+        cls,
+        files: Union[str, Path, List[Union[str, Path]]],
+        **kwargs
+    ) -> Dict[str, pd.DataFrame]:
+        """
+        Load DataFrames from CSV or Excel files.
+
+        Args:
+            files: File path(s) to load
+            **kwargs: Additional pandas read options
+
+        Returns:
+            Dictionary of DataFrames
+        """
+        if isinstance(files, (str, Path)):
+            files = [files]
+
+        dfs = {}
+        for file_path in files:
+            path = Path(file_path)
+
+            if not path.exists():
+                raise FileNotFoundError(f"File not found: {path}")
+
+            # Determine file type and load
+            if path.suffix.lower() in ['.csv', '.txt']:
+                df = pd.read_csv(path, **kwargs)
+                dfs[path.stem] = df
+
+            elif path.suffix.lower() in ['.xlsx', '.xls']:
+                # Load all sheets
+                excel_file = pd.ExcelFile(path)
+                for sheet_name in excel_file.sheet_names:
+                    df = pd.read_excel(path, sheet_name=sheet_name, **kwargs)
+                    dfs[f"{path.stem}_{sheet_name}"] = df
+
+            else:
+                raise ValueError(f"Unsupported file type: {path.suffix}")
+
+        return dfs
 
     @classmethod
     async def gen_data(
@@ -592,67 +518,51 @@ print(f"Pandas version: {pd.__version__}")
         no_cache: bool = False
     ) -> Dict[str, pd.DataFrame]:
         """
-        gen_data.
+        Generate DataFrames with Redis caching support.
 
-        Generate the dataframes required for the agent to work, with Redis caching support.
-
-        Parameters:
-        -----------
-        query : Union[list, dict]
-            The query or queries to execute to generate dataframes.
-        refresh : bool
-            If True, forces regeneration of dataframes even if cached versions exist.
-        cache_expiration_hours : int
-            Number of hours to keep the cached dataframes (default: 48).
-        no_cache : bool
-            If True, disables caching even if no agent_name is provided.
+        Args:
+            query: Query configuration
+            agent_name: Agent identifier for caching
+            refresh: Force data regeneration
+            cache_expiration: Cache duration in hours
+            no_cache: Disable caching
 
         Returns:
-        --------
-        Dict[str, pd.DataFrame]
-            A Dictionary of named pandas DataFrames generated from the queries.
+            Dictionary of DataFrames
         """
-        # If agent_name is provided, we'll use Redis caching
-        if not refresh:
-            # Try to get cached dataframes
+        # Try cache first
+        if not refresh and not no_cache:
             cached_dfs = await cls._get_cached_data(agent_name)
             if cached_dfs:
+                logging.info(f"Using cached data for agent {agent_name}")
                 return cached_dfs
 
-        # Generate dataframes from query if no cache exists or refresh is True
+        # Generate data
         dfs = await cls._execute_query(query)
 
-        # If agent_name is provided, cache the generated dataframes
-        if no_cache is False:
+        # Cache if enabled
+        if not no_cache:
             await cls._cache_data(agent_name, dfs, cache_expiration)
+
         return dfs
 
     @classmethod
     async def _execute_query(cls, query: Union[list, dict]) -> Dict[str, pd.DataFrame]:
-        """Execute the query and return the generated dataframes."""
+        """Execute query and return DataFrames."""
         if isinstance(query, dict):
-            # is a MultiQuery execution, use the MultiQS class engine to do it:
-            try:
-                return await cls.call_multiquery(query)
-            except ValueError as e:
-                raise ValueError(f"Error creating Query For Agent: {e}")
+            return await cls.call_multiquery(query)
         elif isinstance(query, (str, list)):
             if isinstance(query, str):
                 query = [query]
-            try:
-                return await cls.call_qs(query)
-            except ValueError as e:
-                raise ValueError(f"Error creating Query For Agent: {e}")
+            return await cls.call_qs(query)
         else:
-            raise ValueError(
-                f"Expected a list of queries or a dictionary, got {type(query)}"
-            )
+            raise ValueError(f"Expected list or dict, got {type(query)}")
+
+    # ===== Redis Caching Methods =====
 
     @classmethod
     async def _get_redis_connection(cls):
-        """Get a connection to Redis."""
-        # You should adjust these parameters according to your Redis configuration
-        # Consider using environment variables for these settings
+        """Get Redis connection."""
         return await aioredis.Redis.from_url(
             REDIS_HISTORY_URL,
             decode_responses=True
@@ -661,40 +571,41 @@ print(f"Pandas version: {pd.__version__}")
     @classmethod
     async def _get_cached_data(cls, agent_name: str) -> Optional[Dict[str, pd.DataFrame]]:
         """
-        Retrieve cached data from Redis if they exist.
+        Retrieve cached DataFrames from Redis.
 
-        Returns None if no cache exists or on error.
+        Args:
+            agent_name: Agent identifier
+
+        Returns:
+            Dictionary of DataFrames or None
         """
         try:
             redis_conn = await cls._get_redis_connection()
-            # Check if the agent key exists
             key = f"agent_{agent_name}"
+
             if not await redis_conn.exists(key):
                 await redis_conn.close()
                 return None
 
-            # Get all dataframe keys stored for this agent
+            # Get all dataframe keys
             df_keys = await redis_conn.hkeys(key)
             if not df_keys:
                 await redis_conn.close()
                 return None
 
-            # Retrieve and convert each dataframe
+            # Retrieve DataFrames
             dataframes = {}
             for df_key in df_keys:
                 df_json = await redis_conn.hget(key, df_key)
                 if df_json:
-                    # Convert from JSON to dataframe
                     df_data = json_decoder(df_json)
-                    df = pd.DataFrame.from_records(df_data)
-                    dataframes[df_key] = df
+                    dataframes[df_key] = pd.DataFrame.from_records(df_data)
 
             await redis_conn.close()
             return dataframes if dataframes else None
 
         except Exception as e:
-            # Log the error but continue execution without cache
-            print(f"Error retrieving cache: {e}")
+            logging.error(f"Error retrieving cache: {e}")
             return None
 
     @classmethod
@@ -705,9 +616,12 @@ print(f"Pandas version: {pd.__version__}")
         cache_expiration: int
     ) -> None:
         """
-        Cache the given dataframes in Redis.
+        Cache DataFrames in Redis.
 
-        The dataframes are stored as JSON records under a hash key named after the agent.
+        Args:
+            agent_name: Agent identifier
+            dataframes: DataFrames to cache
+            cache_expiration: Expiration time in hours
         """
         try:
             if not dataframes:
@@ -716,28 +630,24 @@ print(f"Pandas version: {pd.__version__}")
             redis_conn = await cls._get_redis_connection()
             key = f"agent_{agent_name}"
 
-            # Delete any existing cache for this agent
+            # Clear existing cache
             await redis_conn.delete(key)
-            hkeys = await redis_conn.hkeys(key)
-            if hkeys:
-                await redis_conn.hdel(key, *hkeys)
 
-            # Store each dataframe under the agent's hash
+            # Store DataFrames
             for df_key, df in dataframes.items():
-                # Convert DataFrame to JSON
                 df_json = json_encoder(df.to_dict(orient='records'))
                 await redis_conn.hset(key, df_key, df_json)
 
-            # Set expiration time
+            # Set expiration
             expiration = timedelta(hours=cache_expiration)
             await redis_conn.expire(key, int(expiration.total_seconds()))
 
             logging.info(
-                f"Data was cached for agent {agent_name} with expiration of {cache_expiration} hours"
+                f"Cached data for agent {agent_name} "
+                f"(expires in {cache_expiration}h)"
             )
 
             await redis_conn.close()
 
         except Exception as e:
-            # Log the error but continue execution
-            print(f"Error caching dataframes: {e}")
+            logging.error(f"Error caching data: {e}")

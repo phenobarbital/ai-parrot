@@ -10,7 +10,7 @@ from ..clients.google import GoogleGenAIClient
 from .chatbot import Chatbot
 from .prompts import AGENT_PROMPT
 from ..tools.abstract import AbstractTool
-from ..tools.pythonpandas import PythonPandasTool
+from ..tools.pythonrepl import PythonREPLTool
 from ..tools.pdfprint import PDFPrintTool
 from ..tools.ppt import PowerPointTool
 from ..models.google import (
@@ -45,6 +45,7 @@ class BasicAgent(MCPEnabledMixin, Chatbot):
         - Compatible with all existing agent functionality
     """
     agent_id: Optional[str] = None
+    agent_name: Optional[str] = None
     _agent_response = AgentResponse
     speech_context: str = ""
     speech_system_prompt: str = ""
@@ -81,6 +82,7 @@ class BasicAgent(MCPEnabledMixin, Chatbot):
         **kwargs
     ):
         self.agent_id = self.agent_id or agent_id
+        self.agent_name = self.agent_name or name
         tools = self._get_default_tools(tools)
         super().__init__(
             name=name,
@@ -117,7 +119,7 @@ class BasicAgent(MCPEnabledMixin, Chatbot):
             tools = []
         tools.extend(
             [
-                PythonPandasTool(
+                PythonREPLTool(
                     report_dir=STATIC_DIR.joinpath(self.agent_id, 'documents')
                 ),
             ]
