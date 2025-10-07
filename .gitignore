@@ -190,7 +190,8 @@ yolo*
 #   YOLOv8 and 9 models
 yolov8*
 yolov9*
-yolov11
+yolov11*
+yolov12*
 
 # Output Folder:
 output/*
@@ -216,3 +217,11 @@ parrot/_version.py
 # ML Training logs
 runs/
 train/
+
+# Navigator configuration
+settings/
+templates/
+resources/
+logs/
+etc/
+documents/

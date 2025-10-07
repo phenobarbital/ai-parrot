@@ -1,5 +1,5 @@
 from typing import Optional, Dict, Union, List, Any
-from decimal import Decimal
+from datetime import datetime
 import json
 from pydantic import BaseModel, Field, field_validator, ConfigDict
 from navconfig import BASE_DIR
@@ -7,13 +7,17 @@ from asyncdb import AsyncDB
 from asyncdb.models import Model, Field as ModelField
 from querysource.conf import default_dsn
 from ..abstract import AbstractTool
-from datetime import datetime
+
 
 
 class ProductInput(BaseModel):
     """Input schema for product information requests."""
-    model: str = Field(..., description="The product model identifier (e.g., 'X1234', 'Y5678').")
-    program_slug: str = Field(..., description="The program slug associated with the product (e.g., 'alpha', 'beta').")
+    model: str = Field(
+        ..., description="The product model identifier (e.g., 'X1234', 'Y5678')."
+    )
+    program_slug: str = Field(
+        ..., description="The program slug associated with the product (e.g., 'alpha', 'beta')."
+    )
 
 
 class ProductInfo(BaseModel):
@@ -81,7 +85,7 @@ class ProductInfoTool(AbstractTool):
                 f"Query file not found for program_slug '{program_slug}' at {query_file}"
             )
         query = query_file.read_text()
-        async with await db.connection() as conn:
+        async with await db.connection() as conn:  # noqa
             product_data, error = await conn.query(query, model)
             if error:
                 raise RuntimeError(f"Database query failed: {error}")
@@ -93,8 +97,12 @@ class ProductInfoTool(AbstractTool):
 
 class ProductListInput(BaseModel):
     """Input schema for product list requests."""
-    program_slug: str = Field(..., description="The program slug to get products from (e.g., 'google', 'hisense').")
-    models: Optional[List[str]] = Field(default=None, description="Optional list of specific models to get. If None, gets all models.")
+    program_slug: str = Field(
+        ..., description="The program slug to get products from (e.g., 'google', 'hisense')."
+    )
+    models: Optional[List[str]] = Field(
+        default=None, description="Optional list of specific models to get. If None, gets all models."
+    )
 
 
 class ProductListTool(AbstractTool):
@@ -109,7 +117,7 @@ class ProductListTool(AbstractTool):
     async def _execute(self, program_slug: str, models: Optional[List[str]] = None) -> List[Dict[str, str]]:
         """Get list of products for a program."""
         db = AsyncDB('pg', dsn=default_dsn)
-        
+
         # Choose the appropriate query file
         if models:
             # Use specific models query
@@ -117,26 +125,26 @@ class ProductListTool(AbstractTool):
         else:
             # Use all products query
             query_file = BASE_DIR / 'agents' / 'product_report' / program_slug / 'products_list.sql'
-            
+
         if not query_file.exists():
             raise FileNotFoundError(
                 f"Products query file not found for program_slug '{program_slug}' at {query_file}"
             )
-        
+
         query = query_file.read_text()
-        async with await db.connection() as conn:
+        async with await db.connection() as conn:  # noqa
             if models:
                 # Execute with models parameter
                 products, error = await conn.query(query, models)
             else:
                 # Execute without parameters
                 products, error = await conn.query(query)
-                
+
             if error:
                 raise RuntimeError(f"Database query failed: {error}")
             if not products:
                 return []
-            
+
             return products
 
 
