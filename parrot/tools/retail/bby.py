@@ -1,360 +1,528 @@
-from typing import List, Dict, Any, Union
+"""
+BestBuy API Toolkit - Unified toolkit for BestBuy operations.
+
+Provides methods for:
+- Product search and information
+- Store availability checking
+- Inventory lookup
+"""
+import os
 import random
-from orjson import JSONDecodeError
+from typing import Dict, Any, Optional
 from pydantic import BaseModel, Field
-# from pydantic.v1 import BaseModel, Field
-from langchain_core.tools import BaseTool, BaseToolkit, StructuredTool, ToolException, Tool
-from datamodel.parsers.json import json_decoder, json_encoder  # pylint: disable=E0611
-from datamodel.exceptions import ParserError  # pylint: disable=E0611
 from navconfig import config
-from ...interfaces.http import HTTPService, ua
+from ...interfaces.http import HTTPService, UA_LIST
+from ..toolkit import AbstractToolkit
+from ..decorators import tool_schema
 
 
-ctt_list: list = [
+# ============================================================================
+# Configuration
+# ============================================================================
+
+BESTBUY_API_KEY = config.get('BESTBUY_APIKEY')
+
+# BestBuy cookies and headers for web scraping
+CTT_LIST = [
     "f3dbf688e45146555bb2b8604a993601",
     "06f4dfe367e87866397ef32302f5042e",
     "4e07e03ff03f5debc4e09ac4db9239ac"
 ]
 
-sid_list: list = [
+SID_LIST = [
     "d4fa1142-2998-4b68-af78-46d821bb3e1f",
     "9627390e-b423-459f-83ee-7964dd05c9a8"
 ]
 
-class BestBuyProductAvailabilityInput(BaseModel):
-    """Input for the BestBuy product availability tool."""
-    zipcode: str = Field(..., description="The ZIP code to check availability in")
-    sku: str = Field(..., description="The SKU of the product to check")
+
+# ============================================================================
+# Input Schemas
+# ============================================================================
+
+class ProductSearchInput(BaseModel):
+    """Input schema for product search."""
+    search_terms: Optional[str] = Field(
+        default=None,
+        description="Search terms separated by commas (e.g., 'oven,stainless,steel')"
+    )
+    product_name: Optional[str] = Field(
+        default=None,
+        description="Specific product name to search for"
+    )
+
+
+class ProductAvailabilityInput(BaseModel):
+    """Input schema for checking product availability."""
+    zipcode: str = Field(
+        description="ZIP code to check availability in"
+    )
+    sku: str = Field(
+        description="Product SKU to check"
+    )
     location_id: str = Field(
-        ..., description="Optional specific location ID to check"
+        description="Store location ID to check"
     )
     show_only_in_stock: bool = Field(
-        False, description="Whether to only show stores with product in stock"
+        default=False,
+        description="Whether to only show stores with product in stock"
     )
 
-    model_config = {
-        "arbitrary_types_allowed": False,
-        "extra": "forbid",  # Helps with compatibility
-        "json_schema_extra": {
-            "required": ["zipcode", "sku", "location_id"]
-        }
-    }
 
-class BestBuyToolkit(BaseToolkit):
-    """Toolkit for interacting with BestBuy's API."""
+class StoreLocatorInput(BaseModel):
+    """Input schema for finding stores."""
+    zipcode: str = Field(
+        description="ZIP code to search near"
+    )
+    radius: int = Field(
+        default=25,
+        description="Search radius in miles"
+    )
 
-    api_key: str = Field(default=config.get('BESTBUY_APIKEY'))
 
-    http_service: HTTPService = Field(default_factory=lambda: HTTPService(
-        use_proxy=True,
-        cookies={
-            "CTT": random.choice(ctt_list),
-            "SID": random.choice(sid_list),
-            "bby_rdp": "l",
-            "bm_sz": "9F5ED0110AF18594E2347A89BB4AB998~YAAQxm1lX6EqYHGSAQAAw+apmhkhXIeGYEc4KnzUMsjeac3xEoQmTNz5+of62i3RXQL6fUI+0FvCb/jgSjiVQOcfaSF+LdLkOXP1F4urgeIcqp/dBAhu5MvZXaCQsT06bwr7j21ozhFfTTWhjz1HmZN8wecsE6WGbK6wXp/33ODKlLaGWkTutqHbkzvMiiHXBCs9hT8jVny0REfita4AfqTK85Y6/M6Uq4IaDLPBLnTtJ0cTlPHk1HmkG5EsnI46llghcx1KZnCGnvZfHdb2ME9YZJ2GmC2b7dNmAgyL/gSVpoNdCJOj5Jk6z/MCVhZ81OZfX4S01E2F1mBGq4uV5/1oK2KR4YgZP4dsTN8izEEPybUKGY3CyM1gOUc=~3556420~4277810",
-            "bby_cbc_lb": "p-browse-e",
-            "intl_splash": "false"
-        },
-        headers={
-            "Host": "www.bestbuy.com",
-            "Referer": "https://www.bestbuy.com/",
-            "TE": "trailers",
-            "Accept-Language": "en-US,en;q=0.5",
-        }
-    ))
+# ============================================================================
+# BestBuy Toolkit
+# ============================================================================
 
-    # Add this model_config to allow arbitrary types
-    model_config = {
-        "extra": "forbid",  # Forbid extra fields
-        "arbitrary_types_allowed": False
-    }
+class BestBuyToolkit(AbstractToolkit):
+    """
+    Toolkit for interacting with BestBuy API and services.
 
-    def get_tools(self) -> List[BaseTool]:
-        """Get the tools in the toolkit."""
-        return [
-            self._get_availability_tool(),
-            self._get_product_information()
-        ]
+    Provides methods for:
+    - Searching for products
+    - Getting product information
+    - Checking store availability
+    - Finding nearby stores
+    """
 
-    def _get_product_information(self) -> StructuredTool:
-        """Create a tool for getting product information from BestBuy."""
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        use_proxy: bool = True,
+        **kwargs
+    ):
+        """
+        Initialize the BestBuy toolkit.
 
-        async def _product_information(tool_input: Union[str, dict]) -> List[dict]:
-            """Get product information from BestBuy based on SKU, name, or search terms."""
-            # https://api.bestbuy.com/v1/products(name={product_name})?format=json&show=sku,name,salePrice,customerReviewAverage,customerReviewCount,manufacturer,modelNumber&apiKey={api_key}
-            if isinstance(tool_input, dict):
-                # Direct call with dict
-                input_data = tool_input
-            elif isinstance(tool_input, str):
-                # Might be a JSON string from LLM
-                try:
-                    # input_data = json.loads(tool_input)
-                    input_data = json_decoder(tool_input)
-                except (ParserError, JSONDecodeError):
-                    # Not valid JSON, treat as zipcode with missing other params
-                    input_data = {"product_name": tool_input}
-            else:
-                # Some other type that we don't expect
-                input_data = {"product_name": str(tool_input)}
+        Args:
+            api_key: BestBuy API key. If None, uses config.get('BESTBUY_APIKEY')
+            use_proxy: Whether to use proxy for requests
+            **kwargs: Additional toolkit configuration
+        """
+        super().__init__(**kwargs)
 
-            # Product Name to be used in the search:
-            print('PRODUCT > ', input_data)
-
-            product_name = input_data.get("product_name", None)
-            search_terms = input_data.get("search_terms", None)
-            print(search_terms)
-            if search_terms:
-                search_terms = search_terms.split(',')
-                # I need in format: search=oven&search=stainless&search=steel
-                search_terms = '&'.join([f"search={term.strip()}" for term in search_terms])
-                url = f"https://api.bestbuy.com/v1/products({search_terms})?format=json&show=sku,name,salePrice,customerReviewAverage,customerReviewCount,manufacturer,modelNumber&apiKey={self.api_key}"
-            elif product_name:
-                if ',' in product_name:
-                    search_terms = product_name.split(',')
-                    search_terms = '&'.join([f"search={term.strip()}" for term in search_terms])
-                else:
-                    search_terms = f"name={product_name.strip()}"
-                url = f"https://api.bestbuy.com/v1/products({search_terms})?format=json&show=sku,name,salePrice,customerReviewAverage,customerReviewCount,manufacturer,modelNumber&apiKey={self.api_key}"
-            else:
-                raise ToolException(
-                    "Either product_name or search_terms must be provided."
-                )
-            # URL for BestBuy's Product API
-            result, error = await self.http_service._request(
-                url=url,
-                method="GET",
-                use_json=True,
-                use_proxy=True,
-                headers={
-                    "User-Agent": random.choice(ua)
-                },
-                use_ssl=True,
-                follow_redirects=True,
-                raise_for_status=True,
-                full_response=False
+        self.api_key = api_key or BESTBUY_API_KEY
+        if not self.api_key:
+            raise ValueError(
+                "BestBuy API key is required. "
+                "Set BESTBUY_APIKEY in config or pass api_key parameter."
             )
-            products = result.get('products', [])
-            if not products:
-                return "No products found."
 
-            return products
-
-
-        return StructuredTool.from_function(
-            name="product_information",
-            description=(
-                "Use this tool to search for product information. "
-                "Input must be the search terms: "
-                "- search terms: different words separated by commas "
-                " Example input: {{\"search_terms\": \"oven,stainless\"}}"
-            ),
-            func=_product_information,
-            coroutine=_product_information,
-            infer_schema=False,
-            return_direct=False,
-            handle_tool_error=True
+        # Initialize HTTPService for BestBuy website (availability checks)
+        self.http_web = HTTPService(
+            use_proxy=use_proxy,
+            cookies={
+                "CTT": random.choice(CTT_LIST),
+                "SID": random.choice(SID_LIST),
+                "bby_rdp": "l",
+                "bm_sz": "9F5ED0110AF18594E2347A89BB4AB998~YAAQxm1lX6EqYHGSAQAAw+apmhkhXIeGYEc4KnzUMsjeac3xEoQmTNz5+of62i3RXQL6fUI+0FvCb/jgSjiVQOcfaSF+LdLkOXP1F4urgeIcqp/dBAhu5MvZXaCQsT06bwr7j21ozhFfTTWhjz1HmZN8wecsE6WGbK6wXp/33ODKlLaGWkTutqHbkzvMiiHXBCs9hT8jVny0REfita4AfqTK85Y6/M6Uq4IaDLPBLnTtJ0cTlPHk1HmkG5EsnI46llghcx1KZnCGnvZfHdb2ME9YZJ2GmC2b7dNmAgyL/gSVpoNdCJOj5Jk6z/MCVhZ81OZfX4S01E2F1mBGq4uV5/1oK2KR4YgZP4dsTN8izEEPybUKGY3CyM1gOUc=~3556420~4277810",
+                "bby_cbc_lb": "p-browse-e",
+                "intl_splash": "false"
+            },
+            headers={
+                "Host": "www.bestbuy.com",
+                "Referer": "https://www.bestbuy.com/",
+                "TE": "trailers",
+                "Accept-Language": "en-US,en;q=0.5",
+            },
+            accept='application/json',
+            timeout=30
         )
 
-    def _get_availability_tool(self) -> StructuredTool:
-        """Create a tool for checking product availability at BestBuy."""
+        # Initialize HTTPService for BestBuy API (product search)
+        self.http_api = HTTPService(
+            use_proxy=True,
+            accept='application/json',
+            timeout=30
+        )
 
-        async def _check_availability(tool_input: Union[str, dict]) -> str:
-            """Check BestBuy product availability based on SKU and location."""
+    @tool_schema(ProductSearchInput)
+    async def search_products(
+        self,
+        search_terms: Optional[str] = None,
+        product_name: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Search for products on BestBuy using product names or search terms.
 
-            # Input validation
-            # tool_input: str
-            try:
-                if isinstance(tool_input, dict):
-                    # Direct call with dict
-                    input_data = tool_input
-                elif isinstance(tool_input, str):
-                    # Might be a JSON string from LLM
-                    try:
-                        # input_data = json.loads(tool_input)
-                        input_data = json_decoder(tool_input)
-                    except (ParserError, JSONDecodeError):
-                        # Not valid JSON, treat as zipcode with missing other params
-                        input_data = {"zipcode": tool_input}
-                else:
-                    # Some other type that we don't expect
-                    input_data = {"zipcode": str(tool_input)}
-                # Extract fields
-                zipcode = input_data.get("zipcode")
-                sku = input_data.get("sku")
-                location_id = input_data.get("location_id")
-                show_only_in_stock = input_data.get("show_only_in_stock", False)
+        Returns detailed product information including:
+        - SKU (needed for availability checks)
+        - Product name
+        - Sale price
+        - Customer reviews and ratings
+        - Manufacturer and model number
 
-            except Exception as e:
-                # Final fallback - treat the entire input as a zipcode
-                zipcode = str(tool_input)
-                sku = None
-                location_id = None
-                show_only_in_stock = False
+        Args:
+            search_terms: Comma-separated search terms (e.g., "oven,stainless,steel")
+            product_name: Specific product name to search for
 
-            # Input validation
-            if not zipcode:
-                raise ToolException("ZIP code is required to check product availability")
-            if not sku:
-                raise ToolException("Product SKU is required to check availability")
-            if not location_id:
-                raise ToolException("Store location ID is required to check availability")
-
-            # Prepare the payload for the API call
-            payload = {
-                "locationId": location_id,
-                "zipCode": zipcode,
-                "showOnShelf": True,
-                "lookupInStoreQuantity": True,
-                "xboxAllAccess": False,
-                "consolidated": True,
-                "showOnlyOnShelf": False,
-                "showInStore": True,
-                "pickupTypes": [
-                    "UPS_ACCESS_POINT",
-                    "FEDEX_HAL"
-                ],
-                "onlyBestBuyLocations": True,
-                # TODO: add more products
-                "items": [
-                    {
-                        "sku": sku,
-                        "condition": None,
-                        "quantity": 1,
-                        "itemSeqNumber": "1",
-                        "reservationToken": None,
-                        "selectedServices": [],
-                        "requiredAccessories": [],
-                        "isTradeIn": False,
-                        "isLeased": False
-                    }
-                ]
+        Returns:
+            Dictionary with list of matching products or error message
+        """
+        # Build query string
+        if search_terms:
+            # Parse comma-separated terms
+            terms = [term.strip() for term in search_terms.split(',')]
+            query = '&'.join([f"search={term}" for term in terms])
+        elif product_name:
+            # Handle product name (can be comma-separated too)
+            if ',' in product_name:
+                terms = [term.strip() for term in product_name.split(',')]
+                query = '&'.join([f"search={term}" for term in terms])
+            else:
+                query = f"name={product_name.strip()}"
+        else:
+            return {
+                "error": "Either search_terms or product_name must be provided"
             }
 
-            # Make the API call using the HTTP service
-            try:
-                # URL for BestBuy's availability API
-                url = "https://www.bestbuy.com/productfulfillment/c/api/2.0/storeAvailability"
-
-                # Make POST request with JSON payload
-                result, error = await self.http_service._request(
-                    url=url,
-                    method="POST",
-                    data=payload,
-                    use_json=True,
-                    use_proxy=True,
-                    headers={
-                        "User-Agent": random.choice(ua)
-                    },
-                    use_ssl=True,
-                    follow_redirects=True,
-                    raise_for_status=True,
-                    full_response=False
-                )
-
-                if error:
-                    raise ToolException(
-                        f"Error checking BestBuy availability: {error}"
-                    )
-
-                # Process and format the response
-                if not result:
-                    return "No data was returned from BestBuy. The service may be unavailable."
-
-                # Extract relevant information from the result
-                formatted_result = self._format_availability_response(result, location_id, sku, show_only_in_stock)
-                return formatted_result
-
-            except Exception as e:
-                raise ToolException(f"Failed to check BestBuy product availability: {str(e)}")
-
-        return StructuredTool.from_function(
-            name="availability",
-            description=(
-                "Use this tool to check product availability at a specific Best Buy store or zipcode. "
-                "Input must be a JSON object with the following fields: "
-                "- zipcode (required): The ZIP code to check availability in. "
-                "- sku (required): The SKU of the product to check. "
-                "- location_id (required): The specific store location ID to check. "
-                "- show_only_in_stock (optional): Whether to only show stores with product in stock. "
-                "Example input: {{\"zipcode\": \"33928\", \"sku\": \"6428376\", \"location_id\": \"767\", \"show_only_in_stock\": false}}"
-            ),
-            func=_check_availability,
-            # args_schema=BestBuyProductAvailabilityInput,
-            coroutine=_check_availability,
-            infer_schema=False,
-            return_direct=False,
-            handle_tool_error=True
+        # Build API URL
+        url = (
+            f"https://api.bestbuy.com/v1/products({query})"
+            f"?format=json"
+            f"&show=sku,name,salePrice,customerReviewAverage,customerReviewCount,manufacturer,modelNumber"
+            f"&apiKey={self.api_key}"
         )
 
-    def _format_availability_response(
-        self, result: Dict[str, Any], location_id: str, sku: str, show_only_in_stock: bool = False
-    ) -> str:
+        self.logger.debug(f"Searching BestBuy API: {url}")
+
         try:
-            # Extract store information from the "ispu" locations
-            locations = result.get("ispu", {}).get("locations", [])
-            # Match on the "id" key rather than "locationId"
-            store = next((loc for loc in locations if loc.get("id") == location_id), None)
-            if not store:
-                return "No matching store location found."
-
-            store_name = store.get("name", "N/A")
-            store_address = store.get("address", "N/A")
-            store_city = store.get("city", "N/A")
-            store_zip = store.get("zipCode", "N/A")
-            store_state = store.get("state", "N/A")
-            store_lat = store.get("latitude", "N/A")
-            store_long = store.get("longitude", "N/A")
-
-            # Format store hours if available
-            open_times = store.get("openTimesMap", {})
-            store_hours_str = (
-                "\n".join(f"{day}: {hours}" for day, hours in open_times.items())
-                if open_times else "N/A"
+            # Make request using HTTPService
+            result, error = await self.http_api.request(
+                url=url,
+                method="GET",
+                client='httpx',
+                use_ssl=True,
+                follow_redirects=True
             )
 
-            # Extract product availability from "ispu" items
-            items = result.get("ispu", {}).get("items", [])
-            item = next((it for it in items if it.get("sku") == sku), None)
-            if not item:
-                return "No matching product found."
+            if error:
+                self.logger.error(f"Error searching products: {error}")
+                return {"error": str(error)}
 
-            print('ITEM > ', item)
+            # Extract products
+            products = result.get('products', [])
 
-            product_instore = item.get("inStoreAvailable", False)
-            product_pickup = item.get("pickupEligible", False)
+            if not products:
+                return {
+                    "message": "No products found",
+                    "products": []
+                }
 
-            # Extract the location-specific availability from the item's "locations" list
-            item_locations = item.get("locations", [])
-            availability = next(
-                (loc for loc in item_locations if loc.get("locationId") == location_id), None
-            )
-            if not availability:
-                return "No matching product availability found."
-
-            on_shelf = availability.get("onShelfDisplay", False)
-            in_store_quantity = availability.get("inStoreAvailability", {}).get("availableInStoreQuantity", 0)
-            available_from = availability.get("inStoreAvailability", {}).get("minDate")
-
-            # Build and return a formatted result string
-            result_str = (
-                f"Store Name: {store_name}\n"
-                f"Address: {store_address}\n"
-                f"City: {store_city}\n"
-                f"Zip Code: {store_zip}\n"
-                f"State: {store_state}\n"
-                f"Latitude: {store_lat}\n"
-                f"Longitude: {store_long}\n"
-                f"Hours:\n{store_hours_str}\n"
-                "--------------------------------\n"
-                f"Product SKU: {sku}\n"
-                f"In-store Available: {product_instore}\n"
-                f"Pickup Eligible: {product_pickup}\n"
-                f"On Shelf Display: {on_shelf}\n"
-                f"Available Quantity: {in_store_quantity}\n"
-                f"Available From: {available_from}\n"
-                "--------------------------------\n"
-            )
-            return result_str
+            return {
+                "total": len(products),
+                "products": products
+            }
 
         except Exception as e:
-            return f"Error formatting availability response: {str(e)}"
+            self.logger.error(f"Failed to search products: {e}")
+            return {"error": str(e)}
+
+    @tool_schema(ProductAvailabilityInput)
+    async def check_availability(
+        self,
+        zipcode: str,
+        sku: str,
+        location_id: str,
+        show_only_in_stock: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Check product availability at a specific BestBuy store.
+
+        Returns detailed availability information including:
+        - Store information (name, address, hours)
+        - Product in-stock status
+        - Pickup eligibility
+        - On-shelf display status
+        - Available quantity
+
+        Args:
+            zipcode: ZIP code to check availability in
+            sku: Product SKU to check
+            location_id: Store location ID
+            show_only_in_stock: Whether to only show in-stock items
+
+        Returns:
+            Dictionary with availability information or error message
+        """
+        # Validate inputs
+        if not zipcode:
+            return {"error": "ZIP code is required"}
+        if not sku:
+            return {"error": "Product SKU is required"}
+        if not location_id:
+            return {"error": "Store location ID is required"}
+
+        # Build request payload
+        payload = {
+            "locationId": location_id,
+            "zipCode": zipcode,
+            "showOnShelf": True,
+            "lookupInStoreQuantity": True,
+            "xboxAllAccess": False,
+            "consolidated": True,
+            "showOnlyOnShelf": False,
+            "showInStore": True,
+            "pickupTypes": [
+                "UPS_ACCESS_POINT",
+                "FEDEX_HAL"
+            ],
+            "onlyBestBuyLocations": True,
+            "items": [
+                {
+                    "sku": sku,
+                    "condition": None,
+                    "quantity": 1,
+                    "itemSeqNumber": "1",
+                    "reservationToken": None,
+                    "selectedServices": [],
+                    "requiredAccessories": [],
+                    "isTradeIn": False,
+                    "isLeased": False
+                }
+            ]
+        }
+
+        url = "https://www.bestbuy.com/productfulfillment/c/api/2.0/storeAvailability"
+
+        self.logger.debug(
+            f"Checking availability: SKU={sku}, Location={location_id}, ZIP={zipcode}"
+        )
+
+        try:
+            # Make request using HTTPService
+            result, error = await self.http_web.request(
+                url=url,
+                method="POST",
+                data=payload,
+                use_json=True,
+                client='httpx',
+                headers={
+                    "User-Agent": random.choice(UA_LIST)
+                },
+                use_ssl=True,
+                follow_redirects=True
+            )
+
+            if error:
+                self.logger.error(f"Error checking availability: {error}")
+                return {"error": str(error)}
+
+            if not result:
+                return {
+                    "error": "No data returned from BestBuy. Service may be unavailable."
+                }
+
+            # Format the response
+            formatted = self._format_availability_response(
+                result,
+                location_id,
+                sku,
+                show_only_in_stock
+            )
+
+            return formatted
+
+        except Exception as e:
+            self.logger.error(f"Failed to check availability: {e}")
+            return {"error": str(e)}
+
+    async def find_stores(
+        self,
+        zipcode: str,
+        radius: int = 25
+    ) -> Dict[str, Any]:
+        """
+        Find BestBuy stores near a ZIP code.
+
+        Args:
+            zipcode: ZIP code to search near
+            radius: Search radius in miles
+
+        Returns:
+            Dictionary with list of stores
+        """
+        # Build API URL
+        url = (
+            f"https://api.bestbuy.com/v1/stores"
+            f"(area({zipcode},{radius}))"
+            f"?format=json"
+            f"&show=storeId,name,address,city,region,postalCode,phone,lat,lng,hours"
+            f"&apiKey={self.api_key}"
+        )
+
+        self.logger.debug(f"Finding stores near {zipcode} within {radius} miles")
+
+        try:
+            result, error = await self.http_api.request(
+                url=url,
+                method="GET",
+                client='httpx',
+                use_ssl=True
+            )
+
+            if error:
+                self.logger.error(f"Error finding stores: {error}")
+                return {"error": str(error)}
+
+            stores = result.get('stores', [])
+
+            return {
+                "total": len(stores),
+                "stores": stores
+            }
+
+        except Exception as e:
+            self.logger.error(f"Failed to find stores: {e}")
+            return {"error": str(e)}
+
+    async def get_product_details(self, sku: str) -> Dict[str, Any]:
+        """
+        Get detailed information for a specific product by SKU.
+
+        Args:
+            sku: Product SKU
+
+        Returns:
+            Dictionary with detailed product information
+        """
+        url = (
+            f"https://api.bestbuy.com/v1/products/{sku}.json"
+            f"?apiKey={self.api_key}"
+        )
+
+        self.logger.debug(f"Getting product details for SKU: {sku}")
+
+        try:
+            result, error = await self.http_api.request(
+                url=url,
+                method="GET",
+                client='httpx',
+                use_ssl=True
+            )
+
+            if error:
+                self.logger.error(f"Error getting product details: {error}")
+                return {"error": str(error)}
+
+            return result
+
+        except Exception as e:
+            self.logger.error(f"Failed to get product details: {e}")
+            return {"error": str(e)}
+
+    def _format_availability_response(
+        self,
+        result: Dict[str, Any],
+        location_id: str,
+        sku: str,
+        show_only_in_stock: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Format availability response into structured data.
+
+        Args:
+            result: Raw API response
+            location_id: Store location ID
+            sku: Product SKU
+            show_only_in_stock: Filter flag
+
+        Returns:
+            Formatted availability dictionary
+        """
+        try:
+            # Extract store information from ISPU locations
+            locations = result.get("ispu", {}).get("locations", [])
+            store = next(
+                (loc for loc in locations if loc.get("id") == location_id),
+                None
+            )
+
+            if not store:
+                return {
+                    "error": "No matching store location found",
+                    "location_id": location_id
+                }
+
+            # Extract store details
+            store_info = {
+                "store_id": location_id,
+                "name": store.get("name", "N/A"),
+                "address": store.get("address", "N/A"),
+                "city": store.get("city", "N/A"),
+                "state": store.get("state", "N/A"),
+                "zip_code": store.get("zipCode", "N/A"),
+                "latitude": store.get("latitude", "N/A"),
+                "longitude": store.get("longitude", "N/A"),
+                "hours": store.get("openTimesMap", {})
+            }
+
+            # Extract product availability from ISPU items
+            items = result.get("ispu", {}).get("items", [])
+            item = next(
+                (it for it in items if it.get("sku") == sku),
+                None
+            )
+
+            if not item:
+                return {
+                    "error": "No matching product found",
+                    "sku": sku,
+                    "store": store_info
+                }
+
+            # Extract item-level availability
+            item_locations = item.get("locations", [])
+            availability = next(
+                (loc for loc in item_locations if loc.get("locationId") == location_id),
+                None
+            )
+
+            if not availability:
+                return {
+                    "error": "No availability data for this product at this location",
+                    "sku": sku,
+                    "store": store_info
+                }
+
+            # Build product availability info
+            in_store_availability = availability.get("inStoreAvailability", {})
+            product_info = {
+                "sku": sku,
+                "in_store_available": item.get("inStoreAvailable", False),
+                "pickup_eligible": item.get("pickupEligible", False),
+                "on_shelf_display": availability.get("onShelfDisplay", False),
+                "available_quantity": in_store_availability.get("availableInStoreQuantity", 0),
+                "available_from": in_store_availability.get("minDate"),
+                "pickup_types": item.get("pickupTypes", [])
+            }
+
+            # Check if we should filter out of stock
+            if show_only_in_stock and product_info["available_quantity"] == 0:
+                return {
+                    "message": "Product not in stock at this location",
+                    "sku": sku,
+                    "store": store_info,
+                    "product": product_info
+                }
+
+            return {
+                "store": store_info,
+                "product": product_info,
+                "status": "available" if product_info["available_quantity"] > 0 else "unavailable"
+            }
+
+        except Exception as e:
+            self.logger.error(f"Error formatting availability response: {e}")
+            return {
+                "error": f"Failed to format response: {str(e)}"
+            }
