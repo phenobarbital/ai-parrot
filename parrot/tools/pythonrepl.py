@@ -19,6 +19,7 @@ from concurrent.futures import ProcessPoolExecutor
 import pandas as pd
 import numpy as np
 import matplotlib
+import folium
 # Force matplotlib to use non-interactive backend
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -27,6 +28,7 @@ from matplotlib import _pylab_helpers
 # altair:
 import altair
 # plotly
+import plotly.express as px
 import plotly.graph_objects as go
 import plotly.io as pio
 import numexpr as ne
@@ -328,14 +330,17 @@ class PythonREPLTool(AbstractTool):
             'pd': pd,
             'np': np,
             'plt': plt,
-            'sns': sns,
-            'ne': ne,
-            'go': go,
+            'seaborn': sns,
+            'numexpr': ne,
             'pio': pio,
+            'px': px,
+            'go': go,
             'altair': altair,
             'bokeh': bokeh,
             'hv': hv,
             'opts': opts,
+            'matplotlib': matplotlib,
+            'folium': folium,
 
             # JSON utilities
             'json_encoder': json_encoder,
@@ -640,25 +645,25 @@ print("Use 'execution_results' dict to store intermediate results.")
                 debug
             )
 
-            # Prepare the response
-            response = {
-                "output": result,
-                "code_executed": code,
-                "debug_mode": debug,
-                "execution_successful": not result.startswith(("SyntaxError:", "ExecutionError:", "Error:")),
-                "matplotlib_backend": matplotlib.get_backend(),
-            }
+            # # Prepare the response
+            # response = {
+            #     "output": result,
+            #     "code_executed": code,
+            #     "debug_mode": debug,
+            #     "execution_successful": not result.startswith(("SyntaxError:", "ExecutionError:", "Error:")),
+            #     "matplotlib_backend": matplotlib.get_backend(),
+            # }
 
-            # Add information about available variables
-            if debug:
-                response["available_variables"] = {
-                    "locals_count": len(self.locals),
-                    "globals_count": len(self.globals),
-                    "execution_results_keys": list(self.locals.get('execution_results', {}).keys()),
-                    "open_figures": len(plt.get_fignums())
-                }
+            # # Add information about available variables
+            # if debug:
+            #     response["available_variables"] = {
+            #         "locals_count": len(self.locals),
+            #         "globals_count": len(self.globals),
+            #         "execution_results_keys": list(self.locals.get('execution_results', {}).keys()),
+            #         "open_figures": len(plt.get_fignums())
+            #     }
 
-            return response
+            return result
 
         except Exception as e:
             self.logger.error(f"Error executing Python code: {e}")
