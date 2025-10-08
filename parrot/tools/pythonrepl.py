@@ -330,7 +330,7 @@ class PythonREPLTool(AbstractTool):
             'pd': pd,
             'np': np,
             'plt': plt,
-            'seaborn': sns,
+            'sns': sns,
             'numexpr': ne,
             'pio': pio,
             'px': px,
