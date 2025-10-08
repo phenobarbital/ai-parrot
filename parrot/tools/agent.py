@@ -1,21 +1,13 @@
 """
-Agent Orchestration System for AI-Parrot
-Agent-as-a-Tool Framework to use LLMs agents as tools in a broader system.
-
-This implementation builds on the existing AI-parrot architecture with:
-- Proper use of conversation() and invoke() methods
-- Integration with existing ToolManager
-- Agent-as-Tool wrapper using AbstractTool
-- Support for both Orchestrator and Crew patterns
-- Tool sharing between agents
+Complete Fixed AgentTool with Correct Schema Structure
 """
 from typing import Dict, List, Any, Optional, Union, Callable
 from dataclasses import dataclass, field
-from .abstract import AbstractTool
-from ..bots.agent import BasicAgent
-from ..bots.abstract import AbstractBot
-from ..models.responses import AIMessage, AgentResponse
-from ..memory import ConversationTurn
+from pydantic import BaseModel, Field
+from parrot.tools.abstract import AbstractTool
+from parrot.bots.abstract import AbstractBot, OutputMode
+from parrot.models.responses import AIMessage, AgentResponse
+from parrot.memory import ConversationTurn
 
 
 @dataclass
@@ -30,28 +22,57 @@ class AgentContext:
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 
+class QuestionInput(BaseModel):
+    """Input schema for AgentTool - defines the question parameter."""
+    question: str = Field(
+        ...,
+        description="The question or task to ask the agent"
+    )
+
+
 class AgentTool(AbstractTool):
     """
     Wraps any BasicAgent/AbstractBot as a tool for use by other agents.
 
-    This allows agents to be used as tools in the existing ToolManager system.
+    - Schema includes "parameters" key for Google GenAI compatibility
+    - Uses Pydantic args_schema for validation
+    - Accepts all args as **kwargs in _execute()
     """
+
+    # Use Pydantic schema for validation
+    args_schema = QuestionInput
 
     def __init__(
         self,
-        agent: Union[BasicAgent, AbstractBot],
+        agent: AbstractBot,
         tool_name: str = None,
         tool_description: str = None,
         use_conversation_method: bool = True,
         context_filter: Optional[Callable[[AgentContext], AgentContext]] = None,
-        question_description: str = "The question or request to send to the specialized agent",
-        context_description: str = "Additional context information to pass to the agent"
     ):
         super().__init__()
 
         self.agent = agent
-        self.name = tool_name or f"{agent.name.lower().replace(' ', '_')}_agent"
-        self.description = tool_description or f"Specialized agent for {agent.name} related queries"
+        self.name = tool_name or f"{agent.name.lower().replace(' ', '_')}"
+
+        # Build description
+        if tool_description:
+            self.description = tool_description
+        else:
+            # Auto-generate from agent properties
+            desc_parts = []
+            if hasattr(agent, 'role') and agent.role:
+                desc_parts.append(f"Role: {agent.role}")
+            if hasattr(agent, 'goal') and agent.goal:
+                desc_parts.append(f"Goal: {agent.goal}")
+            if hasattr(agent, 'capabilities') and agent.capabilities:
+                desc_parts.append(f"Capabilities: {agent.capabilities}")
+
+            if desc_parts:
+                self.description = f"Agent: {agent.name}. " + ". ".join(desc_parts)
+            else:
+                self.description = f"Consult {agent.name} for specialized assistance"
+
         self.use_conversation_method = use_conversation_method
         self.context_filter = context_filter
 
@@ -59,49 +80,73 @@ class AgentTool(AbstractTool):
         self.call_count = 0
         self.last_response = None
 
-        # Define input schema for the tool
-        self.input_schema = {
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": question_description
+        # Build schema in the correct format for Google GenAI
+        # CRITICAL: Must have "parameters" key at top level
+        self._schema = {
+            "name": self.name,
+            "description": self.description,
+            "parameters": {  # ← Google GenAI extracts this key
+                "type": "object",
+                "properties": {
+                    "question": {
+                        "type": "string",
+                        "description": f"The question or task to ask {agent.name}"
+                    }
                 },
-                "context": {
-                    "type": "object",
-                    "description": context_description,
-                    "properties": {
-                        "user_info": {"type": "object"},
-                        "shared_data": {"type": "object"},
-                        "previous_results": {"type": "object"}
-                    },
-                    "additionalProperties": False
-                }
-            },
-            "required": ["query"],
-            "additionalProperties": False
+                "required": ["question"],
+                "additionalProperties": False
+            }
         }
 
-    async def _execute(self, query: str, context: Dict[str, Any] = None, **kwargs) -> str:
+    def get_tool_schema(self) -> Dict[str, Any]:
+        """
+        Return the tool schema in the format expected by Google GenAI.
+
+        Returns:
+            Schema with structure:
+            {
+                "name": "tool_name",
+                "description": "...",
+                "parameters": {  # ← Google GenAI looks for this
+                    "type": "object",
+                    "properties": {...},
+                    "required": [...]
+                }
+            }
+        """
+        return self._schema
+
+    async def _execute(self, **kwargs) -> str:
         """
         Execute the wrapped agent using the appropriate method.
 
-        Uses either conversation() or invoke() based on configuration.
+        Args:
+            **kwargs: Must include 'question' key with the question to ask.
+            AbstractTool validates this using args_schema.
+
+        Returns:
+            Agent's response as a string
         """
         self.call_count += 1
 
+        # Extract question from kwargs (validated by args_schema)
+        question = kwargs.pop('question', '')
+
+        if not question:
+            return "Error: No question provided to agent tool"
+
         try:
+            # Auto-construct context from kwargs
+            user_id = kwargs.pop('user_id', 'orchestrator')
+            session_id = kwargs.pop('session_id', f'tool_call_{self.call_count}')
+
             # Create AgentContext
             agent_context = AgentContext(
-                user_id=context.get('user_id', 'system') if context else 'system',
-                session_id=context.get('session_id', f'tool_call_{self.call_count}') if context else f'tool_call_{self.call_count}',
-                original_query=query,
-                shared_data=context.get(
-                    'shared_data', {}
-                ) if context else {},
-                agent_results=context.get(
-                    'previous_results', {}
-                ) if context else {}
+                user_id=user_id,
+                session_id=session_id,
+                original_query=question,
+                shared_data=kwargs,
+                agent_results={}
             )
 
             # Apply context filter if provided
@@ -111,23 +156,30 @@ class AgentTool(AbstractTool):
             # Choose method based on configuration and availability
             if self.use_conversation_method and hasattr(self.agent, 'conversation'):
                 response = await self.agent.conversation(
-                    question=query,
+                    question=question,
+                    session_id=agent_context.session_id,
+                    user_id=agent_context.user_id,
+                    use_conversation_history=False,  # Keep tool calls stateless
+                    **agent_context.shared_data
+                )
+            elif hasattr(self.agent, 'ask'):
+                response = await self.agent.ask(
+                    question=question,
                     session_id=agent_context.session_id,
                     user_id=agent_context.user_id,
                     use_conversation_history=True,
+                    output_mode=OutputMode.DEFAULT,
                     **agent_context.shared_data
                 )
             elif hasattr(self.agent, 'invoke'):
                 response = await self.agent.invoke(
-                    question=query,
+                    question=question,
                     session_id=agent_context.session_id,
                     user_id=agent_context.user_id,
-                    use_conversation_history=True,
+                    use_conversation_history=False,
                     **agent_context.shared_data
                 )
             else:
-                # Fallback for basic agents
-                # TODO: generate the chat() method if needed.
                 return f"Agent {self.agent.name} does not support conversation or invoke methods"
 
             # Extract content from response
@@ -143,6 +195,7 @@ class AgentTool(AbstractTool):
 
         except Exception as e:
             error_msg = f"Error executing {self.name}: {str(e)}"
+            self.logger.error(error_msg)
             return error_msg
 
     def get_usage_stats(self) -> Dict[str, Any]:
