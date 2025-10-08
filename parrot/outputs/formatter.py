@@ -1227,6 +1227,23 @@ class OutputFormatter:
         html += "</table>"
         return html
 
+    def _get_tool_output(self, tool_result: Any) -> Any:
+        """Extract tool output safely."""
+        if tool_result is None:
+            return None
+        if isinstance(tool_result, str):
+            return tool_result
+        if hasattr(tool_result, 'to_text'):
+            return tool_result.to_text
+        if isinstance(tool_result, pd.DataFrame):
+            return tool_result.to_dict(orient='records')
+        if hasattr(tool_result, 'output'):
+            output = tool_result.output
+            return output if isinstance(output, str) else str(output)
+        if hasattr(tool_result, 'result'):
+            return str(tool_result.result)
+        return str(tool_result)
+
     def _format_json(self, response: Any, **kwargs) -> dict:
         """
         Format output as JSON.
@@ -1239,6 +1256,7 @@ class OutputFormatter:
             Dictionary representation of the response
         """
         result = {
+            'input': getattr(response, 'input', None),
             'content': self._get_content(response),
         }
 
@@ -1262,7 +1280,9 @@ class OutputFormatter:
             result['tool_calls'] = [
                 {
                     'name': getattr(tool, 'name', 'Unknown'),
-                    'status': getattr(tool, 'status', 'completed')
+                    'status': getattr(tool, 'status', 'completed'),
+                    'arguments': json_encoder(getattr(tool, 'arguments', {})),
+                    'output': self._get_tool_output(tool.result),
                 }
                 for tool in response.tool_calls
             ]
