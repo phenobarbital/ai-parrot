@@ -1,6 +1,7 @@
 """
 Enhanced Agent Crew with Parallel and Sequential Execution
 """
+from __future__ import annotations
 from typing import List, Dict, Any, Union, Optional, Literal
 import asyncio
 import uuid
@@ -8,6 +9,7 @@ from dataclasses import dataclass, field
 from navconfig.logging import logging
 from ..agent import BasicAgent
 from ..abstract import AbstractBot
+from ...clients.base import AbstractClient
 from ...tools.manager import ToolManager
 from ...tools.abstract import AbstractTool
 from ...tools.agent import AgentContext
@@ -48,7 +50,8 @@ class AgentCrew:
         name: str = "AgentCrew",
         agents: List[Union[BasicAgent, AbstractBot]] = None,
         shared_tool_manager: ToolManager = None,
-        max_parallel_tasks: int = 10
+        max_parallel_tasks: int = 10,
+        llm: Optional[AbstractClient] = None
     ):
         """
         Initialize the AgentCrew.
@@ -66,6 +69,7 @@ class AgentCrew:
         self.execution_log: List[Dict[str, Any]] = []
         self.logger = logging.getLogger(f"parrot.crews.{self.name}")
         self.semaphore = asyncio.Semaphore(max_parallel_tasks)
+        self._llm = llm  # Optional LLM for orchestration tasks
 
         # Add agents if provided
         if agents:
@@ -562,3 +566,161 @@ Current task: {current_input}"""
             'total_execution_time': total_time,
             'average_time_per_agent': total_time / len(self.execution_log) if self.execution_log else 0
         }
+
+    async def task(
+        self,
+        task: Union[str, Dict[str, str]],
+        synthesis_prompt: Optional[str] = None,
+        user_id: str = None,
+        session_id: str = None,
+        max_tokens: int = 4096,
+        temperature: float = 0.1,
+        **kwargs
+    ) -> AIMessage:
+        """
+        Execute all agents in parallel with a task, then synthesize results with LLM.
+
+        This is a simplified interface for the common pattern:
+        1. Multiple agents research/gather information in parallel
+        2. LLM synthesizes all findings into a coherent response
+
+        Args:
+            task: The task/prompt for agents. Can be:
+                  - str: Same prompt for all agents
+                  - dict: Custom prompt per agent {agent_id: prompt}
+            synthesis_prompt: Prompt for LLM to synthesize results.
+                            If None, uses default synthesis prompt.
+                            Aliases: conclusion, summary_prompt, final_prompt
+            user_id: User identifier
+            session_id: Session identifier
+            max_tokens: Max tokens for synthesis LLM
+            temperature: Temperature for synthesis LLM
+            **kwargs: Additional arguments passed to LLM
+
+        Returns:
+            AIMessage: Synthesized response from the LLM
+
+        Example:
+            >>> crew = AgentCrew(
+            ...     agents=[info_agent, price_agent, review_agent],
+            ...     llm=ClaudeClient()
+            ... )
+            >>> result = await crew.task(
+            ...     task="Research iPhone 15 Pro",
+            ...     synthesis_prompt="Create an executive summary"
+            ... )
+            >>> print(result.content)
+
+        Raises:
+            ValueError: If no LLM is configured for synthesis
+        """
+        if not self._llm:
+            raise ValueError(
+                "No LLM configured for synthesis. "
+                "Pass llm parameter to AgentCrew constructor: "
+                "AgentCrew(agents=[...], llm=ClaudeClient())"
+            )
+
+        if not self.agents:
+            raise ValueError(
+                "No agents in crew. Add agents first."
+            )
+
+        # Setup session
+        session_id = session_id or str(uuid.uuid4())
+        user_id = user_id or 'crew_user'
+
+        # Prepare tasks for each agent
+        tasks_list = []
+
+        if isinstance(task, str):
+            # Same task for all agents
+            for agent_id, _ in self.agents.items():
+                tasks_list.append({
+                    'agent_id': agent_id,
+                    'query': task
+                })
+        elif isinstance(task, dict):
+            # Custom task per agent
+            for agent_id, agent_task in task.items():
+                if agent_id in self.agents:
+                    tasks_list.append({
+                        'agent_id': agent_id,
+                        'query': agent_task
+                    })
+                else:
+                    self.logger.warning(
+                        f"Agent '{agent_id}' in task dict not found in crew"
+                    )
+        else:
+            raise ValueError(
+                f"task must be str or dict, got {type(task)}"
+            )
+
+        # Execute agents in parallel
+        self.logger.info(
+            f"Executing {len(tasks_list)} agents in parallel for research"
+        )
+
+        parallel_result = await self.execute_parallel(
+            tasks=tasks_list,
+            user_id=user_id,
+            session_id=session_id,
+            **kwargs
+        )
+
+        if not parallel_result['success']:
+            raise RuntimeError(
+                f"Parallel execution failed: {parallel_result.get('error', 'Unknown error')}"
+            )
+
+        # Build context from all agent results
+        context_parts = []
+        context_parts.append("# Research Findings from Specialist Agents\n")
+
+        for agent_id, result in parallel_result['results'].items():
+            agent = self.agents[agent_id]
+            agent_name = agent.name
+
+            context_parts.append(f"\n## {agent_name}\n")
+            context_parts.append(result)
+            context_parts.append("\n---\n")
+
+        research_context = "\n".join(context_parts)
+
+        # Default synthesis prompt if none provided
+        if not synthesis_prompt:
+            synthesis_prompt = """Based on the research findings from our specialist agents above,
+provide a comprehensive synthesis that:
+1. Integrates all the key findings
+2. Highlights the most important insights
+3. Identifies any patterns or contradictions
+4. Provides actionable conclusions
+
+Create a clear, well-structured response."""
+
+        # Build final prompt for LLM
+        final_prompt = f"""{research_context}
+
+{synthesis_prompt}"""
+
+        # Call LLM for synthesis
+        self.logger.info("Synthesizing results with LLM coordinator")
+
+        async with self._llm as client:
+            synthesis_response = await client.ask(
+                prompt=final_prompt,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                user_id=user_id,
+                session_id=f"{session_id}_synthesis",
+                **kwargs
+            )
+
+        # Enhance response with crew metadata
+        if hasattr(synthesis_response, 'metadata'):
+            synthesis_response.metadata['crew_name'] = self.name
+            synthesis_response.metadata['agents_used'] = list(parallel_result['results'].keys())
+            synthesis_response.metadata['total_execution_time'] = parallel_result['total_execution_time']
+
+        return synthesis_response

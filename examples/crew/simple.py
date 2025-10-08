@@ -250,7 +250,7 @@ Question: "Tell me about the iPhone 15 Pro - specs and price"
         if response.tool_calls:
             print(f"\n✅ Tools used: {len(response.tool_calls)}")
             for tc in response.tool_calls:
-                print(f"  - {tc.name}: {tc.input}")
+                print(f"  - {tc.name}: {tc.arguments} → {tc.result[:100]}...")
         else:
             print("\n⚠️  WARNING: No tools were used!")
 
@@ -334,25 +334,25 @@ User: "What is the capital of France?"
 async def run_examples():
     """Run all quick examples."""
 
-    # print("="*80)
-    # print("EXAMPLE 1: PARALLEL EXECUTION")
-    # print("="*80)
-    # await quick_parallel_example()
+    print("="*80)
+    print("EXAMPLE 1: PARALLEL EXECUTION")
+    print("="*80)
+    await quick_parallel_example()
 
     # print("\n" + "="*80)
     # print("EXAMPLE 2: SEQUENTIAL EXECUTION")
     # print("="*80)
     # await quick_sequential_example()
 
-    print("\n" + "="*80)
-    print("EXAMPLE 3: ORCHESTRATOR")
-    print("="*80)
-    await orchestrator_example()
+    # print("\n" + "="*80)
+    # print("EXAMPLE 3: ORCHESTRATOR")
+    # print("="*80)
+    # await orchestrator_example()
 
-    print("\n" + "="*80)
-    print("EXAMPLE 4: SIMPLE DELEGATION")
-    print("="*80)
-    await test_simple_delegation()
+    # print("\n" + "="*80)
+    # print("EXAMPLE 4: SIMPLE DELEGATION")
+    # print("="*80)
+    # await test_simple_delegation()
 
 
 if __name__ == "__main__":
