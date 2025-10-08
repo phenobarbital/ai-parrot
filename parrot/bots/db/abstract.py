@@ -25,7 +25,7 @@ from .tools import (
     TableMetadata,
 )
 from ...models import AIMessage
-from ...tools.asdb import DatabaseQueryTool
+from ...tools.databasequery import DatabaseQueryTool
 from .cache import SchemaCache
 from ...memory import ConversationTurn
 

@@ -10,6 +10,7 @@ from .decorators import tool_schema, tool
 from .querytoolkit import QueryToolkit
 from .qsource import QuerySourceTool
 from .ddgo import DuckDuckGoToolkit
+from .databasequery import DatabaseQueryTool
 
 
 __all__ = (
@@ -19,6 +20,7 @@ __all__ = (
     "ToolResult",
     "MathTool",
     "QuerySourceTool",
+    "DatabaseQueryTool",
     "AbstractToolkit",
     "ToolkitTool",
     "tool_schema",

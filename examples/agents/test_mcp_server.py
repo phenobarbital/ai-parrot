@@ -10,7 +10,7 @@ import json
 from parrot.conf import OPENWEATHER_APPID
 # Your existing AI-Parrot tools
 from parrot.tools.openweather import OpenWeatherTool
-from parrot.tools.asdb import DatabaseQueryTool
+from parrot.tools.databasequery import DatabaseQueryTool
 from parrot.tools.google import GoogleLocationTool, GoogleSearchTool
 from parrot.tools.pythonpandas import PythonPandasTool
 from parrot.tools.pdfprint import PDFPrintTool

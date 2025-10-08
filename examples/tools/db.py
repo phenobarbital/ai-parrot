@@ -1,6 +1,6 @@
 import asyncio
 import pandas as pd
-from parrot.tools.asdb import DatabaseQueryTool
+from parrot.tools.databasequery import DatabaseQueryTool
 
 async def example_usage():
     # Create tool instance

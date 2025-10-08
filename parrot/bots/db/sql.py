@@ -19,7 +19,7 @@ from sqlalchemy import text
 from .abstract import AbstractDBAgent
 from .tools import DatabaseSchema, TableMetadata
 from ...models import AIMessage
-from ...tools.asdb import DatabaseQueryTool
+from ...tools.databasequery import DatabaseQueryTool
 from ...tools import ToolResult
 
 

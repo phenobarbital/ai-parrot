@@ -773,9 +773,6 @@ class DatabaseQueryTool(AbstractTool):
 
             # Get credentials
             creds, resolved_dsn = self._get_credentials(driver, credentials)
-
-            print('DRIVER > ', driver)
-            print('CREDENTIALS > ', creds)
             final_dsn = dsn or resolved_dsn
             if 'driver' in creds:
                 driver = creds.pop('driver')
