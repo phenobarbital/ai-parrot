@@ -765,9 +765,7 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
         tool_name: str = None,
         tool_description: str = None,
         use_conversation_method: bool = True,
-        context_filter: Optional[Callable[[AgentContext], AgentContext]] = None,
-        question_description: str = None,
-        context_description: str = None
+        context_filter: Optional[Callable[[AgentContext], AgentContext]] = None
     ) -> 'AgentTool':
         """
         Convert this agent into an AgentTool that can be used by other agents.
@@ -799,22 +797,12 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
             f"Goal: {self.goal}."
         )
 
-        default_question_desc = (
-            f"The question or task to send to {self.name}"
-        )
-
-        default_context_desc = (
-            f"Additional context for {self.name}"
-        )
-
         return AgentTool(
             agent=self,
             tool_name=tool_name,
             tool_description=tool_description or default_description,
             use_conversation_method=use_conversation_method,
             context_filter=context_filter,
-            question_description=question_description or default_question_desc,
-            context_description=context_description or default_context_desc
         )
 
 
@@ -856,7 +844,12 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
             **kwargs
         )
 
+        # Register in bot's tool manager
         target_agent.tool_manager.add_tool(agent_tool)
+
+        # CRITICAL: Sync tools to LLM after registration
+        if hasattr(target_agent, '_sync_tools_to_llm'):
+            target_agent._sync_tools_to_llm()
 
         self.logger.info(
             f"Registered {self.name} as tool '{agent_tool.name}' "
