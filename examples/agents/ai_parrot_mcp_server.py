@@ -31,7 +31,7 @@ try:
         OPENWEATHER_AVAILABLE = False
 
     try:
-        from parrot.tools.asdb import DatabaseQueryTool
+        from parrot.tools.databasequery import DatabaseQueryTool
         DATABASE_AVAILABLE = True
     except ImportError:
         DATABASE_AVAILABLE = False
