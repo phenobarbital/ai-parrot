@@ -290,17 +290,29 @@ class ChatbotHandler(ModelView):
             # add the new bot into the manager
             data = bot_model.to_dict()
             clsname = data.pop('bot_class', 'BasicBot')
+            botclass = manager.get_bot_class(clsname)
             name = data.pop('name', 'NoName')
-            bot = await manager.create_bot(
-                class_name=clsname,
-                name=name,
-                **data
-            )
+            try:
+                bot = manager.create_bot(
+                    class_name=botclass,
+                    name=name,
+                    **data
+                )
+            except Exception as e:
+                self.logger.error(
+                    f"Error creating bot instance of class {clsname}: {e}"
+                )
+                return
             if not bot:
                 self.logger.error(f"Error creating bot instance of class {clsname}")
                 return
             # configure the bot:
-            await bot.configure(app)
+            try:
+                await bot.configure(app)
+            except Exception as e:
+                self.logger.error(f"Error configuring bot {name}: {e}")
+                return
+            # add to manager
             manager.add_bot(bot)
             return True
 

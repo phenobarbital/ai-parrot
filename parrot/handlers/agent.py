@@ -10,6 +10,7 @@ import os
 import json
 import inspect
 from aiohttp import web
+from datamodel.parsers.json import json_encoder  # noqa  pylint: disable=E0611
 from navigator_auth.decorators import is_authenticated, user_session
 from navigator.views import BaseView
 from ..bots.abstract import AbstractBot
@@ -558,7 +559,7 @@ class AgentTalk(BaseView):
         """
         if output_format == 'json':
             # Return structured JSON response
-            return self.json_response({
+            return web.json_response({
                 "success": True,
                 "content": response.content,
                 "metadata": {
@@ -578,11 +579,13 @@ class AgentTalk(BaseView):
                 "tool_calls": [
                     {
                         "name": getattr(tool, 'name', 'unknown'),
-                        "status": getattr(tool, 'status', 'completed')
+                        "status": getattr(tool, 'status', 'completed'),
+                        "output": getattr(tool, 'output', None),
+                        'arguments': getattr(tool, 'arguments', None)
                     }
                     for tool in getattr(response, 'tool_calls', [])
                 ] if format_kwargs.get('include_tool_calls', True) else []
-            })
+            }, dumps=json_encoder)
 
         elif output_format == 'html':
             interactive = format_kwargs.get('interactive', False)
@@ -601,8 +604,6 @@ class AgentTalk(BaseView):
                 html_str = str(html_content)
             else:
                 html_str = str(html_content)
-
-            print('HTML STR ::> ', html_str)
             # Wrap in complete HTML document
             full_html = self._create_html_document(html_str, response)
 

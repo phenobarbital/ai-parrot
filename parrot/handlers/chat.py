@@ -9,6 +9,7 @@ from pathlib import Path
 from aiohttp import web
 from asyncdb.exceptions.exceptions import NoDataFound  # pylint: disable=E0611  # noqa
 from datamodel.exceptions import ValidationError  # pylint: disable=E0611  # noqa
+from datamodel.parsers.json import json_encoder  # noqa  pylint: disable=E0611
 from navigator_auth.decorators import (
     is_authenticated,
     user_session,
@@ -21,6 +22,7 @@ from ..loaders.markdown import MarkdownLoader
 from .models import BotModel
 from ..models.responses import AIMessage
 from ..outputs import OutputFormatter, OutputMode
+
 
 
 @is_authenticated()
@@ -195,20 +197,10 @@ class ChatHandler(BaseView):
                         )
                         if isinstance(response, web.Response):
                             return response
-                        elif isinstance(response, AIMessage):
-                            result = response.model_dump()
-                        if isinstance(response, str):
-                            result = {
-                                "response": response
-                            }
-                        elif isinstance(response, list):
-                            result = {
-                                "response": result
-                            }
-                        else:
-                            result = response
-                        return self.json_response(
-                            response=result
+                        formatter = OutputFormatter(mode=OutputMode.JSON)
+                        formatted_result = formatter.format(response)
+                        return web.json_response(
+                            formatted_result, dumps=json_encoder
                         )
                     except Exception as exc:
                         self.error(
@@ -234,8 +226,10 @@ class ChatHandler(BaseView):
                     request=self.request,
                     **data
                 )
+                formatter = OutputFormatter(mode=OutputMode.JSON)
+                formatted_result = formatter.format(response)
                 return web.json_response(
-                    result.model_dump()
+                    formatted_result, dumps=json_encoder
                 )
         except ValueError as exc:
             return self.error(
@@ -288,7 +282,6 @@ class BotHandler(BaseView):
                     name=name,
                     **data
                 )
-                print('Chatbot Model: ', chatbot_model)
                 chatbot_model = await chatbot_model.insert()
                 return chatbot_model
             except ValidationError:

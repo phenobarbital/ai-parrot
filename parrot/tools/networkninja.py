@@ -82,7 +82,7 @@ class NetworkNinjaTool(RESTTool):
             **kwargs: Additional arguments
         """
         # Construct base URL with environment path
-        env_path = self.ENV_PATHS.get(environment, "dev")
+        env_path = self.ENV_PATHS.get(environment, "production")
         base_url = f"{NETWORKNINJA_BASE_URL}/{env_path}"
         super().__init__(
             base_url=base_url,
