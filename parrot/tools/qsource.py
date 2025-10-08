@@ -56,7 +56,7 @@ class QuerySourceInput(BaseModel):
     )
 
 
-class QuerySourceTool(AbstractTool):
+class QSourceTool(AbstractTool):
     """
     Tool for executing QuerySource queries and returning structured data.
 
@@ -67,7 +67,7 @@ class QuerySourceTool(AbstractTool):
     - Handle multiple data sources through different drivers
     """
 
-    name: str = "QuerySourceTool"
+    name: str = "QSourceTool"
     description: str = (
         "Execute QuerySource queries to retrieve and analyze data. "
         "Supports query slugs, raw SQL, filtering, grouping, and multiple output formats. "
