@@ -1,5 +1,5 @@
 import textwrap
-from typing import Dict, List, Tuple, Any, Optional, Union
+from typing import Dict, List, Tuple, Any, Optional, Union, Callable
 from datetime import datetime
 from pathlib import Path
 import aiofiles
@@ -13,6 +13,7 @@ from ..tools.abstract import AbstractTool
 from ..tools.pythonrepl import PythonREPLTool
 from ..tools.pdfprint import PDFPrintTool
 from ..tools.ppt import PowerPointTool
+from ..tools.agent import AgentTool, AgentContext
 from ..models.google import (
     ConversationalScriptConfig,
     FictionalSpeaker
@@ -759,6 +760,108 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
         if hasattr(super(), 'shutdown'):
             await super().shutdown(**kwargs)
 
+    def as_tool(
+        self,
+        tool_name: str = None,
+        tool_description: str = None,
+        use_conversation_method: bool = True,
+        context_filter: Optional[Callable[[AgentContext], AgentContext]] = None,
+        question_description: str = None,
+        context_description: str = None
+    ) -> 'AgentTool':
+        """
+        Convert this agent into an AgentTool that can be used by other agents.
+
+        This allows agents to be composed and used as tools in orchestration scenarios.
+
+        Args:
+            tool_name: Custom name for the tool (defaults to agent name)
+            tool_description: Description of what this agent does
+            use_conversation_method: Whether to use conversation() or invoke()
+            context_filter: Optional function to filter context before execution
+            question_description: Custom description for the query parameter
+            context_description: Custom description for the context parameter
+
+        Returns:
+            AgentTool: Tool wrapper for this agent
+
+        Example:
+            >>> hr_agent = BasicAgent(name="HRAgent", ...)
+            >>> hr_tool = hr_agent.as_tool(
+            ...     tool_description="Handles HR policy questions"
+            ... )
+            >>> orchestrator.tool_manager.add_tool(hr_tool)
+        """
+        # Default descriptions based on agent properties
+        default_description = (
+            f"Specialized agent: {self.name}. "
+            f"Role: {self.role}. "
+            f"Goal: {self.goal}."
+        )
+
+        default_question_desc = (
+            f"The question or task to send to {self.name}"
+        )
+
+        default_context_desc = (
+            f"Additional context for {self.name}"
+        )
+
+        return AgentTool(
+            agent=self,
+            tool_name=tool_name,
+            tool_description=tool_description or default_description,
+            use_conversation_method=use_conversation_method,
+            context_filter=context_filter,
+            question_description=question_description or default_question_desc,
+            context_description=context_description or default_context_desc
+        )
+
+
+    def register_as_tool(
+        self,
+        target_agent: 'BasicAgent',
+        tool_name: str = None,
+        tool_description: str = None,
+        **kwargs
+    ) -> None:
+        """
+        Register this agent as a tool in another agent's tool manager.
+
+        This is a convenience method that combines as_tool() and registration.
+
+        Args:
+            target_agent: The agent to register this tool with
+            tool_name: Custom name for the tool
+            tool_description: Description of what this agent does
+            **kwargs: Additional arguments for as_tool()
+
+        Example:
+            >>> hr_agent = BasicAgent(name="HRAgent", ...)
+            >>> employee_agent = BasicAgent(name="EmployeeAgent", ...)
+            >>> orchestrator = OrchestratorAgent(name="Orchestrator")
+            >>>
+            >>> hr_agent.register_as_tool(
+            ...     orchestrator,
+            ...     tool_description="Handles HR policies and procedures"
+            ... )
+            >>> employee_agent.register_as_tool(
+            ...     orchestrator,
+            ...     tool_description="Manages employee data"
+            ... )
+        """
+        agent_tool = self.as_tool(
+            tool_name=tool_name,
+            tool_description=tool_description,
+            **kwargs
+        )
+
+        target_agent.tool_manager.add_tool(agent_tool)
+
+        self.logger.info(
+            f"Registered {self.name} as tool '{agent_tool.name}' "
+            f"in {target_agent.name}'s tool manager"
+        )
 
 class Agent(BasicAgent):
     """A general-purpose agent with no additional tools."""
