@@ -215,7 +215,7 @@ class ChatHandler(BaseView):
                         },
                         status=400
                     )
-                result = await bot.conversation(
+                response = await bot.conversation(
                     question=question,
                     session_id=session_id,
                     user_id=user_id,
