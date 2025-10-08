@@ -229,7 +229,8 @@ class ChatHandler(BaseView):
                 formatter = OutputFormatter(mode=OutputMode.JSON)
                 formatted_result = formatter.format(response)
                 return web.json_response(
-                    formatted_result, dumps=json_encoder
+                    formatted_result,
+                    dumps=json_encoder
                 )
         except ValueError as exc:
             return self.error(
