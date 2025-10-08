@@ -431,7 +431,7 @@ class AgentTalk(BaseView):
 
             # Prepare ask() parameters
             format_kwargs = data.pop('format_kwargs', {})
-
+            response = None
             async with agent.retrieval(self.request, app=app) as bot:
                 if method:= self._check_methods(bot, method_name):
                     sig = inspect.signature(method)
@@ -560,7 +560,8 @@ class AgentTalk(BaseView):
         if output_format == 'json':
             # Return structured JSON response
             return web.json_response({
-                "success": True,
+                "input": response.input,
+                "output": response.output,
                 "content": response.content,
                 "metadata": {
                     "model": getattr(response, 'model', None),
