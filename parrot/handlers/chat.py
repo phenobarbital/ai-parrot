@@ -20,6 +20,7 @@ from ..loaders import AbstractLoader, AVAILABLE_LOADERS
 from ..loaders.markdown import MarkdownLoader
 from .models import BotModel
 from ..models.responses import AIMessage
+from ..outputs import OutputFormatter, OutputMode
 
 
 @is_authenticated()
@@ -233,8 +234,8 @@ class ChatHandler(BaseView):
                     request=self.request,
                     **data
                 )
-                return self.json_response(
-                    response=result.model_dump()
+                return web.json_response(
+                    result.model_dump()
                 )
         except ValueError as exc:
             return self.error(
