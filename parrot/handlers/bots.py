@@ -275,10 +275,34 @@ class ChatbotHandler(ModelView):
     name: str = "Chatbot Management"
     pk: str = 'chatbot_id'
 
-
     async def _set_created_by(self, value, column, data):
         return await self.get_userid(session=self._session)
 
+    async def _put_callback(self, response, bot_model):
+        if response.status == 201:
+            # a New Bot was created:
+            app = self.request.app
+            manager = None
+            try:
+                manager = app['bot_manager']
+            except KeyError:
+                self.logger.error("No Bot Manager found on App")
+            # add the new bot into the manager
+            data = bot_model.to_dict()
+            clsname = data.pop('bot_class', 'BasicBot')
+            name = data.pop('name', 'NoName')
+            bot = await manager.create_bot(
+                class_name=clsname,
+                name=name,
+                **data
+            )
+            if not bot:
+                self.logger.error(f"Error creating bot instance of class {clsname}")
+                return
+            # configure the bot:
+            await bot.configure(app)
+            manager.add_bot(bot)
+            return True
 
 @user_session()
 class ToolList(BaseView):

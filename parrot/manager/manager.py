@@ -111,7 +111,7 @@ class BotManager:
         """Load bots from database."""
         try:
             # Import here to avoid circular imports
-            from ..handlers.models import BotModel
+            from ..handlers.models import BotModel  # noqa
             db = app['database']
             async with await db.acquire() as conn:
                 BotModel.Meta.connection = conn
@@ -276,19 +276,6 @@ class BotManager:
             class_name = Chatbot
         chatbot = class_name(**kwargs)
         chatbot.name = name
-        self.add_bot(chatbot)
-        if 'llm' in kwargs:
-            llm = kwargs['llm']
-            if isinstance(llm, dict):
-                llm_name = llm.pop('name')
-                model = llm.pop('model')
-            else:
-                llm_name = llm
-                model = None
-            llm = chatbot.load_llm(
-                llm_name, model=model, **llm
-            )
-            chatbot.llm = llm
         return chatbot
 
     def add_bot(self, bot: AbstractBot) -> None:

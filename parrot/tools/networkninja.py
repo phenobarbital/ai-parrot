@@ -34,7 +34,7 @@ class NetworkNinjaArgsSchema(BaseModel):
     )
 
 
-class NetworkNinjaAPI(RESTTool):
+class NetworkNinjaTool(RESTTool):
     """
     NetworkNinja Batch Processing API Tool.
 

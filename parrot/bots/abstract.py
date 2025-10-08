@@ -454,6 +454,25 @@ class AbstractBot(DBInterface, ABC):
                     raise ConfigError(
                         f"Error configuring Default LLM {self._llm_model}: {e}"
                     )
+            elif isinstance(self._llm, str):
+                # If _llm is a string, get the LLM class and instantiate it
+                try:
+                    cls = SUPPORTED_CLIENTS.get(self._llm.lower(), None)
+                    if not cls:
+                        raise ValueError(f"Unsupported LLM: {self._llm}")
+                    self._llm = cls(
+                        model=self._llm_model,
+                        temperature=self._llm_temp,
+                        top_k=self._top_k,
+                        top_p=self._top_p,
+                        max_tokens=self._max_tokens,
+                        conversation_memory=self.conversation_memory,
+                        **kwargs
+                    )
+                except Exception as e:
+                    raise ConfigError(
+                        f"Error configuring LLM Client {self._llm}: {e}"
+                    )
             elif isinstance(self._llm, AbstractClient):
                 if hasattr(self._llm, 'conversation_memory'):
                     self._llm.conversation_memory = self.conversation_memory
