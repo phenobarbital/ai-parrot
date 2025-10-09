@@ -292,32 +292,41 @@ class NotificationMixin:
                 if output and not message_text:
                     message_text = output
 
+            # PRIORITY 1: Check for 'files' attribute first (preferred for AgentResponse)
             if hasattr(report, 'files'):
-                # Check for file attachments
                 report_files = getattr(report, 'files', None)
                 if report_files:
                     if isinstance(report_files, list):
-                        files.extend([Path(f) for f in report_files if f])
+                        for file_path in report_files:
+                            if file_path and self._is_valid_file_path(file_path):
+                                files.append(Path(file_path))
                     elif isinstance(report_files, (str, Path)):
-                        files.append(Path(report_files))
+                        if self._is_valid_file_path(report_files):
+                            files.append(Path(report_files))
 
-            if hasattr(report, 'documents'):
-                # Check for documents (alternative file storage)
+            # PRIORITY 2: Check for 'documents' attribute (but filter out text content)
+            elif hasattr(report, 'documents'):
                 documents = getattr(report, 'documents', None)
                 if documents:
                     if isinstance(documents, list):
                         for document in documents:
                             if isinstance(document, dict) and 'path' in document:
-                                files.append(Path(document['path']))
+                                doc_path = document['path']
+                                if self._is_valid_file_path(doc_path):
+                                    files.append(Path(doc_path))
                             elif isinstance(document, (str, Path)):
-                                files.append(Path(document))
+                                # Only add if it looks like a file path, not text content
+                                if self._is_valid_file_path(document):
+                                    files.append(Path(document))
 
             # Check for content blocks with files (Claude-style responses)
             if hasattr(report, 'content') and isinstance(report.content, list):
                 for block in report.content:
                     if isinstance(block, dict):
                         if block.get('type') == 'file' and 'path' in block:
-                            files.append(Path(block['path']))
+                            file_path = block['path']
+                            if self._is_valid_file_path(file_path):
+                                files.append(Path(file_path))
                         elif block.get('type') == 'image' and 'source' in block:
                             # Handle image sources
                             source = block['source']
@@ -325,16 +334,77 @@ class NotificationMixin:
                                 # Base64 image - would need to save first
                                 pass
                             elif isinstance(source, (str, Path)):
-                                files.append(Path(source))
+                                if self._is_valid_file_path(source):
+                                    files.append(Path(source))
+
+            # PRIORITY 3: Check AIMessage nested inside AgentResponse
+            if hasattr(report, 'response') and isinstance(report.response, object):
+                ai_message = report.response
+
+                # Extract files from AIMessage
+                if hasattr(ai_message, 'files'):
+                    ai_files = getattr(ai_message, 'files', None)
+                    if ai_files and isinstance(ai_files, list):
+                        for file_path in ai_files:
+                            if file_path and self._is_valid_file_path(file_path):
+                                path_obj = Path(file_path)
+                                if path_obj not in files:  # Avoid duplicates
+                                    files.append(path_obj)
+
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_files = []
+        for file in files:
+            if file not in seen:
+                seen.add(file)
+                unique_files.append(file)
+
+        files = unique_files
 
         # Validate files exist
         valid_files = [f for f in files if f.exists()]
         if len(valid_files) < len(files):
+            missing_count = len(files) - len(valid_files)
+            missing_files = [str(f) for f in files if not f.exists()]
             self.logger.warning(
-                f"Some files not found: {len(files) - len(valid_files)} missing"
+                f"Some files not found: {missing_count} missing - {missing_files[:3]}"
             )
 
         return message_text, valid_files
+
+    def _is_valid_file_path(self, path: Union[str, Path]) -> bool:
+        """
+        Check if a string looks like a valid file path rather than text content.
+
+        Args:
+            path: String or Path to validate
+
+        Returns:
+            bool: True if it looks like a file path, False otherwise
+        """
+        if not path:
+            return False
+
+        path_str = str(path)
+
+        # Filter out obvious text content (too long or contains newlines)
+        if len(path_str) > 500 or '\n' in path_str:
+            return False
+
+        # Must contain path separators or start with common path patterns
+        has_separator = '/' in path_str or '\\' in path_str
+
+        # Check for common file extensions
+        common_extensions = [
+            '.txt', '.pdf', '.doc', '.docx', '.xls', '.xlsx',
+            '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.svg',
+            '.mp4', '.avi', '.mov', '.mp3', '.wav',
+            '.json', '.xml', '.csv', '.html', '.md'
+        ]
+        has_extension = any(path_str.lower().endswith(ext) for ext in common_extensions)
+
+        # Valid if it has separators or a file extension
+        return has_separator or has_extension
 
     def _parse_recipients(
         self,
