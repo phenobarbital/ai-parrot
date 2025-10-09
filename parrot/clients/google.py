@@ -70,7 +70,7 @@ logging.getLogger(
 ).setLevel(logging.ERROR)  # Suppress TiffImagePlugin warnings
 logging.getLogger(
     name='google_genai'
-).setLevel(logging.WARNING)  # Suppress GenAI warnings
+).setLevel(logging.ERROR)  # Suppress GenAI warnings
 
 
 class GoogleGenAIClient(AbstractClient):

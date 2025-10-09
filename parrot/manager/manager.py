@@ -52,14 +52,22 @@ class BotManager:
         if class_name in self._bots:
             # return the class of the existing bot instance
             return self._bots[class_name].__class__
-
-        module = import_module('..bots', __package__)
+        try:
+            module = import_module('..bots', __package__)
+        except ImportError:
+            try:
+                clsname = class_name.lower()
+                module = import_module(f'parrot.bots.{clsname}')
+            except ImportError as e:
+                raise ImportError(
+                    f"Could not import module for class '{class_name}': {e}"
+                ) from e
         try:
             return getattr(module, class_name)
-        except AttributeError:
-            raise ImportError(
+        except AttributeError as e:
+            raise AttributeError(
                 f"No class named '{class_name}' found in the module 'bots'."
-            )
+            ) from e
 
     def _log_final_state(self) -> None:
         """Log the final state of bot loading."""

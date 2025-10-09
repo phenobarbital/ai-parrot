@@ -8,7 +8,7 @@ from .math import MathTool
 from .toolkit import AbstractToolkit, ToolkitTool
 from .decorators import tool_schema, tool
 from .querytoolkit import QueryToolkit
-from .qsource import QuerySourceTool
+from .qsource import QSourceTool
 from .ddgo import DuckDuckGoToolkit
 from .databasequery import DatabaseQueryTool
 
@@ -19,7 +19,7 @@ __all__ = (
     "AbstractTool",
     "ToolResult",
     "MathTool",
-    "QuerySourceTool",
+    "QSourceTool",
     "DatabaseQueryTool",
     "AbstractToolkit",
     "ToolkitTool",
