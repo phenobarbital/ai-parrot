@@ -18,6 +18,14 @@ logging.getLogger("weasyprint").setLevel(logging.ERROR)  # Suppress WeasyPrint w
 logging.getLogger("tiktoken").setLevel(logging.ERROR)
 logging.getLogger("fontTools").setLevel(logging.ERROR)
 
+# Project Root:
+PROJECT_ROOT = BASE_DIR
+# Plugins Directory:
+PLUGINS_DIR = config.get('PLUGINS_DIR', fallback=BASE_DIR.joinpath('plugins'))
+if isinstance(PLUGINS_DIR, str):
+    PLUGINS_DIR = Path(PLUGINS_DIR).resolve()
+if not PLUGINS_DIR.exists():
+    PLUGINS_DIR.mkdir(parents=True, exist_ok=True)
 
 # Static directory
 STATIC_DIR = config.get('STATIC_DIR', fallback=BASE_DIR.joinpath('static'))

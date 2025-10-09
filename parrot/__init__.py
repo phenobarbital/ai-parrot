@@ -13,6 +13,7 @@ from .version import (
     __title__,
     __version__
 )
+from . import plugins
 
 os.environ["USER_AGENT"] = "Parrot.AI/1.0"
 # This environment variable can help prevent some gRPC cleanup issues
