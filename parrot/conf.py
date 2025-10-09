@@ -18,6 +18,14 @@ logging.getLogger("weasyprint").setLevel(logging.ERROR)  # Suppress WeasyPrint w
 logging.getLogger("tiktoken").setLevel(logging.ERROR)
 logging.getLogger("fontTools").setLevel(logging.ERROR)
 
+# Project Root:
+PROJECT_ROOT = BASE_DIR
+# Plugins Directory:
+PLUGINS_DIR = config.get('PLUGINS_DIR', fallback=BASE_DIR.joinpath('plugins'))
+if isinstance(PLUGINS_DIR, str):
+    PLUGINS_DIR = Path(PLUGINS_DIR).resolve()
+if not PLUGINS_DIR.exists():
+    PLUGINS_DIR.mkdir(parents=True, exist_ok=True)
 
 # Static directory
 STATIC_DIR = config.get('STATIC_DIR', fallback=BASE_DIR.joinpath('static'))
@@ -54,7 +62,7 @@ if not AGENTS_BOTS_PROMPT_DIR.exists():
     AGENTS_BOTS_PROMPT_DIR.mkdir(parents=True, exist_ok=True)
 
 # LLM Model
-DEFAULT_LLM_MODEL_NAME = config.get('LLM_MODEL_NAME', fallback='gemini-pro')
+DEFAULT_LLM_MODEL_NAME = config.get('LLM_MODEL_NAME', fallback='gemini-2.5-pro')
 
 
 ## MILVUS DB ##:
@@ -225,7 +233,7 @@ DEFAULT_LLM_TEMPERATURE = config.get('LLM_TEMPERATURE', fallback=0.1)
 Amazon AWS Credentials
 """
 aws_region = config.get("AWS_REGION", fallback="us-east-1")
-aws_bucket = config.get("AWS_BUCKET", fallback="navigator-static-files-2")
+aws_bucket = config.get("AWS_BUCKET", fallback="static-files")
 aws_key = config.get("AWS_KEY")
 aws_secret = config.get("AWS_SECRET")
 

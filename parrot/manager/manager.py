@@ -3,7 +3,7 @@ Chatbot Manager.
 
 Tool for instanciate, managing and interacting with Chatbot through APIs.
 """
-from typing import Any, Dict, Type
+from typing import Any, Dict, Type, Optional
 from importlib import import_module
 from aiohttp import web
 from datamodel.exceptions import ValidationError  # pylint: disable=E0611 # noqa
@@ -40,34 +40,72 @@ class BotManager:
         )
         self.registry: AgentRegistry = agent_registry
 
-    def get_bot_class(self, class_name: str) -> Type[AbstractBot]:
+    def get_bot_class(self, bot_name: str) -> Optional[Type]:
         """
-        Dynamically import a Bot class based on the class name
-        from the relative module '.bots'.
+        Get bot class by name, searching in:
+        1. parrot.bots (core bots)
+        2. parrot.agents (plugin agents)
+
         Args:
-        class_name (str): The name of the Bot class to be imported.
+            bot_name: Name of the bot/agent class
+
         Returns:
-        Type[AbstractBot]: A Bot class derived from AbstractBot.
+            Bot class if found, None otherwise
         """
-        if class_name in self._bots:
-            # return the class of the existing bot instance
-            return self._bots[class_name].__class__
+        # First, try to import from core bots
         try:
-            module = import_module('..bots', __package__)
-        except ImportError:
-            try:
-                clsname = class_name.lower()
-                module = import_module(f'parrot.bots.{clsname}')
-            except ImportError as e:
-                raise ImportError(
-                    f"Could not import module for class '{class_name}': {e}"
-                ) from e
+            module = import_module("parrot.bots")
+            if hasattr(module, bot_name):
+                return getattr(module, bot_name)
+        except (ImportError, AttributeError) as e:
+            pass  # Not found in core, will try plugins
+
+        # Second, try to import from plugin agents
         try:
-            return getattr(module, class_name)
-        except AttributeError as e:
-            raise AttributeError(
-                f"No class named '{class_name}' found in the module 'bots'."
-            ) from e
+            # This will trigger the PluginImporter to look in plugins/agents/
+            agent_module_name = f"parrot.agents.{bot_name.lower()}"
+            module = import_module(agent_module_name)
+            if hasattr(module, bot_name):
+                return getattr(module, bot_name)
+        except (ImportError, AttributeError) as e:
+            pass  # Not found in plugins either
+
+        # Third, try direct import from parrot.agents package
+        # (in case the agent is defined in plugins/agents/__init__.py)
+        try:
+            module = import_module("parrot.agents")
+            if hasattr(module, bot_name):
+                return getattr(module, bot_name)
+        except (ImportError, AttributeError):
+            pass
+
+        self.logger.warning(
+            f"Warning: Bot class '{bot_name}' not found in parrot.bots or parrot.agents"
+        )
+        return None
+
+    def get_or_create_bot(self, bot_name: str, **kwargs):
+        """
+        Get existing bot or create new one from class name.
+
+        Args:
+            bot_name: Name of the bot/agent class
+            **kwargs: Arguments to pass to bot constructor
+
+        Returns:
+            Bot instance
+        """
+        # Check if already instantiated
+        if bot_name in self._bots:
+            return self._bots[bot_name]
+
+        # Get the class and instantiate
+        bot_class = self.get_bot_class(bot_name)
+        if bot_class is None:
+            raise ValueError(f"Bot class '{bot_name}' not found")
+
+        bot_instance = self.create_bot(class_name=bot_class, name=bot_name, **kwargs)
+        return bot_instance
 
     def _log_final_state(self) -> None:
         """Log the final state of bot loading."""
@@ -319,15 +357,6 @@ class BotManager:
         if class_name is None:
             class_name = BasicAgent
         agent = class_name(name=name, **kwargs)
-        self.add_agent(agent)
-        if 'llm' in kwargs:
-            llm = kwargs['llm']
-            llm_name = llm.pop('name')
-            model = llm.pop('model')
-            llm = agent.load_llm(
-                llm_name, model=model, **llm
-            )
-            agent.llm = llm
         return agent
 
     def add_agent(self, agent: AbstractBot) -> None:
