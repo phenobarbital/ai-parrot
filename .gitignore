@@ -13,6 +13,16 @@ etc/config/
 static/*
 plugins/*
 
+# data from examples:
+examples/*.csv
+examples/*.mp4
+examples/*.mkv
+examples/*.webm
+examples/*.wav
+examples/zoom/*
+examples/podcasts/*
+examples/scraper/*
+
 # Distribution / packaging
 .Python
 build/
