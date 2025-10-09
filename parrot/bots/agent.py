@@ -27,7 +27,7 @@ from ..mcp import (
     create_local_mcp_server,
     create_api_key_mcp_server
 )
-from ..conf import STATIC_DIR
+from ..conf import STATIC_DIR, AGENTS_BOTS_PROMPT_DIR, AGENTS_DIR
 from ..notifications import NotificationMixin
 
 
@@ -199,7 +199,7 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
         """
         if not prompt_file:
             raise ValueError("No prompt file specified.")
-        file = BASE_DIR.joinpath('prompts', self.agent_id, prompt_file)
+        file = AGENTS_DIR.joinpath(self.agent_id, 'prompts', prompt_file)
         try:
             async with aiofiles.open(file, 'r') as f:
                 content = await f.read()
@@ -207,6 +207,22 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
         except Exception as e:
             self.logger.error(
                 f"Failed to read prompt file {prompt_file}: {e}"
+            )
+            return None
+
+    async def open_query(self, query: str, **kwargs) -> str:
+        """
+        Opens a query string and formats it with provided keyword arguments.
+        """
+        if not query:
+            raise ValueError("No query specified.")
+        try:
+            query_file = AGENTS_DIR.joinpath(self.agent_id, 'queries', query)
+            formatted_query = query_file.read_text().format(**kwargs)
+            return formatted_query
+        except Exception as e:
+            self.logger.error(
+                f"Failed to format query: {e}"
             )
             return None
 
@@ -414,7 +430,6 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
     async def _generate_report(self, response: AgentResponse) -> AgentResponse:
         """Generate a report from the response data."""
         final_report = response.output.strip()
-        # print(f"Final report generated: {final_report}")
         if not final_report:
             response.output = "No report generated."
             response.status = "error"
@@ -424,8 +439,7 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
             _path = await self.save_transcript(
                 transcript=final_report,
             )
-            response.document_path = str(_path)
-            response.documents.append(response.document_path)
+            response.add_document(_path)
         except Exception as e:
             self.logger.error(f"Error generating transcript: {e}")
         # generate the PDF file:
@@ -433,8 +447,9 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
             pdf_output = await self.pdf_report(
                 content=final_report
             )
-            response.pdf_path = str(pdf_output.result.get('file_path', None))
-            response.documents.append(response.pdf_path)
+            response.set_pdf_path(
+                pdf_output.result.get('file_path', None)
+            )
         except Exception as e:
             self.logger.error(f"Error generating PDF: {e}")
         # generate the podcast file:
@@ -446,8 +461,7 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
             )
             response.podcast_path = str(podcast_output.get('podcast_path', None))
             response.script_path = str(podcast_output.get('script_path', None))
-            response.documents.append(response.podcast_path)
-            response.documents.append(response.script_path)
+            response.set_podcast_path(podcast_output.get('podcast_path', None))
         except Exception as e:
             self.logger.error(
                 f"Error generating podcast: {e}"
