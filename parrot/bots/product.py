@@ -56,8 +56,12 @@ class ProductReport(BasicAgent):
         system_prompt: str = None,
         human_prompt: str = None,
         prompt_template: str = None,
+        static_dir: Optional[Any] = None,
         **kwargs
     ):
+        # Store static_dir before calling super().__init__
+        self._static_dir = static_dir
+
         super().__init__(
             name=name,
             agent_id=agent_id,
@@ -73,11 +77,17 @@ class ProductReport(BasicAgent):
 
     def _get_default_tools(self, tools: List[AbstractTool]) -> List[AbstractTool]:
         tools = super()._get_default_tools(tools)
-        tools.append(
-            ProductInfoTool(
-                output_dir=STATIC_DIR.joinpath(self.agent_id, 'documents')
-            )
-        )
+
+        # Build ProductInfoTool with static_dir if configured
+        tool_kwargs = {
+            'output_dir': STATIC_DIR.joinpath(self.agent_id, 'documents')
+        }
+
+        # Use custom static_dir if provided, otherwise uses BASE_DIR by default
+        if hasattr(self, '_static_dir') and self._static_dir is not None:
+            tool_kwargs['static_dir'] = self._static_dir
+
+        tools.append(ProductInfoTool(**tool_kwargs))
         return tools
 
     async def create_product_report(self, program_slug: str, models: Optional[List[str]] = None) -> List[ProductResponse]:

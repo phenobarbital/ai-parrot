@@ -349,12 +349,21 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
                 break
 
         # 1. Define the script configuration
-        podcast_instruction = await self.open_prompt(
-            podcast_instructions or 'for_podcast.txt'
-        )
-        podcast_instruction.format(
-            report_text=report,
-        )
+        # Check if podcast_instructions is content or filename
+        if podcast_instructions and (
+            '\n' in podcast_instructions or len(podcast_instructions) > 100
+        ):
+            # It's likely content (has newlines or is long), use it directly
+            podcast_instruction = podcast_instructions
+        else:
+            # It's a filename, load it
+            podcast_instruction = await self.open_prompt(
+                podcast_instructions or 'for_podcast.txt'
+            )
+
+        # Format the instruction with report text if it has placeholders
+        if podcast_instruction and '{report_text}' in podcast_instruction:
+            podcast_instruction = podcast_instruction.format(report_text=report)
         script_config = ConversationalScriptConfig(
             context=self.speech_context,
             speakers=speakers,

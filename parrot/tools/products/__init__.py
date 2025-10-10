@@ -79,11 +79,30 @@ class ProductInfoTool(AbstractTool):
 
     async def _execute(self, model: str, program_slug: str) -> ProductInfo:
         db = AsyncDB('pg', dsn=default_dsn)
-        query_file = BASE_DIR / 'agents' / 'product_report' / program_slug / 'products.sql'
-        if query_file.exists() is False:
+
+        # Use static_dir if configured, otherwise fall back to BASE_DIR
+        base_path = self.static_dir if hasattr(self, 'static_dir') and self.static_dir else BASE_DIR
+
+        # Try multiple paths for backward compatibility
+        # 1. Direct path (for when static_dir points to programs/ or taskstore/programs/)
+        query_file = base_path / program_slug / 'sql' / 'products.sql'
+
+        # 2. Try with 'programs/' prefix (for when static_dir points to base directory)
+        if not query_file.exists():
+            query_file = base_path / 'programs' / program_slug / 'sql' / 'products.sql'
+
+        # 3. Fallback to old structure: agents/product_report/{program_slug}/products.sql
+        if not query_file.exists():
+            query_file = base_path / 'agents' / 'product_report' / program_slug / 'products.sql'
+
+        if not query_file.exists():
             raise FileNotFoundError(
-                f"Query file not found for program_slug '{program_slug}' at {query_file}"
+                f"Query file not found for program_slug '{program_slug}'. Tried:\n"
+                f"  - {base_path / program_slug / 'sql' / 'products.sql'}\n"
+                f"  - {base_path / 'programs' / program_slug / 'sql' / 'products.sql'}\n"
+                f"  - {base_path / 'agents' / 'product_report' / program_slug / 'products.sql'}"
             )
+
         query = query_file.read_text()
         async with await db.connection() as conn:  # noqa
             product_data, error = await conn.query(query, model)
@@ -118,17 +137,30 @@ class ProductListTool(AbstractTool):
         """Get list of products for a program."""
         db = AsyncDB('pg', dsn=default_dsn)
 
-        # Choose the appropriate query file
-        if models:
-            # Use specific models query
-            query_file = BASE_DIR / 'agents' / 'product_report' / program_slug / 'product_single.sql'
-        else:
-            # Use all products query
-            query_file = BASE_DIR / 'agents' / 'product_report' / program_slug / 'products_list.sql'
+        # Use static_dir if configured, otherwise fall back to BASE_DIR
+        base_path = self.static_dir if hasattr(self, 'static_dir') and self.static_dir else BASE_DIR
+
+        # Determine which SQL file to use
+        file_type = 'product_single.sql' if models else 'products_list.sql'
+
+        # Try multiple paths for backward compatibility
+        # 1. Direct path (for when static_dir points to programs/ or taskstore/programs/)
+        query_file = base_path / program_slug / 'sql' / file_type
+
+        # 2. Try with 'programs/' prefix (for when static_dir points to base directory)
+        if not query_file.exists():
+            query_file = base_path / 'programs' / program_slug / 'sql' / file_type
+
+        # 3. Fallback to old structure: agents/product_report/{program_slug}/<file>
+        if not query_file.exists():
+            query_file = base_path / 'agents' / 'product_report' / program_slug / file_type
 
         if not query_file.exists():
             raise FileNotFoundError(
-                f"Products query file not found for program_slug '{program_slug}' at {query_file}"
+                f"Products query file not found for program_slug '{program_slug}'. Tried:\n"
+                f"  - {base_path / program_slug / 'sql' / file_type}\n"
+                f"  - {base_path / 'programs' / program_slug / 'sql' / file_type}\n"
+                f"  - {base_path / 'agents' / 'product_report' / program_slug / file_type}"
             )
 
         query = query_file.read_text()
