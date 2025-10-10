@@ -53,3 +53,27 @@ class PluginImporter(importlib.abc.MetaPathFinder, importlib.abc.Loader):
                 loaded = types.ModuleType(loader.name)
                 loader.exec_module(loaded)
                 module.__dict__.update(loaded.__dict__)
+
+def list_plugins(plugin_subdir: str) -> list[str]:
+    """
+    List all available plugins in a subdirectory.
+
+    Args:
+        plugin_subdir: Subdirectory name (e.g., 'agents', 'tools')
+
+    Returns:
+        List of plugin module names (without .py extension)
+    """
+    try:
+        from ..conf import PLUGINS_DIR
+        plugin_dir = PLUGINS_DIR / plugin_subdir
+
+        if not plugin_dir.exists():
+            return []
+
+        return [
+            f.stem for f in plugin_dir.glob("*.py")
+            if f.stem != "__init__"
+        ]
+    except (ImportError, Exception):
+        return []
