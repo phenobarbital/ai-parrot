@@ -1639,31 +1639,32 @@ Use the following information about user's data to guide your responses:
                     use_tools=use_tools,
                 )
 
-                # Enhance the response with context metadata
+                # Extract the vector-specific metadata
+                vector_info = vector_metadata.get('vector', {})
                 response.set_vector_context_info(
                     used=bool(vector_context),
                     context_length=len(vector_context) if vector_context else 0,
-                    search_results_count=vector_metadata.get('search_results_count', 0),
-                    search_type=search_type if vector_context else None,
-                    score_threshold=score_threshold,
-                    sources=vector_metadata.get('sources', []),
-                    source_documents=vector_metadata.get('source_documents', [])
+                    search_results_count=vector_info.get('search_results_count', 0),
+                    search_type=vector_info.get('search_type', search_type) if vector_context else None,
+                    score_threshold=vector_info.get('score_threshold', score_threshold),
+                    sources=vector_info.get('sources', []),
+                    source_documents=vector_info.get('source_documents', [])
                 )
-
                 response.set_conversation_context_info(
                     used=bool(conversation_context),
                     context_length=len(conversation_context) if conversation_context else 0
                 )
-                if return_sources and vector_metadata.get('source_documents'):
-                    response.source_documents = vector_metadata['source_documents']
-                    response.context_sources = vector_metadata.get('context_sources', [])
 
                 # Set additional metadata
                 response.session_id = session_id
                 response.turn_id = turn_id
 
                 # return the response Object:
-                return self.get_response(response, return_sources, return_context)
+                return self.get_response(
+                    response,
+                    return_sources,
+                    return_context
+                )
 
         except asyncio.CancelledError:
             self.logger.info("Conversation task was cancelled.")
@@ -1748,7 +1749,7 @@ Use the following information about user's data to guide your responses:
                 count += 1
 
             if block_sources:
-                markdown_output += f"\n**Sources**:  \n"
+                markdown_output += f"\n## **Sources:**  \n"
                 markdown_output += "\n".join(block_sources)
 
             if d:

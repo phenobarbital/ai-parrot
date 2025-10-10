@@ -712,21 +712,18 @@ class OutputFormatter:
         Returns:
             String content from the response
         """
-        # Try content property first (if added to AIMessage)
+        # Try response property first (if added to AIMessage)
+        if hasattr(response, 'response'):
+            return response.response or response.output
         if hasattr(response, 'content'):
             return response.content
         # Try to_text property
-        elif hasattr(response, 'to_text'):
+        if hasattr(response, 'to_text'):
             return response.to_text
         # Try output attribute
-        elif hasattr(response, 'output'):
+        if hasattr(response, 'output'):
             output = response.output
-            if isinstance(output, str):
-                return output
-            return str(output)
-        # Try response attribute
-        elif hasattr(response, 'response'):
-            return response.response or ""
+            return output if isinstance(output, str) else str(output)
         # Fallback
         return str(response)
 
@@ -1257,7 +1254,8 @@ class OutputFormatter:
         """
         result = {
             'input': getattr(response, 'input', None),
-            'content': self._get_content(response),
+            "output": getattr(response, 'output', None),
+            'response': self._get_content(response),
         }
 
         if hasattr(response, 'model'):
@@ -1286,16 +1284,21 @@ class OutputFormatter:
                 }
                 for tool in response.tool_calls
             ]
+        # Processing Source Documents:
         if hasattr(response, 'source_documents') and response.source_documents:
-            result['sources'] = [
+            result['source_documents'] = [
                 {
-                    'source': getattr(doc, 'source', str(doc)) if hasattr(doc, 'source') else doc.get('source', 'Unknown'),
-                    'score': getattr(doc, 'score', None) if hasattr(doc, 'score') else doc.get('score', None)
+                    **doc
                 }
                 for doc in response.source_documents
             ]
         if hasattr(response, 'context_summary'):
             result['context'] = response.context_summary
+
+        # Also show all files if available:
+        if hasattr(response, 'files') and response.files:
+            # response.files is a list of files:
+            result['files'] = [json_encoder(f) for f in response.files]
 
         if kwargs.get('pretty', False):
             if RICH_AVAILABLE and self.console:
