@@ -43,6 +43,7 @@ from ...tools.abstract import AbstractTool
 from ...models.responses import AgentResponse, AIMessage
 from ...clients.gpt import OpenAIClient
 from ...clients.claude import ClaudeClient
+from ...conf import STATIC_DIR, AGENTS_BOTS_PROMPT_DIR, AGENTS_DIR
 
 
 class RedisWriter:
@@ -200,8 +201,6 @@ class AgentHandler(BaseView):
     ):
         if request is not None:
             super().__init__(request, *args, **kwargs)
-        else:
-            pass
         self.logger = logging.getLogger(
             f"{self.__class__.__module__}.{self.__class__.__name__}"
         )
@@ -783,12 +782,14 @@ class AgentHandler(BaseView):
     ) -> BasicAgent:
         """Create and configure a BasicAgent instance."""
         try:
+            print('AGENTE > ', self._use_llm, self._use_model)
             agent = self._agent_class(
                 name=self.agent_name,
                 tools=self._tools,
                 llm=self._use_llm,
                 model=self._use_model
             )
+            print('AGENTE 2 > ', agent)
             agent.set_response(self._agent_response)
             await agent.configure()
             # define the main agent:
@@ -810,7 +811,7 @@ class AgentHandler(BaseView):
         """
         if not prompt_file:
             raise ValueError("No prompt file specified.")
-        file = BASE_DIR.joinpath('prompts', self.agent_id, prompt_file)
+        file = AGENTS_DIR.joinpath(self.agent_id, 'prompts', prompt_file)
         try:
             async with aiofiles.open(file, 'r') as f:
                 content = await f.read()
@@ -818,7 +819,7 @@ class AgentHandler(BaseView):
         except Exception as e:
             raise RuntimeError(
                 f"Failed to read prompt file {prompt_file}: {e}"
-            )
+            ) from e
 
     async def ask_agent(
         self,
