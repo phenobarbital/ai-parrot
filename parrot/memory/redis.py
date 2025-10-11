@@ -328,64 +328,281 @@ class RedisConversation(ConversationMemory):
             "storage_method": "hash" if self.use_hash_storage else "string"
         }
 
+    async def list_sessions_by_chatbot(
+        self,
+        chatbot_id: str,
+        user_id: Optional[str] = None
+    ) -> List[str]:
+        """List all sessions for a specific chatbot.
+
+        Args:
+            chatbot_id: The chatbot identifier
+            user_id: Optional user filter
+
+        Returns:
+            List of session IDs
+        """
+        if user_id:
+            # Get sessions for specific user and chatbot
+            return await self.list_sessions(user_id, chatbot_id)
+
+        # Get all sessions for this chatbot across all users
+        pattern = f"{self.key_prefix}:{chatbot_id}:*"
+        sessions = []
+        cursor = 0
+
+        while True:
+            cursor, keys = await self.redis.scan(
+                cursor,
+                match=pattern,
+                count=100
+            )
+            for key in keys:
+                # Extract session_id from key
+                # Format: conversation:chatbot_id:user_id:session_id
+                parts = key.split(':')
+                if len(parts) >= 4:
+                    sessions.append(parts[3])
+
+            if cursor == 0:
+                break
+
+        return sessions
+
+
+    async def get_chatbot_stats(self, chatbot_id: str) -> Dict[str, Any]:
+        """Get statistics for a specific chatbot.
+
+        Returns:
+            Dictionary with conversation counts, active users, etc.
+        """
+        pattern = f"{self.key_prefix}:{chatbot_id}:*"
+        total_conversations = 0
+        total_turns = 0
+        unique_users = set()
+        cursor = 0
+
+        while True:
+            cursor, keys = await self.redis.scan(
+                cursor,
+                match=pattern,
+                count=100
+            )
+            total_conversations += len(keys)
+
+            for key in keys:
+                # Extract user_id
+                parts = key.split(':')
+                if len(parts) >= 3:
+                    unique_users.add(parts[2])
+
+                # Count turns
+                if self.use_hash_storage:
+                    turns_data = await self.redis.hget(key, 'turns')
+                    if turns_data:
+                        turns = self._deserialize_data(turns_data)
+                        total_turns += len(turns)
+
+            if cursor == 0:
+                break
+
+        return {
+            'chatbot_id': chatbot_id,
+            'total_conversations': total_conversations,
+            'total_turns': total_turns,
+            'unique_users': len(unique_users),
+            'avg_turns_per_conversation': total_turns / total_conversations if total_conversations > 0 else 0
+        }
+
+
+    async def delete_all_chatbot_conversations(
+        self,
+        chatbot_id: str,
+        user_id: Optional[str] = None
+    ) -> int:
+        """Delete all conversations for a chatbot.
+
+        Args:
+            chatbot_id: The chatbot identifier
+            user_id: Optional user filter
+
+        Returns:
+            Number of conversations deleted
+        """
+        if user_id:
+            pattern = f"{self.key_prefix}:{chatbot_id}:{user_id}:*"
+        else:
+            pattern = f"{self.key_prefix}:{chatbot_id}:*"
+
+        deleted_count = 0
+        cursor = 0
+
+        while True:
+            cursor, keys = await self.redis.scan(
+                cursor,
+                match=pattern,
+                count=100
+            )
+
+            if keys:
+                deleted_count += await self.redis.delete(*keys)
+
+            if cursor == 0:
+                break
+
+        # Also clean up session sets
+        if user_id:
+            await self.redis.delete(self._get_user_sessions_key(user_id, chatbot_id))
+        else:
+            # Clean all user session sets for this chatbot
+            session_pattern = f"{self.key_prefix}_sessions:{chatbot_id}:*"
+            cursor = 0
+            while True:
+                cursor, session_keys = await self.redis.scan(
+                    cursor,
+                    match=session_pattern,
+                    count=100
+                )
+                if session_keys:
+                    await self.redis.delete(*session_keys)
+                if cursor == 0:
+                    break
+
+        return deleted_count
+
+    async def _update_chatbot_index(
+        self,
+        chatbot_id: str,
+        user_id: str,
+        session_id: str,
+        operation: str = 'add'
+    ) -> None:
+        """Maintain reverse index for fast chatbot queries.
+
+        Args:
+            chatbot_id: The chatbot identifier
+            user_id: The user identifier
+            session_id: The session identifier
+            operation: 'add' or 'remove'
+        """
+        # Index: all users who interacted with this chatbot
+        users_key = f"{self.key_prefix}_index:chatbot_users:{chatbot_id}"
+
+        if operation == 'add':
+            await self.redis.sadd(users_key, user_id)
+            # Set expiry if needed
+            # await self.redis.expire(users_key, 86400 * 30)  # 30 days
+        elif operation == 'remove':
+            # Check if user has any other sessions with this chatbot
+            sessions = await self.list_sessions(user_id, chatbot_id)
+            if not sessions:
+                await self.redis.srem(users_key, user_id)
+
+
+    async def get_chatbot_users(self, chatbot_id: str) -> List[str]:
+        """Get all users who have interacted with a chatbot."""
+        users_key = f"{self.key_prefix}_index:chatbot_users:{chatbot_id}"
+        users = await self.redis.smembers(users_key)
+        return list(users)
 
 # Example usage and testing
 async def test_redis_conversation():
-    """Test Redis conversation memory."""
-
-    # Test with hash storage (recommended)
+    """Enhanced test with multiple chatbots and users."""
     redis_memory = RedisConversation(use_hash_storage=True)
 
-    # Test connection
     if not await redis_memory.ping():
         print("Redis connection failed!")
         return
 
-    user_id = "test_user"
-    session_id = "test_session"
-    chatbot_id = "test_chatbot"
+    chatbot1 = "sales_bot"
+    chatbot2 = "support_bot"
+    user1 = "user_alice"
+    user2 = "user_bob"
 
     try:
-        # Create history
-        history = await redis_memory.create_history(
-            user_id,
-            session_id,
-            chatbot_id=chatbot_id
+        # Test 1: Multiple bots with same user
+        print("\n=== Test 1: Same user, different bots ===")
+        h1 = await redis_memory.create_history(user1, "session1", chatbot1)
+        h2 = await redis_memory.create_history(user1, "session2", chatbot2)
+
+        print(f"Created sessions: {h1.session_id}, {h2.session_id}")
+
+        # Test 2: List sessions by chatbot
+        print("\n=== Test 2: List sessions by chatbot ===")
+        sessions1 = await redis_memory.list_sessions(user1, chatbot1)
+        sessions2 = await redis_memory.list_sessions(user1, chatbot2)
+
+        print(f"User {user1} sessions with {chatbot1}: {sessions1}")
+        print(f"User {user1} sessions with {chatbot2}: {sessions2}")
+
+        # Test 3: Add turns to different bots
+        print("\n=== Test 3: Add turns ===")
+        turn1 = ConversationTurn(
+            turn_id="t1",
+            user_id=user1,
+            user_message="What's your price?",
+            assistant_response="Our starting price is $99/month."
         )
-        print(f"Created history: {history.session_id}")
 
-        # Add a turn
-        turn = ConversationTurn(
-            turn_id="turn1",
-            user_id=user_id,
-            user_message="Hello, I'm testing Redis storage",
-            assistant_response="Hello! Redis storage is working correctly."
+        turn2 = ConversationTurn(
+            turn_id="t2",
+            user_id=user1,
+            user_message="I need help",
+            assistant_response="How can I assist you today?"
         )
 
-        await redis_memory.add_turn(user_id, session_id, turn, chatbot_id=chatbot_id)
-        print("Added turn successfully")
+        await redis_memory.add_turn(user1, "session1", turn1, chatbot1)
+        await redis_memory.add_turn(user1, "session2", turn2, chatbot2)
 
-        # Retrieve and verify
-        retrieved_history = await redis_memory.get_history(
-            user_id,
-            session_id,
-            chatbot_id=chatbot_id
+        # Test 4: Retrieve and verify isolation
+        print("\n=== Test 4: Verify conversation isolation ===")
+        conv1 = await redis_memory.get_history(user1, "session1", chatbot1)
+        conv2 = await redis_memory.get_history(user1, "session2", chatbot2)
+
+        print(f"Sales bot conversation: {conv1.turns[0].assistant_response}")
+        print(f"Support bot conversation: {conv2.turns[0].assistant_response}")
+
+        # Test 5: Cross-contamination check
+        print("\n=== Test 5: Cross-contamination check ===")
+        wrong_bot = await redis_memory.get_history(user1, "session1", chatbot2)
+        print(f"Trying to access sales session with support bot ID: {wrong_bot}")  # Should be None
+
+        # Test 6: Same session_id, different chatbots
+        print("\n=== Test 6: Session ID collision test ===")
+        h3 = await redis_memory.create_history(user2, "common_session", chatbot1)
+        h4 = await redis_memory.create_history(user2, "common_session", chatbot2)
+
+        turn3 = ConversationTurn(
+            turn_id="t3",
+            user_id=user2,
+            user_message="Hello sales",
+            assistant_response="Welcome to sales!"
         )
-        if retrieved_history:
-            print(f"Retrieved history with {len(retrieved_history.turns)} turns")
-            print(f"First turn response: {retrieved_history.turns[0].assistant_response}")
 
-        # Debug the conversation
-        debug_info = await redis_memory.debug_conversation(
-            user_id,
-            session_id,
-            chatbot_id=chatbot_id
+        turn4 = ConversationTurn(
+            turn_id="t4",
+            user_id=user2,
+            user_message="Hello support",
+            assistant_response="Welcome to support!"
         )
-        print(f"Debug info: {debug_info}")
 
-        # Clean up
-        await redis_memory.delete_history(user_id, session_id, chatbot_id=chatbot_id)
-        print("Cleaned up test data")
+        await redis_memory.add_turn(user2, "common_session", turn3, chatbot1)
+        await redis_memory.add_turn(user2, "common_session", turn4, chatbot2)
+
+        c1 = await redis_memory.get_history(user2, "common_session", chatbot1)
+        c2 = await redis_memory.get_history(user2, "common_session", chatbot2)
+
+        print(f"Sales bot (common session): {c1.turns[0].assistant_response}")
+        print(f"Support bot (common session): {c2.turns[0].assistant_response}")
+
+        # Cleanup
+        print("\n=== Cleanup ===")
+        await redis_memory.delete_history(user1, "session1", chatbot1)
+        await redis_memory.delete_history(user1, "session2", chatbot2)
+        await redis_memory.delete_history(user2, "common_session", chatbot1)
+        await redis_memory.delete_history(user2, "common_session", chatbot2)
+
+        print("All tests passed! ✓")
 
     finally:
         await redis_memory.close()
