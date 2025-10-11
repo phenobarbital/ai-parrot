@@ -28,13 +28,30 @@ class RedisConversation(ConversationMemory):
             retry_on_timeout=True
         )
 
-    def _get_key(self, user_id: str, session_id: str) -> str:
+    def _get_key(
+        self,
+        user_id: str,
+        session_id: str,
+        chatbot_id: Optional[str] = None
+    ) -> str:
         """Generate Redis key for conversation history."""
-        return f"{self.key_prefix}:{user_id}:{session_id}"
+        parts = [self.key_prefix]
+        if chatbot_id:
+            parts.append(str(chatbot_id))
+        parts.extend([user_id, session_id])
+        return ":".join(parts)
 
-    def _get_user_sessions_key(self, user_id: str) -> str:
+    def _get_user_sessions_key(
+        self,
+        user_id: str,
+        chatbot_id: Optional[str] = None
+    ) -> str:
         """Generate Redis key for user's session list."""
-        return f"{self.key_prefix}_sessions:{user_id}"
+        parts = [f"{self.key_prefix}_sessions"]
+        if chatbot_id:
+            parts.append(str(chatbot_id))
+        parts.append(user_id)
+        return ":".join(parts)
 
     def _serialize_data(self, data: Any) -> str:
         """Serialize data to JSON string with proper encoding."""
@@ -66,42 +83,55 @@ class RedisConversation(ConversationMemory):
         self,
         user_id: str,
         session_id: str,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
+        chatbot_id: Optional[str] = None
     ) -> ConversationHistory:
         """Create a new conversation history."""
         history = ConversationHistory(
             session_id=session_id,
             user_id=user_id,
+            chatbot_id=chatbot_id,
             metadata=metadata or {}
         )
 
         if self.use_hash_storage:
             # Method 1: Using Redis Hash (RECOMMENDED for objects)
-            key = self._get_key(user_id, session_id)
+            key = self._get_key(user_id, session_id, chatbot_id)
             history_dict = history.to_dict()
 
             # Store each field separately in a hash
-            await self.redis.hset(key, mapping={
+            mapping = {
                 'session_id': history_dict['session_id'],
                 'user_id': history_dict['user_id'],
                 'turns': self._serialize_data(history_dict['turns']),
                 'created_at': history_dict['created_at'],
                 'updated_at': history_dict['updated_at'],
                 'metadata': self._serialize_data(history_dict['metadata'])
-            })
+            }
+            if history_dict.get('chatbot_id') is not None:
+                mapping['chatbot_id'] = history_dict['chatbot_id']
+            await self.redis.hset(key, mapping=mapping)
         else:
             # Method 2: Using simple key-value storage
-            key = self._get_key(user_id, session_id)
+            key = self._get_key(user_id, session_id, chatbot_id)
             serialized_data = self._serialize_data(history.to_dict())
             await self.redis.set(key, serialized_data)
 
         # Add to user sessions set
-        await self.redis.sadd(self._get_user_sessions_key(user_id), session_id)
+        await self.redis.sadd(
+            self._get_user_sessions_key(user_id, chatbot_id),
+            session_id
+        )
         return history
 
-    async def get_history(self, user_id: str, session_id: str) -> Optional[ConversationHistory]:
+    async def get_history(
+        self,
+        user_id: str,
+        session_id: str,
+        chatbot_id: Optional[str] = None
+    ) -> Optional[ConversationHistory]:
         """Get a conversation history."""
-        key = self._get_key(user_id, session_id)
+        key = self._get_key(user_id, session_id, chatbot_id)
 
         if self.use_hash_storage:
             # Method 1: Get from Redis Hash
@@ -114,6 +144,7 @@ class RedisConversation(ConversationMemory):
                 history_dict = {
                     'session_id': data['session_id'],
                     'user_id': data['user_id'],
+                    'chatbot_id': data.get('chatbot_id', chatbot_id),
                     'turns': self._deserialize_data(data['turns']),
                     'created_at': data['created_at'],
                     'updated_at': data['updated_at'],
@@ -129,6 +160,8 @@ class RedisConversation(ConversationMemory):
             if data:
                 try:
                     history_dict = self._deserialize_data(data)
+                    if history_dict is not None and chatbot_id and not history_dict.get('chatbot_id'):
+                        history_dict['chatbot_id'] = chatbot_id
                     return ConversationHistory.from_dict(history_dict)
                 except (ValueError, KeyError) as e:
                     print(f"Error deserializing conversation history: {e}")
@@ -137,29 +170,38 @@ class RedisConversation(ConversationMemory):
 
     async def update_history(self, history: ConversationHistory) -> None:
         """Update a conversation history."""
-        key = self._get_key(history.user_id, history.session_id)
+        key = self._get_key(history.user_id, history.session_id, history.chatbot_id)
 
         if self.use_hash_storage:
             # Method 1: Update Redis Hash
             history_dict = history.to_dict()
-            await self.redis.hset(key, mapping={
+            mapping = {
                 'session_id': history_dict['session_id'],
                 'user_id': history_dict['user_id'],
                 'turns': self._serialize_data(history_dict['turns']),
                 'created_at': history_dict['created_at'],
                 'updated_at': history_dict['updated_at'],
                 'metadata': self._serialize_data(history_dict['metadata'])
-            })
+            }
+            if history_dict.get('chatbot_id') is not None:
+                mapping['chatbot_id'] = history_dict['chatbot_id']
+            await self.redis.hset(key, mapping=mapping)
         else:
             # Method 2: Update simple key-value
             serialized_data = self._serialize_data(history.to_dict())
             await self.redis.set(key, serialized_data)
 
-    async def add_turn(self, user_id: str, session_id: str, turn: ConversationTurn) -> None:
+    async def add_turn(
+        self,
+        user_id: str,
+        session_id: str,
+        turn: ConversationTurn,
+        chatbot_id: Optional[str] = None
+    ) -> None:
         """Add a turn to the conversation efficiently."""
         if self.use_hash_storage:
             # Optimized: Only update the turns field
-            key = self._get_key(user_id, session_id)
+            key = self._get_key(user_id, session_id, chatbot_id)
 
             # Get current turns
             current_turns_data = await self.redis.hget(key, 'turns')
@@ -172,44 +214,69 @@ class RedisConversation(ConversationMemory):
             turns.append(turn.to_dict())
 
             # Update only the turns and updated_at fields
-            await self.redis.hset(key, mapping={
+            mapping = {
                 'turns': self._serialize_data(turns),
                 'updated_at': datetime.now().isoformat()
-            })
+            }
+            if chatbot_id is not None:
+                mapping['chatbot_id'] = str(chatbot_id)
+            await self.redis.hset(key, mapping=mapping)
         else:
             # Fallback to full history update
-            history = await self.get_history(user_id, session_id)
+            history = await self.get_history(user_id, session_id, chatbot_id)
             if history:
                 history.add_turn(turn)
                 await self.update_history(history)
 
-    async def clear_history(self, user_id: str, session_id: str) -> None:
+    async def clear_history(
+        self,
+        user_id: str,
+        session_id: str,
+        chatbot_id: Optional[str] = None
+    ) -> None:
         """Clear a conversation history."""
         if self.use_hash_storage:
             # Optimized: Only clear turns
-            key = self._get_key(user_id, session_id)
+            key = self._get_key(user_id, session_id, chatbot_id)
             # Reset turns to empty list and update updated_at
-            await self.redis.hset(key, mapping={
+            mapping = {
                 'turns': self._serialize_data([]),
                 'updated_at': datetime.now().isoformat()
-            })
+            }
+            if chatbot_id is not None:
+                mapping['chatbot_id'] = str(chatbot_id)
+            await self.redis.hset(key, mapping=mapping)
         else:
-            history = await self.get_history(user_id, session_id)
+            history = await self.get_history(user_id, session_id, chatbot_id)
             if history:
                 history.clear_turns()
                 await self.update_history(history)
 
-    async def list_sessions(self, user_id: str) -> List[str]:
+    async def list_sessions(
+        self,
+        user_id: str,
+        chatbot_id: Optional[str] = None
+    ) -> List[str]:
         """List all session IDs for a user."""
-        sessions = await self.redis.smembers(self._get_user_sessions_key(user_id))
+        sessions = await self.redis.smembers(
+            self._get_user_sessions_key(user_id, chatbot_id)
+        )
         # Since decode_responses=True, sessions should already be strings
         return list(sessions)
 
-    async def delete_history(self, user_id: str, session_id: str) -> bool:
+    async def delete_history(
+        self,
+        user_id: str,
+        session_id: str,
+        chatbot_id: Optional[str] = None
+    ) -> bool:
         """Delete a conversation history entirely."""
-        key = self._get_key(user_id, session_id)
+        key = self._get_key(user_id, session_id, chatbot_id)
         result = await self.redis.delete(key)
-        await self.redis.srem(self._get_user_sessions_key(user_id), session_id)
+        await self.redis.srem(
+            self._get_user_sessions_key(user_id, chatbot_id),
+            session_id
+        )
         return result > 0
 
     async def close(self):
@@ -229,9 +296,14 @@ class RedisConversation(ConversationMemory):
             return False
 
     # Additional utility methods for debugging
-    async def get_raw_data(self, user_id: str, session_id: str) -> Optional[Dict]:
+    async def get_raw_data(
+        self,
+        user_id: str,
+        session_id: str,
+        chatbot_id: Optional[str] = None
+    ) -> Optional[Dict]:
         """Get raw data from Redis for debugging."""
-        key = self._get_key(user_id, session_id)
+        key = self._get_key(user_id, session_id, chatbot_id)
 
         if self.use_hash_storage:
             return await self.redis.hgetall(key)
@@ -241,10 +313,15 @@ class RedisConversation(ConversationMemory):
                 return {"raw_data": data}
             return None
 
-    async def debug_conversation(self, user_id: str, session_id: str) -> Dict[str, Any]:
+    async def debug_conversation(
+        self,
+        user_id: str,
+        session_id: str,
+        chatbot_id: Optional[str] = None
+    ) -> Dict[str, Any]:
         """Debug method to inspect conversation data."""
-        raw_data = await self.get_raw_data(user_id, session_id)
-        history = await self.get_history(user_id, session_id)
+        raw_data = await self.get_raw_data(user_id, session_id, chatbot_id)
+        history = await self.get_history(user_id, session_id, chatbot_id)
 
         return {
             "raw_data": raw_data,
@@ -268,10 +345,15 @@ async def test_redis_conversation():
 
     user_id = "test_user"
     session_id = "test_session"
+    chatbot_id = "test_chatbot"
 
     try:
         # Create history
-        history = await redis_memory.create_history(user_id, session_id)
+        history = await redis_memory.create_history(
+            user_id,
+            session_id,
+            chatbot_id=chatbot_id
+        )
         print(f"Created history: {history.session_id}")
 
         # Add a turn
@@ -282,21 +364,29 @@ async def test_redis_conversation():
             assistant_response="Hello! Redis storage is working correctly."
         )
 
-        await redis_memory.add_turn(user_id, session_id, turn)
+        await redis_memory.add_turn(user_id, session_id, turn, chatbot_id=chatbot_id)
         print("Added turn successfully")
 
         # Retrieve and verify
-        retrieved_history = await redis_memory.get_history(user_id, session_id)
+        retrieved_history = await redis_memory.get_history(
+            user_id,
+            session_id,
+            chatbot_id=chatbot_id
+        )
         if retrieved_history:
             print(f"Retrieved history with {len(retrieved_history.turns)} turns")
             print(f"First turn response: {retrieved_history.turns[0].assistant_response}")
 
         # Debug the conversation
-        debug_info = await redis_memory.debug_conversation(user_id, session_id)
+        debug_info = await redis_memory.debug_conversation(
+            user_id,
+            session_id,
+            chatbot_id=chatbot_id
+        )
         print(f"Debug info: {debug_info}")
 
         # Clean up
-        await redis_memory.delete_history(user_id, session_id)
+        await redis_memory.delete_history(user_id, session_id, chatbot_id=chatbot_id)
         print("Cleaned up test data")
 
     finally:

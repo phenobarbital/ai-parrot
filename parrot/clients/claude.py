@@ -553,11 +553,18 @@ class ClaudeClient(AbstractClient):
 
         # Get conversation context (but don't include files since we handle images separately)
         if user_id and session_id and self.conversation_memory:
+            chatbot_key = self._get_chatbot_key()
             # Get or create conversation history
-            conversation_history = await self.conversation_memory.get_history(user_id, session_id)
+            conversation_history = await self.conversation_memory.get_history(
+                user_id,
+                session_id,
+                chatbot_id=chatbot_key
+            )
             if not conversation_history:
                 conversation_history = await self.conversation_memory.create_history(
-                    user_id, session_id
+                    user_id,
+                    session_id,
+                    chatbot_id=chatbot_key
                 )
 
             # Get previous conversation messages for context
