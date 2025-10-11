@@ -1,9 +1,8 @@
-from typing import Tuple, List, Dict
-from redis.asyncio import Redis
+from typing import Tuple, List, Dict, Any, Optional
 from asyncdb import AsyncDB
 from querysource.conf import default_dsn
 from .abstract import AbstractKnowledgeBase
-from ...conf import REDIS_HISTORY_URL
+from .redis import RedisKnowledgeBase
 from ...utils.helpers import RequestContext
 from .cache import TTLCache
 
@@ -178,39 +177,66 @@ class SessionStateKB(AbstractKnowledgeBase):
 
         return facts
 
-class UserPreferences(AbstractKnowledgeBase):
-    """KB for user preferences stored in Redis/DB."""
+class UserPreferences(RedisKnowledgeBase):
+    """KB for user preferences stored in Redis."""
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any) -> None:
         super().__init__(
             name="User Preferences",
             category="preferences",
             activation_patterns=[
                 "preferences", "prefer", "like", "favorite",
                 "based on what I like"
-            ]
-        )
-        self.redis = Redis.from_url(
-            REDIS_HISTORY_URL,
-            decode_responses=True,
-            encoding="utf-8",
-            socket_connect_timeout=5,
-            socket_timeout=5,
-            retry_on_timeout=True
+            ],
+            namespace="user_prefs",
+            **kwargs,
         )
 
-    async def search(self, query: str, user_id: str = None, **kwargs) -> List[Dict]:
-        """Retrieve user preferences."""
+    async def save_preference(
+        self,
+        user_id: str,
+        preference: str,
+        value: Any,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Persist a single preference fact for the user."""
+
+        enriched_metadata = {"preference": preference, "value": value}
+        if metadata:
+            enriched_metadata.update(metadata)
+
+        await super().save_fact(
+            user_id=user_id,
+            fact_id=preference,
+            content=f"User prefers {preference}: {value}",
+            metadata=enriched_metadata,
+        )
+
+    async def delete_preference(self, user_id: str, preference: str) -> None:
+        """Remove a stored preference."""
+
+        await super().delete_fact(user_id, preference)
+
+    async def search(self, query: str, user_id: str = None, **kwargs: Any) -> List[Dict]:
+        """Retrieve user preferences formatted for prompting."""
+
         if not user_id:
             return []
 
-        prefs_key = f"user_prefs:{user_id}"
-        prefs = await self.redis.hgetall(prefs_key)
+        results = await super().search(query, user_id=user_id, **kwargs)
 
-        facts = []
-        for key, value in prefs.items():
+        facts: List[Dict[str, Any]] = []
+        for fact in results:
+            preference = fact.get("metadata", {}).get("preference") or fact.get("id")
+            value = fact.get("metadata", {}).get("value")
+            if value is None:
+                # Attempt to extract value from content when metadata is missing
+                content = fact.get("content", "")
+                value = content.split(":", 1)[-1].strip() if ":" in content else content
+
             facts.append({
-                'content': f"User prefers {key}: {value}",
-                'metadata': {'preference': key}
+                "content": f"User prefers {preference}: {value}",
+                "metadata": {"preference": preference, **(fact.get("metadata") or {})},
             })
+
         return facts
