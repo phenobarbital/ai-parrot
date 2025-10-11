@@ -9,7 +9,7 @@ class UserContext(RedisKnowledgeBase):
         super().__init__(
             name="User Context",
             category="context",
-            key_prefix="user_context",
+            namespace="user_context",
             activation_patterns=[
                 "last conversation", "previously", "we discussed",
                 "earlier you mentioned", "remember when"
@@ -74,7 +74,7 @@ class ChatbotSettings(RedisKnowledgeBase):
         super().__init__(
             name="Chatbot Settings",
             category="settings",
-            key_prefix="bot_settings",
+            namespace="bot_settings",
             activation_patterns=[],  # Not activated by patterns
             use_hash_storage=True,
             **kwargs
@@ -128,7 +128,7 @@ class DocumentMetadata(RedisKnowledgeBase):
         super().__init__(
             name="Document Metadata",
             category="documents",
-            key_prefix="doc_meta",
+            namespace="doc_meta",
             activation_patterns=[
                 "document", "file", "uploaded", "attachment"
             ],

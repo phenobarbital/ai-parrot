@@ -86,9 +86,10 @@ class RedisKnowledgeBase(AbstractKnowledgeBase):
         self,
         data,
         query: str,
+        identifier: str,
         field_filter: Optional[List[str]] = None,
         match_fn: Optional[Callable] = None
-    ) -> bool:
+    ) -> Optional[Dict[str, Any]]:
         """Check if data matches the query."""
         if data and self._matches_query(data, query, field_filter, match_fn):
             return {
@@ -128,7 +129,7 @@ class RedisKnowledgeBase(AbstractKnowledgeBase):
         if identifier:
             # Search in specific identifier
             data = await self.get(identifier, **kwargs)
-            if rst := self._data_matches(data, query_lower, field_filter, match_fn):
+            if rst := self._data_matches(data, query_lower, identifier, field_filter, match_fn):
                 results.append(rst)
         else:
             # Search across all keys with pattern
@@ -152,7 +153,7 @@ class RedisKnowledgeBase(AbstractKnowledgeBase):
                         key_identifier = key_parts[1]
 
                         data = await self.get(key_identifier, **kwargs)
-                        if rst := self._data_matches(data, query_lower, field_filter, match_fn):
+                        if rst := self._data_matches(data, query_lower, key_identifier, field_filter, match_fn):
                             results.append(rst)
 
                 if cursor == 0 or len(results) >= limit:
@@ -307,7 +308,7 @@ class RedisKnowledgeBase(AbstractKnowledgeBase):
             try:
                 return json.loads(data)
             except Exception:
-                return None
+                return data
 
     # ========== Utility Methods ==========
 
@@ -581,3 +582,78 @@ class RedisKnowledgeBase(AbstractKnowledgeBase):
                 f"Error checking existence of {key}: {e}"
             )
             return False
+
+    # ========== Bulk Operations ==========
+
+    async def bulk_insert(
+        self,
+        items: List[Dict[str, Any]],
+        identifier_key: str = 'id',
+        ttl: Optional[int] = None
+    ) -> int:
+        """
+        Insert multiple items in bulk.
+
+        Args:
+            items: List of items to insert
+            identifier_key: Key name containing the identifier
+            ttl: TTL for all items
+
+        Returns:
+            Number of items successfully inserted
+        """
+        count = 0
+        for item in items:
+            identifier = item.get(identifier_key)
+            if not identifier:
+                continue
+
+            if await self.insert(identifier, item, ttl=ttl):
+                count += 1
+
+        return count
+
+    async def bulk_get(
+        self,
+        identifiers: List[str],
+        **kwargs
+    ) -> Dict[str, Any]:
+        """
+        Retrieve multiple items in bulk.
+
+        Args:
+            identifiers: List of identifiers
+            **kwargs: Additional key components
+
+        Returns:
+            Dict mapping identifier to data
+        """
+        results = {}
+        for identifier in identifiers:
+            data = await self.get(identifier, **kwargs)
+            if data is not None:
+                results[identifier] = data
+
+        return results
+
+    async def bulk_delete(
+        self,
+        identifiers: List[str],
+        **kwargs
+    ) -> int:
+        """
+        Delete multiple items in bulk.
+
+        Args:
+            identifiers: List of identifiers to delete
+            **kwargs: Additional key components
+
+        Returns:
+            Number of items deleted
+        """
+        count = 0
+        for identifier in identifiers:
+            if await self.delete(identifier, **kwargs):
+                count += 1
+
+        return count
