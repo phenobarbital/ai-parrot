@@ -3036,7 +3036,15 @@ Provide specific, educational recommendations with concrete implementation steps
                 }
             )
 
-            await self.conversation_memory.add_turn(user_id, session_id, turn)
+            chatbot_key = getattr(self, 'chatbot_id', None)
+            if chatbot_key is not None:
+                chatbot_key = str(chatbot_key)
+            await self.conversation_memory.add_turn(
+                user_id,
+                session_id,
+                turn,
+                chatbot_id=chatbot_key
+            )
             self.logger.debug(
                 f"Updated conversation memory for session {session_id}"
             )

@@ -268,47 +268,86 @@ class AbstractClient(ABC):
         """Set the program slug for the client."""
         self._program = program_slug
 
+    def _get_chatbot_key(self, chatbot_id: Optional[str] = None) -> Optional[str]:
+        """Resolve chatbot identifier for memory operations."""
+        key = chatbot_id or getattr(self, 'chatbot_id', None)
+        if key is None:
+            return None
+        return str(key)
+
     async def start_conversation(
         self,
         user_id: str,
         session_id: str,
         metadata: Optional[Dict[str, Any]] = None,
+        chatbot_id: Optional[str] = None,
     ) -> ConversationHistory:
         """Start a new conversation session."""
         return await self.conversation_memory.create_history(
             user_id,
             session_id,
-            metadata=metadata
+            metadata=metadata,
+            chatbot_id=self._get_chatbot_key(chatbot_id)
         )
 
     async def get_conversation(
         self,
         user_id: str,
-        session_id: str
+        session_id: str,
+        chatbot_id: Optional[str] = None
     ) -> Optional[ConversationHistory]:
         """Get an existing conversation session."""
         if not self.conversation_memory:
             return None
-        return await self.conversation_memory.get_history(user_id, session_id)
+        return await self.conversation_memory.get_history(
+            user_id,
+            session_id,
+            chatbot_id=self._get_chatbot_key(chatbot_id)
+        )
 
-    async def clear_conversation(self, user_id: str, session_id: str) -> bool:
+    async def clear_conversation(
+        self,
+        user_id: str,
+        session_id: str,
+        chatbot_id: Optional[str] = None
+    ) -> bool:
         """Clear conversation history for a session."""
         if not self.conversation_memory:
             return False
-        await self.conversation_memory.clear_history(user_id, session_id)
+        await self.conversation_memory.clear_history(
+            user_id,
+            session_id,
+            chatbot_id=self._get_chatbot_key(chatbot_id)
+        )
         return True
 
-    async def delete_conversation(self, user_id: str, session_id: str) -> bool:
+    async def delete_conversation(
+        self,
+        user_id: str,
+        session_id: str,
+        chatbot_id: Optional[str] = None
+    ) -> bool:
         """Delete conversation history entirely."""
         if not self.conversation_memory:
             return False
-        return await self.conversation_memory.delete_history(user_id, session_id)
+        return await self.conversation_memory.delete_history(
+            user_id,
+            session_id,
+            chatbot_id=self._get_chatbot_key(chatbot_id)
+        )
 
-    async def list_user_conversations(self, user_id: str) -> List[str]:
+    async def list_user_conversations(
+        self,
+        user_id: str,
+        chatbot_id: Optional[str] = None
+    ) -> List[str]:
         """List all conversation sessions for a user."""
         if not self.conversation_memory:
             return []
-        return await self.conversation_memory.list_sessions(user_id)
+        return await self.conversation_memory.list_sessions(
+            user_id,
+            chatbot_id=self._get_chatbot_key(chatbot_id)
+        )
 
     def set_tools(self, tools: List[Union[str, AbstractTool]]) -> None:
         """Set complete list of tools, replacing existing."""
@@ -661,11 +700,15 @@ class AbstractClient(ABC):
 
         if user_id and session_id:
             conversation_history = await self.conversation_memory.get_history(
-                user_id, session_id
+                user_id,
+                session_id,
+                chatbot_id=self._get_chatbot_key()
             )
             if not conversation_history:
                 conversation_history = await self.conversation_memory.create_history(
-                    user_id, session_id
+                    user_id,
+                    session_id,
+                    chatbot_id=self._get_chatbot_key()
                 )
 
         # Get recent conversation messages for context
@@ -762,7 +805,12 @@ class AbstractClient(ABC):
         )
 
         # Add turn to conversation history
-        await self.conversation_memory.add_turn(user_id, session_id, turn)
+        await self.conversation_memory.add_turn(
+            user_id,
+            session_id,
+            turn,
+            chatbot_id=self._get_chatbot_key()
+        )
 
     def _extract_json_from_response(self, text: str) -> str:
         """Extract JSON from Claude's response, handling markdown code blocks and extra text."""

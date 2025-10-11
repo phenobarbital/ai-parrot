@@ -474,7 +474,15 @@ Columns:
                         'tools_used': [tool.name for tool in response.tool_calls] if response.tool_calls else []
                     }
                 )
-                await self.conversation_memory.add_turn(user_id, session_id, turn)
+                chatbot_key = getattr(self, 'chatbot_id', None)
+                if chatbot_key is not None:
+                    chatbot_key = str(chatbot_key)
+                await self.conversation_memory.add_turn(
+                    user_id,
+                    session_id,
+                    turn,
+                    chatbot_id=chatbot_key
+                )
 
             return response
 

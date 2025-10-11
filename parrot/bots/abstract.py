@@ -735,69 +735,125 @@ class AbstractBot(DBInterface, ABC):
     async def get_conversation_history(
         self,
         user_id: str,
-        session_id: str
+        session_id: str,
+        chatbot_id: Optional[str] = None
     ) -> Optional[ConversationHistory]:
         """Get conversation history using unified memory system."""
         if not self.conversation_memory:
             return None
-        return await self.conversation_memory.get_history(user_id, session_id)
+        chatbot_key = chatbot_id or getattr(self, 'chatbot_id', None)
+        if chatbot_key is not None:
+            chatbot_key = str(chatbot_key)
+        return await self.conversation_memory.get_history(
+            user_id,
+            session_id,
+            chatbot_id=chatbot_key
+        )
 
     async def create_conversation_history(
         self,
         user_id: str,
         session_id: str,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
+        chatbot_id: Optional[str] = None
     ) -> ConversationHistory:
         """Create new conversation history using unified memory system."""
         if not self.conversation_memory:
             raise RuntimeError("Conversation memory not configured")
+        chatbot_key = chatbot_id or getattr(self, 'chatbot_id', None)
+        if chatbot_key is not None:
+            chatbot_key = str(chatbot_key)
         return await self.conversation_memory.create_history(
             user_id,
             session_id,
-            metadata
+            metadata,
+            chatbot_id=chatbot_key
         )
 
     async def save_conversation_turn(
         self,
         user_id: str,
         session_id: str,
-        turn: ConversationTurn
+        turn: ConversationTurn,
+        chatbot_id: Optional[str] = None
     ) -> None:
         """Save a conversation turn using unified memory system."""
         if not self.conversation_memory:
             return
-        await self.conversation_memory.add_turn(user_id, session_id, turn)
+        chatbot_key = chatbot_id or getattr(self, 'chatbot_id', None)
+        if chatbot_key is not None:
+            chatbot_key = str(chatbot_key)
+        await self.conversation_memory.add_turn(
+            user_id,
+            session_id,
+            turn,
+            chatbot_id=chatbot_key
+        )
 
-    async def clear_conversation_history(self, user_id: str, session_id: str) -> bool:
+    async def clear_conversation_history(
+        self,
+        user_id: str,
+        session_id: str,
+        chatbot_id: Optional[str] = None
+    ) -> bool:
         """Clear conversation history using unified memory system."""
         if not self.conversation_memory:
             return False
         try:
-            await self.conversation_memory.clear_history(user_id, session_id)
+            chatbot_key = chatbot_id or getattr(self, 'chatbot_id', None)
+            if chatbot_key is not None:
+                chatbot_key = str(chatbot_key)
+            await self.conversation_memory.clear_history(
+                user_id,
+                session_id,
+                chatbot_id=chatbot_key
+            )
             self.logger.info(f"Cleared conversation history for {user_id}/{session_id}")
             return True
         except Exception as e:
             self.logger.error(f"Error clearing conversation history: {e}")
             return False
 
-    async def delete_conversation_history(self, user_id: str, session_id: str) -> bool:
+    async def delete_conversation_history(
+        self,
+        user_id: str,
+        session_id: str,
+        chatbot_id: Optional[str] = None
+    ) -> bool:
         """Delete conversation history entirely using unified memory system."""
         if not self.conversation_memory:
             return False
         try:
-            result = await self.conversation_memory.delete_history(user_id, session_id)
+            chatbot_key = chatbot_id or getattr(self, 'chatbot_id', None)
+            if chatbot_key is not None:
+                chatbot_key = str(chatbot_key)
+            result = await self.conversation_memory.delete_history(
+                user_id,
+                session_id,
+                chatbot_id=chatbot_key
+            )
             self.logger.info(f"Deleted conversation history for {user_id}/{session_id}")
             return result
         except Exception as e:
             self.logger.error(f"Error deleting conversation history: {e}")
             return False
 
-    async def list_user_conversations(self, user_id: str) -> List[str]:
+    async def list_user_conversations(
+        self,
+        user_id: str,
+        chatbot_id: Optional[str] = None
+    ) -> List[str]:
         """List all conversation sessions for a user."""
         if not self.conversation_memory:
             return []
         try:
-            return await self.conversation_memory.list_sessions(user_id)
+            chatbot_key = chatbot_id or getattr(self, 'chatbot_id', None)
+            if chatbot_key is not None:
+                chatbot_key = str(chatbot_key)
+            return await self.conversation_memory.list_sessions(
+                user_id,
+                chatbot_id=chatbot_key
+            )
         except Exception as e:
             self.logger.error(f"Error listing conversations for user {user_id}: {e}")
             return []
