@@ -47,13 +47,11 @@ class KnowledgeBaseStore:
             fact_id = len(self.facts)
             self.facts.append(fact)
             texts.append(fact['content'])
-            category = fact.get('metadata', {}).get('category')
-            if category:
+            if category := fact.get('metadata', {}).get('category'):
                 self.category_index[category].append(fact_id)
             # Index by entities
             for key in ['subject', 'object']:
-                entity = fact.get('metadata', {}).get(key)
-                if entity:
+                if entity := fact.get('metadata', {}).get(key):
                     self.entity_index[entity].append(fact_id)
 
         embeddings = self.embeddings.encode(texts, normalize_embeddings=True)
@@ -64,7 +62,7 @@ class KnowledgeBaseStore:
         )
 
     def _tokenize(self, text: str) -> set:
-        return set(t.lower() for t in text.split())
+        return {t.lower() for t in text.split()}
 
     async def search_facts(
         self,
@@ -97,7 +95,7 @@ class KnowledgeBaseStore:
         q_tokens = self._tokenize(query)
         for r in results:
             tags = set((r["metadata"].get("tags") or []))
-            overlap = len(q_tokens & set(t.lower() for t in tags))
+            overlap = len(q_tokens & {t.lower() for t in tags})
             r["score"] += 0.05 * overlap  # tiny boost per overlapping tag
         results.sort(key=lambda x: x["score"], reverse=True)
         return results
