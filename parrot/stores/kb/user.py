@@ -224,20 +224,27 @@ class UserPreferences(RedisKnowledgeBase):
         facts = []
         query_lower = query.lower()
 
-        facts.extend(
-            {
-                'content': f"User prefers {key}: {value}",
-                'metadata': {
-                    'preference': key,
-                    'value': value,
-                    'user_id': user_id,
-                },
-                'source': 'user_preferences',
-            }
-            for key, value in prefs.items()
-            if query_lower in key.lower() or query_lower in str(value).lower()
-        )
+        for key, value in prefs.items():
+            # Check if query matches key or value
+            if query_lower in key.lower() or query_lower in str(value).lower():
+                # Calculate relevance
+                relevance = 1.0 if query_lower == key.lower() else 0.5
+                if query_lower in str(value).lower():
+                    relevance += 0.3
 
+                facts.append({
+                    'content': f"User prefers {key}: {value}",
+                    'metadata': {
+                        'preference': key,
+                        'value': value,
+                        'user_id': user_id
+                    },
+                    'source': 'user_preferences',
+                    'relevance': min(relevance, 1.0)  # Cap at 1.0
+                })
+
+        # Sort by relevance
+        facts.sort(key=lambda x: x['relevance'], reverse=True)
         return facts
 
     async def set_preference(
@@ -306,3 +313,62 @@ class UserPreferences(RedisKnowledgeBase):
             Dict of all preferences
         """
         return await self.get(user_id, default={})
+
+    async def clear_all_preferences(self, user_id: str) -> bool:
+        """
+        Clear all preferences for a user.
+
+        Args:
+            user_id: User identifier
+
+        Returns:
+            True if successful
+        """
+        return await self.delete(user_id)
+
+    async def update_preferences(
+        self,
+        user_id: str,
+        preferences: Dict[str, Any]
+    ) -> bool:
+        """
+        Update multiple preferences at once.
+
+        Args:
+            user_id: User identifier
+            preferences: Dictionary of preferences to update
+
+        Returns:
+            True if successful
+        """
+        return await self.update(user_id, preferences)
+
+    async def has_preference(
+        self,
+        user_id: str,
+        preference: str
+    ) -> bool:
+        """
+        Check if a user has a specific preference set.
+
+        Args:
+            user_id: User identifier
+            preference: Preference name
+
+        Returns:
+            True if preference exists
+        """
+        return await self.exists(user_id, field=preference)
+
+    async def list_user_preference_keys(self, user_id: str) -> List[str]:
+        """
+        Get list of all preference keys for a user.
+
+        Args:
+            user_id: User identifier
+
+        Returns:
+            List of preference keys
+        """
+        prefs = await self.get_all_preferences(user_id)
+        return list(prefs.keys()) if prefs else []
