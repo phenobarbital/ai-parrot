@@ -70,7 +70,7 @@ class KnowledgeBaseStore:
         self,
         query: str,
         k: int = 5,
-        score_threshold: float = None
+        score_threshold: float = 0.4
     ) -> List[Dict[str, Any]]:
         """Ultra-fast fact retrieval."""
         query_embedding = self.embeddings.encode(

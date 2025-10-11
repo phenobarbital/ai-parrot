@@ -83,8 +83,8 @@ class RedisConversation(ConversationMemory):
         self,
         user_id: str,
         session_id: str,
+        chatbot_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
-        chatbot_id: Optional[str] = None
     ) -> ConversationHistory:
         """Create a new conversation history."""
         history = ConversationHistory(
@@ -103,6 +103,7 @@ class RedisConversation(ConversationMemory):
             mapping = {
                 'session_id': history_dict['session_id'],
                 'user_id': history_dict['user_id'],
+                'chatbot_id': chatbot_id,
                 'turns': self._serialize_data(history_dict['turns']),
                 'created_at': history_dict['created_at'],
                 'updated_at': history_dict['updated_at'],
@@ -307,11 +308,8 @@ class RedisConversation(ConversationMemory):
 
         if self.use_hash_storage:
             return await self.redis.hgetall(key)
-        else:
-            data = await self.redis.get(key)
-            if data:
-                return {"raw_data": data}
-            return None
+        data = await self.redis.get(key)
+        return {"raw_data": data} if data else None
 
     async def debug_conversation(
         self,
