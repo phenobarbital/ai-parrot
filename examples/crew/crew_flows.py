@@ -383,13 +383,17 @@ async def example_advanced_workflow():
         use_llm='google'
     )
 
+    all_agents = [
+        research_coordinator, researcher1, researcher2, researcher3,
+        synthesizer, fact_checker, style_editor, seo_optimizer, final_publisher
+    ]
+    for agent in all_agents:
+        await agent.configure()
+
     # Create crew with all agents
     crew = AgentCrew(
         name="AdvancedContentPipeline",
-        agents=[
-            research_coordinator, researcher1, researcher2, researcher3,
-            synthesizer, fact_checker, style_editor, seo_optimizer, final_publisher
-        ]
+        agents=all_agents
     )
 
     # Define the complex workflow
@@ -555,8 +559,8 @@ async def main():
 
     # Run each example
     try:
-        await example_sequential_pipeline()
-        await example_parallel_research()
+        # await example_sequential_pipeline()
+        # await example_parallel_research()
         await example_complex_workflow()
         #await example_advanced_workflow()
         # await example_hybrid_approach()

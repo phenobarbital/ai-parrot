@@ -164,6 +164,8 @@ class AbstractBot(DBInterface, ABC):
             self._llm_temp = kwargs.get('temperature', self.temperature)
             self._max_tokens = kwargs.get('max_tokens', self.max_tokens)
         # LLM Configuration:
+        # Configuration state flag
+        self._configured: bool = False
         self._top_k = kwargs.get('top_k', 41)
         self._top_p = kwargs.get('top_p', 0.9)
         self._llm_config = kwargs.get('model_config', {})
@@ -631,16 +633,10 @@ class AbstractBot(DBInterface, ABC):
     async def configure(self, app=None) -> None:
         """Basic Configuration of Bot.
         """
+        self._configured = False
         self.app = None
         if app:
-            if isinstance(app, web.Application):
-                self.app = app  # register the app into the Extension
-            else:
-                self.app = app.get_app()  # Nav Application
-        # adding this configured chatbot to app:
-        if self.app:
-            self.app[f"{self.name.lower()}_bot"] = self
-
+            self.app = app if isinstance(app, web.Application) else app.get_app()
         # Configure conversation memory FIRST
         self.configure_conversation_memory()
 
@@ -714,6 +710,12 @@ class AbstractBot(DBInterface, ABC):
                     f"Error initializing KB Selector: {e}"
                 )
                 raise
+        self._configured = True
+
+    @property
+    def is_configured(self) -> bool:
+        """Return whether the bot has completed its configuration."""
+        return self._configured
 
     def get_conversation_memory(
         self,

@@ -90,13 +90,14 @@ Guidelines for using agents:
     def remove_agent(self, agent_name: str) -> None:
         """Remove a specialized agent from this orchestrator."""
         # Find and remove the agent tool
-        tool_to_remove = None
-        for tool_name, agent_tool in self.agent_tools.items():
-            if agent_tool.agent.name == agent_name:
-                tool_to_remove = tool_name
-                break
-
-        if tool_to_remove:
+        if tool_to_remove := next(
+            (
+                tool_name
+                for tool_name, agent_tool in self.agent_tools.items()
+                if agent_tool.agent.name == agent_name
+            ),
+            None,
+        ):
             del self.agent_tools[tool_to_remove]
             self.tool_manager.remove_tool(tool_to_remove)
             self.logger.info(

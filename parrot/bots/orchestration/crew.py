@@ -185,7 +185,8 @@ class AgentCrew:
         agents: List[Union[BasicAgent, AbstractBot]] = None,
         shared_tool_manager: ToolManager = None,
         max_parallel_tasks: int = 10,
-        llm: Optional[AbstractClient] = None
+        llm: Optional[AbstractClient] = None,
+        auto_configure: bool = True,
     ):
         """
         Initialize the AgentCrew.
@@ -198,6 +199,7 @@ class AgentCrew:
         """
         self.name = name or 'AgentCrew'
         self.agents: Dict[str, Union[BasicAgent, AbstractBot]] = {}
+        self._auto_configure: bool = auto_configure
         self.shared_tool_manager = shared_tool_manager or ToolManager()
         self.max_parallel_tasks = max_parallel_tasks
         self.execution_log: List[Dict[str, Any]] = []
@@ -209,6 +211,8 @@ class AgentCrew:
         self.workflow_graph: Dict[str, AgentNode] = {}
         self.initial_agent: Optional[str] = None
         self.final_agents: Set[str] = set()
+        # Internal tracking of per-agent initialization guards
+        self._agent_locks: Dict[int, asyncio.Lock] = {}
         # Add agents if provided
         if agents:
             for agent in agents:
@@ -731,6 +735,12 @@ Current task: {current_input}"""
 
         for agent_name in agent_names:
             node = self.workflow_graph[agent_name]
+            # get readiness of agent in AgentNode:
+            agent = node.agent
+            if agent_name not in self.agents:
+                self.logger.warning(f"Agent '{agent_name}' not found in crew, skipping")
+                continue
+            await self._ensure_agent_ready(agent)
             # Double-check dependencies are satisfied (defensive programming)
             if context.can_execute(agent_name, node.dependencies):
                 context.active_tasks.add(agent_name)
@@ -776,6 +786,52 @@ Current task: {current_input}"""
             )
         }
 
+    def _agent_is_configured(self, agent: Union[BasicAgent, AbstractBot]) -> bool:
+        """Check if an agent is configured, using a lock to prevent race conditions."""
+        return bool(getattr(agent, "is_configured", False))
+
+    async def _ensure_agent_ready(self, agent: Union[BasicAgent, AbstractBot]) -> None:
+        """Ensure the agent is configured before execution.
+
+        Agents require their underlying LLM client to be instantiated before
+        they can answer questions. Many examples explicitly call
+        ``await agent.configure()`` during setup, but it is easy to forget this
+        step when building complex flows programmatically. When configuration
+        is skipped the agent's ``_llm`` attribute remains ``None`` (or points to
+        an un-instantiated client class), leading to runtime errors such as
+        ``'NoneType' object does not support the asynchronous context manager
+        protocol`` when ``agent.ask`` is executed.
+
+        To make the crew orchestration more robust we lazily configure agents
+        the first time they are used. We guard the configuration with a
+        per-agent lock so that concurrent executions of the same agent do not
+        race to configure it multiple times.
+        """
+
+        if self._agent_is_configured(agent):
+            return
+
+        agent_id = id(agent)
+        lock = self._agent_locks.get(agent_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._agent_locks[agent_id] = lock
+
+        async with lock:
+            if not self._agent_is_configured(agent):
+                try:
+                    self.logger.info(
+                        f"Auto-configuring agent '{agent.name}'"
+                    )
+                    await agent.configure()
+                    self.logger.info(
+                        f"Agent '{agent.name}' configured successfully"
+                    )
+                except Exception as e:
+                    self.logger.error(
+                        f"Failed to configure agent '{agent.name}': {e}"
+                    )
+
     async def _execute_agent(
         self,
         agent: Union[BasicAgent, AbstractBot],
@@ -792,6 +848,7 @@ Current task: {current_input}"""
         rate limiting and handles the different execution methods that agents
         might implement.
         """
+        await self._ensure_agent_ready(agent)
         async with self.semaphore:
             if hasattr(agent, 'conversation'):
                 return await agent.conversation(
