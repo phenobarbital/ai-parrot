@@ -45,13 +45,18 @@ class AgentCrew:
     - Comprehensive execution logging
     """
 
+    # Default truncation length for logging and summaries
+    default_truncation_length: int = 200
+
     def __init__(
         self,
         name: str = "AgentCrew",
         agents: List[Union[BasicAgent, AbstractBot]] = None,
         shared_tool_manager: ToolManager = None,
         max_parallel_tasks: int = 10,
-        llm: Optional[AbstractClient] = None
+        llm: Optional[AbstractClient] = None,
+        truncation_length: Optional[int] = None,
+        truncate_context_summary: bool = True
     ):
         """
         Initialize the AgentCrew.
@@ -70,6 +75,12 @@ class AgentCrew:
         self.logger = logging.getLogger(f"parrot.crews.{self.name}")
         self.semaphore = asyncio.Semaphore(max_parallel_tasks)
         self._llm = llm  # Optional LLM for orchestration tasks
+        self.truncation_length = (
+            truncation_length
+            if truncation_length is not None
+            else self.__class__.default_truncation_length
+        )
+        self.truncate_context_summary = truncate_context_summary
 
         # Add agents if provided
         if agents:
@@ -193,8 +204,8 @@ Current task: {current_input}"""
                     'agent_id': agent_id,
                     'agent_name': agent.name,
                     'agent_index': i,
-                    'input': agent_input[:200] + "..." if len(agent_input) > 200 else agent_input,
-                    'output': result[:200] + "..." if len(result) > 200 else result,
+                    'input': self._truncate_text(agent_input),
+                    'output': self._truncate_text(result),
                     'full_output': result,
                     'execution_time': agent_end_time - agent_start_time,
                     'success': True
@@ -330,7 +341,7 @@ Current task: {current_input}"""
                     'agent_name': metadata['agent_name'],
                     'agent_index': i,
                     'input': metadata['query'],
-                    'output': extracted_result[:200] + "..." if len(extracted_result) > 200 else extracted_result,
+                    'output': self._truncate_text(extracted_result),
                     'full_output': extracted_result,
                     'execution_time': end_time - start_time,  # Total parallel time
                     'success': True
@@ -459,7 +470,7 @@ Current task: {current_input}"""
                         'task_id': task.task_id,
                         'agent_name': task.agent_name,
                         'input': task.query,
-                        'output': task.result[:200] + "..." if len(task.result) > 200 else task.result,
+                        'output': self._truncate_text(task.result),
                         'full_output': task.result,
                         'execution_time': task.execution_time,
                         'success': True
@@ -527,9 +538,25 @@ Current task: {current_input}"""
         """Build summary of previous results."""
         summaries = []
         for agent_name, result in context.agent_results.items():
-            truncated = result[:200] + "..." if len(result) > 200 else result
+            truncated = self._truncate_text(
+                result,
+                enabled=self.truncate_context_summary
+            )
             summaries.append(f"- {agent_name}: {truncated}")
         return "\n".join(summaries)
+
+    def _truncate_text(self, text: Optional[str], *, enabled: bool = True) -> str:
+        """Truncate text using configured length."""
+        if text is None or not enabled:
+            return text or ""
+
+        if self.truncation_length is None or self.truncation_length <= 0:
+            return text
+
+        if len(text) <= self.truncation_length:
+            return text
+
+        return text[: self.truncation_length] + "..."
 
     def _build_dependency_context(
         self,
