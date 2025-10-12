@@ -7,6 +7,7 @@ from typing import Any
 import asyncio
 from parrot.bots.agent import BasicAgent
 from parrot.bots.orchestration.crew import AgentCrew, FlowContext
+from parrot.bots.orchestration.fsm import AgentCrewFSM
 from parrot.bots.orchestration.agent import OrchestratorAgent
 from parrot.tools.google import GoogleSearchTool
 
@@ -320,6 +321,68 @@ Question: "Tell me about the iPhone 15 Pro - specs and price"
 
     return orchestrator
 
+async def test_fsm():
+    crew = AgentCrewFSM(name="ResearchCrew")
+
+    # Create agents
+    researcher = BasicAgent(
+        name="Researcher",
+        system_prompt="You research products thoroughly.",
+        llm='google'
+    )
+
+    analyzer = BasicAgent(
+        name="Analyzer",
+        system_prompt="You analyze research data and extract insights.",
+        llm='google'
+    )
+
+    writer = BasicAgent(
+        name="Writer",
+        system_prompt="You create clear, concise reports.",
+        llm='google'
+    )
+
+    error_handler = BasicAgent(
+        name="ErrorHandler",
+        system_prompt="You fix errors in analysis and retry tasks.",
+        llm='google'
+    )
+    # Add agents
+    agents = [researcher, analyzer, writer, error_handler]
+    for agent in agents:
+        web_tool = GoogleSearchTool()
+        agent.tool_manager.add_tool(web_tool)
+        await agent.configure()
+        crew.add_agent(agent)
+    # crew.add_agent(researcher)
+    # crew.add_agent(analyzer)
+    # crew.add_agent(writer)
+    # crew.add_agent(error_handler)
+
+    # Define flow
+    crew.task_flow(researcher, analyzer)
+    crew.task_flow(analyzer, writer)
+
+    # Add error handling
+    crew.on_error(analyzer, error_handler,
+        instruction="Fix the error and retry"
+    )
+    crew.task_flow(error_handler, analyzer)
+
+    # Execute
+    result = await crew.run_flow("Research AI trends in 2025")
+
+    print(f"\n✓ Workflow completed: {result['success']}")
+    print(f"✓ Completed agents: {len(result['completed'])}/{len(agents)}")
+    print(f"✓ Total execution time: {result['total_time']:.2f}s")
+    print(f"\n✓ Execution order:")
+    for i, log in enumerate(result['execution_log'], 1):
+        print(f"  {i}. {log['agent_name']} ({log['execution_time']:.2f}s)")
+
+    print("✓ Results:")
+    for agent, output in result['results'].items():
+        print(f"  - {agent}: {output[:50]}...")
 
 async def test_simple_delegation():
     """
@@ -396,20 +459,20 @@ User: "What is the capital of France?"
 async def run_examples():
     """Run all quick examples."""
 
-    print("="*80)
-    print("EXAMPLE 1: PARALLEL EXECUTION")
-    print("="*80)
-    await quick_parallel_example()
+    # print("="*80)
+    # print("EXAMPLE 1: PARALLEL EXECUTION")
+    # print("="*80)
+    # await quick_parallel_example()
 
-    print("\n" + "="*80)
-    print("EXAMPLE 2: SEQUENTIAL EXECUTION")
-    print("="*80)
-    await quick_sequential_example()
+    # print("\n" + "="*80)
+    # print("EXAMPLE 2: SEQUENTIAL EXECUTION")
+    # print("="*80)
+    # await quick_sequential_example()
 
-    print("\n" + "="*80)
-    print("EXAMPLE 3: WORKFLOW FLOW")
-    print("="*80)
-    await quick_flow_example()
+    # print("\n" + "="*80)
+    # print("EXAMPLE 3: WORKFLOW FLOW")
+    # print("="*80)
+    # await quick_flow_example()
 
     # print("\n" + "="*80)
     # print("EXAMPLE 3: ORCHESTRATOR")
@@ -420,6 +483,11 @@ async def run_examples():
     # print("EXAMPLE 4: SIMPLE DELEGATION")
     # print("="*80)
     # await test_simple_delegation()
+
+    print("\n" + "="*80)
+    print("EXAMPLE 5: FSM WORKFLOW")
+    print("="*80)
+    await test_fsm()
 
 
 if __name__ == "__main__":
