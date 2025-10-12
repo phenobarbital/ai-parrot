@@ -62,6 +62,7 @@ dependencies = [
     "markitdown>=0.1.2",
     "ddgs>=9.5.2",
     "pytesseract>=0.3.13",
+    "python-statemachine==2.5.0",
 ]
 
 [project.optional-dependencies]

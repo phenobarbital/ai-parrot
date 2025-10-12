@@ -124,15 +124,16 @@ class UserProfileKB(AbstractKnowledgeBase):
             return []
 
         # Convert to facts
-        facts = []
-        facts.append({
-            'content': f"User's name is {user_data['first_name']} {user_data['last_name']}",
-            'metadata': {'field': 'name'}
-        })
-        facts.append({
-            'content': f"User's job title is {user_data['job_code']} in {user_data['department_code']}",
-            'metadata': {'field': 'position'}
-        })
+        facts = [
+            {
+                'content': f"User's name is {user_data['first_name']} {user_data['last_name']}",
+                'metadata': {'field': 'name'},
+            },
+            {
+                'content': f"User's job title is {user_data['job_code']} in {user_data['department_code']}",
+                'metadata': {'field': 'position'},
+            },
+        ]
 
         if user_data['groups']:
             facts.append({
@@ -186,57 +187,188 @@ class UserPreferences(RedisKnowledgeBase):
             category="preferences",
             activation_patterns=[
                 "preferences", "prefer", "like", "favorite",
-                "based on what I like"
+                "based on what I like", "my preferences"
             ],
             namespace="user_prefs",
+            use_hash_storage=True,
+            ttl=86400 * 365,  # 1 year expiration
             **kwargs,
         )
 
-    async def save_preference(
+    async def search(
         self,
-        user_id: str,
-        preference: str,
-        value: Any,
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> None:
-        """Persist a single preference fact for the user."""
+        query: str,
+        user_id: Optional[str] = None,
+        **kwargs
+    ) -> List[Dict[str, Any]]:
+        """
+        Retrieve user preferences matching the query.
 
-        enriched_metadata = {"preference": preference, "value": value}
-        if metadata:
-            enriched_metadata.update(metadata)
+        Args:
+            query: Search query
+            user_id: User identifier (required)
+            **kwargs: Additional parameters
 
-        await super().save_fact(
-            user_id=user_id,
-            fact_id=preference,
-            content=f"User prefers {preference}: {value}",
-            metadata=enriched_metadata,
-        )
-
-    async def delete_preference(self, user_id: str, preference: str) -> None:
-        """Remove a stored preference."""
-
-        await super().delete_fact(user_id, preference)
-
-    async def search(self, query: str, user_id: str = None, **kwargs: Any) -> List[Dict]:
-        """Retrieve user preferences formatted for prompting."""
-
+        Returns:
+            List of preference facts
+        """
         if not user_id:
             return []
 
-        results = await super().search(query, user_id=user_id, **kwargs)
+        # Get all preferences for user
+        prefs = await self.get(user_id)
 
-        facts: List[Dict[str, Any]] = []
-        for fact in results:
-            preference = fact.get("metadata", {}).get("preference") or fact.get("id")
-            value = fact.get("metadata", {}).get("value")
-            if value is None:
-                # Attempt to extract value from content when metadata is missing
-                content = fact.get("content", "")
-                value = content.split(":", 1)[-1].strip() if ":" in content else content
+        if not prefs:
+            return []
 
-            facts.append({
-                "content": f"User prefers {preference}: {value}",
-                "metadata": {"preference": preference, **(fact.get("metadata") or {})},
-            })
+        facts = []
+        query_lower = query.lower()
 
+        for key, value in prefs.items():
+            # Check if query matches key or value
+            if query_lower in key.lower() or query_lower in str(value).lower():
+                # Calculate relevance
+                relevance = 1.0 if query_lower == key.lower() else 0.5
+                if query_lower in str(value).lower():
+                    relevance += 0.3
+
+                facts.append({
+                    'content': f"User prefers {key}: {value}",
+                    'metadata': {
+                        'preference': key,
+                        'value': value,
+                        'user_id': user_id
+                    },
+                    'source': 'user_preferences',
+                    'relevance': min(relevance, 1.0)  # Cap at 1.0
+                })
+
+        # Sort by relevance
+        facts.sort(key=lambda x: x['relevance'], reverse=True)
         return facts
+
+    async def set_preference(
+        self,
+        user_id: str,
+        preference: str,
+        value: Any
+    ) -> bool:
+        """
+        Set a single user preference.
+
+        Args:
+            user_id: User identifier
+            preference: Preference name
+            value: Preference value
+
+        Returns:
+            True if successful
+        """
+        return await self.insert(user_id, value, field=preference)
+
+    async def get_preference(
+        self,
+        user_id: str,
+        preference: str,
+        default: Any = None
+    ) -> Any:
+        """
+        Get a single user preference.
+
+        Args:
+            user_id: User identifier
+            preference: Preference name
+            default: Default value if not found
+
+        Returns:
+            Preference value or default
+        """
+        return await self.get(user_id, field=preference, default=default)
+
+    async def delete_preference(
+        self,
+        user_id: str,
+        preference: str
+    ) -> bool:
+        """
+        Delete a single user preference.
+
+        Args:
+            user_id: User identifier
+            preference: Preference name
+
+        Returns:
+            True if successful
+        """
+        return await self.delete(user_id, field=preference)
+
+    async def get_all_preferences(self, user_id: str) -> Dict[str, Any]:
+        """
+        Get all preferences for a user.
+
+        Args:
+            user_id: User identifier
+
+        Returns:
+            Dict of all preferences
+        """
+        return await self.get(user_id, default={})
+
+    async def clear_all_preferences(self, user_id: str) -> bool:
+        """
+        Clear all preferences for a user.
+
+        Args:
+            user_id: User identifier
+
+        Returns:
+            True if successful
+        """
+        return await self.delete(user_id)
+
+    async def update_preferences(
+        self,
+        user_id: str,
+        preferences: Dict[str, Any]
+    ) -> bool:
+        """
+        Update multiple preferences at once.
+
+        Args:
+            user_id: User identifier
+            preferences: Dictionary of preferences to update
+
+        Returns:
+            True if successful
+        """
+        return await self.update(user_id, preferences)
+
+    async def has_preference(
+        self,
+        user_id: str,
+        preference: str
+    ) -> bool:
+        """
+        Check if a user has a specific preference set.
+
+        Args:
+            user_id: User identifier
+            preference: Preference name
+
+        Returns:
+            True if preference exists
+        """
+        return await self.exists(user_id, field=preference)
+
+    async def list_user_preference_keys(self, user_id: str) -> List[str]:
+        """
+        Get list of all preference keys for a user.
+
+        Args:
+            user_id: User identifier
+
+        Returns:
+            List of preference keys
+        """
+        prefs = await self.get_all_preferences(user_id)
+        return list(prefs.keys()) if prefs else []
