@@ -207,6 +207,7 @@ class FlowNode:
     retry_count: int = 0
     max_retries: int = 3
     metadata: Dict[str, Any] = field(default_factory=dict)
+    transitions_processed: bool = False  # Track if transitions have been activated
 
     @property
     def name(self) -> str:
@@ -590,12 +591,14 @@ class AgentCrewFSM:
         self.execution_log = []
         start_time = asyncio.get_event_loop().time()
 
-        # Reset all agents to idle state
+        # Reset all agents to idle state by creating new FSM instances
         for node in self.nodes.values():
-            node.fsm.send("idle")  # Reset to initial state
+            # Create a new FSM instance to reset to initial state
+            node.fsm = AgentTaskMachine(agent_name=node.agent.name)
             node.result = None
             node.error = None
             node.retry_count = 0
+            node.transitions_processed = False  # Reset transition processing flag
 
         # Determine entry points
         entry_agents = self._get_entry_agents(entry_point)
@@ -710,17 +713,25 @@ class AgentCrewFSM:
         )
 
     def _is_workflow_complete(self) -> bool:
-        """Check if all terminal nodes have completed or failed."""
-        if terminal_nodes := [
+        """Check if all terminal nodes have completed or failed (without retries)."""
+        terminal_nodes = [
             node for node in self.nodes.values() if node.is_terminal
-        ]:
+        ]
+
+        if terminal_nodes:
+            # Terminal nodes are complete if they're in completed state OR
+            # in failed state with no retries remaining
             return all(
-                node.fsm.current_state.final
+                node.fsm.current_state == node.fsm.completed or
+                (node.fsm.current_state == node.fsm.failed and not node.can_retry)
                 for node in terminal_nodes
             )
+
+        # If no terminal nodes defined, check if all nodes are done
         return all(
-            node.fsm.current_state.final
-            for node in terminal_nodes
+            node.fsm.current_state == node.fsm.completed or
+            (node.fsm.current_state == node.fsm.failed and not node.can_retry)
+            for node in self.nodes.values()
         )
 
     async def _execute_agents_parallel(self, agent_names: Set[str]) -> None:
@@ -808,8 +819,12 @@ class AgentCrewFSM:
     async def _process_transitions(self) -> None:
         """Process transitions for all completed/failed agents."""
         for agent_name, node in self.nodes.items():
-            # Only process nodes that just completed or failed
+            # Only process nodes that just completed or failed AND haven't been processed yet
             if node.fsm.current_state not in [node.fsm.completed, node.fsm.failed]:
+                continue
+
+            # Skip if transitions already processed
+            if node.transitions_processed:
                 continue
 
             # Get active transitions
@@ -824,11 +839,19 @@ class AgentCrewFSM:
                     )
                     node.retry_count += 1
                     node.fsm.retry()
+                    # Don't mark as processed - allow retry to execute
+                    node.transitions_processed = False
+                else:
+                    # Mark as processed if no transitions and no retry
+                    node.transitions_processed = True
                 continue
 
             # Activate transitions
             for transition in active_transitions:
                 await self._activate_transition(transition)
+
+            # Mark transitions as processed for this node
+            node.transitions_processed = True
 
     async def _activate_transition(self, transition: FlowTransition) -> None:
         """Activate a transition and schedule target agents."""
