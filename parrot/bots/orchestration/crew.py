@@ -179,6 +179,10 @@ class AgentCrew:
     - Rate limiting with semaphores
     - Circular dependency detection
     """
+
+    # Default truncation length for logging and summaries
+    default_truncation_length: int = 200
+
     def __init__(
         self,
         name: str = "AgentCrew",
@@ -187,6 +191,8 @@ class AgentCrew:
         max_parallel_tasks: int = 10,
         llm: Optional[AbstractClient] = None,
         auto_configure: bool = True,
+        truncation_length: Optional[int] = None,
+        truncate_context_summary: bool = True
     ):
         """
         Initialize the AgentCrew.
@@ -206,6 +212,12 @@ class AgentCrew:
         self.logger = logging.getLogger(f"parrot.crews.{self.name}")
         self.semaphore = asyncio.Semaphore(max_parallel_tasks)
         self._llm = llm  # Optional LLM for orchestration tasks
+        self.truncation_length = (
+            truncation_length
+            if truncation_length is not None
+            else self.__class__.default_truncation_length
+        )
+        self.truncate_context_summary = truncate_context_summary
 
         # Workflow graph for flow-based execution
         self.workflow_graph: Dict[str, AgentNode] = {}
@@ -356,7 +368,7 @@ class AgentCrew:
             user_id: User identifier for tracking and logging
             session_id: Session identifier for conversation history
             pass_full_context: If True, each agent sees all previous results;
-                             if False, each agent only sees the immediately previous result
+                if False, each agent only sees the immediately previous result
             **kwargs: Additional arguments passed to each agent
 
         Returns:
@@ -433,14 +445,8 @@ Current task: {current_input}"""
                     'agent_id': agent_id,
                     'agent_name': agent.name,
                     'agent_index': i,
-                    'input': (
-                        f"{agent_input[:200]}..."
-                        if len(agent_input) > 200
-                        else agent_input
-                    ),
-                    'output': (
-                        f"{result[:200]}..." if len(result) > 200 else result
-                    ),
+                    'input': self._truncate_text(agent_input),
+                    'output': self._truncate_text(result),
                     'full_output': result,
                     'execution_time': agent_end_time - agent_start_time,
                     'success': True
@@ -497,8 +503,8 @@ Current task: {current_input}"""
 
         Args:
             tasks: List of task dictionaries, each containing:
-                   - 'agent_id': ID of the agent to execute
-                   - 'query': The query/task for that agent
+                - 'agent_id': ID of the agent to execute
+                - 'query': The query/task for that agent
             user_id: User identifier for tracking
             session_id: Session identifier
             **kwargs: Additional arguments passed to all agents
@@ -595,11 +601,7 @@ Current task: {current_input}"""
                     'agent_name': metadata['agent_name'],
                     'agent_index': i,
                     'input': metadata['query'],
-                    'output': (
-                        f"{extracted_result[:200]}..."
-                        if len(extracted_result) > 200
-                        else extracted_result
-                    ),
+                    'output': self._truncate_text(extracted_result),
                     'full_output': extracted_result,
                     'execution_time': end_time - start_time,  # Total parallel time
                     'success': True
@@ -892,28 +894,25 @@ Current task: {current_input}"""
         """Build summary of previous results."""
         summaries = []
         for agent_name, result in context.agent_results.items():
-            truncated = f"{result[:200]}..." if len(result) > 200 else result
+            truncated = self._truncate_text(
+                result,
+                enabled=self.truncate_context_summary
+            )
             summaries.append(f"- {agent_name}: {truncated}")
         return "\n".join(summaries)
 
-    def visualize_workflow(self) -> str:
-        """
-        Generate a text representation of the workflow graph.
+    def _truncate_text(self, text: Optional[str], *, enabled: bool = True) -> str:
+        """Truncate text using configured length."""
+        if text is None or not enabled:
+            return text or ""
 
-        This is useful for debugging and understanding the structure of your
-        workflow before executing it. It shows each agent, what it depends on,
-        and what depends on it.
+        if self.truncation_length is None or self.truncation_length <= 0:
+            return text
 
-        Could be extended to use graphviz for visual diagrams.
-        """
-        lines = ["Workflow Graph:", "=" * 50]
+        if len(text) <= self.truncation_length:
+            return text
 
-        for agent_name, node in self.workflow_graph.items():
-            deps = f"depends on: {node.dependencies}" if node.dependencies else "initial"
-            successors = f"→ {node.successors}" if node.successors else "(final)"
-            lines.append(f"  {agent_name}: {deps} {successors}")
-
-        return "\n".join(lines)
+        return f"{text[:self.truncation_length]}..."
 
     async def validate_workflow(self) -> bool:
         """
@@ -1007,8 +1006,8 @@ Current task: {current_input}"""
 
         Args:
             task: The task/prompt for agents. Can be:
-                  - str: Same prompt for all agents
-                  - dict: Custom prompt per agent {agent_id: prompt}
+                - str: Same prompt for all agents
+                - dict: Custom prompt per agent {agent_id: prompt}
             synthesis_prompt: Prompt for LLM to synthesize results.
                             If None, uses default synthesis prompt.
                             Aliases: conclusion, summary_prompt, final_prompt
