@@ -558,7 +558,7 @@ async def main():
         await example_sequential_pipeline()
         await example_parallel_research()
         await example_complex_workflow()
-        await example_advanced_workflow()
+        #await example_advanced_workflow()
         # await example_hybrid_approach()
 
         print("\n" + "="*70)
