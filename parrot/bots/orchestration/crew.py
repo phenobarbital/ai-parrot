@@ -1,11 +1,20 @@
 """
-Enhanced Agent Crew with Parallel and Sequential Execution
+Agent Crew with Parallel, Sequential, and Flow-Based Execution
+=========================================================================
+Orchestrates complex agent workflows using finite state machines.
+Supports parallel execution, conditional transitions, and result aggregation.
+
+1. Sequential: Pipeline pattern where agents execute one after another
+2. Parallel: All agents execute simultaneously with asyncio.gather()
+3. Flow: DAG-based execution with dependencies and parallel execution where possible
+
+This implementation uses a graph-based approach for flexibility with dynamic workflows.
 """
 from __future__ import annotations
-from typing import List, Dict, Any, Union, Optional, Literal
+from typing import List, Dict, Any, Union, Optional, Literal, Set, Callable
+from dataclasses import dataclass, field
 import asyncio
 import uuid
-from dataclasses import dataclass, field
 from navconfig.logging import logging
 from ..agent import BasicAgent
 from ..abstract import AbstractBot
@@ -20,31 +29,156 @@ from ...models.responses import (
 
 
 @dataclass
-class CrewTask:
-    """Represents a task to be executed by an agent in the crew."""
+class AgentTask:
+    """Represents a task to be executed by an agent in the Crew."""
     task_id: str
     agent_name: str
-    query: str
-    dependencies: List[str] = field(default_factory=list)  # IDs of tasks this depends on
+    input_data: Any
+    dependencies: Set[str] = field(default_factory=set)
     context: Dict[str, Any] = field(default_factory=dict)
+    completed: bool = False
     result: Optional[str] = None
     error: Optional[str] = None
     execution_time: float = 0.0
     status: Literal["pending", "running", "completed", "failed"] = "pending"
 
+@dataclass
+class FlowContext:
+    """
+    Maintains the execution context across the workflow.
+
+    This context object tracks the state of the entire workflow execution,
+    including which agents have completed, their results, and any errors.
+    It serves as the "memory" of the workflow as it progresses.
+    """
+    initial_task: str
+    results: Dict[str, Any] = field(default_factory=dict)
+    errors: Dict[str, Exception] = field(default_factory=dict)
+    active_tasks: Set[str] = field(default_factory=set)
+    completed_tasks: Set[str] = field(default_factory=set)
+
+    def can_execute(self, agent_name: str, dependencies: Set[str]) -> bool:
+        """
+        Check if all dependencies are satisfied for an agent to execute.
+
+        An agent can only execute when all the agents it depends on have
+        successfully completed their execution.
+        """
+        return dependencies.issubset(self.completed_tasks)
+
+    def mark_completed(self, agent_name: str, result: Any = None):
+        """
+        Mark an agent as completed and store its result.
+
+        This updates the workflow state to reflect that an agent has finished,
+        making it possible for dependent agents to begin execution.
+        """
+        self.completed_tasks.add(agent_name)
+        self.active_tasks.discard(agent_name)
+        if result is not None:
+            self.results[agent_name] = result
+
+    def get_input_for_agent(self, agent_name: str, dependencies: Set[str]) -> Dict[str, Any]:
+        """
+        Prepare input data for an agent based on its dependencies.
+
+        This method aggregates the results from all dependency agents and
+        packages them in a way that the target agent can use. If the agent
+        has no dependencies, it receives the initial task.
+        """
+        if not dependencies:
+            return {"task": self.initial_task}
+
+        return {
+            "task": self.initial_task,
+            "dependencies": {
+                dep: self.results.get(dep)
+                for dep in dependencies
+                if dep in self.results
+            }
+        }
+
+class AgentNode:
+    """Represents a node in the workflow graph (an agent with its dependencies)."""
+
+    def __init__(self, agent: Union[BasicAgent, AbstractBot], dependencies: Optional[Set[str]] = None):
+        self.agent = agent
+        self.dependencies = dependencies or set()
+        self.successors: Set[str] = set()
+
+    def _format_prompt(self, input_data: Dict[str, Any]) -> str:
+        """
+        Format the input data dictionary into a string prompt.
+
+        This method converts the structured input data (task + dependencies)
+        into a natural language prompt that the agent can understand.
+        """
+        if not input_data:
+            return ""
+
+        # Start with the main task
+        task = input_data.get("task", "")
+
+        # If there are no dependencies, just return the task
+        dependencies = input_data.get("dependencies", {})
+        if not dependencies:
+            return task
+
+        # Build a prompt that includes results from dependent agents
+        prompt_parts = [f"Task: {task}\n", "\nContext from previous agents:\n"]
+
+        for dep_agent, dep_result in dependencies.items():
+            prompt_parts.extend((f"\n--- From {dep_agent} ---", str(dep_result), ""))
+
+        return "\n".join(prompt_parts)
+
+    async def execute(self, context: FlowContext) -> Any:
+        """Execute the agent with context from previous agents."""
+        # Get input data based on dependencies
+        input_data = context.get_input_for_agent(self.agent.name, self.dependencies)
+
+        # If this is the first agent, use initial task
+        if not input_data and not self.dependencies:
+            input_data = {"task": context.initial_task}
+
+        prompt = self._format_prompt(input_data)
+
+        # Execute the agent
+        response = await self.agent.ask(question=prompt)
+        # is an AIMessage or AgentResponse
+        return response.content if hasattr(response, 'content') else str(response.output)
+
 
 class AgentCrew:
     """
-    Crew that supports both sequential and parallel execution.
+    Enhanced AgentCrew supporting three execution modes.
+
+    This crew orchestrator provides three ways to execute agents:
+
+    1. SEQUENTIAL (run_sequential): Agents execute in a pipeline, where each
+    agent processes the output of the previous agent. This is useful for
+    multi-stage processing where each stage refines or transforms the data.
+
+    2. PARALLEL (run_parallel): Multiple agents execute simultaneously on
+    different tasks using asyncio.gather(). This is useful when you have
+    multiple independent analyses or tasks that can be performed concurrently.
+
+    3. FLOW (run_flow): Agents execute based on a dependency graph (DAG),
+    automatically parallelizing independent agents while respecting dependencies.
+    This is the most flexible mode, supporting complex workflows like:
+    - One agent → multiple agents (fan-out/parallel processing)
+    - Multiple agents → one agent (fan-in/synchronization)
+    - Complex multi-stage pipelines with parallel branches
 
     Features:
-    - Sequential execution (pipeline pattern)
-    - Parallel execution using asyncio.gather()
-    - Task dependencies and DAG execution
     - Shared tool manager across agents
     - Comprehensive execution logging
+    - Result aggregation and context passing
+    - Error handling and recovery
+    - Optional LLM for result synthesis
+    - Rate limiting with semaphores
+    - Circular dependency detection
     """
-
     def __init__(
         self,
         name: str = "AgentCrew",
@@ -62,7 +196,7 @@ class AgentCrew:
             shared_tool_manager: Optional shared tool manager for all agents
             max_parallel_tasks: Maximum number of parallel tasks (for rate limiting)
         """
-        self.name = name
+        self.name = name or 'AgentCrew'
         self.agents: Dict[str, Union[BasicAgent, AbstractBot]] = {}
         self.shared_tool_manager = shared_tool_manager or ToolManager()
         self.max_parallel_tasks = max_parallel_tasks
@@ -71,10 +205,15 @@ class AgentCrew:
         self.semaphore = asyncio.Semaphore(max_parallel_tasks)
         self._llm = llm  # Optional LLM for orchestration tasks
 
+        # Workflow graph for flow-based execution
+        self.workflow_graph: Dict[str, AgentNode] = {}
+        self.initial_agent: Optional[str] = None
+        self.final_agents: Set[str] = set()
         # Add agents if provided
         if agents:
             for agent in agents:
                 self.add_agent(agent)
+                self.workflow_graph[agent.name] = AgentNode(agent)
 
     def add_agent(self, agent: Union[BasicAgent, AbstractBot], agent_id: str = None) -> None:
         """Add an agent to the crew."""
@@ -107,7 +246,85 @@ class AgentCrew:
             if not agent.tool_manager.get_tool(tool_name or tool.name):
                 agent.tool_manager.add_tool(tool, tool_name)
 
-    async def execute_sequential(
+    def task_flow(self, source_agent: Any, target_agents: Any):
+        """
+        Define a task flow from source agent(s) to target agent(s).
+
+        This method builds the workflow graph by defining dependencies between agents.
+        It supports flexible configurations for different workflow patterns:
+
+        - Single to multiple (fan-out): One agent's output goes to multiple agents
+          for parallel processing
+        - Multiple to single (fan-in): Multiple agents' outputs are aggregated by
+          a single agent
+        - Single to single: Simple sequential dependency
+
+        The workflow graph is used by run_flow() to determine execution order and
+        identify opportunities for parallel execution.
+
+        Args:
+            source_agent: The agent (or list of agents) that must complete first
+            target_agents: The agent (or list of agents) that depend on source completion
+
+        Examples:
+            # Single source to multiple targets (parallel execution after writer completes)
+            crew.task_flow(writer, [editor1, editor2])
+
+            # Multiple sources to single target (final_reviewer waits for both editors)
+            crew.task_flow([editor1, editor2], final_reviewer)
+
+            # Single to single (simple sequential dependency)
+            crew.task_flow(writer, editor1)
+        """
+        # Normalize inputs to lists for uniform processing
+        sources = source_agent if isinstance(source_agent, list) else [source_agent]
+        targets = target_agents if isinstance(target_agents, list) else [target_agents]
+
+        # Build the dependency graph
+        for source in sources:
+            source_name = source.name
+            node = self.workflow_graph[source_name]
+
+            for target in targets:
+                target_name = target.name
+                target_node = self.workflow_graph[target_name]
+                # Add dependency: target depends on source
+                # This means target cannot execute until source completes
+                target_node.dependencies.add(source_name)
+                # Track successors for the source
+                # This helps us traverse the graph forward
+                node.successors.add(target_name)
+
+        # Automatically detect initial and final agents based on the graph structure
+        self._update_flow_metadata()
+
+    def _update_flow_metadata(self):
+        """
+        Update metadata about the workflow (initial and final agents).
+
+        Initial agents are those with no dependencies - they can start immediately.
+        Final agents are those with no successors - the workflow is complete when they finish.
+
+        This metadata is used by run_flow() to know when to start and when to stop.
+        """
+        # Find agents with no dependencies (initial agents)
+        agents_with_deps = {
+            name for name, node in self.workflow_graph.items()
+            if node.dependencies
+        }
+        potential_initial = set(self.workflow_graph.keys()) - agents_with_deps
+
+        if potential_initial and not self.initial_agent:
+            # For now, assume single entry point. Could be extended for multiple entry points.
+            self.initial_agent = next(iter(potential_initial))
+
+        # Find agents with no successors (final agents)
+        self.final_agents = {
+            name for name, node in self.workflow_graph.items()
+            if not node.successors
+        }
+
+    async def run_sequential(
         self,
         initial_query: str,
         agent_sequence: List[str] = None,
@@ -119,13 +336,31 @@ class AgentCrew:
         """
         Execute agents in sequence (pipeline pattern).
 
+        In sequential execution, agents form a pipeline where each agent processes
+        the output of the previous agent. This is like an assembly line where each
+        station performs its specific task on the work-in-progress before passing
+        it to the next station.
+
+        This mode is useful when:
+        - Each agent refines or transforms the previous agent's output
+        - You have a clear multi-stage process (e.g., research → summarize → format)
+        - Later agents need the complete context of all previous work
+
         Args:
-            initial_query: Initial query
-            agent_sequence: Ordered list of agent IDs to execute (None = all agents)
-            user_id: User identifier
-            session_id: Session identifier
-            pass_full_context: Whether to pass full context or just previous result
-            **kwargs: Additional arguments
+            initial_query: The initial query/task to start the pipeline
+            agent_sequence: Ordered list of agent IDs to execute (None = all agents in order)
+            user_id: User identifier for tracking and logging
+            session_id: Session identifier for conversation history
+            pass_full_context: If True, each agent sees all previous results;
+                             if False, each agent only sees the immediately previous result
+            **kwargs: Additional arguments passed to each agent
+
+        Returns:
+            Dictionary containing:
+                - final_result: The output from the last agent
+                - execution_log: Detailed log of each agent's execution
+                - agent_results: Dictionary mapping agent_id to its result
+                - success: Whether all agents executed successfully
         """
         if not self.agents:
             return {
@@ -138,11 +373,11 @@ class AgentCrew:
         if agent_sequence is None:
             agent_sequence = list(self.agents.keys())
 
-        # Setup session
+        # Setup session identifiers
         session_id = session_id or str(uuid.uuid4())
         user_id = user_id or 'crew_user'
 
-        # Initialize context
+        # Initialize context to track execution across agents
         current_input = initial_query
         crew_context = AgentContext(
             user_id=user_id,
@@ -165,20 +400,21 @@ class AgentCrew:
             try:
                 agent_start_time = asyncio.get_event_loop().time()
 
-                # Prepare input
+                # Prepare input based on context passing mode
                 if i == 0:
+                    # First agent gets the initial query
                     agent_input = initial_query
-                else:
-                    if pass_full_context:
-                        context_summary = self._build_context_summary(crew_context)
-                        agent_input = f"""Original query: {initial_query}
-
+                elif pass_full_context:
+                    # Pass full context of all previous agents' work
+                    context_summary = self._build_context_summary(crew_context)
+                    agent_input = f"""Original query: {initial_query}
 Previous processing:
 {context_summary}
 
 Current task: {current_input}"""
-                    else:
-                        agent_input = current_input
+                else:
+                    # Pass only the immediately previous result
+                    agent_input = current_input
 
                 # Execute agent
                 response = await self._execute_agent(
@@ -188,20 +424,26 @@ Current task: {current_input}"""
                 result = self._extract_result(response)
                 agent_end_time = asyncio.get_event_loop().time()
 
-                # Log execution
+                # Log execution details
                 log_entry = {
                     'agent_id': agent_id,
                     'agent_name': agent.name,
                     'agent_index': i,
-                    'input': agent_input[:200] + "..." if len(agent_input) > 200 else agent_input,
-                    'output': result[:200] + "..." if len(result) > 200 else result,
+                    'input': (
+                        f"{agent_input[:200]}..."
+                        if len(agent_input) > 200
+                        else agent_input
+                    ),
+                    'output': (
+                        f"{result[:200]}..." if len(result) > 200 else result
+                    ),
                     'full_output': result,
                     'execution_time': agent_end_time - agent_start_time,
                     'success': True
                 }
                 self.execution_log.append(log_entry)
 
-                # Store result
+                # Store result and prepare for next agent
                 crew_context.agent_results[agent_id] = result
                 current_input = result
 
@@ -229,7 +471,7 @@ Current task: {current_input}"""
             'success': all(log['success'] for log in self.execution_log)
         }
 
-    async def execute_parallel(
+    async def run_parallel(
         self,
         tasks: List[Dict[str, Any]],
         user_id: str = None,
@@ -239,14 +481,30 @@ Current task: {current_input}"""
         """
         Execute multiple agents in parallel using asyncio.gather().
 
+        In parallel execution, all agents run simultaneously on their respective tasks.
+        This is like having multiple independent workers each handling their own job,
+        all working at the same time without waiting for each other.
+
+        This mode is useful when:
+        - You have multiple independent analyses to perform
+        - Agents don't depend on each other's results
+        - You want to maximize throughput and minimize total execution time
+        - Each agent is working on a different aspect of the same problem
+
         Args:
-            tasks: List of task dicts with 'agent_id' and 'query' keys
-            user_id: User identifier
+            tasks: List of task dictionaries, each containing:
+                   - 'agent_id': ID of the agent to execute
+                   - 'query': The query/task for that agent
+            user_id: User identifier for tracking
             session_id: Session identifier
-            **kwargs: Additional arguments
+            **kwargs: Additional arguments passed to all agents
 
         Returns:
-            Dict with results from all parallel executions
+            Dictionary containing:
+                - results: Dictionary mapping agent_id to its result
+                - execution_log: Detailed log of each agent's execution
+                - total_execution_time: Wall-clock time for parallel execution
+                - success: Whether all agents executed successfully
         """
         session_id = session_id or str(uuid.uuid4())
         user_id = user_id or 'crew_user'
@@ -261,7 +519,7 @@ Current task: {current_input}"""
 
         self.execution_log = []
 
-        # Create async tasks
+        # Create async tasks for parallel execution
         async_tasks = []
         task_metadata = []
 
@@ -286,27 +544,29 @@ Current task: {current_input}"""
                 )
             )
 
-            if not async_tasks:
-                return {
-                    'results': {},
-                    'execution_log': [],
-                    'total_execution_time': 0,
-                    'success': False,
-                    'error': 'No valid tasks to execute'
-                }
+        if not async_tasks:
+            return {
+                'results': {},
+                'execution_log': [],
+                'total_execution_time': 0,
+                'success': False,
+                'error': 'No valid tasks to execute'
+            }
 
         # Execute all tasks in parallel using asyncio.gather()
+        # This is the key to parallel execution - all coroutines run concurrently
         start_time = asyncio.get_event_loop().time()
         results = await asyncio.gather(*async_tasks, return_exceptions=True)
         end_time = asyncio.get_event_loop().time()
 
-        # Process results
+        # Process results from all parallel executions
         parallel_results = {}
 
         for i, (result, metadata) in enumerate(zip(results, task_metadata)):
             agent_id = metadata['agent_id']
 
             if isinstance(result, Exception):
+                # Handle exceptions from failed agents
                 error_msg = f"Error: {str(result)}"
                 parallel_results[agent_id] = error_msg
 
@@ -321,6 +581,7 @@ Current task: {current_input}"""
                     'error': str(result)
                 }
             else:
+                # Handle successful agent execution
                 extracted_result = self._extract_result(result)
                 parallel_results[agent_id] = extracted_result
                 crew_context.agent_results[agent_id] = extracted_result
@@ -330,7 +591,11 @@ Current task: {current_input}"""
                     'agent_name': metadata['agent_name'],
                     'agent_index': i,
                     'input': metadata['query'],
-                    'output': extracted_result[:200] + "..." if len(extracted_result) > 200 else extracted_result,
+                    'output': (
+                        f"{extracted_result[:200]}..."
+                        if len(extracted_result) > 200
+                        else extracted_result
+                    ),
                     'full_output': extracted_result,
                     'execution_time': end_time - start_time,  # Total parallel time
                     'success': True
@@ -345,133 +610,168 @@ Current task: {current_input}"""
             'success': all(log['success'] for log in self.execution_log)
         }
 
-    async def execute_with_dependencies(
+    async def run_flow(
         self,
-        tasks: List[CrewTask],
-        user_id: str = None,
-        session_id: str = None,
-        **kwargs
+        initial_task: str,
+        max_iterations: int = 100,
+        on_agent_complete: Optional[Callable] = None
     ) -> Dict[str, Any]:
         """
-        Execute tasks respecting dependencies (DAG execution).
+        Execute the workflow using the defined task flows (DAG-based execution).
 
-        Uses asyncio.gather() to execute independent tasks in parallel
-        while respecting dependency constraints.
+        Flow-based execution is the most sophisticated mode. It executes agents based
+        on a Directed Acyclic Graph (DAG) of dependencies, automatically parallelizing
+        independent agents while respecting dependencies.
+
+        Think of this like a project management system where:
+        - Some tasks can start immediately (no dependencies)
+        - Some tasks must wait for specific other tasks to complete (dependencies)
+        - When multiple tasks can run, they execute in parallel (optimization)
+        - The workflow completes when all final tasks are done
+
+        This mode is useful when:
+        - You have complex workflows with both sequential and parallel elements
+        - Different agents depend on specific other agents' outputs
+        - You want automatic parallelization wherever possible
+        - Your workflow follows patterns like:
+          * Writer → [Editor1, Editor2] → Final Reviewer
+          * [Research1, Research2, Research3] → Synthesizer
+          * Complex multi-stage pipelines with branching and merging
+
+        The workflow execution follows these steps:
+        1. Start with agents that have no dependencies (initial agents)
+        2. Execute ready agents in parallel when possible
+        3. Wait for dependencies before executing dependent agents
+        4. Continue until all final agents complete
+        5. Handle errors and detect stuck workflows
 
         Args:
-            tasks: List of CrewTask objects with dependencies
-            user_id: User identifier
-            session_id: Session identifier
-            **kwargs: Additional arguments
+            initial_task: The initial task/prompt to start the workflow
+            max_iterations: Maximum number of execution rounds (safety limit to prevent infinite loops)
+            on_agent_complete: Optional callback function called when an agent completes.
+            Signature: async def callback(agent_name: str, result: Any, context: FlowContext)
+
+        Returns:
+            Dictionary containing:
+                - results: Dictionary mapping agent_name to its result
+                - errors: Dictionary of any errors that occurred
+                - completed: List of all completed agents in order
+
+        Raises:
+            ValueError: If no initial agent is found (no workflow defined)
+            RuntimeError: If workflow gets stuck or exceeds max_iterations
         """
-        session_id = session_id or str(uuid.uuid4())
-        user_id = user_id or 'crew_user'
+        # Initialize execution context to track the workflow state
+        context = FlowContext(initial_task=initial_task)
 
-        crew_context = AgentContext(
-            user_id=user_id,
-            session_id=session_id,
-            original_query=tasks[0].query if tasks else "",
-            shared_data=kwargs,
-            agent_results={}
-        )
+        # Validate workflow before starting
+        if not self.initial_agent:
+            raise ValueError("No initial agent found. Define task flows first using task_flow().")
 
-        self.execution_log = []
-        task_map = {task.task_id: task for task in tasks}
-        completed_tasks = set()
+        iteration = 0
+        while iteration < max_iterations:
+            # Find agents ready to execute (all dependencies satisfied)
+            ready_agents = await self._get_ready_agents(context)
 
-        # Execute tasks in dependency order
-        while len(completed_tasks) < len(tasks):
-            # Find tasks ready to execute (all dependencies met)
-            ready_tasks = [
-                task for task in tasks
-                if task.status == "pending" and
-                all(dep in completed_tasks for dep in task.dependencies)
-            ]
+            if not ready_agents:
+                # Check if we're done - all final agents have completed
+                if self.final_agents.issubset(context.completed_tasks):
+                    break
 
-            if not ready_tasks:
-                # Check if we're stuck
-                pending_tasks = [t for t in tasks if t.status == "pending"]
-                if pending_tasks:
-                    error_msg = f"Circular dependency or missing tasks detected"
-                    self.logger.error(error_msg)
-                    return {
-                        'results': crew_context.agent_results,
-                        'execution_log': self.execution_log,
-                        'success': False,
-                        'error': error_msg
-                    }
-                break
-
-            # Execute ready tasks in parallel using asyncio.gather()
-            async_tasks = []
-            task_metadata = []
-
-            for task in ready_tasks:
-                task.status = "running"
-
-                if task.agent_name not in self.agents:
-                    task.status = "failed"
-                    task.error = f"Agent '{task.agent_name}' not found"
-                    continue
-
-                agent = self.agents[task.agent_name]
-
-                # Build context from dependencies
-                dep_context = self._build_dependency_context(task, task_map, crew_context)
-                full_query = f"{task.query}\n\n{dep_context}" if dep_context else task.query
-
-                task_metadata.append(task)
-                async_tasks.append(
-                    self._execute_agent(
-                        agent, full_query, session_id, user_id, 0, crew_context
+                # Check if we're stuck - no ready agents but also no active agents
+                if not context.active_tasks:
+                    raise RuntimeError(
+                        f"Workflow is stuck. Completed: {context.completed_tasks}, "
+                        f"Expected final: {self.final_agents}. "
+                        f"This usually indicates a circular dependency or missing agents."
                     )
-                )
 
-            # Execute batch in parallel
-            start_time = asyncio.get_event_loop().time()
-            results = await asyncio.gather(*async_tasks, return_exceptions=True)
-            end_time = asyncio.get_event_loop().time()
+                # Wait for active tasks to complete
+                await asyncio.sleep(0.1)
+                continue
 
-            # Process results
-            for task, result in zip(task_metadata, results):
-                if isinstance(result, Exception):
-                    task.status = "failed"
-                    task.error = str(result)
+            # Execute all ready agents in parallel
+            # This is where the automatic parallelization happens
+            results = await self._execute_parallel_agents(ready_agents, context)
 
-                    log_entry = {
-                        'task_id': task.task_id,
-                        'agent_name': task.agent_name,
-                        'input': task.query,
-                        'output': f"Error: {task.error}",
-                        'execution_time': 0,
-                        'success': False,
-                        'error': task.error
-                    }
-                else:
-                    task.status = "completed"
-                    task.result = self._extract_result(result)
-                    task.execution_time = end_time - start_time
+            # Call callback for each completed agent if provided
+            if on_agent_complete:
+                for agent_name, result in results.items():
+                    await on_agent_complete(agent_name, result, context)
 
-                    crew_context.agent_results[task.task_id] = task.result
-                    completed_tasks.add(task.task_id)
+            iteration += 1
 
-                    log_entry = {
-                        'task_id': task.task_id,
-                        'agent_name': task.agent_name,
-                        'input': task.query,
-                        'output': task.result[:200] + "..." if len(task.result) > 200 else task.result,
-                        'full_output': task.result,
-                        'execution_time': task.execution_time,
-                        'success': True
-                    }
-
-                self.execution_log.append(log_entry)
+        if iteration >= max_iterations:
+            raise RuntimeError(
+                f"Workflow exceeded max iterations ({max_iterations}). "
+                f"Completed: {context.completed_tasks}, "
+                f"Expected: {self.final_agents}"
+            )
 
         return {
-            'results': crew_context.agent_results,
-            'tasks': {task.task_id: task for task in tasks},
-            'execution_log': self.execution_log,
-            'success': all(log['success'] for log in self.execution_log)
+            "results": context.results,
+            "errors": context.errors,
+            "completed": list(context.completed_tasks)
+        }
+
+    async def _execute_parallel_agents(
+        self,
+        agent_names: Set[str],
+        context: FlowContext
+    ) -> Dict[str, Any]:
+        """
+        Execute multiple agents in parallel and collect their results.
+
+        This is the internal method that enables parallel execution of agents
+        within the flow-based execution mode. It's called by run_flow() whenever
+        multiple agents are ready to execute simultaneously.
+        """
+        tasks = []
+        agent_name_map = []
+
+        for agent_name in agent_names:
+            node = self.workflow_graph[agent_name]
+            # Double-check dependencies are satisfied (defensive programming)
+            if context.can_execute(agent_name, node.dependencies):
+                context.active_tasks.add(agent_name)
+                tasks.append(node.execute(context))
+                agent_name_map.append(agent_name)
+
+        # Execute all tasks in parallel
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Process results and handle errors
+        execution_results = {}
+        for agent_name, result in zip(agent_name_map, results):
+            if isinstance(result, Exception):
+                context.errors[agent_name] = result
+                self.logger.error(f"Error executing {agent_name}: {result}", exc_info=True)
+            else:
+                context.mark_completed(agent_name, result)
+                execution_results[agent_name] = result
+
+        return execution_results
+
+    async def _get_ready_agents(self, context: FlowContext) -> Set[str]:
+        """
+        Get all agents that are ready to execute based on their dependencies.
+
+        An agent is ready if:
+        1. All its dependencies are completed
+        2. It hasn't been executed yet
+        3. It's not currently executing
+
+        This method is called repeatedly by run_flow() to determine which agents
+        can execute in the next wave of parallel execution.
+        """
+        return {
+            agent_name
+            for agent_name, node in self.workflow_graph.items()
+            if (
+                agent_name not in context.completed_tasks
+                and agent_name not in context.active_tasks
+                and context.can_execute(agent_name, node.dependencies)
+            )
         }
 
     async def _execute_agent(
@@ -483,7 +783,13 @@ Current task: {current_input}"""
         index: int,
         context: AgentContext
     ) -> Any:
-        """Execute a single agent."""
+        """
+        Execute a single agent with proper rate limiting and error handling.
+
+        This internal method wraps the agent execution with a semaphore for
+        rate limiting and handles the different execution methods that agents
+        might implement.
+        """
         async with self.semaphore:
             if hasattr(agent, 'conversation'):
                 return await agent.conversation(
@@ -511,14 +817,14 @@ Current task: {current_input}"""
                 )
             else:
                 raise ValueError(
-                    f"Agent {agent.name} does not support conversation or invoke methods"
+                    f"Agent {agent.name} does not support conversation, ask, or invoke methods"
                 )
 
     def _extract_result(self, response: Any) -> str:
         """Extract result string from response."""
-        if isinstance(response, (AIMessage, AgentResponse)):
-            return response.content
-        elif hasattr(response, 'content'):
+        if isinstance(response, (AIMessage, AgentResponse)) or hasattr(
+            response, 'content'
+        ):
             return response.content
         else:
             return str(response)
@@ -527,47 +833,103 @@ Current task: {current_input}"""
         """Build summary of previous results."""
         summaries = []
         for agent_name, result in context.agent_results.items():
-            truncated = result[:200] + "..." if len(result) > 200 else result
+            truncated = f"{result[:200]}..." if len(result) > 200 else result
             summaries.append(f"- {agent_name}: {truncated}")
         return "\n".join(summaries)
 
-    def _build_dependency_context(
-        self,
-        task: CrewTask,
-        task_map: Dict[str, CrewTask],
-        context: AgentContext
-    ) -> str:
-        """Build context from task dependencies."""
-        if not task.dependencies:
-            return ""
+    def visualize_workflow(self) -> str:
+        """
+        Generate a text representation of the workflow graph.
 
-        dep_results = []
-        for dep_id in task.dependencies:
-            if dep_id in task_map and task_map[dep_id].result:
-                dep_task = task_map[dep_id]
-                dep_results.append(f"From {dep_task.agent_name}: {dep_task.result}")
+        This is useful for debugging and understanding the structure of your
+        workflow before executing it. It shows each agent, what it depends on,
+        and what depends on it.
 
-        if dep_results:
-            return "Context from dependencies:\n" + "\n\n".join(dep_results)
-        return ""
+        Could be extended to use graphviz for visual diagrams.
+        """
+        lines = ["Workflow Graph:", "=" * 50]
+
+        for agent_name, node in self.workflow_graph.items():
+            deps = f"depends on: {node.dependencies}" if node.dependencies else "initial"
+            successors = f"→ {node.successors}" if node.successors else "(final)"
+            lines.append(f"  {agent_name}: {deps} {successors}")
+
+        return "\n".join(lines)
+
+    async def validate_workflow(self) -> bool:
+        """
+        Validate the workflow for common issues.
+
+        This method checks for:
+        - Circular dependencies (agent A depends on B, B depends on A)
+        - Disconnected agents (agents not reachable from initial agents)
+
+        It's recommended to call this before executing run_flow() to catch
+        configuration errors early.
+
+        Raises:
+            ValueError: If circular dependency is detected
+
+        Returns:
+            True if workflow is valid
+        """
+        def has_cycle(start: str, visited: Set[str], rec_stack: Set[str]) -> bool:
+            """
+            Detect cycles using depth-first search with recursion stack.
+
+            This is a classic graph algorithm for detecting cycles in directed graphs.
+            We track both visited nodes (to avoid redundant work) and the current
+            recursion stack (to detect back edges that indicate cycles).
+            """
+            visited.add(start)
+            rec_stack.add(start)
+
+            node = self.workflow_graph[start]
+            for successor in node.successors:
+                if successor not in visited:
+                    if has_cycle(successor, visited, rec_stack):
+                        return True
+                elif successor in rec_stack:
+                    # Found a back edge - this is a cycle
+                    return True
+
+            rec_stack.remove(start)
+            return False
+
+        visited = set()
+        for agent_name in self.workflow_graph:
+            if agent_name not in visited and has_cycle(agent_name, visited, set()):
+                raise ValueError(
+                    f"Circular dependency detected involving {agent_name}. "
+                    f"Circular dependencies create infinite loops and are not allowed."
+                )
+
+        return True
 
     def get_execution_summary(self) -> Dict[str, Any]:
-        """Get summary of last execution."""
+        """
+        Get a summary of the last execution.
+
+        This provides high-level metrics about the execution, useful for
+        monitoring and optimization.
+        """
         if not self.execution_log:
             return {'message': 'No executions yet'}
 
         total_time = sum(log['execution_time'] for log in self.execution_log)
-        success_count = sum(1 for log in self.execution_log if log['success'])
+        success_count = sum(bool(log['success']) for log in self.execution_log)
 
         return {
             'total_agents': len(self.agents),
             'executed_agents': len(self.execution_log),
             'successful_agents': success_count,
             'total_execution_time': total_time,
-            'average_time_per_agent': total_time / len(self.execution_log) if self.execution_log else 0
+            'average_time_per_agent': (
+                total_time / len(self.execution_log) if self.execution_log else 0
+            )
         }
 
-    async def task(
+    async def run(
         self,
         task: Union[str, Dict[str, str]],
         synthesis_prompt: Optional[str] = None,
@@ -635,11 +997,10 @@ Current task: {current_input}"""
 
         if isinstance(task, str):
             # Same task for all agents
-            for agent_id, _ in self.agents.items():
-                tasks_list.append({
-                    'agent_id': agent_id,
-                    'query': task
-                })
+            tasks_list.extend(
+                {'agent_id': agent_id, 'query': task}
+                for agent_id, _ in self.agents.items()
+            )
         elif isinstance(task, dict):
             # Custom task per agent
             for agent_id, agent_task in task.items():
@@ -662,7 +1023,7 @@ Current task: {current_input}"""
             f"Executing {len(tasks_list)} agents in parallel for research"
         )
 
-        parallel_result = await self.execute_parallel(
+        parallel_result = await self.run_parallel(
             tasks=tasks_list,
             user_id=user_id,
             session_id=session_id,
@@ -675,16 +1036,13 @@ Current task: {current_input}"""
             )
 
         # Build context from all agent results
-        context_parts = []
-        context_parts.append("# Research Findings from Specialist Agents\n")
+        context_parts = ["# Research Findings from Specialist Agents\n"]
 
         for agent_id, result in parallel_result['results'].items():
             agent = self.agents[agent_id]
             agent_name = agent.name
 
-            context_parts.append(f"\n## {agent_name}\n")
-            context_parts.append(result)
-            context_parts.append("\n---\n")
+            context_parts.extend((f"\n## {agent_name}\n", result, "\n---\n"))
 
         research_context = "\n".join(context_parts)
 

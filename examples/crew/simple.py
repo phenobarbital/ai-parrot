@@ -3,9 +3,10 @@ Simple Usage Example for Agent Orchestration
 
 Quick start guide for using the enhanced agent crew system.
 """
+from typing import Any
 import asyncio
 from parrot.bots.agent import BasicAgent
-from parrot.bots.orchestration.crew import AgentCrew
+from parrot.bots.orchestration.crew import AgentCrew, FlowContext
 from parrot.bots.orchestration.agent import OrchestratorAgent
 from parrot.tools.google import GoogleSearchTool
 
@@ -53,7 +54,7 @@ async def quick_parallel_example():
 
     # Execute in parallel
     print(f"\nResearching {product} in parallel...")
-    result = await crew.execute_parallel(tasks)
+    result = await crew.run_parallel(tasks)
 
     # Show results
     print(f"\n✅ Completed in {result['total_execution_time']:.2f}s\n")
@@ -101,7 +102,7 @@ async def quick_sequential_example():
     product = "MacBook Pro M3"
     print(f"\nResearching {product} sequentially...")
 
-    result = await crew.execute_sequential(
+    result = await crew.run_sequential(
         initial_query=f"Research {product}",
         pass_full_context=True
     )
@@ -115,6 +116,67 @@ async def quick_sequential_example():
 
     return result
 
+async def quick_flow_example():
+    # Create agents (using your existing Agent classes)
+    writer = BasicAgent(
+        name="writer",
+        system_prompt="Draft a short paragraph on the given topic.",
+        use_llm='google'
+    )
+
+    editor1 = BasicAgent(
+        name="editor1",
+        system_prompt="Edit for grammar and clarity.",
+        use_llm='google'
+    )
+
+    editor2 = BasicAgent(
+        name="editor2",
+        system_prompt="Edit for style and tone.",
+        use_llm='google'
+    )
+
+    final_reviewer = BasicAgent(
+        name="final_reviewer",
+        system_prompt="Consolidate edits into final version.",
+        use_llm='google'
+    )
+
+    # Add tools and configure
+    web_tool = GoogleSearchTool()
+    for agent in [writer, editor1, editor2, final_reviewer]:
+        agent.tool_manager.add_tool(web_tool)
+        await agent.configure()
+
+    # Create crew
+    crew = AgentCrew(agents=[writer, editor1, editor2, final_reviewer])
+
+    # Define workflow: writer -> [editor1, editor2] -> final_reviewer
+    crew.task_flow(writer, [editor1, editor2])  # Parallel execution
+    crew.task_flow(editor1, final_reviewer)      # Both editors must complete
+    crew.task_flow(editor2, final_reviewer)      # before final reviewer runs
+
+    # Optional: Validate workflow before running
+    await crew.validate_workflow()
+
+    # Optional: Visualize workflow
+    print(crew.visualize_workflow())
+
+    # Optional: Define callback for monitoring
+    async def on_complete(agent_name: str, result: Any, context: FlowContext):
+        print(f"✓ {agent_name} completed: {result[:100]}...")
+
+    # Run the workflow
+    final_results = await crew.run_flow(
+        initial_task="Write about climate change",
+        on_agent_complete=on_complete
+    )
+
+    # Access results
+    print("\nFinal Results:")
+    print(final_results["results"]["final_reviewer"])
+
+    return final_results
 
 async def orchestrator_example():
     """
@@ -339,10 +401,15 @@ async def run_examples():
     print("="*80)
     await quick_parallel_example()
 
-    # print("\n" + "="*80)
-    # print("EXAMPLE 2: SEQUENTIAL EXECUTION")
-    # print("="*80)
-    # await quick_sequential_example()
+    print("\n" + "="*80)
+    print("EXAMPLE 2: SEQUENTIAL EXECUTION")
+    print("="*80)
+    await quick_sequential_example()
+
+    print("\n" + "="*80)
+    print("EXAMPLE 3: WORKFLOW FLOW")
+    print("="*80)
+    await quick_flow_example()
 
     # print("\n" + "="*80)
     # print("EXAMPLE 3: ORCHESTRATOR")
