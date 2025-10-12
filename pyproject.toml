@@ -92,6 +92,7 @@ agents = [
     "selenium==4.35.0",
     "playwright==1.52.0",
     "streamlit==1.50.0",
+    "jira==3.10.5",
 ]
 
 # Update the loaders optional dependency section with pinned versions
