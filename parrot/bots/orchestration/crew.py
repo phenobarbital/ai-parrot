@@ -745,7 +745,9 @@ Current task: {current_input}"""
         for agent_name, result in zip(agent_name_map, results):
             if isinstance(result, Exception):
                 context.errors[agent_name] = result
-                self.logger.error(f"Error executing {agent_name}: {result}", exc_info=True)
+                self.logger.error(
+                    f"Error executing {agent_name}: {result}"
+                )
             else:
                 context.mark_completed(agent_name, result)
                 execution_results[agent_name] = result
