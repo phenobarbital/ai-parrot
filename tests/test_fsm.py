@@ -518,6 +518,64 @@ async def test_error_handling_transition(crew, mock_agents):
 
 
 @pytest.mark.asyncio
+async def test_retry_flow_with_error_handler_loop(crew):
+    """Ensure retry loops with error handlers don't deadlock the FSM."""
+
+    def build_agent(name, ask_side_effect=None, response_content=None):
+        agent = AsyncMock()
+        agent.name = name
+        agent.tool_manager = MagicMock()
+        agent.tool_manager.get_tool = MagicMock(return_value=None)
+
+        async def configure_stub():
+            agent.is_configured = True
+
+        agent.is_configured = False
+        agent.configure = AsyncMock(side_effect=configure_stub)
+
+        if ask_side_effect is not None:
+            agent.ask = AsyncMock(side_effect=ask_side_effect)
+        else:
+            agent.ask = AsyncMock(return_value=type('Response', (), {
+                'content': response_content or f'{name} response'
+            })())
+
+        return agent
+
+    researcher = build_agent('researcher', response_content='Research complete')
+
+    analysis_attempts = {'count': 0}
+
+    async def analyzer_execution(*args, **kwargs):
+        analysis_attempts['count'] += 1
+        if analysis_attempts['count'] == 1:
+            raise Exception('Analysis failed')
+        return type('Response', (), {'content': 'Analysis success'})()
+
+    analyzer = build_agent('analyzer', ask_side_effect=analyzer_execution)
+    writer = build_agent('writer', response_content='Writer done')
+    error_handler = build_agent('error_handler', response_content='Error resolved')
+
+    crew.add_agent(researcher)
+    crew.add_agent(analyzer)
+    crew.add_agent(writer)
+    crew.add_agent(error_handler)
+
+    crew.task_flow(researcher, analyzer)
+    crew.task_flow(analyzer, writer)
+    crew.on_error(analyzer, error_handler, instruction="Fix it")
+    crew.task_flow(error_handler, analyzer)
+
+    result = await crew.run_flow('Test retry with handler')
+
+    assert result['success'] is True
+    assert 'writer' in result['completed']
+    assert analysis_attempts['count'] == 2
+    # Error handler should run once and succeed
+    assert 'error_handler' in result['completed']
+
+
+@pytest.mark.asyncio
 async def test_retry_logic(crew):
     """Test automatic retry on failure."""
     attempt_count = {'value': 0}
