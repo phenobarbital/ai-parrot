@@ -400,6 +400,9 @@ class AgentCrew:
         user_id: str = None,
         session_id: str = None,
         pass_full_context: bool = True,
+        synthesis_prompt: Optional[str] = None,
+        max_tokens: int = 4096,
+        temperature: float = 0.1,
         **kwargs
     ) -> CrewResult:
         """
@@ -422,6 +425,9 @@ class AgentCrew:
             session_id: Session identifier for conversation history
             pass_full_context: If True, each agent sees all previous results;
                 if False, each agent only sees the immediately previous result
+            synthesis_prompt: Optional prompt to synthesize all results with LLM
+            max_tokens: Max tokens for synthesis (if synthesis_prompt provided)
+            temperature: Temperature for synthesis LLM
             **kwargs: Additional arguments passed to each agent
 
         Returns:
@@ -572,7 +578,7 @@ Current task: {current_input}"""
         total_time = end_time - start_time
         status = determine_run_status(success_count, failure_count)
 
-        return CrewResult(
+        result = CrewResult(
             output=current_input,
             response=responses,
             results=results,
@@ -584,12 +590,27 @@ Current task: {current_input}"""
             status=status,
             metadata={'mode': 'sequential', 'agent_sequence': agent_sequence}
         )
+        if synthesis_prompt:
+            result = await self._synthesize_results(
+                crew_result=result,
+                synthesis_prompt=synthesis_prompt,
+                user_id=user_id,
+                session_id=session_id,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                **kwargs
+            )
+
+        return result
 
     async def run_parallel(
         self,
         tasks: List[Dict[str, Any]],
         user_id: str = None,
         session_id: str = None,
+        synthesis_prompt: Optional[str] = None,
+        max_tokens: int = 4096,
+        temperature: float = 0.1,
         **kwargs
     ) -> CrewResult:
         """
@@ -611,6 +632,9 @@ Current task: {current_input}"""
                 - 'query': The query/task for that agent
             user_id: User identifier for tracking
             session_id: Session identifier
+            synthesis_prompt: Optional prompt to synthesize all results with LLM
+            max_tokens: Max tokens for synthesis (if synthesis_prompt provided)
+            temperature: Temperature for synthesis LLM
             **kwargs: Additional arguments passed to all agents
 
         Returns:
@@ -748,7 +772,7 @@ Current task: {current_input}"""
             self.execution_log.append(log_entry)
         status = determine_run_status(success_count, failure_count)
 
-        return CrewResult(
+        result = CrewResult(
             output=last_output,
             response=responses,
             results=results_payload,
@@ -764,12 +788,30 @@ Current task: {current_input}"""
                 'requested_tasks': len(tasks),
             }
         )
+        if synthesis_prompt:
+            result = await self._synthesize_results(
+                crew_result=result,
+                synthesis_prompt=synthesis_prompt,
+                user_id=user_id,
+                session_id=session_id,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                **kwargs
+            )
+
+        return result
 
     async def run_flow(
         self,
         initial_task: str,
         max_iterations: int = 100,
-        on_agent_complete: Optional[Callable] = None
+        on_agent_complete: Optional[Callable] = None,
+        synthesis_prompt: Optional[str] = None,
+        user_id: str = None,
+        session_id: str = None,
+        max_tokens: int = 4096,
+        temperature: float = 0.1,
+        **kwargs
     ) -> CrewResult:
         """
         Execute the workflow using the defined task flows (DAG-based execution).
@@ -804,6 +846,11 @@ Current task: {current_input}"""
             initial_task: The initial task/prompt to start the workflow
             max_iterations: Maximum number of execution rounds (safety limit to prevent infinite loops)
             on_agent_complete: Optional callback function called when an agent completes.
+            synthesis_prompt: Optional prompt to synthesize all results with LLM
+            user_id: User identifier (used for synthesis)
+            session_id: Session identifier (used for synthesis)
+            max_tokens: Max tokens for synthesis
+            temperature: Temperature for synthesis LLM
             Signature: async def callback(agent_name: str, result: Any, context: FlowContext)
 
         Returns:
@@ -911,7 +958,7 @@ Current task: {current_input}"""
 
         status = determine_run_status(success_count, failure_count)
 
-        return CrewResult(
+        result = CrewResult(
             output=last_output,
             response=context.responses,
             results=results_payload,
@@ -923,6 +970,18 @@ Current task: {current_input}"""
             status=status,
             metadata={'mode': 'flow', 'iterations': iteration}
         )
+        if synthesis_prompt:
+            result = await self._synthesize_results(
+                crew_result=result,
+                synthesis_prompt=synthesis_prompt,
+                user_id=user_id,
+                session_id=session_id,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                **kwargs
+            )
+
+        return result
 
 
     async def _execute_parallel_agents(
@@ -1238,6 +1297,104 @@ Current task: {current_input}"""
                 )
 
         return True
+
+    async def _synthesize_results(
+        self,
+        crew_result: CrewResult,
+        synthesis_prompt: Optional[str] = None,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        max_tokens: int = 4096,
+        temperature: float = 0.1,
+        **kwargs
+    ) -> CrewResult:
+        """
+        Synthesize crew results using LLM if synthesis_prompt is provided.
+
+        This method takes the results from any execution mode and uses an LLM
+        to create a synthesized, coherent response.
+
+        Args:
+            crew_result: Result from run_sequential/parallel/flow
+            synthesis_prompt: Prompt for synthesis (if None, returns original result)
+            user_id: User identifier
+            session_id: Session identifier
+            max_tokens: Max tokens for synthesis
+            temperature: Temperature for synthesis
+            **kwargs: Additional LLM arguments
+
+        Returns:
+            CrewResult with synthesized output if synthesis was performed,
+            otherwise returns original crew_result
+        """
+        # If no synthesis prompt or no LLM, return original result
+        if not synthesis_prompt or not self._llm:
+            return crew_result
+
+        # Build context from agent results
+        context_parts = ["# Agent Execution Results\n"]
+
+        for i, (agent_id, result) in enumerate(zip(crew_result.agent_ids, crew_result.results)):
+            agent = self.agents.get(agent_id)
+            agent_name = agent.name if agent else agent_id
+
+            context_parts.extend([
+                f"\n## Agent {i+1}: {agent_name}\n",
+                str(result),
+                "\n---\n"
+            ])
+
+        research_context = "\n".join(context_parts)
+
+        # Build final prompt
+        final_prompt = f"""{research_context}
+
+{synthesis_prompt}"""
+
+        # Call LLM for synthesis
+        self.logger.info("Synthesizing results with LLM")
+
+        try:
+            async with self._llm as client:
+                synthesis_response = await client.ask(
+                    prompt=final_prompt,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    user_id=user_id or 'crew_user',
+                    session_id=session_id or str(uuid.uuid4()),
+                    **kwargs
+                )
+
+            # Extract synthesized content
+            synthesized_output = (
+                synthesis_response.content
+                if hasattr(synthesis_response, 'content')
+                else str(synthesis_response)
+            )
+
+            # Return updated CrewResult with synthesized output
+            return CrewResult(
+                output=synthesized_output,  # Synthesized output
+                response=crew_result.response,
+                results=crew_result.results,  # Keep original results
+                agent_ids=crew_result.agent_ids,
+                agents=crew_result.agents,
+                errors=crew_result.errors,
+                execution_log=crew_result.execution_log,
+                total_time=crew_result.total_time,
+                status=crew_result.status,
+                metadata={
+                    **crew_result.metadata,
+                    'synthesized': True,
+                    'synthesis_prompt': synthesis_prompt,
+                    'original_output': crew_result.output
+                }
+            )
+
+        except Exception as e:
+            self.logger.error(f"Error during synthesis: {e}", exc_info=True)
+            # Return original result if synthesis fails
+            return crew_result
 
     def get_execution_summary(self) -> Dict[str, Any]:
         """
