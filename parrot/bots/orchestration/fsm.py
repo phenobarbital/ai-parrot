@@ -483,6 +483,15 @@ class AgentCrewFSM:
         # Update dependencies in target nodes
         for target_name in target_names:
             target_node = self.nodes[target_name]
+
+            if self._would_create_cycle(source_name, target_name):
+                self.logger.debug(
+                    "Skipping dependency %s → %s to avoid circular dependency",
+                    source_name,
+                    target_name
+                )
+                continue
+
             target_node.dependencies.add(source_name)
 
         self.logger.info(
@@ -847,23 +856,77 @@ class AgentCrewFSM:
                 continue
 
             # Activate transitions
+            transition_activated = False
             for transition in active_transitions:
-                await self._activate_transition(transition)
+                if await self._activate_transition(transition):
+                    transition_activated = True
 
-            # Mark transitions as processed for this node
-            node.transitions_processed = True
+            # Mark transitions as processed only when activation succeeded
+            node.transitions_processed = transition_activated
 
-    async def _activate_transition(self, transition: FlowTransition) -> None:
-        """Activate a transition and schedule target agents."""
+    async def _activate_transition(self, transition: FlowTransition) -> bool:
+        """Activate a transition and schedule target agents.
+
+        Returns:
+            True if at least one target agent was scheduled or reactivated.
+        """
+        scheduled_any = False
+
         for target_name in transition.targets:
             target_node = self.nodes[target_name]
+            scheduled = False
 
-            # Check if all dependencies are satisfied
-            if self._are_dependencies_satisfied(target_node) and target_node.fsm.current_state == target_node.fsm.idle:  # noqa
+            if not self._are_dependencies_satisfied(target_node):
+                self.logger.debug(
+                    "Dependencies for '%s' not yet satisfied after transition from '%s'",
+                    target_name,
+                    transition.source
+                )
+                continue
+
+            if target_node.fsm.current_state == target_node.fsm.idle:
                 target_node.fsm.schedule()
+                scheduled = True
+            elif target_node.fsm.current_state == target_node.fsm.blocked:
+                target_node.fsm.unblock()
+                scheduled = True
+            elif target_node.fsm.current_state == target_node.fsm.failed and target_node.can_retry:
+                target_node.fsm.retry()
+                scheduled = True
+            elif target_node.fsm.current_state == target_node.fsm.ready:
+                scheduled = True
+
+            if scheduled:
                 self.logger.debug(
                     f"Scheduled agent '{target_name}' via transition from '{transition.source}'"
                 )
+                scheduled_any = True
+
+        return scheduled_any
+
+    def _would_create_cycle(self, source_name: str, target_name: str) -> bool:
+        """Check if adding a dependency would introduce a cycle."""
+        if source_name == target_name:
+            return True
+
+        visited = set()
+        stack = [source_name]
+
+        while stack:
+            current = stack.pop()
+            if current == target_name:
+                return True
+            if current in visited:
+                continue
+            visited.add(current)
+
+            current_node = self.nodes.get(current)
+            if not current_node:
+                continue
+
+            stack.extend(current_node.dependencies)
+
+        return False
 
     def _are_dependencies_satisfied(self, node: FlowNode) -> bool:
         """Check if all dependencies for a node are satisfied."""
