@@ -132,26 +132,38 @@ class CrewResult:
     @property
     def completed(self) -> List[str]:
         """Return agent IDs with successful execution."""
+        completed_agents: List[str] = []
 
-        return [
-            agent.get("agent_id")
-            for agent in self.agents
-            if isinstance(agent, dict)
-            and agent.get("agent_id")
-            and agent.get("status") == "completed"
-        ]
+        for agent in self.agents:
+            if isinstance(agent, AgentExecutionInfo):
+                if agent.status == "completed" and agent.agent_id:
+                    completed_agents.append(agent.agent_id)
+            elif isinstance(agent, dict):
+                agent_id = agent.get("agent_id")
+                status = _normalise_agent_status(agent.get("status", ""))
+
+                if agent_id and status == "completed":
+                    completed_agents.append(agent_id)
+
+        return completed_agents
 
     @property
     def failed(self) -> List[str]:
         """Return agent IDs with failed execution."""
+        failed_agents: List[str] = []
 
-        return [
-            agent.get("agent_id")
-            for agent in self.agents
-            if isinstance(agent, dict)
-            and agent.get("agent_id")
-            and agent.get("status") == "error"
-        ]
+        for agent in self.agents:
+            if isinstance(agent, AgentExecutionInfo):
+                if agent.status == "failed" and agent.agent_id:
+                    failed_agents.append(agent.agent_id)
+            elif isinstance(agent, dict):
+                agent_id = agent.get("agent_id")
+                status = _normalise_agent_status(agent.get("status", ""))
+
+                if agent_id and status == "failed":
+                    failed_agents.append(agent_id)
+
+        return failed_agents
 
     @property
     def total_execution_time(self) -> float:
