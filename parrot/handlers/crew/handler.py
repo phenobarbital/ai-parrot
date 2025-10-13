@@ -341,7 +341,7 @@ class CrewHandler(BaseView):
 
                     if mode == ExecutionMode.SEQUENTIAL:
                         result = await crew.run_sequential(
-                            task=query,
+                            query=query,
                             **execution_kwargs
                         )
                     elif mode == ExecutionMode.PARALLEL:
