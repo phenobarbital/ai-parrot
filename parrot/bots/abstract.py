@@ -68,7 +68,6 @@ class AbstractBot(DBInterface, ABC):
     llm_client: str = 'google'
     default_model: str = 'gemini-2.5-flash'
     temperature: float = 0.1
-    max_tokens: int = None
 
     def __init__(
         self,
@@ -158,11 +157,11 @@ class AbstractBot(DBInterface, ABC):
                 )
                 presetting = LLM_PRESETS['default']
             self._llm_temp = presetting.get('temperature', 0.1)
-            self._max_tokens = presetting.get('max_tokens', 4096)
+            self._max_tokens = presetting.get('max_tokens', None)
         else:
             # Default LLM Presetting by LLMs
             self._llm_temp = kwargs.get('temperature', self.temperature)
-            self._max_tokens = kwargs.get('max_tokens', self.max_tokens)
+            self._max_tokens = kwargs.get('max_tokens', None)
         # LLM Configuration:
         # Configuration state flag
         self._configured: bool = False
@@ -2438,7 +2437,7 @@ Use the following information about user's data to guide your responses:
         turn_id = str(uuid.uuid4())
 
         # Set default max_tokens to 8192 if not provided
-        max_tokens = kwargs.get('max_tokens', 8192)
+        max_tokens = kwargs.get('max_tokens', self._max_tokens)
 
         limit = kwargs.get('limit', self.context_search_limit)
         score_threshold = kwargs.get('score_threshold', self.context_score_threshold)

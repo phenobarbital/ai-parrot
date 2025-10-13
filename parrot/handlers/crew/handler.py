@@ -43,10 +43,7 @@ class CrewHandler(BaseView):
         self.logger = logging.getLogger('Parrot.CrewHandler')
         # Get bot manager from app if available
         self._bot_manager = None
-        # Initialize job manager if not in app
-        if not hasattr(self.request.app, 'job_manager'):
-            self.request.app['job_manager'] = JobManager()
-        self.job_manager: JobManager = self.request.app['job_manager']
+        self.job_manager: JobManager = self.app['job_manager'] if 'job_manager' in self.app else JobManager()
 
     @property
     def bot_manager(self):
@@ -60,6 +57,12 @@ class CrewHandler(BaseView):
     def bot_manager(self, value):
         """Set bot manager."""
         self._bot_manager = value
+
+    @staticmethod
+    async def configure_job_manager(app: WebApp):
+        """Configure and start job manager."""
+        app['job_manager'] = JobManager()
+        await app['job_manager'].start()
 
     @classmethod
     def configure(cls, app: WebApp = None, path: str = None, **kwargs) -> WebApp:
@@ -86,6 +89,7 @@ class CrewHandler(BaseView):
             app.router.add_view(
                 r"{url}{{meta:(:.*)?}}".format(url=url), cls
             )
+            app.on_startup.append(cls.configure_job_manager)
 
     async def put(self):
         """
