@@ -874,8 +874,10 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                     if parts:
                         history.append(ModelContent(parts=parts))
 
+
+        default_tokens = max_tokens or self.max_tokens or 4096
         generation_config = {
-            "max_output_tokens": max_tokens or self.max_tokens or 2048,
+            "max_output_tokens": default_tokens,
             "temperature": temperature or self.temperature
         }
 
@@ -899,7 +901,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
         tools = self._build_tools(tool_type) if tool_type else []
 
         self.logger.debug(
-            f"Using model: {model}, max_tokens: {max_tokens}, temperature: {temperature}, "
+            f"Using model: {model}, max_tokens: {default_tokens}, temperature: {temperature}, "
             f"structured_output: {structured_output}, "
             f"use_tools: {_use_tools}, tool_type: {tool_type}, toolbox: {len(tools)}, "
         )
