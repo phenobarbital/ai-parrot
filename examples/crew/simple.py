@@ -7,7 +7,7 @@ from typing import Any
 import asyncio
 from parrot.bots.agent import BasicAgent
 from parrot.bots.orchestration.crew import AgentCrew, FlowContext
-from parrot.bots.orchestration.fsm import AgentCrewFSM
+from parrot.bots.orchestration.fsm import AgentsFlow
 from parrot.bots.orchestration.agent import OrchestratorAgent
 from parrot.tools.google import GoogleSearchTool
 
@@ -322,7 +322,7 @@ Question: "Tell me about the iPhone 15 Pro - specs and price"
     return orchestrator
 
 async def test_fsm():
-    crew = AgentCrewFSM(name="ResearchCrew")
+    crew = AgentsFlow(name="ResearchCrew")
 
     # Create agents
     researcher = BasicAgent(
@@ -373,16 +373,57 @@ async def test_fsm():
     # Execute
     result = await crew.run_flow("Research AI trends in 2025")
 
-    print(f"\n✓ Workflow completed: {result['success']}")
-    print(f"✓ Completed agents: {len(result['completed'])}/{len(agents)}")
-    print(f"✓ Total execution time: {result['total_time']:.2f}s")
-    print(f"\n✓ Execution order:")
-    for i, log in enumerate(result['execution_log'], 1):
-        print(f"  {i}. {log['agent_name']} ({log['execution_time']:.2f}s)")
+    print(f"\n{'='*80}")
+    print("WORKFLOW EXECUTION SUMMARY")
+    print(f"{'='*80}")
 
-    print("✓ Results:")
-    for agent, output in result['results'].items():
-        print(f"  - {agent}: {output[:50]}...")
+    # Status information
+    print(f"\n✓ Status: {result.status}")
+    print(f"✓ Total Time: {result.total_time:.2f}s")
+    print(f"✓ Completed Agents: {len([a for a in result.agents if a.status == 'completed'])}/{len(result.agents)}")
+
+    # Execution order with detailed info
+    print(f"\n{'─'*80}")
+    print("EXECUTION ORDER:")
+    print(f"{'─'*80}")
+    for i, agent_info in enumerate(result.agents, 1):
+        status_icon = "✓" if agent_info.status == "completed" else "✗"
+        print(f"{i}. {status_icon} {agent_info.agent_name}")
+        print(f"   - Time: {agent_info.execution_time:.2f}s")
+        print(f"   - Model: {agent_info.model or 'N/A'}")
+        print(f"   - Status: {agent_info.status}")
+        if agent_info.error:
+            print(f"   - Error: {agent_info.error}")
+
+    # Individual agent results
+    print(f"\n{'─'*80}")
+    print("AGENT OUTPUTS:")
+    print(f"{'─'*80}")
+    for agent_id, output in zip(result.agent_ids, result.results):
+        print(f"\n[{agent_id}]")
+        print(f"{output[:200]}..." if len(output) > 200 else output)
+
+    # Final output (from terminal agent)
+    print(f"\n{'='*80}")
+    print("FINAL REPORT (from Writer):")
+    print(f"{'='*80}")
+    print(result.output)  # or result.content - both work!
+
+    # Error handling
+    if result.errors:
+        print(f"\n{'='*80}")
+        print("ERRORS DETECTED:")
+        print(f"{'='*80}")
+        for agent_id, error in result.errors.items():
+            print(f"❌ {agent_id}: {error}")
+
+    # Metadata
+    print(f"\n{'='*80}")
+    print("EXECUTION METADATA:")
+    print(f"{'='*80}")
+    for key, value in result.metadata.items():
+        print(f"  {key}: {value}")
+
 
 async def test_simple_delegation():
     """

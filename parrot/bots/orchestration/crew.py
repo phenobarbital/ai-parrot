@@ -11,7 +11,10 @@ Supports parallel execution, conditional transitions, and result aggregation.
 This implementation uses a graph-based approach for flexibility with dynamic workflows.
 """
 from __future__ import annotations
-from typing import List, Dict, Any, Union, Optional, Literal, Set, Callable
+from typing import (
+    List, Dict, Any, Union, Optional, Literal, Set, Callable, Awaitable
+)
+from enum import Enum
 from dataclasses import dataclass, field
 import asyncio
 import uuid
@@ -26,6 +29,16 @@ from ...models.responses import (
     AIMessage,
     AgentResponse
 )
+from ...models.crew import (
+    CrewResult,
+    AgentExecutionInfo,
+    build_agent_metadata
+)
+
+
+AgentRef = Union[str, BasicAgent, AbstractBot]
+DependencyResults = Dict[str, str]
+PromptBuilder = Callable[[AgentContext, DependencyResults], Union[str, Awaitable[str]]]
 
 
 @dataclass
@@ -348,7 +361,7 @@ class AgentCrew:
         session_id: str = None,
         pass_full_context: bool = True,
         **kwargs
-    ) -> Dict[str, Any]:
+    ) -> CrewResult:
         """
         Execute agents in sequence (pipeline pattern).
 
@@ -379,11 +392,17 @@ class AgentCrew:
                 - success: Whether all agents executed successfully
         """
         if not self.agents:
-            return {
-                'final_result': 'No agents in crew',
-                'execution_log': [],
-                'success': False
-            }
+            return CrewResult(
+                output='No agents in crew',
+                execution_log=[],
+                status='failed',
+                total_time=0.0,
+                results=[],
+                agents=[],
+                agent_ids=[],
+                errors={},
+                response=None
+            )
 
         # Determine agent sequence
         if agent_sequence is None:
@@ -913,6 +932,25 @@ Current task: {current_input}"""
             return text
 
         return f"{text[:self.truncation_length]}..."
+
+    def visualize_workflow(self) -> str:
+        """
+        Generate a text representation of the workflow graph.
+
+        This is useful for debugging and understanding the structure of your
+        workflow before executing it. It shows each agent, what it depends on,
+        and what depends on it.
+
+        Could be extended to use graphviz for visual diagrams.
+        """
+        lines = ["Workflow Graph:", "=" * 50]
+
+        for agent_name, node in self.workflow_graph.items():
+            deps = f"depends on: {node.dependencies}" if node.dependencies else "initial"
+            successors = f"→ {node.successors}" if node.successors else "(final)"
+            lines.append(f"  {agent_name}: {deps} {successors}")
+
+        return "\n".join(lines)
 
     async def validate_workflow(self) -> bool:
         """
