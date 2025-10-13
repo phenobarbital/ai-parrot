@@ -32,7 +32,8 @@ from ...models.responses import (
 from ...models.crew import (
     CrewResult,
     AgentExecutionInfo,
-    build_agent_metadata
+    build_agent_metadata,
+    determine_run_status,
 )
 
 
@@ -66,6 +67,9 @@ class FlowContext:
     """
     initial_task: str
     results: Dict[str, Any] = field(default_factory=dict)
+    responses: Dict[str, Any] = field(default_factory=dict)
+    agent_metadata: Dict[str, AgentExecutionInfo] = field(default_factory=dict)
+    completion_order: List[str] = field(default_factory=list)
     errors: Dict[str, Exception] = field(default_factory=dict)
     active_tasks: Set[str] = field(default_factory=set)
     completed_tasks: Set[str] = field(default_factory=set)
@@ -79,7 +83,13 @@ class FlowContext:
         """
         return dependencies.issubset(self.completed_tasks)
 
-    def mark_completed(self, agent_name: str, result: Any = None):
+    def mark_completed(
+        self,
+        agent_name: str,
+        result: Any = None,
+        response: Any = None,
+        metadata: Optional[AgentExecutionInfo] = None
+    ):
         """
         Mark an agent as completed and store its result.
 
@@ -87,9 +97,14 @@ class FlowContext:
         making it possible for dependent agents to begin execution.
         """
         self.completed_tasks.add(agent_name)
+        self.completion_order.append(agent_name)
         self.active_tasks.discard(agent_name)
         if result is not None:
             self.results[agent_name] = result
+        if response is not None:
+            self.responses[agent_name] = response
+        if metadata is not None:
+            self.agent_metadata[agent_name] = metadata
 
     def get_input_for_agent(self, agent_name: str, dependencies: Set[str]) -> Dict[str, Any]:
         """
@@ -154,12 +169,37 @@ class AgentNode:
         if not input_data and not self.dependencies:
             input_data = {"task": context.initial_task}
 
+        # Execute the agent and track time
+        start_time = asyncio.get_event_loop().time()
         prompt = self._format_prompt(input_data)
+        try:
+            response = await self.agent.ask(question=prompt)
+            end_time = asyncio.get_event_loop().time()
+            execution_time = end_time - start_time
+            # Extract output text
+            output = response.content if hasattr(response, 'content') else str(response.output if hasattr(response, 'output') else response)
 
-        # Execute the agent
-        response = await self.agent.ask(question=prompt)
-        # is an AIMessage or AgentResponse
-        return response.content if hasattr(response, 'content') else str(response.output)
+            return {
+                'response': response,
+                'output': output,
+                'execution_time': end_time - start_time,
+                'prompt': prompt
+            }
+
+        except Exception as e:
+            end_time = asyncio.get_event_loop().time()
+            execution_time = end_time - start_time
+            # Build agent metadata for failed execution
+            agent_info = build_agent_metadata(
+                agent_id=self.agent.name,
+                agent=self.agent,
+                response=None,
+                output=None,
+                execution_time=execution_time,
+                status='failed',
+                error=str(e)
+            )
+            raise
 
 
 class AgentCrew:
@@ -397,11 +437,7 @@ class AgentCrew:
                 execution_log=[],
                 status='failed',
                 total_time=0.0,
-                results=[],
-                agents=[],
-                agent_ids=[],
-                errors={},
-                response=None
+                metadata={'mode': 'sequential'}
             )
 
         # Determine agent sequence
@@ -423,6 +459,15 @@ class AgentCrew:
         )
 
         self.execution_log = []
+        start_time = asyncio.get_event_loop().time()
+
+        responses: Dict[str, Any] = {}
+        results: List[Any] = []
+        agent_ids: List[str] = []
+        agents_info: List[AgentExecutionInfo] = []
+        errors: Dict[str, str] = {}
+        success_count = 0
+        failure_count = 0
 
         # Execute agents in sequence
         for i, agent_id in enumerate(agent_sequence):
@@ -458,6 +503,7 @@ Current task: {current_input}"""
 
                 result = self._extract_result(response)
                 agent_end_time = asyncio.get_event_loop().time()
+                execution_time = agent_end_time - agent_start_time
 
                 # Log execution details
                 log_entry = {
@@ -467,7 +513,7 @@ Current task: {current_input}"""
                     'input': self._truncate_text(agent_input),
                     'output': self._truncate_text(result),
                     'full_output': result,
-                    'execution_time': agent_end_time - agent_start_time,
+                    'execution_time': execution_time,
                     'success': True
                 }
                 self.execution_log.append(log_entry)
@@ -475,6 +521,20 @@ Current task: {current_input}"""
                 # Store result and prepare for next agent
                 crew_context.agent_results[agent_id] = result
                 current_input = result
+                responses[agent_id] = response
+                agents_info.append(
+                    build_agent_metadata(
+                        agent_id,
+                        agent,
+                        response,
+                        result,
+                        execution_time,
+                        'completed'
+                    )
+                )
+                results.append(result)
+                agent_ids.append(agent_id)
+                success_count += 1
 
             except Exception as e:
                 error_msg = f"Error executing agent {agent_id}: {str(e)}"
@@ -492,13 +552,38 @@ Current task: {current_input}"""
                 }
                 self.execution_log.append(log_entry)
                 current_input = error_msg
+                errors[agent_id] = str(e)
+                agents_info.append(
+                    build_agent_metadata(
+                        agent_id,
+                        agent,
+                        None,
+                        error_msg,
+                        0.0,
+                        'failed',
+                        str(e)
+                    )
+                )
+                results.append(error_msg)
+                agent_ids.append(agent_id)
+                failure_count += 1
 
-        return {
-            'final_result': current_input,
-            'execution_log': self.execution_log,
-            'agent_results': crew_context.agent_results,
-            'success': all(log['success'] for log in self.execution_log)
-        }
+        end_time = asyncio.get_event_loop().time()
+        total_time = end_time - start_time
+        status = determine_run_status(success_count, failure_count)
+
+        return CrewResult(
+            output=current_input,
+            response=responses,
+            results=results,
+            agent_ids=agent_ids,
+            agents=agents_info,
+            errors=errors,
+            execution_log=self.execution_log,
+            total_time=total_time,
+            status=status,
+            metadata={'mode': 'sequential', 'agent_sequence': agent_sequence}
+        )
 
     async def run_parallel(
         self,
@@ -506,7 +591,7 @@ Current task: {current_input}"""
         user_id: str = None,
         session_id: str = None,
         **kwargs
-    ) -> Dict[str, Any]:
+    ) -> CrewResult:
         """
         Execute multiple agents in parallel using asyncio.gather().
 
@@ -529,11 +614,8 @@ Current task: {current_input}"""
             **kwargs: Additional arguments passed to all agents
 
         Returns:
-            Dictionary containing:
-                - results: Dictionary mapping agent_id to its result
-                - execution_log: Detailed log of each agent's execution
-                - total_execution_time: Wall-clock time for parallel execution
-                - success: Whether all agents executed successfully
+            CrewResult: Standardized execution payload containing outputs,
+            metadata, and execution logs.
         """
         session_id = session_id or str(uuid.uuid4())
         user_id = user_id or 'crew_user'
@@ -547,6 +629,14 @@ Current task: {current_input}"""
         )
 
         self.execution_log = []
+        responses: Dict[str, Any] = {}
+        results_payload: List[Any] = []
+        agent_ids: List[str] = []
+        agents_info: List[AgentExecutionInfo] = []
+        errors: Dict[str, str] = {}
+        success_count = 0
+        failure_count = 0
+        last_output = None
 
         # Create async tasks for parallel execution
         async_tasks = []
@@ -574,13 +664,12 @@ Current task: {current_input}"""
             )
 
         if not async_tasks:
-            return {
-                'results': {},
-                'execution_log': [],
-                'total_execution_time': 0,
-                'success': False,
-                'error': 'No valid tasks to execute'
-            }
+            return CrewResult(
+                output=None,
+                status='failed',
+                errors={'__crew__': 'No valid tasks to execute'},
+                metadata={'mode': 'parallel'}
+            )
 
         # Execute all tasks in parallel using asyncio.gather()
         # This is the key to parallel execution - all coroutines run concurrently
@@ -593,12 +682,13 @@ Current task: {current_input}"""
 
         for i, (result, metadata) in enumerate(zip(results, task_metadata)):
             agent_id = metadata['agent_id']
+            agent_ids.append(agent_id)
 
             if isinstance(result, Exception):
                 # Handle exceptions from failed agents
                 error_msg = f"Error: {str(result)}"
                 parallel_results[agent_id] = error_msg
-
+                errors[agent_id] = str(result)
                 log_entry = {
                     'agent_id': agent_id,
                     'agent_name': metadata['agent_name'],
@@ -609,6 +699,21 @@ Current task: {current_input}"""
                     'success': False,
                     'error': str(result)
                 }
+                agents_info.append(
+                    build_agent_metadata(
+                        agent_id,
+                        self.agents.get(agent_id),
+                        None,
+                        error_msg,
+                        0.0,
+                        'failed',
+                        str(result)
+                    )
+                )
+                results_payload.append(error_msg)
+
+                responses[agent_id] = None
+                failure_count += 1
             else:
                 # Handle successful agent execution
                 extracted_result = self._extract_result(result)
@@ -625,22 +730,47 @@ Current task: {current_input}"""
                     'execution_time': end_time - start_time,  # Total parallel time
                     'success': True
                 }
+                agents_info.append(
+                    build_agent_metadata(
+                        agent_id,
+                        self.agents.get(agent_id),
+                        result,
+                        extracted_result,
+                        end_time - start_time,
+                        'completed'
+                    )
+                )
+                results_payload.append(extracted_result)
+                responses[agent_id] = result
+                last_output = extracted_result
+                success_count += 1
 
             self.execution_log.append(log_entry)
+        status = determine_run_status(success_count, failure_count)
 
-        return {
-            'results': parallel_results,
-            'execution_log': self.execution_log,
-            'total_execution_time': end_time - start_time,
-            'success': all(log['success'] for log in self.execution_log)
-        }
+        return CrewResult(
+            output=last_output,
+            response=responses,
+            results=results_payload,
+            agent_ids=agent_ids,
+            agents=agents_info,
+            errors=errors,
+            execution_log=self.execution_log,
+            total_time=end_time - start_time,
+            status=status,
+            metadata={
+                'mode': 'parallel',
+                'task_count': len(agent_ids),
+                'requested_tasks': len(tasks),
+            }
+        )
 
     async def run_flow(
         self,
         initial_task: str,
         max_iterations: int = 100,
         on_agent_complete: Optional[Callable] = None
-    ) -> Dict[str, Any]:
+    ) -> CrewResult:
         """
         Execute the workflow using the defined task flows (DAG-based execution).
 
@@ -677,10 +807,8 @@ Current task: {current_input}"""
             Signature: async def callback(agent_name: str, result: Any, context: FlowContext)
 
         Returns:
-            Dictionary containing:
-                - results: Dictionary mapping agent_name to its result
-                - errors: Dictionary of any errors that occurred
-                - completed: List of all completed agents in order
+            CrewResult: Standardized execution payload containing outputs,
+            metadata, and execution logs.
 
         Raises:
             ValueError: If no initial agent is found (no workflow defined)
@@ -688,10 +816,14 @@ Current task: {current_input}"""
         """
         # Initialize execution context to track the workflow state
         context = FlowContext(initial_task=initial_task)
+        self.execution_log = []
+        start_time = asyncio.get_event_loop().time()
 
         # Validate workflow before starting
         if not self.initial_agent:
-            raise ValueError("No initial agent found. Define task flows first using task_flow().")
+            raise ValueError(
+                "No initial agent found. Define task flows first using task_flow()."
+            )
 
         iteration = 0
         while iteration < max_iterations:
@@ -733,23 +865,83 @@ Current task: {current_input}"""
                 f"Expected: {self.final_agents}"
             )
 
-        return {
-            "results": context.results,
-            "errors": context.errors,
-            "completed": list(context.completed_tasks)
+        end_time = asyncio.get_event_loop().time()
+        error_messages: Dict[str, str] = {
+            agent: str(err)
+            for agent, err in context.errors.items()
         }
+        completion_order = context.completion_order or list(context.completed_tasks)
+
+        results_payload = [
+            context.results.get(agent_name)
+            for agent_name in completion_order
+        ]
+
+        agents_info: List[AgentExecutionInfo] = []
+        for agent_name in completion_order:
+            metadata = context.agent_metadata.get(agent_name)
+            if metadata:
+                agents_info.append(metadata)
+
+        success_count = sum(
+            info.status == 'completed' for info in agents_info
+        )
+        failure_count = sum(info.status == 'failed' for info in agents_info)
+
+        for agent_name, error in error_messages.items():
+            if agent_name not in completion_order:
+                node = self.workflow_graph.get(agent_name)
+                agent_obj = node.agent if node else None
+                metadata = build_agent_metadata(
+                    agent_name,
+                    agent_obj,
+                    context.responses.get(agent_name),
+                    context.results.get(agent_name),
+                    0.0,
+                    'failed',
+                    error
+                )
+                agents_info.append(metadata)
+                failure_count += 1
+
+        last_output = None
+        if completion_order:
+            last_agent = completion_order[-1]
+            last_output = context.results.get(last_agent)
+
+        status = determine_run_status(success_count, failure_count)
+
+        return CrewResult(
+            output=last_output,
+            response=context.responses,
+            results=results_payload,
+            agent_ids=completion_order,
+            agents=agents_info,
+            errors=error_messages,
+            execution_log=self.execution_log,
+            total_time=end_time - start_time,
+            status=status,
+            metadata={'mode': 'flow', 'iterations': iteration}
+        )
+
 
     async def _execute_parallel_agents(
         self,
         agent_names: Set[str],
         context: FlowContext
-    ) -> Dict[str, Any]:
+    ) -> CrewResult:
         """
         Execute multiple agents in parallel and collect their results.
 
         This is the internal method that enables parallel execution of agents
         within the flow-based execution mode. It's called by run_flow() whenever
         multiple agents are ready to execute simultaneously.
+
+        Args:
+            agent_names: Set of agent names that are ready to execute
+            context: The current FlowContext tracking execution state
+        Returns:
+            CrewResult with results from all executed agents
         """
         tasks = []
         agent_name_map = []
@@ -774,14 +966,59 @@ Current task: {current_input}"""
         # Process results and handle errors
         execution_results = {}
         for agent_name, result in zip(agent_name_map, results):
+            node = self.workflow_graph[agent_name]
             if isinstance(result, Exception):
                 context.errors[agent_name] = result
+                context.active_tasks.discard(agent_name)
                 self.logger.error(
                     f"Error executing {agent_name}: {result}"
                 )
+                context.responses[agent_name] = None
+                context.agent_metadata[agent_name] = build_agent_metadata(
+                    agent_name,
+                    node.agent,
+                    None,
+                    None,
+                    0.0,
+                    'failed',
+                    str(result)
+                )
+                self.execution_log.append({
+                    'agent_id': agent_name,
+                    'agent_name': node.agent.name,
+                    'output': str(result),
+                    'execution_time': 0,
+                    'success': False,
+                    'error': str(result)
+                })
             else:
-                context.mark_completed(agent_name, result)
-                execution_results[agent_name] = result
+                output = result.get('output') if isinstance(result, dict) else result
+                raw_response = result.get('response') if isinstance(result, dict) else result
+                execution_time = result.get('execution_time', 0.0) if isinstance(result, dict) else 0.0
+                metadata = build_agent_metadata(
+                    agent_name,
+                    node.agent,
+                    raw_response,
+                    output,
+                    execution_time,
+                    'completed'
+                )
+                context.mark_completed(
+                    agent_name,
+                    output,
+                    raw_response,
+                    metadata
+                )
+                context.active_tasks.discard(agent_name)
+                execution_results[agent_name] = output
+                self.execution_log.append({
+                    'agent_id': agent_name,
+                    'agent_name': node.agent.name,
+                    'input': self._truncate_text(result.get('prompt', '') if isinstance(result, dict) else ''),
+                    'output': self._truncate_text(output),
+                    'execution_time': execution_time,
+                    'success': True
+                })
 
         return execution_results
 

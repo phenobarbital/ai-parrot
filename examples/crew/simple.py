@@ -395,14 +395,6 @@ async def test_fsm():
         if agent_info.error:
             print(f"   - Error: {agent_info.error}")
 
-    # Individual agent results
-    print(f"\n{'─'*80}")
-    print("AGENT OUTPUTS:")
-    print(f"{'─'*80}")
-    for agent_id, output in zip(result.agent_ids, result.results):
-        print(f"\n[{agent_id}]")
-        print(f"{output[:200]}..." if len(output) > 200 else output)
-
     # Final output (from terminal agent)
     print(f"\n{'='*80}")
     print("FINAL REPORT (from Writer):")
@@ -500,20 +492,20 @@ User: "What is the capital of France?"
 async def run_examples():
     """Run all quick examples."""
 
-    # print("="*80)
-    # print("EXAMPLE 1: PARALLEL EXECUTION")
-    # print("="*80)
-    # await quick_parallel_example()
+    print("="*80)
+    print("EXAMPLE 1: PARALLEL EXECUTION")
+    print("="*80)
+    await quick_parallel_example()
 
-    # print("\n" + "="*80)
-    # print("EXAMPLE 2: SEQUENTIAL EXECUTION")
-    # print("="*80)
-    # await quick_sequential_example()
+    print("\n" + "="*80)
+    print("EXAMPLE 2: SEQUENTIAL EXECUTION")
+    print("="*80)
+    await quick_sequential_example()
 
-    # print("\n" + "="*80)
-    # print("EXAMPLE 3: WORKFLOW FLOW")
-    # print("="*80)
-    # await quick_flow_example()
+    print("\n" + "="*80)
+    print("EXAMPLE 3: WORKFLOW FLOW")
+    print("="*80)
+    await quick_flow_example()
 
     # print("\n" + "="*80)
     # print("EXAMPLE 3: ORCHESTRATOR")

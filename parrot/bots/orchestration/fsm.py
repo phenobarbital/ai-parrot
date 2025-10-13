@@ -213,7 +213,8 @@ class FlowNode:
     completed_at: Optional[datetime] = None
     retry_count: int = 0
     max_retries: int = 3
-    metadata: Optional[AgentExecutionInfo] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    agent_info: Optional[AgentExecutionInfo] = None
     transitions_processed: bool = False  # Track if transitions have been activated
 
     @property
@@ -252,6 +253,13 @@ class FlowNode:
             if await transition.should_activate(self.result, error):
                 active.append(transition)
         return active
+
+    async def execute(self,  prompt:str, ctx: Dict[str, Any]) -> Any:
+        """Execute the agent with context from previous agents."""
+        return await self.agent.ask(
+            question=prompt,
+            **ctx
+        )
 
 
 class AgentsFlow:
@@ -739,8 +747,16 @@ class AgentsFlow:
         failure_count = sum(info.status == 'failed' for info in agents_info)
         status = determine_run_status(success_count, failure_count)
 
+        # Get final output from terminal nodes
+        terminal_results = [
+            node.result
+            for node in self.nodes.values()
+            if node.is_terminal and node.fsm.current_state == node.fsm.completed
+        ]
+        final_output = terminal_results[-1] if terminal_results else ''
+
         return CrewResult(
-            output=last_output,
+            output=final_output or last_output,
             response=responses,
             results=results_payload,
             agent_ids=agent_ids,
@@ -749,7 +765,12 @@ class AgentsFlow:
             execution_log=self.execution_log,
             total_time=end_time - start_time,
             status=status,
-            metadata={'mode': 'fsm', 'iterations': iteration}
+            metadata={
+                'mode': 'fsm',
+                'iterations': iteration,
+                'completed': success_count,
+                'failed': failure_count
+            }
         )
 
 
@@ -842,10 +863,13 @@ class AgentsFlow:
             async with self.semaphore:
                 start_time = asyncio.get_event_loop().time()
 
-                response = await node.agent.ask(
-                    question=prompt,
-                    session_id=self.current_context.session_id,
-                    user_id=self.current_context.user_id
+                response = await node.execute(
+                    prompt=prompt,
+                    ctx={
+                        "session_id": self.current_context.session_id,
+                        "user_id": self.current_context.user_id,
+                        **self.current_context.shared_data
+                    }
                 )
 
                 end_time = asyncio.get_event_loop().time()
@@ -856,13 +880,15 @@ class AgentsFlow:
             node.result = result
             node.response = response
             node.completed_at = datetime.now()
-            node.metadata = build_agent_metadata(
-                agent_name,
-                node.agent,
-                response,
-                result,
-                node.execution_time,
-                'completed'
+            # Build agent execution info
+            node.agent_info = build_agent_metadata(
+                agent_id=agent_name,
+                agent=node.agent,
+                response=response,
+                output=result,
+                execution_time=node.execution_time,
+                status='completed',
+                error=None
             )
 
             # Store in context
@@ -894,14 +920,15 @@ class AgentsFlow:
             node.completed_at = datetime.now()
             node.fsm.fail()
             node.response = None
-            node.metadata = build_agent_metadata(
-                agent_name,
-                node.agent,
-                None,
-                None,
-                node.execution_time,
-                'failed',
-                str(e)
+            # Build agent execution info for failure
+            node.agent_info = build_agent_metadata(
+                agent_id=agent_name,
+                agent=node.agent,
+                response=None,
+                output=None,
+                execution_time=node.execution_time or 0.0,
+                status='failed',
+                error=str(e)
             )
 
             self.execution_log.append({
