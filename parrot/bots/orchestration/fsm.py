@@ -29,6 +29,12 @@ from ..abstract import AbstractBot
 from ...tools.manager import ToolManager
 from ...tools.agent import AgentContext
 from ...models.responses import AIMessage, AgentResponse
+from ...models.crew import (
+    CrewResult,
+    AgentExecutionInfo,
+    build_agent_metadata,
+    determine_run_status,
+)
 
 
 # Type aliases for better readability
@@ -120,7 +126,7 @@ class FlowTransition:
     prompt_builder: Optional[PromptBuilder] = None
     predicate: Optional[Callable[[Any], Union[bool, Awaitable[bool]]]] = None
     priority: int = 0  # Higher priority transitions are evaluated first
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: Optional[AgentExecutionInfo] = None
 
     async def should_activate(self, result: Any, error: Optional[Exception] = None) -> bool:
         """
@@ -200,6 +206,7 @@ class FlowNode:
     dependencies: Set[str] = field(default_factory=set)
     outgoing_transitions: List[FlowTransition] = field(default_factory=list)
     result: Optional[Any] = None
+    response: Optional[Any] = None
     error: Optional[Exception] = None
     execution_time: float = 0.0
     started_at: Optional[datetime] = None
@@ -207,6 +214,7 @@ class FlowNode:
     retry_count: int = 0
     max_retries: int = 3
     metadata: Dict[str, Any] = field(default_factory=dict)
+    agent_info: Optional[AgentExecutionInfo] = None
     transitions_processed: bool = False  # Track if transitions have been activated
 
     @property
@@ -246,8 +254,15 @@ class FlowNode:
                 active.append(transition)
         return active
 
+    async def execute(self,  prompt:str, ctx: Dict[str, Any]) -> Any:
+        """Execute the agent with context from previous agents."""
+        return await self.agent.ask(
+            question=prompt,
+            **ctx
+        )
 
-class AgentCrewFSM:
+
+class AgentsFlow:
     """
     Enhanced Agent Crew with Finite State Machine orchestration.
 
@@ -260,7 +275,7 @@ class AgentCrewFSM:
     - Detailed execution tracking and logging
 
     Example:
-        >>> crew = AgentCrewFSM(name="ResearchCrew")
+        >>> crew = AgentsFlow(name="ResearchCrew")
         >>>
         >>> # Add agents
         >>> researcher = crew.add_agent(research_agent)
@@ -288,12 +303,13 @@ class AgentCrewFSM:
 
     def __init__(
         self,
-        name: str = "AgentCrewFSM",
+        name: str = "AgentsFlow",
         agents: Optional[List[Union[BasicAgent, AbstractBot]]] = None,
         shared_tool_manager: Optional[ToolManager] = None,
         max_parallel_tasks: int = 10,
         default_max_retries: int = 3,
         execution_timeout: Optional[float] = None,
+        truncation_length: Optional[int] = None,
     ):
         """
         Initialize the FSM-based Agent Crew.
@@ -314,7 +330,7 @@ class AgentCrewFSM:
         self.execution_timeout = execution_timeout
         self.logger = logging.getLogger(f"parrot.crews.fsm.{self.name}")
         self.semaphore = asyncio.Semaphore(max_parallel_tasks)
-
+        self.truncation_length = truncation_length or 200
         # Execution tracking
         self.execution_log: List[Dict[str, Any]] = []
         self.current_context: Optional[AgentContext] = None
@@ -552,7 +568,7 @@ class AgentCrewFSM:
         session_id: Optional[str] = None,
         max_iterations: int = 100,
         **shared_data
-    ) -> Dict[str, Any]:
+    ) -> CrewResult:
         """
         Execute the workflow starting from the entry point.
 
@@ -573,13 +589,8 @@ class AgentCrewFSM:
             **shared_data: Additional shared data for all agents
 
         Returns:
-            Dictionary containing:
-                - results: Dict mapping agent_name to result
-                - errors: Dict of errors by agent_name
-                - completed: List of successfully completed agents
-                - failed: List of failed agents
-                - execution_log: Detailed execution log
-                - success: Whether workflow completed successfully
+            CrewResult: Standardized execution payload containing outputs,
+            metadata, and execution logs.
 
         Raises:
             RuntimeError: If workflow gets stuck or exceeds max_iterations
@@ -605,9 +616,11 @@ class AgentCrewFSM:
             # Create a new FSM instance to reset to initial state
             node.fsm = AgentTaskMachine(agent_name=node.agent.name)
             node.result = None
+            node.response = None
             node.error = None
             node.retry_count = 0
             node.transitions_processed = False  # Reset transition processing flag
+            node.metadata = None
 
         # Determine entry points
         entry_agents = self._get_entry_agents(entry_point)
@@ -670,29 +683,96 @@ class AgentCrewFSM:
 
         end_time = asyncio.get_event_loop().time()
 
-        # Compile results
-        results = {}
-        errors = {}
-        completed = []
-        failed = []
+        agent_ids: List[str] = []
+        for entry in self.execution_log:
+            agent_name = entry.get("agent_id") or entry.get("agent_name")
+            if agent_name and agent_name not in agent_ids:
+                agent_ids.append(agent_name)
 
-        for agent_name, node in self.nodes.items():
-            if node.fsm.current_state == node.fsm.completed:
-                results[agent_name] = node.result
-                completed.append(agent_name)
-            elif node.fsm.current_state == node.fsm.failed:
-                errors[agent_name] = node.error
-                failed.append(agent_name)
+        for agent_name in self.nodes:
+            if agent_name not in agent_ids:
+                agent_ids.append(agent_name)
 
-        return {
-            "results": results,
-            "errors": errors,
-            "completed": completed,
-            "failed": failed,
-            "execution_log": self.execution_log,
-            "total_time": end_time - start_time,
-            "success": not failed,
-        }
+        responses: Dict[str, Any] = {}
+        agents_info: List[AgentExecutionInfo] = []
+        results_payload: List[Any] = []
+        errors: Dict[str, str] = {}
+        last_output: Optional[Any] = None
+
+        for agent_name in agent_ids:
+            node = self.nodes.get(agent_name)
+            if not node:
+                continue
+
+            if node.result is not None:
+                results_payload.append(node.result)
+                responses[agent_name] = node.response
+                metadata = (
+                    node.metadata
+                    if isinstance(node.metadata, AgentExecutionInfo)
+                    else build_agent_metadata(
+                        agent_name,
+                        node.agent,
+                        node.response,
+                        node.result,
+                        node.execution_time,
+                        'completed'
+                    )
+                )
+                agents_info.append(metadata)
+                last_output = node.result
+            else:
+                results_payload.append(node.result)
+                responses[agent_name] = node.response
+                status_value = 'failed' if node.error is not None else 'pending'
+                error_message = str(node.error) if node.error else None
+                if error_message:
+                    errors[agent_name] = error_message
+                metadata = (
+                    node.metadata
+                    if isinstance(node.metadata, AgentExecutionInfo)
+                    else build_agent_metadata(
+                        agent_name,
+                        node.agent,
+                        node.response,
+                        node.result,
+                        node.execution_time,
+                        status_value,
+                        error_message
+                    )
+                )
+                agents_info.append(metadata)
+
+        success_count = sum(info.status == 'completed' for info in agents_info)
+        failure_count = sum(info.status == 'failed' for info in agents_info)
+        status = determine_run_status(success_count, failure_count)
+
+        # Get final output from terminal nodes
+        terminal_results = [
+            node.result
+            for node in self.nodes.values()
+            if node.is_terminal and node.fsm.current_state == node.fsm.completed
+        ]
+        final_output = terminal_results[-1] if terminal_results else ''
+
+        return CrewResult(
+            output=final_output or last_output,
+            response=responses,
+            results=results_payload,
+            agent_ids=agent_ids,
+            agents=agents_info,
+            errors=errors,
+            execution_log=self.execution_log,
+            total_time=end_time - start_time,
+            status=status,
+            metadata={
+                'mode': 'fsm',
+                'iterations': iteration,
+                'completed': success_count,
+                'failed': failure_count
+            }
+        )
+
 
     def _get_entry_agents(self, entry_point: Optional[AgentRef]) -> Set[str]:
         """Determine which agents should be entry points."""
@@ -720,6 +800,19 @@ class AgentCrewFSM:
             node.fsm.current_state == node.fsm.running
             for node in self.nodes.values()
         )
+
+    def _truncate_text(self, text: Optional[str], *, enabled: bool = True) -> str:
+        """Truncate text using configured length."""
+        if text is None or not enabled:
+            return text or ""
+
+        if self.truncation_length is None or self.truncation_length <= 0:
+            return text
+
+        if len(text) <= self.truncation_length:
+            return text
+
+        return f"{text[:self.truncation_length]}..."
 
     def _is_workflow_complete(self) -> bool:
         """Check if all terminal nodes have completed or failed (without retries)."""
@@ -770,10 +863,13 @@ class AgentCrewFSM:
             async with self.semaphore:
                 start_time = asyncio.get_event_loop().time()
 
-                response = await node.agent.ask(
-                    question=prompt,
-                    session_id=self.current_context.session_id,
-                    user_id=self.current_context.user_id
+                response = await node.execute(
+                    prompt=prompt,
+                    ctx={
+                        "session_id": self.current_context.session_id,
+                        "user_id": self.current_context.user_id,
+                        **self.current_context.shared_data
+                    }
                 )
 
                 end_time = asyncio.get_event_loop().time()
@@ -782,7 +878,18 @@ class AgentCrewFSM:
             # Extract result
             result = self._extract_result(response)
             node.result = result
+            node.response = response
             node.completed_at = datetime.now()
+            # Build agent execution info
+            node.agent_info = build_agent_metadata(
+                agent_id=agent_name,
+                agent=node.agent,
+                response=response,
+                output=result,
+                execution_time=node.execution_time,
+                status='completed',
+                error=None
+            )
 
             # Store in context
             self.current_context.agent_results[agent_name] = result
@@ -792,9 +899,12 @@ class AgentCrewFSM:
 
             # Log execution
             self.execution_log.append({
+                "agent_id": agent_name,
                 "agent_name": agent_name,
                 "state": "completed",
                 "execution_time": node.execution_time,
+                "input": self._truncate_text(prompt),
+                "output": self._truncate_text(result),
                 "started_at": node.started_at.isoformat(),
                 "completed_at": node.completed_at.isoformat(),
                 "result_length": len(str(result)),
@@ -809,8 +919,20 @@ class AgentCrewFSM:
             node.error = e
             node.completed_at = datetime.now()
             node.fsm.fail()
+            node.response = None
+            # Build agent execution info for failure
+            node.agent_info = build_agent_metadata(
+                agent_id=agent_name,
+                agent=node.agent,
+                response=None,
+                output=None,
+                execution_time=node.execution_time or 0.0,
+                status='failed',
+                error=str(e)
+            )
 
             self.execution_log.append({
+                "agent_id": agent_name,
                 "agent_name": agent_name,
                 "state": "failed",
                 "error": str(e),
