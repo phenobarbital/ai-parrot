@@ -328,6 +328,7 @@ async def example_advanced_workflow():
     research_coordinator = BasicAgent(
         name="research_coordinator",
         system_prompt="Break down the topic into key research areas and provide direction.",
+        tools=[GoogleSearchTool()],
         use_llm='google'
     )
 
@@ -335,18 +336,21 @@ async def example_advanced_workflow():
     researcher1 = BasicAgent(
         name="researcher1",
         system_prompt="Research historical context and background.",
+        tools=[GoogleSearchTool()],
         use_llm='google'
     )
 
     researcher2 = BasicAgent(
         name="researcher2",
         system_prompt="Research current trends and developments.",
+        tools=[GoogleSearchTool()],
         use_llm='google'
     )
 
     researcher3 = BasicAgent(
         name="researcher3",
         system_prompt="Research future predictions and implications.",
+        tools=[GoogleSearchTool()],
         use_llm='google'
     )
 
@@ -361,6 +365,7 @@ async def example_advanced_workflow():
     fact_checker = BasicAgent(
         name="fact_checker",
         system_prompt="Verify facts and add citations.",
+        tools=[GoogleSearchTool()],
         use_llm='google'
     )
 
@@ -373,6 +378,7 @@ async def example_advanced_workflow():
     seo_optimizer = BasicAgent(
         name="seo_optimizer",
         system_prompt="Optimize for search engines.",
+        tools=[GoogleSearchTool()],
         use_llm='google'
     )
 
@@ -492,12 +498,18 @@ async def example_hybrid_approach():
     print("Phase 2: Flow-Based Analysis")
     print("-" * 50)
 
+    swot_analyzer = BasicAgent(name="swot_analyzer", system_prompt="Perform SWOT analysis", use_llm='google')
+    trend_analyzer = BasicAgent(name="trend_analyzer", system_prompt="Identify key trends", use_llm='google')
+    risk_analyzer = BasicAgent(name="risk_analyzer", system_prompt="Assess risks", use_llm='google')
+    opportunity_analyzer = BasicAgent(name="opportunity_analyzer", system_prompt="Identify opportunities", use_llm='google')
+    strategic_synthesizer = BasicAgent(name="strategic_synthesizer", system_prompt="Synthesize strategic insights", use_llm='google')
+
     analysis_agents = [
-        BasicAgent(name="swot_analyzer", system_prompt="Perform SWOT analysis", use_llm='google'),
-        BasicAgent(name="trend_analyzer", system_prompt="Identify key trends", use_llm='google'),
-        BasicAgent(name="risk_analyzer", system_prompt="Assess risks", use_llm='google'),
-        BasicAgent(name="opportunity_analyzer", system_prompt="Identify opportunities", use_llm='google'),
-        BasicAgent(name="strategic_synthesizer", system_prompt="Synthesize strategic insights", use_llm='google')
+        swot_analyzer,
+        trend_analyzer,
+        risk_analyzer,
+        opportunity_analyzer,
+        strategic_synthesizer
     ]
 
     analysis_crew = AgentCrew(name="Analysis", agents=analysis_agents)
@@ -561,8 +573,8 @@ async def main():
     try:
         # await example_sequential_pipeline()
         # await example_parallel_research()
-        await example_complex_workflow()
-        #await example_advanced_workflow()
+        # await example_complex_workflow()
+        await example_advanced_workflow()
         # await example_hybrid_approach()
 
         print("\n" + "="*70)

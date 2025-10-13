@@ -355,10 +355,6 @@ async def test_fsm():
         agent.tool_manager.add_tool(web_tool)
         await agent.configure()
         crew.add_agent(agent)
-    # crew.add_agent(researcher)
-    # crew.add_agent(analyzer)
-    # crew.add_agent(writer)
-    # crew.add_agent(error_handler)
 
     # Define flow
     crew.task_flow(researcher, analyzer)
@@ -492,35 +488,35 @@ User: "What is the capital of France?"
 async def run_examples():
     """Run all quick examples."""
 
-    print("="*80)
-    print("EXAMPLE 1: PARALLEL EXECUTION")
-    print("="*80)
-    await quick_parallel_example()
-
-    print("\n" + "="*80)
-    print("EXAMPLE 2: SEQUENTIAL EXECUTION")
-    print("="*80)
-    await quick_sequential_example()
-
-    print("\n" + "="*80)
-    print("EXAMPLE 3: WORKFLOW FLOW")
-    print("="*80)
-    await quick_flow_example()
+    # print("="*80)
+    # print("EXAMPLE 1: PARALLEL EXECUTION")
+    # print("="*80)
+    # await quick_parallel_example()
 
     # print("\n" + "="*80)
-    # print("EXAMPLE 3: ORCHESTRATOR")
+    # print("EXAMPLE 2: SEQUENTIAL EXECUTION")
     # print("="*80)
-    # await orchestrator_example()
+    # await quick_sequential_example()
 
     # print("\n" + "="*80)
-    # print("EXAMPLE 4: SIMPLE DELEGATION")
+    # print("EXAMPLE 3: WORKFLOW FLOW")
     # print("="*80)
-    # await test_simple_delegation()
+    # await quick_flow_example()
 
     print("\n" + "="*80)
-    print("EXAMPLE 5: FSM WORKFLOW")
+    print("EXAMPLE 3: ORCHESTRATOR")
     print("="*80)
-    await test_fsm()
+    await orchestrator_example()
+
+    print("\n" + "="*80)
+    print("EXAMPLE 4: SIMPLE DELEGATION")
+    print("="*80)
+    await test_simple_delegation()
+
+    # print("\n" + "="*80)
+    # print("EXAMPLE 5: FSM WORKFLOW")
+    # print("="*80)
+    # await test_fsm()
 
 
 if __name__ == "__main__":
