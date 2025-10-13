@@ -3,15 +3,14 @@ Chatbot Manager.
 
 Tool for instanciate, managing and interacting with Chatbot through APIs.
 """
-from typing import Any, Dict, Type, Optional
+from typing import Any, Dict, Type, Optional, Tuple
 from importlib import import_module
+import contextlib
 from aiohttp import web
 from datamodel.exceptions import ValidationError  # pylint: disable=E0611 # noqa
 # Navigator:
 from navconfig.logging import logging
 from asyncdb.exceptions import NoDataFound
-
-from parrot.bots.database import router
 from ..bots.abstract import AbstractBot
 from ..bots.basic import BasicBot
 from ..bots.chatbot import Chatbot
@@ -21,6 +20,10 @@ from ..handlers.agent import AgentTalk
 from ..handlers import ChatbotHandler
 from ..handlers.models import BotModel
 from ..registry import agent_registry, AgentRegistry
+# Crew:
+from ..bots.orchestration.crew import AgentCrew
+from ..handlers.crew.models import CrewDefinition
+from ..handlers.crew.handler import CrewHandler
 
 
 class BotManager:
@@ -39,6 +42,7 @@ class BotManager:
             name='Parrot.Manager'
         )
         self.registry: AgentRegistry = agent_registry
+        self._crews: Dict[str, Tuple[AgentCrew, CrewDefinition]] = {}
 
     def get_bot_class(self, bot_name: str) -> Optional[Type]:
         """
@@ -53,31 +57,24 @@ class BotManager:
             Bot class if found, None otherwise
         """
         # First, try to import from core bots
-        try:
+        with contextlib.suppress(ImportError, AttributeError):
             module = import_module("parrot.bots")
             if hasattr(module, bot_name):
                 return getattr(module, bot_name)
-        except (ImportError, AttributeError) as e:
-            pass  # Not found in core, will try plugins
 
         # Second, try to import from plugin agents
-        try:
-            # This will trigger the PluginImporter to look in plugins/agents/
+        with contextlib.suppress(ImportError, AttributeError):
             agent_module_name = f"parrot.agents.{bot_name.lower()}"
             module = import_module(agent_module_name)
             if hasattr(module, bot_name):
                 return getattr(module, bot_name)
-        except (ImportError, AttributeError) as e:
-            pass  # Not found in plugins either
 
         # Third, try direct import from parrot.agents package
         # (in case the agent is defined in plugins/agents/__init__.py)
-        try:
+        with contextlib.suppress(ImportError, AttributeError):
             module = import_module("parrot.agents")
             if hasattr(module, bot_name):
                 return getattr(module, bot_name)
-        except (ImportError, AttributeError):
-            pass
 
         self.logger.warning(
             f"Warning: Bot class '{bot_name}' not found in parrot.bots or parrot.agents"
@@ -104,8 +101,7 @@ class BotManager:
         if bot_class is None:
             raise ValueError(f"Bot class '{bot_name}' not found")
 
-        bot_instance = self.create_bot(class_name=bot_class, name=bot_name, **kwargs)
-        return bot_instance
+        return self.create_bot(class_name=bot_class, name=bot_name, **kwargs)
 
     def _log_final_state(self) -> None:
         """Log the final state of bot loading."""
@@ -119,8 +115,7 @@ class BotManager:
         """Process startup instantiation results."""
         for agent_name, result in startup_results.items():
             if result["status"] == "success":
-                instance = result.get("instance")
-                if instance:
+                if instance := result.get("instance"):
                     self._bots[agent_name] = instance
                     self.logger.info(
                         f"Added startup agent to active bots: {agent_name}"
@@ -157,7 +152,7 @@ class BotManager:
         """Load bots from database."""
         try:
             # Import here to avoid circular imports
-            from ..handlers.models import BotModel  # noqa
+            from ..handlers.models import BotModel  # pylint: disable=import-outside-toplevel # noqa
             db = app['database']
             async with await db.acquire() as conn:
                 BotModel.Meta.connection = conn
@@ -356,8 +351,7 @@ class BotManager:
     async def create_agent(self, class_name: Any = None, name: str = None, **kwargs) -> AbstractBot:
         if class_name is None:
             class_name = BasicAgent
-        agent = class_name(name=name, **kwargs)
-        return agent
+        return class_name(name=name, **kwargs)
 
     def add_agent(self, agent: AbstractBot) -> None:
         """Add a Agent to the manager."""
@@ -411,10 +405,9 @@ class BotManager:
         return self.app
 
     def setup(self, app: web.Application) -> web.Application:
-        if isinstance(app, web.Application):
-            self.app = app  # register the app into the Extension
-        else:
-            self.app = app.get_app()  # Nav Application
+        self.app = None
+        if app:
+            self.app = app if isinstance(app, web.Application) else app.get_app()
         # register signals for startup and shutdown
         self.app.on_startup.append(self.on_startup)
         self.app.on_shutdown.append(self.on_shutdown)
@@ -455,6 +448,16 @@ class BotManager:
             '/api/v1/chatbots/{name}',
             BotHandler
         )
+        # Agent Crew Handler:
+        # router.add_view(
+        #     '/api/v1/crew',
+        #     CrewHandler
+        # )
+        # router.add_view(
+        #     '/api/v1/crew/{crew}',
+        #     CrewHandler
+        # )
+        CrewHandler.configure(self.app, '/api/v1/crew')
         return self.app
 
     async def on_startup(self, app: web.Application) -> None:
@@ -465,3 +468,155 @@ class BotManager:
     async def on_shutdown(self, app: web.Application) -> None:
         """On shutdown."""
         pass
+
+    def add_crew(
+        self,
+        name: str,
+        crew: AgentCrew,
+        crew_def: CrewDefinition
+    ) -> None:
+        """
+        Register a crew in the manager.
+
+        Args:
+            name: Unique name for the crew
+            crew: AgentCrew instance
+            crew_def: Crew definition containing metadata
+
+        Raises:
+            ValueError: If crew with same name already exists
+        """
+        if name in self._crews:
+            raise ValueError(f"Crew '{name}' already exists")
+
+        self._crews[name] = (crew, crew_def)
+        self.logger.info(
+            f"Registered crew '{name}' with {len(crew.agents)} agents "
+            f"in {crew_def.execution_mode.value} mode"
+        )
+
+    def get_crew(
+        self,
+        identifier: str
+    ) -> Optional[Tuple[AgentCrew, CrewDefinition]]:
+        """
+        Get a crew by name or ID.
+
+        Args:
+            identifier: Crew name or crew_id
+
+        Returns:
+            Tuple of (AgentCrew, CrewDefinition) if found, None otherwise
+        """
+        # Try by name first
+        if identifier in self._crews:
+            return self._crews[identifier]
+
+        return next(
+            (
+                (crew, crew_def)
+                for name, (crew, crew_def) in self._crews.items()
+                if crew_def.crew_id == identifier
+            ),
+            None,
+        )
+
+    def list_crews(self) -> Dict[str, Tuple[AgentCrew, CrewDefinition]]:
+        """
+        List all registered crews.
+
+        Returns:
+            Dictionary mapping crew names to (AgentCrew, CrewDefinition) tuples
+        """
+        return self._crews.copy()
+
+    def remove_crew(self, identifier: str) -> bool:
+        """
+        Remove a crew from the manager.
+
+        Args:
+            identifier: Crew name or crew_id
+
+        Returns:
+            True if removed, False if not found
+        """
+        # Try by name first
+        if identifier in self._crews:
+            del self._crews[identifier]
+            self.logger.info(f"Removed crew '{identifier}'")
+            return True
+
+        # Try by crew_id
+        for name, (crew, crew_def) in list(self._crews.items()):
+            if crew_def.crew_id == identifier:
+                del self._crews[name]
+                self.logger.info(f"Removed crew '{name}' (ID: {identifier})")
+                return True
+
+        return False
+
+    def update_crew(
+        self,
+        identifier: str,
+        crew: AgentCrew,
+        crew_def: CrewDefinition
+    ) -> bool:
+        """
+        Update an existing crew.
+
+        Args:
+            identifier: Crew name or crew_id
+            crew: Updated AgentCrew instance
+            crew_def: Updated crew definition
+
+        Returns:
+            True if updated, False if not found
+        """
+        # Find crew by name or ID
+        crew_name = None
+        if identifier in self._crews:
+            crew_name = identifier
+        else:
+            for name, (_, def_) in self._crews.items():
+                if def_.crew_id == identifier:
+                    crew_name = name
+                    break
+
+        if crew_name:
+            self._crews[crew_name] = (crew, crew_def)
+            self.logger.info(f"Updated crew '{crew_name}'")
+            return True
+
+        return False
+
+    def get_crew_stats(self) -> Dict[str, Any]:
+        """
+        Get statistics about registered crews.
+
+        Returns:
+            Dictionary with crew statistics
+        """
+        stats = {
+            'total_crews': len(self._crews),
+            'crews_by_mode': {
+                'sequential': 0,
+                'parallel': 0,
+                'flow': 0
+            },
+            'total_agents': 0,
+            'crews': []
+        }
+
+        for name, (crew, crew_def) in self._crews.items():
+            mode = crew_def.execution_mode.value
+            stats['crews_by_mode'][mode] = stats['crews_by_mode'].get(mode, 0) + 1
+            stats['total_agents'] += len(crew.agents)
+
+            stats['crews'].append({
+                'name': name,
+                'crew_id': crew_def.crew_id,
+                'mode': mode,
+                'agent_count': len(crew.agents)
+            })
+
+        return stats
