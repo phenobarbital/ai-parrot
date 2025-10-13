@@ -11,6 +11,7 @@ Endpoints:
     DELETE /api/v1/crew - Delete a crew
 """
 from typing import Any, List
+from aiohttp import web
 from navigator.views import BaseView
 from navigator.types import WebApp  # pylint: disable=E0611,E0401
 from navigator.applications.base import BaseApplication  # pylint: disable=E0611,E0401
@@ -161,7 +162,8 @@ class CrewHandler(BaseView):
                     },
                     status=400
                 )
-
+        except web.HTTPError:
+            raise
         except Exception as e:
             self.logger.error(f"Error parsing request: {e}", exc_info=True)
             return self.error(
@@ -245,7 +247,8 @@ class CrewHandler(BaseView):
                 "crews": crew_list,
                 "total": len(crew_list)
             })
-
+        except web.HTTPError:
+            raise
         except Exception as e:
             self.logger.error(f"Error getting crew: {e}", exc_info=True)
             return self.error(
@@ -395,7 +398,8 @@ class CrewHandler(BaseView):
                 },
                 status=202
             )
-
+        except web.HTTPError:
+            raise
         except Exception as e:
             self.logger.error(f"Error creating job: {e}", exc_info=True)
             return self.error(
@@ -454,7 +458,8 @@ class CrewHandler(BaseView):
                 response_data["started_at"] = job.started_at.isoformat()
 
             return self.json_response(response_data)
-
+        except web.HTTPError:
+            raise
         except Exception as e:
             self.logger.error(f"Error getting job status: {e}", exc_info=True)
             return self.error(
@@ -504,7 +509,8 @@ class CrewHandler(BaseView):
                     response={"message": f"Crew '{identifier}' not found"},
                     status=404
                 )
-
+        except web.HTTPError:
+            raise
         except Exception as e:
             self.logger.error(f"Error deleting crew: {e}", exc_info=True)
             return self.error(
@@ -537,10 +543,10 @@ class CrewHandler(BaseView):
                 **agent_def.config
             )
 
-            # Add tools to agent if specified
-            for tool_name in agent_def.tools:
-                if tool := self.bot_manager.get_tool(tool_name):
-                    agent.tool_manager.add_tool(tool, tool_name)
+            # # Add tools to agent if specified
+            # for tool_name in agent_def.tools:
+            #     if tool := self.bot_manager.get_tool(tool_name):
+            #         agent.tool_manager.add_tool(tool, tool_name)
 
             # Set system prompt if provided
             if agent_def.system_prompt:
