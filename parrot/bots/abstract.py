@@ -1676,8 +1676,7 @@ Use the following information about user's data to guide your responses:
                 **kwargs
             )
             # Configure LLM if needed
-            new_llm = kwargs.pop('llm', None)
-            if new_llm:
+            if (new_llm := kwargs.pop('llm', None)):
                 self.configure_llm(
                     llm=new_llm,
                     **kwargs.pop('llm_config', {})
@@ -1685,16 +1684,21 @@ Use the following information about user's data to guide your responses:
 
             # Make the LLM call using the Claude client
             async with self._llm as client:
-                response = await client.ask(
-                    prompt=question,
-                    system_prompt=system_prompt,
-                    model=kwargs.get('model', self._llm_model),
-                    max_tokens=kwargs.get('max_tokens', self._max_tokens),
-                    temperature=kwargs.get('temperature', self._llm_temp),
-                    user_id=user_id,
-                    session_id=session_id,
-                    use_tools=use_tools,
-                )
+                llm_kwargs = {
+                    "prompt": question,
+                    "system_prompt": system_prompt,
+                    "model": kwargs.get('model', self._llm_model),
+                    "temperature": kwargs.get('temperature', self._llm_temp),
+                    "user_id": user_id,
+                    "session_id": session_id,
+                    "use_tools": use_tools,
+                }
+
+                max_tokens = kwargs.get('max_tokens', self._max_tokens)
+                if max_tokens is not None:
+                    llm_kwargs["max_tokens"] = max_tokens
+
+                response = await client.ask(**llm_kwargs)
 
                 # Extract the vector-specific metadata
                 vector_info = vector_metadata.get('vector', {})
@@ -2005,8 +2009,7 @@ Use the following information about user's data to guide your responses:
             )
 
             # Configure LLM if needed
-            new_llm = kwargs.pop('llm', None)
-            if new_llm:
+            if (new_llm := kwargs.pop('llm', None)):
                 self.configure_llm(
                     llm=new_llm,
                     **kwargs.pop('llm_config', {})
@@ -2014,15 +2017,20 @@ Use the following information about user's data to guide your responses:
 
             # Make the LLM call using the Claude client
             async with self._llm as client:
-                response = await client.ask(
-                    prompt=question,
-                    system_prompt=system_prompt,
-                    model=kwargs.get('model', self._llm_model),
-                    max_tokens=kwargs.get('max_tokens', self._max_tokens),
-                    temperature=kwargs.get('temperature', self._llm_temp),
-                    user_id=user_id,
-                    session_id=session_id,
-                )
+                llm_kwargs = {
+                    "prompt": question,
+                    "system_prompt": system_prompt,
+                    "model": kwargs.get('model', self._llm_model),
+                    "temperature": kwargs.get('temperature', self._llm_temp),
+                    "user_id": user_id,
+                    "session_id": session_id,
+                }
+
+                max_tokens = kwargs.get('max_tokens', self._max_tokens)
+                if max_tokens is not None:
+                    llm_kwargs["max_tokens"] = max_tokens
+
+                response = await client.ask(**llm_kwargs)
 
                 # Set conversation context info
                 response.set_conversation_context_info(
@@ -2436,9 +2444,9 @@ Use the following information about user's data to guide your responses:
             session_id = str(uuid.uuid4())
         turn_id = str(uuid.uuid4())
 
-        # Set default max_tokens to 8192 if not provided
-        max_tokens = kwargs.get('max_tokens', self._max_tokens)
-
+        # Set max_tokens using bot default when provided
+        default_max_tokens = self._max_tokens if self._max_tokens is not None else None
+        max_tokens = kwargs.get('max_tokens', default_max_tokens)
         limit = kwargs.get('limit', self.context_search_limit)
         score_threshold = kwargs.get('score_threshold', self.context_score_threshold)
 
@@ -2485,22 +2493,25 @@ Use the following information about user's data to guide your responses:
             )
 
             # Configure LLM if needed
-            new_llm = kwargs.pop('llm', None)
-            if new_llm:
+            if (new_llm := kwargs.pop('llm', None)):
                 self.configure_llm(llm=new_llm, **kwargs.pop('llm_config', {}))
 
             # Make the LLM call
             async with self._llm as client:
-                response = await client.ask(
-                    prompt=question,
-                    system_prompt=system_prompt,
-                    model=kwargs.get('model', self._llm_model),
-                    max_tokens=max_tokens,
-                    temperature=kwargs.get('temperature', self._llm_temp),
-                    user_id=user_id,
-                    session_id=session_id,
-                    use_tools=use_tools,
-                )
+                llm_kwargs = {
+                    "prompt": question,
+                    "system_prompt": system_prompt,
+                    "model": kwargs.get('model', self._llm_model),
+                    "temperature": kwargs.get('temperature', self._llm_temp),
+                    "user_id": user_id,
+                    "session_id": session_id,
+                    "use_tools": use_tools,
+                }
+
+                if max_tokens is not None:
+                    llm_kwargs["max_tokens"] = max_tokens
+
+                response = await client.ask(**llm_kwargs)
 
                 # Enhance response with metadata
                 response.set_vector_context_info(

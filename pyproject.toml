@@ -257,6 +257,9 @@ license-files = ["LICENSE*"]
 override-dependencies = [
     "moviepy==2.2.1",
     "av>=13.0.0,<14.0.0",
+    "watchdog>=6.0.0",
+    "selenium==4.36.0",
+    "ortools>=9.11.4210,<=9.14.6206",
 ]
 
 # Version from parrot/version.py
