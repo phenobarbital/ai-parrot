@@ -11,6 +11,7 @@ Endpoints:
     DELETE /api/v1/crew - Delete a crew
 """
 from typing import Any, List
+import uuid
 from aiohttp import web
 from navigator.views import BaseView
 from navigator.types import WebApp  # pylint: disable=E0611,E0401
@@ -310,9 +311,12 @@ class CrewHandler(BaseView):
                 )
 
             crew, crew_def = crew_data
+            # Create a job for async execution
+            job_id = str(uuid.uuid4())
 
             # Create job
             job = self.job_manager.create_job(
+                job_id=job_id,
                 crew_id=crew_def.crew_id,
                 query=query,
                 user_id=data.get('user_id'),
@@ -385,7 +389,10 @@ class CrewHandler(BaseView):
                     raise
 
             # Start execution
-            await self.job_manager.execute_job(job.job_id, execute_crew)
+            await self.job_manager.execute_job(
+                job.job_id,
+                execute_crew
+            )
 
             # Return job ID for tracking
             return self.json_response(
@@ -422,6 +429,10 @@ class CrewHandler(BaseView):
         try:
             qs = self.get_arguments(self.request)
             job_id = qs.get('job_id')
+            if not job_id:
+                # get from json body as fallback
+                data = await self.request.json()
+                job_id = data.get('job_id')
 
             if not job_id:
                 return self.error(

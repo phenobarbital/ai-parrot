@@ -66,6 +66,7 @@ class JobManager:
 
     def create_job(
         self,
+        job_id: str,
         crew_id: str,
         query: Any,
         user_id: Optional[str] = None,
@@ -85,7 +86,7 @@ class JobManager:
         Returns:
             CrewJob: The created job
         """
-        job_id = str(uuid.uuid4())
+        job_id = job_id or str(uuid.uuid4())
         job = CrewJob(
             job_id=job_id,
             crew_id=crew_id,

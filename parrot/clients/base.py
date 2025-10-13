@@ -221,13 +221,13 @@ class AbstractClient(ABC):
             self.temperature = preset_config.get('temperature', 0.4)
             self.top_k = preset_config.get('top_k', 30)
             self.top_p = preset_config.get('top_p', 0.2)
-            self.max_tokens = preset_config.get('max_tokens', 1024)
+            self.max_tokens = preset_config.get('max_tokens', 8192)
         else:
             # define default values from preset default:
             self.temperature = kwargs.get('temperature', 0)
             self.top_k = kwargs.get('top_k', 30)
             self.top_p = kwargs.get('top_p', 0.2)
-            self.max_tokens = kwargs.get('max_tokens', 4096)
+            self.max_tokens = kwargs.get('max_tokens', 8192)
         self.conversation_memory = conversation_memory or InMemoryConversation()
         self.base_headers.update(kwargs.get('headers', {}))
         self.api_key = kwargs.get('api_key', None)

@@ -40,7 +40,7 @@ class AgentDefinition(BaseModel):
     )
     config: Dict[str, Any] = Field(
         default_factory=dict,
-        description="Agent configuration (model, temperature, etc.)"
+        description="Agent configuration (llm, model, temperature, etc.)"
     )
     tools: List[str] = Field(
         default_factory=list,

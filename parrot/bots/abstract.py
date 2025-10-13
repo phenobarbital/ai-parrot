@@ -68,7 +68,7 @@ class AbstractBot(DBInterface, ABC):
     llm_client: str = 'google'
     default_model: str = 'gemini-2.5-flash'
     temperature: float = 0.1
-    max_tokens: int = 1024
+    max_tokens: int = None
 
     def __init__(
         self,
@@ -158,7 +158,7 @@ class AbstractBot(DBInterface, ABC):
                 )
                 presetting = LLM_PRESETS['default']
             self._llm_temp = presetting.get('temperature', 0.1)
-            self._max_tokens = presetting.get('max_tokens', 1024)
+            self._max_tokens = presetting.get('max_tokens', 4096)
         else:
             # Default LLM Presetting by LLMs
             self._llm_temp = kwargs.get('temperature', self.temperature)
