@@ -395,7 +395,7 @@ class AgentCrew:
 
     async def run_sequential(
         self,
-        initial_query: str,
+        query: str,
         agent_sequence: List[str] = None,
         user_id: str = None,
         session_id: str = None,
@@ -419,7 +419,7 @@ class AgentCrew:
         - Later agents need the complete context of all previous work
 
         Args:
-            initial_query: The initial query/task to start the pipeline
+            query: The initial query/task to start the pipeline
             agent_sequence: Ordered list of agent IDs to execute (None = all agents in order)
             user_id: User identifier for tracking and logging
             session_id: Session identifier for conversation history
@@ -455,11 +455,11 @@ class AgentCrew:
         user_id = user_id or 'crew_user'
 
         # Initialize context to track execution across agents
-        current_input = initial_query
+        current_input = query
         crew_context = AgentContext(
             user_id=user_id,
             session_id=session_id,
-            original_query=initial_query,
+            original_query=query,
             shared_data=kwargs,
             agent_results={}
         )
@@ -489,11 +489,11 @@ class AgentCrew:
                 # Prepare input based on context passing mode
                 if i == 0:
                     # First agent gets the initial query
-                    agent_input = initial_query
+                    agent_input = query
                 elif pass_full_context:
                     # Pass full context of all previous agents' work
                     context_summary = self._build_context_summary(crew_context)
-                    agent_input = f"""Original query: {initial_query}
+                    agent_input = f"""Original query: {query}
 Previous processing:
 {context_summary}
 
