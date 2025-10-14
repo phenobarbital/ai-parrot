@@ -2,9 +2,15 @@
   import { goto } from '$app/navigation';
   import { browser } from '$app/environment';
   import { ThemeSwitcher, LoadingSpinner } from '../components';
+  import { crew as crewApi } from '$lib/api';
+  import { crewStore } from '$lib/stores/crewStore';
   import { authStore } from '$lib/stores/auth.svelte.ts';
 
   let redirecting = $state(false);
+  let crews = $state([]);
+  let crewsLoading = $state(false);
+  let crewsError = $state('');
+  let totalCrews = $state(0);
 
   $effect(() => {
     if (!browser) return;
@@ -15,8 +21,75 @@
     }
   });
 
+  async function fetchCrews() {
+    if (!browser) return;
+
+    crewsLoading = true;
+    crewsError = '';
+
+    try {
+      const response = await crewApi.listCrews();
+      crews = Array.isArray(response?.crews) ? response.crews : [];
+      totalCrews = typeof response?.total === 'number' ? response.total : crews.length;
+    } catch (error) {
+      console.error('Failed to load crews', error);
+      const responseMessage =
+        typeof error === 'object' &&
+        error !== null &&
+        'response' in error &&
+        typeof (error as { response?: { data?: { message?: string } } }).response?.data?.message ===
+          'string'
+          ? (error as { response?: { data?: { message?: string } } }).response?.data?.message
+          : undefined;
+      const fallbackMessage =
+        error instanceof Error && typeof error.message === 'string'
+          ? error.message
+          : 'Unable to load crews at this time.';
+      crewsError = responseMessage ?? fallbackMessage;
+      crews = [];
+      totalCrews = 0;
+    } finally {
+      crewsLoading = false;
+    }
+  }
+
+  $effect(() => {
+    if (!browser) return;
+
+    if (!authStore.loading && authStore.isAuthenticated) {
+      fetchCrews();
+    }
+  });
+
   async function handleLogout() {
     await authStore.logout();
+  }
+
+  function handleStartBuilding(event?: Event) {
+    if (!browser) return;
+
+    event?.preventDefault?.();
+    crewStore.reset();
+    goto('/builder');
+  }
+
+  function formatDate(dateString?: string) {
+    if (!dateString) {
+      return '—';
+    }
+
+    const date = new Date(dateString);
+    if (Number.isNaN(date.getTime())) {
+      return dateString;
+    }
+
+    return date.toLocaleString(undefined, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
   }
 </script>
 
@@ -109,7 +182,7 @@
               </svg>
             </div>
             <div class="stat-title">Total Crews</div>
-            <div class="stat-value text-primary">0</div>
+            <div class="stat-value text-primary">{crewsLoading ? '…' : totalCrews}</div>
             <div class="stat-desc">Active agent crews</div>
           </div>
 
@@ -184,7 +257,7 @@
               <h2 class="card-title">Create New Crew</h2>
               <p>Design a new agent crew using our visual workflow builder.</p>
               <div class="card-actions justify-end">
-                <a href="/builder" class="btn btn-primary">Start Building</a>
+                <a href="/builder" class="btn btn-primary" onclick={handleStartBuilding}>Start Building</a>
               </div>
             </div>
           </div>
@@ -202,24 +275,59 @@
 
         <!-- Recent Crews -->
         <div class="mt-6">
-          <h3 class="mb-4 text-2xl font-bold">Recent Crews</h3>
+          <h3 class="mb-4 text-2xl font-bold">My Crews</h3>
           <div class="overflow-x-auto bg-base-100 shadow-xl">
             <table class="table">
               <thead>
                 <tr>
                   <th>Name</th>
                   <th>Agents</th>
-                  <th>Last Run</th>
-                  <th>Status</th>
+                  <th>Execution Mode</th>
+                  <th>Created</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                <tr>
-                  <td colspan="5" class="text-center text-base-content/70">
-                    No crews yet. Create your first crew to get started!
-                  </td>
-                </tr>
+                {#if crewsLoading}
+                  <tr>
+                    <td colspan="5" class="text-center text-base-content/70">
+                      Loading crews...
+                    </td>
+                  </tr>
+                {:else if crewsError}
+                  <tr>
+                    <td colspan="5" class="text-center text-error">
+                      {crewsError}
+                    </td>
+                  </tr>
+                {:else if !crews.length}
+                  <tr>
+                    <td colspan="5" class="text-center text-base-content/70">
+                      No crews yet. Create your first crew to get started!
+                    </td>
+                  </tr>
+                {:else}
+                  {#each crews as crewItem (crewItem.crew_id)}
+                    <tr>
+                      <td>
+                        <div class="flex flex-col">
+                          <span class="font-semibold capitalize">{crewItem.name}</span>
+                          <span class="text-sm text-base-content/70">{crewItem.description}</span>
+                        </div>
+                      </td>
+                      <td>{crewItem.agent_count ?? '—'}</td>
+                      <td class="capitalize">{crewItem.execution_mode || '—'}</td>
+                      <td>{formatDate(crewItem.created_at)}</td>
+                      <td>
+                        <div class="flex gap-2">
+                          <a class="btn btn-ghost btn-xs" href={`/builder?crew_id=${crewItem.crew_id}`}>
+                            View
+                          </a>
+                        </div>
+                      </td>
+                    </tr>
+                  {/each}
+                {/if}
               </tbody>
             </table>
           </div>
@@ -278,7 +386,7 @@
             </a>
           </li>
           <li>
-            <a href="/builder">
+            <a href="/builder" onclick={handleStartBuilding}>
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 class="h-5 w-5"
