@@ -60,7 +60,7 @@
 
           <!-- User Menu -->
           <div class="dropdown dropdown-end">
-            <button tabindex="0" class="btn btn-circle btn-ghost">
+            <button class="btn btn-circle btn-ghost">
               <div class="avatar placeholder">
                 <div class="w-10 rounded-full bg-primary text-primary-content">
                   <span class="text-xs">
@@ -70,7 +70,6 @@
               </div>
             </button>
             <ul
-              tabindex="0"
               class="menu dropdown-content menu-sm z-[1] mt-3 w-52 rounded-box bg-base-100 p-2 shadow"
             >
               <li class="menu-title">
@@ -78,7 +77,7 @@
               </li>
               <li><a href="/profile">Profile</a></li>
               <li><a href="/settings">Settings</a></li>
-              <li><button on:click={handleLogout}>Logout</button></li>
+              <li><button onclick={handleLogout}>Logout</button></li>
             </ul>
           </div>
         </div>

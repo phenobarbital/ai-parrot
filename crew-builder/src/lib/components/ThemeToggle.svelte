@@ -19,14 +19,14 @@
 </script>
 
 <div class="flex items-center gap-2">
-  <button class="btn btn-sm btn-ghost" type="button" on:click={handleToggle} aria-label="Toggle theme">
+  <button class="btn btn-sm btn-ghost" type="button" onclick={handleToggle} aria-label="Toggle theme">
     <span class="hidden sm:inline">Toggle</span>
     <span class="sm:hidden">🌓</span>
   </button>
   <select
     class="select select-bordered select-sm"
     bind:value={selectedTheme}
-    on:change={handleChange}
+    onchange={handleChange}
     aria-label="Select theme"
   >
     {#each themeOptions as option}

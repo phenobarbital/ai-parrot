@@ -79,7 +79,7 @@
           class="input input-bordered input-sm"
           type="text"
           bind:value={crewName}
-          on:change={updateMetadata}
+          onchange={updateMetadata}
           placeholder="Crew name..."
         />
       </label>
@@ -89,13 +89,13 @@
           class="input input-bordered input-sm"
           type="text"
           bind:value={crewDescription}
-          on:change={updateMetadata}
+          onchange={updateMetadata}
           placeholder="Description..."
         />
       </label>
       <label class="form-control w-full max-w-[160px]">
         <span class="label-text">Execution mode</span>
-        <select class="select select-bordered select-sm" bind:value={executionMode} on:change={updateMetadata}>
+        <select class="select select-bordered select-sm" bind:value={executionMode} onchange={updateMetadata}>
           <option value="sequential">Sequential</option>
           <option value="parallel">Parallel (Coming Soon)</option>
           <option value="hierarchical">Hierarchical (Coming Soon)</option>
@@ -106,13 +106,13 @@
 
   <div class="flex items-center gap-2">
     <ThemeToggle />
-    <button class="btn btn-primary btn-sm" type="button" on:click={() => dispatch('addAgent')}>
+    <button class="btn btn-primary btn-sm" type="button" onclick={() => dispatch('addAgent')}>
       + Agent
     </button>
-    <button class="btn btn-success btn-sm" type="button" on:click={uploadToAPI} disabled={uploading}>
+    <button class="btn btn-success btn-sm" type="button" onclick={uploadToAPI} disabled={uploading}>
       {uploading ? 'Uploading…' : 'Upload'}
     </button>
-    <button class="btn btn-info btn-sm" type="button" on:click={() => dispatch('export')}>
+    <button class="btn btn-info btn-sm" type="button" onclick={() => dispatch('export')}>
       Export JSON
     </button>
   </div>

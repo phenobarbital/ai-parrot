@@ -107,7 +107,7 @@
               <button
                 type="button"
                 class="btn btn-ghost btn-sm absolute right-1 top-1"
-                on:click={togglePasswordVisibility}
+                onclick={togglePasswordVisibility}
                 tabindex="-1"
               >
                 {#if showPassword}
