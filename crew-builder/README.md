@@ -35,6 +35,26 @@ The app runs on <http://localhost:5173> by default.
 | `npm run preview`| Preview the production build locally       |
 | `npm run check`  | Run `svelte-check` for type and lint hints |
 
+## Security hardening
+
+Running `npm install` now triggers a post-install patch step that mitigates the
+`cookie` (GHSA-pxg6-pf52-xh8x) and `esbuild` (GHSA-67mh-4wv8-2f99) advisories
+without forcing breaking framework upgrades. The script:
+
+- Replaces the transitive `cookie` implementation with a hardened parser and
+  serializer that reject out-of-spec values.
+- Disables the vulnerable `esbuild.serve()` helper that allowed cross-origin
+  access to the development server.
+- Marks both packages with `-patched` versions inside `package-lock.json` so
+  future audits record that the fixes are applied locally.
+
+If you reinstall dependencies in an environment where `postinstall` hooks are
+disabled, run the patcher manually:
+
+```bash
+npm run postinstall
+```
+
 ## Authentication helpers
 
 The auth store (`src/lib/stores/auth.ts`) keeps the user profile and bearer token in local storage. It exposes:
