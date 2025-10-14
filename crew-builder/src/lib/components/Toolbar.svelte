@@ -39,6 +39,7 @@
   }
 
   function goHome() {
+    crewStore.reset();
     goto('/');
   }
 
