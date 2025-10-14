@@ -149,11 +149,11 @@
                 {/if}
               </button>
             </div>
-            <label class="label">
+            <div class="label">
               <a href="/forgot-password" class="link-hover link label-text-alt">
                 Forgot password?
               </a>
-            </label>
+            </div>
           </div>
 
           <!-- Submit Button -->

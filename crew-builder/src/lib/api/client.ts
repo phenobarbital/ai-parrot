@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios, { AxiosHeaders } from 'axios';
 import { browser } from '$app/environment';
 
 export const apiClient = axios.create({
@@ -14,14 +14,13 @@ apiClient.interceptors.request.use(
     if (browser) {
       const token = localStorage.getItem('token');
       if (token) {
-        if (config.headers && typeof config.headers.set === 'function') {
-          config.headers.set('Authorization', `Bearer ${token}`);
-        } else {
-          config.headers = {
-            ...(config.headers ?? {}),
-            Authorization: `Bearer ${token}`
-          };
-        }
+        const headers =
+          config.headers instanceof AxiosHeaders
+            ? config.headers
+            : AxiosHeaders.from(config.headers ?? {});
+
+        headers.set('Authorization', `Bearer ${token}`);
+        config.headers = headers;
       }
     }
 

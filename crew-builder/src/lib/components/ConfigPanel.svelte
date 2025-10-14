@@ -71,6 +71,11 @@
     }
   }
 
+  function handleFormSubmit(event: SubmitEvent) {
+    event.preventDefault();
+    handleSave();
+  }
+
   function switchMode(mode: 'form' | 'json') {
     if (mode === editMode) return;
     if (mode === 'json') {
@@ -135,7 +140,7 @@
 
     <section class="flex-1 overflow-y-auto px-6 py-4">
       {#if editMode === 'form'}
-        <form class="flex flex-col gap-4 text-sm" onsubmit|preventDefault={handleSave}>
+        <form class="flex flex-col gap-4 text-sm" onsubmit={handleFormSubmit}>
           <label class="form-control w-full">
             <span class="label-text">Agent ID*</span>
             <input class="input input-bordered" bind:value={formData.agent_id} placeholder="e.g., researcher" required />

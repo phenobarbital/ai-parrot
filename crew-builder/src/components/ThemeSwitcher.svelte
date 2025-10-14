@@ -81,10 +81,7 @@
   </button>
 
   {#if showDropdown}
-    <div
-      class="absolute right-0 z-[100] mt-2 w-64 rounded-box bg-base-100 shadow-2xl"
-      onclick={(event) => event.stopPropagation()}
-    >
+    <div class="absolute right-0 z-[100] mt-2 w-64 rounded-box bg-base-100 shadow-2xl">
       <div class="p-3">
         <!-- Search Input -->
         <input

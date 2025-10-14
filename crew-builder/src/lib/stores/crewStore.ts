@@ -241,4 +241,3 @@ function buildExecutionOrder(nodes: Node<AgentNodeData>[], edges: Edge[]) {
 }
 
 export const crewStore = createCrewStore();
-export type { AgentNodeData };
