@@ -1,36 +1,41 @@
 <script lang="ts">
   import { Background, Controls, MiniMap, SvelteFlow } from '@xyflow/svelte';
-  import type { Edge as FlowEdge, Node as FlowNode } from '@xyflow/svelte';
+  import type { Connection, Edge, Node, NodeTypes } from '@xyflow/svelte';
   import '@xyflow/svelte/dist/style.css';
 
   import AgentNode from '$lib/components/AgentNode.svelte';
   import ConfigPanel from '$lib/components/ConfigPanel.svelte';
   import Toolbar from '$lib/components/Toolbar.svelte';
   import { crewStore } from '$lib/stores/crewStore';
+  import type { AgentNodeData } from '$lib/stores/crewStore';
+  import type { Writable } from 'svelte/store';
 
-  const nodeTypes = {
-    agentNode: AgentNode
-  } as const;
+  type AgentFlowNode = Node<AgentNodeData>;
+  type AgentFlowEdge = Edge;
 
-  const nodesStore = crewStore.nodes;
-  const edgesStore = crewStore.edges;
+  const nodeTypes: NodeTypes = {
+    agentNode: AgentNode as unknown as NodeTypes[string]
+  };
 
-  let nodes: FlowNode[] = [];
-  let edges: FlowEdge[] = [];
+  const nodesStore = crewStore.nodes as Writable<AgentFlowNode[]>;
+  const edgesStore = crewStore.edges as Writable<AgentFlowEdge[]>;
+
+  let nodes: AgentFlowNode[] = [];
+  let edges: AgentFlowEdge[] = [];
   let selectedNodeId: string | null = null;
   let showConfigPanel = false;
+  let selectedNode: AgentFlowNode | undefined;
 
-  $: nodes = $nodesStore as FlowNode[];
-  $: edges = $edgesStore as FlowEdge[];
-
+  $: nodes = $nodesStore as AgentFlowNode[];
+  $: edges = $edgesStore as AgentFlowEdge[];
   $: selectedNode = nodes.find((node) => node.id === selectedNodeId);
 
-  function handleNodeClick(event: CustomEvent) {
+  function handleNodeClick(event: CustomEvent<{ node: Node }>) {
     selectedNodeId = event.detail.node.id;
     showConfigPanel = true;
   }
 
-  function handleConnect(event: CustomEvent) {
+  function handleConnect(event: CustomEvent<Connection>) {
     crewStore.addEdge(event.detail);
   }
 
