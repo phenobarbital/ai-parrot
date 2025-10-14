@@ -4,6 +4,7 @@
   import { crew as crewApi } from '$lib/api';
   import ThemeToggle from '$lib/components/ThemeToggle.svelte';
   import { crewStore } from '$lib/stores/crewStore';
+  import { toastStore } from '$lib/stores/toast.svelte';
 
   // Svelte 5: Use callback props instead of createEventDispatcher
   interface Props {
@@ -44,16 +45,9 @@
   async function uploadToAPI() {
     try {
       uploading = true;
-      uploadStatus = null;
       const crewJSON = crewStore.exportToJSON();
       const response = await crewApi.createCrew(crewJSON);
-      uploadStatus = {
-        type: 'success',
-        message: `Crew "${response.name ?? crewJSON.name}" created successfully!`
-      };
-      setTimeout(() => {
-        uploadStatus = null;
-      }, 3000);
+      toastStore.success(`Crew "${response.name ?? crewJSON.name}" created successfully!`);
     } catch (error) {
       const responseMessage =
         typeof error === 'object' &&
@@ -80,8 +74,8 @@
 <div class="navbar border-b border-base-300 bg-base-100 px-4 shadow-sm">
   <div class="flex flex-1 items-center gap-4">
     <!-- Home Button -->
-    <button 
-      class="btn btn-ghost btn-sm gap-2" 
+    <button
+      class="btn btn-ghost btn-sm gap-2"
       onclick={goHome}
       aria-label="Go to home"
       type="button"
@@ -108,7 +102,7 @@
       <span class="hidden sm:inline">AgentCrew Builder</span>
       <span class="sm:hidden">Builder</span>
     </div>
-    
+
     <div class="flex flex-1 flex-wrap items-center gap-3">
       <label class="form-control w-full max-w-xs">
         <span class="label-text">Crew name</span>

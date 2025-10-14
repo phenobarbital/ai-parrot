@@ -23,10 +23,17 @@
 
   let selectedNodeId = $state<string | null>(null);
   let showConfigPanel = $state(false);
-  
+
   // Derived values for UI (not for SvelteFlow)
   let nodes = $state<AgentFlowNode[]>([]);
-  let selectedNode = $derived(nodes.find((node) => node.id === selectedNodeId));
+  let selectedNode = $derived.by(() => {
+    let result: AgentFlowNode | undefined;
+    const unsub = nodesStore.subscribe(nodes => {
+      result = nodes.find(n => n.id === selectedNodeId);
+    });
+    unsub();
+    return result;
+  });
 
   // Subscribe to nodes for local state
   $effect(() => {
@@ -121,7 +128,7 @@
   :global(.svelte-flow) {
     background-color: #f8f9fa;
   }
-  
+
   :global(.svelte-flow__minimap) {
     background-color: #fff;
   }
