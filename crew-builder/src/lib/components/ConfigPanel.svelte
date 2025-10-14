@@ -96,11 +96,22 @@
 </script>
 
 <div class="fixed inset-0 z-40 flex justify-end">
-  <div class="absolute inset-0 bg-base-content/40" on:click={() => dispatch('close')} />
+  <div
+    class="absolute inset-0 bg-base-content/40"
+    role="button"
+    tabindex="0"
+    onclick={() => dispatch('close')}
+    onkeydown={(event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        dispatch('close');
+      }
+    }}
+  ></div>
   <aside class="relative z-10 flex h-full w-full max-w-md flex-col bg-base-100 shadow-2xl">
     <header class="flex items-center justify-between border-b border-base-200 px-6 py-4">
       <h2 class="text-lg font-semibold">Configure Agent</h2>
-      <button class="btn btn-circle btn-ghost btn-sm" on:click={() => dispatch('close')} aria-label="Close">
+      <button class="btn btn-circle btn-ghost btn-sm" onclick={() => dispatch('close')} aria-label="Close">
         ✕
       </button>
     </header>
@@ -109,14 +120,14 @@
       <button
         class={`btn btn-sm flex-1 ${editMode === 'form' ? 'btn-primary' : 'btn-outline'}`}
         type="button"
-        on:click={() => switchMode('form')}
+        onclick={() => switchMode('form')}
       >
         Form
       </button>
       <button
         class={`btn btn-sm flex-1 ${editMode === 'json' ? 'btn-primary' : 'btn-outline'}`}
         type="button"
-        on:click={() => switchMode('json')}
+        onclick={() => switchMode('json')}
       >
         JSON
       </button>
@@ -124,7 +135,7 @@
 
     <section class="flex-1 overflow-y-auto px-6 py-4">
       {#if editMode === 'form'}
-        <form class="flex flex-col gap-4 text-sm" on:submit|preventDefault={handleSave}>
+        <form class="flex flex-col gap-4 text-sm" onsubmit|preventDefault={handleSave}>
           <label class="form-control w-full">
             <span class="label-text">Agent ID*</span>
             <input class="input input-bordered" bind:value={formData.agent_id} placeholder="e.g., researcher" required />
@@ -163,7 +174,7 @@
               {#each availableTools as tool}
                 <label class={`flex items-center justify-between rounded-lg border px-4 py-2 ${formData.tools.includes(tool) ? 'border-primary bg-primary/10' : 'border-base-200'}`}>
                   <span>{tool}</span>
-                  <input type="checkbox" class="checkbox" checked={formData.tools.includes(tool)} on:change={() => toggleTool(tool)} />
+                  <input type="checkbox" class="checkbox" checked={formData.tools.includes(tool)} onchange={() => toggleTool(tool)} />
                 </label>
               {/each}
             </div>
@@ -175,7 +186,7 @@
               rows="6"
               bind:value={formData.system_prompt}
               placeholder="You are an expert AI agent..."
-            />
+            ></textarea>
           </label>
         </form>
       {:else}
@@ -184,7 +195,7 @@
             class={`textarea textarea-bordered h-80 font-mono text-xs ${jsonError ? 'textarea-error' : ''}`}
             bind:value={jsonText}
             placeholder="Paste or edit JSON configuration..."
-          />
+          ></textarea>
           {#if jsonError}
             <div class="alert alert-error text-sm">
               <span>{jsonError}</span>
@@ -195,12 +206,12 @@
     </section>
 
     <footer class="flex items-center gap-2 border-t border-base-200 px-6 py-4">
-      <button class="btn btn-error btn-sm" type="button" on:click={handleDelete}>Delete</button>
-      <span class="flex-1" />
-      <button class="btn btn-ghost btn-sm" type="button" on:click={() => dispatch('close')}>
+      <button class="btn btn-error btn-sm" type="button" onclick={handleDelete}>Delete</button>
+      <span class="flex-1"></span>
+      <button class="btn btn-ghost btn-sm" type="button" onclick={() => dispatch('close')}>
         Cancel
       </button>
-      <button class="btn btn-primary btn-sm" type="button" on:click={handleSave}>
+      <button class="btn btn-primary btn-sm" type="button" onclick={handleSave}>
         Save
       </button>
     </footer>
