@@ -167,20 +167,22 @@ class AbstractTool(ABC):
         Returns:
             Validated arguments as Pydantic model instance
         """
-        if self.args_schema and self.args_schema != AbstractToolArgsSchema:
-            try:
-                result = self.args_schema(**kwargs)
-                if not result:
-                    self.logger.warning(
-                        f"Validation failed for {self.name} with args: {kwargs}"
-                    )
-                return result
-            except Exception as e:
-                self.logger.error(f"Validation error in {self.name}: {e}")
-                raise ValueError(f"Invalid arguments for {self.name}: {e}")
-        else:
+        if not self.args_schema or self.args_schema == AbstractToolArgsSchema:
             # If no schema is defined, return a basic model with the kwargs
             return AbstractToolArgsSchema()
+        try:
+            result = self.args_schema(**kwargs)
+            if not result:
+                self.logger.warning(
+                    f"Validation failed for {self.name} with args: {kwargs}"
+                )
+            return result
+        except Exception as e:
+            self.logger.error(f"Validation error in {self.name}: {e}")
+            raise ValueError(
+                f"Invalid arguments for {self.name}: {e}"
+            ) from e
+
 
     async def execute(self, *args, **kwargs) -> ToolResult:
         """
@@ -252,6 +254,8 @@ class AbstractTool(ABC):
                     "error_type": type(e).__name__
                 }
             )
+
+    run = execute  # Alias for compatibility with sync code
 
     # Utility methods for file handling (inherited from BaseAbstractTool)
     def to_static_url(self, file_path: Union[str, Path]) -> str:
@@ -348,10 +352,10 @@ class AbstractTool(ABC):
 
         try:
             file_path.relative_to(self.static_dir.resolve())
-        except ValueError:
+        except ValueError as e:
             raise ValueError(
                 f"Output path {file_path} must be within static directory {self.static_dir}"
-            )
+            ) from e
 
         return file_path
 
