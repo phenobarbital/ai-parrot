@@ -26,20 +26,13 @@
 
   // Derived values for UI (not for SvelteFlow)
   let nodes = $state<AgentFlowNode[]>([]);
-  let selectedNode = $derived.by(() => {
-    let result: AgentFlowNode | undefined;
-    const unsub = nodesStore.subscribe(nodes => {
-      result = nodes.find(n => n.id === selectedNodeId);
-    });
-    unsub();
-    return result;
-  });
+  let selectedNode = $derived.by(() => nodes.find((n) => n.id === selectedNodeId));
 
   // Subscribe to nodes for local state
   $effect(() => {
     const unsubscribe = nodesStore.subscribe((value) => {
       nodes = value;
-      console.log('Nodes updated:', nodes.length);
+      console.log('Nodes updated:', value.length);
     });
     return unsubscribe;
   });

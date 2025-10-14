@@ -1,5 +1,5 @@
 import { MarkerType, type Connection, type Edge, type Node } from '@xyflow/svelte';
-import { get, writable, type Subscriber, type Unsubscriber, type Writable } from 'svelte/store';
+import { derived, get, writable, type Readable } from 'svelte/store';
 
 export interface AgentConfig {
   model: string;
@@ -28,7 +28,7 @@ export interface CrewState {
   nextNodeId: number;
 }
 
-const initialState: CrewState = {
+const createInitialState = (): CrewState => ({
   metadata: {
     name: 'research_pipeline',
     description: 'Sequential pipeline for research and writing',
@@ -37,79 +37,61 @@ const initialState: CrewState = {
   nodes: [],
   edges: [],
   nextNodeId: 1
-};
-
-function mapStore<T>(
-  subscribeState: (run: Subscriber<CrewState>, invalidate?: (value?: CrewState) => void) => Unsubscriber,
-  updateState: (updater: (state: CrewState) => CrewState) => void,
-  selector: (state: CrewState) => T,
-  assign: (state: CrewState, value: T) => CrewState
-): Writable<T> {
-  return {
-    subscribe(run, invalidate) {
-      return subscribeState((state) => run(selector(state)), invalidate);
-    },
-    set(value) {
-      updateState((state) => assign(state, value));
-    },
-    update(updater) {
-      updateState((state) => assign(state, updater(selector(state))));
-    }
-  };
-}
+});
 
 function createCrewStore() {
-  const store = writable<CrewState>(initialState);
-  const { subscribe, set, update } = store;
+  const initialState = createInitialState();
 
-  const nodes = mapStore<Node<AgentNodeData>[]>(subscribe, update, (state) => state.nodes, (state, value) => ({
-    ...state,
-    nodes: value
-  }));
+  const metadataStore = writable(initialState.metadata);
+  const nodesStore = writable<Node<AgentNodeData>[]>(initialState.nodes);
+  const edgesStore = writable<Edge[]>(initialState.edges);
+  const nextNodeIdStore = writable(initialState.nextNodeId);
 
-  const edges = mapStore<Edge[]>(subscribe, update, (state) => state.edges, (state, value) => ({
-    ...state,
-    edges: value
-  }));
+  const combined: Readable<CrewState> = derived(
+    [metadataStore, nodesStore, edgesStore, nextNodeIdStore],
+    ([$metadata, $nodes, $edges, $nextNodeId]) => ({
+      metadata: $metadata,
+      nodes: $nodes,
+      edges: $edges,
+      nextNodeId: $nextNodeId
+    })
+  );
+
+  function makeAgentNode(id: number, existingNodes: Node<AgentNodeData>[]): Node<AgentNodeData> {
+    const nodeId = `agent-${id}`;
+    return {
+      id: nodeId,
+      type: 'agentNode',
+      position: {
+        x: 100 + existingNodes.length * 50,
+        y: 100 + existingNodes.length * 50
+      },
+      data: {
+        agent_id: `agent_${id}`,
+        name: `Agent ${id}`,
+        agent_class: 'Agent',
+        config: {
+          model: 'gemini-2.5-pro',
+          temperature: 0.7
+        },
+        tools: [],
+        system_prompt: 'You are an expert AI agent.'
+      }
+    };
+  }
 
   return {
-    subscribe,
-    nodes,
-    edges,
+    subscribe: combined.subscribe,
+    nodes: nodesStore,
+    edges: edgesStore,
     addAgent: () => {
-      update((state) => {
-        const nodeId = `agent-${state.nextNodeId}`;
-        const newNode: Node<AgentNodeData> = {
-          id: nodeId,
-          type: 'agentNode',
-          position: {
-            x: 100 + state.nodes.length * 50,
-            y: 100 + state.nodes.length * 50
-          },
-          data: {
-            agent_id: `agent_${state.nextNodeId}`,
-            name: `Agent ${state.nextNodeId}`,
-            agent_class: 'Agent',
-            config: {
-              model: 'gemini-2.5-pro',
-              temperature: 0.7
-            },
-            tools: [],
-            system_prompt: 'You are an expert AI agent.'
-          }
-        };
-
-        return {
-          ...state,
-          nodes: [...state.nodes, newNode],
-          nextNodeId: state.nextNodeId + 1
-        };
-      });
+      const nextId = get(nextNodeIdStore);
+      nodesStore.update((current) => [...current, makeAgentNode(nextId, current)]);
+      nextNodeIdStore.set(nextId + 1);
     },
     updateAgent: (nodeId: string, updatedData: Partial<AgentNodeData>) => {
-      update((state) => ({
-        ...state,
-        nodes: state.nodes.map((node) =>
+      nodesStore.update((current) =>
+        current.map((node) =>
           node.id === nodeId
             ? {
                 ...node,
@@ -125,45 +107,38 @@ function createCrewStore() {
               }
             : node
         )
-      }));
+      );
     },
     deleteAgent: (nodeId: string) => {
-      update((state) => ({
-        ...state,
-        nodes: state.nodes.filter((node) => node.id !== nodeId),
-        edges: state.edges.filter((edge) => edge.source !== nodeId && edge.target !== nodeId)
-      }));
+      nodesStore.update((current) => current.filter((node) => node.id !== nodeId));
+      edgesStore.update((current) =>
+        current.filter((edge) => edge.source !== nodeId && edge.target !== nodeId)
+      );
     },
     addEdge: (connection: Connection) => {
-      update((state) => {
-        const newEdge: Edge = {
-          id: `${connection.source}-${connection.target}`,
-          source: connection.source,
-          target: connection.target,
-          type: 'smoothstep',
-          animated: true,
-          markerEnd: {
-            type: MarkerType.ArrowClosed,
-            width: 20,
-            height: 20
-          }
-        };
+      const newEdge: Edge = {
+        id: `${connection.source}-${connection.target}`,
+        source: connection.source,
+        target: connection.target,
+        type: 'smoothstep',
+        animated: true,
+        markerEnd: {
+          type: MarkerType.ArrowClosed,
+          width: 20,
+          height: 20
+        }
+      };
 
-        return {
-          ...state,
-          edges: [...state.edges, newEdge]
-        };
-      });
+      edgesStore.update((current) => [...current, newEdge]);
     },
     updateMetadata: (metadata: Partial<CrewMetadata>) => {
-      update((state) => ({
-        ...state,
-        metadata: { ...state.metadata, ...metadata }
-      }));
+      metadataStore.update((current) => ({ ...current, ...metadata }));
     },
     exportToJSON: () => {
-      const currentState = get(store);
-      const executionOrder = buildExecutionOrder(currentState.nodes, currentState.edges);
+      const currentMetadata = get(metadataStore);
+      const currentNodes = get(nodesStore);
+      const currentEdges = get(edgesStore);
+      const executionOrder = buildExecutionOrder(currentNodes, currentEdges);
 
       const agents = executionOrder.map((node) => ({
         agent_id: node.data.agent_id,
@@ -175,13 +150,19 @@ function createCrewStore() {
       }));
 
       return {
-        name: currentState.metadata.name,
-        description: currentState.metadata.description,
-        execution_mode: currentState.metadata.execution_mode,
+        name: currentMetadata.name,
+        description: currentMetadata.description,
+        execution_mode: currentMetadata.execution_mode,
         agents
       };
     },
-    reset: () => set(initialState)
+    reset: () => {
+      const resetState = createInitialState();
+      metadataStore.set(resetState.metadata);
+      nodesStore.set(resetState.nodes);
+      edgesStore.set(resetState.edges);
+      nextNodeIdStore.set(resetState.nextNodeId);
+    }
   };
 }
 
