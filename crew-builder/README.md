@@ -1,306 +1,93 @@
-# 🎉 AgentCrew Builder - Complete Package
+# AgentCrew Builder
 
-## What You've Got
+AgentCrew Builder is a SvelteKit 5 application that lets you assemble, configure and export AgentCrew pipelines visually. The project now ships with Tailwind CSS v4, DaisyUI theme switching and an opinionated auth flow that persists bearer tokens in local storage.
 
-I've created a **complete visual workflow builder** for your AI-parrot AgentCrew library! This is a production-ready proof-of-concept that allows you to:
+## Features
 
-✅ **Design workflows visually** using drag-and-drop
-✅ **Configure agents** through forms or JSON
-✅ **Connect agents** to define execution flow
-✅ **Export to JSON** compatible with your API
-✅ **Ready to integrate** with your backend
+- 🧠 **Visual crew editor** powered by [@xyflow/svelte](https://xyflow.com/) for drag-and-drop agent orchestration
+- 🛠️ **Dual configuration modes** (form and JSON) with DaisyUI styling
+- 🌗 **Theme switching** with DaisyUI v5 following the [Scott Spence guide](https://scottspence.com/posts/theme-switching-in-sveltekit-updated-for-daisyui-v5-and-tailwind-v4)
+- 🔐 **Auth store** that persists bearer tokens and exposes login/logout helpers
+- 🔁 **Axios client** that injects bearer tokens into every request and handles common HTTP failures
+- 📦 **Modern tooling**: Svelte 5, SvelteKit 2, Tailwind CSS 4, DaisyUI 5, Prettier 3
 
-## 📦 What's Included
+## Prerequisites
 
-### Frontend (Svelte + SvelteFlow)
-- **Main App** (`src/App.svelte`) - Flow editor integration
-- **Agent Nodes** (`src/components/AgentNode.svelte`) - Visual agent representation
-- **Config Panel** (`src/components/ConfigPanel.svelte`) - Dual-mode editor
-- **Toolbar** (`src/components/Toolbar.svelte`) - Controls and metadata
-- **State Management** (`src/stores/crewStore.js`) - Logic + export
+- Node.js 20+
+- npm 10+
 
-### Backend (FastAPI)
-- **REST API** (`backend_example.py`) - Complete API with 9 endpoints
-- **Crew Management** - Create, list, get, delete crews
-- **Execution** - Run crews with tasks
-- **File Upload** - Import JSON workflows
+## Getting started
 
-### Documentation
-- **README.md** - Comprehensive documentation
-- **QUICKSTART.md** - 5-minute getting started
-- **PROJECT_OVERVIEW.md** - Architecture and roadmap
-
-### Examples
-- **research_pipeline.json** - Complex 5-agent workflow
-- **simple_qa_bot.json** - Simple 2-agent workflow
-
-### DevOps
-- **Docker Compose** - One-command deployment
-- **Dockerfiles** - Frontend and backend containers
-- **Setup Script** - Automated installation
-
-## 🚀 Quick Start
-
-### Option 1: Local Development (3 commands)
 ```bash
-cd agent-crew-builder
-./setup.sh
-python3 backend_example.py  # Terminal 1
-npm run dev                  # Terminal 2
+cd crew-builder
+npm install
+npm run dev
 ```
 
-### Option 2: Docker (1 command)
-```bash
-cd agent-crew-builder
-docker-compose up
-```
+The app runs on <http://localhost:5173> by default.
 
-Then open: **http://localhost:5173**
+### Available scripts
 
-## 🎯 Key Features
+| Command          | Description                                |
+| ---------------- | ------------------------------------------ |
+| `npm run dev`    | Start the Vite dev server                  |
+| `npm run build`  | Create a production build                  |
+| `npm run preview`| Preview the production build locally       |
+| `npm run check`  | Run `svelte-check` for type and lint hints |
 
-### 1. Visual Workflow Design
-- Drag-and-drop agent nodes
-- Visual connections = execution flow
-- Real-time preview
-- Minimap navigation
+## Authentication helpers
 
-### 2. Flexible Configuration
-- **Form Mode**: Guided configuration with dropdowns and checkboxes
-- **JSON Mode**: Direct JSON editing for advanced users
-- Switch between modes without losing data
+The auth store (`src/lib/stores/auth.ts`) keeps the user profile and bearer token in local storage. It exposes:
 
-### 3. Smart Export
-- Topological sorting for execution order
-- Handles disconnected nodes
-- One-click JSON download
-- Ready for your API
+- `init()` – restore session data at start-up
+- `login(email, password)` – call the `/auth/login` API with the `x-auth-method: BasicAuth` header
+- `logout()` – clear storage and redirect to `/login`
+- `checkAuth()` – lightweight token presence check
 
-### 4. Backend Integration
-```python
-# Your API endpoint format
-POST /api/crews
+Derived stores `isAuthenticated` and `currentUser` are exported for convenience.
+
+## API client
+
+An Axios instance lives in `src/lib/api/client.ts`. It automatically injects the bearer token and reacts to `401` responses by clearing storage and redirecting to `/login`. Feature-specific APIs are grouped under `src/lib/api`:
+
+- `auth.login` – authentication endpoint
+- `crew.*` – CRUD helpers for crew management
+
+## Styling
+
+Tailwind CSS v4 is enabled through the official Vite plugin. DaisyUI v5 powers ready-made components and the theme switcher. Theme selection is stored in local storage and updates the `data-theme` attribute on the document root.
+
+## Export format
+
+The `crewStore` still produces JSON compatible with the AgentCrew backend:
+
+```json
 {
   "name": "research_pipeline",
-  "description": "...",
+  "description": "Sequential pipeline for research and writing",
   "execution_mode": "sequential",
-  "agents": [...]
+  "agents": [
+    {
+      "agent_id": "agent_1",
+      "name": "Agent 1",
+      "agent_class": "Agent",
+      "config": {
+        "model": "gemini-2.5-pro",
+        "temperature": 0.7
+      },
+      "system_prompt": "You are an expert AI agent."
+    }
+  ]
 }
 ```
 
-## 📊 Architecture
+Download the definition via the toolbar’s **Export JSON** button or push it directly to your backend with **Upload**.
 
-```
-┌─────────────────────────────────────────┐
-│         Frontend (Svelte)               │
-│  ┌───────────────────────────────────┐  │
-│  │   SvelteFlow (Visual Editor)      │  │
-│  └───────────────────────────────────┘  │
-│              ↓                           │
-│  ┌───────────────────────────────────┐  │
-│  │   Crew Store (State + Logic)      │  │
-│  └───────────────────────────────────┘  │
-└─────────────────────────────────────────┘
-              ↓ JSON Export
-┌─────────────────────────────────────────┐
-│         Backend (FastAPI)                │
-│  ┌───────────────────────────────────┐  │
-│  │   REST API (9 endpoints)          │  │
-│  └───────────────────────────────────┘  │
-│              ↓                           │
-│  ┌───────────────────────────────────┐  │
-│  │   AI-parrot AgentCrew             │  │
-│  └───────────────────────────────────┘  │
-└─────────────────────────────────────────┘
-```
+## Next steps
 
-## 🛠️ What's Implemented
+- Wire the auth store into your login route
+- Extend `crewStore` with persistence or backend syncing
+- Add new DaisyUI themes to `themeOptions` in `ThemeToggle.svelte`
+- Introduce additional execution modes once the backend supports them
 
-### ✅ Core Features
-- [x] Visual node editor with SvelteFlow
-- [x] Agent configuration (form + JSON)
-- [x] Sequential execution order
-- [x] Connection validation
-- [x] JSON export
-- [x] Backend API integration
-- [x] Docker deployment
-- [x] Complete documentation
-
-### 🚧 Easy to Add
-- [ ] Parallel execution (change execution_mode)
-- [ ] Import existing workflows (reverse of export)
-- [ ] Workflow templates (pre-defined JSONs)
-- [ ] Custom tool editor
-- [ ] Real-time validation
-
-## 📁 Project Structure
-
-```
-agent-crew-builder/
-├── src/
-│   ├── App.svelte              # Main app
-│   ├── components/
-│   │   ├── AgentNode.svelte    # Agent visualization
-│   │   ├── ConfigPanel.svelte  # Configuration UI
-│   │   └── Toolbar.svelte      # Top controls
-│   └── stores/
-│       └── crewStore.js        # State management
-├── backend_example.py          # FastAPI server
-├── examples/
-│   ├── research_pipeline.json  # Complex example
-│   └── simple_qa_bot.json     # Simple example
-└── [Docker, docs, config files]
-```
-
-## 🔌 Integration with Your Backend
-
-### Method 1: Use the FastAPI Example
-```python
-# Extend backend_example.py with your AI-parrot code
-from ai_parrot import Agent, AgentCrew, ToolRegistry
-
-@app.post("/api/crews")
-async def create_crew(crew: CrewDefinition):
-    agents = []
-    for agent_def in crew.agents:
-        agent = Agent(
-            agent_id=agent_def.agent_id,
-            model=agent_def.config.model,
-            # ... your initialization
-        )
-        agents.append(agent)
-
-    crew = AgentCrew(
-        name=crew.name,
-        agents=agents,
-        execution_mode=crew.execution_mode
-    )
-    return crew
-```
-
-### Method 2: Direct JSON Import
-```python
-import json
-from ai_parrot import AgentCrew
-
-with open('exported_workflow.json') as f:
-    config = json.load(f)
-
-crew = AgentCrew.from_config(config)
-result = crew.run(task="Your task")
-```
-
-## 🎨 Customization Guide
-
-### Add Your Models
-Edit `src/components/ConfigPanel.svelte`:
-```javascript
-const models = [
-  'gemini-2.5-pro',
-  'your-custom-model',
-];
-```
-
-### Add Your Tools
-```javascript
-const availableTools = [
-  'GoogleSearchTool',
-  'YourCustomTool',
-];
-```
-
-### Styling
-Edit `src/components/AgentNode.svelte` for node appearance.
-
-## 🧪 Try It Out
-
-### Create a Simple Workflow
-
-1. **Start the app**
-   ```bash
-   npm run dev
-   ```
-
-2. **Add 2 agents**:
-   - Agent 1: Researcher with GoogleSearchTool
-   - Agent 2: Writer without tools
-
-3. **Connect them**: Researcher → Writer
-
-4. **Export** and you get:
-   ```json
-   {
-     "name": "my_crew",
-     "execution_mode": "sequential",
-     "agents": [
-       { /* Researcher config */ },
-       { /* Writer config */ }
-     ]
-   }
-   ```
-
-5. **Use it** with your AI-parrot backend!
-
-## 📈 Next Steps
-
-1. **Test locally**: Run the setup and create a workflow
-2. **Integrate**: Connect to your AI-parrot backend
-3. **Customize**: Add your models, tools, and styling
-4. **Extend**: Add parallel execution, templates, etc.
-5. **Deploy**: Use Docker Compose for production
-
-## 🎓 Learning Resources
-
-- **QUICKSTART.md** - Get running in 5 minutes
-- **README.md** - Full feature documentation
-- **PROJECT_OVERVIEW.md** - Architecture deep dive
-- **backend_example.py** - API implementation guide
-
-## 💡 Pro Tips
-
-1. **Start with examples**: Import `simple_qa_bot.json` to see it in action
-2. **Use JSON mode**: For complex configurations
-3. **Save often**: Export after major changes
-4. **Test connections**: Ensure proper execution order
-5. **Check console**: Debug issues with browser DevTools
-
-## 🤝 Support
-
-Questions? Check:
-- Comments in the code (heavily documented)
-- Example workflows in `/examples`
-- API docs at `http://localhost:8000/docs`
-
-## 🎉 That's It!
-
-You now have a **complete visual workflow builder** for your AI-parrot AgentCrew. The proof-of-concept is ready to:
-
-✅ Create sequential crews visually
-✅ Configure agents with forms or JSON
-✅ Export to your API format
-✅ Integrate with your backend
-✅ Deploy with Docker
-
-**Happy building! 🦜**
-
----
-
-**Need Help?**
-- Check the documentation files
-- Look at example workflows
-- Read the inline code comments
-- Test with the simple_qa_bot example first
-
-**Want to Extend?**
-- Add more execution modes
-- Create workflow templates
-- Build custom tools UI
-- Add validation rules
-- Integrate with MCP
-
-**Ready for Production?**
-- Add authentication
-- Implement rate limiting
-- Set up monitoring
-- Configure backups
-- Enable HTTPS
+Happy building! 🦜
