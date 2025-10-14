@@ -33,14 +33,21 @@
       totalCrews = typeof response?.total === 'number' ? response.total : crews.length;
     } catch (error) {
       console.error('Failed to load crews', error);
-      const responseMessage =
+      let responseMessage;
+      if (
         typeof error === 'object' &&
         error !== null &&
         'response' in error &&
-        typeof (error as { response?: { data?: { message?: string } } }).response?.data?.message ===
-          'string'
-          ? (error as { response?: { data?: { message?: string } } }).response?.data?.message
-          : undefined;
+        error.response &&
+        typeof error.response === 'object' &&
+        'data' in error.response &&
+        error.response.data &&
+        typeof error.response.data === 'object' &&
+        'message' in error.response.data &&
+        typeof error.response.data.message === 'string'
+      ) {
+        responseMessage = error.response.data.message;
+      }
       const fallbackMessage =
         error instanceof Error && typeof error.message === 'string'
           ? error.message
