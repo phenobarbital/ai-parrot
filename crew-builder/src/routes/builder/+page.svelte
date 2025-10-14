@@ -17,29 +17,39 @@
     agentNode: AgentNode as unknown as NodeTypes[string]
   };
 
+  // SvelteFlow expects stores, not plain values!
   const nodesStore = crewStore.nodes as Writable<AgentFlowNode[]>;
   const edgesStore = crewStore.edges as Writable<AgentFlowEdge[]>;
 
-  let nodes: AgentFlowNode[] = [];
-  let edges: AgentFlowEdge[] = [];
-  let selectedNodeId: string | null = null;
-  let showConfigPanel = false;
-  let selectedNode: AgentFlowNode | undefined;
+  let selectedNodeId = $state<string | null>(null);
+  let showConfigPanel = $state(false);
+  
+  // Derived values for UI (not for SvelteFlow)
+  let nodes = $state<AgentFlowNode[]>([]);
+  let selectedNode = $derived(nodes.find((node) => node.id === selectedNodeId));
 
-  $: nodes = $nodesStore as AgentFlowNode[];
-  $: edges = $edgesStore as AgentFlowEdge[];
-  $: selectedNode = nodes.find((node) => node.id === selectedNodeId);
+  // Subscribe to nodes for local state
+  $effect(() => {
+    const unsubscribe = nodesStore.subscribe((value) => {
+      nodes = value;
+      console.log('Nodes updated:', nodes.length);
+    });
+    return unsubscribe;
+  });
 
   function handleNodeClick(event: CustomEvent<{ node: Node }>) {
+    console.log('Node clicked:', event.detail.node);
     selectedNodeId = event.detail.node.id;
     showConfigPanel = true;
   }
 
   function handleConnect(event: CustomEvent<Connection>) {
+    console.log('Connecting:', event.detail);
     crewStore.addEdge(event.detail);
   }
 
   function handleAddAgent() {
+    console.log('Adding agent...');
     crewStore.addAgent();
   }
 
@@ -48,19 +58,22 @@
     showConfigPanel = false;
   }
 
-  function handleUpdateAgent(event: CustomEvent) {
+  function handleUpdateAgent(data: Partial<AgentNodeData>) {
     if (!selectedNodeId) return;
-    crewStore.updateAgent(selectedNodeId, event.detail);
+    console.log('Updating agent:', selectedNodeId, data);
+    crewStore.updateAgent(selectedNodeId, data);
   }
 
   function handleDeleteAgent() {
     if (!selectedNodeId) return;
+    console.log('Deleting agent:', selectedNodeId);
     crewStore.deleteAgent(selectedNodeId);
     closeConfigPanel();
   }
 
   function handleExport() {
     const crewJSON = crewStore.exportToJSON();
+    console.log('Exporting crew:', crewJSON);
     const blob = new Blob([JSON.stringify(crewJSON, null, 2)], {
       type: 'application/json'
     });
@@ -73,14 +86,17 @@
   }
 </script>
 
-<main class="flex min-h-screen flex-col">
-  <Toolbar on:addAgent={handleAddAgent} on:export={handleExport} />
-  <section class="relative flex-1">
+<svelte:head>
+  <title>Crew Builder</title>
+</svelte:head>
+
+<div class="flex h-screen flex-col">
+  <Toolbar onAddAgent={handleAddAgent} onExport={handleExport} />
+  <div class="relative flex-1">
     <SvelteFlow
-      {nodeTypes}
       nodes={nodesStore}
       edges={edgesStore}
-      class="h-full w-full"
+      {nodeTypes}
       fitView
       on:nodeclick={handleNodeClick}
       on:connect={handleConnect}
@@ -89,14 +105,24 @@
       <Background />
       <MiniMap />
     </SvelteFlow>
-  </section>
+  </div>
 
   {#if showConfigPanel && selectedNode}
     <ConfigPanel
       agent={selectedNode.data}
-      on:close={closeConfigPanel}
-      on:update={handleUpdateAgent}
-      on:delete={handleDeleteAgent}
+      onClose={closeConfigPanel}
+      onUpdate={handleUpdateAgent}
+      onDelete={handleDeleteAgent}
     />
   {/if}
-</main>
+</div>
+
+<style>
+  :global(.svelte-flow) {
+    background-color: #f8f9fa;
+  }
+  
+  :global(.svelte-flow__minimap) {
+    background-color: #fff;
+  }
+</style>
