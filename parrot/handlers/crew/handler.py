@@ -127,6 +127,8 @@ class CrewHandler(BaseView):
             data = await self.request.json()
             crew_def = CrewDefinition(**data)
 
+            print('Crew Definition:', crew_def)
+
             # Validate bot manager availability
             if not self.bot_manager:
                 return self.error(
@@ -552,16 +554,21 @@ class CrewHandler(BaseView):
             # Get agent class
             agent_class = self.bot_manager.get_bot_class(agent_def.agent_class)
 
+            print('Agent Class:', agent_class)
+            print('Agent Definition:', agent_def)
+
+            tools = []
+            if agent_def.tools:
+                tools.extend(iter(agent_def.tools))
+
             # Create agent instance
             agent = agent_class(
                 name=agent_def.name or agent_def.agent_id,
+                tools=tools,
                 **agent_def.config
             )
 
-            # # Add tools to agent if specified
-            # for tool_name in agent_def.tools:
-            #     if tool := self.bot_manager.get_tool(tool_name):
-            #         agent.tool_manager.add_tool(tool, tool_name)
+            print('Agent Instance:', agent)
 
             # Set system prompt if provided
             if agent_def.system_prompt:

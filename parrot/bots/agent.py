@@ -12,7 +12,7 @@ from .prompts import AGENT_PROMPT
 from ..tools.abstract import AbstractTool
 from ..tools.pythonrepl import PythonREPLTool
 from ..tools.pdfprint import PDFPrintTool
-from ..tools.ppt import PowerPointTool
+from ..tools.powerpoint import PowerPointTool
 from ..tools.agent import AgentTool, AgentContext
 from ..models.google import (
     ConversationalScriptConfig,
