@@ -1,0 +1,19 @@
+{
+  "name": "agent-crew-builder",
+  "version": "0.1.0",
+  "description": "Visual builder for AI-parrot AgentCrew pipelines",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^3.0.0",
+    "svelte": "^4.2.0",
+    "vite": "^5.0.0"
+  },
+  "dependencies": {
+    "@xyflow/svelte": "^0.1.0"
+  }
+}

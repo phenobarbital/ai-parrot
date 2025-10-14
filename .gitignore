@@ -241,3 +241,9 @@ work/
 
 # Custom Agents:
 agents/
+
+
+# SvelteKit build
+build/
+node_modules/
+.svelte-kit/

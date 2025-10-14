@@ -12,6 +12,7 @@ Endpoints:
 """
 from typing import Any, List
 import uuid
+import json
 from aiohttp import web
 from navigator.views import BaseView
 from navigator.types import WebApp  # pylint: disable=E0611,E0401
@@ -90,6 +91,99 @@ class CrewHandler(BaseView):
                 r"{url}{{meta:(:.*)?}}".format(url=url), cls
             )
             app.on_startup.append(cls.configure_job_manager)
+
+    async def upload(self):
+        """
+        Upload a crew definition from a JSON file.
+
+        This endpoint accepts multipart/form-data with a JSON file containing
+        the crew definition from the visual builder.
+
+        Form data:
+            - file: JSON file with crew definition
+
+        Returns:
+            201: Crew created successfully from file
+            400: Invalid file or format
+            500: Server error
+        """
+        try:
+            # Get multipart reader
+            reader = await self.request.multipart()
+
+            # Read file field
+            field = await reader.next()
+
+            if not field or field.name != 'file':
+                return self.error(
+                    response={"message": "No file provided. Expected 'file' field."},
+                    status=400
+                )
+
+            # Read file content
+            content = await field.read(decode=True)
+            try:
+                crew_data = json.loads(content)
+            except json.JSONDecodeError as e:
+                return self.error(
+                    response={"message": f"Invalid JSON format: {str(e)}"},
+                    status=400
+                )
+
+            # Validate bot manager availability
+            if not self.bot_manager:
+                return self.error(
+                    response={"message": "BotManager not available"},
+                    status=500
+                )
+
+            # Parse into CrewDefinition
+            try:
+                crew_def = CrewDefinition(**crew_data)
+            except Exception as e:
+                return self.error(
+                    response={"message": f"Invalid crew definition: {str(e)}"},
+                    status=400
+                )
+
+            # Create the crew
+            try:
+                crew = await self._create_crew_from_definition(crew_def)
+
+                # Register crew in bot manager
+                self.bot_manager.add_crew(crew_def.name, crew, crew_def)
+
+                self.logger.info(
+                    f"Uploaded and created crew '{crew_def.name}' with {len(crew_def.agents)} agents"
+                )
+
+                return self.json_response(
+                    {
+                        "message": "Crew uploaded and created successfully",
+                        "crew_id": crew_def.crew_id,
+                        "name": crew_def.name,
+                        "execution_mode": crew_def.execution_mode.value,
+                        "agents": [agent.agent_id for agent in crew_def.agents],
+                        "created_at": crew_def.created_at.isoformat()
+                    },
+                    status=201
+                )
+
+            except Exception as e:
+                self.logger.error(f"Error creating crew from upload: {e}", exc_info=True)
+                return self.error(
+                    response={"message": f"Error creating crew: {str(e)}"},
+                    status=400
+                )
+
+        except web.HTTPError:
+            raise
+        except Exception as e:
+            self.logger.error(f"Error processing upload: {e}", exc_info=True)
+            return self.error(
+                response={"message": f"Error processing upload: {str(e)}"},
+                status=500
+            )
 
     async def put(self):
         """
