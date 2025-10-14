@@ -77,7 +77,7 @@ class CrewHandler(BaseView):
             TypeError: Invalid aiohttp Application.
             ConfigError: Wrong configuration parameters.
         """
-        if isinstance(app, BaseApplication):  # migrate to BaseApplication (on types)
+        if isinstance(app, BaseApplication):
             cls.app = app.get_app()
         elif isinstance(app, WebApp):
             cls.app = app  # register the app into the Extension
@@ -187,7 +187,11 @@ class CrewHandler(BaseView):
 
     async def put(self):
         """
-        Create a new AgentCrew.
+        Create a new AgentCrew or update an existing one.
+
+        URL parameters:
+            - id: Crew ID or name (optional, for updates)
+                e.g., /api/v1/crew/my-crew-id
 
         Request body should contain CrewDefinition:
         {
@@ -213,15 +217,19 @@ class CrewHandler(BaseView):
 
         Returns:
             201: Crew created successfully
+            200: Crew updated successfully
             400: Invalid request
+            404: Crew not found (for updates)
             500: Server error
         """
         try:
+            # Get crew ID from URL if provided
+            match_params = self.match_parameters(self.request)
+            url_crew_id = match_params.get('id')
+
             # Parse request body
             data = await self.request.json()
             crew_def = CrewDefinition(**data)
-
-            print('Crew Definition:', crew_def)
 
             # Validate bot manager availability
             if not self.bot_manager:
@@ -231,28 +239,53 @@ class CrewHandler(BaseView):
                     },
                     status=500
                 )
+            # if crew_id is provided, then is an update
+            if url_crew_id:
+                existing_crew = self.bot_manager.get_crew(url_crew_id)
+                if not existing_crew:
+                    return self.error(
+                        response={
+                            "message": f"Crew '{url_crew_id}' not found for update"
+                        },
+                        status=404
+                    )
+                # Update existing crew definition
+                _, existing_def = existing_crew
+                crew_def.crew_id = existing_def.crew_id  # Preserve original ID
+                crew_def.created_at = existing_def.created_at  # Preserve creation time
+                crew_def.updated_at = None  # Will be set on save
+
+                # Remove old crew
+                self.bot_manager.remove_crew(url_crew_id)
+
+                self.logger.info(f"Updating crew '{url_crew_id}'")
 
             # Create the crew via bot manager
             try:
                 crew = await self._create_crew_from_definition(crew_def)
 
+                crew_key = url_crew_id or crew_def.name
+
                 # Register crew in bot manager
-                self.bot_manager.add_crew(crew_def.name, crew, crew_def)
+                self.bot_manager.add_crew(crew_key, crew, crew_def)
+
+                action = "updated" if url_crew_id else "created"
+                status_code = 202 if url_crew_id else 201
 
                 self.logger.info(
-                    f"Created crew '{crew_def.name}' with {len(crew_def.agents)} agents"
+                    f"{action.capitalize()} crew '{crew_def.name}' with {len(crew_def.agents)} agents"
                 )
 
                 return self.json_response(
                     {
-                        "message": "Crew created successfully",
+                        "message": f"Crew {action} successfully",
                         "crew_id": crew_def.crew_id,
                         "name": crew_def.name,
                         "execution_mode": crew_def.execution_mode.value,  # pylint: disable=E1101
                         "agents": [agent.agent_id for agent in crew_def.agents],
                         "created_at": crew_def.created_at.isoformat()  # pylint: disable=E1101
                     },
-                    status=201
+                    status=status_code
                 )
 
             except Exception as e:
@@ -289,8 +322,9 @@ class CrewHandler(BaseView):
         """
         try:
             qs = self.get_arguments(self.request)
+            match_params = self.match_parameters(self.request)
+            crew_id = match_params.get('id') or qs.get('crew_id')
             crew_name = qs.get('name')
-            crew_id = qs.get('crew_id')
 
             if not self.bot_manager:
                 return self.error(
@@ -528,7 +562,8 @@ class CrewHandler(BaseView):
         """
         try:
             qs = self.get_arguments(self.request)
-            job_id = qs.get('job_id')
+            match_params = self.match_parameters(self.request)
+            job_id = match_params.get('id') or qs.get('job_id')
             if not job_id:
                 # get from json body as fallback
                 data = await self.request.json()
@@ -592,9 +627,10 @@ class CrewHandler(BaseView):
             500: Server error
         """
         try:
+            match_params = self.match_parameters(self.request)
             qs = self.get_arguments(self.request)
+            crew_id = match_params.get('id') or qs.get('crew_id')
             crew_name = qs.get('name')
-            crew_id = qs.get('crew_id')
 
             if not crew_name and not crew_id:
                 return self.error(
@@ -648,9 +684,6 @@ class CrewHandler(BaseView):
             # Get agent class
             agent_class = self.bot_manager.get_bot_class(agent_def.agent_class)
 
-            print('Agent Class:', agent_class)
-            print('Agent Definition:', agent_def)
-
             tools = []
             if agent_def.tools:
                 tools.extend(iter(agent_def.tools))
@@ -661,8 +694,6 @@ class CrewHandler(BaseView):
                 tools=tools,
                 **agent_def.config
             )
-
-            print('Agent Instance:', agent)
 
             # Set system prompt if provided
             if agent_def.system_prompt:

@@ -275,7 +275,7 @@ async def test_dispatch(output_path: Path, zipcodes: List[str]):
                 "iterations": 0,
                 "break_on_error": False,
                 "description": "Iterate through all zipcodes",
-                "values": zipcodes,  # zipcodes
+                "values": ["90660", "94115", "92587", "95020"],  # zipcodes
                 "value_name": "zipcode",
                 "actions": [
                     {
@@ -316,16 +316,16 @@ async def test_dispatch(output_path: Path, zipcodes: List[str]):
                                 "description": "Wait after reload"
                             }
                         ],
-                        "actions_if_false": [
-                            {
-                                'action': 'get_html',
-                                'selector': '//div[@id and translate(@id, "0123456789", "") = ""]',
-                                'selector_type': 'xpath',
-                                'multiple': True,
-                                'extract_name': 'numeric_id_divs',
-                                'description': 'Extract all divs with numeric IDs'
-                            }
-                        ]  # Continue normally if no error
+                        # "actions_if_false": [
+                        #     {
+                        #         'action': 'get_html',
+                        #         'selector': '//div[@id and translate(@id, "0123456789", "") = ""]',
+                        #         'selector_type': 'xpath',
+                        #         'multiple': True,
+                        #         'extract_name': 'numeric_id_divs',
+                        #         'description': 'Extract all divs with numeric IDs'
+                        #     }
+                        # ]  # Continue normally if no error
                     }
                 ]
             }
