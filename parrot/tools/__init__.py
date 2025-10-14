@@ -12,6 +12,7 @@ from .querytoolkit import QueryToolkit
 from .qsource import QSourceTool
 from .ddgo import DuckDuckGoToolkit
 from .databasequery import DatabaseQueryTool
+from .file_reader import FileReaderTool
 
 setup_plugin_importer('parrot.tools', 'tools')
 
@@ -30,6 +31,7 @@ __all__ = (
     "tool",
     "DuckDuckGoToolkit",
     "QueryToolkit",
+    "FileReaderTool",
 )
 
 # Enable dynamic imports
