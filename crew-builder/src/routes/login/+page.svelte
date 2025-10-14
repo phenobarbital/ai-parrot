@@ -2,6 +2,7 @@
   import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
   import { authStore } from '$lib/stores/auth.svelte.js';
+  import { toastStore } from '$lib/stores/toast.svelte.js';
   import { LoadingSpinner } from '../../components';
 
   let username = $state('');
@@ -27,6 +28,12 @@
     if (!result.success) {
       error = result.error;
       loading = false;
+      
+      // Show toast notification for better UX
+      toastStore.error(result.error, 5000);
+    } else {
+      // Success - redirect happens in authStore.login
+      toastStore.success('Login successful! Redirecting...', 2000);
     }
   }
 
@@ -86,6 +93,7 @@
               bind:value={username}
               disabled={loading}
               required
+              autocomplete="username"
             />
           </div>
 
@@ -103,12 +111,14 @@
                 bind:value={password}
                 disabled={loading}
                 required
+                autocomplete="current-password"
               />
               <button
                 type="button"
                 class="btn btn-ghost btn-sm absolute right-1 top-1"
                 onclick={togglePasswordVisibility}
                 tabindex="-1"
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
               >
                 {#if showPassword}
                   <svg
@@ -122,7 +132,7 @@
                       stroke-linecap="round"
                       stroke-linejoin="round"
                       stroke-width="2"
-                      d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"
+                      d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.542 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"
                     />
                   </svg>
                 {:else}
@@ -149,11 +159,11 @@
                 {/if}
               </button>
             </div>
-            <div class="label">
+            <label class="label">
               <a href="/forgot-password" class="link-hover link label-text-alt">
                 Forgot password?
               </a>
-            </div>
+            </label>
           </div>
 
           <!-- Submit Button -->
