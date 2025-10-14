@@ -2,7 +2,7 @@
   import { goto } from '$app/navigation';
   import { browser } from '$app/environment';
   import { ThemeSwitcher, LoadingSpinner } from '../components';
-  import { authStore } from '$lib/stores/auth.svelte.js';
+  import { authStore } from '$lib/stores/auth.svelte.ts';
 
   let redirecting = $state(false);
 

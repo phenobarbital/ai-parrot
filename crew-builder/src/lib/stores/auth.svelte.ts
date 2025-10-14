@@ -1,6 +1,7 @@
 import { browser } from '$app/environment';
 import { goto } from '$app/navigation';
-import { login as loginRequest, type LoginResponse, type SessionData } from '$lib/auth/auth';
+import type { LoginResponse, SessionData } from '$lib/auth/auth';
+import { login as loginRequest } from '$lib/auth/auth';
 
 class AuthStore {
   user = $state<LoginResponse | null>(null);

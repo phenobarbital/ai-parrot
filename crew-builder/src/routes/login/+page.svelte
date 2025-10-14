@@ -1,8 +1,8 @@
 <script>
   import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
-  import { authStore } from '$lib/stores/auth.svelte.js';
-  import { toastStore } from '$lib/stores/toast.svelte.js';
+  import { authStore } from '$lib/stores/auth.svelte.ts';
+  import { toastStore } from '$lib/stores/toast.svelte';
   import { LoadingSpinner } from '../../components';
 
   let username = $state('');
@@ -28,7 +28,7 @@
     if (!result.success) {
       error = result.error;
       loading = false;
-      
+
       // Show toast notification for better UX
       toastStore.error(result.error, 5000);
     } else {
