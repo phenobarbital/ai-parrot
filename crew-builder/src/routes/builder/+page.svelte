@@ -3,9 +3,13 @@
   import type { Connection, Edge, Node, NodeTypes } from '@xyflow/svelte';
   import '@xyflow/svelte/dist/style.css';
 
+  import { onDestroy } from 'svelte';
+  import { page } from '$app/stores';
+
   import AgentNode from '$lib/components/AgentNode.svelte';
   import ConfigPanel from '$lib/components/ConfigPanel.svelte';
   import Toolbar from '$lib/components/Toolbar.svelte';
+  import { crew as crewApi } from '$lib/api';
   import { crewStore } from '$lib/stores/crewStore';
   import type { AgentNodeData } from '$lib/stores/crewStore';
   import type { Writable } from 'svelte/store';
@@ -23,6 +27,10 @@
 
   let selectedNodeId = $state<string | null>(null);
   let showConfigPanel = $state(false);
+  let isCrewLoading = $state(false);
+  let loadError = $state('');
+  let crewId = $state<string | null>(null);
+  let loadRequestId = 0;
 
   // Derived values for UI (not for SvelteFlow)
   let nodes = $state<AgentFlowNode[]>([]);
@@ -36,6 +44,48 @@
     });
     return unsubscribe;
   });
+
+  async function loadCrewById(id: string | null) {
+    loadError = '';
+    const requestId = ++loadRequestId;
+
+    if (!id) {
+      crewStore.reset();
+      selectedNodeId = null;
+      showConfigPanel = false;
+      if (requestId === loadRequestId) {
+        isCrewLoading = false;
+      }
+      return;
+    }
+
+    isCrewLoading = true;
+    try {
+      const response = await crewApi.getCrewById(id);
+      const crewResponse = Array.isArray(response?.crews)
+        ? response.crews[0]
+        : response?.crew || response;
+      if (!crewResponse) {
+        throw new Error('Crew not found');
+      }
+      if (requestId !== loadRequestId) {
+        return;
+      }
+      crewStore.importCrew(crewResponse);
+      selectedNodeId = null;
+      showConfigPanel = false;
+    } catch (error) {
+      console.error('Failed to load crew', error);
+      if (requestId === loadRequestId) {
+        loadError = 'Unable to load the requested crew. Please try again.';
+        crewStore.reset();
+      }
+    } finally {
+      if (requestId === loadRequestId) {
+        isCrewLoading = false;
+      }
+    }
+  }
 
   function handleNodeClick(event: CustomEvent<{ node: Node }>) {
     console.log('Node clicked:', event.detail.node);
@@ -84,6 +134,18 @@
     anchor.click();
     URL.revokeObjectURL(url);
   }
+
+  const unsubscribePage = page.subscribe(($page) => {
+    const newCrewId = $page.url.searchParams.get('crew_id');
+    if (newCrewId !== crewId) {
+      crewId = newCrewId;
+      void loadCrewById(crewId);
+    }
+  });
+
+  onDestroy(() => {
+    unsubscribePage();
+  });
 </script>
 
 <svelte:head>
@@ -93,6 +155,12 @@
 <div class="flex h-screen flex-col">
   <Toolbar onAddAgent={handleAddAgent} onExport={handleExport} />
   <div class="relative flex-1">
+    {#if isCrewLoading}
+      <div class="absolute inset-0 z-20 flex items-center justify-center bg-base-100/70 backdrop-blur-sm">
+        <span class="loading loading-spinner loading-lg text-primary" aria-label="Loading crew"></span>
+      </div>
+    {/if}
+
     <SvelteFlow
       nodes={nodesStore}
       edges={edgesStore}
@@ -114,6 +182,14 @@
       onUpdate={handleUpdateAgent}
       onDelete={handleDeleteAgent}
     />
+  {/if}
+
+  {#if loadError}
+    <div class="toast toast-end">
+      <div class="alert alert-error shadow-lg">
+        <span>{loadError}</span>
+      </div>
+    </div>
   {/if}
 </div>
 

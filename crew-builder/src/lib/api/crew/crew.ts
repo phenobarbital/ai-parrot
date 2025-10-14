@@ -9,6 +9,11 @@ export interface CrewDefinition {
   agents: unknown[];
 }
 
+export interface GetCrewParams {
+  name?: string;
+  crew_id?: string;
+}
+
 export async function createCrew(crewDefinition: CrewDefinition) {
   const { data } = await apiClient.put(API_PATH, crewDefinition);
   return data;
@@ -27,14 +32,25 @@ export async function uploadCrew(file: File) {
   return data;
 }
 
-export async function getCrew(identifier?: string) {
-  const params = identifier ? { name: identifier } : undefined;
-  const { data } = await apiClient.get(API_PATH, { params });
+export async function getCrew(params?: GetCrewParams | string) {
+  let query: GetCrewParams | undefined;
+
+  if (typeof params === 'string') {
+    query = { name: params };
+  } else if (params && (params.name || params.crew_id)) {
+    query = params;
+  }
+
+  const { data } = await apiClient.get(API_PATH, { params: query });
   return data;
 }
 
 export async function listCrews() {
   return getCrew();
+}
+
+export async function getCrewById(crewId: string) {
+  return getCrew({ crew_id: crewId });
 }
 
 export interface ExecuteCrewOptions {
@@ -96,6 +112,7 @@ export const crew = {
   createCrew,
   uploadCrew,
   getCrew,
+  getCrewById,
   listCrews,
   executeCrew,
   getJobStatus,
