@@ -1,49 +1,42 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
   import { Background, Controls, MiniMap, SvelteFlow } from '@xyflow/svelte';
-  import type { Edge as FlowEdge, Node as FlowNode } from '@xyflow/svelte';
+  import type { Connection, Edge, Node, NodeTypes } from '@xyflow/svelte';
   import '@xyflow/svelte/dist/style.css';
 
   import AgentNode from '$lib/components/AgentNode.svelte';
   import ConfigPanel from '$lib/components/ConfigPanel.svelte';
   import Toolbar from '$lib/components/Toolbar.svelte';
   import { crewStore } from '$lib/stores/crewStore';
+  import type { AgentNodeData } from '$lib/stores/crewStore';
+  import type { Writable } from 'svelte/store';
 
-  const nodeTypes = {
-    agentNode: AgentNode
-  } as const;
+  type AgentFlowNode = Node<AgentNodeData>;
+  type AgentFlowEdge = Edge;
 
-  let nodes: FlowNode[] = [];
-  let edges: FlowEdge[] = [];
+  const nodeTypes: NodeTypes = {
+    agentNode: AgentNode as unknown as NodeTypes[string]
+  };
+
+  const nodesStore = crewStore.nodes as Writable<AgentFlowNode[]>;
+  const edgesStore = crewStore.edges as Writable<AgentFlowEdge[]>;
+
+  let nodes: AgentFlowNode[] = [];
+  let edges: AgentFlowEdge[] = [];
   let selectedNodeId: string | null = null;
   let showConfigPanel = false;
+  let selectedNode: AgentFlowNode | undefined;
 
-  const unsubscribe = crewStore.subscribe((value) => {
-    nodes = value.nodes;
-    edges = value.edges;
-  });
-
-  onDestroy(() => {
-    unsubscribe();
-  });
-
+  $: nodes = $nodesStore as AgentFlowNode[];
+  $: edges = $edgesStore as AgentFlowEdge[];
   $: selectedNode = nodes.find((node) => node.id === selectedNodeId);
 
-  function handleNodeClick(event: CustomEvent) {
+  function handleNodeClick(event: CustomEvent<{ node: Node }>) {
     selectedNodeId = event.detail.node.id;
     showConfigPanel = true;
   }
 
-  function handleConnect(event: CustomEvent) {
+  function handleConnect(event: CustomEvent<Connection>) {
     crewStore.addEdge(event.detail);
-  }
-
-  function handleNodesChange(event: CustomEvent) {
-    crewStore.updateNodes(event.detail);
-  }
-
-  function handleEdgesChange(event: CustomEvent) {
-    crewStore.updateEdges(event.detail);
   }
 
   function handleAddAgent() {
@@ -85,14 +78,12 @@
   <section class="relative flex-1">
     <SvelteFlow
       {nodeTypes}
-      {nodes}
-      {edges}
+      nodes={nodesStore}
+      edges={edgesStore}
       class="h-full w-full"
       fitView
       on:nodeclick={handleNodeClick}
       on:connect={handleConnect}
-      on:nodeschange={handleNodesChange}
-      on:edgeschange={handleEdgesChange}
     >
       <Controls />
       <Background />

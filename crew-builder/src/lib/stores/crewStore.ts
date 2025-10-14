@@ -1,12 +1,12 @@
-import { MarkerType, type Connection, type Edge, type EdgeChange, type Node, type NodeChange } from '@xyflow/svelte';
-import { get, writable } from 'svelte/store';
+import { MarkerType, type Connection, type Edge, type Node } from '@xyflow/svelte';
+import { get, writable, type Subscriber, type Unsubscriber, type Writable } from 'svelte/store';
 
 export interface AgentConfig {
   model: string;
   temperature: number;
 }
 
-export interface AgentNodeData {
+export interface AgentNodeData extends Record<string, unknown> {
   agent_id: string;
   name: string;
   agent_class: string;
@@ -39,11 +39,43 @@ const initialState: CrewState = {
   nextNodeId: 1
 };
 
+function mapStore<T>(
+  subscribeState: (run: Subscriber<CrewState>, invalidate?: (value?: CrewState) => void) => Unsubscriber,
+  updateState: (updater: (state: CrewState) => CrewState) => void,
+  selector: (state: CrewState) => T,
+  assign: (state: CrewState, value: T) => CrewState
+): Writable<T> {
+  return {
+    subscribe(run, invalidate) {
+      return subscribeState((state) => run(selector(state)), invalidate);
+    },
+    set(value) {
+      updateState((state) => assign(state, value));
+    },
+    update(updater) {
+      updateState((state) => assign(state, updater(selector(state))));
+    }
+  };
+}
+
 function createCrewStore() {
-  const { subscribe, set, update } = writable<CrewState>(initialState);
+  const store = writable<CrewState>(initialState);
+  const { subscribe, set, update } = store;
+
+  const nodes = mapStore<Node<AgentNodeData>[]>(subscribe, update, (state) => state.nodes, (state, value) => ({
+    ...state,
+    nodes: value
+  }));
+
+  const edges = mapStore<Edge[]>(subscribe, update, (state) => state.edges, (state, value) => ({
+    ...state,
+    edges: value
+  }));
 
   return {
     subscribe,
+    nodes,
+    edges,
     addAgent: () => {
       update((state) => {
         const nodeId = `agent-${state.nextNodeId}`;
@@ -123,40 +155,6 @@ function createCrewStore() {
         };
       });
     },
-    updateNodes: (changes: NodeChange<AgentNodeData>[]) => {
-      update((state) => {
-        let updatedNodes = [...state.nodes];
-
-        for (const change of changes) {
-          if (change.type === 'position' && change.position) {
-            const index = updatedNodes.findIndex((node) => node.id === change.id);
-            if (index !== -1) {
-              updatedNodes[index] = {
-                ...updatedNodes[index],
-                position: change.position
-              };
-            }
-          } else if (change.type === 'remove') {
-            updatedNodes = updatedNodes.filter((node) => node.id !== change.id);
-          }
-        }
-
-        return { ...state, nodes: updatedNodes };
-      });
-    },
-    updateEdges: (changes: EdgeChange[]) => {
-      update((state) => {
-        let updatedEdges = [...state.edges];
-
-        for (const change of changes) {
-          if (change.type === 'remove') {
-            updatedEdges = updatedEdges.filter((edge) => edge.id !== change.id);
-          }
-        }
-
-        return { ...state, edges: updatedEdges };
-      });
-    },
     updateMetadata: (metadata: Partial<CrewMetadata>) => {
       update((state) => ({
         ...state,
@@ -164,7 +162,7 @@ function createCrewStore() {
       }));
     },
     exportToJSON: () => {
-      const currentState = get({ subscribe });
+      const currentState = get(store);
       const executionOrder = buildExecutionOrder(currentState.nodes, currentState.edges);
 
       const agents = executionOrder.map((node) => ({
@@ -243,4 +241,3 @@ function buildExecutionOrder(nodes: Node<AgentNodeData>[], edges: Edge[]) {
 }
 
 export const crewStore = createCrewStore();
-export type { AgentNodeData };

@@ -51,7 +51,7 @@
   <button
     type="button"
     class="btn {buttonClass} gap-2"
-    on:click={toggleDropdown}
+    onclick={toggleDropdown}
     aria-label="Theme Selector"
   >
     <svg
@@ -81,10 +81,7 @@
   </button>
 
   {#if showDropdown}
-    <div
-      class="absolute right-0 z-[100] mt-2 w-64 rounded-box bg-base-100 shadow-2xl"
-      on:click={(e) => e.stopPropagation()}
-    >
+    <div class="absolute right-0 z-[100] mt-2 w-64 rounded-box bg-base-100 shadow-2xl">
       <div class="p-3">
         <!-- Search Input -->
         <input
@@ -106,7 +103,7 @@
             <li>
               <button
                 class:active={themeStore.currentTheme === theme}
-                on:click={() => selectTheme(theme)}
+                onclick={() => selectTheme(theme)}
                 data-theme={theme}
               >
                 <div class="flex w-full items-center justify-between">
@@ -136,7 +133,7 @@
       <div class="border-t border-base-300 p-2">
         <button
           class="btn btn-sm btn-block"
-          on:click={() => themeStore.toggleDarkMode()}
+          onclick={() => themeStore.toggleDarkMode()}
         >
           Toggle Dark Mode
         </button>

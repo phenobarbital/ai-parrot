@@ -107,7 +107,7 @@
               <button
                 type="button"
                 class="btn btn-ghost btn-sm absolute right-1 top-1"
-                on:click={togglePasswordVisibility}
+                onclick={togglePasswordVisibility}
                 tabindex="-1"
               >
                 {#if showPassword}
@@ -149,11 +149,11 @@
                 {/if}
               </button>
             </div>
-            <label class="label">
+            <div class="label">
               <a href="/forgot-password" class="link-hover link label-text-alt">
                 Forgot password?
               </a>
-            </label>
+            </div>
           </div>
 
           <!-- Submit Button -->
