@@ -1,28 +1,32 @@
-<script lang="ts">
-  import { theme } from '$lib/stores/theme';
+<script>
+  import { themeStore, THEMES } from '$lib/stores/theme.svelte.js';
 
-  const themeOptions = ['light', 'dark', 'cupcake', 'business'];
+  const themeOptions = THEMES;
+  let selectedTheme = $state(themeStore.currentTheme);
 
-  function handleChange(event: Event) {
-    const target = event.target as HTMLSelectElement;
-    theme.set(target.value);
+  $effect(() => {
+    selectedTheme = themeStore.currentTheme;
+  });
+
+  function handleChange(event) {
+    const target = event.target;
+    themeStore.setTheme(target.value);
+  }
+
+  function handleToggle() {
+    themeStore.toggleDarkMode();
   }
 </script>
 
 <div class="flex items-center gap-2">
-  <button
-    class="btn btn-sm btn-ghost"
-    type="button"
-    on:click={() => theme.toggle()}
-    aria-label="Toggle theme"
-  >
+  <button class="btn btn-sm btn-ghost" type="button" on:click={handleToggle} aria-label="Toggle theme">
     <span class="hidden sm:inline">Toggle</span>
     <span class="sm:hidden">🌓</span>
   </button>
   <select
     class="select select-bordered select-sm"
+    bind:value={selectedTheme}
     on:change={handleChange}
-    bind:value={$theme}
     aria-label="Select theme"
   >
     {#each themeOptions as option}

@@ -1,111 +1,364 @@
-<script lang="ts">
-  import { onDestroy } from 'svelte';
-  import { Background, Controls, MiniMap, SvelteFlow } from '@xyflow/svelte';
-  import type { Edge as FlowEdge, Node as FlowNode } from '@xyflow/svelte';
-  import '@xyflow/svelte/dist/style.css';
+<script>
+  import { goto } from '$app/navigation';
+  import { browser } from '$app/environment';
+  import { ThemeSwitcher, LoadingSpinner } from '../components';
+  import { authStore } from '$lib/stores/auth.svelte.js';
 
-  import AgentNode from '$lib/components/AgentNode.svelte';
-  import ConfigPanel from '$lib/components/ConfigPanel.svelte';
-  import Toolbar from '$lib/components/Toolbar.svelte';
-  import { crewStore } from '$lib/stores/crewStore';
+  let redirecting = $state(false);
 
-  const nodeTypes = {
-    agentNode: AgentNode
-  } as const;
+  $effect(() => {
+    if (!browser) return;
 
-  let nodes: FlowNode[] = [];
-  let edges: FlowEdge[] = [];
-  let selectedNodeId: string | null = null;
-  let showConfigPanel = false;
-
-  const unsubscribe = crewStore.subscribe((value) => {
-    nodes = value.nodes;
-    edges = value.edges;
+    if (!authStore.loading && !authStore.isAuthenticated && !redirecting) {
+      redirecting = true;
+      goto('/login');
+    }
   });
 
-  onDestroy(() => {
-    unsubscribe();
-  });
-
-  $: selectedNode = nodes.find((node) => node.id === selectedNodeId);
-
-  function handleNodeClick(event: CustomEvent) {
-    selectedNodeId = event.detail.node.id;
-    showConfigPanel = true;
-  }
-
-  function handleConnect(event: CustomEvent) {
-    crewStore.addEdge(event.detail);
-  }
-
-  function handleNodesChange(event: CustomEvent) {
-    crewStore.updateNodes(event.detail);
-  }
-
-  function handleEdgesChange(event: CustomEvent) {
-    crewStore.updateEdges(event.detail);
-  }
-
-  function handleAddAgent() {
-    crewStore.addAgent();
-  }
-
-  function closeConfigPanel() {
-    selectedNodeId = null;
-    showConfigPanel = false;
-  }
-
-  function handleUpdateAgent(event: CustomEvent) {
-    if (!selectedNodeId) return;
-    crewStore.updateAgent(selectedNodeId, event.detail);
-  }
-
-  function handleDeleteAgent() {
-    if (!selectedNodeId) return;
-    crewStore.deleteAgent(selectedNodeId);
-    closeConfigPanel();
-  }
-
-  function handleExport() {
-    const crewJSON = crewStore.exportToJSON();
-    const blob = new Blob([JSON.stringify(crewJSON, null, 2)], {
-      type: 'application/json'
-    });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `${crewJSON.name || 'crew'}.json`;
-    anchor.click();
-    URL.revokeObjectURL(url);
+  async function handleLogout() {
+    await authStore.logout();
   }
 </script>
 
-<main class="flex min-h-screen flex-col">
-  <Toolbar on:addAgent={handleAddAgent} on:export={handleExport} />
-  <section class="relative flex-1">
-    <SvelteFlow
-      {nodeTypes}
-      {nodes}
-      {edges}
-      class="h-full w-full"
-      fitView
-      on:nodeclick={handleNodeClick}
-      on:connect={handleConnect}
-      on:nodeschange={handleNodesChange}
-      on:edgeschange={handleEdgesChange}
-    >
-      <Controls />
-      <Background />
-      <MiniMap />
-    </SvelteFlow>
-  </section>
+<svelte:head>
+  <title>Dashboard - Crew Builder</title>
+</svelte:head>
 
-  {#if showConfigPanel && selectedNode}
-    <ConfigPanel
-      agent={selectedNode.data}
-      on:close={closeConfigPanel}
-      on:update={handleUpdateAgent}
-      on:delete={handleDeleteAgent}
-    />
-  {/if}
-</main>
+{#if authStore.loading}
+  <div class="flex min-h-screen items-center justify-center">
+    <LoadingSpinner text="Loading your workspace..." />
+  </div>
+{:else}
+  <div class="drawer lg:drawer-open">
+    <input id="main-drawer" type="checkbox" class="drawer-toggle" />
+    <div class="drawer-content flex flex-col">
+      <!-- Navbar -->
+      <div class="navbar sticky top-0 z-30 bg-base-100 shadow-md">
+        <div class="flex-none lg:hidden">
+          <label for="main-drawer" class="btn btn-square btn-ghost">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              class="inline-block h-6 w-6 stroke-current"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M4 6h16M4 12h16M4 18h16"
+              ></path>
+            </svg>
+          </label>
+        </div>
+        <div class="flex-1">
+          <h1 class="px-4 text-xl font-bold">Crew Builder</h1>
+        </div>
+        <div class="flex-none gap-2">
+          <!-- Theme Selector -->
+          <ThemeSwitcher showLabel={false} buttonClass="btn-ghost btn-square" />
+
+          <!-- User Menu -->
+          <div class="dropdown dropdown-end">
+            <button tabindex="0" class="btn btn-circle btn-ghost">
+              <div class="avatar placeholder">
+                <div class="w-10 rounded-full bg-primary text-primary-content">
+                  <span class="text-xs">
+                    {authStore.user?.username?.[0]?.toUpperCase() || 'U'}
+                  </span>
+                </div>
+              </div>
+            </button>
+            <ul
+              tabindex="0"
+              class="menu dropdown-content menu-sm z-[1] mt-3 w-52 rounded-box bg-base-100 p-2 shadow"
+            >
+              <li class="menu-title">
+                <span>{authStore.user?.username || 'User'}</span>
+              </li>
+              <li><a href="/profile">Profile</a></li>
+              <li><a href="/settings">Settings</a></li>
+              <li><button on:click={handleLogout}>Logout</button></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Page Content -->
+      <div class="flex-1 p-6">
+        <div class="mb-6">
+          <h2 class="text-3xl font-bold">Welcome back, {authStore.user?.username || 'User'}!</h2>
+          <p class="text-base-content/70">Build and manage your AI agent crews</p>
+        </div>
+
+        <!-- Quick Stats -->
+        <div class="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div class="stat bg-base-100 shadow">
+            <div class="stat-figure text-primary">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                class="inline-block h-8 w-8 stroke-current"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
+                />
+              </svg>
+            </div>
+            <div class="stat-title">Total Crews</div>
+            <div class="stat-value text-primary">0</div>
+            <div class="stat-desc">Active agent crews</div>
+          </div>
+
+          <div class="stat bg-base-100 shadow">
+            <div class="stat-figure text-secondary">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                class="inline-block h-8 w-8 stroke-current"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M13 10V3L4 14h7v7l9-11h-7z"
+                />
+              </svg>
+            </div>
+            <div class="stat-title">Executions</div>
+            <div class="stat-value text-secondary">0</div>
+            <div class="stat-desc">Total runs</div>
+          </div>
+
+          <div class="stat bg-base-100 shadow">
+            <div class="stat-figure text-accent">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                class="inline-block h-8 w-8 stroke-current"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"
+                />
+              </svg>
+            </div>
+            <div class="stat-title">Success Rate</div>
+            <div class="stat-value text-accent">100%</div>
+            <div class="stat-desc">Last 30 days</div>
+          </div>
+
+          <div class="stat bg-base-100 shadow">
+            <div class="stat-figure text-info">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                class="inline-block h-8 w-8 stroke-current"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+            </div>
+            <div class="stat-title">Avg Duration</div>
+            <div class="stat-value text-info">0s</div>
+            <div class="stat-desc">Per execution</div>
+          </div>
+        </div>
+
+        <!-- Action Cards -->
+        <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <div class="card bg-base-100 shadow-xl">
+            <div class="card-body">
+              <h2 class="card-title">Create New Crew</h2>
+              <p>Design a new agent crew using our visual workflow builder.</p>
+              <div class="card-actions justify-end">
+                <a href="/builder" class="btn btn-primary">Start Building</a>
+              </div>
+            </div>
+          </div>
+
+          <div class="card bg-base-100 shadow-xl">
+            <div class="card-body">
+              <h2 class="card-title">Import Crew</h2>
+              <p>Import an existing crew configuration from a JSON file.</p>
+              <div class="card-actions justify-end">
+                <button class="btn btn-secondary">Import JSON</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Recent Crews -->
+        <div class="mt-6">
+          <h3 class="mb-4 text-2xl font-bold">Recent Crews</h3>
+          <div class="overflow-x-auto bg-base-100 shadow-xl">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Agents</th>
+                  <th>Last Run</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td colspan="5" class="text-center text-base-content/70">
+                    No crews yet. Create your first crew to get started!
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sidebar -->
+    <div class="drawer-side">
+      <label for="main-drawer" aria-label="close sidebar" class="drawer-overlay"></label>
+      <aside class="flex min-h-screen w-64 flex-col bg-base-200">
+        <!-- Logo -->
+        <div class="flex h-16 items-center gap-2 px-4">
+          <div class="avatar">
+            <div class="w-10 rounded-lg bg-primary text-primary-content">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                class="h-6 w-6 stroke-current"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M13 10V3L4 14h7v7l9-11h-7z"
+                />
+              </svg>
+            </div>
+          </div>
+          <span class="text-lg font-bold">AI-Parrot</span>
+        </div>
+
+        <!-- Navigation Menu -->
+        <ul class="menu flex-1 p-4">
+          <li class="menu-title">
+            <span>Main</span>
+          </li>
+          <li>
+            <a href="/" class="active">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                class="h-5 w-5"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
+                />
+              </svg>
+              Dashboard
+            </a>
+          </li>
+          <li>
+            <a href="/builder">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                class="h-5 w-5"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M14 10l-2 1m0 0l-2-1m2 1v2.5M20 7l-2 1m2-1l-2-1m2 1v2.5M14 4l-2-1-2 1M4 7l2-1M4 7l2 1M4 7v2.5M12 21l-2-1m2 1l2-1m-2 1v-2.5M6 18l-2-1v-2.5M18 18l2-1v-2.5"
+                />
+              </svg>
+              Crew Builder
+            </a>
+          </li>
+          <li>
+            <a href="/crews">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                class="h-5 w-5"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
+                />
+              </svg>
+              My Crews
+            </a>
+          </li>
+          <li class="menu-title">
+            <span>Resources</span>
+          </li>
+          <li>
+            <a href="/templates">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                class="h-5 w-5"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
+                />
+              </svg>
+              Templates
+            </a>
+          </li>
+          <li>
+            <a href="/docs">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                class="h-5 w-5"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
+                />
+              </svg>
+              Documentation
+            </a>
+          </li>
+        </ul>
+      </aside>
+    </div>
+  </div>
+{/if}
