@@ -12,6 +12,7 @@ Endpoints:
 """
 from typing import Any, List
 import uuid
+import json
 from aiohttp import web
 from navigator.views import BaseView
 from navigator.types import WebApp  # pylint: disable=E0611,E0401
@@ -43,10 +44,7 @@ class CrewHandler(BaseView):
         self.logger = logging.getLogger('Parrot.CrewHandler')
         # Get bot manager from app if available
         self._bot_manager = None
-        # Initialize job manager if not in app
-        if not hasattr(self.request.app, 'job_manager'):
-            self.request.app['job_manager'] = JobManager()
-        self.job_manager: JobManager = self.request.app['job_manager']
+        self.job_manager: JobManager = self.app['job_manager'] if 'job_manager' in self.app else JobManager()
 
     @property
     def bot_manager(self):
@@ -60,6 +58,12 @@ class CrewHandler(BaseView):
     def bot_manager(self, value):
         """Set bot manager."""
         self._bot_manager = value
+
+    @staticmethod
+    async def configure_job_manager(app: WebApp):
+        """Configure and start job manager."""
+        app['job_manager'] = JobManager()
+        await app['job_manager'].start()
 
     @classmethod
     def configure(cls, app: WebApp = None, path: str = None, **kwargs) -> WebApp:
@@ -85,6 +89,100 @@ class CrewHandler(BaseView):
             )
             app.router.add_view(
                 r"{url}{{meta:(:.*)?}}".format(url=url), cls
+            )
+            app.on_startup.append(cls.configure_job_manager)
+
+    async def upload(self):
+        """
+        Upload a crew definition from a JSON file.
+
+        This endpoint accepts multipart/form-data with a JSON file containing
+        the crew definition from the visual builder.
+
+        Form data:
+            - file: JSON file with crew definition
+
+        Returns:
+            201: Crew created successfully from file
+            400: Invalid file or format
+            500: Server error
+        """
+        try:
+            # Get multipart reader
+            reader = await self.request.multipart()
+
+            # Read file field
+            field = await reader.next()
+
+            if not field or field.name != 'file':
+                return self.error(
+                    response={"message": "No file provided. Expected 'file' field."},
+                    status=400
+                )
+
+            # Read file content
+            content = await field.read(decode=True)
+            try:
+                crew_data = json.loads(content)
+            except json.JSONDecodeError as e:
+                return self.error(
+                    response={"message": f"Invalid JSON format: {str(e)}"},
+                    status=400
+                )
+
+            # Validate bot manager availability
+            if not self.bot_manager:
+                return self.error(
+                    response={"message": "BotManager not available"},
+                    status=500
+                )
+
+            # Parse into CrewDefinition
+            try:
+                crew_def = CrewDefinition(**crew_data)
+            except Exception as e:
+                return self.error(
+                    response={"message": f"Invalid crew definition: {str(e)}"},
+                    status=400
+                )
+
+            # Create the crew
+            try:
+                crew = await self._create_crew_from_definition(crew_def)
+
+                # Register crew in bot manager
+                self.bot_manager.add_crew(crew_def.name, crew, crew_def)
+
+                self.logger.info(
+                    f"Uploaded and created crew '{crew_def.name}' with {len(crew_def.agents)} agents"
+                )
+
+                return self.json_response(
+                    {
+                        "message": "Crew uploaded and created successfully",
+                        "crew_id": crew_def.crew_id,
+                        "name": crew_def.name,
+                        "execution_mode": crew_def.execution_mode.value,
+                        "agents": [agent.agent_id for agent in crew_def.agents],
+                        "created_at": crew_def.created_at.isoformat()
+                    },
+                    status=201
+                )
+
+            except Exception as e:
+                self.logger.error(f"Error creating crew from upload: {e}", exc_info=True)
+                return self.error(
+                    response={"message": f"Error creating crew: {str(e)}"},
+                    status=400
+                )
+
+        except web.HTTPError:
+            raise
+        except Exception as e:
+            self.logger.error(f"Error processing upload: {e}", exc_info=True)
+            return self.error(
+                response={"message": f"Error processing upload: {str(e)}"},
+                status=500
             )
 
     async def put(self):
@@ -122,6 +220,8 @@ class CrewHandler(BaseView):
             # Parse request body
             data = await self.request.json()
             crew_def = CrewDefinition(**data)
+
+            print('Crew Definition:', crew_def)
 
             # Validate bot manager availability
             if not self.bot_manager:
@@ -548,16 +648,21 @@ class CrewHandler(BaseView):
             # Get agent class
             agent_class = self.bot_manager.get_bot_class(agent_def.agent_class)
 
+            print('Agent Class:', agent_class)
+            print('Agent Definition:', agent_def)
+
+            tools = []
+            if agent_def.tools:
+                tools.extend(iter(agent_def.tools))
+
             # Create agent instance
             agent = agent_class(
                 name=agent_def.name or agent_def.agent_id,
+                tools=tools,
                 **agent_def.config
             )
 
-            # # Add tools to agent if specified
-            # for tool_name in agent_def.tools:
-            #     if tool := self.bot_manager.get_tool(tool_name):
-            #         agent.tool_manager.add_tool(tool, tool_name)
+            print('Agent Instance:', agent)
 
             # Set system prompt if provided
             if agent_def.system_prompt:

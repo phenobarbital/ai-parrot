@@ -68,7 +68,6 @@ class AbstractBot(DBInterface, ABC):
     llm_client: str = 'google'
     default_model: str = 'gemini-2.5-flash'
     temperature: float = 0.1
-    max_tokens: int = None
 
     def __init__(
         self,
@@ -158,11 +157,11 @@ class AbstractBot(DBInterface, ABC):
                 )
                 presetting = LLM_PRESETS['default']
             self._llm_temp = presetting.get('temperature', 0.1)
-            self._max_tokens = presetting.get('max_tokens', 4096)
+            self._max_tokens = presetting.get('max_tokens', None)
         else:
             # Default LLM Presetting by LLMs
             self._llm_temp = kwargs.get('temperature', self.temperature)
-            self._max_tokens = kwargs.get('max_tokens', self.max_tokens)
+            self._max_tokens = kwargs.get('max_tokens', None)
         # LLM Configuration:
         # Configuration state flag
         self._configured: bool = False
@@ -1677,8 +1676,7 @@ Use the following information about user's data to guide your responses:
                 **kwargs
             )
             # Configure LLM if needed
-            new_llm = kwargs.pop('llm', None)
-            if new_llm:
+            if (new_llm := kwargs.pop('llm', None)):
                 self.configure_llm(
                     llm=new_llm,
                     **kwargs.pop('llm_config', {})
@@ -2011,8 +2009,7 @@ Use the following information about user's data to guide your responses:
             )
 
             # Configure LLM if needed
-            new_llm = kwargs.pop('llm', None)
-            if new_llm:
+            if (new_llm := kwargs.pop('llm', None)):
                 self.configure_llm(
                     llm=new_llm,
                     **kwargs.pop('llm_config', {})
@@ -2450,7 +2447,6 @@ Use the following information about user's data to guide your responses:
         # Set max_tokens using bot default when provided
         default_max_tokens = self._max_tokens if self._max_tokens is not None else None
         max_tokens = kwargs.get('max_tokens', default_max_tokens)
-
         limit = kwargs.get('limit', self.context_search_limit)
         score_threshold = kwargs.get('score_threshold', self.context_score_threshold)
 
@@ -2497,8 +2493,7 @@ Use the following information about user's data to guide your responses:
             )
 
             # Configure LLM if needed
-            new_llm = kwargs.pop('llm', None)
-            if new_llm:
+            if (new_llm := kwargs.pop('llm', None)):
                 self.configure_llm(llm=new_llm, **kwargs.pop('llm_config', {}))
 
             # Make the LLM call

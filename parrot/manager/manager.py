@@ -448,15 +448,6 @@ class BotManager:
             '/api/v1/chatbots/{name}',
             BotHandler
         )
-        # Agent Crew Handler:
-        # router.add_view(
-        #     '/api/v1/crew',
-        #     CrewHandler
-        # )
-        # router.add_view(
-        #     '/api/v1/crew/{crew}',
-        #     CrewHandler
-        # )
         CrewHandler.configure(self.app, '/api/v1/crew')
         return self.app
 

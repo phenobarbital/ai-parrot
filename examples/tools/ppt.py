@@ -1,6 +1,6 @@
 import asyncio
 from pathlib import Path
-from parrot.tools.ppt import PowerPointTool
+from parrot.tools.powerpoint import PowerPointTool
 
 
 async def example_usage():

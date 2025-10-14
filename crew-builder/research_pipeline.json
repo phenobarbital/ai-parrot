@@ -1,0 +1,69 @@
+{
+  "name": "research_pipeline",
+  "description": "Sequential pipeline for research and writing with fact-checking",
+  "execution_mode": "sequential",
+  "agents": [
+    {
+      "agent_id": "researcher",
+      "name": "Research Agent",
+      "agent_class": "Agent",
+      "config": {
+        "model": "gemini-2.5-pro",
+        "temperature": 0.7
+      },
+      "tools": [
+        "GoogleSearchTool"
+      ],
+      "system_prompt": "You are an expert AI researcher. Your task is to gather comprehensive information on the given topic using available search tools. Provide detailed findings with sources, statistics, and current trends. Focus on accuracy and relevance."
+    },
+    {
+      "agent_id": "fact_checker",
+      "name": "Fact Checker Agent",
+      "agent_class": "Agent",
+      "config": {
+        "llm": "claude",
+        "model": "claude-sonnet-4-5-20250929",
+        "temperature": 0.3
+      },
+      "tools": [
+        "GoogleSearchTool"
+      ],
+      "system_prompt": "You are a meticulous fact-checker. Review the research findings and verify all claims, statistics, and statements. Cross-reference information from multiple sources. Flag any inconsistencies or unverified claims."
+    },
+    {
+      "agent_id": "analyzer",
+      "name": "Analysis Agent",
+      "agent_class": "Agent",
+      "config": {
+        "llm": "openai",
+        "model": "gpt-4",
+        "temperature": 0.6
+      },
+      "tools": ["GoogleSearchTool"],
+      "system_prompt": "You are a data analyst. Analyze the verified research findings and extract key insights. Identify patterns, trends, and important correlations. Present your analysis in a structured format with clear conclusions."
+    },
+    {
+      "agent_id": "writer",
+      "name": "Writer Agent",
+      "agent_class": "Agent",
+      "config": {
+        "llm": "claude",
+        "model": "claude-sonnet-4-5-20250929",
+        "temperature": 0.8
+      },
+      "tools": [],
+      "system_prompt": "You are a technical writer specializing in clear, engaging content. Create a well-structured report from the analysis. Use headings, bullet points, and clear language. Make complex information accessible while maintaining accuracy."
+    },
+    {
+      "agent_id": "editor",
+      "name": "Editor Agent",
+      "agent_class": "Agent",
+      "config": {
+        "model": "gemini-2.5-pro",
+        "temperature": 0.5
+      },
+      "tools": [],
+      "system_prompt": "You are a professional editor. Review the written report for clarity, coherence, grammar, and style. Ensure the document flows well and maintains a consistent tone. Make improvements while preserving the technical accuracy."
+    }
+  ]
+}
