@@ -72,7 +72,7 @@
     await authStore.logout();
   }
 
-  function handleStartBuilding(event?: Event) {
+  function handleStartBuilding(event) {
     if (!browser) return;
 
     event?.preventDefault?.();
@@ -80,7 +80,7 @@
     goto('/builder');
   }
 
-  function formatDate(dateString?: string) {
+  function formatDate(dateString) {
     if (!dateString) {
       return '—';
     }
