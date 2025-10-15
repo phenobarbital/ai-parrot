@@ -224,7 +224,7 @@ class NotificationMixin:
                 pass
 
             # Merge additional kwargs
-            notify_args.update(kwargs)
+            notify_args |= kwargs
 
             # Send notification with smart file handling
             result = await self._send_with_provider(

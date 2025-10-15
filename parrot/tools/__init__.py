@@ -8,10 +8,7 @@ from .abstract import AbstractTool, ToolResult
 from .math import MathTool
 from .toolkit import AbstractToolkit, ToolkitTool
 from .decorators import tool_schema, tool
-from .querytoolkit import QueryToolkit
-from .qsource import QSourceTool
 from .ddgo import DuckDuckGoToolkit
-from .databasequery import DatabaseQueryTool
 from .file_reader import FileReaderTool
 
 setup_plugin_importer('parrot.tools', 'tools')
@@ -23,14 +20,11 @@ __all__ = (
     "AbstractTool",
     "ToolResult",
     "MathTool",
-    "QSourceTool",
-    "DatabaseQueryTool",
     "AbstractToolkit",
     "ToolkitTool",
     "tool_schema",
     "tool",
     "DuckDuckGoToolkit",
-    "QueryToolkit",
     "FileReaderTool",
 )
 
