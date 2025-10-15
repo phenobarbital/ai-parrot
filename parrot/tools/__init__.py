@@ -11,8 +11,7 @@ from .decorators import tool_schema, tool
 from .ddgo import DuckDuckGoToolkit
 from .file_reader import FileReaderTool
 
-setup_plugin_importer('parrot.tools', 'tools')
-
+# setup_plugin_importer('parrot.tools', 'tools')
 
 __all__ = (
     "PythonREPLTool",

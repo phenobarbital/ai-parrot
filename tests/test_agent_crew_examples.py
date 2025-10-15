@@ -89,7 +89,7 @@ def test_agentcrew_sequential_execution_passes_context() -> None:
         shared_tool_manager=DummyToolManager(),
     )
 
-    result = asyncio.run(crew.run_sequential(initial_query="Investigate widgets"))
+    result = asyncio.run(crew.run_sequential(query="Investigate widgets"))
 
     # Pipeline execution order and outputs are preserved
     assert result.status == "completed"

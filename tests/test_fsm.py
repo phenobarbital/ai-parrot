@@ -1,5 +1,5 @@
 """
-Unit Tests for AgentCrewFSM
+Unit Tests for AgentsFlow
 ============================
 Comprehensive test suite for the FSM-based Agent Crew system.
 """
@@ -10,7 +10,7 @@ import pytest
 
 
 from parrot.bots.orchestration.fsm import (
-    AgentCrewFSM,
+    AgentsFlow,
     AgentTaskMachine,
     FlowNode,
     FlowTransition,
@@ -55,8 +55,8 @@ def mock_agents():
 
 @pytest.fixture
 def crew():
-    """Create an AgentCrewFSM instance."""
-    return AgentCrewFSM(name="TestCrew")
+    """Create an AgentsFlow instance."""
+    return AgentsFlow(name="TestCrew")
 
 
 # Test: State Machine
@@ -109,12 +109,12 @@ def test_state_machine_retry():
     assert fsm.current_state == fsm.ready
 
 
-# Test: AgentCrewFSM Basic Operations
+# Test: AgentsFlow Basic Operations
 # ====================================
 
 def test_crew_initialization():
     """Test crew initialization."""
-    crew = AgentCrewFSM(name="TestCrew", max_parallel_tasks=5)
+    crew = AgentsFlow(name="TestCrew", max_parallel_tasks=5)
     assert crew.name == "TestCrew"
     assert crew.max_parallel_tasks == 5
     assert len(crew.nodes) == 0
@@ -662,7 +662,7 @@ def test_workflow_stats(crew, mock_agents):
 @pytest.mark.asyncio
 async def test_empty_workflow():
     """Test execution with no agents."""
-    crew = AgentCrewFSM()
+    crew = AgentsFlow()
 
     with pytest.raises(ValueError, match="No entry point"):
         await crew.run_flow("Test task")
@@ -681,7 +681,7 @@ async def test_workflow_timeout(crew, mock_agents):
 
     slow_agent.ask = AsyncMock(side_effect=slow_execution)
 
-    crew_with_timeout = AgentCrewFSM(execution_timeout=0.5)
+    crew_with_timeout = AgentsFlow(execution_timeout=0.5)
     crew_with_timeout.add_agent(slow_agent)
 
     with pytest.raises(TimeoutError):
