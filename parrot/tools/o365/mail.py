@@ -8,7 +8,10 @@ Specific tools for interacting with Office365 services:
 """
 from typing import Dict, Any, Optional, List, Type
 from datetime import datetime
+from pathlib import Path
+import base64
 from pydantic import BaseModel, Field
+import aiofiles
 from msgraph.generated.models.message import Message
 from msgraph.generated.models.recipient import Recipient
 from msgraph.generated.models.email_address import EmailAddress
@@ -542,4 +545,448 @@ class SendEmailTool(O365Tool):
 
         except Exception as e:
             self.logger.error(f"Failed to send email: {e}", exc_info=True)
+            raise
+
+# ============================================================================
+# LIST MESSAGES TOOL
+# ============================================================================
+
+class ListMessagesArgs(O365ToolArgsSchema):
+    """Arguments for listing email messages."""
+    folder: str = Field(
+        default="inbox",
+        description="Folder to list messages from: 'inbox', 'sentitems', 'drafts', 'deleteditems', or folder ID"
+    )
+    top: int = Field(
+        default=10,
+        description="Maximum number of messages to return (1-1000)"
+    )
+    filter_query: Optional[str] = Field(
+        default=None,
+        description="OData filter query (e.g., 'isRead eq false', 'hasAttachments eq true')"
+    )
+    order_by: str = Field(
+        default="receivedDateTime desc",
+        description="Sort order (e.g., 'receivedDateTime desc', 'subject asc')"
+    )
+    select_fields: Optional[List[str]] = Field(
+        default=None,
+        description="Specific fields to retrieve. If None, returns default fields."
+    )
+
+
+class ListMessagesTool(O365Tool):
+    """
+    Tool for listing email messages from a specified folder.
+
+    This tool allows you to:
+    - List messages from any mail folder (Inbox, Sent Items, etc.)
+    - Filter messages by various criteria (read status, sender, date, etc.)
+    - Limit the number of results
+    - Order results by different fields
+    - Select specific fields to retrieve
+
+    Filter query examples:
+        - "isRead eq false" - Unread messages
+        - "hasAttachments eq true" - Messages with attachments
+        - "from/emailAddress/address eq 'user@example.com'" - From specific sender
+        - "receivedDateTime ge 2025-10-16T00:00:00Z" - Received after date
+        - "importance eq 'high'" - High importance messages
+
+    Examples:
+        # List recent messages
+        result = await tool.run(
+            folder="inbox",
+            top=20
+        )
+
+        # List unread messages
+        result = await tool.run(
+            folder="inbox",
+            filter_query="isRead eq false"
+        )
+
+        # List messages from specific sender
+        result = await tool.run(
+            folder="inbox",
+            filter_query="from/emailAddress/address eq 'boss@company.com'",
+            top=10
+        )
+    """
+
+    name: str = "list_messages"
+    description: str = (
+        "List email messages from a specified folder with optional filtering and sorting. "
+        "Supports OData filters for advanced queries."
+    )
+    args_schema: Type[BaseModel] = ListMessagesArgs
+
+    async def _execute_graph_operation(
+        self,
+        client: O365Client,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """
+        List messages using Microsoft Graph API.
+
+        Args:
+            client: Authenticated O365Client
+            **kwargs: List parameters
+
+        Returns:
+            Dict with list of messages
+        """
+        folder = kwargs.get('folder', 'inbox')
+        top = min(kwargs.get('top', 10), 1000)  # Cap at 1000
+        filter_query = kwargs.get('filter_query')
+        order_by = kwargs.get('order_by', 'receivedDateTime desc')
+        select_fields = kwargs.get('select_fields')
+        user_id = kwargs.get('user_id')
+
+        try:
+            # Get user context
+            mailbox = client.get_user_context(user_id=user_id)
+
+            # Default fields to select
+            default_fields = [
+                'id', 'subject', 'from', 'toRecipients', 'receivedDateTime',
+                'sentDateTime', 'hasAttachments', 'importance', 'isRead',
+                'bodyPreview', 'internetMessageId', 'webLink'
+            ]
+
+            fields = select_fields or default_fields
+
+            # Apply folder filter and get appropriate request builder
+            folder_map = {
+                'inbox': 'inbox',
+                'sentitems': 'sentitems',
+                'drafts': 'drafts',
+                'deleteditems': 'deleteditems'
+            }
+
+            if folder.lower() in folder_map:
+                folder_name = folder_map[folder.lower()]
+                request_builder = mailbox.mail_folders.by_mail_folder_id(folder_name).messages
+            else:
+                # Try as direct folder ID or use inbox as fallback
+                request_builder = mailbox.messages
+
+            # Build query parameters
+            query_params_obj = MessagesRequestBuilder.MessagesRequestBuilderGetQueryParameters(
+                top=top,
+                select=fields,
+                orderby=[order_by]
+            )
+
+            # Add filter if provided
+            if filter_query:
+                query_params_obj.filter = filter_query
+
+            # Wrap in RequestConfiguration
+            request_config = RequestConfiguration(
+                query_parameters=query_params_obj
+            )
+
+            # Execute request
+            self.logger.info(f"Listing messages: folder='{folder}', top={top}, filter='{filter_query}'")
+            messages = await request_builder.get(request_configuration=request_config)
+
+            # Format results
+            results = []
+            if messages and messages.value:
+                for msg in messages.value:
+                    result_item = {
+                        "id": msg.id,
+                        "subject": msg.subject or "(No subject)",
+                        "from": msg.from_.email_address.address if msg.from_ and msg.from_.email_address else None,
+                        "from_name": msg.from_.email_address.name if msg.from_ and msg.from_.email_address else None,
+                        "to": [
+                            r.email_address.address
+                            for r in (msg.to_recipients or [])
+                            if r and r.email_address
+                        ],
+                        "received_datetime": msg.received_date_time.isoformat() if msg.received_date_time else None,
+                        "sent_datetime": msg.sent_date_time.isoformat() if msg.sent_date_time else None,
+                        "has_attachments": msg.has_attachments,
+                        "importance": str(msg.importance) if msg.importance else None,
+                        "is_read": msg.is_read,
+                        "body_preview": msg.body_preview,
+                        "internet_message_id": msg.internet_message_id,
+                        "web_link": msg.web_link
+                    }
+                    results.append(result_item)
+
+            self.logger.info(f"Found {len(results)} messages in folder '{folder}'")
+
+            return {
+                "folder": folder,
+                "total_results": len(results),
+                "messages": results
+            }
+
+        except Exception as e:
+            self.logger.error(f"Failed to list messages: {e}", exc_info=True)
+            raise
+
+
+# ============================================================================
+# GET MESSAGE TOOL
+# ============================================================================
+
+class GetMessageArgs(O365ToolArgsSchema):
+    """Arguments for retrieving a specific message."""
+    message_id: str = Field(
+        description="The ID of the message to retrieve"
+    )
+    include_body: bool = Field(
+        default=True,
+        description="Whether to include the full message body content"
+    )
+
+
+class GetMessageTool(O365Tool):
+    """
+    Tool for retrieving a specific email message by its ID.
+
+    This tool retrieves complete information about a single message, including:
+    - Full message headers (subject, sender, recipients, dates)
+    - Message body content (if include_body=True)
+    - Attachment information
+    - Message metadata (read status, importance, conversation ID)
+
+    Use this tool when you need detailed information about a specific message,
+    such as reading the full content or checking for attachments.
+
+    Examples:
+        # Get message with body
+        result = await tool.run(
+            message_id="AAMkAGI...",
+            include_body=True
+        )
+
+        # Get message metadata only (faster)
+        result = await tool.run(
+            message_id="AAMkAGI...",
+            include_body=False
+        )
+    """
+
+    name: str = "get_message"
+    description: str = (
+        "Retrieve a specific email message by its ID with complete details. "
+        "Can include full body content and attachment information."
+    )
+    args_schema: Type[BaseModel] = GetMessageArgs
+
+    async def _execute_graph_operation(
+        self,
+        client: O365Client,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """
+        Get a specific message using Microsoft Graph API.
+
+        Args:
+            client: Authenticated O365Client
+            **kwargs: Get parameters
+
+        Returns:
+            Dict with message details
+        """
+        message_id = kwargs.get('message_id')
+        include_body = kwargs.get('include_body', True)
+        user_id = kwargs.get('user_id')
+
+        try:
+            # Get user context
+            mailbox = client.get_user_context(user_id=user_id)
+
+            # Select fields based on whether body is needed
+            if include_body:
+                select_fields = [
+                    'id', 'subject', 'from', 'toRecipients', 'ccRecipients', 'bccRecipients',
+                    'receivedDateTime', 'sentDateTime', 'hasAttachments', 'importance', 'isRead',
+                    'body', 'bodyPreview', 'internetMessageId', 'conversationId', 'webLink'
+                ]
+            else:
+                select_fields = [
+                    'id', 'subject', 'from', 'toRecipients', 'ccRecipients', 'bccRecipients',
+                    'receivedDateTime', 'sentDateTime', 'hasAttachments', 'importance', 'isRead',
+                    'bodyPreview', 'internetMessageId', 'conversationId', 'webLink'
+                ]
+
+            # Build query parameters
+            query_params_obj = MessagesRequestBuilder.MessagesRequestBuilderGetQueryParameters(
+                select=select_fields
+            )
+
+            request_config = RequestConfiguration(
+                query_parameters=query_params_obj
+            )
+
+            # Get the message
+            self.logger.info(f"Getting message: {message_id}")
+            message = await mailbox.messages.by_message_id(message_id).get(
+                request_configuration=request_config
+            )
+
+            if not message:
+                raise ValueError(f"Message {message_id} not found")
+
+            # Format result
+            result = {
+                "id": message.id,
+                "subject": message.subject or "(No subject)",
+                "from": message.from_.email_address.address if message.from_ and message.from_.email_address else None,
+                "from_name": message.from_.email_address.name if message.from_ and message.from_.email_address else None,
+                "to_recipients": [
+                    r.email_address.address
+                    for r in (message.to_recipients or [])
+                    if r and r.email_address
+                ],
+                "cc_recipients": [
+                    r.email_address.address
+                    for r in (message.cc_recipients or [])
+                    if r and r.email_address
+                ],
+                "bcc_recipients": [
+                    r.email_address.address
+                    for r in (message.bcc_recipients or [])
+                    if r and r.email_address
+                ],
+                "received_datetime": message.received_date_time.isoformat() if message.received_date_time else None,
+                "sent_datetime": message.sent_date_time.isoformat() if message.sent_date_time else None,
+                "has_attachments": message.has_attachments,
+                "importance": str(message.importance) if message.importance else None,
+                "is_read": message.is_read,
+                "body_preview": message.body_preview,
+                "internet_message_id": message.internet_message_id,
+                "conversation_id": message.conversation_id,
+                "web_link": message.web_link
+            }
+
+            # Add body if requested
+            if include_body and message.body:
+                result["body"] = {
+                    "content_type": str(message.body.content_type) if message.body.content_type else "text",
+                    "content": message.body.content or ""
+                }
+
+            self.logger.info(f"Retrieved message: {message.subject}")
+
+            return result
+
+        except Exception as e:
+            self.logger.error(f"Failed to get message {message_id}: {e}", exc_info=True)
+            raise
+
+
+# ============================================================================
+# DOWNLOAD ATTACHMENT TOOL
+# ============================================================================
+
+class DownloadAttachmentArgs(O365ToolArgsSchema):
+    """Arguments for downloading an email attachment."""
+    message_id: str = Field(
+        description="The ID of the message containing the attachment"
+    )
+    attachment_id: str = Field(
+        description="The ID of the attachment to download"
+    )
+    destination: str = Field(
+        description="Local path where the attachment should be saved"
+    )
+
+
+class DownloadAttachmentTool(O365Tool):
+    """
+    Tool for downloading email attachments to local storage.
+
+    This tool downloads a specific attachment from an email message and saves it
+    to a specified location on the local filesystem.
+
+    Before downloading, you should:
+    1. Use GetMessageTool to retrieve the message and check hasAttachments
+    2. List the attachments to get their IDs and names
+    3. Use this tool to download specific attachments
+
+    The tool will:
+    - Create parent directories if they don't exist
+    - Decode and save the attachment content
+    - Return the path where the file was saved
+
+    Examples:
+        # Download attachment
+        result = await tool.run(
+            message_id="AAMkAGI...",
+            attachment_id="AAMkAGI...Attach...",
+            destination="/tmp/documents/report.pdf"
+        )
+    """
+
+    name: str = "download_attachment"
+    description: str = (
+        "Download an email attachment to local storage. "
+        "Saves the attachment file to the specified destination path."
+    )
+    args_schema: Type[BaseModel] = DownloadAttachmentArgs
+
+    async def _execute_graph_operation(
+        self,
+        client: O365Client,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """
+        Download an attachment using Microsoft Graph API.
+
+        Args:
+            client: Authenticated O365Client
+            **kwargs: Download parameters
+
+        Returns:
+            Dict with download confirmation and path
+        """
+        message_id = kwargs.get('message_id')
+        attachment_id = kwargs.get('attachment_id')
+        destination = kwargs.get('destination')
+        user_id = kwargs.get('user_id')
+
+        try:
+            # Get user context
+            mailbox = client.get_user_context(user_id=user_id)
+
+            # Get attachment info
+            self.logger.info(f"Getting attachment {attachment_id} from message {message_id}")
+            attachment = await mailbox.messages.by_message_id(message_id)\
+                .attachments.by_attachment_id(attachment_id).get()
+
+            if not attachment:
+                raise ValueError(f"Attachment {attachment_id} not found")
+
+            # Prepare destination path
+            destination_path = Path(destination)
+            destination_path.parent.mkdir(parents=True, exist_ok=True)
+
+            # Handle different attachment types
+            if hasattr(attachment, 'content_bytes') and attachment.content_bytes:
+                # File attachment with content
+                content = base64.b64decode(attachment.content_bytes)
+                async with aiofiles.open(destination_path, "wb") as f:
+                    await f.write(content)
+
+                self.logger.info(f"Downloaded attachment '{attachment.name}' to {destination_path}")
+
+                return {
+                    "status": "downloaded",
+                    "attachment_id": attachment.id,
+                    "attachment_name": attachment.name,
+                    "size": attachment.size,
+                    "content_type": attachment.content_type,
+                    "destination": str(destination_path)
+                }
+            else:
+                raise ValueError(f"Attachment {attachment_id} has no downloadable content")
+
+        except Exception as e:
+            self.logger.error(f"Failed to download attachment {attachment_id}: {e}", exc_info=True)
             raise

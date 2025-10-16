@@ -9,8 +9,8 @@ Tools for interacting with OneDrive:
 """
 from typing import Dict, Any, Optional, List, Type
 from pathlib import Path
+import shutil
 from pydantic import BaseModel, Field
-
 from .base import O365Tool, O365ToolArgsSchema
 from ...interfaces.onedrive import OneDriveClient
 
@@ -452,7 +452,6 @@ class UploadOneDriveFileTool(O365Tool):
             if rename_as:
                 # Create temporary renamed file
                 temp_path = local_path.parent / rename_as
-                import shutil
                 shutil.copy2(local_path, temp_path)
                 upload_path = temp_path
                 cleanup_temp = True
