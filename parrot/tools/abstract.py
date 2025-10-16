@@ -80,7 +80,7 @@ class AbstractTool(ABC):
             **kwargs: Additional configuration
         """
         # Set name and description
-        self.name = name or self.__class__.__name__
+        self.name = name or self.name or self.__class__.__name__
         self.description = description or self.__class__.__doc__ or f"Tool: {self.name}"
 
         # Set up logging

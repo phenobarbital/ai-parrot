@@ -9,6 +9,7 @@ import asyncio
 from pathlib import Path
 from typing import Dict, Any
 from parrot.bots.abstract import AbstractBot
+from parrot.tools.manager import ToolManager
 from parrot.tools.codeinterpreter import CodeInterpreterTool, ExecutionStatus
 
 
@@ -75,25 +76,6 @@ def subtract(a, b):
 
 async def example_tool_manager():
     """Using CodeInterpreterTool with Parrot's ToolManager."""
-
-    # Simulate ToolManager
-    class ToolManager:
-        def __init__(self):
-            self._tools = {}
-
-        def register_tool(self, tool: Any):
-            """Register a tool by its name attribute."""
-            self._tools[tool.name] = tool
-            print(f"✓ Registered tool: {tool.name}")
-
-        def get_tool(self, name: str):
-            """Get a tool by name."""
-            return self._tools.get(name)
-
-        def list_tools(self):
-            """List all registered tools."""
-            return list(self._tools.keys())
-
     # Create tool manager
     tool_manager = ToolManager()
 
