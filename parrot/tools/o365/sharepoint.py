@@ -100,10 +100,7 @@ class ListSharePointFilesTool(O365Tool):
             client.credentials['tenant'] = site
 
             # Build full path
-            if folder_path:
-                full_path = f"{library}/{folder_path}".strip('/')
-            else:
-                full_path = library
+            full_path = f"{library}/{folder_path}".strip('/') if folder_path else library
 
             self.logger.info(f"Listing files in: {site}/{full_path}")
 
@@ -315,8 +312,7 @@ class SearchSharePointFilesTool(O365Tool):
             # Format results
             files = []
             for result in search_results:
-                item = result.get('item')
-                if item:
+                if item := result.get('item'):
                     file_info = {
                         "name": item.name,
                         "path": result.get('path', ''),
@@ -445,10 +441,7 @@ class DownloadSharePointFileTool(O365Tool):
             self.logger.info(f"Downloading: {site}/{full_directory}/{filename}")
 
             # Set up download destination
-            if local_destination:
-                dest_dir = Path(local_destination)
-            else:
-                dest_dir = Path.cwd()
+            dest_dir = Path(local_destination) if local_destination else Path.cwd()
 
             dest_dir.mkdir(parents=True, exist_ok=True)
             client.directory = str(dest_dir)
