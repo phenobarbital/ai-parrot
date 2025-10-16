@@ -3,10 +3,12 @@ import asyncio
 import contextlib
 from concurrent.futures import ThreadPoolExecutor
 import time
+from urllib.parse import urlparse
 from redis import asyncio as aioredis
 import msal
 from msgraph import GraphServiceClient
 from msal import PublicClientApplication, SerializableTokenCache
+from msal.application import ClientApplication
 # Microsoft Graph SDK imports
 from azure.identity import (
     ClientSecretCredential,
@@ -81,16 +83,23 @@ class MSALTokenCredential(TokenCredential):
             raise
 
 class MSALCacheTokenCredential(TokenCredential):
-    """TokenCredential that uses an MSAL PublicClientApplication with a serialized cache (e.g., Redis)."""
-    def __init__(self, pca: PublicClientApplication, scopes: List[str], account=None, logger=None):
-        self.pca = pca
+    """TokenCredential that uses an MSAL client application with a serialized cache."""
+
+    def __init__(
+        self,
+        app: ClientApplication,
+        scopes: List[str],
+        account=None,
+        logger=None
+    ):
+        self.app = app
         self.scopes = scopes
         self.account = account
         self.logger = logger or logging.getLogger(__name__)
 
     def get_token(self, *scopes, **kwargs) -> AccessToken:
         wanted_scopes = list(scopes) if scopes else self.scopes
-        result = self.pca.acquire_token_silent(wanted_scopes, account=self.account)
+        result = self.app.acquire_token_silent(wanted_scopes, account=self.account)
         if not result or "access_token" not in result:
             raise RuntimeError(
                 "No cached token available. Run interactive_login() first."
@@ -774,67 +783,78 @@ class O365Client(CredentialsInterface):
         cache = SerializableTokenCache()
         await self._load_token_cache(cache)
 
-        result = None
+        result: Optional[Dict[str, Any]] = None
+        active_app: Optional[ClientApplication] = None
 
-        # Choose authentication flow based on client type
+        confidential_app: Optional[msal.ConfidentialClientApplication] = None
         if client_secret:
-            # CONFIDENTIAL CLIENT: Use device code flow
-            self.logger.info("Using device code flow (confidential client)")
-
-            app = msal.ConfidentialClientApplication(
+            confidential_app = msal.ConfidentialClientApplication(
                 client_id=client_id,
                 client_credential=client_secret,
                 authority=authority,
                 token_cache=cache
             )
 
-            # Try silent first if we have cached accounts
-            if accounts := app.get_accounts():
-                result = app.acquire_token_silent(scopes, account=accounts[0])
+            if accounts := confidential_app.get_accounts():
+                result = confidential_app.acquire_token_silent(scopes, account=accounts[0])
+                if result and "access_token" in result:
+                    active_app = confidential_app
 
-            if not result or "access_token" not in result:
-                # Initiate device code flow
-                flow = app.initiate_device_flow(scopes=scopes)
+        public_app = PublicClientApplication(
+            client_id=client_id,
+            authority=authority,
+            token_cache=cache
+        )
+
+        if (not result) or ("access_token" not in result):
+            if accounts := public_app.get_accounts():
+                result = public_app.acquire_token_silent(scopes, account=accounts[0])
+                if result and "access_token" in result:
+                    active_app = public_app
+
+        if (not result) or ("access_token" not in result):
+            if client_secret:
+                self.logger.info("Using device code flow (public client)")
+                flow = public_app.initiate_device_flow(scopes=scopes)
 
                 if "user_code" not in flow:
                     raise ValueError(
                         f"Failed to create device flow: {flow.get('error_description')}"
                     )
 
-                # Display the code to the user
-                print("\n" + "="*60)
+                print("\n" + "=" * 60)
                 print(flow["message"])
-                print("="*60 + "\n")
+                print("=" * 60 + "\n")
 
-                # Wait for user to authenticate
-                result = app.acquire_token_by_device_flow(flow)
-        else:
-            # PUBLIC CLIENT: Use interactive browser flow
-            self.logger.info("Using interactive browser flow (public client)")
+                result = public_app.acquire_token_by_device_flow(flow)
+                active_app = public_app
+            else:
+                self.logger.info("Starting interactive browser authentication (public client)")
 
-            pca = PublicClientApplication(
-                client_id=client_id,
-                authority=authority,
-                token_cache=cache
-            )
+                interactive_kwargs: Dict[str, Any] = {"prompt": "select_account"}
+                if redirect_uri:
+                    parsed_uri = urlparse(redirect_uri)
+                    if parsed_uri.port:
+                        interactive_kwargs["port"] = parsed_uri.port
 
-            # Try silent first (if user already logged in and cache is valid)
-            if accounts := pca.get_accounts():
-                result = pca.acquire_token_silent(scopes, account=accounts[0])
+                if not open_browser:
+                    def _log_login_url(url: str) -> bool:
+                        self.logger.info("Interactive authentication URL: %s", url)
+                        return False
 
-            if not result or "access_token" not in result:
-                # Interactive login with PKCE
-                self.logger.info("Starting interactive browser authentication...")
-                result = pca.acquire_token_interactive(
+                    interactive_kwargs["on_before_launching_ui"] = _log_login_url
+
+                result = public_app.acquire_token_interactive(
                     scopes=scopes,
-                    prompt="select_account"
+                    **interactive_kwargs
                 )
+                active_app = public_app
 
         if "access_token" not in result:
             error_desc = result.get('error_description', 'Unknown error')
             error_code = result.get('error', 'Unknown error code')
             raise RuntimeError(
-                f"Interactive login failed: {error_desc}"
+                f"Interactive login failed: {error_code} - {error_desc}"
             )
 
         self.token = result['access_token']
@@ -843,14 +863,13 @@ class O365Client(CredentialsInterface):
         await self._save_token_cache(cache)
 
         # Build a TokenCredential backed by MSAL cache for GraphServiceClient
-        account = (
-            app.get_accounts()[0] if client_secret and app.get_accounts()
-            else pca.get_accounts()[0] if not client_secret and pca.get_accounts()
-            else None
-        )
+        account = None
+        if active_app:
+            accounts = active_app.get_accounts()
+            account = accounts[0] if accounts else None
 
         self._credential = MSALCacheTokenCredential(
-            pca=app if client_secret else pca,
+            app=active_app or public_app,
             scopes=scopes,
             account=account,
             logger=self.logger
@@ -907,7 +926,7 @@ class O365Client(CredentialsInterface):
 
         # Build credential and graph client from cache
         self._credential = MSALCacheTokenCredential(
-            pca=app,
+            app=app,
             scopes=scopes,
             account=accounts[0],
             logger=self.logger
