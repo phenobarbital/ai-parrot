@@ -228,10 +228,10 @@ async def test_dispatch(output_path: Path, zipcodes: List[str]):
                 "action": "authenticate",
                 "method": "form",
                 "username_selector": "input[name='email']",
-                "username": "troc-assurant@trocglobal.com",
+                "username": "",
                 "enter_on_username": True,  # Press Enter after filling username
                 "password_selector": "input[name='password']",
-                "password": "bozhip-Juvhac-kektu0",
+                "password": "",
                 "submit_selector": "button[type='submit']"
             },
             {
