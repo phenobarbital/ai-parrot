@@ -10,7 +10,231 @@ from pathlib import Path
 from typing import Dict, Any
 from parrot.bots.abstract import AbstractBot
 from parrot.tools.manager import ToolManager
-from parrot.tools.codeinterpreter import CodeInterpreterTool, ExecutionStatus
+from parrot.tools.codeinterpreter import CodeInterpreterTool
+from parrot.tools.codeinterpreter.models import (
+    CodeAnalysisResponse,
+    DocumentationResponse,
+    TestGenerationResponse,
+    DebugResponse,
+    ExplanationResponse,
+    OperationType,
+    ExecutionStatus,
+    ComplexityMetrics,
+    DocstringFormat,
+    TestType,
+    GeneratedTest,
+    Severity,
+    BugIssue,
+    CodeReference,
+)
+
+class MockLLM:
+    """
+    Mock LLM client that respects response_format parameter.
+
+    Usage:
+        llm = MockLLM()
+        tool = CodeInterpreterTool(llm=llm)
+    """
+
+    async def ask(self, prompt: str, system_prompt: str, response_format: type, **kwargs):
+        """
+        Mock ask method that returns the appropriate Pydantic model based on response_format.
+
+        Args:
+            prompt: The prompt to send to the LLM
+            system_prompt: The system prompt
+            response_format: The Pydantic model class to return
+            **kwargs: Additional arguments
+
+        Returns:
+            Instance of the requested response_format model
+        """
+        # Generate a dummy code hash
+        code_hash = "a" * 64
+
+        # Route based on response_format type
+        if response_format == CodeAnalysisResponse:
+            return self._mock_analysis_response(code_hash)
+
+        elif response_format == DocumentationResponse:
+            return self._mock_documentation_response(code_hash)
+
+        elif response_format == TestGenerationResponse:
+            return self._mock_test_response(code_hash)
+
+        elif response_format == DebugResponse:
+            return self._mock_debug_response(code_hash)
+
+        elif response_format == ExplanationResponse:
+            return self._mock_explanation_response(code_hash)
+
+        else:
+            raise ValueError(f"Unknown response format: {response_format}")
+
+    def _mock_analysis_response(self, code_hash: str) -> CodeAnalysisResponse:
+        """Create mock analysis response."""
+        return CodeAnalysisResponse(
+            operation_type=OperationType.ANALYZE,
+            status=ExecutionStatus.SUCCESS,
+            execution_time_ms=1500,
+            code_hash=code_hash,
+            executive_summary="This code implements a data processing function with input validation and error handling.",
+            detailed_purpose="The code provides a function that processes input data, validates the format, handles edge cases, and returns processed results. It includes proper error handling for common failure scenarios.",
+            complexity_metrics=ComplexityMetrics(
+                cyclomatic_complexity=5,
+                lines_of_code=45,
+                cognitive_complexity=7,
+                maintainability_index=78.5
+            )
+        )
+
+    def _mock_documentation_response(self, code_hash: str) -> DocumentationResponse:
+        """Create mock documentation response."""
+        documented_code = '''def process_data(data: list) -> dict:
+    """Process input data and return results.
+
+    This function takes a list of data items, validates each item,
+    processes them according to business rules, and returns a summary.
+
+    Args:
+        data: List of data items to process. Each item should be a dict
+              with 'id' and 'value' keys.
+
+    Returns:
+        Dictionary containing processing results with keys:
+        - 'processed': Number of items processed successfully
+        - 'failed': Number of items that failed processing
+        - 'results': List of processed items
+
+    Raises:
+        ValueError: If data is None or empty
+        TypeError: If data is not a list
+
+    Examples:
+        >>> data = [{'id': 1, 'value': 10}, {'id': 2, 'value': 20}]
+        >>> result = process_data(data)
+        >>> result['processed']
+        2
+    """
+    if not data:
+        raise ValueError("Data cannot be empty")
+
+    # Processing logic here
+    results = []
+    for item in data:
+        # Process each item
+        results.append(item)
+
+    return {
+        'processed': len(results),
+        'failed': 0,
+        'results': results
+    }
+'''
+
+        return DocumentationResponse(
+            operation_type=OperationType.DOCUMENT,
+            status=ExecutionStatus.SUCCESS,
+            execution_time_ms=2000,
+            code_hash=code_hash,
+            docstring_format=DocstringFormat.GOOGLE,
+            modified_code=documented_code,
+            documentation_coverage=100.0
+        )
+
+    def _mock_test_response(self, code_hash: str) -> TestGenerationResponse:
+        """Create mock test response."""
+        test_code = '''def test_process_data_valid_input():
+    """Test processing with valid input data."""
+    data = [{'id': 1, 'value': 10}, {'id': 2, 'value': 20}]
+    result = process_data(data)
+
+    assert result['processed'] == 2
+    assert result['failed'] == 0
+    assert len(result['results']) == 2
+
+
+def test_process_data_empty_input():
+    """Test that empty input raises ValueError."""
+    with pytest.raises(ValueError, match="Data cannot be empty"):
+        process_data([])
+
+
+def test_process_data_none_input():
+    """Test that None input raises ValueError."""
+    with pytest.raises(ValueError, match="Data cannot be empty"):
+        process_data(None)
+
+
+def test_process_data_invalid_type():
+    """Test that invalid input type raises TypeError."""
+    with pytest.raises(TypeError):
+        process_data("not a list")
+'''
+
+        return TestGenerationResponse(
+            operation_type=OperationType.TEST,
+            status=ExecutionStatus.SUCCESS,
+            execution_time_ms=2500,
+            code_hash=code_hash,
+            test_framework="pytest",
+            generated_tests=[
+                GeneratedTest(
+                    name="test_process_data_valid_input",
+                    test_type=TestType.UNIT,
+                    test_code=test_code,
+                    estimated_coverage=85.0,
+                    covers_lines=[1, 2, 3, 4, 5],
+                    is_edge_case=False
+                )
+            ],
+            overall_coverage=85.0
+        )
+
+    def _mock_debug_response(self, code_hash: str) -> DebugResponse:
+        """Create mock debug response."""
+        return DebugResponse(
+            operation_type=OperationType.DEBUG,
+            status=ExecutionStatus.SUCCESS,
+            execution_time_ms=1800,
+            code_hash=code_hash,
+            issues_found=[
+                BugIssue(
+                    severity=Severity.HIGH,
+                    category="error_handling",
+                    title="Missing type checking for input parameter",
+                    location=CodeReference(
+                        start_line=1,
+                        end_line=3,
+                        code_snippet="def process_data(data):\n    if not data:"
+                    ),
+                    description="The function does not check if 'data' is the correct type before processing. This could lead to unexpected behavior if a non-list is passed.",
+                    trigger_scenario="When a string or other non-list type is passed as the 'data' parameter, the function may fail with unclear error messages.",
+                    expected_behavior="Function should validate that 'data' is a list before attempting to process it.",
+                    actual_behavior="Function assumes 'data' is a list without validation.",
+                    suggested_fix="Add type checking at the start of the function:\n\nif not isinstance(data, list):\n    raise TypeError('data must be a list')"
+                )
+            ],
+            critical_count=0,
+            high_count=1,
+            medium_count=0,
+            low_count=0
+        )
+
+    def _mock_explanation_response(self, code_hash: str) -> ExplanationResponse:
+        """Create mock explanation response."""
+        return ExplanationResponse(
+            operation_type=OperationType.EXPLAIN,
+            status=ExecutionStatus.SUCCESS,
+            execution_time_ms=2200,
+            code_hash=code_hash,
+            analogy="This code works like a quality control checkpoint in a factory - items come in, get inspected, and only valid ones pass through.",
+            high_level_summary="This function processes a list of data items, validates each one, and returns a summary of the processing results.",
+            user_expertise_level="intermediate"
+        )
+
+
 
 
 # ============================================================================
@@ -21,7 +245,7 @@ async def example_basic_usage():
     """Basic usage of CodeInterpreterTool as a Parrot tool."""
 
     # Mock LLM client that simulates structured output support
-    class MockLLM:
+    class MockClient:
         async def ask(self, prompt, system_prompt, response_format):
             # In real usage, this would call the actual LLM API
             # and return a validated Pydantic model instance
@@ -42,7 +266,7 @@ async def example_basic_usage():
 
     # Initialize the tool (Parrot way)
     tool = CodeInterpreterTool(
-        llm=MockLLM(),  # Note: llm parameter, not llm_client
+        llm=MockClient(),  # Note: llm parameter, not llm_client
         use_docker=False  # For demo, use subprocess
     )
 
@@ -80,11 +304,11 @@ async def example_tool_manager():
     tool_manager = ToolManager()
 
     # Create and register CodeInterpreterTool
-    class MockLLM:
+    class MockMini:
         async def ask(self, *args, **kwargs):
             pass
 
-    code_tool = CodeInterpreterTool(llm=MockLLM())
+    code_tool = CodeInterpreterTool(llm=MockMini())
     tool_manager.register_tool(code_tool)
 
     # Verify registration
@@ -132,7 +356,7 @@ async def example_agent_as_tool():
             tests = await self.code_tool.generate_tests(code)
 
             # Compile review report
-            review = {
+            return {
                 "summary": analysis.executive_summary,
                 "complexity": analysis.complexity_metrics.cyclomatic_complexity,
                 "quality_score": analysis.complexity_metrics.maintainability_index,
@@ -145,49 +369,6 @@ async def example_agent_as_tool():
                     if obs.actionable_suggestion
                 ]
             }
-
-            return review
-
-    # Usage
-    class MockLLM:
-        async def ask(self, *args, **kwargs):
-            from parrot.tools.codeinterpreter.models import (
-                CodeAnalysisResponse, DebugResponse, TestGenerationResponse,
-                OperationType, ExecutionStatus, ComplexityMetrics
-            )
-
-            # Return appropriate mock based on what's being requested
-            if "bugs" in str(kwargs.get('user_request', '')):
-                return DebugResponse(
-                    operation_type=OperationType.DEBUG,
-                    status=ExecutionStatus.SUCCESS,
-                    execution_time_ms=1000,
-                    code_hash="b" * 64,
-                    critical_count=0,
-                    high_count=1
-                )
-            elif "test" in str(kwargs.get('user_request', '')):
-                return TestGenerationResponse(
-                    operation_type=OperationType.TEST,
-                    status=ExecutionStatus.SUCCESS,
-                    execution_time_ms=1500,
-                    code_hash="c" * 64,
-                    overall_coverage=85.0
-                )
-            else:
-                return CodeAnalysisResponse(
-                    operation_type=OperationType.ANALYZE,
-                    status=ExecutionStatus.SUCCESS,
-                    execution_time_ms=1500,
-                    code_hash="a" * 64,
-                    executive_summary="Sample analysis",
-                    detailed_purpose="Sample purpose",
-                    complexity_metrics=ComplexityMetrics(
-                        cyclomatic_complexity=5,
-                        lines_of_code=100,
-                        maintainability_index=75.0
-                    )
-                )
 
     agent = CodeReviewAgent(llm=MockLLM())
 
@@ -218,33 +399,6 @@ def process_data(data):
 
 async def example_multi_operation_workflow():
     """Demonstrate using multiple operations in a workflow."""
-
-    class MockLLM:
-        async def ask(self, *args, **kwargs):
-            # Mock responses for different operations
-            from parrot.tools.codeinterpreter.models import (
-                DocumentationResponse, TestGenerationResponse,
-                OperationType, ExecutionStatus, DocstringFormat
-            )
-
-            if "documentation" in str(kwargs.get('prompt', '')):
-                return DocumentationResponse(
-                    operation_type=OperationType.DOCUMENT,
-                    status=ExecutionStatus.SUCCESS,
-                    execution_time_ms=2000,
-                    code_hash="d" * 64,
-                    docstring_format=DocstringFormat.GOOGLE,
-                    modified_code="# Documented code here",
-                    documentation_coverage=100.0
-                )
-            else:
-                return TestGenerationResponse(
-                    operation_type=OperationType.TEST,
-                    status=ExecutionStatus.SUCCESS,
-                    execution_time_ms=2500,
-                    code_hash="e" * 64,
-                    overall_coverage=90.0
-                )
 
     tool = CodeInterpreterTool(llm=MockLLM())
 
@@ -285,11 +439,6 @@ def example_tool_schema():
     The tool schema is automatically generated from the args_schema
     and can be used with LLMs that support function calling.
     """
-
-    class MockLLM:
-        async def ask(self, *args, **kwargs):
-            pass
-
     tool = CodeInterpreterTool(llm=MockLLM())
 
     # Get the tool schema (compatible with OpenAI, Claude, etc.)
@@ -317,28 +466,6 @@ def example_tool_schema():
 
 async def example_error_handling():
     """Demonstrate error handling and input validation."""
-
-    class MockLLM:
-        async def ask(self, *args, **kwargs):
-            from parrot.tools.codeinterpreter.models import (
-                CodeAnalysisResponse, OperationType, ExecutionStatus, ComplexityMetrics
-            )
-
-            # Simulate error in LLM response
-            return CodeAnalysisResponse(
-                operation_type=OperationType.ANALYZE,
-                status=ExecutionStatus.FAILED,
-                execution_time_ms=500,
-                code_hash="f" * 64,
-                error_message="Simulated LLM error",
-                executive_summary="",
-                detailed_purpose="",
-                complexity_metrics=ComplexityMetrics(
-                    cyclomatic_complexity=0,
-                    lines_of_code=0
-                )
-            )
-
     tool = CodeInterpreterTool(llm=MockLLM())
 
     # Test with invalid code
@@ -377,11 +504,6 @@ async def example_error_handling():
 
 async def example_cleanup():
     """Demonstrate proper cleanup of resources."""
-
-    class MockLLM:
-        async def ask(self, *args, **kwargs):
-            pass
-
     # Create tool with Docker (if available)
     tool = CodeInterpreterTool(
         llm=MockLLM(),
