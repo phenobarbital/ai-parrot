@@ -50,6 +50,7 @@ class MSALTokenCredential(TokenCredential):
         self.password = password
         self._token_cache = None
         self.logger = logging.getLogger(__name__)
+        super().__init__()
 
     def get_token(self, *scopes, **kwargs) -> AccessToken:
         """Get token using MSAL."""
@@ -96,6 +97,7 @@ class MSALCacheTokenCredential(TokenCredential):
         self.scopes = scopes
         self.account = account
         self.logger = logger or logging.getLogger(__name__)
+        super().__init__()
 
     def get_token(self, *scopes, **kwargs) -> AccessToken:
         wanted_scopes = list(scopes) if scopes else self.scopes

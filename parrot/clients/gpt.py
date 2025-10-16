@@ -1,5 +1,4 @@
-import re
-from typing import AsyncIterator, Dict, List, Optional, Union, Any, Tuple
+from typing import AsyncIterator, Dict, List, Optional, Union, Any, Tuple, Iterable
 import base64
 import io
 import json
@@ -44,6 +43,20 @@ from ..models.detections import (
 getLogger('httpx').setLevel('WARNING')
 getLogger('httpcore').setLevel('WARNING')
 getLogger('openai').setLevel('INFO')
+
+# Reasoning models like o3 / o3-pro / o3-mini and o4-mini
+# (including deep-research variants) are Responses-only.
+RESPONSES_ONLY = {
+    "o3",
+    "o3-pro",
+    "o3-mini",
+    "o3-deep-research",
+    "o4-mini",
+    "o4-mini-deep-research",
+    "gpt-4.1",
+    "gpt-4.1-mini",
+    "gpt-5-pro"
+}
 
 
 class OpenAIClient(AbstractClient):
@@ -98,12 +111,30 @@ class OpenAIClient(AbstractClient):
         )
         async for attempt in retry_policy:
             with attempt:
-                response = await self.client.chat.completions.create(
+                return await self.client.chat.completions.create(
                     model=model,
                     messages=messages,
                     **kwargs
                 )
-                return response
+
+    def _split_instructions_and_messages(
+        self, messages: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """
+        For Responses API, we can optionally lift the first system message into `instructions`.
+        Everything else is kept as a chat-style list for `input`.
+        """
+        instructions = None
+        input_msgs: List[Dict[str, Any]] = []
+        for m in messages:
+            role = m.get("role")
+            if role == "system" and instructions is None:
+                # Prefer the first system message as instructions
+                # (Responses API supports a top-level `instructions` field)
+                instructions = m.get("content")
+            else:
+                input_msgs.append({"role": role, "content": m.get("content")})
+        return {"instructions": instructions, "input": input_msgs}
 
     async def ask(
         self,
