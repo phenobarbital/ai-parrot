@@ -8,8 +8,8 @@ Specific tools for interacting with Office365 services:
 - SendEmail: Send emails directly
 """
 from typing import Dict, Any, Optional, List, Type
-from pydantic import BaseModel, Field
 from datetime import datetime
+from pydantic import BaseModel, Field
 from msgraph.generated.models.message import Message
 from msgraph.generated.models.recipient import Recipient
 from msgraph.generated.models.email_address import EmailAddress
@@ -20,6 +20,14 @@ from msgraph.generated.models.date_time_time_zone import DateTimeTimeZone
 from msgraph.generated.models.location import Location
 from msgraph.generated.models.attendee import Attendee
 from msgraph.generated.models.attendee_type import AttendeeType
+from msgraph.generated.models.importance import Importance
+from msgraph.generated.users.item.mail_folders.item.messages.messages_request_builder import (
+    MessagesRequestBuilder
+)
+from msgraph.generated.users.item.send_mail.send_mail_post_request_body import (
+    SendMailPostRequestBody
+)
+from kiota_abstractions.base_request_configuration import RequestConfiguration
 
 from .base import O365Tool, O365ToolArgsSchema, O365Client
 
@@ -55,7 +63,6 @@ class CreateDraftMessageArgs(O365ToolArgsSchema):
         default=False,
         description="Whether the body is HTML (True) or plain text (False)"
     )
-
 
 class CreateDraftMessageTool(O365Tool):
     """
@@ -96,74 +103,84 @@ class CreateDraftMessageTool(O365Tool):
         **kwargs
     ) -> Dict[str, Any]:
         """
-        Create a draft message using Microsoft Graph API.
+        Create a draft email using Microsoft Graph API.
 
         Args:
             client: Authenticated O365Client
-            **kwargs: Message parameters
+            **kwargs: Draft parameters
 
         Returns:
-            Dict with draft message details
+            Dict with draft details
         """
         # Extract parameters
         subject = kwargs.get('subject')
         body_content = kwargs.get('body')
         to_recipients = kwargs.get('to_recipients', [])
-        cc_recipients = kwargs.get('cc_recipients', [])
-        bcc_recipients = kwargs.get('bcc_recipients', [])
-        importance = kwargs.get('importance', 'normal')
+        cc_recipients = kwargs.get('cc_recipients')
+        bcc_recipients = kwargs.get('bcc_recipients')
+        importance_str = kwargs.get('importance', 'normal')
         is_html = kwargs.get('is_html', False)
         user_id = kwargs.get('user_id')
 
-        # Build message object
-        message = Message()
-        message.subject = subject
-
-        # Set body
-        message.body = ItemBody()
-        message.body.content = body_content
-        message.body.content_type = BodyType.Html if is_html else BodyType.Text
-
-        # Set recipients
-        def create_recipient(email: str) -> Recipient:
-            recipient = Recipient()
-            recipient.email_address = EmailAddress()
-            recipient.email_address.address = email
-            return recipient
-
-        message.to_recipients = [create_recipient(email) for email in to_recipients]
-
-        if cc_recipients:
-            message.cc_recipients = [create_recipient(email) for email in cc_recipients]
-
-        if bcc_recipients:
-            message.bcc_recipients = [create_recipient(email) for email in bcc_recipients]
-
-        # Set importance
-        message.importance = importance
-
         try:
-            # Create the draft
+            # Get user context
             mailbox = client.get_user_context(user_id=user_id)
+
+            # Build message object
+            message = Message()
+            message.subject = subject
+
+            # Set body
+            message.body = ItemBody()
+            message.body.content = body_content
+            message.body.content_type = BodyType.Html if is_html else BodyType.Text
+
+            # Helper function to create recipient
+            def create_recipient(email: str) -> Recipient:
+                recipient = Recipient()
+                recipient.email_address = EmailAddress()
+                recipient.email_address.address = email
+                return recipient
+
+            # Set recipients
+            message.to_recipients = [create_recipient(email) for email in to_recipients]
+
+            if cc_recipients:
+                message.cc_recipients = [create_recipient(email) for email in cc_recipients]
+
+            if bcc_recipients:
+                message.bcc_recipients = [create_recipient(email) for email in bcc_recipients]
+
+            # Set importance
+            importance_map = {
+                'low': Importance.Low,
+                'normal': Importance.Normal,
+                'high': Importance.High
+            }
+            message.importance = importance_map.get(importance_str.lower(), Importance.Normal)
+
+            # Create the draft
+            self.logger.info(f"Creating draft message: {subject}")
             draft = await mailbox.messages.post(message)
 
-            self.logger.info(f"Created draft message: {draft.id}")
+            self.logger.info(f"Created draft with ID: {draft.id}")
 
             return {
+                "status": "created",
                 "id": draft.id,
                 "subject": draft.subject,
-                "created_datetime": draft.created_date_time.isoformat() if draft.created_date_time else None,
                 "to_recipients": to_recipients,
                 "cc_recipients": cc_recipients or [],
                 "bcc_recipients": bcc_recipients or [],
-                "importance": importance,
-                "web_link": draft.web_link
+                "importance": importance_str,
+                "is_html": is_html,
+                "web_link": draft.web_link,
+                "created_datetime": draft.created_date_time.isoformat() if draft.created_date_time else None
             }
 
         except Exception as e:
-            self.logger.error(f"Failed to create draft message: {e}")
+            self.logger.error(f"Failed to create draft message: {e}", exc_info=True)
             raise
-
 
 # ============================================================================
 # CREATE EVENT TOOL
@@ -280,54 +297,64 @@ class CreateEventTool(O365Tool):
         is_all_day = kwargs.get('is_all_day', False)
         user_id = kwargs.get('user_id')
 
-        # Build event object
-        event = Event()
-        event.subject = subject
-        event.is_all_day = is_all_day
-
-        # Set start and end times
-        event.start = DateTimeTimeZone()
-        event.start.date_time = start_dt
-        event.start.time_zone = timezone
-
-        event.end = DateTimeTimeZone()
-        event.end.date_time = end_dt
-        event.end.time_zone = timezone
-
-        # Set body if provided
-        if body_content:
-            event.body = ItemBody()
-            event.body.content = body_content
-            event.body.content_type = BodyType.Text
-
-        # Set location if provided
-        if location_name:
-            event.location = Location()
-            event.location.display_name = location_name
-
-        # Set attendees if provided
-        if attendee_emails:
-            event.attendees = []
-            for email in attendee_emails:
-                attendee = Attendee()
-                attendee.type = AttendeeType.Required
-                attendee.email_address = EmailAddress()
-                attendee.email_address.address = email
-                event.attendees.append(attendee)
-
-        # Enable online meeting if requested
-        if is_online_meeting:
-            event.is_online_meeting = True
-            event.online_meeting_provider = "teamsForBusiness"
-
         try:
-            # Create the event
+            # Get user context
             mailbox = client.get_user_context(user_id=user_id)
+
+            # Build event object
+            event = Event()
+            event.subject = subject
+            event.is_all_day = is_all_day
+
+            # Set start and end times
+            event.start = DateTimeTimeZone()
+            event.start.date_time = start_dt
+            event.start.time_zone = timezone
+
+            event.end = DateTimeTimeZone()
+            event.end.date_time = end_dt
+            event.end.time_zone = timezone
+
+            # Set body if provided
+            if body_content:
+                event.body = ItemBody()
+                event.body.content = body_content
+                event.body.content_type = BodyType.Text
+
+            # Set location if provided
+            if location_name:
+                event.location = Location()
+                event.location.display_name = location_name
+
+            # Set attendees if provided
+            if attendee_emails:
+                event.attendees = []
+                for email in attendee_emails:
+                    attendee = Attendee()
+                    attendee.type = AttendeeType.Required
+                    attendee.email_address = EmailAddress()
+                    attendee.email_address.address = email
+                    event.attendees.append(attendee)
+
+            # Enable online meeting if requested
+            if is_online_meeting:
+                event.is_online_meeting = True
+                # Note: online_meeting_provider might need to be set differently
+                # depending on your Graph SDK version
+                try:
+                    event.online_meeting_provider = "teamsForBusiness"
+                except AttributeError:
+                    # Some versions use a different property
+                    self.logger.warning("Could not set online_meeting_provider, using default")
+
+            # Create the event
+            self.logger.info(f"Creating event: {subject}")
             created_event = await mailbox.events.post(event)
 
-            self.logger.info(f"Created event: {created_event.id}")
+            self.logger.info(f"Created event with ID: {created_event.id}")
 
             result = {
+                "status": "created",
                 "id": created_event.id,
                 "subject": created_event.subject,
                 "start": start_dt,
@@ -336,19 +363,19 @@ class CreateEventTool(O365Tool):
                 "location": location_name,
                 "attendees": attendee_emails,
                 "is_online_meeting": is_online_meeting,
+                "is_all_day": is_all_day,
                 "web_link": created_event.web_link
             }
 
             # Add online meeting info if available
-            if is_online_meeting and created_event.online_meeting:
-                result["join_url"] = created_event.online_meeting.join_url
+            if is_online_meeting and hasattr(created_event, 'online_meeting') and created_event.online_meeting:
+                result["join_url"] = getattr(created_event.online_meeting, 'join_url', None)
 
             return result
 
         except Exception as e:
-            self.logger.error(f"Failed to create event: {e}")
+            self.logger.error(f"Failed to create event: {e}", exc_info=True)
             raise
-
 
 # ============================================================================
 # SEARCH EMAIL TOOL
@@ -373,7 +400,10 @@ class SearchEmailArgs(O365ToolArgsSchema):
     )
     order_by: str = Field(
         default="receivedDateTime desc",
-        description="Sort order (e.g., 'receivedDateTime desc', 'subject asc')"
+        description=(
+            "Sort order (e.g., 'receivedDateTime desc', 'subject asc'). "
+            "Note: When using search queries, sorting is done client-side after retrieval."
+        )
     )
 
 
@@ -447,31 +477,6 @@ class SearchEmailTool(O365Tool):
         try:
             # Build the request
             mailbox = client.get_user_context(user_id=user_id)
-            request_builder = mailbox.messages
-
-            # Apply folder filter if not default
-            folder_map = {
-                'inbox': 'inbox',
-                'sentitems': 'sentitems',
-                'drafts': 'drafts',
-                'deleteditems': 'deleteditems'
-            }
-
-            if folder.lower() in folder_map:
-                folder_name = folder_map[folder.lower()]
-                request_builder = mailbox.mail_folders.by_mail_folder_id(
-                    folder_name
-                ).messages
-
-            # Configure query parameters
-            query_params = {
-                'top': max_results,
-                'orderby': [order_by]
-            }
-
-            # Add search filter if query provided
-            if query:
-                query_params['search'] = f'"{query}"'
 
             # Select fields to return
             select_fields = [
@@ -483,10 +488,46 @@ class SearchEmailTool(O365Tool):
             if include_attachments:
                 select_fields.append('attachments')
 
-            query_params['select'] = select_fields
+            # Apply folder filter and get appropriate request builder
+            folder_map = {
+                'inbox': 'inbox',
+                'sentitems': 'sentitems',
+                'drafts': 'drafts',
+                'deleteditems': 'deleteditems'
+            }
+
+            if folder.lower() in folder_map:
+                folder_name = folder_map[folder.lower()]
+                request_builder = mailbox.mail_folders.by_mail_folder_id(folder_name).messages
+
+            else:
+                # Direct messages (inbox shortcut)
+                request_builder = mailbox.messages
+
+            query_params_obj = MessagesRequestBuilder.MessagesRequestBuilderGetQueryParameters(
+                top=max_results,
+                select=select_fields
+            )
+
+            # CRITICAL: Only add orderby if NOT using search
+            if not query:
+                query_params_obj.orderby = [order_by]
+
+            # Add search filter if query provided
+            if query:
+                query_params_obj.search = f'"{query}"'
+                self.logger.info(f"Using search (orderby disabled): '{query}'")
+            else:
+                self.logger.info(f"Listing messages with orderby: {order_by}")
+
+            # Wrap in RequestConfiguration
+            request_config = RequestConfiguration(
+                query_parameters=query_params_obj
+            )
 
             # Execute search
-            messages = await request_builder.get(request_configuration=query_params)
+            self.logger.info(f"Searching emails: query='{query}', folder='{folder}'")
+            messages = await request_builder.get(request_configuration=request_config)
 
             # Format results
             results = []
@@ -495,16 +536,19 @@ class SearchEmailTool(O365Tool):
                     result_item = {
                         "id": msg.id,
                         "subject": msg.subject or "(No subject)",
-                        "from": msg.from_prop.email_address.address if msg.from_prop else None,
+                        # Fix: Use from_ instead of from_prop
+                        "from": msg.from_.email_address.address if msg.from_ and msg.from_.email_address else None,
+                        "from_name": msg.from_.email_address.name if msg.from_ and msg.from_.email_address else None,
                         "to": [
                             r.email_address.address
                             for r in (msg.to_recipients or [])
+                            if r and r.email_address
                         ],
                         "received_datetime": msg.received_date_time.isoformat() if msg.received_date_time else None,
                         "body_preview": msg.body_preview,
                         "is_read": msg.is_read,
                         "has_attachments": msg.has_attachments,
-                        "importance": msg.importance,
+                        "importance": str(msg.importance) if msg.importance else None,
                         "web_link": msg.web_link
                     }
 
@@ -531,9 +575,8 @@ class SearchEmailTool(O365Tool):
             }
 
         except Exception as e:
-            self.logger.error(f"Failed to search emails: {e}")
+            self.logger.error(f"Failed to search emails: {e}", exc_info=True)
             raise
-
 
 # ============================================================================
 # SEND EMAIL TOOL
@@ -632,51 +675,60 @@ class SendEmailTool(O365Tool):
         subject = kwargs.get('subject')
         body_content = kwargs.get('body')
         to_recipients = kwargs.get('to_recipients', [])
-        cc_recipients = kwargs.get('cc_recipients', [])
-        bcc_recipients = kwargs.get('bcc_recipients', [])
-        importance = kwargs.get('importance', 'normal')
+        cc_recipients = kwargs.get('cc_recipients')
+        bcc_recipients = kwargs.get('bcc_recipients')
+        importance_str = kwargs.get('importance', 'normal')
         is_html = kwargs.get('is_html', False)
         save_to_sent = kwargs.get('save_to_sent_items', True)
         user_id = kwargs.get('user_id')
 
-        # Build message object
-        message = Message()
-        message.subject = subject
-
-        # Set body
-        message.body = ItemBody()
-        message.body.content = body_content
-        message.body.content_type = BodyType.Html if is_html else BodyType.Text
-
-        # Set recipients
-        def create_recipient(email: str) -> Recipient:
-            recipient = Recipient()
-            recipient.email_address = EmailAddress()
-            recipient.email_address.address = email
-            return recipient
-
-        message.to_recipients = [create_recipient(email) for email in to_recipients]
-
-        if cc_recipients:
-            message.cc_recipients = [create_recipient(email) for email in cc_recipients]
-
-        if bcc_recipients:
-            message.bcc_recipients = [create_recipient(email) for email in bcc_recipients]
-
-        # Set importance
-        message.importance = importance
-
         try:
-            # Send the email
+            # Get user context
             mailbox = client.get_user_context(user_id=user_id)
-            await mailbox.send_mail.post(
-                body={
-                    "message": message,
-                    "saveToSentItems": save_to_sent
-                }
-            )
 
-            self.logger.info(f"Successfully sent email to {to_recipients}")
+            # Build message object
+            message = Message()
+            message.subject = subject
+
+            # Set body
+            message.body = ItemBody()
+            message.body.content = body_content
+            message.body.content_type = BodyType.Html if is_html else BodyType.Text
+
+            # Helper function to create recipient
+            def create_recipient(email: str) -> Recipient:
+                recipient = Recipient()
+                recipient.email_address = EmailAddress()
+                recipient.email_address.address = email
+                return recipient
+
+            # Set recipients
+            message.to_recipients = [create_recipient(email) for email in to_recipients]
+
+            if cc_recipients:
+                message.cc_recipients = [create_recipient(email) for email in cc_recipients]
+
+            if bcc_recipients:
+                message.bcc_recipients = [create_recipient(email) for email in bcc_recipients]
+
+            # Set importance
+            importance_map = {
+                'low': Importance.Low,
+                'normal': Importance.Normal,
+                'high': Importance.High
+            }
+            message.importance = importance_map.get(importance_str.lower(), Importance.Normal)
+
+            # Create the request body for send_mail
+            request_body = SendMailPostRequestBody()
+            request_body.message = message
+            request_body.save_to_sent_items = save_to_sent
+
+            # Send the email
+            self.logger.info(f"Sending email to {to_recipients}")
+            await mailbox.send_mail.post(body=request_body)
+
+            self.logger.info(f"Successfully sent email: {subject}")
 
             return {
                 "status": "sent",
@@ -684,14 +736,15 @@ class SendEmailTool(O365Tool):
                 "to_recipients": to_recipients,
                 "cc_recipients": cc_recipients or [],
                 "bcc_recipients": bcc_recipients or [],
+                "importance": importance_str,
+                "is_html": is_html,
                 "sent_datetime": datetime.now().isoformat(),
                 "saved_to_sent_items": save_to_sent
             }
 
         except Exception as e:
-            self.logger.error(f"Failed to send email: {e}")
+            self.logger.error(f"Failed to send email: {e}", exc_info=True)
             raise
-
 
 # ============================================================================
 # EXPORT ALL TOOLS

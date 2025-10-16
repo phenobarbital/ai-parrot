@@ -38,14 +38,14 @@ async def example_direct_usage():
         'client_id': O365_CLIENT_ID,
         'client_secret': O365_CLIENT_SECRET,
         'tenant_id': O365_TENANT_ID,
-        "user_id": "jlara@trocglobal.com"
+        'user_id': 'jlara@trocglobal.com'
     }
 
     # Create tool instances
-    draft_tool = CreateDraftMessageTool(credentials=credentials)
-    send_tool = SendEmailTool(credentials=credentials)
-    search_tool = SearchEmailTool(credentials=credentials)
-    event_tool = CreateEventTool(credentials=credentials)
+    draft_tool = CreateDraftMessageTool(credentials=credentials, user_id='jlara@trocglobal.com')
+    send_tool = SendEmailTool(credentials=credentials, user_id='jlara@trocglobal.com')
+    search_tool = SearchEmailTool(credentials=credentials, user_id='jlara@trocglobal.com')
+    event_tool = CreateEventTool(credentials=credentials, user_id='jlara@trocglobal.com')
 
     # Create a draft email
     draft_result = await draft_tool.run(
@@ -216,8 +216,9 @@ async def example_delegated_auth():
     """Example using delegated permissions with interactive login."""
 
     credentials = {
-        'client_id': 'your-public-app-client-id',  # Public client app
-        'tenant_id': 'your-tenant-id'
+        'client_id': O365_CLIENT_ID,  # Public client app
+        'tenant_id': O365_TENANT_ID,
+        'user_id': 'jlara@trocglobal.com'
     }
 
     # Create tool with delegated mode
@@ -228,8 +229,7 @@ async def example_delegated_auth():
             "User.Read",
             "Mail.Read",
             "Mail.Send",
-            "Calendars.ReadWrite",
-            "offline_access"
+            "Calendars.ReadWrite"
         ]
     )
 
@@ -259,9 +259,24 @@ class EmailManagerAgent(BasicAgent):
     def __init__(self, credentials: dict, **kwargs):
         # Initialize O365 tools
         self.o365_tools = [
-            CreateDraftMessageTool(credentials=credentials),
-            SendEmailTool(credentials=credentials),
-            SearchEmailTool(credentials=credentials)
+            CreateDraftMessageTool(
+                credentials=credentials,
+                default_auth_mode='delegated',
+            ),
+            SendEmailTool(
+                credentials=credentials,
+                default_auth_mode='delegated',
+            ),
+            SearchEmailTool(
+                credentials=credentials,
+                default_auth_mode='delegated',
+                scopes=[
+                    "User.Read",
+                    "Mail.Read",
+                    "Mail.Send",
+                    "Calendars.ReadWrite"
+                ]
+            )
         ]
 
         super().__init__(
@@ -287,7 +302,8 @@ class EmailManagerAgent(BasicAgent):
 
         result = await search_tool.run(
             query=query,
-            max_results=max_results
+            max_results=max_results,
+            auth_mode='delegated'
         )
 
         if result.status == "success":
@@ -304,13 +320,19 @@ async def example_specialized_agent():
     """Example using a specialized email management agent."""
 
     credentials = {
-        'client_id': O365_CLIENT_ID,
+        'client_id': O365_CLIENT_ID,  # Public client app
+        'tenant_id': O365_TENANT_ID,
         'client_secret': O365_CLIENT_SECRET,
-        'tenant_id': O365_TENANT_ID
+        'user_id': 'jlara@trocglobal.com'
     }
 
     # Create the specialized agent
-    email_agent = EmailManagerAgent(credentials=credentials)
+    email_agent = EmailManagerAgent(
+        credentials=credentials,
+        default_auth_mode='delegated',
+    )
+
+    await email_agent.configure()
 
     # Use it via direct method
     summary = await email_agent.find_and_summarize(
@@ -529,12 +551,12 @@ async def main():
     print("=" * 60)
 
     # Choose which example to run
-    await example_direct_usage()
+    # await example_direct_usage()
     # await example_agent_integration()
     # await example_manual_registration()
     # await example_obo_auth()
     # await example_delegated_auth()
-    # await example_specialized_agent()
+    await example_specialized_agent()
     # await example_calendar_agent()
     # await example_orchestrated_agents()
     # await example_error_handling()

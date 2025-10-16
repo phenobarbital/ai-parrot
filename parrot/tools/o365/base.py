@@ -30,7 +30,7 @@ class O365AuthMode:
 class O365ToolArgsSchema(AbstractToolArgsSchema):
     """Base schema for Office365 tool arguments."""
     auth_mode: Optional[str] = Field(
-        default=O365AuthMode.DIRECT,
+        default=O365AuthMode.DELEGATED,
         description="Authentication mode: 'direct', 'on_behalf_of', 'delegated', or 'cached'"
     )
     user_assertion: Optional[str] = Field(
@@ -286,9 +286,3 @@ class O365Tool(AbstractTool):
             except Exception as e:
                 self.logger.warning(f"Error closing client: {e}")
         self._client_cache.clear()
-
-    def __del__(self):
-        """Cleanup on deletion."""
-        if self._client_cache:
-            with contextlib.suppress(RuntimeError):
-                asyncio.create_task(self.cleanup())

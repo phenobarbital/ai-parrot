@@ -361,15 +361,13 @@ class O365Client(CredentialsInterface):
     def get_user_context(self, user_id: Optional[str] = None):
         """Return the appropriate user request builder for Graph operations."""
         # Determine effective user identifier
-        effective_user = (
+        if effective_user := (
             user_id
             or self.credentials.get("user_id")
             or self.credentials.get("user_principal_name")
             or self.credentials.get("mailbox")
             or self.credentials.get("username")
-        )
-
-        if effective_user:
+        ):
             return self.graph_client.users.by_user_id(effective_user)
 
         if self.is_app_only:
@@ -716,7 +714,7 @@ class O365Client(CredentialsInterface):
             if getattr(self, "redis", None):
                 blob = await self.redis.get(self._cache_key())
                 if blob:
-                    cache.deserialize(blob.decode("utf-8"))
+                    cache.deserialize(blob)
                     self.logger.info("Loaded MSAL token cache from Redis")
         except Exception as e:
             self.logger.warning(
@@ -738,61 +736,121 @@ class O365Client(CredentialsInterface):
                 f"Could not save token cache: {e}"
             )
 
+    def _filter_reserved_scopes(self, scopes: List[str]) -> List[str]:
+        """
+        Filter out reserved scopes that MSAL adds automatically.
+
+        Args:
+            scopes: List of scopes
+
+        Returns:
+            Filtered list without reserved scopes
+        """
+        reserved_scopes = {'offline_access', 'profile', 'openid'}
+        return [s for s in scopes if s not in reserved_scopes]
+
     async def interactive_login(
         self,
         scopes: Optional[List[str]] = None,
-        redirect_uri: str = "http://localhost",  # must be registered on the app
+        redirect_uri: str = "http://localhost",
         open_browser: bool = True,
     ) -> Dict[str, Any]:
         """
-        Perform Authorization Code + PKCE interactive login (supports MFA),
-        then persist the MSAL cache to Redis. Reuses the cache on subsequent runs.
+        Perform interactive login supporting both public and confidential clients.
+
+        - If client_secret is provided: Uses device code flow (confidential client)
+        - If no client_secret: Uses interactive browser flow (public client)
         """
-        # Scopes must include offline_access to receive refresh tokens. :contentReference[oaicite:1]{index=1}
-        scopes = scopes or [
-            "User.Read", "Files.ReadWrite.All", "Sites.Read.All", "offline_access", "openid", "profile"
-        ]
+        scopes = self._filter_reserved_scopes(scopes or [
+            "User.Read", "Files.ReadWrite.All", "Sites.Read.All"
+        ])
 
         tenant_id = self.credentials.get('tenant_id', self._default_tenant_id)
         client_id = self.credentials.get("client_id", self._default_client_id)
+        client_secret = self.credentials.get("client_secret", self._default_client_secret)
         authority = f"https://login.microsoftonline.com/{tenant_id}"
 
         # Prepare cache, load from Redis if present
         cache = SerializableTokenCache()
         await self._load_token_cache(cache)
 
-        # Create a Public Client (no secret) bound to this cache
-        pca = PublicClientApplication(
-            client_id=client_id,
-            authority=authority,
-            token_cache=cache
-        )
-
-        # Try silent first (if user already logged in and cache is valid)
         result = None
-        if accounts := pca.get_accounts():
-            result = pca.acquire_token_silent(scopes, account=accounts[0])
 
-        if not result or "access_token" not in result:
-            # Interactive (opens system browser by default) :contentReference[oaicite:2]{index=2}
-            result = pca.acquire_token_interactive(
-                scopes=scopes,
-                redirect_uri=redirect_uri,
-                prompt="select_account",
-                open_browser=open_browser,  # set False if you want to drive the URL with Playwright yourself
+        # Choose authentication flow based on client type
+        if client_secret:
+            # CONFIDENTIAL CLIENT: Use device code flow
+            self.logger.info("Using device code flow (confidential client)")
+
+            app = msal.ConfidentialClientApplication(
+                client_id=client_id,
+                client_credential=client_secret,
+                authority=authority,
+                token_cache=cache
             )
+
+            # Try silent first if we have cached accounts
+            if accounts := app.get_accounts():
+                result = app.acquire_token_silent(scopes, account=accounts[0])
+
+            if not result or "access_token" not in result:
+                # Initiate device code flow
+                flow = app.initiate_device_flow(scopes=scopes)
+
+                if "user_code" not in flow:
+                    raise ValueError(
+                        f"Failed to create device flow: {flow.get('error_description')}"
+                    )
+
+                # Display the code to the user
+                print("\n" + "="*60)
+                print(flow["message"])
+                print("="*60 + "\n")
+
+                # Wait for user to authenticate
+                result = app.acquire_token_by_device_flow(flow)
+        else:
+            # PUBLIC CLIENT: Use interactive browser flow
+            self.logger.info("Using interactive browser flow (public client)")
+
+            pca = PublicClientApplication(
+                client_id=client_id,
+                authority=authority,
+                token_cache=cache
+            )
+
+            # Try silent first (if user already logged in and cache is valid)
+            if accounts := pca.get_accounts():
+                result = pca.acquire_token_silent(scopes, account=accounts[0])
+
+            if not result or "access_token" not in result:
+                # Interactive login with PKCE
+                self.logger.info("Starting interactive browser authentication...")
+                result = pca.acquire_token_interactive(
+                    scopes=scopes,
+                    prompt="select_account"
+                )
+
         if "access_token" not in result:
+            error_desc = result.get('error_description', 'Unknown error')
+            error_code = result.get('error', 'Unknown error code')
             raise RuntimeError(
-                f"Interactive login failed: {result.get('error_description', 'Unknown error')}"
+                f"Interactive login failed: {error_desc}"
             )
+
+        self.token = result['access_token']
 
         # Persist cache to Redis so future runs can refresh silently
         await self._save_token_cache(cache)
 
-        # Build a TokenCredential backed by this MSAL PCA & cache for GraphServiceClient
-        account = pca.get_accounts()[0] if pca.get_accounts() else None
+        # Build a TokenCredential backed by MSAL cache for GraphServiceClient
+        account = (
+            app.get_accounts()[0] if client_secret and app.get_accounts()
+            else pca.get_accounts()[0] if not client_secret and pca.get_accounts()
+            else None
+        )
+
         self._credential = MSALCacheTokenCredential(
-            pca=pca,
+            pca=app if client_secret else pca,
             scopes=scopes,
             account=account,
             logger=self.logger
@@ -805,32 +863,43 @@ class O365Client(CredentialsInterface):
     async def ensure_interactive_session(self, scopes: Optional[List[str]] = None):
         """
         Ensure an interactive session (with cached refresh tokens) exists.
-        Creates Graph client credential from MSAL cache without prompting, if possible.
+        Supports both public and confidential clients.
         """
-        scopes = scopes or [
-            "User.Read", "Files.ReadWrite.All", "Sites.Read.All", "offline_access", "openid", "profile"
-        ]
+        scopes = self._filter_reserved_scopes(scopes or [
+            "User.Read", "Files.ReadWrite.All", "Sites.Read.All"
+        ])
+
         tenant_id = self.credentials.get('tenant_id', self._default_tenant_id)
         client_id = self.credentials.get("client_id", self._default_client_id)
+        client_secret = self.credentials.get("client_secret", self._default_client_secret)
         authority = f"https://login.microsoftonline.com/{tenant_id}"
 
         cache = SerializableTokenCache()
         await self._load_token_cache(cache)
 
-        pca = PublicClientApplication(
-            client_id=client_id,
-            authority=authority,
-            token_cache=cache
-        )
-        accounts = pca.get_accounts()
+        # Choose app type based on whether we have a secret
+        if client_secret:
+            app = msal.ConfidentialClientApplication(
+                client_id=client_id,
+                client_credential=client_secret,
+                authority=authority,
+                token_cache=cache
+            )
+        else:
+            app = PublicClientApplication(
+                client_id=client_id,
+                authority=authority,
+                token_cache=cache
+            )
+
+        accounts = app.get_accounts()
         if not accounts:
-            # No cached account -> caller should run interactive_login()
             raise RuntimeError(
                 "No cached session; call interactive_login() first"
             )
 
-        # Try silent; if fails, caller must re-run interactive_login()
-        result = pca.acquire_token_silent(scopes, account=accounts[0])
+        # Try silent refresh
+        result = app.acquire_token_silent(scopes, account=accounts[0])
         if not result or "access_token" not in result:
             raise RuntimeError(
                 "Cached session expired; call interactive_login() again"
@@ -838,12 +907,12 @@ class O365Client(CredentialsInterface):
 
         # Build credential and graph client from cache
         self._credential = MSALCacheTokenCredential(
-            pca=pca,
+            pca=app,
             scopes=scopes,
             account=accounts[0],
             logger=self.logger
         )
         self._graph_client = self._create_graph_client(scopes=scopes)
         self.logger.debug(
-            "🔐 Using cached MSAL session (silent refresh enabled)"
+            "🔒 Using cached MSAL session (silent refresh enabled)"
         )
