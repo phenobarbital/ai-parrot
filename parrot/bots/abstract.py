@@ -1736,6 +1736,8 @@ Use the following information about user's data to guide your responses:
             )
             raise
 
+    chat = conversation  # alias
+
     def as_markdown(
         self,
         response: AIMessage,
