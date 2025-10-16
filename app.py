@@ -17,6 +17,11 @@ from parrot.handlers.bots import (
 from parrot.handlers.chat import (
     BotManagement
 )
+from parrot.handlers.o365_auth import (
+    O365InteractiveAuthSessions,
+    O365InteractiveAuthSessionDetail,
+)
+from parrot.services.o365_remote_auth import RemoteAuthManager
 
 # new resources:
 from resources.nextstop import NextStopAgent
@@ -81,6 +86,18 @@ class Main(AppHandler):
             ToolList,
             name='tools_list'
         )
+        # Office 365 delegated authentication endpoints
+        self.app['o365_auth_manager'] = RemoteAuthManager()
+        self.app.router.add_view(
+            '/api/v1/o365/auth/sessions',
+            O365InteractiveAuthSessions,
+            name='o365_auth_sessions'
+        )
+        self.app.router.add_view(
+            '/api/v1/o365/auth/sessions/{session_id}',
+            O365InteractiveAuthSessionDetail,
+            name='o365_auth_session_detail'
+        )
 
     async def on_prepare(self, request, response):
         """
@@ -112,4 +129,6 @@ class Main(AppHandler):
         on_shutdown.
         description: Signal for customize the response when server is shutting down
         """
-        pass
+        manager = app.get('o365_auth_manager')
+        if manager:
+            await manager.shutdown()

@@ -1,4 +1,4 @@
-from typing import Any, Optional, List, Dict
+from typing import Any, Optional, List, Dict, Callable
 import asyncio
 import contextlib
 from concurrent.futures import ThreadPoolExecutor
@@ -765,12 +765,24 @@ class O365Client(CredentialsInterface):
         scopes: Optional[List[str]] = None,
         redirect_uri: str = "http://localhost",
         open_browser: bool = True,
+        login_callback: Optional[Callable[[str], Optional[bool]]] = None,
+        device_flow_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
     ) -> Dict[str, Any]:
         """
         Perform interactive login supporting both public and confidential clients.
 
         - If client_secret is provided: Uses device code flow (confidential client)
         - If no client_secret: Uses interactive browser flow (public client)
+
+        Args:
+            scopes: Requested permission scopes.
+            redirect_uri: Redirect URI to use for interactive login.
+            open_browser: When False, suppress automatic browser launch.
+            login_callback: Optional callback invoked with the interactive login URL
+                when ``open_browser`` is False. Should return ``False`` to prevent the
+                default browser launch behaviour.
+            device_flow_callback: Optional callback invoked with the device flow
+                payload when running the device code flow.
         """
         scopes = self._filter_reserved_scopes(scopes or [
             "User.Read", "Files.ReadWrite.All", "Sites.Read.All"
@@ -824,11 +836,23 @@ class O365Client(CredentialsInterface):
                         f"Failed to create device flow: {flow.get('error_description')}"
                     )
 
-                print("\n" + "=" * 60)
-                print(flow["message"])
-                print("=" * 60 + "\n")
+                if device_flow_callback:
+                    try:
+                        device_flow_callback(flow)
+                    except Exception as callback_error:  # pragma: no cover - defensive
+                        self.logger.warning(
+                            "Device flow callback raised an exception: %s",
+                            callback_error
+                        )
+                else:
+                    print("\n" + "=" * 60)
+                    print(flow["message"])
+                    print("=" * 60 + "\n")
 
-                result = public_app.acquire_token_by_device_flow(flow)
+                loop = asyncio.get_running_loop()
+                result = await loop.run_in_executor(
+                    None, lambda: public_app.acquire_token_by_device_flow(flow)
+                )
                 active_app = public_app
             else:
                 self.logger.info("Starting interactive browser authentication (public client)")
@@ -838,17 +862,32 @@ class O365Client(CredentialsInterface):
                     parsed_uri = urlparse(redirect_uri)
                     if parsed_uri.port:
                         interactive_kwargs["port"] = parsed_uri.port
+                    interactive_kwargs["redirect_uri"] = redirect_uri
 
                 if not open_browser:
                     def _log_login_url(url: str) -> bool:
                         self.logger.info("Interactive authentication URL: %s", url)
+                        if login_callback:
+                            try:
+                                callback_result = login_callback(url)
+                                if callback_result is not None:
+                                    return bool(callback_result)
+                            except Exception as callback_error:  # pragma: no cover - defensive
+                                self.logger.warning(
+                                    "Login callback raised an exception: %s",
+                                    callback_error
+                                )
                         return False
 
                     interactive_kwargs["on_before_launching_ui"] = _log_login_url
 
-                result = public_app.acquire_token_interactive(
-                    scopes=scopes,
-                    **interactive_kwargs
+                loop = asyncio.get_running_loop()
+                result = await loop.run_in_executor(
+                    None,
+                    lambda: public_app.acquire_token_interactive(
+                        scopes=scopes,
+                        **interactive_kwargs
+                    )
                 )
                 active_app = public_app
 
