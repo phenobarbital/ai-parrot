@@ -8,8 +8,8 @@ from abc import abstractmethod
 from pydantic import BaseModel, Field
 from navconfig.logging import logging
 
-from .abstract import AbstractTool, AbstractToolArgsSchema
-from ..interfaces.google import GoogleClient
+from ..abstract import AbstractTool, AbstractToolArgsSchema
+from ...interfaces.google import GoogleClient
 
 
 class GoogleAuthMode:
@@ -154,9 +154,7 @@ class GoogleBaseTool(AbstractTool):
     def _normalize_scope_list(scopes: Optional[Union[str, List[str]]]) -> List[str]:
         if scopes is None:
             return []
-        if isinstance(scopes, str):
-            return [scopes]
-        return list(scopes)
+        return [scopes] if isinstance(scopes, str) else list(scopes)
 
     def clear_client_cache(self) -> None:
         """Clear cached client instances."""
@@ -169,4 +167,3 @@ class GoogleBaseTool(AbstractTool):
         **kwargs
     ) -> Any:
         """Execute the tool-specific Google API operation."""
-

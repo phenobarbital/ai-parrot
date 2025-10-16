@@ -5,7 +5,7 @@ from parrot.plugins import setup_plugin_importer, dynamic_import_helper
 from .pythonrepl import PythonREPLTool
 from .pythonpandas import PythonPandasTool
 from .abstract import AbstractTool, ToolResult
-from .google_base import GoogleBaseTool, GoogleToolArgsSchema, GoogleAuthMode
+from .google.base import GoogleBaseTool, GoogleToolArgsSchema, GoogleAuthMode
 from .math import MathTool
 from .toolkit import AbstractToolkit, ToolkitTool
 from .decorators import tool_schema, tool

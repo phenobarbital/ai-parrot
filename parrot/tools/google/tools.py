@@ -9,8 +9,8 @@ import aiohttp
 from pydantic import BaseModel, Field, field_validator
 from googleapiclient.discovery import build
 from navconfig import config
-from ..conf import GOOGLE_API_KEY
-from .abstract import AbstractTool
+from ...conf import GOOGLE_API_KEY
+from ..abstract import AbstractTool
 
 
 # Schema definitions
@@ -79,12 +79,12 @@ class GoogleRouteArgs(BaseModel):
     @property
     def map_width(self) -> int:
         """Get map width from map_size string."""
-        return int(self.map_size.split('x')[0])
+        return int(self.map_size.split('x')[0])  #  pylint: disable=E1101
 
     @property
     def map_height(self) -> int:
         """Get map height from map_size string."""
-        return int(self.map_size.split('x')[1])
+        return int(self.map_size.split('x')[1])  #  pylint: disable=E1101
 
     def get_map_size_tuple(self) -> tuple:
         """Get map_size as tuple."""
@@ -366,24 +366,40 @@ class GoogleRoutesTool(AbstractTool):
             lng_span = abs(ne_lng - sw_lng)
             max_span = max(lat_span, lng_span)
 
-            if max_span >= 10: return 6
-            elif max_span >= 5: return 7
-            elif max_span >= 2: return 8
-            elif max_span >= 1: return 9
-            elif max_span >= 0.5: return 10
-            elif max_span >= 0.25: return 11
-            elif max_span >= 0.1: return 12
-            elif max_span >= 0.05: return 13
+            if max_span >= 10:
+                return 6
+            elif max_span >= 5:
+                return 7
+            elif max_span >= 2:
+                return 8
+            elif max_span >= 1:
+                return 9
+            elif max_span >= 0.5:
+                return 10
+            elif max_span >= 0.25:
+                return 11
+            elif max_span >= 0.1:
+                return 12
+            elif max_span >= 0.05:
+                return 13
             else: return 14
 
-        if distance_miles >= 500: return 6
-        elif distance_miles >= 200: return 7
-        elif distance_miles >= 100: return 8
-        elif distance_miles >= 50: return 9
-        elif distance_miles >= 25: return 10
-        elif distance_miles >= 10: return 11
-        elif distance_miles >= 5: return 12
-        elif distance_miles >= 2: return 13
+        if distance_miles >= 500:
+            return 6
+        elif distance_miles >= 200:
+            return 7
+        elif distance_miles >= 100:
+            return 8
+        elif distance_miles >= 50:
+            return 9
+        elif distance_miles >= 25:
+            return 10
+        elif distance_miles >= 10:
+            return 11
+        elif distance_miles >= 5:
+            return 12
+        elif distance_miles >= 2:
+            return 13
         else: return 14
 
     def _get_gradient_colors(self, num_colors: int, start_color: str = "0x0000FF", end_color: str = "0xFF0000") -> List[str]:
