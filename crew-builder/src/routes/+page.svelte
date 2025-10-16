@@ -278,6 +278,16 @@
               </div>
             </div>
           </div>
+
+          <div class="card bg-base-100 shadow-xl">
+            <div class="card-body">
+              <h2 class="card-title">Authorize Office 365</h2>
+              <p>Grant delegated Microsoft 365 access for Parrot tools.</p>
+              <div class="card-actions justify-end">
+                <a class="btn btn-accent" href="/integrations/o365">Open Authorization</a>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- Recent Crews -->
