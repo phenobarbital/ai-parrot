@@ -2,11 +2,13 @@
 Office 365 Tools and Toolkit integration.
 """
 
-from .tools import (
+from .mail import (
     CreateDraftMessageTool,
-    CreateEventTool,
     SearchEmailTool,
     SendEmailTool
+)
+from .events import (
+    CreateEventTool,
 )
 
 
