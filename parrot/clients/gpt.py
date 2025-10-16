@@ -46,7 +46,7 @@ getLogger('openai').setLevel('INFO')
 
 # Reasoning models like o3 / o3-pro / o3-mini and o4-mini
 # (including deep-research variants) are Responses-only.
-RESPONSES_ONLY = {
+RESPONSES_ONLY_MODELS = {
     "o3",
     "o3-pro",
     "o3-mini",
@@ -117,24 +117,129 @@ class OpenAIClient(AbstractClient):
                     **kwargs
                 )
 
-    def _split_instructions_and_messages(
-        self, messages: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
+    def _is_responses_model(self, model_str: str) -> bool:
+        """Return True if the selected model must go through Responses API."""
+        # allow aliases/enums already normalized to str
+        ms = (model_str or "").strip()
+        return ms in RESPONSES_ONLY_MODELS
+
+    def _prepare_responses_args(self, *, messages, args):
         """
-        For Responses API, we can optionally lift the first system message into `instructions`.
-        Everything else is kept as a chat-style list for `input`.
+        Map your existing args/messages into Responses API fields.
+
+        - Lift the first system message into `instructions` when present
+        - Keep the rest as chat-style list under `input`
+        - Pass tools/response_format/temperature/max_output_tokens if provided
         """
         instructions = None
-        input_msgs: List[Dict[str, Any]] = []
+        input_msgs = []
         for m in messages:
             role = m.get("role")
             if role == "system" and instructions is None:
-                # Prefer the first system message as instructions
-                # (Responses API supports a top-level `instructions` field)
                 instructions = m.get("content")
             else:
+                # Responses accepts chat-like role/content items
                 input_msgs.append({"role": role, "content": m.get("content")})
-        return {"instructions": instructions, "input": input_msgs}
+
+        req = {
+            "instructions": instructions,
+            "input": input_msgs,
+        }
+        # Translate selected Chat args to Responses fields
+        if "tools" in args:
+            req["tools"] = args["tools"]
+        if "tool_choice" in args:
+            req["tool_choice"] = args["tool_choice"]
+        if "response_format" in args:
+            req["response_format"] = args["response_format"]
+        # temperature/max_tokens mapping:
+        if "temperature" in args and args["temperature"] is not None:
+            req["temperature"] = args["temperature"]
+        # Responses uses max_output_tokens (not max_tokens)
+        if "max_tokens" in args and args["max_tokens"] is not None:
+            req["max_output_tokens"] = args["max_tokens"]
+
+        # Parallel tool calls hint (Responses will parallelize tool calls internally;
+        # we still keep your external loop for compatibility)
+        if "parallel_tool_calls" in args:
+            req["parallel_tool_calls"] = args["parallel_tool_calls"]
+
+        return req
+
+    async def _responses_completion(self, *, model: str, messages, **args):
+        """
+        Adapter around OpenAI Responses API that mimics Chat Completions:
+        returns an object with `.choices[0].message` where `message` has
+        `.content: str` and `.tool_calls: list` (each item has `.id` and `.function.{name,arguments}`).
+        """
+        # 1) Build request payload from chat-like messages/args
+        req = self._prepare_responses_args(messages=messages, args=args)
+        req["model"] = model
+
+        # 2) Call Responses API
+        resp = await self.client.responses.create(**req)
+
+        # 3) Extract best-effort text
+        output_text = getattr(resp, "output_text", None)
+        if output_text is None:
+            output_text = ""
+            for item in getattr(resp, "output", []) or []:
+                for part in getattr(item, "content", []) or []:
+                    # common shapes the SDK returns
+                    if isinstance(part, dict):
+                        if part.get("type") == "output_text":
+                            output_text += part.get("text", "") or ""
+                    elif (text := getattr(part, "text", None)):
+                            output_text += text
+
+        # 4) Extract & normalize tool calls
+        #    We shape them to look like Chat Completions tool_calls:
+        #    {"id":..., "function": {"name": ..., "arguments": "<json string>"}}
+        norm_tool_calls = []
+        for item in getattr(resp, "output", []) or []:
+            for part in getattr(item, "content", []) or []:
+                if isinstance(part, dict) and part.get("type") == "tool_call":
+                    _id = part.get("id") or part.get("tool_call_id") or str(uuid.uuid4())
+                    _name = part.get("name")
+                    _args = part.get("arguments", {})
+                    # ensure arguments is a JSON string (Chat-style)
+                    if not isinstance(_args, str):
+                        try:
+                            _args = self._json.dumps(_args)
+                        except Exception:
+                            _args = json.dumps(_args, default=str)
+
+                    # tiny compatibility holders
+                    class _Fn:
+                        def __init__(self, name, arguments):
+                            self.name = name
+                            self.arguments = arguments
+                    class _ToolCall:
+                        def __init__(self, id, function):
+                            self.id = id
+                            self.function = function
+
+                    norm_tool_calls.append(_ToolCall(_id, _Fn(_name, _args)))
+
+        # 5) Build a Chat-like container
+        class _Msg:
+            def __init__(self, content, tool_calls):
+                self.content = content
+                self.tool_calls = tool_calls
+
+        class _Choice:
+            def __init__(self, message):
+                self.message = message
+
+        class _CompatResp:
+            def __init__(self, raw, message):
+                self.raw = raw
+                self.choices = [_Choice(message)]
+                # Usage may or may not exist; keep attribute for downstream code
+                self.usage = getattr(raw, "usage", None)
+
+        message = _Msg(output_text or "", norm_tool_calls)
+        return _CompatResp(resp, message)
 
     async def ask(
         self,
@@ -150,21 +255,36 @@ class OpenAIClient(AbstractClient):
         tools: Optional[List[Dict[str, Any]]] = None,
         use_tools: Optional[bool] = None
     ) -> AIMessage:
-        """Ask OpenAI a question with optional conversation memory."""
+        """Ask OpenAI a question with optional conversation memory.
 
-        # Generate unique turn ID for tracking
+        Args:
+            prompt (str): The prompt to send to the model.
+            model (Union[str, OpenAIModel], optional): The model to use. Defaults to GPT4_TURBO.
+            max_tokens (Optional[int], optional): Maximum tokens for the response. Defaults to None.
+            temperature (Optional[float], optional): Sampling temperature. Defaults to None.
+            files (Optional[List[Union[str, Path]]], optional): Files to upload. Defaults to None.
+            system_prompt (Optional[str], optional): System prompt to prepend. Defaults to None.
+            structured_output (Optional[type], optional): Pydantic model for structured output. Defaults to None.
+            user_id (Optional[str], optional): User ID for conversation memory. Defaults to None.
+            session_id (Optional[str], optional): Session ID for conversation memory. Defaults to None.
+            tools (Optional[List[Dict[str, Any]]], optional): Tools to register for this call. Defaults to None.
+            use_tools (Optional[bool], optional): Whether to use tools. Defaults to None.
+
+        Returns:
+            AIMessage: The response from the model.
+
+        """
+
         turn_id = str(uuid.uuid4())
         original_prompt = prompt
         _use_tools = use_tools if use_tools is not None else self.enable_tools
 
-        # Extract model value if it's an enum
         model_str = model.value if isinstance(model, Enum) else model
 
         messages, conversation_session, system_prompt = await self._prepare_conversation_context(
             prompt, files, user_id, session_id, system_prompt
         )
 
-        # Upload files if they are path-like objects
         if files:
             for file in files:
                 if isinstance(file, str):
@@ -175,20 +295,15 @@ class OpenAIClient(AbstractClient):
         if system_prompt:
             messages.insert(0, {"role": "system", "content": system_prompt})
 
-        # Track tool calls for the response
         all_tool_calls = []
 
-        # Prepare tools and special arguments
+        # tools prep
         if tools and isinstance(tools, list):
             for tool in tools:
                 self.register_tool(tool)
-        if _use_tools:
-            tools = self._prepare_tools()
-        else:
-            tools = None
+        tools = self._prepare_tools() if (_use_tools) else None
 
         args = {}
-        # Handle search models
         if model in [OpenAIModel.GPT_4O_MINI_SEARCH, OpenAIModel.GPT_4O_SEARCH]:
             args['web_search_options'] = {
                 "web_search": True,
@@ -200,96 +315,126 @@ class OpenAIClient(AbstractClient):
             args['tool_choice'] = "auto"
             args['parallel_tool_calls'] = True
 
-        # Add structured output if specified
-        if structured_output:
-            if hasattr(structured_output, 'model_json_schema'):
-                args['response_format'] = {
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": structured_output.__name__.lower(),
-                        "schema": structured_output.model_json_schema()
-                    }
+        if structured_output and hasattr(structured_output, 'model_json_schema'):
+            args['response_format'] = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": structured_output.__name__.lower(),
+                    "schema": structured_output.model_json_schema()
                 }
+            }
 
-        # Make initial request
-        if not model_str == 'gpt-5-nano':
-            # there is not max_tokens param for gpt-5-nano
+        if model_str != 'gpt-5-nano':
             args['max_tokens'] = max_tokens or self.max_tokens
             args['temperature'] = temperature or self.temperature
-        response = await self._chat_completion(
-            model=model_str,
-            messages=messages,
-            stream=False,
-            **args
-        )
 
-        result = response.choices[0].message
+        # -------- ROUTING: Responses-only vs Chat -----------
+        use_responses = self._is_responses_model(model_str)
 
-        # Handle tool calls in a loop
-        while result.tool_calls:
-            messages.append({
-                "role": "assistant",
-                "content": result.content,
-                "tool_calls": [
-                    tc.model_dump() for tc in result.tool_calls
-                ]
-            })
-            # Process and add tool results
-            for tool_call in result.tool_calls:
-                tool_name = tool_call.function.name
-                try:
-                    tool_args = self._json.loads(tool_call.function.arguments)
-                except json.JSONDecodeError:
-                    tool_args = json_decoder(tool_call.function.arguments)
-
-                # Create ToolCall object and execute
-                tc = ToolCall(
-                    id=tool_call.id,
-                    name=tool_name,
-                    arguments=tool_args
-                )
-
-                try:
-                    start_time = time.time()
-                    tool_result = await self._execute_tool(tool_name, tool_args)
-                    execution_time = time.time() - start_time
-
-                    tc.result = tool_result
-                    tc.execution_time = execution_time
-
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "name": tool_name,
-                        "content": str(tool_result)
-                    })
-                except Exception as e:
-                    tc.error = str(e)
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "name": tool_name,
-                        "content": str(e)
-                    })
-
-                all_tool_calls.append(tc)
-
-            # Continue conversation with tool results
+        if use_responses:
+            response = await self._responses_completion(
+                model=model_str,
+                messages=messages,
+                **args
+            )
+        else:
             response = await self._chat_completion(
                 model=model_str,
                 messages=messages,
                 stream=False,
                 **args
             )
+
+        result = response.choices[0].message
+
+        # ---------- Tool loop (works for both paths) ----------
+        while getattr(result, "tool_calls", None):
+            messages.append({
+                "role": "assistant",
+                "content": result.content,
+                "tool_calls": [
+                    tc.model_dump() if hasattr(tc, "model_dump") else {
+                        "id": tc.id,
+                        "function": {
+                            "name": getattr(tc.function, "name", None),
+                            "arguments": getattr(tc.function, "arguments", "{}"),
+                        },
+                    }
+                    for tc in result.tool_calls
+                ]
+            })
+
+            for tool_call in result.tool_calls:
+                tool_name = tool_call.function.name
+                try:
+                    try:
+                        tool_args = self._json.loads(tool_call.function.arguments)
+                    except json.JSONDecodeError:
+                        tool_args = json_decoder(tool_call.function.arguments)
+
+                    tc = ToolCall(
+                        id=getattr(tool_call, "id", ""),
+                        name=tool_name,
+                        arguments=tool_args
+                    )
+
+                    try:
+                        start_time = time.time()
+                        tool_result = await self._execute_tool(tool_name, tool_args)
+                        execution_time = time.time() - start_time
+
+                        tc.result = tool_result
+                        tc.execution_time = execution_time
+
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": getattr(tool_call, "id", ""),
+                            "name": tool_name,
+                            "content": str(tool_result)
+                        })
+                    except Exception as e:
+                        tc.error = str(e)
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": getattr(tool_call, "id", ""),
+                            "name": tool_name,
+                            "content": str(e)
+                        })
+
+                    all_tool_calls.append(tc)
+
+                except Exception as e:
+                    all_tool_calls.append(ToolCall(
+                        id=getattr(tool_call, "id", ""),
+                        name=tool_name,
+                        arguments={"_error": f"malformed tool args: {e}"}
+                    ))
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": getattr(tool_call, "id", ""),
+                        "name": tool_name,
+                        "content": f"Error decoding arguments: {e}"
+                    })
+
+            # continue via the same routed API
+            if use_responses:
+                response = await self._responses_completion(
+                    model=model_str,
+                    messages=messages,
+                    **args
+                )
+            else:
+                response = await self._chat_completion(
+                    model=model_str,
+                    messages=messages,
+                    stream=False,
+                    **args
+                )
             result = response.choices[0].message
 
-        # Add final assistant message
-        messages.append({
-            "role": "assistant",
-            "content": result.content
-        })
+        # ---------- Finalization (unchanged) ----------
+        messages.append({"role": "assistant", "content": result.content})
 
-        # Handle structured output
         final_output = None
         if structured_output:
             try:
@@ -303,8 +448,6 @@ class OpenAIClient(AbstractClient):
             except Exception:
                 final_output = result.content
 
-
-        # Update conversation memory
         tools_used = [tc.name for tc in all_tool_calls]
         assistant_response_text = result.content if isinstance(result.content, str) else self._json.dumps(result.content)
         await self._update_conversation_memory(
@@ -319,7 +462,6 @@ class OpenAIClient(AbstractClient):
             tools_used
         )
 
-        # Create AIMessage using factory
         ai_message = AIMessageFactory.from_openai(
             response=response,
             input_text=original_prompt,
@@ -330,9 +472,7 @@ class OpenAIClient(AbstractClient):
             structured_output=final_output if final_output != result.content else None
         )
 
-        # Add tool calls to the response
         ai_message.tool_calls = all_tool_calls
-
         return ai_message
 
     async def ask_stream(
