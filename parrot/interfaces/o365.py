@@ -159,6 +159,7 @@ class O365Client(CredentialsInterface):
         self.tenant_id: Optional[str] = None
         self.tenant: Optional[str] = None
         self.site: Optional[str] = None
+        self.auth_mode: Optional[str] = None
 
         # Azure Identity and Graph SDK objects
         self._credential: Optional[TokenCredential] = None
@@ -344,6 +345,40 @@ class O365Client(CredentialsInterface):
             str: Current access token or None
         """
         return self._access_token
+
+    def set_auth_mode(self, auth_mode: Optional[str]) -> None:
+        """Persist the authentication mode used to acquire tokens."""
+        self.auth_mode = auth_mode
+
+    @property
+    def is_app_only(self) -> bool:
+        """Return True when running with application (client credentials) permissions."""
+        has_user_context = bool(
+            self.credentials.get("username") or self.credentials.get("assertion")
+        )
+        return (self.auth_mode or "") == "direct" and not has_user_context
+
+    def get_user_context(self, user_id: Optional[str] = None):
+        """Return the appropriate user request builder for Graph operations."""
+        # Determine effective user identifier
+        effective_user = (
+            user_id
+            or self.credentials.get("user_id")
+            or self.credentials.get("user_principal_name")
+            or self.credentials.get("mailbox")
+            or self.credentials.get("username")
+        )
+
+        if effective_user:
+            return self.graph_client.users.by_user_id(effective_user)
+
+        if self.is_app_only:
+            raise ValueError(
+                "App-only authentication requires a target user_id (UPN or GUID) "
+                "either in the tool arguments or credentials."
+            )
+
+        return self.graph_client.me
 
     # Async Context Methods:
     async def __aenter__(self):
