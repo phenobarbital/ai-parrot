@@ -37,7 +37,8 @@ async def example_direct_usage():
     credentials = {
         'client_id': O365_CLIENT_ID,
         'client_secret': O365_CLIENT_SECRET,
-        'tenant_id': O365_TENANT_ID
+        'tenant_id': O365_TENANT_ID,
+        "user_id": "jlara@trocglobal.com"
     }
 
     # Create tool instances
