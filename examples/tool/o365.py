@@ -9,6 +9,7 @@ This file demonstrates various ways to use the Office365 tools:
 5. Practical use cases
 """
 import asyncio
+from datetime import datetime, timedelta
 from typing import List
 from parrot.bots.agent import BasicAgent
 
@@ -256,7 +257,7 @@ async def example_delegated_auth():
 class EmailManagerAgent(BasicAgent):
     """Specialized agent for email management."""
 
-    def __init__(self, credentials: dict, **kwargs):
+    def __init__(self, credentials: dict, scopes: list[str] = None, **kwargs):
         # Default scopes if not provided
         if scopes is None:
             scopes = [
@@ -429,7 +430,8 @@ async def example_specialized_agent():
     finally:
         # Cleanup
         for tool in email_agent.o365_tools:
-            await tool.cleanup()
+            if hasattr(tool, 'cleanup'):
+                await tool.cleanup()
 
 
 # ============================================================================
@@ -464,8 +466,6 @@ class CalendarManagerAgent(BasicAgent):
         online: bool = True
     ):
         """Schedule a meeting with standard duration."""
-        from datetime import datetime, timedelta
-
         # Parse start time and calculate end time
         start_dt = datetime.fromisoformat(start_time)
         end_dt = start_dt + timedelta(hours=duration_hours)
