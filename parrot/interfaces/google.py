@@ -7,14 +7,19 @@ and environment variable replacement.
 """
 from __future__ import annotations
 from pathlib import Path, PurePath
-from typing import Union, List, Dict, Any, Optional
+from typing import Union, List, Dict, Any, Optional, Callable
 from abc import ABC
+import asyncio
 import os
 import re
 import json
 import logging
+from contextlib import suppress
+from urllib.parse import urlparse
+from aiohttp import web
 from aiogoogle import Aiogoogle
 from aiogoogle.auth.creds import ServiceAccountCreds, UserCreds
+from aiogoogle.auth.utils import create_secret
 from navconfig import BASE_DIR, config
 from ..exceptions import ConfigError  # pylint: disable=E0611 # noqa
 from ..conf import GOOGLE_CREDENTIALS_FILE
@@ -197,6 +202,7 @@ class GoogleClient(CredentialsInterface, ABC):
         self,
         credentials: Optional[Union[str, dict, Path]] = None,
         scopes: Optional[Union[List[str], str]] = None,
+        user_creds_cache_file: Optional[Union[str, Path]] = None,
         **kwargs
     ):
         """
@@ -214,6 +220,7 @@ class GoogleClient(CredentialsInterface, ABC):
         self.credentials_str: Optional[str] = None
         self.credentials_dict: Optional[dict] = None
         self.auth_type: str = 'service_account'  # or 'user'
+        self._oauth_client_config: Optional[Dict[str, Any]] = None
 
         # Process scopes
         self.scopes: List[str] = self._process_scopes(scopes or 'all')
@@ -224,6 +231,13 @@ class GoogleClient(CredentialsInterface, ABC):
 
         # Authentication state
         self._authenticated = False
+
+        # User credential cache
+        if isinstance(user_creds_cache_file, (str, Path)):
+            self.user_creds_cache_file: Optional[Path] = Path(user_creds_cache_file).expanduser().resolve()
+        else:
+            # Default cache location inside env directory
+            self.user_creds_cache_file = BASE_DIR.joinpath('env', 'google', 'user_creds.json')
 
         # Process credentials
         self._load_credentials(credentials)
@@ -274,6 +288,12 @@ class GoogleClient(CredentialsInterface, ABC):
                     "Google: No credentials provided and GOOGLE_CREDENTIALS_FILE not found."
                 )
             self.credentials_file = GOOGLE_CREDENTIALS_FILE
+            try:
+                self.credentials_dict = json.loads(self.credentials_file.read_text())
+                self._set_auth_type_from_dict(self.credentials_dict)
+            except json.JSONDecodeError:
+                # Keep lazy loading for malformed files; will raise during initialize
+                self.logger.debug("Google: Could not parse default credentials file on load.")
             return
 
         if isinstance(credentials, str):
@@ -291,10 +311,18 @@ class GoogleClient(CredentialsInterface, ABC):
                         raise ConfigError(
                             f"Google: Credentials file not found: {credentials}"
                         )
+                try:
+                    self.credentials_dict = json.loads(self.credentials_file.read_text())
+                    self._set_auth_type_from_dict(self.credentials_dict)
+                except json.JSONDecodeError as exc:
+                    raise ConfigError(
+                        f"Google: Invalid JSON in credentials file: {self.credentials_file}"
+                    ) from exc
             else:
                 # JSON string
                 try:
                     self.credentials_dict = json.loads(credentials)
+                    self._set_auth_type_from_dict(self.credentials_dict)
                 except json.JSONDecodeError as e:
                     raise ConfigError(
                         "Google: Invalid JSON credentials string"
@@ -306,14 +334,152 @@ class GoogleClient(CredentialsInterface, ABC):
                 raise ConfigError(
                     f"Google: Credentials file not found: {self.credentials_file}"
                 )
+            try:
+                self.credentials_dict = json.loads(self.credentials_file.read_text())
+                self._set_auth_type_from_dict(self.credentials_dict)
+            except json.JSONDecodeError as exc:
+                raise ConfigError(
+                    f"Google: Invalid JSON in credentials file: {self.credentials_file}"
+                ) from exc
 
         elif isinstance(credentials, dict):
             self.credentials_dict = credentials
+            self._set_auth_type_from_dict(self.credentials_dict)
 
         else:
             raise ConfigError(
                 f"Google: Invalid credentials type: {type(credentials)}"
             )
+
+    def _set_auth_type_from_dict(self, data: Optional[Dict[str, Any]]) -> None:
+        """Determine authentication type based on credentials dictionary."""
+        if not data:
+            return
+
+        if data.get('type') == 'service_account':
+            self.auth_type = 'service_account'
+            self._oauth_client_config = None
+            return
+
+        oauth_config = self._extract_oauth_client_config(data)
+        if oauth_config:
+            self.auth_type = 'user'
+            self._oauth_client_config = oauth_config
+        else:
+            self._oauth_client_config = None
+
+    @staticmethod
+    def _extract_oauth_client_config(data: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """Extract OAuth client configuration from credentials dictionary."""
+        if not data or not isinstance(data, dict):
+            return None
+
+        if data.get('type') == 'service_account':
+            return None
+
+        for key in ('installed', 'web'):
+            value = data.get(key)
+            if isinstance(value, dict) and 'client_id' in value:
+                return value
+
+        if 'client_id' in data and ('auth_uri' in data or 'token_uri' in data):
+            return data
+
+        return None
+
+    def _get_oauth_client_config(self) -> Dict[str, Any]:
+        """Resolve OAuth client credentials for interactive login."""
+        if self._oauth_client_config:
+            return self._oauth_client_config
+
+        candidates: List[Dict[str, Any]] = []
+
+        if isinstance(self.credentials_dict, dict):
+            candidates.append(self.credentials_dict)
+
+        if self.credentials_file and Path(self.credentials_file).exists():
+            try:
+                candidates.append(json.loads(Path(self.credentials_file).read_text()))
+            except json.JSONDecodeError:
+                self.logger.debug(
+                    "Google: Failed to parse credentials file %s for OAuth config.",
+                    self.credentials_file
+                )
+
+        default_file = GOOGLE_CREDENTIALS_FILE
+        if default_file and default_file.exists():
+            if not self.credentials_file or Path(self.credentials_file).resolve() != default_file.resolve():
+                try:
+                    candidates.append(json.loads(default_file.read_text()))
+                except json.JSONDecodeError:
+                    self.logger.debug(
+                        "Google: Failed to parse default credentials file %s for OAuth config.",
+                        default_file
+                    )
+
+        for candidate in candidates:
+            oauth_config = self._extract_oauth_client_config(candidate)
+            if oauth_config:
+                self._oauth_client_config = oauth_config
+                return oauth_config
+
+        raise ConfigError(
+            "Google: OAuth client credentials not found. Provide OAuth client JSON for user authentication."
+        )
+
+    def _prepare_user_creds(
+        self,
+        creds: Dict[str, Any],
+        scopes: List[str]
+    ) -> Dict[str, Any]:
+        """Prepare user credential payload for storage and UserCreds construction."""
+        allowed_keys = [
+            'access_token', 'refresh_token', 'expires_in', 'expires_at',
+            'token_type', 'token_uri', 'token_info_uri', 'revoke_uri', 'id_token_jwt'
+        ]
+        sanitized = {key: creds.get(key) for key in allowed_keys if creds.get(key) is not None}
+
+        id_token = creds.get('id_token')
+        if isinstance(id_token, (dict, str)):
+            sanitized['id_token'] = id_token
+
+        sanitized['scopes'] = scopes
+        return sanitized
+
+    def _save_user_creds_to_cache(self, creds: Dict[str, Any]) -> None:
+        """Persist user credentials to cache for subsequent sessions."""
+        if not self.user_creds_cache_file:
+            return
+
+        try:
+            self.user_creds_cache_file.parent.mkdir(parents=True, exist_ok=True)
+            self.user_creds_cache_file.write_text(json.dumps(creds, indent=2, default=str))
+        except Exception as cache_error:  # pragma: no cover - defensive
+            self.logger.warning(
+                "Google: Failed to cache user credentials: %s",
+                cache_error
+            )
+
+    def _load_cached_user_creds(self) -> bool:
+        """Load cached user credentials if available."""
+        if not self.user_creds_cache_file or not self.user_creds_cache_file.exists():
+            return False
+
+        try:
+            cached = json.loads(self.user_creds_cache_file.read_text())
+            scopes = cached.get('scopes', self.scopes)
+            if isinstance(scopes, str):
+                scopes = [scopes]
+            creds_kwargs = cached.copy()
+            creds_kwargs.pop('scopes', None)
+            self._user_creds = UserCreds(scopes=scopes, **creds_kwargs)
+            return True
+        except Exception as cache_error:  # pragma: no cover - defensive
+            self.logger.warning(
+                "Google: Failed to load cached user credentials: %s",
+                cache_error
+            )
+            return False
 
     async def initialize(self) -> GoogleClient:
         """
@@ -330,10 +496,10 @@ class GoogleClient(CredentialsInterface, ABC):
 
         if self.auth_type == 'service_account':
             # Service account credentials
-            if self.credentials_file:
-                creds_dict = json.loads(self.credentials_file.read_text())
-            elif self.credentials_dict:
+            if self.credentials_dict:
                 creds_dict = self.credentials_dict
+            elif self.credentials_file:
+                creds_dict = json.loads(self.credentials_file.read_text())
             else:
                 raise RuntimeError("Google: No credentials available")
 
@@ -341,9 +507,15 @@ class GoogleClient(CredentialsInterface, ABC):
                 scopes=self.scopes,
                 **creds_dict
             )
+            self._user_creds = None
         else:
             # User credentials require interactive login
-            pass  # Will be set in interactive_login
+            self._service_account_creds = None
+            if not self._user_creds:
+                if not self._load_cached_user_creds():
+                    raise RuntimeError(
+                        "Google: User credentials not available. Run interactive_login() first."
+                    )
 
         self._authenticated = True
         self.logger.info("Google Client initialized")
@@ -481,8 +653,11 @@ class GoogleClient(CredentialsInterface, ABC):
         self,
         scopes: Optional[Union[List[str], str]] = None,
         port: int = 8080,
-        redirect_uri: Optional[str] = None
-    ) -> None:
+        redirect_uri: Optional[str] = None,
+        open_browser: bool = True,
+        login_callback: Optional[Callable[[str], Optional[bool]]] = None,
+        timeout: int = 300
+    ) -> Dict[str, Any]:
         """
         Perform interactive OAuth2 login for user credentials.
 
@@ -492,28 +667,179 @@ class GoogleClient(CredentialsInterface, ABC):
             scopes: Scopes to request (defaults to self.scopes)
             port: Local server port for OAuth redirect
             redirect_uri: Custom redirect URI
-
-        TODO: Implement OAuth2 flow with aiogoogle
-        Reference: https://github.com/omarryhan/aiogoogle/blob/master/examples/auth/oauth2.py
-
-        Implementation steps:
-        1. Create OAuth2 manager with client credentials
-        2. Get authorization URL
-        3. Open browser or display device code
-        4. Start local server to receive callback
-        5. Exchange code for tokens
-        6. Store UserCreds
+            open_browser: When True, launch a Playwright browser to complete login
+            login_callback: Optional callback invoked with the authorization URL
+            timeout: Seconds to wait for the authentication flow to complete
         """
+
         self.auth_type = 'user'
-        scopes = self._process_scopes(scopes or self.scopes)
+        scopes_list = self._process_scopes(scopes or self.scopes)
+        self.processing_credentials()
 
-        self.logger.info("Starting interactive OAuth2 login...")
+        oauth_client_config = self._get_oauth_client_config()
+        redirect_uri = redirect_uri or oauth_client_config.get('redirect_uri')
+        if not redirect_uri:
+            redirect_uris = oauth_client_config.get('redirect_uris', [])
+            if redirect_uris:
+                redirect_uri = redirect_uris[0]
+        if not redirect_uri:
+            redirect_uri = f"http://localhost:{port}/callback/aiogoogle"
 
-        raise NotImplementedError(
-            "Interactive login not yet implemented. "
-            "See aiogoogle OAuth2 examples for implementation guidance: "
-            "https://github.com/omarryhan/aiogoogle/blob/master/examples/auth/oauth2.py"
+        parsed_redirect = urlparse(redirect_uri)
+        callback_host = parsed_redirect.hostname or 'localhost'
+        callback_port = parsed_redirect.port or port
+        callback_path = parsed_redirect.path or '/'
+        if not callback_path.startswith('/'):
+            callback_path = f'/{callback_path}'
+
+        client_creds = {
+            'client_id': oauth_client_config['client_id'],
+            'client_secret': oauth_client_config.get('client_secret'),
+            'scopes': scopes_list,
+            'redirect_uri': redirect_uri
+        }
+
+        aiogoogle_client = Aiogoogle(client_creds=client_creds)
+        if not aiogoogle_client.oauth2.is_ready(client_creds):
+            raise ConfigError("Google: OAuth client configuration is incomplete for interactive login")
+
+        state = create_secret()
+        authorization_url = aiogoogle_client.oauth2.authorization_url(
+            client_creds=client_creds,
+            state=state,
+            access_type="offline",
+            include_granted_scopes=True,
+            prompt="consent"
         )
+
+        # Provide URL via callback or console
+        if login_callback:
+            try:
+                login_callback(authorization_url)
+            except Exception as callback_error:  # pragma: no cover - defensive
+                self.logger.warning(
+                    "Login callback raised an exception: %s",
+                    callback_error
+                )
+        self.logger.info("Authorize Google access by visiting: %s", authorization_url)
+        print("\n" + "=" * 60)
+        print("Open the following URL in your browser to authenticate:")
+        print(authorization_url)
+        print("=" * 60 + "\n")
+
+        login_event = asyncio.Event()
+        result_container: Dict[str, Any] = {}
+        error_container: Dict[str, Any] = {}
+
+        routes = web.RouteTableDef()
+
+        @routes.get(callback_path)
+        async def oauth_callback(request):  # type: ignore[unused-variable]
+            if request.query.get('error'):
+                error_container['error'] = request.query.get('error_description') or request.query.get('error')
+                login_event.set()
+                return web.json_response({'status': 'error', **error_container}, status=400)
+
+            if not request.query.get('code'):
+                login_event.set()
+                error_container['error'] = 'Missing authorization code'
+                return web.Response(text="Missing authorization code", status=400)
+
+            returned_state = request.query.get('state')
+            if returned_state != state:
+                login_event.set()
+                error_container['error'] = 'State mismatch during OAuth2 callback'
+                return web.Response(text="State mismatch", status=400)
+
+            try:
+                full_user_creds = await aiogoogle_client.oauth2.build_user_creds(
+                    grant=request.query.get('code'),
+                    client_creds=client_creds
+                )
+                result_container['creds'] = full_user_creds
+                login_event.set()
+                return web.Response(
+                    text="Authentication complete. You may close this window.",
+                    content_type='text/plain'
+                )
+            except Exception as auth_error:  # pragma: no cover - defensive
+                error_container['error'] = str(auth_error)
+                login_event.set()
+                return web.Response(
+                    text=f"Authentication failed: {auth_error}",
+                    status=500
+                )
+
+        app = web.Application()
+        app.add_routes(routes)
+
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, host=callback_host, port=callback_port)
+        await site.start()
+
+        playwright_task: Optional[asyncio.Task] = None
+        if open_browser:
+            try:
+                from playwright.async_api import async_playwright
+
+                async def launch_browser():
+                    try:
+                        async with async_playwright() as playwright:
+                            browser = await playwright.chromium.launch(headless=False)
+                            page = await browser.new_page()
+                            try:
+                                await page.goto(authorization_url, wait_until="load")
+                                await login_event.wait()
+                            finally:
+                                with suppress(Exception):
+                                    await page.close()
+                                with suppress(Exception):
+                                    await browser.close()
+                    except asyncio.CancelledError:  # pragma: no cover - cancellation support
+                        raise
+                    except Exception as browser_error:  # pragma: no cover - defensive
+                        self.logger.warning(
+                            "Playwright interactive session failed: %s",
+                            browser_error
+                        )
+
+                playwright_task = asyncio.create_task(launch_browser())
+            except ImportError:
+                self.logger.warning(
+                    "Playwright is not installed; open the authorization URL manually."
+                )
+
+        try:
+            await asyncio.wait_for(login_event.wait(), timeout=timeout)
+        except asyncio.TimeoutError as exc:
+            raise RuntimeError(
+                "Google interactive login timed out. Try again and ensure the browser completes authentication."
+            ) from exc
+        finally:
+            if playwright_task:
+                playwright_task.cancel()
+                with suppress(Exception):
+                    await playwright_task
+            await runner.cleanup()
+
+        if error_container.get('error'):
+            raise RuntimeError(f"Google interactive login failed: {error_container['error']}")
+
+        if 'creds' not in result_container:
+            raise RuntimeError("Google interactive login did not return credentials")
+
+        sanitized_creds = self._prepare_user_creds(result_container['creds'], scopes_list)
+        creds_for_instance = sanitized_creds.copy()
+        scopes_for_user = creds_for_instance.pop('scopes', scopes_list)
+        self._user_creds = UserCreds(scopes=scopes_for_user, **creds_for_instance)
+        self._service_account_creds = None
+        self._authenticated = True
+
+        self._save_user_creds_to_cache(sanitized_creds)
+
+        self.logger.info("Google interactive login completed successfully")
+        return sanitized_creds
 
     async def close(self) -> None:
         """Clean up resources."""
