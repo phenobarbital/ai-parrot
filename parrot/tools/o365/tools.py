@@ -113,6 +113,7 @@ class CreateDraftMessageTool(O365Tool):
         bcc_recipients = kwargs.get('bcc_recipients', [])
         importance = kwargs.get('importance', 'normal')
         is_html = kwargs.get('is_html', False)
+        user_id = kwargs.get('user_id')
 
         # Build message object
         message = Message()
@@ -143,7 +144,8 @@ class CreateDraftMessageTool(O365Tool):
 
         try:
             # Create the draft
-            draft = await client.graph_client.me.messages.post(message)
+            mailbox = client.get_user_context(user_id=user_id)
+            draft = await mailbox.messages.post(message)
 
             self.logger.info(f"Created draft message: {draft.id}")
 
@@ -276,6 +278,7 @@ class CreateEventTool(O365Tool):
         attendee_emails = kwargs.get('attendees', [])
         is_online_meeting = kwargs.get('is_online_meeting', False)
         is_all_day = kwargs.get('is_all_day', False)
+        user_id = kwargs.get('user_id')
 
         # Build event object
         event = Event()
@@ -319,7 +322,8 @@ class CreateEventTool(O365Tool):
 
         try:
             # Create the event
-            created_event = await client.graph_client.me.events.post(event)
+            mailbox = client.get_user_context(user_id=user_id)
+            created_event = await mailbox.events.post(event)
 
             self.logger.info(f"Created event: {created_event.id}")
 
@@ -438,10 +442,12 @@ class SearchEmailTool(O365Tool):
         max_results = min(kwargs.get('max_results', 10), 50)  # Cap at 50
         include_attachments = kwargs.get('include_attachments', False)
         order_by = kwargs.get('order_by', 'receivedDateTime desc')
+        user_id = kwargs.get('user_id')
 
         try:
             # Build the request
-            request_builder = client.graph_client.me.messages
+            mailbox = client.get_user_context(user_id=user_id)
+            request_builder = mailbox.messages
 
             # Apply folder filter if not default
             folder_map = {
@@ -453,7 +459,7 @@ class SearchEmailTool(O365Tool):
 
             if folder.lower() in folder_map:
                 folder_name = folder_map[folder.lower()]
-                request_builder = client.graph_client.me.mail_folders.by_mail_folder_id(
+                request_builder = mailbox.mail_folders.by_mail_folder_id(
                     folder_name
                 ).messages
 
@@ -631,6 +637,7 @@ class SendEmailTool(O365Tool):
         importance = kwargs.get('importance', 'normal')
         is_html = kwargs.get('is_html', False)
         save_to_sent = kwargs.get('save_to_sent_items', True)
+        user_id = kwargs.get('user_id')
 
         # Build message object
         message = Message()
@@ -661,7 +668,8 @@ class SendEmailTool(O365Tool):
 
         try:
             # Send the email
-            await client.graph_client.me.send_mail.post(
+            mailbox = client.get_user_context(user_id=user_id)
+            await mailbox.send_mail.post(
                 body={
                     "message": message,
                     "saveToSentItems": save_to_sent

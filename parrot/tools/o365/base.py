@@ -37,6 +37,13 @@ class O365ToolArgsSchema(AbstractToolArgsSchema):
         default=None,
         description="User assertion token for OBO flow"
     )
+    user_id: Optional[str] = Field(
+        default=None,
+        description=(
+            "Target mailbox user principal name or ID. Required when using app-only "
+            "(client credentials) authentication to access user-specific resources."
+        )
+    )
 
 
 class O365Tool(AbstractTool):
@@ -123,7 +130,9 @@ class O365Tool(AbstractTool):
 
         # Check cache
         if cache_key in self._client_cache:
-            return self._client_cache[cache_key]
+            cached_client = self._client_cache[cache_key]
+            cached_client.set_auth_mode(auth_mode)
+            return cached_client
 
         # Create new client
         client_credentials = self.credentials.copy()
@@ -139,6 +148,7 @@ class O365Tool(AbstractTool):
             credentials=client_credentials
         )
         client.processing_credentials()
+        client.set_auth_mode(auth_mode)
 
         try:
             if auth_mode == O365AuthMode.DIRECT:
