@@ -528,7 +528,7 @@ class OutputFormatter:
             sources_md = self._create_sources_markdown(response.source_documents)
             display(IPyMarkdown(sources_md))
 
-    def _create_tools_widget(self, tool_calls: List[Any], theme: str) -> widgets.Widget:
+    def _create_tools_widget(self, tool_calls: List[Any], theme: str) -> Any:
         """Create widget for tool calls."""
         rows = []
         for idx, tool in enumerate(tool_calls, 1):
@@ -547,7 +547,7 @@ class OutputFormatter:
         html_content = ''.join(rows)
         return widgets.HTML(value=html_content)
 
-    def _create_metadata_widget(self, response: Any, theme: str) -> widgets.Widget:
+    def _create_metadata_widget(self, response: Any, theme: str) -> Any:
         """Create widget for metadata."""
         metadata_items = []
 
@@ -568,7 +568,7 @@ class OutputFormatter:
         html_content = '<br>'.join(metadata_items)
         return widgets.HTML(value=html_content)
 
-    def _create_context_widget(self, response: Any, theme: str) -> Optional[widgets.Widget]:
+    def _create_context_widget(self, response: Any, theme: str) -> Optional[Any]:
         """Create widget for context information."""
         context_items = []
 
@@ -591,7 +591,7 @@ class OutputFormatter:
         html_content = '<br>'.join(context_items)
         return widgets.HTML(value=html_content)
 
-    def _create_sources_widget(self, sources: List[Any], theme: str) -> widgets.Widget:
+    def _create_sources_widget(self, sources: List[Any], theme: str) -> Any:
         """Create widget for sources."""
         rows = []
         for idx, source in enumerate(sources, 1):
