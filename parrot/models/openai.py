@@ -25,5 +25,4 @@ class OpenAIModel(Enum):
     O3_PRO = "o3-pro"
     O3_DEEP_RESEARCH = "o3-deep-research"
     GPT_4O = "gpt-4o"
-    O3_DEEP_RESEARCH = "o3-deep-research"
     GPT_IMAGE_1 = "gpt-image-1"
