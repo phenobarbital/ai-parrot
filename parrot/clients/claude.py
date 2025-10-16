@@ -31,7 +31,9 @@ from ..models.outputs import (
 class ClaudeModel(Enum):
     """Enum for Claude models."""
     SONNET_4 = "claude-sonnet-4-20250514"
+    SONNET_4_5 = "claude-sonnet-4-5"
     OPUS_4 = "claude-opus-4-20241022"
+    OPUS_4_1 = "claude-opus-4-1"
     SONNET_3_5 = "claude-3-5-sonnet-20241022"
     HAIKU_3_5 = "claude-3-5-haiku-20241022"
 

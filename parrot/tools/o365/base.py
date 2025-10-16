@@ -30,8 +30,8 @@ class O365AuthMode:
 class O365ToolArgsSchema(AbstractToolArgsSchema):
     """Base schema for Office365 tool arguments."""
     auth_mode: Optional[str] = Field(
-        default=O365AuthMode.DELEGATED,
-        description="Authentication mode: 'direct', 'on_behalf_of', 'delegated', or 'cached'"
+        default=None,
+        description="Authentication mode: 'direct', 'on_behalf_of', 'delegated', or 'cached'. If not provided, uses the tool's default_auth_mode."
     )
     user_assertion: Optional[str] = Field(
         default=None,
@@ -105,7 +105,7 @@ class O365Tool(AbstractTool):
         self.scopes = scopes
         self._client: Optional[O365Client] = None
         self._client_cache: Dict[str, O365Client] = {}  # Cache clients by auth mode
-
+        self._authenticated = False  # Track auth state
         self.logger = logging.getLogger(f'Parrot.Tools.{self.__class__.__name__}')
 
     async def _get_client(
@@ -126,6 +126,7 @@ class O365Tool(AbstractTool):
             Configured O365Client instance
         """
         auth_mode = auth_mode or self.default_auth_mode
+        scopes = scopes or self.scopes
         cache_key = f"{auth_mode}_{user_assertion or 'none'}"
 
         # Check cache
@@ -171,10 +172,11 @@ class O365Tool(AbstractTool):
                 )
 
             elif auth_mode == O365AuthMode.DELEGATED:
-                # Interactive login
-                self.logger.info("Starting interactive login")
-                await client.interactive_login(scopes=scopes or self.scopes)
-
+                if not self._authenticated:
+                    await client.interactive_login(scopes=scopes)
+                    self._authenticated = True
+                else:
+                    await client.ensure_interactive_session(scopes=scopes)
             elif auth_mode == O365AuthMode.CACHED:
                 # Use cached session
                 self.logger.info("Using cached interactive session")
@@ -234,9 +236,14 @@ class O365Tool(AbstractTool):
 
         try:
             # Extract auth parameters
-            auth_mode = kwargs.pop('auth_mode', self.default_auth_mode)
+            auth_mode = kwargs.pop('auth_mode', None) or self.default_auth_mode
             user_assertion = kwargs.pop('user_assertion', None)
-            scopes = kwargs.pop('scopes', None)
+            scopes = kwargs.pop('scopes', None) or self.scopes
+
+            self.logger.debug(
+                f"Executing with auth_mode={auth_mode}, "
+                f"default_auth_mode={self.default_auth_mode}"
+            )
 
             # Get authenticated client
             client = await self._get_client(

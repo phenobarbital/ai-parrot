@@ -257,25 +257,36 @@ class EmailManagerAgent(BasicAgent):
     """Specialized agent for email management."""
 
     def __init__(self, credentials: dict, **kwargs):
+        # Default scopes if not provided
+        if scopes is None:
+            scopes = [
+                "User.Read",
+                "Mail.Read",
+                "Mail.ReadWrite",
+                "Mail.Send",
+                "Calendars.ReadWrite"
+            ]
         # Initialize O365 tools
         self.o365_tools = [
+            SearchEmailTool(
+                credentials=credentials,
+                default_auth_mode='delegated',
+                scopes=scopes
+            ),
             CreateDraftMessageTool(
                 credentials=credentials,
                 default_auth_mode='delegated',
+                scopes=scopes
             ),
             SendEmailTool(
                 credentials=credentials,
                 default_auth_mode='delegated',
+                scopes=scopes
             ),
-            SearchEmailTool(
+            CreateEventTool(
                 credentials=credentials,
                 default_auth_mode='delegated',
-                scopes=[
-                    "User.Read",
-                    "Mail.Read",
-                    "Mail.Send",
-                    "Calendars.ReadWrite"
-                ]
+                scopes=scopes
             )
         ]
 
@@ -293,60 +304,132 @@ class EmailManagerAgent(BasicAgent):
         )
 
     async def find_and_summarize(self, query: str, max_results: int = 5):
-        """Search for emails and provide a summary."""
-        # This could be called directly or via chat
+        """
+        Search for emails and provide a summary.
+
+        Note: No need to pass auth_mode here - it uses the default from initialization.
+        """
         search_tool = next(
             t for t in self.o365_tools
             if isinstance(t, SearchEmailTool)
         )
 
+        # NO auth_mode parameter needed - uses default_auth_mode='delegated'
         result = await search_tool.run(
             query=query,
-            max_results=max_results,
-            auth_mode='delegated'
+            max_results=max_results
+            # auth_mode is automatically 'delegated' from initialization
         )
 
         if result.status == "success":
             messages = result.result['messages']
             summary = f"Found {len(messages)} emails:\n"
             for msg in messages:
-                summary += f"- From {msg['from']}: {msg['subject']}\n"
+                from_name = msg.get('from_name', msg.get('from', 'Unknown'))
+                summary += f"- From {from_name}: {msg['subject']}\n"
             return summary
         else:
             return f"Error searching emails: {result.error}"
+
+    async def draft_reply(self, to: str, subject: str, body: str):
+        """
+        Create a draft email.
+
+        Note: No need to pass auth_mode here either.
+        """
+        draft_tool = next(
+            t for t in self.o365_tools
+            if isinstance(t, CreateDraftMessageTool)
+        )
+
+        # NO auth_mode parameter needed
+        result = await draft_tool.run(
+            subject=subject,
+            body=body,
+            to_recipients=[to]
+            # auth_mode is automatically 'delegated' from initialization
+        )
+
+        if result.status == "success":
+            return f"Draft created successfully: {result.result['id']}"
+        else:
+            return f"Error creating draft: {result.error}"
+
+    async def send_email(self, to: list, subject: str, body: str, is_html: bool = False):
+        """
+        Send an email directly.
+
+        Note: No need to pass auth_mode here either.
+        """
+        send_tool = next(
+            t for t in self.o365_tools
+            if isinstance(t, SendEmailTool)
+        )
+
+        # NO auth_mode parameter needed
+        result = await send_tool.run(
+            subject=subject,
+            body=body,
+            to_recipients=to,
+            is_html=is_html
+        )
+
+        if result.status == "success":
+            return f"Email sent successfully to {to}"
+        else:
+            return f"Error sending email: {result.error}"
 
 
 async def example_specialized_agent():
     """Example using a specialized email management agent."""
 
     credentials = {
-        'client_id': O365_CLIENT_ID,  # Public client app
+        'client_id': O365_CLIENT_ID,
         'tenant_id': O365_TENANT_ID,
-        'client_secret': O365_CLIENT_SECRET,
+        # 'client_secret': O365_CLIENT_SECRET,
         'user_id': 'jlara@trocglobal.com'
     }
 
     # Create the specialized agent
     email_agent = EmailManagerAgent(
         credentials=credentials,
-        default_auth_mode='delegated',
+        scopes=[
+            "User.Read",
+            "Mail.Read",
+            "Mail.ReadWrite",
+            "Mail.Send",
+            "Calendars.ReadWrite"
+        ]
     )
 
     await email_agent.configure()
 
-    # Use it via direct method
-    summary = await email_agent.find_and_summarize(
-        query="project update",
-        max_results=10
-    )
-    print(summary)
+    try:
+        # First call: Will trigger interactive login if not cached
+        print("Searching for important emails...")
+        summary = await email_agent.find_and_summarize("important", max_results=5)
+        print(summary)
+        print()
 
-    # Or via natural language
-    response = await email_agent.chat(
-        "Find all unread emails from last week and create draft replies "
-        "acknowledging receipt and saying I'll respond in detail tomorrow."
-    )
-    print(response)
+        # Second call: Will use cached session - NO INTERACTIVE LOGIN PROMPT
+        print("Searching for meetings...")
+        summary = await email_agent.find_and_summarize("meetings", max_results=3)
+        print(summary)
+        print()
+
+        # Third call: Create a draft - STILL using cached session
+        print("Creating draft email...")
+        result = await email_agent.draft_reply(
+            to="colleague@company.com",
+            subject="Re: Project Update",
+            body="Thanks for the update. I'll review and get back to you."
+        )
+        print(result)
+
+    finally:
+        # Cleanup
+        for tool in email_agent.o365_tools:
+            await tool.cleanup()
 
 
 # ============================================================================
