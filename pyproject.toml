@@ -95,6 +95,7 @@ agents = [
     "jira==3.10.5",
     "arxiv==2.2.0",
     "docker==7.1.0",
+    "aiogoogle==5.17.0"
 ]
 
 # Update the loaders optional dependency section with pinned versions
