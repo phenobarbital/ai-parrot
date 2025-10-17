@@ -249,6 +249,7 @@ class GoogleClient(CredentialsInterface, ABC):
         # Credentials
         self._service_account_creds: Optional[ServiceAccountCreds] = None
         self._user_creds: Optional[UserCreds] = None
+        self._user_creds_payload: Optional[Dict[str, Any]] = None
 
         # Authentication state
         self._authenticated = False
@@ -314,6 +315,7 @@ class GoogleClient(CredentialsInterface, ABC):
         try:
             await self.redis.set(key, json.dumps(creds, default=str), ex=self.user_creds_ttl)
             self.logger.info("Google: saved user credentials to Redis cache")
+            self._user_creds_payload = creds.copy()
         except Exception as e:
             self.logger.warning("Google: failed to save creds to Redis: %s", e)
 
@@ -332,6 +334,7 @@ class GoogleClient(CredentialsInterface, ABC):
             d = data.copy()
             d.pop("scopes", None)
             self._user_creds = UserCreds(scopes=scopes2, **d)
+            self._user_creds_payload = data
             self._service_account_creds = None
             self._authenticated = True
             self._client_credentials_source = f"redis:{key}"
@@ -519,6 +522,19 @@ class GoogleClient(CredentialsInterface, ABC):
         sanitized['scopes'] = scopes
         return sanitized
 
+    def _export_active_user_creds(self, scopes: List[str]) -> Dict[str, Any]:
+        """Return the sanitized credential payload for the active user session."""
+        if not self._user_creds:
+            raise RuntimeError("Google: No active user credentials to export")
+
+        payload: Dict[str, Any]
+        if self._user_creds_payload:
+            payload = self._user_creds_payload.copy()
+        else:
+            payload = dict(self._user_creds)
+        payload['scopes'] = scopes
+        return self._prepare_user_creds(payload, scopes)
+
     def _save_user_creds_to_cache(self, creds: Dict[str, Any]) -> None:
         """Persist user credentials to cache for subsequent sessions."""
         if not self.user_creds_cache_file:
@@ -546,6 +562,7 @@ class GoogleClient(CredentialsInterface, ABC):
             creds_kwargs = cached.copy()
             creds_kwargs.pop('scopes', None)
             self._user_creds = UserCreds(scopes=scopes, **creds_kwargs)
+            self._user_creds_payload = cached
             self._client_credentials_source = f"cache:{self.user_creds_cache_file}"
             return True
         except Exception as cache_error:  # pragma: no cover - defensive
@@ -634,6 +651,7 @@ class GoogleClient(CredentialsInterface, ABC):
                 **creds_dict
             )
             self._user_creds = None
+            self._user_creds_payload = None
             if not self._client_credentials_source:
                 self._client_credentials_source = 'service_account:runtime'
         else:
@@ -803,6 +821,20 @@ class GoogleClient(CredentialsInterface, ABC):
         self.auth_type = 'user'
         scopes_list = self._process_scopes(scopes or self.scopes)
         self.processing_credentials()
+
+        try:
+            await self.ensure_interactive_session(scopes_list)
+        except Exception as cached_error:  # pragma: no cover - defensive reuse path
+            self.logger.debug(
+                "Google: cached interactive session unavailable: %s",
+                cached_error
+            )
+        else:
+            if self._user_creds:
+                self.logger.info(
+                    "Google: reusing cached credentials for interactive login request"
+                )
+                return self._export_active_user_creds(scopes_list)
 
         oauth_client_config = self._get_oauth_client_config()
         redirect_uri = redirect_uri or oauth_client_config.get('redirect_uri')
@@ -998,6 +1030,7 @@ class GoogleClient(CredentialsInterface, ABC):
         self._service_account_creds = None
         self._authenticated = True
         self._client_credentials_source = 'user:interactive'
+        self._user_creds_payload = sanitized_creds.copy()
 
         self._save_user_creds_to_cache(sanitized_creds)
         client_id = oauth_client_config.get('client_id')
