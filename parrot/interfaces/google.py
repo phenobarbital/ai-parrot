@@ -361,8 +361,7 @@ class GoogleClient(CredentialsInterface, ABC):
             self._oauth_client_config = None
             return
 
-        oauth_config = self._extract_oauth_client_config(data)
-        if oauth_config:
+        if (oauth_config := self._extract_oauth_client_config(data)):
             self.auth_type = 'user'
             self._oauth_client_config = oauth_config
         else:
@@ -418,8 +417,7 @@ class GoogleClient(CredentialsInterface, ABC):
                     )
 
         for candidate in candidates:
-            oauth_config = self._extract_oauth_client_config(candidate)
-            if oauth_config:
+            if (oauth_config := self._extract_oauth_client_config(candidate)):
                 self._oauth_client_config = oauth_config
                 return oauth_config
 
@@ -511,11 +509,10 @@ class GoogleClient(CredentialsInterface, ABC):
         else:
             # User credentials require interactive login
             self._service_account_creds = None
-            if not self._user_creds:
-                if not self._load_cached_user_creds():
-                    raise RuntimeError(
-                        "Google: User credentials not available. Run interactive_login() first."
-                    )
+            if not self._user_creds and not self._load_cached_user_creds():
+                raise RuntimeError(
+                    "Google: User credentials not available. Run interactive_login() first."
+                )
 
         self._authenticated = True
         self.logger.info("Google Client initialized")
