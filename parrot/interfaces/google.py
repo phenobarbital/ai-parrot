@@ -221,6 +221,7 @@ class GoogleClient(CredentialsInterface, ABC):
         self.credentials_dict: Optional[dict] = None
         self.auth_type: str = 'service_account'  # or 'user'
         self._oauth_client_config: Optional[Dict[str, Any]] = None
+        self._client_credentials_source: Optional[str] = None
 
         # Process scopes
         self.scopes: List[str] = self._process_scopes(scopes or 'all')
@@ -288,6 +289,7 @@ class GoogleClient(CredentialsInterface, ABC):
                     "Google: No credentials provided and GOOGLE_CREDENTIALS_FILE not found."
                 )
             self.credentials_file = GOOGLE_CREDENTIALS_FILE
+            self._client_credentials_source = f"file:{self.credentials_file}"
             try:
                 self.credentials_dict = json.loads(self.credentials_file.read_text())
                 self._set_auth_type_from_dict(self.credentials_dict)
@@ -300,6 +302,7 @@ class GoogleClient(CredentialsInterface, ABC):
             if credentials.lower() == "user":
                 # OAuth2 user credentials
                 self.auth_type = 'user'
+                self._client_credentials_source = 'user:prompt'
                 return
             elif credentials.endswith(".json"):
                 # JSON file path
@@ -314,6 +317,7 @@ class GoogleClient(CredentialsInterface, ABC):
                 try:
                     self.credentials_dict = json.loads(self.credentials_file.read_text())
                     self._set_auth_type_from_dict(self.credentials_dict)
+                    self._client_credentials_source = f"file:{self.credentials_file}"
                 except json.JSONDecodeError as exc:
                     raise ConfigError(
                         f"Google: Invalid JSON in credentials file: {self.credentials_file}"
@@ -323,6 +327,7 @@ class GoogleClient(CredentialsInterface, ABC):
                 try:
                     self.credentials_dict = json.loads(credentials)
                     self._set_auth_type_from_dict(self.credentials_dict)
+                    self._client_credentials_source = 'string:json'
                 except json.JSONDecodeError as e:
                     raise ConfigError(
                         "Google: Invalid JSON credentials string"
@@ -337,6 +342,7 @@ class GoogleClient(CredentialsInterface, ABC):
             try:
                 self.credentials_dict = json.loads(self.credentials_file.read_text())
                 self._set_auth_type_from_dict(self.credentials_dict)
+                self._client_credentials_source = f"file:{self.credentials_file}"
             except json.JSONDecodeError as exc:
                 raise ConfigError(
                     f"Google: Invalid JSON in credentials file: {self.credentials_file}"
@@ -345,6 +351,7 @@ class GoogleClient(CredentialsInterface, ABC):
         elif isinstance(credentials, dict):
             self.credentials_dict = credentials
             self._set_auth_type_from_dict(self.credentials_dict)
+            self._client_credentials_source = 'dict:provided'
 
         else:
             raise ConfigError(
@@ -471,6 +478,7 @@ class GoogleClient(CredentialsInterface, ABC):
             creds_kwargs = cached.copy()
             creds_kwargs.pop('scopes', None)
             self._user_creds = UserCreds(scopes=scopes, **creds_kwargs)
+            self._client_credentials_source = f"cache:{self.user_creds_cache_file}"
             return True
         except Exception as cache_error:  # pragma: no cover - defensive
             self.logger.warning(
@@ -478,6 +486,38 @@ class GoogleClient(CredentialsInterface, ABC):
                 cache_error
             )
             return False
+
+    def load_cached_user_credentials(self) -> bool:
+        """Public helper for loading cached user credentials."""
+        return self._load_cached_user_creds()
+
+    def set_credentials(self, credentials: Optional[Union[str, dict, Path]]) -> None:
+        """Public helper to update credentials after initialization."""
+        self._load_credentials(credentials)
+        self._authenticated = False
+
+    @property
+    def active_credentials(self) -> Optional[Union[ServiceAccountCreds, UserCreds]]:
+        """Return whichever credential set is currently active."""
+        return self._service_account_creds or self._user_creds
+
+    @property
+    def credentials_source(self) -> Optional[str]:
+        """Return the source the client used to obtain credentials."""
+        return self._client_credentials_source
+
+    @property
+    def is_authenticated(self) -> bool:
+        """Expose authentication status for callers."""
+        return self._authenticated
+
+    def using_service_account(self) -> bool:
+        """Return True if the client is configured for service-account credentials."""
+        return self.auth_type == 'service_account' and self._service_account_creds is not None
+
+    def using_user_credentials(self) -> bool:
+        """Return True if the client is configured for end-user OAuth credentials."""
+        return self.auth_type == 'user' and self._user_creds is not None
 
     async def initialize(self) -> GoogleClient:
         """
@@ -506,6 +546,8 @@ class GoogleClient(CredentialsInterface, ABC):
                 **creds_dict
             )
             self._user_creds = None
+            if not self._client_credentials_source:
+                self._client_credentials_source = 'service_account:runtime'
         else:
             # User credentials require interactive login
             self._service_account_creds = None
@@ -832,6 +874,7 @@ class GoogleClient(CredentialsInterface, ABC):
         self._user_creds = UserCreds(scopes=scopes_for_user, **creds_for_instance)
         self._service_account_creds = None
         self._authenticated = True
+        self._client_credentials_source = 'user:interactive'
 
         self._save_user_creds_to_cache(sanitized_creds)
 
