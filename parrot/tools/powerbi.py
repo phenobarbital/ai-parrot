@@ -10,14 +10,10 @@ import asyncio
 import random
 import logging
 from typing import Any, Dict, List, Optional, Union
-
 import aiohttp
 import requests
-from pydantic import BaseModel, Field, model_validator
-
-from .abstract import AbstractTool, AbstractToolArgsSchema, ToolResult  # your base
-
-logger = logging.getLogger(__name__)
+from pydantic import BaseModel, Field, model_validator, PrivateAttr, ConfigDict
+from .abstract import AbstractTool, AbstractToolArgsSchema, ToolResult
 
 POWERBI_BASE_URL = os.getenv("POWERBI_BASE_URL", "https://api.powerbi.com/v1.0/myorg")
 PBI_SCOPE = "https://analysis.windows.net/powerbi/api/.default"
@@ -69,10 +65,41 @@ def _rows_to_dataframe(rows: List[Dict[str, Any]]):
         ) from exc
     return pd.DataFrame(rows)
 
+# near other helpers at the top
+def _rows_to_arrow_table(rows: List[Dict[str, Any]]):
+    try:
+        import pyarrow as pa  # lazy import
+    except ImportError as exc:
+        raise RuntimeError("pyarrow is not installed. Install it to use output_format='pyarrow.Table' or 'parquet'.") from exc
+    # pyarrow infers schema well from pylist of dicts
+    return pa.Table.from_pylist(rows)
+
+def _write_parquet(rows: List[Dict[str, Any]], path: str) -> str:
+    # prefer pyarrow directly; fallback to pandas if pyarrow not available
+    try:
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+        table = pa.Table.from_pylist(rows)
+        pq.write_table(table, path)
+        return path
+    except ImportError:
+        # fallback via pandas (requires pandas + either pyarrow or fastparquet installed)
+        try:
+            import pandas as pd
+        except ImportError as exc:
+            raise RuntimeError("pandas is not installed. Install it (and pyarrow/fastparquet) to write parquet.") from exc
+        df = pd.DataFrame(rows)
+        df.to_parquet(path)  # pandas will pick available parquet engine
+        return path
+
+
 # ---------------- Core Client ----------------
 
 class PowerBIDatasetClient(BaseModel):
     """Client for executing DAX queries against a Power BI dataset."""
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    _logger: logging.Logger = PrivateAttr(default=logging.getLogger("PowerBIDatasetClient"))
+
     dataset_id: str
     table_names: List[str] = Field(default_factory=list)
     group_id: Optional[str] = None
@@ -85,15 +112,13 @@ class PowerBIDatasetClient(BaseModel):
     # Sampling for table info
     sample_rows_in_table_info: int = Field(default=1, gt=0, le=10)
 
-    # Networking
-    aiosession: Optional[aiohttp.ClientSession] = None
-
     # Retry settings (NEW)
     max_attempts: int = Field(default=5, ge=1, le=10)
     base_backoff: float = Field(default=0.5, ge=0.0)  # seconds
     max_backoff: float = Field(default=10.0, ge=0.0)  # seconds
 
-    _schemas: Dict[str, str] = Field(default_factory=dict, repr=False)
+    _schemas: Dict[str, str] = PrivateAttr(default_factory=dict)
+    _aiosession: Optional[aiohttp.ClientSession] = PrivateAttr(default=None)
 
     @model_validator(mode="before")
     @classmethod
@@ -163,7 +188,9 @@ class PowerBIDatasetClient(BaseModel):
                     except ValueError:
                         retry_after = None
                 sleep_s = self._compute_sleep(attempt, retry_after)
-                logger.warning("PowerBI %s; retrying in %.2fs (attempt %d/%d)", status, sleep_s, attempt, self.max_attempts)
+                self._logger.warning(
+                    "PowerBI %s; retrying in %.2fs (attempt %d/%d)", status, sleep_s, attempt, self.max_attempts
+                )
                 time.sleep(sleep_s)
                 attempt += 1
                 continue
@@ -183,14 +210,13 @@ class PowerBIDatasetClient(BaseModel):
 
         attempt = 1
         while True:
-            if self.aiosession:
-                async with self.aiosession.post(self.request_url, headers=headers, json=payload, timeout=timeout) as resp:
+            if self._aiosession:
+                async with self._aiosession.post(self.request_url, headers=headers, json=payload, timeout=timeout) as resp:
                     status = resp.status
                     if status == 403:
                         return {"error": "TokenError: Could not login to Power BI (403)."}
                     if status < 400:
                         return await resp.json(content_type=resp.content_type)
-
                     # retry on 429/5xx
                     if status in (429, 500, 502, 503, 504) and attempt < self.max_attempts:
                         retry_after_header = resp.headers.get("Retry-After")
@@ -201,7 +227,7 @@ class PowerBIDatasetClient(BaseModel):
                             except ValueError:
                                 retry_after = None
                         sleep_s = self._compute_sleep(attempt, retry_after)
-                        logger.warning("PowerBI %s; retrying in %.2fs (attempt %d/%d)", status, sleep_s, attempt, self.max_attempts)
+                        self._logger.warning("PowerBI %s; retrying in %.2fs (attempt %d/%d)", status, sleep_s, attempt, self.max_attempts)
                         await asyncio.sleep(sleep_s)
                         attempt += 1
                         continue
@@ -219,7 +245,6 @@ class PowerBIDatasetClient(BaseModel):
                         return {"error": "TokenError: Could not login to Power BI (403)."}
                     if status < 400:
                         return await resp.json(content_type=resp.content_type)
-
                     if status in (429, 500, 502, 503, 504) and attempt < self.max_attempts:
                         retry_after_header = resp.headers.get("Retry-After")
                         retry_after = None
@@ -229,11 +254,10 @@ class PowerBIDatasetClient(BaseModel):
                             except ValueError:
                                 retry_after = None
                         sleep_s = self._compute_sleep(attempt, retry_after)
-                        logger.warning("PowerBI %s; retrying in %.2fs (attempt %d/%d)", status, sleep_s, attempt, self.max_attempts)
+                        self._logger.warning("PowerBI %s; retrying in %.2fs (attempt %d/%d)", status, sleep_s, attempt, self.max_attempts)
                         await asyncio.sleep(sleep_s)
                         attempt += 1
                         continue
-
                     try:
                         err = await resp.json(content_type=resp.content_type)
                     except Exception:
@@ -253,7 +277,7 @@ class PowerBIDatasetClient(BaseModel):
                 rows = (js or {}).get("results", [{}])[0].get("tables", [{}])[0].get("rows", [])
                 self._schemas[t] = _json_rows_to_markdown(rows, table_name=t.strip("'"))
             except Exception as exc:
-                logger.warning("Error while getting table info for %s: %s", t, exc)
+                self._logger.warning("Error while getting table info for %s: %s", t, exc)
                 self._schemas[t] = "unknown"
         return ", ".join([self._schemas.get(t, "unknown") for t in requested])
 
@@ -269,7 +293,7 @@ class PowerBIDatasetClient(BaseModel):
                 rows = (js or {}).get("results", [{}])[0].get("tables", [{}])[0].get("rows", [])
                 self._schemas[t] = _json_rows_to_markdown(rows, table_name=t.strip("'"))
             except Exception as exc:
-                logger.warning("Error while getting table info for %s: %s", t, exc)
+                self._logger.warning("Error while getting table info for %s: %s", t, exc)
                 self._schemas[t] = "unknown"
 
         await asyncio.gather(*[_fetch(t) for t in todo])
@@ -282,7 +306,7 @@ class PowerBIDatasetClient(BaseModel):
         if isinstance(tables, str):
             t = _fix_table_name(tables)
             if self.table_names and t not in [_fix_table_name(x) for x in self.table_names]:
-                logger.warning("Table %s not found in dataset.", tables)
+                self.logger.warning("Table %s not found in dataset.", tables)
                 return None
             return [t]
         if isinstance(tables, list):
@@ -291,14 +315,13 @@ class PowerBIDatasetClient(BaseModel):
                 known = {_fix_table_name(x) for x in self.table_names}
                 fixed = [t for t in fixed if t in known]
                 if not fixed:
-                    logger.warning("No valid tables found in requested list.")
+                    self._logger.warning("No valid tables found in requested list.")
                     return None
             return fixed or None
         return None
 
-# ---------------- Tool Args ----------------
-
 class _BasePowerBIToolArgs(AbstractToolArgsSchema):
+    """Base arguments for Power BI tools."""
     dataset_id: str = Field(..., description="Power BI dataset (semantic model) ID")
     group_id: Optional[str] = Field(None, description="Workspace (group) ID; omit for My workspace")
     token: Optional[str] = Field(None, description="Bearer token (if not using Azure TokenCredential)")
@@ -307,22 +330,32 @@ class _BasePowerBIToolArgs(AbstractToolArgsSchema):
     sample_rows_in_table_info: int = Field(default=1, ge=1, le=10, description="Rows sampled in table preview")
     timeout: int = Field(default=30, ge=1, le=300, description="HTTP timeout in seconds")
 
-    # Retry knobs (NEW)
+    # Retry knobs
     max_attempts: int = Field(default=5, ge=1, le=10, description="Max HTTP attempts on 429/5xx")
     base_backoff: float = Field(default=0.5, ge=0.0, description="Base backoff seconds")
     max_backoff: float = Field(default=10.0, ge=0.0, description="Max backoff seconds")
 
-    # Export knobs (NEW)
+    # Export knobs
     export_csv: bool = Field(default=False, description="Write result rows to CSV")
     export_csv_path: Optional[str] = Field(default=None, description="CSV path; if not provided, a temp name is used")
     export_pandas: bool = Field(default=False, description="Return a pandas DataFrame in result (requires pandas)")
 
-    # DAX templating (NEW)
+    # DAX templating
     template: Optional[str] = Field(default=None, description="DAX template using Python format syntax")
     parameters: Optional[Dict[str, Any]] = Field(default=None, description="Values for template placeholders")
 
+    output_format: Optional[str] = Field(
+        default=None,
+        description="One of: row|rows|json|csv|dataframe|markdown|parquet|pyarrow.Table"
+    )
+    parquet_path: Optional[str] = Field(
+        default=None,
+        description="Where to write parquet if output_format='parquet'. Defaults to /tmp/..."
+    )
+
 
 class PowerBIQueryArgs(_BasePowerBIToolArgs):
+    """Arguments for PowerBIQueryTool."""
     command: Optional[str] = Field(
         default=None,
         description="DAX command to execute; ignored if 'template' is provided"
@@ -364,40 +397,97 @@ class PowerBIQueryTool(AbstractTool):
                 return ToolResult(status="error", result=None, error=f"Missing template parameter: {exc}")
 
         if not command:
-            return ToolResult(status="error", result=None, error="No DAX command provided (command/template missing)")
+            return ToolResult(
+                status="error", result=None, error="No DAX command provided (command/template missing)"
+            )
 
         js = await client.arun(command, timeout=kwargs.get("timeout", 30))
         if "error" in js:
-            return ToolResult(status="error", result=None, error=js["error"])
+            return ToolResult(
+                status="error", result=None, error=js["error"]
+            )
 
         rows = (js or {}).get("results", [{}])[0].get("tables", [{}])[0].get("rows", [])
         md = _json_rows_to_markdown(rows)
+        fmt_raw = kwargs.get("output_format")
+        fmt = (fmt_raw or "").strip().lower() if fmt_raw else None
 
-        # ---- Exports (NEW)
+        # ---- Exports
+        if not fmt:
+            if kwargs.get("export_csv"):
+                fmt = "csv"
+            elif kwargs.get("export_pandas"):
+                fmt = "dataframe"
+
+        # Normalize a few aliases
+        if fmt in ("row", "json"):
+            fmt = "rows"
+        if fmt in ("pyarrow", "arrow", "pyarrow.table"):
+            fmt = "pyarrow.Table"
+
+        result_payload: Dict[str, Any] = {
+            "raw": js,
+            "format": fmt or "default",
+        }
+
         csv_path = None
         df_obj = None
-        if kwargs.get("export_csv"):
+        parquet_path = None
+
+        if fmt == "rows" or fmt is None:
+            # default behavior keeps both rows and markdown available
+            result_payload |= {
+                "rows": rows,
+                "markdown": md,
+            }
+
+        elif fmt == "markdown":
+            result_payload["markdown"] = md
+
+        elif fmt == "csv":
             csv_text = _rows_to_csv_string(rows)
             path = kwargs.get("export_csv_path") or f"/tmp/powerbi_{client.dataset_id[:8]}_{int(time.time())}.csv"
             with open(path, "w", encoding="utf-8", newline="") as f:
                 f.write(csv_text)
             csv_path = path
+            result_payload |= {
+                "csv_path": csv_path,
+                "csv_text": csv_text,
+            }
 
-        if kwargs.get("export_pandas"):
+        elif fmt == "dataframe":
             try:
                 df_obj = _rows_to_dataframe(rows)
             except Exception as exc:
                 return ToolResult(status="error", result=None, error=str(exc))
+            result_payload["dataframe"] = df_obj  # note: not JSON-serializable
+
+        elif fmt == "parquet":
+            path = kwargs.get("parquet_path") or f"/tmp/powerbi_{client.dataset_id[:8]}_{int(time.time())}.parquet"
+            try:
+                parquet_path = _write_parquet(rows, path)
+            except Exception as exc:
+                return ToolResult(status="error", result=None, error=str(exc))
+            result_payload["parquet_path"] = parquet_path
+
+        elif fmt == "pyarrow.Table":
+            try:
+                table = _rows_to_arrow_table(rows)
+            except Exception as exc:
+                return ToolResult(status="error", result=None, error=str(exc))
+            result_payload["pyarrow_table"] = table  # note: not JSON-serializable
+
+        else:
+            # Unknown selector → return a helpful error
+            return ToolResult(
+                status="error",
+                result=None,
+                error=f"Unsupported output_format='{fmt_raw}'. Use one of: row|rows|json|csv|dataframe|markdown|parquet|pyarrow.Table"
+            )
 
         return {
             "status": "success",
-            "result": {
-                "rows": rows,
-                "markdown": md,
-                "raw": js,
-                "csv_path": csv_path,
-                "dataframe": df_obj,  # NOTE: non-serializable across processes; fine in-process
-            }
+            "result": result_payload
         }
 
 

@@ -6,7 +6,7 @@ from typing import List, Optional
 import pandas as pd
 from bs4 import Tag, NavigableString
 from pydantic import BaseModel, Field
-from navconfig import BASE_DIR
+from navconfig import config, BASE_DIR
 from parrot.tools.scraping import WebScrapingTool
 
 
@@ -228,10 +228,10 @@ async def test_dispatch(output_path: Path, zipcodes: List[str]):
                 "action": "authenticate",
                 "method": "form",
                 "username_selector": "input[name='email']",
-                "username": "",
+                "username": config.get('DISPATCHME_USERNAME'),
                 "enter_on_username": True,  # Press Enter after filling username
                 "password_selector": "input[name='password']",
-                "password": "",
+                "password": config.get('DISPATCHME_PASSWORD'),
                 "submit_selector": "button[type='submit']"
             },
             {
