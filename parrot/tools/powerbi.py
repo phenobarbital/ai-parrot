@@ -1,54 +1,49 @@
-"""
-Power BI Dataset tools for Parrot (execute DAX queries; inspect table info).
-
-Implements:
-- PowerBIDatasetClient: thin client over Power BI ExecuteQueries REST API
-- PowerBIQueryTool: Parrot tool to run DAX and return structured results
-- PowerBITableInfoTool: Parrot tool to preview table "schemas" via TOPN sampling
-"""
+# parrot/tools/powerbi.py
 from __future__ import annotations
 
 import os
+import io
+import csv
+import time
+import math
 import asyncio
+import random
 import logging
-from typing import Any, Dict, List, Optional, Union, Iterable
+from typing import Any, Dict, List, Optional, Union
 
 import aiohttp
 import requests
 from pydantic import BaseModel, Field, model_validator
 
-from .abstract import AbstractTool, AbstractToolArgsSchema, ToolResult  # noqa: F401
+from .abstract import AbstractTool, AbstractToolArgsSchema, ToolResult  # your base
 
 logger = logging.getLogger(__name__)
 
-# --------- Constants ----------
 POWERBI_BASE_URL = os.getenv("POWERBI_BASE_URL", "https://api.powerbi.com/v1.0/myorg")
-PBI_SCOPE = "https://analysis.windows.net/powerbi/api/.default"  # MS-recommended resource scope
+PBI_SCOPE = "https://analysis.windows.net/powerbi/api/.default"
 
-# --------- Utilities ----------
+# ---------------- Utilities ----------------
 
 def _fix_table_name(table: str) -> str:
     """Add single quotes around table names that contain spaces (DAX)."""
-    t = table.strip()
+    t = (table or "").strip()
     if " " in t and not (t.startswith("'") and t.endswith("'")):
         return f"'{t}'"
     return t
 
 def _json_rows_to_markdown(rows: List[Dict[str, Any]], table_name: Optional[str] = None) -> str:
-    """Convert Power BI ExecuteQueries rows to Markdown table."""
     if not rows:
         return ""
-    # Headers (keep original column order from first row)
     headers = list(rows[0].keys())
-    # Normalize header text (remove [] and optional table prefix)
+
     def clean(h: str) -> str:
         h2 = h.replace("[", ".").replace("]", "")
         if table_name:
-            # only strip leading "<table_name>."
             pref = f"{table_name}."
             if h2.startswith(pref):
                 return h2[len(pref):]
         return h2
+
     hdrs = [clean(h) for h in headers]
     out = "|" + "|".join(f" {h} " for h in hdrs) + "|\n"
     out += "|" + "|".join("---" for _ in hdrs) + "|\n"
@@ -56,27 +51,52 @@ def _json_rows_to_markdown(rows: List[Dict[str, Any]], table_name: Optional[str]
         out += "|" + "|".join(f" {row.get(h, '')} " for h in headers) + "|\n"
     return out
 
-# --------- Low-level client ----------
+def _rows_to_csv_string(rows: List[Dict[str, Any]]) -> str:
+    if not rows:
+        return ""
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=list(rows[0].keys()))
+    writer.writeheader()
+    writer.writerows(rows)
+    return output.getvalue()
+
+def _rows_to_dataframe(rows: List[Dict[str, Any]]):
+    try:
+        import pandas as pd  # lazy import
+    except ImportError as exc:
+        raise RuntimeError(
+            "pandas is not installed. Install it to use export_pandas=True."
+        ) from exc
+    return pd.DataFrame(rows)
+
+# ---------------- Core Client ----------------
 
 class PowerBIDatasetClient(BaseModel):
-    """
-    Minimal client around Power BI ExecuteQueries REST API.
-    Mirrors core behavior of LangChain's PowerBIDataset, but decoupled for Parrot use.
-    """
+    """Client for executing DAX queries against a Power BI dataset."""
     dataset_id: str
-    table_names: List[str] = Field(default_factory=list)  # optional; helps table validation
+    table_names: List[str] = Field(default_factory=list)
     group_id: Optional[str] = None
-    # Auth: either token or azure TokenCredential (lazy import)
+
+    # Auth
     token: Optional[str] = None
     credential: Optional[Any] = None  # azure.core.credentials.TokenCredential
     impersonated_user_name: Optional[str] = None
+
+    # Sampling for table info
     sample_rows_in_table_info: int = Field(default=1, gt=0, le=10)
+
+    # Networking
     aiosession: Optional[aiohttp.ClientSession] = None
 
-    # internal cache of table "schemas" (markdown previews)
+    # Retry settings (NEW)
+    max_attempts: int = Field(default=5, ge=1, le=10)
+    base_backoff: float = Field(default=0.5, ge=0.0)  # seconds
+    max_backoff: float = Field(default=10.0, ge=0.0)  # seconds
+
     _schemas: Dict[str, str] = Field(default_factory=dict, repr=False)
 
     @model_validator(mode="before")
+    @classmethod
     def _validate_auth(cls, v: Dict[str, Any]) -> Dict[str, Any]:
         if not v.get("token") and not v.get("credential"):
             raise ValueError("Please provide either a credential or a token.")
@@ -91,7 +111,6 @@ class PowerBIDatasetClient(BaseModel):
     def _headers(self) -> Dict[str, str]:
         if self.token:
             return {"Content-Type": "application/json", "Authorization": f"Bearer {self.token}"}
-        # Fetch a token from the azure credential
         try:
             token = self.credential.get_token(PBI_SCOPE).token  # type: ignore[attr-defined]
             return {"Content-Type": "application/json", "Authorization": f"Bearer {token}"}
@@ -105,42 +124,125 @@ class PowerBIDatasetClient(BaseModel):
             "serializerSettings": {"includeNulls": True},
         }
 
-    # ---- Sync ----
-    def run(self, command: str, timeout: int = 30) -> Dict[str, Any]:
-        """
-        Execute a DAX query synchronously. Returns Power BI JSON result.
-        Docs: Execute Queries REST API. See Microsoft Learn.
-        """
-        resp = requests.post(self.request_url, json=self._payload(command), headers=self._headers(), timeout=timeout)
-        if resp.status_code == 403:
-            return {"error": "TokenError: Could not login to Power BI (403)."}
-        try:
-            return resp.json()
-        except Exception as exc:
-            raise RuntimeError(f"Invalid JSON from Power BI: {exc}") from exc
+    # ---------- Retry helpers (NEW) ----------
 
-    # ---- Async ----
-    async def arun(self, command: str, timeout: int = 30) -> Dict[str, Any]:
-        """
-        Execute a DAX query asynchronously. Returns Power BI JSON result.
-        """
+    def _compute_sleep(self, attempt: int, retry_after: Optional[float]) -> float:
+        if retry_after is not None:
+            return min(retry_after, self.max_backoff)
+        # exponential backoff with jitter
+        backoff = min(self.base_backoff * (2 ** (attempt - 1)), self.max_backoff)
+        jitter = random.uniform(0, backoff / 2)
+        return backoff + jitter
+
+    # ---------- Sync ----------
+
+    def run(self, command: str, timeout: int = 30) -> Dict[str, Any]:
         headers = self._headers()
         payload = self._payload(command)
-        if self.aiosession:
-            async with self.aiosession.post(self.request_url, headers=headers, json=payload, timeout=timeout) as resp:
-                if resp.status == 403:
-                    return {"error": "TokenError: Could not login to Power BI (403)."}
-                return await resp.json(content_type=resp.content_type)
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(self.request_url, headers=headers, json=payload, timeout=timeout) as resp:
-                if resp.status == 403:
-                    return {"error": "TokenError: Could not login to Power BI (403)."}
-                return await resp.json(content_type=resp.content_type)
+        attempt = 1
+        while True:
+            resp = requests.post(self.request_url, json=payload, headers=headers, timeout=timeout)
+            status = resp.status_code
+            if status == 403:
+                return {"error": "TokenError: Could not login to Power BI (403)."}
 
-    # ---- Helpers for “schema-like” info via TOPN sampling ----
+            if status < 400:
+                try:
+                    return resp.json()
+                except Exception as exc:
+                    raise RuntimeError(f"Invalid JSON from Power BI: {exc}") from exc
+
+            # retry on 429/5xx
+            if status in {429, 500, 502, 503, 504} and attempt < self.max_attempts:
+                retry_after_header = resp.headers.get("Retry-After")
+                retry_after = None
+                if retry_after_header:
+                    try:
+                        retry_after = float(retry_after_header)
+                    except ValueError:
+                        retry_after = None
+                sleep_s = self._compute_sleep(attempt, retry_after)
+                logger.warning("PowerBI %s; retrying in %.2fs (attempt %d/%d)", status, sleep_s, attempt, self.max_attempts)
+                time.sleep(sleep_s)
+                attempt += 1
+                continue
+
+            # give up
+            try:
+                err = resp.json()
+            except Exception:
+                err = {"message": resp.text}
+            return {"error": f"HTTP {status}", "details": err}
+
+    # ---------- Async ----------
+
+    async def arun(self, command: str, timeout: int = 30) -> Dict[str, Any]:
+        headers = self._headers()
+        payload = self._payload(command)
+
+        attempt = 1
+        while True:
+            if self.aiosession:
+                async with self.aiosession.post(self.request_url, headers=headers, json=payload, timeout=timeout) as resp:
+                    status = resp.status
+                    if status == 403:
+                        return {"error": "TokenError: Could not login to Power BI (403)."}
+                    if status < 400:
+                        return await resp.json(content_type=resp.content_type)
+
+                    # retry on 429/5xx
+                    if status in (429, 500, 502, 503, 504) and attempt < self.max_attempts:
+                        retry_after_header = resp.headers.get("Retry-After")
+                        retry_after = None
+                        if retry_after_header:
+                            try:
+                                retry_after = float(retry_after_header)
+                            except ValueError:
+                                retry_after = None
+                        sleep_s = self._compute_sleep(attempt, retry_after)
+                        logger.warning("PowerBI %s; retrying in %.2fs (attempt %d/%d)", status, sleep_s, attempt, self.max_attempts)
+                        await asyncio.sleep(sleep_s)
+                        attempt += 1
+                        continue
+
+                    try:
+                        err = await resp.json(content_type=resp.content_type)
+                    except Exception:
+                        err = {"message": await resp.text()}
+                    return {"error": f"HTTP {status}", "details": err}
+
+            async with aiohttp.ClientSession() as session:
+                async with session.post(self.request_url, headers=headers, json=payload, timeout=timeout) as resp:
+                    status = resp.status
+                    if status == 403:
+                        return {"error": "TokenError: Could not login to Power BI (403)."}
+                    if status < 400:
+                        return await resp.json(content_type=resp.content_type)
+
+                    if status in (429, 500, 502, 503, 504) and attempt < self.max_attempts:
+                        retry_after_header = resp.headers.get("Retry-After")
+                        retry_after = None
+                        if retry_after_header:
+                            try:
+                                retry_after = float(retry_after_header)
+                            except ValueError:
+                                retry_after = None
+                        sleep_s = self._compute_sleep(attempt, retry_after)
+                        logger.warning("PowerBI %s; retrying in %.2fs (attempt %d/%d)", status, sleep_s, attempt, self.max_attempts)
+                        await asyncio.sleep(sleep_s)
+                        attempt += 1
+                        continue
+
+                    try:
+                        err = await resp.json(content_type=resp.content_type)
+                    except Exception:
+                        err = {"message": await resp.text()}
+                    return {"error": f"HTTP {status}", "details": err}
+
+    # ---------- Schema-like preview (TOPN sampling) ----------
+
     def get_table_info(self, tables: Optional[Union[str, List[str]]] = None) -> str:
-        """Return markdown preview for requested tables (uses TOPN sampling)."""
         requested = self._normalize_tables(tables)
         if not requested:
             return "No (valid) tables requested."
@@ -156,7 +258,6 @@ class PowerBIDatasetClient(BaseModel):
         return ", ".join([self._schemas.get(t, "unknown") for t in requested])
 
     async def aget_table_info(self, tables: Optional[Union[str, List[str]]] = None) -> str:
-        """Async version of get_table_info."""
         requested = self._normalize_tables(tables)
         if not requested:
             return "No (valid) tables requested."
@@ -175,9 +276,9 @@ class PowerBIDatasetClient(BaseModel):
         return ", ".join([self._schemas.get(t, "unknown") for t in requested])
 
     def _normalize_tables(self, tables: Optional[Union[str, List[str]]]) -> Optional[List[str]]:
-        """Validate requested table names against known list (if provided)."""
         if tables is None:
-            return [*_fix_table_name(t) for t in self.table_names] if self.table_names else None
+            # FIX: no starred-unpack! Just map.
+            return [_fix_table_name(t) for t in self.table_names] if self.table_names else None
         if isinstance(tables, str):
             t = _fix_table_name(tables)
             if self.table_names and t not in [_fix_table_name(x) for x in self.table_names]:
@@ -187,7 +288,7 @@ class PowerBIDatasetClient(BaseModel):
         if isinstance(tables, list):
             fixed = [_fix_table_name(x) for x in tables if x]
             if self.table_names:
-                known = set(_fix_table_name(x) for x in self.table_names)
+                known = {_fix_table_name(x) for x in self.table_names}
                 fixed = [t for t in fixed if t in known]
                 if not fixed:
                     logger.warning("No valid tables found in requested list.")
@@ -195,45 +296,48 @@ class PowerBIDatasetClient(BaseModel):
             return fixed or None
         return None
 
-
-# --------- Parrot Tools ----------
+# ---------------- Tool Args ----------------
 
 class _BasePowerBIToolArgs(AbstractToolArgsSchema):
     dataset_id: str = Field(..., description="Power BI dataset (semantic model) ID")
     group_id: Optional[str] = Field(None, description="Workspace (group) ID; omit for My workspace")
     token: Optional[str] = Field(None, description="Bearer token (if not using Azure TokenCredential)")
-    impersonated_user_name: Optional[str] = Field(
-        None,
-        description="UPN to impersonate (RLS-enabled datasets only)"
-    )
-    table_names: Optional[List[str]] = Field(
-        default=None,
-        description="Optional known table names for validation and schema preview"
-    )
-    sample_rows_in_table_info: int = Field(
-        default=1,
-        ge=1,
-        le=10,
-        description="Number of sample rows when previewing table info"
-    )
+    impersonated_user_name: Optional[str] = Field(None, description="UPN to impersonate for RLS testing")
+    table_names: Optional[List[str]] = Field(default=None, description="Known table names for validation/preview")
+    sample_rows_in_table_info: int = Field(default=1, ge=1, le=10, description="Rows sampled in table preview")
     timeout: int = Field(default=30, ge=1, le=300, description="HTTP timeout in seconds")
+
+    # Retry knobs (NEW)
+    max_attempts: int = Field(default=5, ge=1, le=10, description="Max HTTP attempts on 429/5xx")
+    base_backoff: float = Field(default=0.5, ge=0.0, description="Base backoff seconds")
+    max_backoff: float = Field(default=10.0, ge=0.0, description="Max backoff seconds")
+
+    # Export knobs (NEW)
+    export_csv: bool = Field(default=False, description="Write result rows to CSV")
+    export_csv_path: Optional[str] = Field(default=None, description="CSV path; if not provided, a temp name is used")
+    export_pandas: bool = Field(default=False, description="Return a pandas DataFrame in result (requires pandas)")
+
+    # DAX templating (NEW)
+    template: Optional[str] = Field(default=None, description="DAX template using Python format syntax")
+    parameters: Optional[Dict[str, Any]] = Field(default=None, description="Values for template placeholders")
 
 
 class PowerBIQueryArgs(_BasePowerBIToolArgs):
-    command: str = Field(..., description="DAX command to execute, e.g., EVALUATE TOPN(10, 'Sales')")
+    command: Optional[str] = Field(
+        default=None,
+        description="DAX command to execute; ignored if 'template' is provided"
+    )
 
 
 class PowerBIQueryTool(AbstractTool):
     """
-    Execute a DAX query against a Power BI dataset using the ExecuteQueries REST API.
-    Returns rows as JSON plus a Markdown rendering for quick inspection.
+    Tool for executing DAX queries against a Power BI dataset.
     """
     name = "powerbi_query"
     description = "Execute DAX against a Power BI dataset and return rows"
     args_schema = PowerBIQueryArgs
 
     async def _execute(self, **kwargs) -> Any:
-        # Build client (prefer TokenCredential if present in kwargs)
         cred = kwargs.get("credential", None)
         client = PowerBIDatasetClient(
             dataset_id=kwargs["dataset_id"],
@@ -243,19 +347,56 @@ class PowerBIQueryTool(AbstractTool):
             impersonated_user_name=kwargs.get("impersonated_user_name"),
             table_names=kwargs.get("table_names") or [],
             sample_rows_in_table_info=kwargs.get("sample_rows_in_table_info", 1),
+            max_attempts=kwargs.get("max_attempts", 5),
+            base_backoff=kwargs.get("base_backoff", 0.5),
+            max_backoff=kwargs.get("max_backoff", 10.0),
         )
-        js = await client.arun(kwargs["command"], timeout=kwargs.get("timeout", 30))
+
+        # ---- DAX templating (NEW)
+        command = kwargs.get("command")
+        template = kwargs.get("template")
+        params = kwargs.get("parameters") or {}
+        if template:
+            try:
+                # Users can escape literal braces with {{ and }}
+                command = template.format(**params)
+            except KeyError as exc:
+                return ToolResult(status="error", result=None, error=f"Missing template parameter: {exc}")
+
+        if not command:
+            return ToolResult(status="error", result=None, error="No DAX command provided (command/template missing)")
+
+        js = await client.arun(command, timeout=kwargs.get("timeout", 30))
         if "error" in js:
             return ToolResult(status="error", result=None, error=js["error"])
-        # Expect: {"results":[{"tables":[{"rows":[{...},{...}], "name": "..."}]}]}
+
         rows = (js or {}).get("results", [{}])[0].get("tables", [{}])[0].get("rows", [])
         md = _json_rows_to_markdown(rows)
+
+        # ---- Exports (NEW)
+        csv_path = None
+        df_obj = None
+        if kwargs.get("export_csv"):
+            csv_text = _rows_to_csv_string(rows)
+            path = kwargs.get("export_csv_path") or f"/tmp/powerbi_{client.dataset_id[:8]}_{int(time.time())}.csv"
+            with open(path, "w", encoding="utf-8", newline="") as f:
+                f.write(csv_text)
+            csv_path = path
+
+        if kwargs.get("export_pandas"):
+            try:
+                df_obj = _rows_to_dataframe(rows)
+            except Exception as exc:
+                return ToolResult(status="error", result=None, error=str(exc))
+
         return {
             "status": "success",
             "result": {
                 "rows": rows,
                 "markdown": md,
-                "raw": js
+                "raw": js,
+                "csv_path": csv_path,
+                "dataframe": df_obj,  # NOTE: non-serializable across processes; fine in-process
             }
         }
 
@@ -263,13 +404,13 @@ class PowerBIQueryTool(AbstractTool):
 class PowerBITableInfoArgs(_BasePowerBIToolArgs):
     tables: Optional[Union[str, List[str]]] = Field(
         default=None,
-        description="Specific table or list of tables to preview; defaults to known list if provided"
+        description="Specific table(s) to preview; defaults to known list if provided"
     )
 
 
 class PowerBITableInfoTool(AbstractTool):
     """
-    Preview dataset tables by sampling rows via TOPN to produce a compact, human-readable schema snapshot.
+    Tool for previewing table info (sample rows) from a Power BI dataset.
     """
     name = "powerbi_table_info"
     description = "Preview table info (sample rows) for a Power BI dataset"
@@ -285,8 +426,16 @@ class PowerBITableInfoTool(AbstractTool):
             impersonated_user_name=kwargs.get("impersonated_user_name"),
             table_names=kwargs.get("table_names") or [],
             sample_rows_in_table_info=kwargs.get("sample_rows_in_table_info", 1),
+            max_attempts=kwargs.get("max_attempts", 5),
+            base_backoff=kwargs.get("base_backoff", 0.5),
+            max_backoff=kwargs.get("max_backoff", 10.0),
         )
         md = await client.aget_table_info(kwargs.get("tables"))
+
+        # Optional export of the preview as CSV/DF by stitching rows from TOPN calls is not included here,
+        # since get_table_info returns a joined markdown snapshot of multiple tables. If you want,
+        # we can extend this tool to return per-table rows to export individually.
+
         return {
             "status": "success",
             "result": {
