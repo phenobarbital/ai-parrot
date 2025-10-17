@@ -6,6 +6,7 @@ Provides unified interface for Google services with credential management
 and environment variable replacement.
 """
 from __future__ import annotations
+import contextlib
 from pathlib import Path, PurePath
 from typing import Union, List, Dict, Any, Optional, Callable
 from abc import ABC
@@ -16,13 +17,20 @@ import json
 import logging
 from contextlib import suppress
 from urllib.parse import urlparse
+import webbrowser
 from aiohttp import web
+from redis import asyncio as aioredis
+from selenium.webdriver.chrome.service import Service as ChromeService
+from selenium.webdriver.chrome.options import Options as ChromeOptions
+from webdriver_manager.core.driver_cache import DriverCacheManager
+from webdriver_manager.chrome import ChromeDriverManager
+from playwright.async_api import async_playwright
 from aiogoogle import Aiogoogle
 from aiogoogle.auth.creds import ServiceAccountCreds, UserCreds
 from aiogoogle.auth.utils import create_secret
 from navconfig import BASE_DIR, config
 from ..exceptions import ConfigError  # pylint: disable=E0611 # noqa
-from ..conf import GOOGLE_CREDENTIALS_FILE
+from ..conf import GOOGLE_CREDENTIALS_FILE, REDIS_HISTORY_URL
 
 
 # ============================================================================
@@ -222,6 +230,18 @@ class GoogleClient(CredentialsInterface, ABC):
         self.auth_type: str = 'service_account'  # or 'user'
         self._oauth_client_config: Optional[Dict[str, Any]] = None
         self._client_credentials_source: Optional[str] = None
+        self.redis_url: str = kwargs.get(
+            "redis_url", REDIS_HISTORY_URL or "redis://localhost:6379/0"
+        )
+        self.redis: Optional[aioredis.Redis] = None
+        try:
+            self.redis = aioredis.from_url(self.redis_url, encoding="utf-8", decode_responses=True)
+        except Exception as e:
+            self.logger.warning(
+                "Google: Redis unavailable (%s); falling back to file cache only.", e
+            )
+        self.user_creds_ttl: int = int(kwargs.get("user_creds_ttl", 75 * 24 * 3600)) # 75 days
+
 
         # Process scopes
         self.scopes: List[str] = self._process_scopes(scopes or 'all')
@@ -242,8 +262,15 @@ class GoogleClient(CredentialsInterface, ABC):
 
         # Process credentials
         self._load_credentials(credentials)
+        super().__init__()
 
-        super().__init__(**kwargs)
+    async def __aenter__(self) -> GoogleClient:
+        await self.ensure_interactive_session()
+        await self.initialize()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        await self.close()
 
     def _process_scopes(self, scopes: Union[List[str], str]) -> List[str]:
         """
@@ -272,6 +299,47 @@ class GoogleClient(CredentialsInterface, ABC):
                 self.logger.warning(f"Unknown scope: {scope}")
 
         return list(set(result))  # Remove duplicates
+
+    def _redis_cache_key(self, client_id: Optional[str], user_hint: Optional[str], scopes: list[str]) -> str:
+        # Use OAuth client_id + (optional) user email hint + stable scopes hash
+        sid = (client_id or "unknown").strip()
+        u = (user_hint or "").strip()
+        scopes_key = "|".join(sorted(scopes))
+        return f"google:oauth:{sid}:{u}:{hash(scopes_key)}"
+
+    async def _save_user_creds_to_redis(self, creds: dict, client_id: Optional[str], user_hint: Optional[str], scopes: list[str]) -> None:
+        if not self.redis:
+            return
+        key = self._redis_cache_key(client_id, user_hint, scopes)
+        try:
+            await self.redis.set(key, json.dumps(creds, default=str), ex=self.user_creds_ttl)
+            self.logger.info("Google: saved user credentials to Redis cache")
+        except Exception as e:
+            self.logger.warning("Google: failed to save creds to Redis: %s", e)
+
+    async def _load_user_creds_from_redis(self, client_id: Optional[str], user_hint: Optional[str], scopes: list[str]) -> bool:
+        if not self.redis:
+            return False
+        key = self._redis_cache_key(client_id, user_hint, scopes)
+        try:
+            blob = await self.redis.get(key)
+            if not blob:
+                return False
+            data = json.loads(blob)
+            scopes2 = data.get("scopes", scopes)
+            if isinstance(scopes2, str):
+                scopes2 = [scopes2]
+            d = data.copy()
+            d.pop("scopes", None)
+            self._user_creds = UserCreds(scopes=scopes2, **d)
+            self._service_account_creds = None
+            self._authenticated = True
+            self._client_credentials_source = f"redis:{key}"
+            self.logger.info("Google: loaded user credentials from Redis cache")
+            return True
+        except Exception as e:
+            self.logger.warning("Google: failed to load creds from Redis: %s", e)
+            return False
 
     def _load_credentials(
         self,
@@ -531,8 +599,28 @@ class GoogleClient(CredentialsInterface, ABC):
 
         # Process environment variables in credentials
         self.processing_credentials()
+        if self.auth_type != 'service_account':
+            # user creds: try Redis first
+            client_id = None
+            try:
+                oauth_cfg = self._get_oauth_client_config()  # you already have this
+                client_id = oauth_cfg.get("client_id")
+            except Exception:
+                pass
 
-        if self.auth_type == 'service_account':
+            # Optional user hint from config/env (email), else None
+            user_hint = (self.credentials_dict or {}).get("user_email") or os.environ.get("GOOGLE_USER_HINT")
+
+            if not self._user_creds:
+                loaded = await self._load_user_creds_from_redis(client_id, user_hint, self.scopes)
+                if not loaded:
+                    # Fall back to file cache
+                    if not self._load_cached_user_creds():
+                        raise RuntimeError(
+                            "Google: User credentials not available. Run interactive_login() first."
+                        )
+
+        elif self.auth_type == 'service_account':
             # Service account credentials
             if self.credentials_dict:
                 creds_dict = self.credentials_dict
@@ -691,9 +779,10 @@ class GoogleClient(CredentialsInterface, ABC):
     async def interactive_login(
         self,
         scopes: Optional[Union[List[str], str]] = None,
-        port: int = 8080,
+        port: int = 5050,
         redirect_uri: Optional[str] = None,
         open_browser: bool = True,
+        browser: str = "system",
         login_callback: Optional[Callable[[str], Optional[bool]]] = None,
         timeout: int = 300
     ) -> Dict[str, Any]:
@@ -819,35 +908,69 @@ class GoogleClient(CredentialsInterface, ABC):
 
         playwright_task: Optional[asyncio.Task] = None
         if open_browser:
-            try:
-                from playwright.async_api import async_playwright
+            if browser == "system":
+                webbrowser.open(authorization_url, new=1, autoraise=True)
+            elif browser == "playwright":
+                try:
+                    async def launch_browser():
+                        try:
+                            async with async_playwright() as playwright:
+                                browser = await playwright.chromium.launch(channel="chrome", headless=False)
+                                page = await browser.new_page()
+                                try:
+                                    await page.goto(authorization_url, wait_until="load")
+                                    await login_event.wait()
+                                finally:
+                                    with suppress(Exception):
+                                        await page.close()
+                                    with suppress(Exception):
+                                        await browser.close()
+                        except asyncio.CancelledError:  # pragma: no cover - cancellation support
+                            raise
+                        except Exception as browser_error:  # pragma: no cover - defensive
+                            self.logger.warning(
+                                "Playwright interactive session failed: %s",
+                                browser_error
+                            )
 
-                async def launch_browser():
-                    try:
-                        async with async_playwright() as playwright:
-                            browser = await playwright.chromium.launch(headless=False)
-                            page = await browser.new_page()
-                            try:
-                                await page.goto(authorization_url, wait_until="load")
-                                await login_event.wait()
-                            finally:
-                                with suppress(Exception):
-                                    await page.close()
-                                with suppress(Exception):
-                                    await browser.close()
-                    except asyncio.CancelledError:  # pragma: no cover - cancellation support
-                        raise
-                    except Exception as browser_error:  # pragma: no cover - defensive
-                        self.logger.warning(
-                            "Playwright interactive session failed: %s",
-                            browser_error
-                        )
+                    playwright_task = asyncio.create_task(launch_browser())
+                except ImportError:
+                    self.logger.warning(
+                        "Playwright is not installed; open the authorization URL manually."
+                    )
+            elif browser == "selenium":
+                try:
+                    from selenium import webdriver
+                    from selenium.webdriver.chrome.options import Options
 
-                playwright_task = asyncio.create_task(launch_browser())
-            except ImportError:
-                self.logger.warning(
-                    "Playwright is not installed; open the authorization URL manually."
-                )
+                    def launch_selenium_browser():
+                        try:
+                            options = Options()
+                            options.add_argument("--disable-infobars")
+                            options.add_argument("--disable-extensions")
+                            driver = webdriver.Chrome(options=options)
+                            driver.get(authorization_url)
+                            # Wait until login_event is set
+                            while not login_event.is_set():
+                                asyncio.sleep(1)
+                        except Exception as selenium_error:  # pragma: no cover - defensive
+                            self.logger.warning(
+                                "Selenium interactive session failed: %s",
+                                selenium_error
+                            )
+                        finally:
+                            with suppress(Exception):
+                                driver.quit()
+
+                    loop = asyncio.get_event_loop()
+                    playwright_task = loop.run_in_executor(None, launch_selenium_browser)
+                except ImportError:
+                    self.logger.warning(
+                        "Selenium is not installed; open the authorization URL manually."
+                    )
+            else:
+                self.logger.warning("Unknown browser=%s, falling back to system browser", browser)
+                webbrowser.open(authorization_url, new=1, autoraise=True)
 
         try:
             await asyncio.wait_for(login_event.wait(), timeout=timeout)
@@ -877,8 +1000,14 @@ class GoogleClient(CredentialsInterface, ABC):
         self._client_credentials_source = 'user:interactive'
 
         self._save_user_creds_to_cache(sanitized_creds)
+        client_id = oauth_client_config.get('client_id')
 
         self.logger.info("Google interactive login completed successfully")
+        user_hint = sanitized_creds.get("id_token", {}) if isinstance(sanitized_creds.get("id_token"), dict) else None
+        if isinstance(user_hint, dict):
+            # try extracting email if present
+            user_hint = user_hint.get("email")
+        await self._save_user_creds_to_redis(sanitized_creds, client_id, user_hint, scopes_list)
         return sanitized_creds
 
     async def close(self) -> None:
@@ -901,6 +1030,35 @@ class GoogleClient(CredentialsInterface, ABC):
             f"auth_type={self.auth_type}, "
             f"authenticated={self._authenticated})"
         )
+
+    async def ensure_interactive_session(self, scopes: Optional[Union[List[str], str]] = None) -> None:
+        """Ensure we have usable user creds in memory; load from Redis/file cache if possible."""
+        scopes_list = self._process_scopes(scopes or self.scopes)
+        if self._user_creds:
+            return
+
+        client_id = None
+        with contextlib.suppress(Exception):
+            oauth_cfg = self._get_oauth_client_config()
+            client_id = oauth_cfg.get("client_id")
+
+        user_hint = (self.credentials_dict or {}).get("user_email") or os.environ.get("GOOGLE_USER_HINT")
+
+        loaded = await self._load_user_creds_from_redis(client_id, user_hint, scopes_list)
+        if not loaded and not self._load_cached_user_creds():
+                raise RuntimeError("Google: no cached session; call interactive_login()")
+
+        # Optionally probe a trivial endpoint to trigger refresh if needed:
+        try:
+            async with Aiogoogle(user_creds=self._user_creds) as ag:
+                # a lightweight no-op call: get token info endpoint
+                _ = await ag.oauth2.get_user_info()  # if scopes include openid/profile; otherwise skip
+        except Exception as e:
+            # If this fails due to expired token & bad refresh, force re-login
+            raise RuntimeError(
+                "Google: cached session expired; run interactive_login() again"
+            ) from e
+
 
 
 # ============================================================================

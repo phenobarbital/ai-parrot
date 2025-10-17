@@ -24,10 +24,18 @@ async def run_example() -> None:
     logging.basicConfig(level=logging.INFO)
 
     # Update this path to point at a service-account JSON file if desired
-    service_account_path = Path("service-account.json")
+    service_account_path = Path("env/google/google-service.json")
 
     if service_account_path.exists():
-        client = GoogleClient(credentials=service_account_path, scopes=["drive"])
+        client = GoogleClient(
+            credentials=service_account_path,
+            scopes=["drive"],
+            redis_url="redis://localhost:6379/2",
+            user_creds_cache_file="~/.config/parrot/google/user_creds.json",
+        )
+
+        await client.interactive_login(open_browser=True, port=5050)
+
         async with client:
             files = await client.execute_api_call(
                 "drive",
@@ -39,26 +47,6 @@ async def run_example() -> None:
         print("Service account mode results:")
         for file_info in files.get("files", []):
             print(f" - {file_info['name']} ({file_info['id']})")
-
-    print("\nStarting user OAuth2 login flow...")
-    user_client = GoogleClient(credentials="user", scopes=["drive"])
-
-    if not user_client.load_cached_user_credentials():
-        await user_client.interactive_login(open_browser=False)
-
-    async with user_client:
-        files = await user_client.execute_api_call(
-            "drive",
-            "files",
-            "list",
-            pageSize=5,
-            fields="files(id, name)",
-        )
-
-    print("User OAuth mode results:")
-    for file_info in files.get("files", []):
-        print(f" - {file_info['name']} ({file_info['id']})")
-
 
 if __name__ == "__main__":
     asyncio.run(run_example())
