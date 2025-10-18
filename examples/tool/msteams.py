@@ -10,6 +10,7 @@ This script shows:
 6. Error handling
 """
 from typing import Dict, Any
+from datetime import datetime, timedelta, timezone
 import traceback
 import asyncio
 import os
@@ -21,7 +22,9 @@ from parrot.conf import (
     MS_TEAMS_CLIENT_ID,
     MS_TEAMS_CLIENT_SECRET,
     MS_TEAMS_USERNAME,
-    MS_TEAMS_PASSWORD
+    MS_TEAMS_PASSWORD,
+    MS_TEAMS_DEFAULT_TEAMS_ID,
+    MS_TEAMS_DEFAULT_CHANNEL_ID
 )
 
 
@@ -356,17 +359,25 @@ async def example_with_agent():
             name="TeamsBot",
             role="Microsoft Teams Communication Manager",
             tools=tools,
-            instructions="""
+            instructions=f"""
             You are a helpful assistant that can send messages to Microsoft Teams.
             You can send messages to channels, chats, and direct messages to users.
             Always use adaptive cards for important announcements.
+            If No Team ID or Channel ID is provided, use the default ones.
+
+            Default Team ID: {TEST_TEAM_ID}
+            Default Channel ID: {TEST_CHANNEL_ID}
             """
         )
 
+        await agent.configure()
+
         # The agent can now use all toolkit methods
-        response = await agent.run(
+        response = await agent.ask(
             "Send a sprint summary to the Navigator channel"
         )
+
+        print(response.output)
 
         print("✓ Tools are ready for agent integration")
 
@@ -422,6 +433,181 @@ async def example_error_handling():
 
     print("✓ Error handling examples completed")
 
+# ============================================================================
+# Example 8: Message Extraction
+# ============================================================================
+
+async def example_message_extraction(toolkit):
+    """Demonstrate message extraction from a channel."""
+    print("\n=== Example 8: Message Extraction ===")
+    # Extract messages from a channel
+    messages = await toolkit.extract_channel_messages(
+        team_id=TEST_TEAM_ID,
+        channel_id=TEST_CHANNEL_ID,
+        start_time="2025-01-01T00:00:00Z",
+        end_time="2025-01-31T23:59:59Z",
+        max_messages=100
+    )
+
+    print(f"✓ Extracted {len(messages)} messages from channel:")
+    for msg in messages:
+        print(f"  - {msg}")
+
+    print("✓ Message extraction example completed")
+
+async def example_team_channel_discovery(toolkit):
+    """Demonstrate finding teams and channels by name."""
+    print("\n" + "=" * 70)
+    print("Example 1: Team and Channel Discovery")
+    print("=" * 70)
+
+    try:
+        # Find a team by name
+        print("\n1. Finding team by name...")
+        team = await toolkit.find_team_by_name("Navigator")
+
+        if team:
+            print(f"✓ Found team: {team['displayName']}")
+            print(f"  Team ID: {team['id']}")
+            print(f"  Description: {team['description']}")
+
+            # Find a channel within that team
+            print("\n2. Finding channel by name...")
+            channel = await toolkit.find_channel_by_name(
+                team_id=team['id'],
+                channel_name="Alerts"
+            )
+
+            if channel:
+                print(f"✓ Found channel: {channel['displayName']}")
+                print(f"  Channel ID: {channel['id']}")
+                print(f"  Type: {channel['membershipType']}")
+            else:
+                print("✗ Channel not found")
+        else:
+            print("✗ Team not found")
+
+    except Exception as e:
+        print(f"✗ Error: {e}")
+
+# ============================================================================
+# Example 2: Channel Details and Members
+# ============================================================================
+
+async def example_channel_info(toolkit):
+    """Demonstrate getting channel details and members."""
+    print("\n" + "=" * 70)
+    print("Example 2: Channel Details and Members")
+    print("=" * 70)
+
+    try:
+        # First find the team and channel
+        team = await toolkit.find_team_by_name("Navigator")
+        if not team:
+            print("✗ Team not found")
+            return
+
+        channel = await toolkit.find_channel_by_name(
+            team_id=team['id'],
+            channel_name="General"
+        )
+        if not channel:
+            print("✗ Channel not found")
+            return
+
+        # Get detailed channel information
+        print("\n1. Getting channel details...")
+        details = await toolkit.get_channel_details(
+            team_id=team['id'],
+            channel_id=channel['id']
+        )
+
+        print("✓ Channel Details:")
+        print(f"  Name: {details['displayName']}")
+        print(f"  Email: {details['email']}")
+        print(f"  Created: {details['createdDateTime']}")
+        print(f"  Web URL: {details['webUrl']}")
+
+        # Get channel members
+        print("\n2. Getting channel members...")
+        members = await toolkit.get_channel_members(
+            team_id=team['id'],
+            channel_id=channel['id']
+        )
+
+        print(f"✓ Found {len(members)} members:")
+        for member in members[:5]:  # Show first 5
+            print(f"  - {member['displayName']} ({member['email']})")
+            print(f"    Roles: {member['roles']}")
+
+    except Exception as e:
+        print(f"✗ Error: {e}")
+
+
+# ============================================================================
+# Example 3: Extract Channel Messages
+# ============================================================================
+
+async def example_extract_channel_messages(toolkit):
+    """Demonstrate extracting messages from a channel."""
+    print("\n" + "=" * 70)
+    print("Example 3: Extract Channel Messages")
+    print("=" * 70)
+
+    try:
+        # Find team and channel
+        team = await toolkit.find_team_by_name("Navigator")
+        if not team:
+            print("✗ Team not found")
+            return
+
+        channel = await toolkit.find_channel_by_name(
+            team_id=team['id'],
+            channel_name="General"
+        )
+        if not channel:
+            print("✗ Channel not found")
+            return
+
+        # Extract messages from last 7 days
+        print("\n1. Extracting messages from last 7 days...")
+        end_time = datetime.now(timezone.utc)
+        start_time = end_time - timedelta(days=7)
+
+        messages = await toolkit.extract_channel_messages(
+            team_id=team['id'],
+            channel_id=channel['id'],
+            start_time=start_time.isoformat() + 'Z',
+            end_time=end_time.isoformat() + 'Z',
+            max_messages=50
+        )
+
+        print(f"✓ Found {len(messages)} messages")
+
+        # Analyze messages
+        if messages:
+            print("\n2. Message analysis:")
+
+            # Count unique senders
+            senders = {
+                msg['from']['displayName']
+                for msg in messages
+                if msg.get('from') and msg['from'].get('displayName')
+            }
+            print(f"  Unique participants: {len(senders)}")
+
+            # Show most recent messages
+            print("\n3. Recent messages (last 3):")
+            for msg in messages[:3]:
+                sender = msg['from']['displayName'] if msg.get('from') else "Unknown"
+                content = msg['body']['content'][:100] if msg.get('body') else "No content"
+                timestamp = msg.get('createdDateTime', 'Unknown time')
+                print(f"\n  From: {sender}")
+                print(f"  Time: {timestamp}")
+                print(f"  Message: {content}...")
+
+    except Exception as e:
+        print(f"✗ Error: {e}")
 
 # ============================================================================
 # Main Function
@@ -447,24 +633,35 @@ async def main():
         # Example 1: Basic setup
         toolkit = await example_basic_setup()
 
-        # Example 2: Send to channel
-        await example_send_to_channel(toolkit)
+        # # Example 2: Send to channel
+        # await example_send_to_channel(toolkit)
 
-        # Example 3: Adaptive cards
-        await example_adaptive_cards(toolkit)
+        # # Example 3: Adaptive cards
+        # await example_adaptive_cards(toolkit)
 
-        # Example 4: Direct messages
-        await example_direct_messages(toolkit)
+        # # Example 4: Direct messages
+        # await example_direct_messages(toolkit)
 
-        # Example 5: Custom adaptive card
-        await example_custom_adaptive_card(toolkit)
+        # # Example 5: Custom adaptive card
+        # await example_custom_adaptive_card(toolkit)
 
         # Example 6: Agent integration
-        await example_with_agent()
+        # await example_with_agent()
 
-        # Example 7: Error handling
-        await example_error_handling()
+        # # Example 7: Error handling
+        # await example_error_handling()
 
+        # Example 8: Message extraction
+        # await example_message_extraction(toolkit)
+
+        # Example 9: Team and Channel Discovery
+        # await example_team_channel_discovery(toolkit)
+
+        # Example 10: Channel Details and Members
+        await example_channel_info(toolkit)
+
+        # Example 11: Extract Channel Messages
+        await example_extract_channel_messages(toolkit)
 
         print("\n" + "=" * 70)
         print("All examples completed successfully!")
