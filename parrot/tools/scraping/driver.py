@@ -16,7 +16,10 @@ from webdriver_manager.microsoft import EdgeChromiumDriverManager
 from webdriver_manager.core.driver_cache import DriverCacheManager
 
 # Selenium imports
-from selenium import webdriver
+try:
+    from seleniumwire import webdriver
+except ImportError:
+    from selenium import webdriver
 from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.chrome.options import Options as ChromeOptions
 from selenium.webdriver.firefox.service import Service as FirefoxService
@@ -134,6 +137,9 @@ class SeleniumSetup:
         # User agent
         user_agent = self._get_user_agent()
         options.add_argument(f"--user-agent={user_agent}")
+
+        # enable performance logging
+        options.set_capability('goog:loggingPrefs', {'performance': 'ALL'})
 
         # Browser binary
         if self.browser_binary:

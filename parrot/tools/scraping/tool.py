@@ -12,13 +12,19 @@ import asyncio
 import logging
 import base64
 import re
+import json
+import contextlib
 from urllib.parse import urlparse, urljoin
 from lxml import html as lxml_html
 import aiofiles
 from pydantic import BaseModel, Field
 from bs4 import BeautifulSoup
 # Selenium imports
-from selenium import webdriver
+try:
+    from seleniumwire import webdriver
+except ImportError:
+    from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
@@ -156,6 +162,10 @@ authenticate or waiting for events or human intervention actions."""
         self.default_timeout = kwargs.get('default_timeout', 10)
         self.retry_attempts = kwargs.get('retry_attempts', 3)
         self.delay_between_actions = kwargs.get('delay_between_actions', 1)
+        # extracted cookies and headers from Driver
+        self.extracted_cookies: Dict[str, str] = {}
+        self.extracted_headers: Dict[str, str] = {}
+        self.extracted_authorization: str = None
         logging.getLogger("urllib3.connectionpool").setLevel(logging.ERROR)
 
     async def _execute(
@@ -250,6 +260,12 @@ authenticate or waiting for events or human intervention actions."""
         if config_overrides:
             final_config.update(config_overrides)
         self.driver = await self._get_selenium_driver(final_config)
+        # Attempt to capture from performance logs first
+        try:
+            # turn on CDP Network domain
+            self.driver.execute_cdp_cmd("Network.enable", {})
+        except Exception:  # pragma: no cover - command may not exist
+            pass
         return self.driver
 
     async def _setup_playwright(self):
@@ -317,6 +333,15 @@ authenticate or waiting for events or human intervention actions."""
                 result = await self._extract_full_content(current_url)
                 if result:
                     self.results.append(result)
+            # and extract the headers, authorization and cookies
+            try:
+                self.extracted_headers = self._extract_headers()
+                self.extracted_authorization = self._extract_authorization()
+                self.extracted_cookies = self._collect_cookies()
+            except Exception as e:
+                self.logger.error(
+                    f"Error extracting headers, authorization, or cookies: {str(e)}"
+                )
 
         except Exception as e:
             self.logger.error(f"Scraping workflow failed: {str(e)}")
@@ -2949,3 +2974,106 @@ return 1;
         # Create new action instance from substituted dict
         action_class = type(action)
         return action_class(**substituted_dict)
+
+    def _collect_cookies(self) -> Dict[str, str]:
+        if not self.driver:
+            raise RuntimeError(
+                "Selenium driver not available after scraping flow"
+            )
+        cookies: Dict[str, str] = {}
+        with contextlib.suppress(Exception):
+            cookies = self.driver.execute_cdp_cmd("Network.getAllCookies", {})["cookies"]
+        if not cookies:
+            for cookie in self.driver.get_cookies():
+                name = cookie.get("name")
+                if name:
+                    cookies[name] = cookie.get("value", "")
+        return cookies
+
+    def _extract_headers(self) -> Dict[str, str]:
+        headers: Dict[str, str] = {}
+        if not self.driver:
+            return headers
+
+        # for Selenium Wire, this path:
+        try:
+            for req in self.driver.requests:
+                for key, value in req.headers.items():
+                    headers[key] = value
+            return headers
+        except Exception:
+            pass
+
+        try:
+            performance_logs = self.driver.get_log("performance")
+        except Exception:
+            performance_logs = []
+
+        for entry in reversed(performance_logs):
+            try:
+                message = json.loads(entry.get("message", "{}"))
+                log = message.get("message", {})
+                if log.get("method") != "Network.requestWillBeSent":
+                    continue
+                req_headers = log.get("params", {}).get("request", {}).get("headers", {})
+                for key, value in req_headers.items():
+                    if key not in headers:
+                        headers[key] = value
+            except (ValueError, TypeError):
+                continue
+
+        return headers
+
+    def _extract_authorization(self) -> Optional[str]:
+        if not self.driver:
+            return None
+
+        # Check first if Authorization is in headers:
+        if 'Authorization' in self.extracted_headers:
+            return self.extracted_headers['Authorization']
+        if 'authorization' in self.extracted_headers:
+            return self.extracted_headers['authorization']
+
+        # Attempt to capture from performance logs first
+        try:
+            self.driver.execute_cdp_cmd("Network.enable", {})
+        except Exception:  # pragma: no cover - command may not exist
+            pass
+
+        try:
+            performance_logs = self.driver.get_log("performance")
+        except Exception:
+            performance_logs = []
+
+        for entry in reversed(performance_logs):
+            try:
+                message = json.loads(entry.get("message", "{}"))
+                log = message.get("message", {})
+                if log.get("method") != "Network.requestWillBeSent":
+                    continue
+                headers = log.get("params", {}).get("request", {}).get("headers", {})
+                authorization = headers.get("Authorization") or headers.get("authorization")
+                if authorization:
+                    return authorization
+            except (ValueError, TypeError):
+                continue
+
+        # Fallback: check localStorage/sessionStorage for tokens
+        script_templates = [
+            "return window.sessionStorage.getItem('authorization');",
+            "return window.localStorage.getItem('authorization');",
+            "return window.sessionStorage.getItem('authToken');",
+            "return window.localStorage.getItem('authToken');",
+            "return window.localStorage.getItem('token');",
+        ]
+        for script in script_templates:
+            try:
+                token = self.driver.execute_script(script)
+            except Exception:
+                token = None
+            if token:
+                if not token.lower().startswith("bearer"):
+                    token = f"Bearer {token}".strip()
+                return token
+
+        return None

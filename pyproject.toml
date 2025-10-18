@@ -263,6 +263,7 @@ override-dependencies = [
     "watchdog>=6.0.0",
     "selenium==4.36.0",
     "ortools>=9.11.4210,<=9.14.6206",
+    "blinker==1.7.0"
 ]
 
 # Version from parrot/version.py
