@@ -1,12 +1,14 @@
 """
-Agent Crew with Parallel, Sequential, and Flow-Based Execution
+Agent Crew with Parallel, Sequential, Flow, and Loop-Based Execution
 =========================================================================
 Orchestrates complex agent workflows using finite state machines.
-Supports parallel execution, conditional transitions, and result aggregation.
+Supports parallel execution, conditional transitions, iterative loops,
+and result aggregation.
 
 1. Sequential: Pipeline pattern where agents execute one after another
 2. Parallel: All agents execute simultaneously with asyncio.gather()
 3. Flow: DAG-based execution with dependencies and parallel execution where possible
+4. Loop: Iterative execution that reuses the latest output until a condition is met
 
 This implementation uses a graph-based approach for flexibility with dynamic workflows.
 """
@@ -204,9 +206,9 @@ class AgentNode:
 
 class AgentCrew:
     """
-    Enhanced AgentCrew supporting three execution modes.
+    Enhanced AgentCrew supporting multiple execution modes.
 
-    This crew orchestrator provides three ways to execute agents:
+    This crew orchestrator provides multiple ways to execute agents:
 
     1. SEQUENTIAL (run_sequential): Agents execute in a pipeline, where each
     agent processes the output of the previous agent. This is useful for
@@ -222,6 +224,11 @@ class AgentCrew:
     - One agent → multiple agents (fan-out/parallel processing)
     - Multiple agents → one agent (fan-in/synchronization)
     - Complex multi-stage pipelines with parallel branches
+
+    4. LOOP (run_loop): Agents execute sequentially in repeated iterations,
+    reusing the previous iteration's output as the next iteration's input until
+    an LLM-evaluated stopping condition is satisfied or a safety limit is
+    reached.
 
     Features:
     - Shared tool manager across agents
@@ -590,6 +597,321 @@ Current task: {current_input}"""
             status=status,
             metadata={'mode': 'sequential', 'agent_sequence': agent_sequence}
         )
+        if synthesis_prompt:
+            result = await self._synthesize_results(
+                crew_result=result,
+                synthesis_prompt=synthesis_prompt,
+                user_id=user_id,
+                session_id=session_id,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                **kwargs
+            )
+
+        return result
+
+    async def run_loop(
+        self,
+        initial_task: str,
+        condition: str,
+        agent_sequence: Optional[List[str]] = None,
+        max_iterations: int = 2,
+        user_id: str = None,
+        session_id: str = None,
+        pass_full_context: bool = True,
+        synthesis_prompt: Optional[str] = None,
+        max_tokens: int = 4096,
+        temperature: float = 0.1,
+        **kwargs
+    ) -> CrewResult:
+        """Execute agents iteratively until the stopping condition is met.
+
+        Loop execution reuses the final output from each iteration as the input
+        for the next iteration. After every iteration the crew uses the
+        configured LLM to decide if the provided condition has been satisfied.
+
+        Args:
+            initial_task: The initial task/question that triggers the loop.
+            condition: Natural language description of the success criteria.
+            agent_sequence: Ordered list of agent IDs for each iteration
+                (defaults to all registered agents in insertion order).
+            max_iterations: Safety limit on number of iterations to run.
+            user_id: Optional identifier propagated to agents and LLM.
+            session_id: Optional identifier propagated to agents and LLM.
+            pass_full_context: If True, downstream agents receive summaries of
+                previous outputs from the current iteration.
+            synthesis_prompt: Optional prompt to synthesize final results.
+            max_tokens: Token limit when synthesizing or evaluating condition.
+            temperature: Temperature used for synthesis or condition evaluation.
+            **kwargs: Additional parameters forwarded to agent executions.
+
+        Returns:
+            CrewResult describing the entire loop execution history.
+
+        Raises:
+            ValueError: If no agents are registered or no LLM is configured to
+                evaluate the stopping condition.
+        """
+        if not self.agents:
+            return CrewResult(
+                output='No agents in crew',
+                execution_log=[],
+                status='failed',
+                total_time=0.0,
+                metadata={'mode': 'loop', 'iterations': 0, 'condition_met': False}
+            )
+
+        if not self._llm:
+            raise ValueError(
+                "run_loop requires an LLM (self._llm) to evaluate the loop condition"
+            )
+
+        agent_sequence = agent_sequence or list(self.agents.keys())
+        if not agent_sequence:
+            return CrewResult(
+                output='No agents configured for loop execution',
+                execution_log=[],
+                status='failed',
+                total_time=0.0,
+                metadata={'mode': 'loop', 'iterations': 0, 'condition_met': False}
+            )
+
+        session_id = session_id or str(uuid.uuid4())
+        user_id = user_id or 'crew_user'
+
+        self.execution_log = []
+        overall_start = asyncio.get_event_loop().time()
+
+        shared_state: Dict[str, Any] = {
+            'initial_task': initial_task,
+            'history': [],
+            'iteration_outputs': [],
+            'last_output': initial_task,
+        }
+
+        responses: Dict[str, Any] = {}
+        results: List[Any] = []
+        agent_ids: List[str] = []
+        agents_info: List[AgentExecutionInfo] = []
+        errors: Dict[str, str] = {}
+        success_count = 0
+        failure_count = 0
+
+        current_input = initial_task
+        condition_met = False
+
+        iterations_run = 0
+
+        for iteration_index in range(max_iterations):
+            iterations_run = iteration_index + 1
+            crew_context = AgentContext(
+                user_id=user_id,
+                session_id=session_id,
+                original_query=initial_task,
+                shared_data={**kwargs, 'shared_state': shared_state},
+                agent_results={}
+            )
+
+            iteration_start = asyncio.get_event_loop().time()
+            iteration_success = True
+
+            for agent_position, agent_id in enumerate(agent_sequence):
+                if agent_id not in self.agents:
+                    self.logger.warning(
+                        f"Agent '{agent_id}' not found in crew during loop execution, skipping"
+                    )
+                    iteration_success = False
+                    execution_id = f"{agent_id}#iteration{iterations_run}"
+                    error_message = 'Agent not found'
+                    self.execution_log.append({
+                        'agent_id': agent_id,
+                        'execution_id': execution_id,
+                        'iteration': iterations_run,
+                        'agent_name': agent_id,
+                        'agent_index': agent_position,
+                        'input': self._truncate_text(current_input),
+                        'output': error_message,
+                        'execution_time': 0.0,
+                        'success': False,
+                        'error': error_message,
+                    })
+                    agents_info.append(
+                        build_agent_metadata(
+                            execution_id,
+                            None,
+                            None,
+                            None,
+                            0.0,
+                            'failed',
+                            error_message,
+                        )
+                    )
+                    results.append(error_message)
+                    agent_ids.append(execution_id)
+                    errors[execution_id] = error_message
+                    failure_count += 1
+                    continue
+
+                agent = self.agents[agent_id]
+                await self._ensure_agent_ready(agent)
+
+                if agent_position == 0:
+                    agent_input = self._build_loop_first_agent_prompt(
+                        initial_task=initial_task,
+                        iteration_input=current_input,
+                        iteration_number=iterations_run,
+                    )
+                elif pass_full_context:
+                    context_summary = self._build_context_summary(crew_context)
+                    shared_summary = self._build_shared_state_summary(shared_state)
+                    agent_input = (
+                        f"Original task: {initial_task}\n"
+                        f"Loop iteration: {iterations_run}\n"
+                        f"Shared state so far:\n{shared_summary}\n\n"
+                        f"Previous results this iteration:\n{context_summary}\n\n"
+                        f"Continue the work based on the latest result: {current_input}"
+                    ).strip()
+                else:
+                    agent_input = current_input
+
+                try:
+                    agent_start = asyncio.get_event_loop().time()
+                    response = await self._execute_agent(
+                        agent,
+                        agent_input,
+                        session_id,
+                        user_id,
+                        agent_position,
+                        crew_context
+                    )
+
+                    result = self._extract_result(response)
+                    agent_end = asyncio.get_event_loop().time()
+                    execution_time = agent_end - agent_start
+
+                    execution_id = f"{agent_id}#iteration{iterations_run}"
+                    log_entry = {
+                        'agent_id': agent_id,
+                        'execution_id': execution_id,
+                        'iteration': iterations_run,
+                        'agent_name': agent.name,
+                        'agent_index': agent_position,
+                        'input': self._truncate_text(agent_input),
+                        'output': self._truncate_text(result),
+                        'full_output': result,
+                        'execution_time': execution_time,
+                        'success': True,
+                    }
+                    self.execution_log.append(log_entry)
+
+                    crew_context.agent_results[agent_id] = result
+                    current_input = result
+                    responses[execution_id] = response
+                    agents_info.append(
+                        build_agent_metadata(
+                            execution_id,
+                            agent,
+                            response,
+                            result,
+                            execution_time,
+                            'completed'
+                        )
+                    )
+                    results.append(result)
+                    agent_ids.append(execution_id)
+                    shared_state['history'].append({
+                        'iteration': iterations_run,
+                        'agent_id': agent_id,
+                        'output': result,
+                    })
+                    success_count += 1
+                except Exception as exc:
+                    execution_id = f"{agent_id}#iteration{iterations_run}"
+                    error_msg = f"Error executing agent {agent_id}: {exc}"
+                    self.logger.error(error_msg, exc_info=True)
+                    self.execution_log.append({
+                        'agent_id': agent_id,
+                        'execution_id': execution_id,
+                        'iteration': iterations_run,
+                        'agent_name': agent.name,
+                        'agent_index': agent_position,
+                        'input': self._truncate_text(agent_input),
+                        'output': error_msg,
+                        'execution_time': 0.0,
+                        'success': False,
+                        'error': str(exc)
+                    })
+                    agents_info.append(
+                        build_agent_metadata(
+                            execution_id,
+                            agent,
+                            None,
+                            None,
+                            0.0,
+                            'failed',
+                            str(exc)
+                        )
+                    )
+                    results.append(error_msg)
+                    agent_ids.append(execution_id)
+                    errors[execution_id] = str(exc)
+                    failure_count += 1
+                    iteration_success = False
+                    current_input = error_msg
+
+            shared_state['last_output'] = current_input
+            shared_state['iteration_outputs'].append(current_input)
+            iteration_end = asyncio.get_event_loop().time()
+
+            if condition:
+                condition_met = await self._evaluate_loop_condition(
+                    condition=condition,
+                    shared_state=shared_state,
+                    last_output=current_input,
+                    iteration=iterations_run,
+                    user_id=user_id,
+                    session_id=session_id,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                )
+            else:
+                condition_met = False
+
+            if condition_met:
+                break
+
+            if not iteration_success:
+                self.logger.debug(
+                    f"Loop iteration {iterations_run} completed with errors; continuing until condition is met or max iterations reached"
+                )
+
+            current_input = shared_state['last_output']
+
+        overall_end = asyncio.get_event_loop().time()
+
+        last_output = shared_state['last_output'] if shared_state['iteration_outputs'] else initial_task
+        status = determine_run_status(success_count, failure_count)
+
+        result = CrewResult(
+            output=last_output,
+            response=responses,
+            results=results,
+            agent_ids=agent_ids,
+            agents=agents_info,
+            errors=errors,
+            execution_log=self.execution_log,
+            total_time=overall_end - overall_start,
+            status=status,
+            metadata={
+                'mode': 'loop',
+                'iterations': iterations_run,
+                'max_iterations': max_iterations,
+                'condition': condition,
+                'condition_met': condition_met,
+                'shared_state': shared_state,
+            }
+        )
+
         if synthesis_prompt:
             result = await self._synthesize_results(
                 crew_result=result,
@@ -1228,6 +1550,103 @@ Current task: {current_input}"""
             return text
 
         return f"{text[:self.truncation_length]}..."
+
+    def _build_loop_first_agent_prompt(
+        self,
+        *,
+        initial_task: str,
+        iteration_input: str,
+        iteration_number: int,
+    ) -> str:
+        """Compose the prompt for the first agent in each loop iteration."""
+        if iteration_number == 1:
+            return iteration_input
+
+        return (
+            f"Initial task: {initial_task}\n"
+            f"This is loop iteration {iteration_number}."
+            f"\nPrevious iteration output:\n{iteration_input}"
+        )
+
+    def _build_shared_state_summary(self, shared_state: Dict[str, Any]) -> str:
+        """Create a human-readable summary from the shared loop state."""
+        history = shared_state.get('history', [])
+        if not history:
+            return "No prior agent outputs."
+
+        lines = []
+        for entry in history[-10:]:
+            iteration = entry.get('iteration')
+            agent_id = entry.get('agent_id')
+            output = entry.get('output')
+            lines.append(
+                f"Iteration {iteration} - {agent_id}: {self._truncate_text(str(output))}"
+            )
+        return "\n".join(lines)
+
+    async def _evaluate_loop_condition(
+        self,
+        *,
+        condition: str,
+        shared_state: Dict[str, Any],
+        last_output: Optional[str],
+        iteration: int,
+        user_id: Optional[str],
+        session_id: Optional[str],
+        max_tokens: int,
+        temperature: float,
+    ) -> bool:
+        """Ask the configured LLM whether the loop condition has been satisfied."""
+        if not condition:
+            return False
+
+        history_summary = []
+        for entry in shared_state.get('history', []):
+            iteration_no = entry.get('iteration')
+            agent_id = entry.get('agent_id')
+            output = entry.get('output')
+            history_summary.append(
+                f"Iteration {iteration_no} - {agent_id}: {output}"
+            )
+
+        history_text = "\n".join(history_summary) or "(no outputs yet)"
+        prompt = (
+            "You are monitoring an autonomous team of agents running in a loop.\n"
+            f"Initial task: {shared_state.get('initial_task')}\n"
+            f"Stopping condition: {condition}\n"
+            f"Current iteration: {iteration}\n"
+            "Shared state history:\n"
+            f"{history_text}\n\n"
+            f"Most recent output: {last_output}\n\n"
+            "Decide if the loop should stop. Respond with a single word:"
+            " YES to stop the loop because the condition is met, or NO to"
+            " continue running."
+        )
+
+        try:
+            async with self._llm as client:
+                response = await client.ask(
+                    prompt=prompt,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    user_id=user_id,
+                    session_id=f"{session_id}_loop_condition",
+                )
+        except Exception as exc:
+            self.logger.error(
+                f"Failed to evaluate loop condition with LLM: {exc}",
+                exc_info=True
+            )
+            return False
+
+        decision_text = self._extract_result(response).strip().lower()
+        if not decision_text:
+            return False
+
+        if decision_text.startswith('yes') or ' stop' in decision_text:
+            return True
+
+        return False
 
     def visualize_workflow(self) -> str:
         """

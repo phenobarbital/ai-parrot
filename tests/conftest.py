@@ -37,8 +37,17 @@ def _install_navconfig_stub() -> None:
     logging_module.logging = logging
     navconfig_module.logging = logging_module
 
+    exceptions_module = types.ModuleType("navconfig.exceptions")
+
+    class _ConfigError(Exception):
+        pass
+
+    exceptions_module.ConfigError = _ConfigError
+    exceptions_module.NavConfigException = _ConfigError
+
     sys.modules.setdefault("navconfig", navconfig_module)
     sys.modules.setdefault("navconfig.logging", logging_module)
+    sys.modules.setdefault("navconfig.exceptions", exceptions_module)
 
 
 def _install_navigator_stubs() -> None:
@@ -51,14 +60,44 @@ def _install_navigator_stubs() -> None:
     sys.modules.setdefault("navigator", types.ModuleType("navigator"))
     sys.modules.setdefault("navigator.conf", navigator_conf)
 
+    navigator_auth_module = types.ModuleType("navigator_auth")
     navigator_auth_conf = types.ModuleType("navigator_auth.conf")
     navigator_auth_conf.AUTH_SESSION_OBJECT = None
-    sys.modules.setdefault("navigator_auth", types.ModuleType("navigator_auth"))
+
+    decorators_module = types.ModuleType("navigator_auth.decorators")
+
+    def _user_session(func=None, **__):
+        if func is None:
+            def wrapper(inner):
+                return inner
+
+            return wrapper
+        return func
+
+    decorators_module.user_session = _user_session
+
+    navigator_auth_module.decorators = decorators_module
+
+    sys.modules.setdefault("navigator_auth", navigator_auth_module)
     sys.modules.setdefault("navigator_auth.conf", navigator_auth_conf)
+    sys.modules.setdefault("navigator_auth.decorators", decorators_module)
+
+    navigator_views = types.ModuleType("navigator.views")
+    base_handler = type("BaseHandler", (), {})
+    navigator_views.View = type("View", (), {})
+    navigator_views.BaseHandler = base_handler
+    navigator_views.ModelView = type("ModelView", (), {})
+    navigator_views.BaseView = type("BaseView", (), {})
+    navigator_views.FormModel = type("FormModel", (), {})
+    sys.modules.setdefault("navigator.views", navigator_views)
 
 
 def _install_parrot_stubs() -> None:
     """Install lightweight stand-ins for heavy parrot dependencies."""
+
+    # Provide a lightweight ``parrot.tools`` package to avoid heavy imports
+    tools_pkg = types.ModuleType("parrot.tools")
+    sys.modules.setdefault("parrot.tools", tools_pkg)
 
     # Stub ToolManager used by AgentCrew during initialisation
     class _ToolManager:
@@ -85,6 +124,7 @@ def _install_parrot_stubs() -> None:
     tool_manager_module = types.ModuleType("parrot.tools.manager")
     tool_manager_module.ToolManager = _ToolManager
     sys.modules.setdefault("parrot.tools.manager", tool_manager_module)
+    tools_pkg.ToolManager = _ToolManager
 
     # Minimal AbstractTool placeholder
     class _AbstractTool:
@@ -97,7 +137,14 @@ def _install_parrot_stubs() -> None:
     abstract_module.AbstractTool = _AbstractTool
     abstract_module.AbstractToolArgsSchema = object
     abstract_module.ToolResult = object
+    abstract_module.ToolRegistry = type("ToolRegistry", (), {})
     sys.modules.setdefault("parrot.tools.abstract", abstract_module)
+    tools_pkg.AbstractTool = _AbstractTool
+
+    # Register placeholder modules commonly imported from ``parrot.tools``
+    pythonrepl_module = types.ModuleType("parrot.tools.pythonrepl")
+    pythonrepl_module.PythonREPLTool = type("PythonREPLTool", (), {})
+    sys.modules.setdefault("parrot.tools.pythonrepl", pythonrepl_module)
 
     # Minimal MathTool referenced by abstract bot
     math_module = types.ModuleType("parrot.tools.math")
