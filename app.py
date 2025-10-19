@@ -22,7 +22,7 @@ from parrot.handlers.o365_auth import (
     O365InteractiveAuthSessionDetail,
 )
 from parrot.services.o365_remote_auth import RemoteAuthManager
-from parrot.handlers.jobs.worker import configure_redis_queue
+from parrot.handlers.jobs.worker import configure_redis_queue, configure_job_manager
 from resources.example import ExampleAsyncView
 
 class Main(AppHandler):
@@ -62,6 +62,8 @@ class Main(AppHandler):
 
         # Configure Redis RQ Queue for jobs
         configure_redis_queue(self.app)
+        # Configure Job Manager
+        configure_job_manager(self.app)
 
         # API of feedback types:
         self.app.router.add_view(

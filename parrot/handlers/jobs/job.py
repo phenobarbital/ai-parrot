@@ -187,6 +187,7 @@ class JobManager:
         Returns:
             Job if found, None otherwise
         """
+        print('JOBS > ', self.jobs)
         return self.jobs.get(job_id)
 
     def list_jobs(

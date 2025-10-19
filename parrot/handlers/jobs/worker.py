@@ -6,6 +6,7 @@ from ...conf import (
     REDIS_PORT,
     REDIS_DB,
 )
+from .job import JobManager
 
 
 def configure_redis_queue(app: web.Application) -> Queue:
@@ -17,3 +18,14 @@ def configure_redis_queue(app: web.Application) -> Queue:
     app['job_queue'] = job_queue
     print("✅ RQ Queue configured")
     return job_queue
+
+def configure_job_manager(app: web.Application):
+    """Configure and start job manager."""
+    app['job_manager'] = JobManager()
+    async def start_job_manager(app: web.Application):
+        """Start job manager on app startup."""
+        await app['job_manager'].start()
+        print("✅ Job manager started")
+
+    # Register startup hook
+    app.on_startup.append(start_job_manager)

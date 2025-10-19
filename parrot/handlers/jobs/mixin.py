@@ -10,6 +10,7 @@ import functools
 import inspect
 import asyncio
 from aiohttp import web
+from .job import JobManager
 
 
 class JobManagerMixin:
@@ -328,6 +329,17 @@ class AsyncJobManagerMixin:
     def __init__(self, *args, **kwargs):
         """Initialize the mixin."""
         super().__init__(*args, **kwargs)
+
+    def _get_jobmanager(self, request: web.Request) -> Any:
+        """
+        Retrieve the job manager from the aiohttp request.
+
+        Args:
+            request: aiohttp Request object
+        Returns:
+            Job manager instance (RQ Queue or your JobManager)
+        """
+        return request.app['job_manager'] if 'job_manager' in request.app else JobManager()
 
     @staticmethod
     def as_job(
