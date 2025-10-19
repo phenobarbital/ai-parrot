@@ -15,4 +15,5 @@ def configure_redis_queue(app: web.Application) -> Queue:
     redis_conn = Redis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB)
     job_queue = Queue(connection=redis_conn)
     app['job_queue'] = job_queue
+    print("✅ RQ Queue configured")
     return job_queue
