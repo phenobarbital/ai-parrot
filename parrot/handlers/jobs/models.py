@@ -30,6 +30,19 @@ class Job:
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     @property
+    def id(self) -> str:
+        """Job ID (RQ uses 'id', yours uses 'job_id')."""
+        return self.job_id
+
+    def get_status(self) -> str:
+        """
+        Get job status as string.
+
+        RQ uses get_status() method, yours has status as attribute.
+        """
+        return self.status.value
+
+    @property
     def elapsed_time(self) -> Optional[float]:
         """Calculate elapsed time in seconds."""
         if self.started_at:
@@ -53,3 +66,65 @@ class Job:
             'execution_mode': self.execution_mode,
             'metadata': self.metadata
         }
+
+    @property
+    def is_finished(self) -> bool:
+        """Check if job completed successfully."""
+        return self.status == JobStatus.COMPLETED
+
+    @property
+    def is_failed(self) -> bool:
+        """Check if job failed."""
+        return self.status in [JobStatus.FAILED, JobStatus.CANCELLED]
+
+    @property
+    def is_started(self) -> bool:
+        """Check if job has started."""
+        return self.status == JobStatus.RUNNING
+
+    @property
+    def is_queued(self) -> bool:
+        """Check if job is queued."""
+        return self.status == JobStatus.PENDING
+
+    @property
+    def result(self) -> Any:
+        """Job result."""
+        return self.result
+
+    @property
+    def exc_info(self) -> Optional[str]:
+        """Exception info (RQ uses 'exc_info', yours uses 'error')."""
+        return self.error
+
+    @property
+    def created_at(self) -> datetime:
+        """When job was created."""
+        return self.created_at
+
+    @property
+    def started_at(self) -> Optional[datetime]:
+        """When job started execution."""
+        return self.started_at
+
+    @property
+    def ended_at(self) -> Optional[datetime]:
+        """When job ended (RQ uses 'ended_at', yours uses 'completed_at')."""
+        return self.completed_at
+
+    @property
+    def meta(self) -> Dict[str, Any]:
+        """Job metadata (for progress tracking, etc.)."""
+        return self.metadata
+
+    def refresh(self):
+        """
+        Refresh job data (RQ jobs have this method).
+
+        For your in-memory JobManager, this is a no-op since
+        we're working with the same object reference.
+        """
+        pass
+
+    def __repr__(self) -> str:
+        return f"Job(id={self.id}, status={self.get_status()})"
