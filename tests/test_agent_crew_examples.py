@@ -150,6 +150,43 @@ def test_agentcrew_parallel_execution_returns_all_results() -> None:
     assert review_agent.received_prompts == ["Find reviews"]
 
 
+def test_agentcrew_parallel_execution_all_results() -> None:
+    """Ensure ``run_parallel`` triggers all agents concurrently."""
+
+    info_agent = DummyAgent("InfoAgent", "Specs located")
+    price_agent = DummyAgent("PriceAgent", "Prices gathered")
+    review_agent = DummyAgent("ReviewAgent", "Reviews summarised")
+
+    crew = AgentCrew(
+        name="TestParallelCrew",
+        agents=[info_agent, price_agent, review_agent],
+        shared_tool_manager=DummyToolManager(),
+    )
+
+    tasks = [
+        {"agent_id": "InfoAgent", "query": "Find specs"},
+        {"agent_id": "PriceAgent", "query": "Find prices"},
+        {"agent_id": "ReviewAgent", "query": "Find reviews"},
+    ]
+
+    result = asyncio.run(crew.run_parallel(tasks, all_results=True))
+
+    assert result.status == "completed"
+    assert result.metadata["mode"] == "parallel"
+    assert result.output == [
+        "Specs located",
+        "Prices gathered",
+        "Reviews summarised",
+    ]
+    assert set(result.agent_ids) == {"InfoAgent", "PriceAgent", "ReviewAgent"}
+    assert info_agent.configure_calls == 1
+    assert price_agent.configure_calls == 1
+    assert review_agent.configure_calls == 1
+    assert info_agent.received_prompts == ["Find specs"]
+    assert price_agent.received_prompts == ["Find prices"]
+    assert review_agent.received_prompts == ["Find reviews"]
+
+
 def test_agentcrew_flow_execution_respects_dependencies() -> None:
     """``run_flow`` should fan-out/fan-in according to the DAG definition."""
 

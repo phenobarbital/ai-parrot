@@ -606,6 +606,7 @@ Current task: {current_input}"""
     async def run_parallel(
         self,
         tasks: List[Dict[str, Any]],
+        all_results: Optional[bool] = False,
         user_id: str = None,
         session_id: str = None,
         synthesis_prompt: Optional[str] = None,
@@ -772,8 +773,10 @@ Current task: {current_input}"""
             self.execution_log.append(log_entry)
         status = determine_run_status(success_count, failure_count)
 
+        output = results_payload if all_results else last_output
+
         result = CrewResult(
-            output=last_output,
+            output=output,
             response=responses,
             results=results_payload,
             agent_ids=agent_ids,
