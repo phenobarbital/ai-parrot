@@ -10,7 +10,7 @@ import uuid
 import contextlib
 from datetime import datetime, timedelta, timezone
 from navconfig.logging import logging
-from .models import CrewJob, JobStatus
+from .models import JobStatus, Job
 
 
 class JobManager:
@@ -37,7 +37,7 @@ class JobManager:
             cleanup_interval: Interval in seconds between cleanup runs
             job_ttl: Time-to-live for completed jobs in seconds
         """
-        self.jobs: Dict[str, CrewJob] = {}
+        self.jobs: Dict[str, Job] = {}
         self.tasks: Dict[str, asyncio.Task] = {}
         self.logger = logging.getLogger('Parrot.JobManager')
         self.cleanup_interval = cleanup_interval
@@ -67,18 +67,18 @@ class JobManager:
     def create_job(
         self,
         job_id: str,
-        crew_id: str,
+        obj_id: str,
         query: Any,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
         execution_mode: Optional[str] = None
-    ) -> CrewJob:
+    ) -> Job:
         """
         Create a new job for crew execution.
 
         Args:
-            crew_id: ID of the crew to execute
-            query: Query or task for the crew
+            obj_id: ID of the object to execute
+            query: Query or task for the object
             user_id: Optional user identifier
             session_id: Optional session identifier
             execution_mode: Execution mode (sequential, parallel, flow)
@@ -87,9 +87,9 @@ class JobManager:
             CrewJob: The created job
         """
         job_id = job_id or str(uuid.uuid4())
-        job = CrewJob(
+        job = Job(
             job_id=job_id,
-            crew_id=crew_id,
+            obj_id=obj_id,
             query=query,
             status=JobStatus.PENDING,
             user_id=user_id,
@@ -97,7 +97,7 @@ class JobManager:
             execution_mode=execution_mode
         )
         self.jobs[job_id] = job
-        self.logger.info(f"Created job {job_id} for crew {crew_id}")
+        self.logger.info(f"Created job {job_id} for object {obj_id}")
         return job
 
     async def execute_job(
@@ -174,7 +174,7 @@ class JobManager:
             if job_id in self.tasks:
                 del self.tasks[job_id]
 
-    def get_job(self, job_id: str) -> Optional[CrewJob]:
+    def get_job(self, job_id: str) -> Optional[Job]:
         """
         Get a job by ID.
 
@@ -182,21 +182,21 @@ class JobManager:
             job_id: Job identifier
 
         Returns:
-            CrewJob if found, None otherwise
+            Job if found, None otherwise
         """
         return self.jobs.get(job_id)
 
     def list_jobs(
         self,
-        crew_id: Optional[str] = None,
+        obj_id: Optional[str] = None,
         status: Optional[JobStatus] = None,
         limit: int = 100
-    ) -> list[CrewJob]:
+    ) -> list[Job]:
         """
         List jobs with optional filtering.
 
         Args:
-            crew_id: Filter by crew ID
+            obj_id: Filter by object ID
             status: Filter by status
             limit: Maximum number of jobs to return
 
@@ -206,8 +206,8 @@ class JobManager:
         jobs = list(self.jobs.values())
 
         # Apply filters
-        if crew_id:
-            jobs = [j for j in jobs if j.crew_id == crew_id]
+        if obj_id:
+            jobs = [j for j in jobs if j.obj_id == obj_id]
         if status:
             jobs = [j for j in jobs if j.status == status]
 

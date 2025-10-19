@@ -24,7 +24,7 @@ from .models import (
     JobStatus,
     ExecutionMode,
 )
-from .job import JobManager
+from ..jobs import JobManager
 
 
 class CrewHandler(BaseView):
@@ -162,7 +162,7 @@ class CrewHandler(BaseView):
                         "message": "Crew uploaded and created successfully",
                         "crew_id": crew_def.crew_id,
                         "name": crew_def.name,
-                        "execution_mode": crew_def.execution_mode.value,
+                        "execution_mode": crew_def.execution_mode.value,  # pylint: disable=E1101  #noqa
                         "agents": [agent.agent_id for agent in crew_def.agents],
                         "created_at": crew_def.created_at.isoformat()
                     },
@@ -451,7 +451,7 @@ class CrewHandler(BaseView):
             # Create job
             job = self.job_manager.create_job(
                 job_id=job_id,
-                crew_id=crew_def.crew_id,
+                obj_id=crew_def.crew_id,
                 query=query,
                 user_id=data.get('user_id'),
                 session_id=data.get('session_id'),
@@ -586,7 +586,7 @@ class CrewHandler(BaseView):
             # Return job status
             response_data = {
                 "job_id": job.job_id,
-                "crew_id": job.crew_id,
+                "crew_id": job.obj_id,
                 "status": job.status.value,
                 "elapsed_time": job.elapsed_time,
                 "created_at": job.created_at.isoformat(),
