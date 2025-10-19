@@ -27,6 +27,7 @@ class JobManager:
 
     def __init__(
         self,
+        id: str = "default",
         cleanup_interval: int = 3600,  # 1 hour
         job_ttl: int = 86400  # 24 hours
     ):
@@ -37,6 +38,7 @@ class JobManager:
             cleanup_interval: Interval in seconds between cleanup runs
             job_ttl: Time-to-live for completed jobs in seconds
         """
+        self.id = id
         self.jobs: Dict[str, Job] = {}
         self.tasks: Dict[str, asyncio.Task] = {}
         self.logger = logging.getLogger('Parrot.JobManager')
@@ -44,6 +46,7 @@ class JobManager:
         self.job_ttl = job_ttl
         self._cleanup_task: Optional[asyncio.Task] = None
         self._running = False
+        self._loop = asyncio.get_event_loop()
 
     async def start(self):
         """Start the job manager and cleanup task."""
@@ -290,3 +293,91 @@ class JobManager:
             'failed_jobs': failed_jobs,
             'active_tasks': len(self.tasks)
         }
+
+    def enqueue(
+        self,
+        func: Callable,
+        args: tuple = None,
+        kwargs: dict = None,
+        queue: str = "default",
+        timeout: Optional[int] = None,
+        result_ttl: Optional[int] = None,
+        job_id: Optional[str] = None,
+        **extra_kwargs
+    ) -> Job:
+        """
+        Enqueue a function for async execution.
+
+        This method:
+        1. Creates a job in your JobManager
+        2. Wraps the function in an async wrapper
+        3. Schedules it for execution with asyncio.create_task
+        4. Returns an adapted job that looks like an RQ job
+
+        Args:
+            func: Function to execute
+            args: Positional arguments for the function
+            kwargs: Keyword arguments for the function
+            queue: Queue name (stored in metadata)
+            timeout: Execution timeout in seconds
+            result_ttl: How long to keep results (not used in asyncio version)
+            job_id: Optional job ID (generated if not provided)
+            **extra_kwargs: Additional parameters
+
+        Returns:
+            AdaptedJob: Wrapper around your Job that looks like an RQ job
+        """
+        args = args or ()
+        kwargs = kwargs or {}
+        job_id = job_id or str(uuid.uuid4())
+
+        # Create async wrapper for the function
+        async def async_execution_wrapper():
+            """Wrapper to execute the function and handle sync/async."""
+            if asyncio.iscoroutinefunction(func):
+                return await func(*args, **kwargs)
+            else:
+                # Run sync function in executor to avoid blocking
+                return await self._loop.run_in_executor(
+                    None,
+                    lambda: func(*args, **kwargs)
+                )
+
+        # Create job in your JobManager
+        job = self.create_job(
+            job_id=job_id,
+            obj_id=func.__name__,
+            query={
+                'function': func.__name__,
+                'args': str(args),
+                'kwargs': str(kwargs)
+            },
+            execution_mode=queue  # Store queue as execution_mode
+        )
+
+        # Add timeout and TTL to metadata
+        if job.metadata is None:
+            job.metadata = {}
+        job.metadata['timeout'] = timeout
+        job.metadata['result_ttl'] = result_ttl
+        job.metadata['queue'] = queue
+
+        # Schedule async execution
+        # Note: We're not awaiting, just scheduling
+        asyncio.create_task(
+            self.execute_job(job_id, async_execution_wrapper)
+        )
+
+        return job
+
+    def fetch_job(self, job_id: str) -> Optional[Job]:
+        """
+        Fetch a job by ID.
+
+        Args:
+            job_id: The job identifier
+
+        Returns:
+            AdaptedJob if found, None otherwise
+        """
+        return self.get_job(job_id)

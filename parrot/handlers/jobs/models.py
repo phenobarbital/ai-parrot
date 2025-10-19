@@ -88,24 +88,9 @@ class Job:
         return self.status == JobStatus.PENDING
 
     @property
-    def result(self) -> Any:
-        """Job result."""
-        return self.result
-
-    @property
     def exc_info(self) -> Optional[str]:
         """Exception info (RQ uses 'exc_info', yours uses 'error')."""
         return self.error
-
-    @property
-    def created_at(self) -> datetime:
-        """When job was created."""
-        return self.created_at
-
-    @property
-    def started_at(self) -> Optional[datetime]:
-        """When job started execution."""
-        return self.started_at
 
     @property
     def ended_at(self) -> Optional[datetime]:
