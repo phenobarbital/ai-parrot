@@ -65,3 +65,7 @@ make cuda-info
 
 # For development with WhisperX
 make develop-fast
+
+# start with honcho
+uv pip install honcho
+uv run honcho start -f Procfile.dev
