@@ -72,6 +72,24 @@ class DummyAgent:
         return DummyResponse(self._response_builder(question))
 
 
+class DummyLoopLLM:
+    """LLM stub that decides whether to stop the loop based on the prompt."""
+
+    def __init__(self, decision_fn: Callable[[str], str]) -> None:
+        self._decision_fn = decision_fn
+        self.prompts: List[str] = []
+
+    async def __aenter__(self) -> "DummyLoopLLM":
+        return self
+
+    async def __aexit__(self, *_: Any) -> bool:
+        return False
+
+    async def ask(self, prompt: str, **_: Any) -> DummyResponse:
+        self.prompts.append(prompt)
+        return DummyResponse(self._decision_fn(prompt))
+
+
 def test_agentcrew_sequential_execution_passes_context() -> None:
     """Verify ``run_sequential`` pipelines agents and aggregates metadata."""
 
@@ -225,6 +243,60 @@ def test_agentcrew_flow_execution_respects_dependencies() -> None:
     assert writer_output in editor2.received_prompts[0]
     assert editor1_output in final_reviewer.received_prompts[0]
     assert editor2_output in final_reviewer.received_prompts[0]
+
+
+def test_agentcrew_loop_execution_stops_when_condition_met() -> None:
+    """``run_loop`` should reuse outputs and stop when the LLM approves."""
+
+    def sequential_responses(outputs: List[str]) -> Callable[[str], str]:
+        call_index = {"value": 0}
+
+        def builder(_: str) -> str:
+            value = outputs[call_index["value"]]
+            call_index["value"] += 1
+            return value
+
+        return builder
+
+    researcher_outputs = ["Draft outline", "Refined outline"]
+    reviewer_outputs = ["Needs revision", "FINAL report"]
+
+    researcher = DummyAgent("Researcher", sequential_responses(researcher_outputs))
+    reviewer = DummyAgent("Reviewer", sequential_responses(reviewer_outputs))
+
+    loop_llm = DummyLoopLLM(
+        lambda prompt: "YES" if "FINAL report" in prompt else "NO"
+    )
+
+    crew = AgentCrew(
+        name="TestLoopCrew",
+        agents=[researcher, reviewer],
+        shared_tool_manager=DummyToolManager(),
+        llm=loop_llm,
+    )
+
+    result = asyncio.run(
+        crew.run_loop(
+            initial_task="Create a market analysis",
+            condition="Stop when the reviewer marks the report as FINAL",
+            max_iterations=4,
+        )
+    )
+
+    assert result.status == "completed"
+    assert result.metadata["mode"] == "loop"
+    assert result.metadata["condition_met"] is True
+    assert result.metadata["iterations"] == 2
+    assert result.output == "FINAL report"
+
+    assert "Create a market analysis" in researcher.received_prompts[0]
+    assert "Needs revision" in researcher.received_prompts[1]
+
+    assert len(loop_llm.prompts) == 2
+
+    shared_state = result.metadata["shared_state"]
+    assert len(shared_state["history"]) == 4
+    assert shared_state["iteration_outputs"][-1] == "FINAL report"
 
 
 def test_agentsflow_fsm_execution_records_transitions() -> None:
