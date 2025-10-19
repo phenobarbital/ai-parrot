@@ -22,9 +22,8 @@ from parrot.handlers.o365_auth import (
     O365InteractiveAuthSessionDetail,
 )
 from parrot.services.o365_remote_auth import RemoteAuthManager
-
-# new resources:
-from resources.nextstop import NextStopAgent
+from parrot.handlers.jobs.worker import configure_redis_queue, configure_job_manager
+from resources.example import ExampleAsyncView
 
 class Main(AppHandler):
     """
@@ -61,6 +60,11 @@ class Main(AppHandler):
         self._scheduler = AgentSchedulerManager(bot_manager=self.bot_manager)
         self._scheduler.setup(app=self.app)
 
+        # Configure Redis RQ Queue for jobs
+        configure_redis_queue(self.app)
+        # Configure Job Manager
+        configure_job_manager(self.app)
+
         # API of feedback types:
         self.app.router.add_view(
             '/api/v1/feedback_types/{feedback_type}',
@@ -75,9 +79,6 @@ class Main(AppHandler):
             '/api/v1/chatbots/questions/{sid}',
             ChatbotSharingQuestion
         )
-        # NextStop:
-        nextstop = NextStopAgent(app=self.app)
-        nextstop.setup(self.app, '/api/v1/agents/nextstop')
         # Install Bot Management
         BotManagement.setup(self.app, r'/api/v1/bot_management{slash:/?}{bot:[^/]*}')
         # Tools List
@@ -97,6 +98,12 @@ class Main(AppHandler):
             '/api/v1/o365/auth/sessions/{session_id}',
             O365InteractiveAuthSessionDetail,
             name='o365_auth_session_detail'
+        )
+        # Example Async View for Queue:
+        self.app.router.add_view(
+            '/api/v1/example_async',
+            ExampleAsyncView,
+            name='example_async'
         )
 
     async def on_prepare(self, request, response):
