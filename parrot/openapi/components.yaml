@@ -596,7 +596,7 @@ components:
     MethodName:
       name: method_name
       in: path
-      required: false
+      required: true
       description: Nombre del método a invocar en el bot/agent
       schema:
         type: string
