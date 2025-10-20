@@ -150,6 +150,9 @@ class ChatHandler(BaseView):
                 },
                 status=400
             )
+        stream = data.pop('stream', False)
+        if isinstance(stream, str):
+            stream = stream.lower() == 'true'
         try:
             async with chatbot.retrieval(self.request, app=app, llm=llm) as bot:
                 session_id = session.get('session_id', None)
@@ -216,6 +219,44 @@ class ChatHandler(BaseView):
                         },
                         status=400
                     )
+                if stream:
+                    response = web.StreamResponse(
+                        status=200,
+                        headers={
+                            'Content-Type': 'text/event-stream',
+                            'Cache-Control': 'no-cache',
+                            'Connection': 'keep-alive'
+                        }
+                    )
+                    await response.prepare(self.request)
+
+                    try:
+                        async for event in await bot.ask_stream(
+                            question=question,
+                            session_id=session_id,
+                            user_id=user_id,
+                            search_type=search_type,
+                            llm=llm,
+                            model=model,
+                            return_sources=return_sources,
+                            return_context=return_context,
+                            request=self.request,
+                            **data
+                        ):
+                            payload = json_encoder(event)
+                            message = f"data: {payload}\n\n"
+                            await response.write(message.encode('utf-8'))
+                    except Exception as exc:
+                        error_payload = json_encoder({
+                            "event": "error",
+                            "data": str(exc)
+                        })
+                        await response.write(f"data: {error_payload}\n\n".encode('utf-8'))
+                        raise
+                    finally:
+                        await response.write_eof()
+                    return response
+
                 response = await bot.conversation(
                     question=question,
                     session_id=session_id,
