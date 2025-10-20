@@ -144,10 +144,8 @@ class AgentSchedulerManager:
             if not self.bot_manager:
                 raise RuntimeError("Bot manager not available")
 
-            agent = self.bot_manager._bots.get(agent_name)
-            if not agent:
-                # Try to get from registry
-                agent = await self.bot_manager.registry.get_instance(agent_name)
+            agent = self.bot_manager._bots.get(
+                agent_name) or await self.bot_manager.registry.get_instance(agent_name)
 
             if not agent:
                 raise ValueError(f"Agent {agent_name} not found")
@@ -163,12 +161,14 @@ class AgentSchedulerManager:
                 if not callable(method):
                     raise TypeError(f"{method_name} is not callable")
 
-                result = await method()
+                result = await method(**metadata)
             elif prompt:
                 # Send prompt to agent
                 result = await agent.chat(prompt)
             else:
-                raise ValueError("Either prompt or method_name must be provided")
+                raise ValueError(
+                    "Either prompt or method_name must be provided"
+                )
 
             # Update schedule record
             await self._update_schedule_run(schedule_id, success=True)
