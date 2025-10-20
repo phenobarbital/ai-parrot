@@ -4,6 +4,7 @@ Agent Scheduler Module for AI-Parrot.
 This module provides scheduling capabilities for agents using APScheduler,
 allowing agents to execute operations at specified intervals.
 """
+import contextlib
 import inspect
 import json
 from typing import Any, Dict, Optional, Callable, List, Tuple
@@ -19,13 +20,27 @@ from apscheduler.executors.asyncio import AsyncIOExecutor
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from apscheduler.triggers.date import DateTrigger
+from apscheduler.events import (
+    EVENT_JOB_ADDED,
+    EVENT_JOB_ERROR,
+    EVENT_JOB_EXECUTED,
+    EVENT_JOB_MAX_INSTANCES,
+    EVENT_JOB_MISSED,
+    EVENT_JOB_SUBMITTED,
+    EVENT_SCHEDULER_SHUTDOWN,
+    EVENT_SCHEDULER_STARTED,
+    JobExecutionEvent,
+)
+from apscheduler.jobstores.base import JobLookupError
 from navconfig.logging import logging
 from asyncdb import AsyncDB
 from navigator.conf import CACHE_HOST, CACHE_PORT
 from navigator.connections import PostgresPool
 from querysource.conf import default_dsn
 from .models import AgentSchedule
-from parrot.notifications import NotificationMixin
+from ..notifications import NotificationMixin
+from ..conf import ENVIRONMENT
+
 
 # disable logging of APScheduler
 logging.getLogger("apscheduler").setLevel(logging.WARNING)
@@ -152,14 +167,12 @@ class AgentSchedulerManager:
                 'run_sequential': 'query',
                 'run_parallel': 'tasks',
             }
-            param_name = crew_prompt_map.get(method_name or '')
-            if param_name:
+            if (param_name := crew_prompt_map.get(method_name or '')):
                 if param_name == 'tasks':
                     if param_name not in call_kwargs and isinstance(prompt, list):
                         call_kwargs[param_name] = prompt
                         assigned_prompt = True
-                else:
-                    if param_name not in call_kwargs:
+                elif param_name not in call_kwargs:
                         call_kwargs[param_name] = prompt
                         assigned_prompt = True
 
@@ -215,6 +228,112 @@ class AgentSchedulerManager:
 
         return call_args, call_kwargs
 
+    def define_listeners(self):
+        # Asyncio Scheduler
+        self.scheduler.add_listener(
+            self.scheduler_status,
+            EVENT_SCHEDULER_STARTED
+        )
+        self.scheduler.add_listener(
+            self.scheduler_shutdown,
+            EVENT_SCHEDULER_SHUTDOWN
+        )
+        self.scheduler.add_listener(self.job_success, EVENT_JOB_EXECUTED)
+        self.scheduler.add_listener(self.job_status, EVENT_JOB_ERROR | EVENT_JOB_MISSED)
+        # a new job was added:
+        self.scheduler.add_listener(self.job_added, EVENT_JOB_ADDED)
+
+    def scheduler_status(self, event):
+        print(event)
+        self.logger.debug(f"[{ENVIRONMENT} - NAV Scheduler] :: Started.")
+        self.logger.notice(
+            f"[{ENVIRONMENT} - NAV Scheduler] START time is: {datetime.now()}"
+        )
+
+    def scheduler_shutdown(self, event):
+        self.logger.notice(
+            f"[{ENVIRONMENT}] Scheduler {event} Stopped at: {datetime.now()}"
+        )
+
+    def job_added(self, event: JobExecutionEvent, *args, **kwargs):
+        with contextlib.suppress(Exception):
+            job = self.scheduler.get_job(event.job_id)
+            job_name = job.name
+            # TODO: using to check if tasks were added
+            self.logger.info(
+                f"Job Added: {job_name} with args: {args!s}/{kwargs!r}"
+            )
+
+    def job_status(self, event: JobExecutionEvent):
+        """React on Error events from scheduler.
+
+        :param apscheduler.events.JobExecutionEvent event: job execution event.
+
+        TODO: add the reschedule_job
+        scheduler = sched.scheduler #it returns the native apscheduler instance
+        scheduler.reschedule_job('my_job_id', trigger='cron', minute='*/5')
+
+        """
+        job_id = event.job_id
+        job = self.scheduler.get_job(job_id)
+        job_name = job.name
+        scheduled = event.scheduled_run_time
+        stack = event.traceback
+        if event.code == EVENT_JOB_MISSED:
+            self.logger.warning(
+                f"[{ENVIRONMENT} - NAV Scheduler] Job {job_name} \
+                was missed for scheduled run at {scheduled}"
+            )
+            message = f"⚠️ :: [{ENVIRONMENT} - NAV Scheduler] Job {job_name} was missed \
+            for scheduled run at {scheduled}"
+        elif event.code == EVENT_JOB_ERROR:
+            self.logger.error(
+                f"[{ENVIRONMENT} - NAV Scheduler] Job {job_name} scheduled at \
+                {scheduled!s} failed with Exception: {event.exception!s}"
+            )
+            message = f"🛑 :: [{ENVIRONMENT} - NAV Scheduler] Job **{job_name}** \
+             scheduled at {scheduled!s} failed with Error {event.exception!s}"
+            if stack:
+                self.logger.exception(
+                    f"[{ENVIRONMENT} - NAV Scheduler] Job {job_name} id: {job_id!s} \
+                    StackTrace: {stack!s}"
+                )
+                message = f"🛑 :: [{ENVIRONMENT} - NAV Scheduler] Job \
+                **{job_name}**:**{job_id!s}** failed with Exception {event.exception!s}"
+            # send a Notification error from Scheduler
+        elif event.code == EVENT_JOB_MAX_INSTANCES:
+            self.logger.exception(
+                f"[{ENVIRONMENT} - Scheduler] Job {job_name} could not be submitted \
+                Maximum number of running instances was reached."
+            )
+            message = f"⚠️ :: [{ENVIRONMENT} - NAV Scheduler] Job **{job_name}** was \
+            missed for scheduled run at {scheduled}"
+        else:
+            # will be an exception
+            message = f"🛑 :: [{ENVIRONMENT} - NAV Scheduler] Job \
+            {job_name}:{job_id!s} failed with Exception {stack!s}"
+        # send a Notification Exception from Scheduler
+        # self._send_notification(message)
+
+    def job_success(self, event: JobExecutionEvent):
+        """Job Success.
+
+        Event when a Job was executed successfully.
+
+        :param apscheduler.events.JobExecutionEvent event: job execution event
+        """
+        job_id = event.job_id
+        try:
+            job = self.scheduler.get_job(job_id)
+        except JobLookupError as err:
+            self.logger.warning(f"Error found a Job with ID: {err}")
+            return False
+        job_name = job.name
+        self.logger.info(
+            f"[Scheduler - {ENVIRONMENT}]: {job_name} with id {event.job_id!s} \
+            was queued/executed successfully @ {event.scheduled_run_time!s}"
+        )
+
     async def _execute_agent_job(
         self,
         schedule_id: str,
@@ -264,18 +383,16 @@ class AgentSchedulerManager:
 
             agent: Any = None
             if is_crew:
-                crew_entry = self.bot_manager.get_crew(agent_name)
-                if crew_entry:
+                if (crew_entry := self.bot_manager.get_crew(agent_name)):
                     agent = crew_entry[0]
                 else:
                     raise ValueError(f"Crew {agent_name} not found")
-            else:
-                agent = self.bot_manager._bots.get(agent_name)
-                if not agent:
+            elif not (agent := self.bot_manager._bots.get(agent_name)):
                     agent = await self.bot_manager.registry.get_instance(agent_name)
-
             if not agent:
-                raise ValueError(f"Agent {agent_name} not found")
+                raise ValueError(
+                    f"Agent {agent_name} not found"
+                )
 
             if method_name:
                 if not hasattr(agent, method_name):
@@ -396,10 +513,8 @@ class AgentSchedulerManager:
             f"Job {agent_name} ({schedule_id}) completed successfully.",
         )
 
-        include_result = send_result.get('include_result', True)
-        if include_result:
-            formatted_result = self._format_result(result)
-            if formatted_result:
+        if (include_result := send_result.get('include_result', True)):
+            if (formatted_result := self._format_result(result)):
                 message = f"{message}\n\nResult:\n{formatted_result}"
 
         template = send_result.get('template')
@@ -442,16 +557,12 @@ class AgentSchedulerManager:
             return str(result)
 
         if hasattr(result, 'model_dump'):
-            try:
+            with contextlib.suppress(Exception):
                 return json.dumps(result.model_dump(), indent=2, default=str)
-            except Exception:  # pylint: disable=broad-except
-                pass
 
         if hasattr(result, 'dict'):
-            try:
+            with contextlib.suppress(Exception):
                 return json.dumps(result.dict(), indent=2, default=str)
-            except Exception:  # pylint: disable=broad-except
-                pass
 
         try:
             return json.dumps(result, indent=2, default=str)
@@ -586,9 +697,9 @@ class AgentSchedulerManager:
                 if not agent_id:
                     agent_id = getattr(crew_def, 'crew_id', agent_name)
             else:
-                agent = self.bot_manager._bots.get(agent_name)
-                if not agent:
-                    agent = await self.bot_manager.registry.get_instance(agent_name)
+                agent = self.bot_manager._bots.get(
+                    agent_name
+                ) or await self.bot_manager.registry.get_instance(agent_name)
                 if not agent:
                     raise ValueError(f"Agent {agent_name} not found")
 
@@ -652,7 +763,9 @@ class AgentSchedulerManager:
         except Exception as e:
             # Rollback database record
             await schedule.delete()
-            raise RuntimeError(f"Failed to add schedule to jobstore: {e}")
+            raise RuntimeError(
+                f"Failed to add schedule to jobstore: {e}"
+            ) from e
 
         return schedule
 

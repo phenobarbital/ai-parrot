@@ -33,6 +33,10 @@ if isinstance(STATIC_DIR, str):
     STATIC_DIR = Path(STATIC_DIR)
 
 
+# Environment
+ENVIRONMENT = config.get("ENVIRONMENT", fallback="development")
+
+
 # Agents Directory
 AGENTS_DIR = config.get('AGENTS_DIR', fallback=BASE_DIR.joinpath('agents'))
 if isinstance(AGENTS_DIR, str):
