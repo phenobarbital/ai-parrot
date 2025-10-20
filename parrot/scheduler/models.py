@@ -25,7 +25,9 @@ class AgentSchedule(Model):
         last_run TIMESTAMP WITH TIME ZONE,
         next_run TIMESTAMP WITH TIME ZONE,
         run_count INTEGER DEFAULT 0,
-        metadata JSONB DEFAULT '{}'::JSONB
+        metadata JSONB DEFAULT '{}'::JSONB,
+        is_crew BOOLEAN DEFAULT FALSE,
+        send_result JSONB DEFAULT '{}'::JSONB
     );
 
     CREATE INDEX idx_agents_scheduler_enabled ON navigator.agents_scheduler(enabled);
@@ -47,6 +49,8 @@ class AgentSchedule(Model):
     next_run: Optional[datetime] = Field(required=False)
     run_count: int = Field(required=False, default=0)
     metadata: dict = Field(required=False, default_factory=dict)
+    is_crew: bool = Field(required=False, default=False)
+    send_result: dict = Field(required=False, default_factory=dict)
 
     class Meta:
         driver = 'pg'

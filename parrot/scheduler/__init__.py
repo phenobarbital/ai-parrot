@@ -4,7 +4,9 @@ Agent Scheduler Module for AI-Parrot.
 This module provides scheduling capabilities for agents using APScheduler,
 allowing agents to execute operations at specified intervals.
 """
-from typing import Any, Dict, Optional, Callable, List
+import inspect
+import json
+from typing import Any, Dict, Optional, Callable, List, Tuple
 from datetime import datetime
 import uuid
 from enum import Enum
@@ -23,6 +25,7 @@ from navigator.conf import CACHE_HOST, CACHE_PORT
 from navigator.connections import PostgresPool
 from querysource.conf import default_dsn
 from .models import AgentSchedule
+from parrot.notifications import NotificationMixin
 
 # disable logging of APScheduler
 logging.getLogger("apscheduler").setLevel(logging.WARNING)
@@ -72,6 +75,13 @@ def schedule(
     return decorator
 
 
+class _SchedulerNotification(NotificationMixin):
+    """Helper to reuse notification mixin capabilities."""
+
+    def __init__(self, logger):
+        self.logger = logger
+
+
 class AgentSchedulerManager:
     """
     Manager for scheduling agent operations using APScheduler.
@@ -117,13 +127,105 @@ class AgentSchedulerManager:
             timezone='UTC'
         )
 
+    def _prepare_call_arguments(
+        self,
+        method: Callable,
+        prompt: Optional[Any],
+        metadata: Optional[Dict[str, Any]],
+        *,
+        is_crew: bool,
+        method_name: Optional[str]
+    ) -> Tuple[List[Any], Dict[str, Any]]:
+        """Build positional and keyword arguments for method execution."""
+        call_kwargs: Dict[str, Any] = dict(metadata or {})
+        call_args: List[Any] = []
+
+        if prompt is None:
+            return call_args, call_kwargs
+
+        assigned_prompt = False
+
+        if is_crew:
+            crew_prompt_map = {
+                'run_flow': 'initial_task',
+                'run_loop': 'initial_task',
+                'run_sequential': 'query',
+                'run_parallel': 'tasks',
+            }
+            param_name = crew_prompt_map.get(method_name or '')
+            if param_name:
+                if param_name == 'tasks':
+                    if param_name not in call_kwargs and isinstance(prompt, list):
+                        call_kwargs[param_name] = prompt
+                        assigned_prompt = True
+                else:
+                    if param_name not in call_kwargs:
+                        call_kwargs[param_name] = prompt
+                        assigned_prompt = True
+
+        if not assigned_prompt:
+            call_args, call_kwargs = self._apply_prompt_signature(
+                method,
+                call_args,
+                call_kwargs,
+                prompt
+            )
+
+        return call_args, call_kwargs
+
+    def _apply_prompt_signature(
+        self,
+        method: Callable,
+        call_args: List[Any],
+        call_kwargs: Dict[str, Any],
+        prompt: Any
+    ) -> Tuple[List[Any], Dict[str, Any]]:
+        """Inject prompt into call signature when possible."""
+        try:
+            signature = inspect.signature(method)
+        except (TypeError, ValueError):
+            return call_args, call_kwargs
+
+        positional_params = [
+            param
+            for param in signature.parameters.values()
+            if param.kind in (
+                inspect.Parameter.POSITIONAL_ONLY,
+                inspect.Parameter.POSITIONAL_OR_KEYWORD
+            )
+        ]
+
+        if positional_params:
+            first_param = positional_params[0]
+            call_kwargs.setdefault(first_param.name, prompt)
+            return call_args, call_kwargs
+
+        if any(
+            param.kind == inspect.Parameter.VAR_POSITIONAL
+            for param in signature.parameters.values()
+        ):
+            call_args.append(prompt)
+            return call_args, call_kwargs
+
+        if any(
+            param.kind == inspect.Parameter.VAR_KEYWORD
+            for param in signature.parameters.values()
+        ):
+            call_kwargs.setdefault('prompt', prompt)
+
+        return call_args, call_kwargs
+
     async def _execute_agent_job(
         self,
         schedule_id: str,
         agent_name: str,
         prompt: Optional[str] = None,
         method_name: Optional[str] = None,
-        metadata: Optional[Dict] = None
+        metadata: Optional[Dict] = None,
+        *,
+        is_crew: bool = False,
+        success_callback: Optional[Callable] = None,
+        send_result: Optional[Dict[str, Any]] = None
     ):
         """
         Execute a scheduled agent operation.
@@ -140,19 +242,42 @@ class AgentSchedulerManager:
                 f"Executing scheduled job {schedule_id} for agent {agent_name}"
             )
 
-            # Get agent instance from bot manager
             if not self.bot_manager:
                 raise RuntimeError("Bot manager not available")
 
-            agent = self.bot_manager._bots.get(
-                agent_name) or await self.bot_manager.registry.get_instance(agent_name)
+            call_metadata: Dict[str, Any] = dict(metadata or {})
+
+            metadata_send_result = call_metadata.pop('send_result', None)
+            send_result_config = (
+                send_result
+                if send_result is not None
+                else metadata_send_result
+            )
+
+            metadata_success_callback = call_metadata.pop('success_callback', None)
+            if success_callback is None and callable(metadata_success_callback):
+                success_callback = metadata_success_callback
+
+            metadata_is_crew = call_metadata.pop('is_crew', None)
+            if metadata_is_crew is not None:
+                is_crew = bool(is_crew or metadata_is_crew)
+
+            agent: Any = None
+            if is_crew:
+                crew_entry = self.bot_manager.get_crew(agent_name)
+                if crew_entry:
+                    agent = crew_entry[0]
+                else:
+                    raise ValueError(f"Crew {agent_name} not found")
+            else:
+                agent = self.bot_manager._bots.get(agent_name)
+                if not agent:
+                    agent = await self.bot_manager.registry.get_instance(agent_name)
 
             if not agent:
                 raise ValueError(f"Agent {agent_name} not found")
 
-            # Execute based on type
             if method_name:
-                # Call specific method
                 if not hasattr(agent, method_name):
                     raise AttributeError(
                         f"Agent {agent_name} has no method {method_name}"
@@ -161,21 +286,48 @@ class AgentSchedulerManager:
                 if not callable(method):
                     raise TypeError(f"{method_name} is not callable")
 
-                result = await method(**metadata)
-            elif prompt:
-                # Send prompt to agent
+                call_args, call_kwargs = self._prepare_call_arguments(
+                    method,
+                    prompt,
+                    call_metadata,
+                    is_crew=is_crew,
+                    method_name=method_name,
+                )
+                result = await method(*call_args, **call_kwargs)
+            elif prompt is not None:
                 result = await agent.chat(prompt)
             else:
                 raise ValueError(
                     "Either prompt or method_name must be provided"
                 )
 
-            # Update schedule record
             await self._update_schedule_run(schedule_id, success=True)
 
             self.logger.info(
                 f"Successfully executed job {schedule_id} for agent {agent_name}"
             )
+
+            send_result_payload = (
+                dict(send_result_config)
+                if isinstance(send_result_config, dict)
+                else send_result_config
+            )
+
+            try:
+                await self._handle_job_success(
+                    schedule_id,
+                    agent_name,
+                    result,
+                    success_callback,
+                    send_result_payload,
+                )
+            except Exception as callback_error:
+                self.logger.error(
+                    "Error executing success callback for job %s: %s",
+                    schedule_id,
+                    callback_error,
+                    exc_info=True,
+                )
 
             return result
 
@@ -186,6 +338,125 @@ class AgentSchedulerManager:
             )
             await self._update_schedule_run(schedule_id, success=False, error=str(e))
             raise
+
+    async def _handle_job_success(
+        self,
+        schedule_id: str,
+        agent_name: str,
+        result: Any,
+        success_callback: Optional[Callable],
+        send_result: Optional[Dict[str, Any]],
+    ) -> None:
+        """Execute success callback or fallback notification."""
+        if success_callback:
+            callback_result = success_callback(result)
+            if inspect.isawaitable(callback_result):
+                await callback_result
+            return
+
+        if not send_result:
+            return
+
+        await self._send_result_email(schedule_id, agent_name, result, send_result)
+
+    async def _send_result_email(
+        self,
+        schedule_id: str,
+        agent_name: str,
+        result: Any,
+        send_result: Dict[str, Any],
+    ) -> None:
+        """Send job result via email using the notification system."""
+        if not isinstance(send_result, dict):
+            self.logger.warning(
+                "send_result configuration for schedule %s is not a dictionary", schedule_id
+            )
+            return
+
+        recipients = (
+            send_result.get('recipients')
+            or send_result.get('emails')
+            or send_result.get('email')
+            or send_result.get('to')
+        )
+
+        if not recipients:
+            self.logger.warning(
+                "send_result for schedule %s is missing recipients", schedule_id
+            )
+            return
+
+        subject = send_result.get(
+            'subject',
+            f"Scheduled job {agent_name} completed",
+        )
+
+        message = send_result.get(
+            'message',
+            f"Job {agent_name} ({schedule_id}) completed successfully.",
+        )
+
+        include_result = send_result.get('include_result', True)
+        if include_result:
+            formatted_result = self._format_result(result)
+            if formatted_result:
+                message = f"{message}\n\nResult:\n{formatted_result}"
+
+        template = send_result.get('template')
+        report = send_result.get('report')
+
+        reserved_keys = {
+            'recipients',
+            'emails',
+            'email',
+            'to',
+            'subject',
+            'message',
+            'include_result',
+            'template',
+            'report',
+        }
+
+        extra_kwargs = {
+            key: value
+            for key, value in send_result.items()
+            if key not in reserved_keys
+        }
+
+        notifier = _SchedulerNotification(self.logger)
+        await notifier.send_email(
+            message=message,
+            recipients=recipients,
+            subject=subject,
+            report=report,
+            template=template,
+            **extra_kwargs,
+        )
+
+    def _format_result(self, result: Any) -> str:
+        """Format execution result for notifications."""
+        if result is None:
+            return ''
+
+        if isinstance(result, (str, int, float, bool)):
+            return str(result)
+
+        if hasattr(result, 'model_dump'):
+            try:
+                return json.dumps(result.model_dump(), indent=2, default=str)
+            except Exception:  # pylint: disable=broad-except
+                pass
+
+        if hasattr(result, 'dict'):
+            try:
+                return json.dumps(result.dict(), indent=2, default=str)
+            except Exception:  # pylint: disable=broad-except
+                pass
+
+        try:
+            return json.dumps(result, indent=2, default=str)
+        except TypeError:
+            return str(result)
 
     async def _update_schedule_run(
         self,
@@ -279,7 +550,11 @@ class AgentSchedulerManager:
         created_by: Optional[int] = None,
         created_email: Optional[str] = None,
         metadata: Optional[Dict] = None,
-        agent_id: Optional[str] = None
+        agent_id: Optional[str] = None,
+        *,
+        is_crew: bool = False,
+        send_result: Optional[Dict[str, Any]] = None,
+        success_callback: Optional[Callable] = None
     ) -> AgentSchedule:
         """
         Add a new schedule to both database and APScheduler.
@@ -292,22 +567,33 @@ class AgentSchedulerManager:
             method_name: Optional method name to call
             created_by: User ID who created the schedule
             created_email: Email of creator
-            metadata: Additional metadata
+            metadata: Additional metadata passed to execution method
             agent_id: Optional agent ID
+            is_crew: Whether the scheduled target is a crew
+            send_result: Optional configuration to email execution results
+            success_callback: Optional coroutine/function executed after success
 
         Returns:
             Created AgentSchedule instance
         """
         # Validate agent exists
         if self.bot_manager:
-            agent = self.bot_manager._bots.get(agent_name)
-            if not agent:
-                agent = await self.bot_manager.registry.get_instance(agent_name)
-            if not agent:
-                raise ValueError(f"Agent {agent_name} not found")
+            if is_crew:
+                crew_entry = self.bot_manager.get_crew(agent_name)
+                if not crew_entry:
+                    raise ValueError(f"Crew {agent_name} not found")
+                _, crew_def = crew_entry
+                if not agent_id:
+                    agent_id = getattr(crew_def, 'crew_id', agent_name)
+            else:
+                agent = self.bot_manager._bots.get(agent_name)
+                if not agent:
+                    agent = await self.bot_manager.registry.get_instance(agent_name)
+                if not agent:
+                    raise ValueError(f"Agent {agent_name} not found")
 
-            if not agent_id:
-                agent_id = getattr(agent, 'chatbot_id', agent_name)
+                if not agent_id:
+                    agent_id = getattr(agent, 'chatbot_id', agent_name)
 
         # Create database record
         async with await self._pool.acquire() as conn:  # pylint: disable=no-member # noqa
@@ -323,7 +609,9 @@ class AgentSchedulerManager:
                     schedule_config=schedule_config,
                     created_by=created_by,
                     created_email=created_email,
-                    metadata=metadata or {}
+                    metadata=dict(metadata or {}),
+                    is_crew=is_crew,
+                    send_result=dict(send_result or {}),
                 )
                 await schedule.save()
             except Exception as e:
@@ -344,7 +632,10 @@ class AgentSchedulerManager:
                     'agent_name': agent_name,
                     'prompt': prompt,
                     'method_name': method_name,
-                    'metadata': metadata
+                    'metadata': dict(metadata or {}),
+                    'is_crew': is_crew,
+                    'success_callback': success_callback,
+                    'send_result': dict(send_result or {}),
                 },
                 replace_existing=True
             )
@@ -422,7 +713,9 @@ class AgentSchedulerManager:
                                 'agent_name': schedule_data.agent_name,
                                 'prompt': schedule_data.prompt,
                                 'method_name': schedule_data.method_name,
-                                'metadata': schedule_data.metadata
+                                'metadata': dict(schedule_data.metadata or {}),
+                                'is_crew': schedule_data.is_crew,
+                                'send_result': dict(schedule_data.send_result or {}),
                             },
                             replace_existing=True
                         )
@@ -609,7 +902,9 @@ class SchedulerHandler(web.View):
                 method_name=data.get('method_name'),
                 created_by=created_by,
                 created_email=created_email,
-                metadata=data.get('metadata', {})
+                metadata=data.get('metadata', {}),
+                is_crew=data.get('is_crew', False),
+                send_result=data.get('send_result'),
             )
 
             return web.json_response({
@@ -692,7 +987,9 @@ class SchedulerHandler(web.View):
                             'agent_name': schedule.agent_name,
                             'prompt': schedule.prompt,
                             'method_name': schedule.method_name,
-                            'metadata': schedule.metadata
+                            'metadata': dict(schedule.metadata or {}),
+                            'is_crew': schedule.is_crew,
+                            'send_result': dict(schedule.send_result or {}),
                         },
                         replace_existing=True
                     )
