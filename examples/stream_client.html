@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Parrot Chat Streaming Demo</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 2rem auto;
+            max-width: 800px;
+            line-height: 1.5;
+        }
+        label {
+            display: block;
+            margin-top: 1rem;
+        }
+        input, textarea {
+            width: 100%;
+            padding: 0.5rem;
+            font-size: 1rem;
+        }
+        button {
+            margin-top: 1rem;
+            padding: 0.6rem 1.2rem;
+            font-size: 1rem;
+            cursor: pointer;
+        }
+        #output {
+            margin-top: 2rem;
+            padding: 1rem;
+            border: 1px solid #ddd;
+            min-height: 200px;
+            white-space: pre-wrap;
+            background-color: #f9f9f9;
+        }
+        #metadata {
+            margin-top: 1rem;
+            font-size: 0.9rem;
+            color: #333;
+        }
+        .chunk {
+            color: #222;
+        }
+        .metadata, .done, .error {
+            display: block;
+            margin-bottom: 0.5rem;
+        }
+        .metadata {
+            color: #555;
+        }
+        .done {
+            color: #0a6b0a;
+        }
+        .error {
+            color: #b00020;
+        }
+    </style>
+</head>
+<body>
+    <h1>Parrot Chat Streaming Demo</h1>
+    <p>Use this page to try Parrot's streaming responses. Provide the API endpoint, chatbot name, and your query. The response chunks will appear as they arrive.</p>
+
+    <form id="chat-form">
+        <label>
+            API Endpoint (POST URL)
+            <input type="url" id="endpoint" placeholder="https://localhost:8000/api/v1/chat/{bot_name}" required>
+        </label>
+        <label>
+            Query
+            <textarea id="query" rows="4" placeholder="Ask me anything..." required></textarea>
+        </label>
+        <label>
+            Additional Payload (optional JSON)
+            <textarea id="extra" rows="4" placeholder='{"return_sources": true}'></textarea>
+        </label>
+        <button type="submit">Send streaming request</button>
+    </form>
+
+    <div id="metadata"></div>
+    <div id="output"></div>
+
+    <script>
+        const form = document.getElementById('chat-form');
+        const endpoint = document.getElementById('endpoint');
+        const query = document.getElementById('query');
+        const extra = document.getElementById('extra');
+        const output = document.getElementById('output');
+        const metadata = document.getElementById('metadata');
+
+        form.addEventListener('submit', async (event) => {
+            event.preventDefault();
+
+            output.textContent = '';
+            metadata.textContent = '';
+
+            let payload = { query: query.value, stream: true };
+
+            if (extra.value.trim()) {
+                try {
+                    const extraPayload = JSON.parse(extra.value);
+                    payload = { ...payload, ...extraPayload };
+                } catch (err) {
+                    metadata.textContent = 'Invalid JSON in additional payload: ' + err.message;
+                    metadata.className = 'error';
+                    return;
+                }
+            }
+
+            try {
+                const response = await fetch(endpoint.value, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    credentials: 'include',
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok || !response.body) {
+                    throw new Error('Streaming request failed with status ' + response.status);
+                }
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) {
+                        break;
+                    }
+                    buffer += decoder.decode(value, { stream: true });
+
+                    let parts = buffer.split('\n\n');
+                    buffer = parts.pop();
+
+                    for (const part of parts) {
+                        if (!part.trim()) {
+                            continue;
+                        }
+                        const line = part.trim();
+                        if (!line.startsWith('data:')) {
+                            continue;
+                        }
+                        const jsonStr = line.slice(5).trim();
+                        if (!jsonStr) {
+                            continue;
+                        }
+                        let message;
+                        try {
+                            message = JSON.parse(jsonStr);
+                        } catch (err) {
+                            console.error('Unable to parse chunk', jsonStr, err);
+                            continue;
+                        }
+                        handleEvent(message);
+                    }
+                }
+            } catch (err) {
+                metadata.textContent = 'Streaming error: ' + err.message;
+                metadata.className = 'error';
+            }
+        });
+
+        function handleEvent(event) {
+            if (!event || !event.event) {
+                return;
+            }
+            if (event.event === 'metadata') {
+                metadata.textContent = JSON.stringify(event.data, null, 2);
+                metadata.className = 'metadata';
+            } else if (event.event === 'chunk') {
+                const span = document.createElement('span');
+                span.className = 'chunk';
+                span.textContent = event.data;
+                output.appendChild(span);
+            } else if (event.event === 'done') {
+                const div = document.createElement('div');
+                div.className = 'done';
+                div.textContent = 'Completed';
+                output.appendChild(div);
+            } else if (event.event === 'error') {
+                const div = document.createElement('div');
+                div.className = 'error';
+                div.textContent = 'Error: ' + event.data;
+                output.appendChild(div);
+            }
+        }
+    </script>
+</body>
+</html>
