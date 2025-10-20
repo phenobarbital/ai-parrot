@@ -297,7 +297,9 @@ class AgentSchedulerManager:
             elif prompt is not None:
                 result = await agent.chat(prompt)
             else:
-                raise ValueError("Either prompt or method_name must be provided")
+                raise ValueError(
+                    "Either prompt or method_name must be provided"
+                )
 
             await self._update_schedule_run(schedule_id, success=True)
 
