@@ -4,10 +4,11 @@ Agent Scheduler Module for AI-Parrot.
 This module provides scheduling capabilities for agents using APScheduler,
 allowing agents to execute operations at specified intervals.
 """
+import asyncio
 import contextlib
 import inspect
 import json
-from typing import Any, Dict, Optional, Callable, List, Tuple
+from typing import Any, Dict, Optional, Callable, List, Tuple, Set
 from datetime import datetime
 import uuid
 from enum import Enum
@@ -114,6 +115,8 @@ class AgentSchedulerManager:
         self.app: Optional[web.Application] = None
         self.db: Optional[AsyncDB] = None
         self._pool: Optional[AsyncDB] = None  # Database connection pool
+        self._job_context: Dict[str, Dict[str, Any]] = {}
+        self._pending_success_tasks: Set[asyncio.Task] = set()
 
         # Configure APScheduler with AsyncIO
         jobstores = {
@@ -275,6 +278,7 @@ class AgentSchedulerManager:
 
         """
         job_id = event.job_id
+        self._job_context.pop(str(job_id), None)
         job = self.scheduler.get_job(job_id)
         job_name = job.name
         scheduled = event.scheduled_run_time
@@ -333,6 +337,47 @@ class AgentSchedulerManager:
             f"[Scheduler - {ENVIRONMENT}]: {job_name} with id {event.job_id!s} \
             was queued/executed successfully @ {event.scheduled_run_time!s}"
         )
+
+        job_kwargs = getattr(job, "kwargs", {}) or {}
+        schedule_id = str(job_kwargs.get('schedule_id', event.job_id))
+        context = self._job_context.pop(schedule_id, {})
+
+        if 'agent_name' in context:
+            agent_name = context['agent_name']
+        else:
+            agent_name = job_kwargs.get('agent_name', job_name)
+
+        if 'success_callback' in context:
+            success_callback = context['success_callback']
+        else:
+            success_callback = job_kwargs.get('success_callback')
+
+        if 'send_result' in context:
+            send_result = context['send_result']
+        else:
+            send_result = job_kwargs.get('send_result')
+
+        result = getattr(event, 'retval', None)
+
+        if not schedule_id:
+            self.logger.debug(
+                "Job %s executed successfully but no schedule_id was found in context",
+                job_id,
+            )
+            return True
+
+        task = asyncio.create_task(
+            self._process_job_success(
+                schedule_id,
+                agent_name,
+                result,
+                success_callback,
+                send_result if isinstance(send_result, dict) else send_result,
+            )
+        )
+        self._pending_success_tasks.add(task)
+        task.add_done_callback(self._pending_success_tasks.discard)
+        return True
 
     async def _execute_agent_job(
         self,
@@ -418,33 +463,22 @@ class AgentSchedulerManager:
                     "Either prompt or method_name must be provided"
                 )
 
-            await self._update_schedule_run(schedule_id, success=True)
-
-            self.logger.info(
-                f"Successfully executed job {schedule_id} for agent {agent_name}"
-            )
-
             send_result_payload = (
                 dict(send_result_config)
                 if isinstance(send_result_config, dict)
                 else send_result_config
             )
 
-            try:
-                await self._handle_job_success(
-                    schedule_id,
-                    agent_name,
-                    result,
-                    success_callback,
-                    send_result_payload,
-                )
-            except Exception as callback_error:
-                self.logger.error(
-                    "Error executing success callback for job %s: %s",
-                    schedule_id,
-                    callback_error,
-                    exc_info=True,
-                )
+            self._job_context[str(schedule_id)] = {
+                'schedule_id': str(schedule_id),
+                'agent_name': agent_name,
+                'success_callback': success_callback,
+                'send_result': send_result_payload,
+            }
+
+            self.logger.info(
+                f"Successfully executed job {schedule_id} for agent {agent_name}"
+            )
 
             return result
 
@@ -453,6 +487,7 @@ class AgentSchedulerManager:
                 f"Error executing scheduled job {schedule_id}: {e}",
                 exc_info=True
             )
+            self._job_context.pop(str(schedule_id), None)
             await self._update_schedule_run(schedule_id, success=False, error=str(e))
             raise
 
@@ -547,6 +582,41 @@ class AgentSchedulerManager:
             template=template,
             **extra_kwargs,
         )
+
+    async def _process_job_success(
+        self,
+        schedule_id: str,
+        agent_name: str,
+        result: Any,
+        success_callback: Optional[Callable],
+        send_result: Optional[Dict[str, Any]],
+    ) -> None:
+        """Finalize processing for successful job executions."""
+        try:
+            await self._update_schedule_run(schedule_id, success=True)
+        except Exception as update_error:  # pragma: no cover - safety net
+            self.logger.error(
+                "Failed to update schedule run for job %s: %s",
+                schedule_id,
+                update_error,
+                exc_info=True,
+            )
+
+        try:
+            await self._handle_job_success(
+                schedule_id,
+                agent_name,
+                result,
+                success_callback,
+                send_result,
+            )
+        except Exception as callback_error:  # pragma: no cover - safety net
+            self.logger.error(
+                "Error executing success callback for job %s: %s",
+                schedule_id,
+                callback_error,
+                exc_info=True,
+            )
 
     def _format_result(self, result: Any) -> str:
         """Format execution result for notifications."""
