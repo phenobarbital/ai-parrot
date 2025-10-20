@@ -1,3 +1,5 @@
+import asyncio
+from datetime import datetime
 from types import SimpleNamespace
 import pytest
 from unittest.mock import AsyncMock
@@ -98,7 +100,30 @@ async def test_execute_crew_job_uses_registered_crew(monkeypatch):
         'query': 'Write the report',
         'agent_sequence': ['writer', 'editor'],
     }]
-    scheduler._update_schedule_run.assert_awaited_with("123", success=True)
+    scheduler._update_schedule_run.assert_not_awaited()
+
+    job = SimpleNamespace(
+        name="CrewAlpha_daily",
+        kwargs={
+            'schedule_id': '123',
+            'agent_name': 'CrewAlpha',
+            'send_result': {'recipients': ['user@example.com']},
+        },
+    )
+    monkeypatch.setattr(scheduler.scheduler, "get_job", lambda _job_id: job)
+
+    event = SimpleNamespace(
+        job_id="123",
+        scheduled_run_time=datetime.utcnow(),
+        retval=result,
+    )
+
+    scheduler.job_success(event)
+    pending = list(scheduler._pending_success_tasks)
+    if pending:
+        await asyncio.gather(*pending)
+
+    scheduler._update_schedule_run.assert_awaited_once_with("123", success=True)
     handle_mock.assert_awaited_once_with(
         "123",
         "CrewAlpha",
