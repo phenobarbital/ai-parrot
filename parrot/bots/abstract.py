@@ -1738,6 +1738,188 @@ Use the following information about user's data to guide your responses:
 
     chat = conversation  # alias
 
+    async def ask_stream(
+        self,
+        question: str,
+        session_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        search_type: str = 'similarity',
+        search_kwargs: dict = None,
+        metric_type: str = 'COSINE',
+        use_vector_context: bool = True,
+        use_conversation_history: bool = True,
+        return_sources: bool = True,
+        return_context: bool = False,
+        memory: Optional[Callable] = None,
+        ensemble_config: dict = None,
+        mode: str = "adaptive",
+        ctx: Optional[RequestContext] = None,
+        **kwargs
+    ) -> AsyncIterator[Dict[str, Any]]:
+        """Stream conversation responses while keeping context handling."""
+
+        if not session_id:
+            session_id = str(uuid.uuid4())
+        turn_id = str(uuid.uuid4())
+
+        limit = kwargs.get(
+            'limit',
+            self.context_search_limit
+        )
+        score_threshold = kwargs.get(
+            'score_threshold', self.context_score_threshold
+        )
+
+        async def stream_generator() -> AsyncIterator[Dict[str, Any]]:
+            try:
+                conversation_history = None
+                conversation_context = ""
+
+                local_memory = memory or self.conversation_memory
+
+                if use_conversation_history and local_memory:
+                    conversation_history = await self.get_conversation_history(user_id, session_id)
+                    if not conversation_history:
+                        conversation_history = await self.create_conversation_history(
+                            user_id, session_id
+                        )
+
+                    conversation_context = self.build_conversation_context(conversation_history)
+
+                kb_context, user_context, vector_context, vector_metadata = await self._build_context(
+                    question,
+                    user_id=user_id,
+                    session_id=session_id,
+                    ctx=ctx,
+                    use_vectors=use_vector_context,
+                    search_type=search_type,
+                    search_kwargs=search_kwargs,
+                    ensemble_config=ensemble_config,
+                    metric_type=metric_type,
+                    limit=limit,
+                    score_threshold=score_threshold,
+                    return_sources=return_sources,
+                    **kwargs
+                )
+
+                use_tools = self._use_tools(question)
+                if mode == "adaptive":
+                    effective_mode = "agentic" if use_tools else "conversational"
+                elif mode == "agentic":
+                    use_tools = True
+                    effective_mode = "agentic"
+                else:
+                    use_tools = False
+                    effective_mode = "conversational"
+
+                system_prompt = await self.create_system_prompt(
+                    kb_context=kb_context,
+                    vector_context=vector_context,
+                    conversation_context=conversation_context,
+                    metadata=vector_metadata,
+                    user_context=user_context,
+                    **kwargs
+                )
+
+                if (new_llm := kwargs.pop('llm', None)):
+                    self.configure_llm(
+                        llm=new_llm,
+                        **kwargs.pop('llm_config', {})
+                    )
+
+                llm_kwargs = {
+                    "prompt": question,
+                    "system_prompt": system_prompt,
+                    "model": kwargs.get('model', self._llm_model),
+                    "temperature": kwargs.get('temperature', self._llm_temp),
+                    "user_id": user_id,
+                    "session_id": session_id,
+                    "use_tools": use_tools,
+                }
+
+                max_tokens = kwargs.get('max_tokens', self._max_tokens)
+                if max_tokens is not None:
+                    llm_kwargs["max_tokens"] = max_tokens
+
+                vector_info = vector_metadata.get('vector', {})
+
+                preface_payload = {
+                    "event": "metadata",
+                    "data": {
+                        "session_id": session_id,
+                        "turn_id": turn_id,
+                        "mode": effective_mode,
+                        "use_tools": use_tools,
+                        "vector_context": {
+                            "used": bool(vector_context),
+                            "length": len(vector_context) if vector_context else 0,
+                            "search_results_count": vector_info.get('search_results_count', 0),
+                            "search_type": vector_info.get('search_type', search_type) if vector_context else None,
+                            "score_threshold": vector_info.get('score_threshold', score_threshold),
+                            "sources": vector_info.get('sources', []) if return_sources else []
+                        },
+                        "conversation_context": {
+                            "used": bool(conversation_context),
+                            "length": len(conversation_context) if conversation_context else 0
+                        },
+                        "metadata": vector_metadata
+                    }
+                }
+
+                yield preface_payload
+
+                response_text = ""
+
+                async with self._llm as client:
+                    stream = await client.ask_stream(**llm_kwargs)
+                    async for chunk in stream:
+                        if chunk:
+                            response_text += chunk
+                            yield {
+                                "event": "chunk",
+                                "data": chunk
+                            }
+
+                final_payload = {
+                    "event": "done",
+                    "data": {
+                        "session_id": session_id,
+                        "turn_id": turn_id,
+                        "mode": effective_mode,
+                        "use_tools": use_tools,
+                        "response": response_text,
+                        "return_sources": return_sources,
+                        "return_context": return_context
+                    }
+                }
+
+                if return_sources and vector_info.get('sources'):
+                    final_payload["data"]["sources"] = vector_info.get('sources', [])
+                if return_context:
+                    final_payload["data"]["context"] = {
+                        "kb": kb_context,
+                        "vector": vector_context,
+                        "conversation": conversation_context,
+                        "user": user_context
+                    }
+
+                yield final_payload
+
+            except asyncio.CancelledError:
+                self.logger.info("Streaming conversation task was cancelled.")
+                raise
+            except Exception as exc:
+                self.logger.error(
+                    f"Error in streaming conversation: {exc}"
+                )
+                yield {
+                    "event": "error",
+                    "data": str(exc)
+                }
+                raise
+
+        return stream_generator()
+
     def as_markdown(
         self,
         response: AIMessage,
