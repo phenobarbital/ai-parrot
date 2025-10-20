@@ -24,6 +24,7 @@ from navconfig.logging import logging
 from ..agent import BasicAgent
 from ..abstract import AbstractBot
 from ...clients.base import AbstractClient
+from ...clients.google import GoogleGenAIClient
 from ...tools.manager import ToolManager
 from ...tools.abstract import AbstractTool
 from ...tools.agent import AgentContext
@@ -662,8 +663,10 @@ Current task: {current_input}"""
             )
 
         if not self._llm:
-            raise ValueError(
-                "run_loop requires an LLM (self._llm) to evaluate the loop condition"
+            # Let's create an LLM session if none is provided:
+            self._llm = GoogleGenAIClient(
+                model='gemini-2.5-pro',
+                max_tokens=8192
             )
 
         agent_sequence = agent_sequence or list(self.agents.keys())
@@ -703,6 +706,9 @@ Current task: {current_input}"""
         iterations_run = 0
 
         for iteration_index in range(max_iterations):
+            self.logger.notice(
+                f'Starting iteration {iteration_index + 1}/{max_iterations}'
+            )
             iterations_run = iteration_index + 1
             crew_context = AgentContext(
                 user_id=user_id,
