@@ -35,15 +35,53 @@ class ChatHandler(BaseView):
 
     async def get(self, **kwargs):
         """
-        get.
-        description: Get method for ChatHandler.
+        Obtener información de un chatbot
+        ---
+        tags:
+        - chatbots
+        summary: Info de un chatbot o bienvenida al servicio
+        description: |
+        Si no se especifica nombre de chatbot, retorna mensaje de bienvenida.
+        Si se especifica nombre, retorna configuración y detalles del chatbot.
+        operationId: getChatbotInfo
+        parameters:
+        - $ref: "#/components/parameters/ChatbotName"
+        responses:
+        "200":
+            description: Información del chatbot o mensaje de bienvenida
+            content:
+            application/json:
+                schema:
+                oneOf:
+                    - type: object
+                    properties:
+                        message:
+                        type: string
+                        example: "Welcome to Parrot Chatbot Service."
+                    - $ref: "#/components/schemas/ChatbotInfo"
+                examples:
+                welcome:
+                    summary: Sin chatbot especificado
+                    value:
+                    message: "Welcome to Parrot Chatbot Service."
+                chatbot_info:
+                    summary: Con chatbot especificado
+                    value:
+                    chatbot: "nextstop"
+                    description: "Travel planning assistant"
+                    role: "You are a helpful travel agent"
+                    embedding_model: "text-embedding-3-small"
+                    llm: "ChatOpenAI(model='gpt-4', temperature=0.7)"
+                    temperature: 0.7
+                    config_file: "/config/bots/nextstop.yaml"
+        "404":
+            $ref: "#/components/responses/NotFound"
+        "401":
+            $ref: "#/components/responses/Unauthorized"
+        security:
+        - sessionAuth: []
         """
-        name = self.request.match_info.get('chatbot_name', None)
-        if not name:
-            return self.json_response({
-                "message": "Welcome to Parrot Chatbot Service."
-            })
-        else:
+        if (name := self.request.match_info.get('chatbot_name', None)):
             # retrieve chatbof information:
             manager = self.request.app['bot_manager']
             chatbot = await manager.get_bot(name)
@@ -61,6 +99,10 @@ class ChatHandler(BaseView):
                 "llm": f"{chatbot.llm!r}",
                 "temperature": chatbot.llm.temperature,
                 "config_file": config_file
+            })
+        else:
+            return self.json_response({
+                "message": "Welcome to Parrot Chatbot Service."
             })
 
     def _check_methods(self, bot: AbstractBot, method_name: str):
@@ -90,10 +132,171 @@ class ChatHandler(BaseView):
 
     async def post(self, *args, **kwargs):
         """
-        post.
-        description: Post method for ChatHandler.
+        Interactuar con un chatbot
+        ---
+        tags:
+        - chatbots
+        summary: Enviar mensaje a un chatbot
+        description: |
+        Endpoint principal para interactuar con chatbots. Soporta:
 
-        Use this method to interact with a Chatbot.
+        - Conversaciones con contexto (RAG)
+        - Búsqueda en vector store (similarity, MMR, ensemble)
+        - Override de LLM y modelo
+        - Upload de archivos (multipart/form-data)
+        - Invocación de métodos personalizados del bot
+
+        ## Modos de uso
+
+        ### 1. Chat básico
+        ```json
+        {
+            "query": "¿Cuál es la capital de Francia?"
+        }
+        ```
+
+        ### 2. Chat con configuración personalizada
+        ```json
+        {
+            "query": "Explica el concepto de RAG",
+            "llm": "openai",
+            "model": "gpt-4-turbo",
+            "temperature": 0.3,
+            "search_type": "mmr",
+            "return_sources": true
+        }
+        ```
+
+        ### 3. Invocar método personalizado
+        ```
+        POST /api/v1/chat/{chatbot_name}/summarize
+        {
+            "text": "Long text to summarize...",
+            "max_length": 100
+        }
+        ```
+
+        ### 4. Upload de archivos
+        ```
+        Content-Type: multipart/form-data
+
+        query: "Analiza este documento"
+        file: [documento.pdf]
+        ```
+
+        operationId: chatWithBot
+        parameters:
+        - $ref: "#/components/parameters/ChatbotName"
+        - $ref: "#/components/parameters/MethodName"
+        requestBody:
+        required: true
+        description: Mensaje y configuración de la conversación
+        content:
+            application/json:
+            schema:
+                $ref: "#/components/schemas/ChatRequest"
+            examples:
+                basic_chat:
+                summary: Chat básico
+                value:
+                    query: "¿Cuál es el mejor momento para visitar Japón?"
+
+                advanced_chat:
+                summary: Chat con opciones avanzadas
+                value:
+                    query: "Explícame sobre inteligencia artificial"
+                    search_type: "mmr"
+                    return_sources: true
+                    return_context: false
+                    llm: "openai"
+                    model: "gpt-4-turbo"
+                    temperature: 0.5
+                    max_tokens: 1000
+                    session_id: "session_abc123"
+
+                contextual_chat:
+                summary: Chat con contexto de sesión
+                value:
+                    query: "¿Y cuál es el clima típico?"
+                    session_id: "session_abc123"
+                    search_type: "similarity"
+
+            multipart/form-data:
+            schema:
+                type: object
+                required:
+                - query
+                properties:
+                query:
+                    type: string
+                    description: Pregunta o mensaje
+                file:
+                    type: string
+                    format: binary
+                    description: Archivo a procesar (PDF, TXT, MD, etc.)
+                search_type:
+                    type: string
+                    enum: [similarity, mmr, ensemble]
+                return_sources:
+                    type: boolean
+
+        responses:
+        "200":
+            description: Respuesta exitosa del chatbot
+            content:
+            application/json:
+                schema:
+                $ref: "#/components/schemas/ChatResponse"
+                examples:
+                simple_response:
+                    summary: Respuesta simple
+                    value:
+                    response: "La mejor época para visitar Japón es durante la primavera (marzo-mayo) para ver los cerezos en flor, o en otoño (septiembre-noviembre) por el clima agradable y los colores del follaje."
+                    session_id: "session_abc123"
+
+                response_with_sources:
+                    summary: Respuesta con fuentes
+                    value:
+                    response: "La mejor época para visitar Japón es durante la primavera..."
+                    sources:
+                        - content: "Japan's cherry blossom season typically occurs in March..."
+                        metadata:
+                            source: "japan_travel_guide.pdf"
+                            page: 12
+                            title: "Best Times to Visit Japan"
+                        score: 0.92
+                        - content: "Autumn in Japan offers spectacular foliage..."
+                        metadata:
+                            source: "seasonal_travel.pdf"
+                            page: 5
+                        score: 0.87
+                    session_id: "session_abc123"
+                    metadata:
+                        model: "gpt-4-turbo"
+                        temperature: 0.7
+                        tokens_used: 245
+                        response_time: 1.23
+
+        "400":
+            $ref: "#/components/responses/BadRequest"
+        "401":
+            $ref: "#/components/responses/Unauthorized"
+        "404":
+            description: Chatbot no encontrado
+            content:
+            application/json:
+                schema:
+                $ref: "#/components/schemas/ErrorResponse"
+                example:
+                error: "Not Found"
+                message: "Chatbot 'travel_bot' not found."
+        "422":
+            $ref: "#/components/responses/ValidationError"
+        "500":
+            $ref: "#/components/responses/InternalError"
+
+        security:
+        - sessionAuth: []
         """
         app = self.request.app
         name = self.request.match_info.get('chatbot_name', None)

@@ -24,6 +24,8 @@ from ..registry import agent_registry, AgentRegistry
 from ..bots.orchestration.crew import AgentCrew
 from ..handlers.crew.models import CrewDefinition
 from ..handlers.crew.handler import CrewHandler
+from ..openapi.config import setup_swagger
+from ..conf import ENABLE_SWAGGER
 
 
 class BotManager:
@@ -449,6 +451,18 @@ class BotManager:
             BotHandler
         )
         CrewHandler.configure(self.app, '/api/v1/crew')
+        if ENABLE_SWAGGER:
+            self.logger.info("Setting up OpenAPI documentation...")
+            setup_swagger(self.app)
+        self.logger.info("""
+✅ OpenAPI Documentation configured successfully!
+
+Available documentation UIs:
+- Swagger UI:  http://localhost:5000/api/docs
+- ReDoc:       http://localhost:5000/api/docs/redoc
+- RapiDoc:     http://localhost:5000/api/docs/rapidoc
+- OpenAPI Spec: http://localhost:5000/api/docs/swagger.json
+        """)
         return self.app
 
     async def on_startup(self, app: web.Application) -> None:

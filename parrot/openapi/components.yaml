@@ -1,0 +1,641 @@
+openapi: 3.0.3
+info:
+  title: AI-Parrot API Components
+  version: 1.0.0
+
+components:
+  schemas:
+    # ==================== Error Responses ====================
+    ErrorResponse:
+      type: object
+      required:
+        - error
+        - message
+      properties:
+        error:
+          type: string
+          description: Error type/category
+          example: "Bad Request"
+        message:
+          type: string
+          description: Human-readable error message
+          example: "Invalid input parameters"
+        details:
+          type: object
+          description: Additional error details
+          additionalProperties: true
+
+    ValidationErrorResponse:
+      type: object
+      required:
+        - error
+        - message
+        - errors
+      properties:
+        error:
+          type: string
+          example: "Validation Error"
+        message:
+          type: string
+          example: "Input validation failed"
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              loc:
+                type: array
+                items:
+                  oneOf:
+                    - type: string
+                    - type: integer
+                description: Error location path
+              msg:
+                type: string
+                description: Error message
+              type:
+                type: string
+                description: Error type
+
+    # ==================== Chatbot Schemas ====================
+    ChatbotInfo:
+      type: object
+      description: Información básica de un chatbot
+      properties:
+        chatbot:
+          type: string
+          description: Nombre del chatbot
+          example: "nextstop"
+        description:
+          type: string
+          description: Descripción del propósito del chatbot
+          example: "Travel planning assistant"
+        role:
+          type: string
+          description: Rol o personalidad del chatbot
+          example: "You are a helpful travel agent"
+        embedding_model:
+          type: string
+          description: Modelo de embeddings usado
+          example: "text-embedding-3-small"
+        llm:
+          type: string
+          description: Modelo LLM usado
+          example: "ChatOpenAI(model='gpt-4', temperature=0.7)"
+        temperature:
+          type: number
+          format: float
+          description: Temperatura del modelo
+          minimum: 0.0
+          maximum: 2.0
+          example: 0.7
+        config_file:
+          type: string
+          nullable: true
+          description: Path al archivo de configuración
+          example: "/config/bots/nextstop.yaml"
+
+    ChatRequest:
+      type: object
+      required:
+        - query
+      properties:
+        query:
+          type: string
+          description: Pregunta o mensaje del usuario
+          minLength: 1
+          maxLength: 4000
+          example: "¿Cuál es el mejor momento para visitar Japón?"
+        search_type:
+          type: string
+          enum: [similarity, mmr, ensemble]
+          default: similarity
+          description: Tipo de búsqueda en vector store
+        return_sources:
+          type: boolean
+          default: true
+          description: Incluir fuentes en la respuesta
+        return_context:
+          type: boolean
+          default: false
+          description: Incluir contexto RAG usado
+        llm:
+          type: string
+          nullable: true
+          description: LLM alternativo a usar (ej. 'openai', 'google', 'anthropic')
+          example: "openai"
+        model:
+          type: string
+          nullable: true
+          description: Modelo específico a usar
+          example: "gpt-4-turbo"
+        session_id:
+          type: string
+          nullable: true
+          description: ID de sesión para mantener contexto conversacional
+          example: "session_abc123"
+        temperature:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 2.0
+          nullable: true
+          description: Override de temperatura del modelo
+        max_tokens:
+          type: integer
+          minimum: 1
+          maximum: 32000
+          nullable: true
+          description: Máximo de tokens en la respuesta
+
+    ChatResponse:
+      type: object
+      required:
+        - response
+      properties:
+        response:
+          type: string
+          description: Respuesta del chatbot
+          example: "La mejor época para visitar Japón es durante la primavera..."
+        sources:
+          type: array
+          description: Fuentes usadas para generar la respuesta
+          items:
+            type: object
+            properties:
+              content:
+                type: string
+                description: Contenido del documento fuente
+              metadata:
+                type: object
+                description: Metadatos del documento
+                properties:
+                  source:
+                    type: string
+                  page:
+                    type: integer
+                  title:
+                    type: string
+              score:
+                type: number
+                format: float
+                description: Score de relevancia
+        context:
+          type: array
+          description: Contexto RAG usado (si return_context=true)
+          items:
+            type: string
+        session_id:
+          type: string
+          description: ID de sesión usado
+        metadata:
+          type: object
+          description: Metadatos adicionales
+          properties:
+            model:
+              type: string
+            temperature:
+              type: number
+            tokens_used:
+              type: integer
+            response_time:
+              type: number
+
+    # ==================== Bot Management Schemas ====================
+    BotModel:
+      type: object
+      required:
+        - name
+        - bot_class
+      properties:
+        chatbot_id:
+          type: string
+          format: uuid
+          readOnly: true
+          description: ID único del bot (generado automáticamente)
+        name:
+          type: string
+          description: Nombre único del bot
+          minLength: 3
+          maxLength: 100
+          pattern: "^[a-zA-Z0-9_-]+$"
+          example: "travel_assistant"
+        bot_class:
+          type: string
+          description: Clase Python del bot
+          enum: [BasicBot, Chatbot, BasicAgent, CustomAgent]
+          example: "Chatbot"
+        description:
+          type: string
+          nullable: true
+          description: Descripción del propósito del bot
+          maxLength: 500
+          example: "Asistente para planificación de viajes"
+        role:
+          type: string
+          nullable: true
+          description: System prompt / rol del bot
+          maxLength: 2000
+          example: "Eres un agente de viajes experto que ayuda a planificar vacaciones"
+        use_llm:
+          type: string
+          enum: [openai, google, anthropic, groq]
+          default: google
+          description: Proveedor de LLM a usar
+        use_model:
+          type: string
+          description: Modelo específico del LLM
+          example: "gpt-4-turbo"
+        temperature:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 2.0
+          default: 0.7
+          description: Temperatura del modelo
+        embedding_model:
+          type: string
+          nullable: true
+          description: Modelo de embeddings
+          example: "text-embedding-3-small"
+        config_file:
+          type: string
+          nullable: true
+          description: Path a archivo de configuración YAML
+        tools:
+          type: array
+          description: Lista de herramientas habilitadas
+          items:
+            type: string
+          example: ["web_search", "calculator", "database_query"]
+        vector_store:
+          type: object
+          nullable: true
+          description: Configuración del vector store
+          properties:
+            collection_name:
+              type: string
+            embedding_model:
+              type: string
+            distance_metric:
+              type: string
+              enum: [cosine, euclidean, inner_product]
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+        created_by:
+          type: string
+          readOnly: true
+          description: User ID del creador
+
+    BotList:
+      type: object
+      properties:
+        bots:
+          type: array
+          items:
+            $ref: "#/components/schemas/BotModel"
+        total:
+          type: integer
+          description: Total de bots disponibles
+        active:
+          type: integer
+          description: Bots actualmente activos en memoria
+
+    # ==================== Agent Schemas ====================
+    AgentChatRequest:
+      type: object
+      required:
+        - agent_name
+        - query
+      properties:
+        agent_name:
+          type: string
+          description: Nombre o ID del agente
+          example: "research_agent"
+        query:
+          type: string
+          description: Pregunta o tarea para el agente
+          minLength: 1
+          maxLength: 4000
+          example: "Investiga las últimas tendencias en IA para 2024"
+        session_id:
+          type: string
+          nullable: true
+          description: ID de sesión para mantener estado
+        user_id:
+          type: string
+          nullable: true
+          description: ID del usuario
+        output_mode:
+          type: string
+          enum: [json, html, markdown, terminal, default]
+          default: json
+          description: Formato de salida deseado
+        output_format:
+          type: string
+          enum: [json, html, markdown, text]
+          nullable: true
+          description: Formato específico (override de Accept header)
+        search_type:
+          type: string
+          enum: [similarity, mmr, ensemble]
+          default: similarity
+          description: Tipo de búsqueda en vector store
+        use_vector_context:
+          type: boolean
+          default: true
+          description: Usar contexto del vector store
+        use_conversation_history:
+          type: boolean
+          default: true
+          description: Usar historial conversacional
+        return_sources:
+          type: boolean
+          default: true
+          description: Incluir fuentes en respuesta
+        format_kwargs:
+          type: object
+          description: Argumentos adicionales para formateo
+          properties:
+            show_metadata:
+              type: boolean
+              default: true
+            show_sources:
+              type: boolean
+              default: true
+            show_thinking:
+              type: boolean
+              default: false
+            include_citations:
+              type: boolean
+              default: true
+        mcp_servers:
+          type: array
+          description: MCP servers adicionales a usar
+          items:
+            $ref: "#/components/schemas/MCPServerConfig"
+        ask_kwargs:
+          type: object
+          description: Argumentos adicionales para el método ask()
+          additionalProperties: true
+
+    MCPServerConfig:
+      type: object
+      required:
+        - name
+        - url
+      properties:
+        name:
+          type: string
+          description: Nombre identificador del servidor MCP
+          example: "weather_api"
+        url:
+          type: string
+          format: uri
+          description: URL del servidor MCP
+          example: "https://api.weather.com/mcp"
+        auth_type:
+          type: string
+          enum: [none, api_key, bearer, basic, oauth2]
+          default: none
+          description: Tipo de autenticación
+        auth_config:
+          type: object
+          description: Configuración de autenticación
+          properties:
+            api_key:
+              type: string
+            bearer_token:
+              type: string
+            username:
+              type: string
+            password:
+              type: string
+        headers:
+          type: object
+          description: Headers HTTP adicionales
+          additionalProperties:
+            type: string
+          example:
+            User-Agent: "AI-Parrot/1.0"
+            X-Custom-Header: "value"
+        timeout:
+          type: integer
+          minimum: 1
+          maximum: 300
+          default: 30
+          description: Timeout en segundos
+        retry_count:
+          type: integer
+          minimum: 0
+          maximum: 5
+          default: 3
+
+    AgentResponse:
+      type: object
+      required:
+        - response
+        - agent
+      properties:
+        response:
+          type: string
+          description: Respuesta del agente
+        agent:
+          type: string
+          description: Nombre del agente que respondió
+        session_id:
+          type: string
+          nullable: true
+        sources:
+          type: array
+          items:
+            type: object
+            properties:
+              content:
+                type: string
+              metadata:
+                type: object
+              score:
+                type: number
+        tools_used:
+          type: array
+          description: Herramientas usadas por el agente
+          items:
+            type: object
+            properties:
+              tool_name:
+                type: string
+              input:
+                type: object
+              output:
+                type: object
+              execution_time:
+                type: number
+        thinking:
+          type: string
+          nullable: true
+          description: Proceso de razonamiento del agente (si está habilitado)
+        metadata:
+          type: object
+          properties:
+            model:
+              type: string
+            temperature:
+              type: number
+            tokens_used:
+              type: integer
+            response_time:
+              type: number
+            mcp_servers_used:
+              type: array
+              items:
+                type: string
+
+    AgentInfo:
+      type: object
+      properties:
+        message:
+          type: string
+        version:
+          type: string
+        usage:
+          type: object
+          properties:
+            method:
+              type: string
+            endpoint:
+              type: string
+            required_fields:
+              type: array
+              items:
+                type: string
+            optional_fields:
+              type: array
+              items:
+                type: string
+            output_modes:
+              type: array
+              items:
+                type: string
+
+    # ==================== Feedback Schemas ====================
+    FeedbackRequest:
+      type: object
+      required:
+        - chatbot_id
+        - question
+        - rating
+      properties:
+        chatbot_id:
+          type: string
+          description: ID del bot que generó la respuesta
+        question:
+          type: string
+          description: Pregunta original del usuario
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+          description: Calificación de 1 a 5
+        response:
+          type: string
+          nullable: true
+          description: Respuesta del bot
+        feedback_text:
+          type: string
+          nullable: true
+          maxLength: 1000
+          description: Comentarios adicionales del usuario
+        response_time:
+          type: number
+          nullable: true
+          description: Tiempo de respuesta en segundos
+        sources_used:
+          type: array
+          nullable: true
+          items:
+            type: string
+
+    FeedbackResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        feedback_id:
+          type: string
+        question:
+          type: string
+
+  # ==================== Common Parameters ====================
+  parameters:
+    ChatbotName:
+      name: chatbot_name
+      in: path
+      required: true
+      description: Nombre único del chatbot
+      schema:
+        type: string
+        pattern: "^[a-zA-Z0-9_-]+$"
+      example: "travel_assistant"
+
+    AgentId:
+      name: agent_id
+      in: path
+      required: true
+      description: ID o nombre del agente
+      schema:
+        type: string
+      example: "research_agent"
+
+    MethodName:
+      name: method_name
+      in: path
+      required: false
+      description: Nombre del método a invocar en el bot/agent
+      schema:
+        type: string
+        pattern: "^[a-zA-Z_][a-zA-Z0-9_]*$"
+      example: "summarize"
+
+    BotId:
+      name: id
+      in: path
+      required: true
+      description: UUID del bot
+      schema:
+        type: string
+        format: uuid
+
+    OutputFormat:
+      name: output_format
+      in: query
+      required: false
+      description: Formato de salida deseado
+      schema:
+        type: string
+        enum: [json, html, markdown, text]
+        default: json
+
+  # ==================== Security Schemes ====================
+  securitySchemes:
+    sessionAuth:
+      type: apiKey
+      in: cookie
+      name: session
+      description: Session-based authentication using HTTP cookies
+
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token authentication
+
+# Global security requirement (can be overridden per operation)
+security:
+  - sessionAuth: []

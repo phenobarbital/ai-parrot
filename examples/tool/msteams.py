@@ -640,7 +640,7 @@ async def main():
         # await example_adaptive_cards(toolkit)
 
         # # Example 4: Direct messages
-        # await example_direct_messages(toolkit)
+        await example_direct_messages(toolkit)
 
         # # Example 5: Custom adaptive card
         # await example_custom_adaptive_card(toolkit)

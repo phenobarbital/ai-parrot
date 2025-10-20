@@ -35,6 +35,7 @@ if isinstance(STATIC_DIR, str):
 
 # Environment
 ENVIRONMENT = config.get("ENVIRONMENT", fallback="development")
+ENABLE_SWAGGER = config.getboolean("ENABLE_SWAGGER", fallback=True)
 
 
 # Agents Directory

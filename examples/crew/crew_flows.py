@@ -68,7 +68,7 @@ async def example_sequential_pipeline():
     # Execute sequential pipeline
     # Each agent processes the output of the previous agent
     result = await crew.run_sequential(
-        initial_query="Write a blog post about the benefits of async programming in Python",
+        query="Write a blog post about the benefits of async programming in Python",
         pass_full_context=True  # Each agent sees all previous work
     )
 

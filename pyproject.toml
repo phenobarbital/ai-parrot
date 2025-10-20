@@ -63,6 +63,7 @@ dependencies = [
     "ddgs>=9.5.2",
     "pytesseract>=0.3.13",
     "python-statemachine==2.5.0",
+    "aiohttp-swagger3==0.10.0",
 ]
 
 [project.optional-dependencies]
