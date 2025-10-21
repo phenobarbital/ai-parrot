@@ -1,16 +1,19 @@
 """
 Foundational base of every Chatbot and Agent in ai-parrot.
 """
-from typing import Any, Union, Dict, List
+from typing import Any, Union, Dict, List, Optional, ClassVar
 from pathlib import Path
 import uuid
 from string import Template
 import importlib
+import asyncio
+from contextlib import asynccontextmanager
 # Navconfig
 from datamodel.exceptions import ValidationError # pylint: disable=E0611
 from navconfig import BASE_DIR
 from navconfig.exceptions import ConfigError  # pylint: disable=E0611
 from asyncdb.exceptions import NoDataFound
+from asyncdb import AsyncPool
 from ..conf import (
     default_dsn,
     EMBEDDING_DEFAULT_MODEL,
@@ -32,6 +35,9 @@ class Chatbot(AbstractBot):
         2. Database loading: bot = Chatbot(name="MyBot", from_database=True)
     """
     company_information: dict = {}
+    # Shared database pool for BotModel operations
+    _db_pool: ClassVar[Optional[AsyncPool]] = None
+    _db_pool_lock: ClassVar[asyncio.Lock] = asyncio.Lock()
 
     def __init__(
         self,
@@ -86,23 +92,70 @@ class Chatbot(AbstractBot):
                 exist_ok=True
             )
 
+    # ------------------------------------------------------------------
+    # Database helpers
+    # ------------------------------------------------------------------
+    @classmethod
+    async def _get_db_pool(cls) -> AsyncPool:
+        """Return a shared async database pool for bot metadata."""
+        if not default_dsn:
+            raise ConfigError(
+                "Database DSN is not configured; cannot load bots from database"
+            )
+
+        pool = cls._db_pool
+        if pool is not None and pool.is_connected() and not pool.event_loop_is_closed():
+            return pool
+
+        async with cls._db_pool_lock:
+            pool = cls._db_pool
+            if pool is not None and pool.is_connected() and not pool.event_loop_is_closed():
+                return pool
+
+            pool = AsyncPool('pg', dsn=default_dsn)
+            await pool.connect()
+            cls._db_pool = pool
+            return pool
+
+    @classmethod
+    @asynccontextmanager
+    async def _botmodel_connection(cls):
+        """Context manager that yields a pooled connection for BotModel operations."""
+        pool = await cls._get_db_pool()
+        connection = None
+        try:
+            connection = await pool.acquire()
+            yield connection
+        finally:
+            if connection is not None:
+                await pool.release(connection)
+
     def __repr__(self):
         return f"<ChatBot.{self.__class__.__name__}:{self.name}>"
 
     async def configure(self, app=None) -> None:
         """Load configuration for this Chatbot."""
         if self._from_database:
-            if (bot := await self.bot_exists(name=self.name, uuid=self.chatbot_id)):
+            bot = None
+            try:
+                bot = await self.bot_exists(name=self.name, uuid=self.chatbot_id)
+            except Exception as exc:  # pragma: no cover - defensive logging
+                self.logger.error(
+                    (
+                        f"Failed to load bot '{self.name}' metadata from database: {exc}. "
+                        "Falling back to manual configuration."
+                    ),
+                    exc_info=True,
+                )
+            if bot:
                 self.logger.notice(
                     f"Loading Bot {self.name} from Database: {bot.chatbot_id}"
                 )
                 # Bot exists on Database, Configure from the Database
-                await self.from_database(
-                    bot
-                )
+                await self.from_database(bot)
             else:
                 self.logger.warning(
-                    f'Bot {self.name} not found, falling back to manual configuration'
+                    f"Bot {self.name} not found or database unavailable, falling back to manual configuration"
                 )
                 self._from_database = False
                 await self.from_manual_config()
@@ -205,23 +258,32 @@ class Chatbot(AbstractBot):
         uuid: uuid.UUID = None
     ) -> Union[BotModel, bool]:
         """Check if the Chatbot exists in the Database."""
-        db = self.get_database('pg', dsn=default_dsn)
-        async with await db.connection() as conn:  # pylint: disable=E1101
-            BotModel.Meta.connection = conn
-            try:
-                if self.chatbot_id:
-                    try:
-                        bot = await BotModel.get(chatbot_id=uuid, enabled=True)
-                    except Exception:
-                        bot = await BotModel.get(name=name, enabled=True)
-                else:
-                    bot = await BotModel.get(name=self.name, enabled=True)
-                if bot:
-                    return bot
-                else:
+        try:
+            async with self._botmodel_connection() as conn:  # pylint: disable=E1101
+                BotModel.Meta.connection = conn
+                try:
+                    if self.chatbot_id:
+                        try:
+                            bot = await BotModel.get(chatbot_id=uuid, enabled=True)
+                        except Exception:
+                            bot = await BotModel.get(name=name, enabled=True)
+                    else:
+                        bot = await BotModel.get(name=self.name, enabled=True)
+                    if bot:
+                        return bot
+                except NoDataFound:
                     return False
-            except NoDataFound:
-                return False
+                except Exception as exc:  # pragma: no cover - unexpected database error
+                    self.logger.error(
+                        f"Error retrieving bot from database: {exc}",
+                        exc_info=True,
+                    )
+        except Exception as exc:  # pragma: no cover - database unavailable
+            self.logger.error(
+                f"Database error while checking bot existence: {exc}",
+                exc_info=True,
+            )
+        return False
 
     async def from_database(
         self,
@@ -232,8 +294,7 @@ class Chatbot(AbstractBot):
         If the bot is not found, it will raise a ConfigError.
         """
         if not bot:
-            db = self.get_database('pg', dsn=default_dsn)
-            async with await db.connection() as conn:  # pylint: disable=E1101
+            async with self._botmodel_connection() as conn:  # pylint: disable=E1101
                 # import model
                 BotModel.Meta.connection = conn
                 try:
@@ -402,8 +463,7 @@ class Chatbot(AbstractBot):
             bool: True if update was successful, False otherwise
         """
         try:
-            db = self.get_database('pg', dsn=default_dsn)
-            async with await db.connection() as conn:  # pylint: disable=E1101 # noqa
+            async with self._botmodel_connection() as conn:  # pylint: disable=E1101 # noqa
                 BotModel.Meta.connection = conn
                 bot = await BotModel.get(chatbot_id=self.chatbot_id)
 
@@ -429,8 +489,7 @@ class Chatbot(AbstractBot):
             bool: True if save was successful, False otherwise
         """
         try:
-            db = self.get_database('pg', dsn=default_dsn)
-            async with await db.connection() as conn:  # pylint: disable=E1101 # noqa
+            async with self._botmodel_connection() as conn:  # pylint: disable=E1101 # noqa
                 BotModel.Meta.connection = conn
 
                 # Create or update bot model

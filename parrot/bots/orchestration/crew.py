@@ -1436,7 +1436,15 @@ Current task: {current_input}"""
 
     def _agent_is_configured(self, agent: Union[BasicAgent, AbstractBot]) -> bool:
         """Check if an agent is configured, using a lock to prevent race conditions."""
-        return bool(getattr(agent, "is_configured", False))
+        status = getattr(agent, "is_configured", False)
+        if callable(status):
+            try:
+                status = status()
+            except TypeError:
+                # Some agents expose ``is_configured`` as a property; if calling fails,
+                # fall back to the original value.
+                pass
+        return bool(status)
 
     async def _ensure_agent_ready(self, agent: Union[BasicAgent, AbstractBot]) -> None:
         """Ensure the agent is configured before execution.
@@ -1477,8 +1485,10 @@ Current task: {current_input}"""
                     )
                 except Exception as e:
                     self.logger.error(
-                        f"Failed to configure agent '{agent.name}': {e}"
+                        f"Failed to configure agent '{agent.name}': {e}",
+                        exc_info=True,
                     )
+                    raise
 
     async def _execute_agent(
         self,
