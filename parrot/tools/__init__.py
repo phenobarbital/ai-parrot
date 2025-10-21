@@ -11,6 +11,7 @@ from .toolkit import AbstractToolkit, ToolkitTool
 from .decorators import tool_schema, tool
 from .ddgo import DuckDuckGoToolkit
 from .file_reader import FileReaderTool
+from .yfinance_tool import YFinanceTool
 
 # setup_plugin_importer('parrot.tools', 'tools')
 
@@ -29,6 +30,7 @@ __all__ = (
     "tool",
     "DuckDuckGoToolkit",
     "FileReaderTool",
+    "YFinanceTool",
 )
 
 # Enable dynamic imports
