@@ -11,7 +11,7 @@ import pandas as pd
 import yfinance as yf
 from pydantic import Field, field_validator
 
-from .abstract import AbstractTool, AbstractToolArgsSchema
+from .abstract import AbstractTool, AbstractToolArgsSchema, ToolResult
 
 
 class YFinanceArgs(AbstractToolArgsSchema):
@@ -85,27 +85,42 @@ class YFinanceTool(AbstractTool):
     )
     args_schema = YFinanceArgs
 
-    async def _execute(self, **kwargs: Any) -> Dict[str, Any]:
+    async def _execute(self, **kwargs: Any) -> ToolResult:
         args = self.args_schema(**kwargs)
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self._run, args)
 
-    def _run(self, args: YFinanceArgs) -> Dict[str, Any]:
+    def _run(self, args: YFinanceArgs) -> ToolResult:
         ticker = yf.Ticker(args.ticker)
         action = args.action
 
+        retrieved_at = datetime.utcnow().isoformat() + "Z"
+
         if action == "quote":
-            return self._get_quote(ticker, args)
-        if action == "info":
-            return self._get_info(ticker, args)
-        if action == "history":
-            return self._get_history(ticker, args)
-        if action == "financials":
-            return self._get_financials(ticker, args)
+            payload = self._get_quote(ticker, args, retrieved_at)
+        elif action == "info":
+            payload = self._get_info(ticker, args, retrieved_at)
+        elif action == "history":
+            payload = self._get_history(ticker, args, retrieved_at)
+        elif action == "financials":
+            payload = self._get_financials(ticker, args, retrieved_at)
+        else:
+            raise ValueError(f"Unsupported action: {action}")
 
-        raise ValueError(f"Unsupported action: {action}")
+        return ToolResult(
+            status="success",
+            result=payload,
+            metadata={
+                "symbol": args.ticker,
+                "action": action,
+                "source": "yfinance",
+                "retrieved_at": retrieved_at,
+            },
+        )
 
-    def _get_quote(self, ticker: yf.Ticker, args: YFinanceArgs) -> Dict[str, Any]:
+    def _get_quote(
+        self, ticker: yf.Ticker, args: YFinanceArgs, retrieved_at: str
+    ) -> Dict[str, Any]:
         fast_info: Dict[str, Any] = {}
         info: Dict[str, Any] = {}
 
@@ -155,28 +170,34 @@ class YFinanceTool(AbstractTool):
         }
 
         return {
-            "symbol": args.ticker,
-            "action": "quote",
-            "summary": summary,
+            "ticker": args.ticker,
+            "retrieved_at": retrieved_at,
+            "quote": summary,
             "fast_info": self._clean_nested(fast_info),
-            "info_excerpt": {k: info.get(k) for k in ("longName", "shortName", "quoteType", "sector", "industry") if k in info},
-            "source": "yfinance",
+            "info_excerpt": {
+                k: info.get(k)
+                for k in ("longName", "shortName", "quoteType", "sector", "industry")
+                if k in info
+            },
         }
 
-    def _get_info(self, ticker: yf.Ticker, args: YFinanceArgs) -> Dict[str, Any]:
+    def _get_info(
+        self, ticker: yf.Ticker, args: YFinanceArgs, retrieved_at: str
+    ) -> Dict[str, Any]:
         try:
             info = ticker.get_info() or {}
         except Exception as exc:
             raise ValueError(f"Unable to retrieve company info for {args.ticker}: {exc}") from exc
 
         return {
-            "symbol": args.ticker,
-            "action": "info",
+            "ticker": args.ticker,
+            "retrieved_at": retrieved_at,
             "info": self._clean_nested(info),
-            "source": "yfinance",
         }
 
-    def _get_history(self, ticker: yf.Ticker, args: YFinanceArgs) -> Dict[str, Any]:
+    def _get_history(
+        self, ticker: yf.Ticker, args: YFinanceArgs, retrieved_at: str
+    ) -> Dict[str, Any]:
         history_df = ticker.history(
             period=args.period,
             interval=args.interval,
@@ -199,8 +220,8 @@ class YFinanceTool(AbstractTool):
                 records.append(cleaned_row)
 
         return {
-            "symbol": args.ticker,
-            "action": "history",
+            "ticker": args.ticker,
+            "retrieved_at": retrieved_at,
             "parameters": {
                 "period": args.period,
                 "interval": args.interval,
@@ -210,10 +231,11 @@ class YFinanceTool(AbstractTool):
                 "include_actions": args.include_actions,
             },
             "records": records,
-            "source": "yfinance",
         }
 
-    def _get_financials(self, ticker: yf.Ticker, args: YFinanceArgs) -> Dict[str, Any]:
+    def _get_financials(
+        self, ticker: yf.Ticker, args: YFinanceArgs, retrieved_at: str
+    ) -> Dict[str, Any]:
         datasets = {
             "financials": getattr(ticker, "financials", None),
             "quarterly_financials": getattr(ticker, "quarterly_financials", None),
@@ -231,10 +253,9 @@ class YFinanceTool(AbstractTool):
                 serialized[name] = {}
 
         return {
-            "symbol": args.ticker,
-            "action": "financials",
+            "ticker": args.ticker,
+            "retrieved_at": retrieved_at,
             "financials": serialized,
-            "source": "yfinance",
         }
 
     @staticmethod
