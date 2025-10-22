@@ -203,6 +203,35 @@ class OpenAIClient(AbstractClient):
         ms = (model_str or "").strip()
         return ms in RESPONSES_ONLY_MODELS
 
+    def _normalize_content_for_responses(self, content):
+        """
+        Convert Chat Completions content format to Responses API format.
+        - "text" -> "input_text"
+        - "image_url" -> "input_image"
+        """
+        if isinstance(content, str):
+            # Simple string content
+            return content
+        elif isinstance(content, list):
+            # List of content blocks - need to convert types
+            normalized = []
+            for item in content:
+                if isinstance(item, dict):
+                    new_item = item.copy()
+                    # Convert "text" type to "input_text"
+                    if new_item.get("type") == "text":
+                        new_item["type"] = "input_text"
+                    # Convert "image_url" type to "input_image"
+                    elif new_item.get("type") == "image_url":
+                        new_item["type"] = "input_image"
+                    normalized.append(new_item)
+                else:
+                    normalized.append(item)
+            return normalized
+        else:
+            # Return as-is for other types
+            return content
+
     def _prepare_responses_args(self, *, messages, args):
         """
         Map your existing args/messages into Responses API fields.
@@ -219,7 +248,9 @@ class OpenAIClient(AbstractClient):
                 instructions = m.get("content")
             else:
                 # Responses accepts chat-like role/content items
-                input_msgs.append({"role": role, "content": m.get("content")})
+                # but needs "input_text" instead of "text" for content type
+                content = self._normalize_content_for_responses(m.get("content"))
+                input_msgs.append({"role": role, "content": content})
 
         req = {
             "instructions": instructions,
