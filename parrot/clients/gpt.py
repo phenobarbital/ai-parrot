@@ -391,6 +391,32 @@ class OpenAIClient(AbstractClient):
             "OpenAI responses.create call failed without response"
         )
 
+    async def _call_responses_stream(self, payloads):
+        """
+        Try several payload shapes against responses.stream(), mirroring
+        the compatibility shims we use for responses.create().
+        """
+        last_exc = None
+        for payload in payloads:
+            try:
+                return await self.client.responses.stream(**payload)
+            except TypeError as exc:
+                last_exc = exc
+            except BadRequestError as exc:
+                msg = getattr(exc, "message", "") or ""
+                body = getattr(getattr(exc, "response", None), "json", lambda: {})()
+                code = (body.get("error") or {}).get("code", "")
+                param = (body.get("error") or {}).get("param", "")
+                if code == "unknown_parameter" or "Unknown parameter" in msg or param in {"response", "modalities", "video"}:
+                    last_exc = exc
+                    continue
+                raise
+        if last_exc:
+            raise last_exc
+        raise RuntimeError(
+            "OpenAI responses.stream call failed without response"
+        )
+
     async def _responses_completion(self, *, model: str, messages, **args):
         """
         Adapter around OpenAI Responses API that mimics Chat Completions:
@@ -773,28 +799,92 @@ class OpenAIClient(AbstractClient):
             for tool in tools:
                 self.register_tool(tool)
         tools = self._prepare_tools() if self.tools else None
-        args = {}
+        args: Dict[str, Any] = {}
 
         if tools:
             args['tools'] = tools
             args['tool_choice'] = "auto"
 
-        # Create streaming response
-        response_stream = await self.client.chat.completions.create(
-            model=model_str,
-            messages=messages,
-            max_tokens=max_tokens or self.max_tokens,
-            temperature=temperature or self.temperature,
-            stream=True,
-            **args
-        )
+        max_tokens_value = max_tokens if max_tokens is not None else self.max_tokens
+        if max_tokens_value is not None:
+            args['max_tokens'] = max_tokens_value
+
+        temperature_value = temperature if temperature is not None else self.temperature
+        if temperature_value is not None:
+            args['temperature'] = temperature_value
+
+        use_responses = self._is_responses_model(model_str)
 
         assistant_content = ""
-        async for chunk in response_stream:
-            if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
-                text_chunk = chunk.choices[0].delta.content
-                assistant_content += text_chunk
-                yield text_chunk
+
+        if use_responses:
+            req = self._prepare_responses_args(messages=messages, args=args)
+            req["model"] = model_str
+
+            payload_base = dict(req)
+            attempts: List[Dict[str, Any]] = [dict(payload_base)]
+
+            stream_cm = await self._call_responses_stream(attempts)
+
+            async with stream_cm as stream:
+                async for event in stream:
+                    event_type = getattr(event, "type", None)
+                    if event_type is None and isinstance(event, dict):
+                        event_type = event.get("type")
+
+                    if event_type == "response.output_text.delta":
+                        delta = getattr(event, "delta", None)
+                        if delta is None and isinstance(event, dict):
+                            delta = event.get("delta")
+                        if delta:
+                            assistant_content += delta
+                            yield delta
+                    elif event_type == "response.output_text.done":
+                        text = getattr(event, "text", None)
+                        if text is None and isinstance(event, dict):
+                            text = event.get("text")
+                        if text:
+                            assistant_content += text
+                            yield text
+
+                final_response = None
+                try:
+                    final_response = await stream.get_final_response()
+                except AttributeError:
+                    final_response = None
+                except Exception:  # pylint: disable=broad-except
+                    final_response = None
+
+            if final_response and not assistant_content:
+                output_text = getattr(final_response, "output_text", None) or ""
+                if not output_text:
+                    for item in getattr(final_response, "output", []) or []:
+                        for part in getattr(item, "content", []) or []:
+                            text_part = None
+                            if isinstance(part, dict):
+                                if part.get("type") == "output_text":
+                                    text_part = part.get("text", "")
+                            else:
+                                text_part = getattr(part, "text", None)
+                            if text_part:
+                                output_text += text_part
+                if output_text:
+                    assistant_content = output_text
+                    yield output_text
+        else:
+            chat_args = dict(args)
+            response_stream = await self.client.chat.completions.create(
+                model=model_str,
+                messages=messages,
+                stream=True,
+                **chat_args
+            )
+
+            async for chunk in response_stream:
+                if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
+                    text_chunk = chunk.choices[0].delta.content
+                    assistant_content += text_chunk
+                    yield text_chunk
 
         # Update conversation memory if content was generated
         if assistant_content:
