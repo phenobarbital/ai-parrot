@@ -21,7 +21,7 @@ from tenacity import (
     retry_if_exception_type
 )
 from openai import AsyncOpenAI
-from openai import APIConnectionError, RateLimitError, APIError
+from openai import APIConnectionError, RateLimitError, APIError, BadRequestError
 from .base import AbstractClient
 from ..models import (
     AIMessage,
@@ -355,38 +355,41 @@ class OpenAIClient(AbstractClient):
     def _with_extra_body(payload: Dict[str, Any], extra_body: Dict[str, Any]) -> Dict[str, Any]:
         merged = dict(payload)
         existing_raw = merged.pop("extra_body", None)
-        if isinstance(existing_raw, dict):
-            existing = dict(existing_raw)
-        else:
-            existing = {}
-        existing.update(extra_body)
+        existing = (
+            dict(existing_raw) if isinstance(existing_raw, dict) else {}
+        ) | extra_body
         if existing:
             merged["extra_body"] = existing
         return merged
 
-    async def _call_responses_create(self, payloads: Iterable[Dict[str, Any]]):
-        last_exc: Optional[TypeError] = None
+    async def _call_responses_create(self, payloads):
+        """
+        Try several payload shapes against responses.create().
+        We retry not only on TypeError (client-side signature issues)
+        but also on BadRequestError when the server reports unknown params,
+        so we can fall back to older-SDK-compatible shapes.
+        """
+        last_exc = None
         for payload in payloads:
             try:
                 return await self.client.responses.create(**payload)
             except TypeError as exc:
                 last_exc = exc
-
-                if isinstance(payload, dict) and "response" in payload:
-                    response_block = payload.get("response")
-                    alt_payload = dict(payload)
-                    alt_payload.pop("response", None)
-                    alt_payload = self._with_extra_body(alt_payload, {"response": response_block})
-                    try:
-                        return await self.client.responses.create(**alt_payload)
-                    except TypeError as exc2:
-                        last_exc = exc2
-                        continue
-                continue
-
-        if last_exc is not None:
+            except BadRequestError as exc:
+                # 2.6.0 returns 400 unknown_parameter for fields like "response", "modalities", etc.
+                msg = getattr(exc, "message", "") or ""
+                body = getattr(getattr(exc, "response", None), "json", lambda: {})()
+                code = (body.get("error") or {}).get("code", "")
+                param = (body.get("error") or {}).get("param", "")
+                if code == "unknown_parameter" or "Unknown parameter" in msg or param in {"response", "modalities", "video"}:
+                    last_exc = exc
+                    continue
+                raise  # other 400s should bubble up
+        if last_exc:
             raise last_exc
-        raise RuntimeError("OpenAI responses.create call failed without response")
+        raise RuntimeError(
+            "OpenAI responses.create call failed without response"
+        )
 
     async def _responses_completion(self, *, model: str, messages, **args):
         """
@@ -406,13 +409,11 @@ class OpenAIClient(AbstractClient):
 
         attempts: List[Dict[str, Any]] = []
         if resp_format:
-            # Prefer the newer `response={"format": ...}` namespace but fall
-            # back to the legacy `response_format` parameter for older SDKs.
-            attempts.append(self._with_extra_body(payload_base, {"response": {"format": resp_format}}))
+            # 2.6-compatible first:
             attempts.append({**payload_base, "response_format": resp_format})
-            # Final fallback: drop structured output hints so the request still
-            # succeeds even if the installed SDK doesn't recognize either
-            # parameter name.
+            # Fallback to future SDKs that accept namespaced `response`:
+            attempts.append(self._with_extra_body(payload_base, {"response": {"format": resp_format}}))
+            # Last resort: drop structured constraints
             attempts.append(dict(payload_base))
         else:
             attempts.append(dict(payload_base))
@@ -1496,296 +1497,142 @@ class OpenAIClient(AbstractClient):
 
     async def generate_video(
         self,
-        prompt: VideoGenerationPrompt,
+        prompt: Union[str, Any],
         *,
-        output_directory: Optional[Path] = None,
-        mime_format: str = "video/mp4",
-        model: Optional[Union[str, OpenAIModel]] = None,
-        poll_interval: float = 5.0,
-        timeout: Optional[float] = 600.0,
-    ) -> AIMessage:
-        """Generate a video using OpenAI's Sora or Sora 2 models."""
+        model_name: str = "sora-2",        # "sora-1" or "sora-2"
+        duration: Optional[int] = None,    # seconds (if your access supports it)
+        ratio: Optional[str] = None,       # "16:9", "9:16", "1:1", etc. (mapped to aspect_ratio)
+        output_path: Optional[Union[str, Path]] = None,
+        poll_interval: float = 2.0,
+        timeout: float = 15 * 60,          # 15 minutes
+        extra: Optional[Dict[str, Any]] = None,  # pass-through for future knobs (seed/fps/style/etc.)
+    ):
+        """
+        Generate a video with Sora using the Videos API and return an AIMessage.
 
-        if not prompt or not prompt.prompt or not prompt.prompt.strip():
-            raise ValueError("Prompt text is required to generate a video with OpenAI.")
+        Notes:
+        - Requires an openai 2.6.x build that exposes `client.videos`.
+        - This function intentionally does NOT fall back to Responses for video,
+            because 2.6.0 rejects a `response` object (400 unknown_parameter).
+        """
+        start_ts = time.time()
 
-        selected_model: Union[str, OpenAIModel, None] = model or prompt.model or OpenAIModel.SORA
-        if isinstance(selected_model, Enum):
-            selected_model = selected_model.value
-        if isinstance(selected_model, OpenAIModel):
-            selected_model = selected_model.value
-        if selected_model is None:
-            selected_model = OpenAIModel.SORA.value
+        # -------- 0) Verify Videos API exists in this installed client --------
+        videos_res = getattr(self.client, "videos", None)
+        if videos_res is None:
+            import openai as _openai
+            ver = getattr(_openai, "__version__", "unknown")
+            raise RuntimeError(
+                f"openai=={ver} does not expose `client.videos`; "
+                "this build cannot generate video. Please upgrade to a build that includes the Videos API."
+            )
 
-        model_name = str(selected_model).strip()
-        normalized_model = model_name.lower()
-        allowed_models = {
-            OpenAIModel.SORA.value,
-            OpenAIModel.SORA_2.value,
-        }
-        if normalized_model not in allowed_models:
-            raise ValueError("OpenAI video generation is only supported for Sora or Sora 2 models.")
-
-        configured_dir = config.get("OPENAI_VIDEO_OUTPUT_DIR")
-        if output_directory is not None:
-            output_dir_path = Path(output_directory)
-        elif configured_dir:
-            output_dir_path = Path(configured_dir)
+        # -------- 1) Normalize prompt + build create kwargs --------
+        if isinstance(prompt, str):
+            prompt_text = prompt
+            create_kwargs: Dict[str, Any] = {"model": model_name, "prompt": prompt_text}
         else:
-            output_dir_path = BASE_DIR.joinpath("static", "generated_videos")
+            # supports objects like your VideoPrompt with `.prompt` and maybe `.options`
+            prompt_text = getattr(prompt, "prompt", None) or str(prompt)
+            create_kwargs = {"model": model_name, "prompt": prompt_text}
+            # if user supplied options, merge them
+            opts = getattr(prompt, "options", None)
+            if isinstance(opts, dict):
+                create_kwargs |= opts
 
-        video_options: Dict[str, Any] = {}
-        if prompt.aspect_ratio:
-            video_options["aspect_ratio"] = prompt.aspect_ratio
-        if prompt.duration:
-            video_options["duration"] = prompt.duration
-        if prompt.negative_prompt:
-            video_options["negative_prompt"] = prompt.negative_prompt
-        if prompt.number_of_videos and prompt.number_of_videos > 1:
-            video_options["num_videos"] = prompt.number_of_videos
+        if duration is not None:
+            create_kwargs["duration"] = duration
+        if ratio:
+            create_kwargs["aspect_ratio"] = ratio
+        if extra:
+            create_kwargs |= extra
 
-        start_time = time.time()
+        # choose output file
+        out_path = Path(output_path) if output_path else Path.cwd() / f"{int(start_ts)}_{model_name}.mp4"
 
-        async def _await_video_job(job_obj: Any) -> Any:
-            """Poll OpenAI until the async video job completes."""
-
-            videos_resource = getattr(self.client, "videos", None)
-            if videos_resource is None:
-                return job_obj
-
-            completed_states = {"succeeded", "completed", "ready", "finished"}
-            failed_states = {"failed", "cancelled", "canceled", "error", "errored"}
-
-            def _status(obj: Any) -> Optional[str]:
-                return getattr(obj, "status", None) or getattr(obj, "state", None)
-
-            status = _status(job_obj)
-            if status in completed_states:
-                return job_obj
-            if status in failed_states:
-                raise RuntimeError(f"OpenAI video generation failed with status '{status}'.")
-
-            job_id = getattr(job_obj, "id", None) or getattr(job_obj, "job_id", None)
-            if not job_id:
-                return job_obj
-
-            retrieve_callable = None
-            for attr in ("retrieve", "get", "retrieve_job", "job"):
-                candidate = getattr(videos_resource, attr, None)
-                if candidate:
-                    retrieve_callable = candidate
-                    break
-
-            jobs_resource = getattr(videos_resource, "jobs", None)
-            if retrieve_callable is None and jobs_resource is not None:
-                for attr in ("retrieve", "get"):
-                    candidate = getattr(jobs_resource, attr, None)
-                    if candidate:
-                        retrieve_callable = candidate
-                        videos_resource = jobs_resource
-                        break
-
-            if retrieve_callable is None:
-                return job_obj
-
-            deadline = (time.time() + timeout) if timeout else None
-
-            while True:
-                if deadline and time.time() > deadline:
-                    raise TimeoutError("Timed out waiting for OpenAI video generation to complete.")
-
-                await asyncio.sleep(max(0.5, poll_interval))
-
-                try:
-                    if asyncio.iscoroutinefunction(retrieve_callable):
-                        refreshed = await retrieve_callable(job_id)
-                    else:
-                        refreshed = retrieve_callable(job_id)
-                        if asyncio.iscoroutine(refreshed):
-                            refreshed = await refreshed
-                except TypeError:
-                    kwargs = {"id": job_id}
-                    try:
-                        if asyncio.iscoroutinefunction(retrieve_callable):
-                            refreshed = await retrieve_callable(**kwargs)
-                        else:
-                            refreshed = retrieve_callable(**kwargs)
-                            if asyncio.iscoroutine(refreshed):
-                                refreshed = await refreshed
-                    except Exception as exc:  # pylint: disable=broad-except
-                        self.logger.error(f"Failed to poll OpenAI video job: {exc}")
-                        return job_obj
-
-                if refreshed is None:
-                    return job_obj
-
-                status = _status(refreshed)
-                if status in failed_states:
-                    raise RuntimeError(f"OpenAI video generation failed with status '{status}'.")
-                if status in completed_states or not status:
-                    return refreshed
-
-                job_obj = refreshed
-
-        videos_resource = getattr(self.client, "videos", None)
-        responses_resource = getattr(self.client, "responses", None)
-
-        response_payload = {
-            "model": model_name,
-            "prompt": prompt.prompt,
-        }
-        if video_options:
-            response_payload.update(video_options)
-
-        final_response: Any
-
-        if videos_resource and hasattr(videos_resource, "generate"):
-            try:
-                job_response = await videos_resource.generate(**response_payload)
-            except TypeError:
-                kwargs = {k: v for k, v in response_payload.items() if k not in video_options}
-                extra_args = {"video": video_options} if video_options else {}
-                job_response = await videos_resource.generate(**kwargs, **extra_args)
-            final_response = await _await_video_job(job_response)
+        # -------- 2) Run job (prefer create_and_poll) --------
+        create_and_poll = getattr(videos_res, "create_and_poll", None)
+        if callable(create_and_poll):
+            video_obj = await create_and_poll(**create_kwargs)
         else:
-            if responses_resource is None or not hasattr(responses_resource, "create"):
-                raise RuntimeError("OpenAI client does not provide a video generation endpoint. Please update the SDK.")
+            create = getattr(videos_res, "create", None)
+            retrieve = getattr(videos_res, "retrieve", None)
+            if not callable(create) or not callable(retrieve):
+                import openai as _openai
+                ver = getattr(_openai, "__version__", "unknown")
+                raise RuntimeError(
+                    f"`client.videos` exists but lacks required methods in openai=={ver} "
+                    "(expected videos.create and videos.retrieve)."
+                )
+            job = await create(**create_kwargs)
+            vid_id = getattr(job, "id", None) or getattr(job, "video_id", None)
+            if not vid_id:
+                raise RuntimeError(f"Videos.create returned no id: {job!r}")
 
-            responses_payload = {
-                "model": model_name,
-                "modalities": ["video"],
-                "input": [
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "input_text", "text": prompt.prompt}
-                        ],
-                    }
-                ],
-            }
-            if video_options:
-                responses_payload["video"] = video_options
+            status = getattr(job, "status", None) or "queued"
+            start_poll = time.time()
+            while status in ("queued", "in_progress", "processing", "running"):
+                if (time.time() - start_poll) > timeout:
+                    raise RuntimeError(f"Video job {vid_id} timed out after {timeout}s")
+                await asyncio.sleep(poll_interval)
+                job = await retrieve(vid_id)
+                status = getattr(job, "status", None)
+            if status not in ("completed", "succeeded", "success"):
+                err = getattr(job, "error", None) or getattr(job, "last_error", None)
+                raise RuntimeError(f"Video job {vid_id} failed with status={status}, error={err}")
+            video_obj = job
 
-            attempts: List[Dict[str, Any]] = [dict(responses_payload)]
+        # -------- 3) Download the MP4 --------
+        download = getattr(videos_res, "download_content", None)
+        vid_id = getattr(video_obj, "id", None) or getattr(video_obj, "video_id", None)
+        if callable(download) and vid_id:
+            content = await download(vid_id)
+            data = await content.aread() if hasattr(content, "aread") else bytes(content)
+            out_path.write_bytes(data)
+        else:
+            url = getattr(video_obj, "url", None) or getattr(video_obj, "download_url", None)
+            if url:
+                # You can implement your own HTTP fetch here if needed
+                raise RuntimeError(
+                    "download_content() is unavailable and direct URL download isn't implemented. "
+                    "Please enable videos.download_content in your SDK."
+                )
+            raise RuntimeError("Could not download video: no download method or URL available on video object.")
 
-            modalities = responses_payload.get("modalities")
-            video_config = responses_payload.get("video")
-            if modalities or video_config:
-                migrated_payload = {
-                    k: v
-                    for k, v in responses_payload.items()
-                    if k not in {"modalities", "video"}
-                }
-                response_block: Dict[str, Any] = {}
-                if modalities:
-                    response_block["modalities"] = modalities
-                if video_config:
-                    response_block["video"] = video_config
-                if response_block:
-                    attempts.append(
-                        self._with_extra_body(migrated_payload, {"response": response_block})
-                    )
+        # -------- 4) Build saved_files + usage + raw_dump --------
+        saved_files = [{
+            "path": str(out_path),
+            "mime_type": "video/mp4",
+            "type": "video",
+            "id": vid_id,
+            "model": getattr(video_obj, "model", model_name),
+            "duration": getattr(video_obj, "duration", None),
+        }]
 
-            final_response = await self._call_responses_create(attempts)
+        # usage is typically token-based for text; keep a minimal structure for consistency
+        usage = getattr(video_obj, "usage", None) or {
+            "total_tokens": 0,
+            "input_tokens": 0,
+            "output_tokens": 0,
+        }
 
-        video_bytes: List[bytes] = []
-
-        def _decode_b64(value: Any) -> Optional[bytes]:
-            if not isinstance(value, str):
-                return None
-            try:
-                return base64.b64decode(value)
-            except Exception:  # pylint: disable=broad-except
-                return None
-
-        async def _collect_video_bytes(node: Any) -> None:
-            if node is None:
-                return
-
-            if isinstance(node, dict):
-                for key in ("b64_json", "b64_mp4", "base64", "video", "data"):
-                    if key in node and isinstance(node[key], str):
-                        decoded = _decode_b64(node[key])
-                        if decoded:
-                            video_bytes.append(decoded)
-
-                video_node = node.get("video") or node.get("output_video") or node.get("asset")
-                if isinstance(video_node, dict):
-                    await _collect_video_bytes(video_node)
-
-                file_identifier = None
-                if isinstance(node.get("file_id"), str):
-                    file_identifier = node["file_id"]
-                elif isinstance(node.get("id"), str) and node.get("mime_type", "").startswith("video"):
-                    file_identifier = node["id"]
-                elif isinstance(node.get("file"), str) and node.get("mime_type", "").startswith("video"):
-                    file_identifier = node["file"]
-
-                if file_identifier:
-                    data = await self._download_openai_file(file_identifier)
-                    if data:
-                        video_bytes.append(data)
-
-                for value in node.values():
-                    await _collect_video_bytes(value)
-
-            elif isinstance(node, list):
-                for item in node:
-                    await _collect_video_bytes(item)
-
-        raw_dump: Optional[Dict[str, Any]] = None
-        if hasattr(final_response, "model_dump") and callable(final_response.model_dump):
-            try:
-                raw_dump = final_response.model_dump()
-            except TypeError:
-                try:
-                    raw_dump = final_response.model_dump(mode="python")
-                except Exception:  # pylint: disable=broad-except
-                    raw_dump = None
-
-        if raw_dump is None and hasattr(final_response, "__dict__"):
-            raw_dump = {
-                k: v for k, v in final_response.__dict__.items() if not k.startswith("_")
-            }
-
-        await _collect_video_bytes(raw_dump if raw_dump is not None else final_response)
-
-        if not video_bytes:
-            raise RuntimeError("OpenAI did not return any video content for the provided prompt.")
-
-        saved_files: List[Path] = []
-        for index, payload in enumerate(video_bytes, start=1):
-            if not isinstance(payload, (bytes, bytearray)):
-                continue
-            file_path = self._save_video_file(bytes(payload), output_dir_path, video_number=index, mime_format=mime_format)
-            saved_files.append(file_path)
-
-        if not saved_files:
-            raise RuntimeError("Failed to persist OpenAI video generation results.")
-
-        execution_time = time.time() - start_time
-        usage = CompletionUsage(
-            prompt_tokens=len(prompt.prompt or ""),
-            total_time=execution_time,
-            extra_usage={
-                "videos_requested": prompt.number_of_videos,
-                "aspect_ratio": prompt.aspect_ratio,
-                "duration": prompt.duration,
-                "negative_prompt": prompt.negative_prompt,
-                "model": model_name,
-            },
+        # serialize the raw object if it’s a Pydantic-like model
+        raw_dump = (
+            video_obj.model_dump() if hasattr(video_obj, "model_dump")
+            else getattr(video_obj, "__dict__", video_obj)
         )
 
-        ai_message = AIMessageFactory.from_video(
-            output=raw_dump or final_response,
+        execution_time = time.time() - start_ts
+
+        # -------- 5) Return AIMessage (drop-in) --------
+        return AIMessageFactory.from_video(
+            output=raw_dump or video_obj,
             files=saved_files,
             media=saved_files,
-            input=prompt.prompt,
+            input=prompt_text,
             model=model_name,
             provider="openai",
             usage=usage,
             response_time=execution_time,
             raw_response=raw_dump,
         )
-
-        return ai_message

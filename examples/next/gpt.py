@@ -150,7 +150,7 @@ async def example_video_generation():
                 "A timelapse of a city skyline transitioning from dusk to night, "
                 "with neon lights gradually illuminating the streets."
             ),
-            model=OpenAIModel.SORA.value,
+            model=OpenAIModel.SORA_2,
             number_of_videos=1,
             aspect_ratio="16:9",
             duration=10,
@@ -164,3 +164,4 @@ async def example_video_generation():
 
 if __name__ == "__main__":
     asyncio.run(example_usage())
+    # asyncio.run(example_video_generation())
