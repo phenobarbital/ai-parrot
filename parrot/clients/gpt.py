@@ -203,6 +203,7 @@ class OpenAIClient(AbstractClient):
         ms = (model_str or "").strip()
         return ms in RESPONSES_ONLY_MODELS
 
+
     def _prepare_responses_args(self, *, messages, args):
         """
         Map your existing args/messages into Responses API fields.
@@ -211,39 +212,145 @@ class OpenAIClient(AbstractClient):
         - Keep the rest as chat-style list under `input`
         - Pass tools/response_format/temperature/max_output_tokens if provided
         """
+
+        def _as_response_content(role: str, content: Any, message: Dict[str, Any]) -> List[Dict[str, Any]]:
+            """Translate chat `content` into Responses-style content blocks."""
+
+            def _normalize_text(text_value: Any, *, text_type: str) -> Optional[Dict[str, Any]]:
+                if text_value is None:
+                    return None
+                text = text_value if isinstance(text_value, str) else str(text_value)
+                if not text:
+                    return None
+                return {"type": text_type, "text": text}
+
+            if role == "tool":
+                tool_call_id = message.get("tool_call_id")
+                # Responses expects tool output blocks
+                if isinstance(content, list):
+                    normalized_output = "\n".join(
+                        str(part) if not isinstance(part, dict) else str(part.get("text") or part.get("output") or "")
+                        for part in content
+                    )
+                else:
+                    normalized_output = "" if content is None else str(content)
+
+                block = {
+                    "type": "tool_output",
+                    "tool_call_id": tool_call_id,
+                    "output": normalized_output,
+                }
+                if message.get("name"):
+                    block["name"] = message["name"]
+                return [block]
+
+            text_type = "input_text" if role in {"user", "tool_user"} else "output_text"
+
+            parts: List[Dict[str, Any]] = []
+
+            def _append_text(value: Any):
+                block = _normalize_text(value, text_type=text_type)
+                if block:
+                    parts.append(block)
+
+            if isinstance(content, list):
+                for item in content:
+                    if isinstance(item, dict):
+                        item_type = item.get("type")
+
+                        if item_type in {
+                            "input_text",
+                            "output_text",
+                            "input_image",
+                            "input_audio",
+                            "tool_output",
+                            "tool_call",
+                            "input_file",
+                            "computer_screenshot",
+                            "summary_text",
+                        }:
+                            parts.append(item)
+                            continue
+
+                        if item_type == "text":
+                            _append_text(item.get("text"))
+                            continue
+
+                        if item_type is None and {"id", "function"}.issubset(item.keys()):
+                            parts.append(
+                                {
+                                    "type": "tool_call",
+                                    "id": item.get("id"),
+                                    "name": (item.get("function") or {}).get("name"),
+                                    "arguments": (item.get("function") or {}).get("arguments"),
+                                }
+                            )
+                            continue
+
+                        parts.append(item)
+                    else:
+                        _append_text(item)
+            else:
+                _append_text(content)
+
+            if role == "assistant" and message.get("tool_calls"):
+                for tool_call in message["tool_calls"]:
+                    if isinstance(tool_call, dict):
+                        parts.append(
+                            {
+                                "type": "tool_call",
+                                "id": tool_call.get("id"),
+                                "name": (tool_call.get("function") or {}).get("name"),
+                                "arguments": (tool_call.get("function") or {}).get("arguments"),
+                            }
+                        )
+
+            return parts
+
         instructions = None
         input_msgs = []
         for m in messages:
             role = m.get("role")
             if role == "system" and instructions is None:
-                instructions = m.get("content")
-            else:
-                # Responses accepts chat-like role/content items
-                input_msgs.append({"role": role, "content": m.get("content")})
+                sys_content = m.get("content")
+                if isinstance(sys_content, list):
+                    instructions = " ".join(
+                        part.get("text", "") if isinstance(part, dict) else str(part)
+                        for part in sys_content
+                    ).strip()
+                else:
+                    instructions = sys_content
+                continue
+
+            content_blocks = _as_response_content(role, m.get("content"), m)
+            msg_payload: Dict[str, Any] = {"role": role, "content": content_blocks}
+
+            if m.get("tool_calls"):
+                msg_payload["tool_calls"] = m["tool_calls"]
+            if m.get("tool_call_id"):
+                msg_payload["tool_call_id"] = m["tool_call_id"]
+            if m.get("name"):
+                msg_payload["name"] = m["name"]
+
+            input_msgs.append(msg_payload)
 
         req = {
             "instructions": instructions,
             "input": input_msgs,
         }
-        # Translate selected Chat args to Responses fields
+
         if "tools" in args:
             req["tools"] = args["tools"]
         if "tool_choice" in args:
             req["tool_choice"] = args["tool_choice"]
         if "response_format" in args:
             req["response_format"] = args["response_format"]
-        # temperature/max_tokens mapping:
         if "temperature" in args and args["temperature"] is not None:
             req["temperature"] = args["temperature"]
-        # Responses uses max_output_tokens (not max_tokens)
         if "max_tokens" in args and args["max_tokens"] is not None:
             req["max_output_tokens"] = args["max_tokens"]
-
-        # Parallel tool calls hint (Responses will parallelize tool calls internally;
-        # we still keep your external loop for compatibility)
         if "parallel_tool_calls" in args:
             req["parallel_tool_calls"] = args["parallel_tool_calls"]
-
         return req
 
     async def _responses_completion(self, *, model: str, messages, **args):
