@@ -344,7 +344,14 @@ class OpenAIClient(AbstractClient):
         if "tool_choice" in args:
             req["tool_choice"] = args["tool_choice"]
         if "response_format" in args:
-            req["response_format"] = args["response_format"]
+            resp_format = args["response_format"]
+            if resp_format:
+                # The Responses SDK (>=2.6.0) expects structured output under the
+                # `response.format` namespace rather than the chat-style
+                # `response_format` parameter. Translate proactively so we avoid
+                # "unexpected keyword" errors when calling
+                # `AsyncResponses.create`.
+                req["response"] = {"format": resp_format}
         if "temperature" in args and args["temperature"] is not None:
             req["temperature"] = args["temperature"]
         if "max_tokens" in args and args["max_tokens"] is not None:
@@ -360,11 +367,24 @@ class OpenAIClient(AbstractClient):
         `.content: str` and `.tool_calls: list` (each item has `.id` and `.function.{name,arguments}`).
         """
         # 1) Build request payload from chat-like messages/args
+        resp_format = args.get("response_format")
         req = self._prepare_responses_args(messages=messages, args=args)
         req["model"] = model
 
         # 2) Call Responses API
-        resp = await self.client.responses.create(**req)
+        try:
+            resp = await self.client.responses.create(**req)
+        except TypeError as exc:
+            # Older SDKs (<2.6) still expect the legacy `response_format`
+            # parameter instead of the new `response.format` namespace. If we
+            # detect that shape rejection, retry with the old argument for
+            # maximum compatibility.
+            if "unexpected keyword argument 'response'" in str(exc) and resp_format:
+                req.pop("response", None)
+                req["response_format"] = resp_format
+                resp = await self.client.responses.create(**req)
+            else:
+                raise
 
         # 3) Extract best-effort text
         output_text = getattr(resp, "output_text", None)
