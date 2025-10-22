@@ -343,15 +343,6 @@ class OpenAIClient(AbstractClient):
             req["tools"] = args["tools"]
         if "tool_choice" in args:
             req["tool_choice"] = args["tool_choice"]
-        if "response_format" in args:
-            resp_format = args["response_format"]
-            if resp_format:
-                # The Responses SDK (>=2.6.0) expects structured output under the
-                # `response.format` namespace rather than the chat-style
-                # `response_format` parameter. Translate proactively so we avoid
-                # "unexpected keyword" errors when calling
-                # `AsyncResponses.create`.
-                req["response"] = {"format": resp_format}
         if "temperature" in args and args["temperature"] is not None:
             req["temperature"] = args["temperature"]
         if "max_tokens" in args and args["max_tokens"] is not None:
@@ -372,19 +363,37 @@ class OpenAIClient(AbstractClient):
         req["model"] = model
 
         # 2) Call Responses API
-        try:
-            resp = await self.client.responses.create(**req)
-        except TypeError as exc:
-            # Older SDKs (<2.6) still expect the legacy `response_format`
-            # parameter instead of the new `response.format` namespace. If we
-            # detect that shape rejection, retry with the old argument for
-            # maximum compatibility.
-            if "unexpected keyword argument 'response'" in str(exc) and resp_format:
-                req.pop("response", None)
-                req["response_format"] = resp_format
-                resp = await self.client.responses.create(**req)
-            else:
-                raise
+        payload_base = dict(req)
+        payload_base.pop("response", None)
+        payload_base.pop("response_format", None)
+
+        attempts: List[Dict[str, Any]] = []
+        if resp_format:
+            # Prefer the newer `response={"format": ...}` namespace but fall
+            # back to the legacy `response_format` parameter for older SDKs.
+            attempts.append({**payload_base, "response": {"format": resp_format}})
+            attempts.append({**payload_base, "response_format": resp_format})
+            # Final fallback: drop structured output hints so the request still
+            # succeeds even if the installed SDK doesn't recognize either
+            # parameter name.
+            attempts.append(payload_base)
+        else:
+            attempts.append(payload_base)
+
+        resp = None
+        last_exc: Optional[TypeError] = None
+        for payload in attempts:
+            try:
+                resp = await self.client.responses.create(**payload)
+                break
+            except TypeError as exc:
+                last_exc = exc
+                continue
+
+        if resp is None:
+            if last_exc is not None:
+                raise last_exc
+            raise RuntimeError("OpenAI responses.create call failed without response")
 
         # 3) Extract best-effort text
         output_text = getattr(resp, "output_text", None)
