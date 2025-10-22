@@ -5,10 +5,12 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 import urllib.parse
 import string
+import tempfile
 import aiohttp
 from pydantic import BaseModel, Field, field_validator
 from googleapiclient.discovery import build
 from navconfig import config
+from markitdown import MarkItDown
 from ...conf import GOOGLE_API_KEY
 from ..abstract import AbstractTool
 
@@ -126,9 +128,35 @@ class GoogleSearchTool(AbstractTool):
             async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
                 async with session.get(url) as response:
                     if response.status == 200:
-                        content = await response.text()
-                        # Basic HTML content extraction (you might want to use BeautifulSoup here)
-                        return content[:5000]  # Limit content size
+                        # Check if content is a PDF
+                        content_type = response.headers.get('Content-Type', '').lower()
+                        is_pdf = url.lower().endswith('.pdf') or 'application/pdf' in content_type
+
+                        if is_pdf:
+                            # Use markitdown for PDF content extraction
+                            try:
+                                # Download PDF content to a temporary file
+                                pdf_content = await response.read()
+                                with tempfile.NamedTemporaryFile(mode='wb', suffix='.pdf', delete=False) as tmp_file:
+                                    tmp_file.write(pdf_content)
+                                    tmp_file_path = tmp_file.name
+
+                                # Extract content using markitdown
+                                markitdown = MarkItDown()
+                                result = markitdown.convert(tmp_file_path)
+
+                                # Clean up temporary file
+                                Path(tmp_file_path).unlink(missing_ok=True)
+
+                                # Return extracted text content (limited size)
+                                return result.text_content[:5000] if result.text_content else "PDF content could not be extracted"
+                            except Exception as pdf_error:
+                                return f"Error extracting PDF content: {str(pdf_error)}"
+                        else:
+                            # Regular text/HTML content
+                            content = await response.text()
+                            # Basic HTML content extraction (you might want to use BeautifulSoup here)
+                            return content[:5000]  # Limit content size
                     else:
                         return f"Error: HTTP {response.status}"
         except Exception as e:
