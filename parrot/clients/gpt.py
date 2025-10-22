@@ -383,6 +383,8 @@ class OpenAIClient(AbstractClient):
         #    We shape them to look like Chat Completions tool_calls:
         #    {"id":..., "function": {"name": ..., "arguments": "<json string>"}}
         norm_tool_calls = []
+        finish_reason = None
+        stop_reason = None
         for item in getattr(resp, "output", []) or []:
             for part in getattr(item, "content", []) or []:
                 if isinstance(part, dict) and part.get("type") == "tool_call":
@@ -408,6 +410,13 @@ class OpenAIClient(AbstractClient):
 
                     norm_tool_calls.append(_ToolCall(_id, _Fn(_name, _args)))
 
+            finish_reason = finish_reason or getattr(item, "finish_reason", None)
+            if isinstance(item, dict):
+                finish_reason = finish_reason or item.get("finish_reason")
+            stop_reason = stop_reason or getattr(item, "stop_reason", None)
+            if isinstance(item, dict):
+                stop_reason = stop_reason or item.get("stop_reason")
+
         # 5) Build a Chat-like container
         class _Msg:
             def __init__(self, content, tool_calls):
@@ -415,18 +424,25 @@ class OpenAIClient(AbstractClient):
                 self.tool_calls = tool_calls
 
         class _Choice:
-            def __init__(self, message):
+            def __init__(self, message, *, finish_reason=None, stop_reason=None):
                 self.message = message
+                self.finish_reason = finish_reason
+                self.stop_reason = stop_reason
 
         class _CompatResp:
-            def __init__(self, raw, message):
+            def __init__(self, raw, message, *, finish_reason=None, stop_reason=None):
                 self.raw = raw
-                self.choices = [_Choice(message)]
+                self.choices = [_Choice(message, finish_reason=finish_reason, stop_reason=stop_reason)]
                 # Usage may or may not exist; keep attribute for downstream code
                 self.usage = getattr(raw, "usage", None)
 
         message = _Msg(output_text or "", norm_tool_calls)
-        return _CompatResp(resp, message)
+        return _CompatResp(
+            resp,
+            message,
+            finish_reason=finish_reason,
+            stop_reason=stop_reason,
+        )
 
     async def ask(
         self,

@@ -360,14 +360,17 @@ class AIMessageFactory:
                     )
                 )
 
+        finish_reason = getattr(response.choices[0], "finish_reason", None)
+        stop_reason = getattr(response.choices[0], "stop_reason", None)
+
         return AIMessage(
             input=input_text,
             output=structured_output if structured_output else message.content,
             model=model,
             provider="openai",
             usage=CompletionUsage.from_openai(response.usage),
-            stop_reason=response.choices[0].finish_reason,
-            finish_reason=response.choices[0].finish_reason,
+            stop_reason=stop_reason or finish_reason,
+            finish_reason=finish_reason,
             tool_calls=tool_calls,
             user_id=user_id,
             session_id=session_id,
