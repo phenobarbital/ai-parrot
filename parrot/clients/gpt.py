@@ -351,6 +351,19 @@ class OpenAIClient(AbstractClient):
             req["parallel_tool_calls"] = args["parallel_tool_calls"]
         return req
 
+    @staticmethod
+    def _with_extra_body(payload: Dict[str, Any], extra_body: Dict[str, Any]) -> Dict[str, Any]:
+        merged = dict(payload)
+        existing_raw = merged.pop("extra_body", None)
+        if isinstance(existing_raw, dict):
+            existing = dict(existing_raw)
+        else:
+            existing = {}
+        existing.update(extra_body)
+        if existing:
+            merged["extra_body"] = existing
+        return merged
+
     async def _call_responses_create(self, payloads: Iterable[Dict[str, Any]]):
         last_exc: Optional[TypeError] = None
         for payload in payloads:
@@ -358,6 +371,17 @@ class OpenAIClient(AbstractClient):
                 return await self.client.responses.create(**payload)
             except TypeError as exc:
                 last_exc = exc
+
+                if isinstance(payload, dict) and "response" in payload:
+                    response_block = payload.get("response")
+                    alt_payload = dict(payload)
+                    alt_payload.pop("response", None)
+                    alt_payload = self._with_extra_body(alt_payload, {"response": response_block})
+                    try:
+                        return await self.client.responses.create(**alt_payload)
+                    except TypeError as exc2:
+                        last_exc = exc2
+                        continue
                 continue
 
         if last_exc is not None:
@@ -384,14 +408,14 @@ class OpenAIClient(AbstractClient):
         if resp_format:
             # Prefer the newer `response={"format": ...}` namespace but fall
             # back to the legacy `response_format` parameter for older SDKs.
-            attempts.append({**payload_base, "response": {"format": resp_format}})
+            attempts.append(self._with_extra_body(payload_base, {"response": {"format": resp_format}}))
             attempts.append({**payload_base, "response_format": resp_format})
             # Final fallback: drop structured output hints so the request still
             # succeeds even if the installed SDK doesn't recognize either
             # parameter name.
-            attempts.append(payload_base)
+            attempts.append(dict(payload_base))
         else:
-            attempts.append(payload_base)
+            attempts.append(dict(payload_base))
 
         resp = await self._call_responses_create(attempts)
 
@@ -1652,14 +1676,15 @@ class OpenAIClient(AbstractClient):
                     for k, v in responses_payload.items()
                     if k not in {"modalities", "video"}
                 }
-                response_block: Dict[str, Any] = dict(migrated_payload.get("response") or {})
+                response_block: Dict[str, Any] = {}
                 if modalities:
                     response_block["modalities"] = modalities
                 if video_config:
                     response_block["video"] = video_config
                 if response_block:
-                    migrated_payload["response"] = response_block
-                attempts.append(migrated_payload)
+                    attempts.append(
+                        self._with_extra_body(migrated_payload, {"response": response_block})
+                    )
 
             final_response = await self._call_responses_create(attempts)
 
