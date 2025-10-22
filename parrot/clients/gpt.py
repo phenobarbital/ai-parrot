@@ -6,13 +6,14 @@ import mimetypes
 import uuid
 from pathlib import Path
 import time
+import asyncio
 from logging import getLogger
 from enum import Enum
 from PIL import Image
 import pytesseract
 from pydantic import BaseModel, ValidationError
 from datamodel.parsers.json import json_decoder, json_decoder  # pylint: disable=E0611 # noqa
-from navconfig import config
+from navconfig import config, BASE_DIR
 from tenacity import (
     AsyncRetrying,
     stop_after_attempt,
@@ -26,7 +27,8 @@ from ..models import (
     AIMessage,
     AIMessageFactory,
     ToolCall,
-    CompletionUsage
+    CompletionUsage,
+    VideoGenerationPrompt
 )
 from ..models.openai import OpenAIModel
 from ..models.outputs import (
@@ -89,6 +91,84 @@ class OpenAIClient(AbstractClient):
         """Initialize the client context."""
         # OpenAI client doesn't need explicit session management like aiohttp
         return self
+
+    async def _download_openai_file(self, file_id: str) -> Optional[bytes]:
+        """Download a file from OpenAI's Files API handling various SDK shapes."""
+        if not file_id:
+            return None
+
+        files_resource = getattr(self.client, "files", None)
+        if files_resource is None:
+            return None
+
+        candidate_methods = [
+            getattr(files_resource, "content", None),
+            getattr(files_resource, "retrieve_content", None),
+            getattr(files_resource, "download", None),
+        ]
+
+        async def _invoke(method, *args, **kwargs):
+            if asyncio.iscoroutinefunction(method):
+                return await method(*args, **kwargs)
+            result = method(*args, **kwargs)
+            if asyncio.iscoroutine(result):
+                result = await result
+            return result
+
+        arg_permutations = [
+            ((file_id,), {}),
+            (tuple(), {"id": file_id}),
+            (tuple(), {"file_id": file_id}),
+            (tuple(), {"file": file_id}),
+        ]
+
+        for method in candidate_methods:
+            if method is None:
+                continue
+
+            result = None
+            for args, kwargs in arg_permutations:
+                try:
+                    result = await _invoke(method, *args, **kwargs)
+                    break
+                except TypeError:
+                    continue
+                except Exception:  # pylint: disable=broad-except
+                    result = None
+                    continue
+
+            if result is None:
+                continue
+
+            if isinstance(result, bytes):
+                return result
+
+            if isinstance(result, dict):
+                if isinstance(result.get("data"), bytes):
+                    return result["data"]
+                if isinstance(result.get("content"), bytes):
+                    return result["content"]
+
+            if hasattr(result, "content"):
+                content = result.content
+                if asyncio.iscoroutine(content):
+                    content = await content
+                if isinstance(content, bytes):
+                    return content
+
+            if hasattr(result, "read"):
+                read_method = result.read
+                data = await read_method() if asyncio.iscoroutinefunction(read_method) else read_method()
+                if isinstance(data, bytes):
+                    return data
+
+            if hasattr(result, "body") and hasattr(result.body, "read"):
+                read_method = result.body.read
+                data = await read_method() if asyncio.iscoroutinefunction(read_method) else read_method()
+                if isinstance(data, bytes):
+                    return data
+
+        return None
 
     async def _upload_file(
         self,
@@ -1236,3 +1316,279 @@ class OpenAIClient(AbstractClient):
                 )
             )
         return out
+
+    async def generate_video(
+        self,
+        prompt: VideoGenerationPrompt,
+        *,
+        output_directory: Optional[Path] = None,
+        mime_format: str = "video/mp4",
+        model: Optional[Union[str, OpenAIModel]] = None,
+        poll_interval: float = 5.0,
+        timeout: Optional[float] = 600.0,
+    ) -> AIMessage:
+        """Generate a video using OpenAI's Sora or Sora 2 models."""
+
+        if not prompt or not prompt.prompt or not prompt.prompt.strip():
+            raise ValueError("Prompt text is required to generate a video with OpenAI.")
+
+        selected_model: Union[str, OpenAIModel, None] = model or prompt.model or OpenAIModel.SORA
+        if isinstance(selected_model, Enum):
+            selected_model = selected_model.value
+        if isinstance(selected_model, OpenAIModel):
+            selected_model = selected_model.value
+        if selected_model is None:
+            selected_model = OpenAIModel.SORA.value
+
+        model_name = str(selected_model).strip()
+        normalized_model = model_name.lower()
+        allowed_models = {
+            OpenAIModel.SORA.value,
+            OpenAIModel.SORA_2.value,
+        }
+        if normalized_model not in allowed_models:
+            raise ValueError("OpenAI video generation is only supported for Sora or Sora 2 models.")
+
+        configured_dir = config.get("OPENAI_VIDEO_OUTPUT_DIR")
+        if output_directory is not None:
+            output_dir_path = Path(output_directory)
+        elif configured_dir:
+            output_dir_path = Path(configured_dir)
+        else:
+            output_dir_path = BASE_DIR.joinpath("static", "generated_videos")
+
+        video_options: Dict[str, Any] = {}
+        if prompt.aspect_ratio:
+            video_options["aspect_ratio"] = prompt.aspect_ratio
+        if prompt.duration:
+            video_options["duration"] = prompt.duration
+        if prompt.negative_prompt:
+            video_options["negative_prompt"] = prompt.negative_prompt
+        if prompt.number_of_videos and prompt.number_of_videos > 1:
+            video_options["num_videos"] = prompt.number_of_videos
+
+        start_time = time.time()
+
+        async def _await_video_job(job_obj: Any) -> Any:
+            """Poll OpenAI until the async video job completes."""
+
+            videos_resource = getattr(self.client, "videos", None)
+            if videos_resource is None:
+                return job_obj
+
+            completed_states = {"succeeded", "completed", "ready", "finished"}
+            failed_states = {"failed", "cancelled", "canceled", "error", "errored"}
+
+            def _status(obj: Any) -> Optional[str]:
+                return getattr(obj, "status", None) or getattr(obj, "state", None)
+
+            status = _status(job_obj)
+            if status in completed_states:
+                return job_obj
+            if status in failed_states:
+                raise RuntimeError(f"OpenAI video generation failed with status '{status}'.")
+
+            job_id = getattr(job_obj, "id", None) or getattr(job_obj, "job_id", None)
+            if not job_id:
+                return job_obj
+
+            retrieve_callable = None
+            for attr in ("retrieve", "get", "retrieve_job", "job"):
+                candidate = getattr(videos_resource, attr, None)
+                if candidate:
+                    retrieve_callable = candidate
+                    break
+
+            jobs_resource = getattr(videos_resource, "jobs", None)
+            if retrieve_callable is None and jobs_resource is not None:
+                for attr in ("retrieve", "get"):
+                    candidate = getattr(jobs_resource, attr, None)
+                    if candidate:
+                        retrieve_callable = candidate
+                        videos_resource = jobs_resource
+                        break
+
+            if retrieve_callable is None:
+                return job_obj
+
+            deadline = (time.time() + timeout) if timeout else None
+
+            while True:
+                if deadline and time.time() > deadline:
+                    raise TimeoutError("Timed out waiting for OpenAI video generation to complete.")
+
+                await asyncio.sleep(max(0.5, poll_interval))
+
+                try:
+                    if asyncio.iscoroutinefunction(retrieve_callable):
+                        refreshed = await retrieve_callable(job_id)
+                    else:
+                        refreshed = retrieve_callable(job_id)
+                        if asyncio.iscoroutine(refreshed):
+                            refreshed = await refreshed
+                except TypeError:
+                    kwargs = {"id": job_id}
+                    try:
+                        if asyncio.iscoroutinefunction(retrieve_callable):
+                            refreshed = await retrieve_callable(**kwargs)
+                        else:
+                            refreshed = retrieve_callable(**kwargs)
+                            if asyncio.iscoroutine(refreshed):
+                                refreshed = await refreshed
+                    except Exception as exc:  # pylint: disable=broad-except
+                        self.logger.error(f"Failed to poll OpenAI video job: {exc}")
+                        return job_obj
+
+                if refreshed is None:
+                    return job_obj
+
+                status = _status(refreshed)
+                if status in failed_states:
+                    raise RuntimeError(f"OpenAI video generation failed with status '{status}'.")
+                if status in completed_states or not status:
+                    return refreshed
+
+                job_obj = refreshed
+
+        videos_resource = getattr(self.client, "videos", None)
+        responses_resource = getattr(self.client, "responses", None)
+
+        response_payload = {
+            "model": model_name,
+            "prompt": prompt.prompt,
+        }
+        if video_options:
+            response_payload.update(video_options)
+
+        final_response: Any
+
+        if videos_resource and hasattr(videos_resource, "generate"):
+            try:
+                job_response = await videos_resource.generate(**response_payload)
+            except TypeError:
+                kwargs = {k: v for k, v in response_payload.items() if k not in video_options}
+                extra_args = {"video": video_options} if video_options else {}
+                job_response = await videos_resource.generate(**kwargs, **extra_args)
+            final_response = await _await_video_job(job_response)
+        else:
+            if responses_resource is None or not hasattr(responses_resource, "create"):
+                raise RuntimeError("OpenAI client does not provide a video generation endpoint. Please update the SDK.")
+
+            responses_payload = {
+                "model": model_name,
+                "modalities": ["video"],
+                "input": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "input_text", "text": prompt.prompt}
+                        ],
+                    }
+                ],
+            }
+            if video_options:
+                responses_payload["video"] = video_options
+
+            final_response = await responses_resource.create(**responses_payload)
+
+        video_bytes: List[bytes] = []
+
+        def _decode_b64(value: Any) -> Optional[bytes]:
+            if not isinstance(value, str):
+                return None
+            try:
+                return base64.b64decode(value)
+            except Exception:  # pylint: disable=broad-except
+                return None
+
+        async def _collect_video_bytes(node: Any) -> None:
+            if node is None:
+                return
+
+            if isinstance(node, dict):
+                for key in ("b64_json", "b64_mp4", "base64", "video", "data"):
+                    if key in node and isinstance(node[key], str):
+                        decoded = _decode_b64(node[key])
+                        if decoded:
+                            video_bytes.append(decoded)
+
+                video_node = node.get("video") or node.get("output_video") or node.get("asset")
+                if isinstance(video_node, dict):
+                    await _collect_video_bytes(video_node)
+
+                file_identifier = None
+                if isinstance(node.get("file_id"), str):
+                    file_identifier = node["file_id"]
+                elif isinstance(node.get("id"), str) and node.get("mime_type", "").startswith("video"):
+                    file_identifier = node["id"]
+                elif isinstance(node.get("file"), str) and node.get("mime_type", "").startswith("video"):
+                    file_identifier = node["file"]
+
+                if file_identifier:
+                    data = await self._download_openai_file(file_identifier)
+                    if data:
+                        video_bytes.append(data)
+
+                for value in node.values():
+                    await _collect_video_bytes(value)
+
+            elif isinstance(node, list):
+                for item in node:
+                    await _collect_video_bytes(item)
+
+        raw_dump: Optional[Dict[str, Any]] = None
+        if hasattr(final_response, "model_dump") and callable(final_response.model_dump):
+            try:
+                raw_dump = final_response.model_dump()
+            except TypeError:
+                try:
+                    raw_dump = final_response.model_dump(mode="python")
+                except Exception:  # pylint: disable=broad-except
+                    raw_dump = None
+
+        if raw_dump is None and hasattr(final_response, "__dict__"):
+            raw_dump = {
+                k: v for k, v in final_response.__dict__.items() if not k.startswith("_")
+            }
+
+        await _collect_video_bytes(raw_dump if raw_dump is not None else final_response)
+
+        if not video_bytes:
+            raise RuntimeError("OpenAI did not return any video content for the provided prompt.")
+
+        saved_files: List[Path] = []
+        for index, payload in enumerate(video_bytes, start=1):
+            if not isinstance(payload, (bytes, bytearray)):
+                continue
+            file_path = self._save_video_file(bytes(payload), output_dir_path, video_number=index, mime_format=mime_format)
+            saved_files.append(file_path)
+
+        if not saved_files:
+            raise RuntimeError("Failed to persist OpenAI video generation results.")
+
+        execution_time = time.time() - start_time
+        usage = CompletionUsage(
+            prompt_tokens=len(prompt.prompt or ""),
+            total_time=execution_time,
+            extra_usage={
+                "videos_requested": prompt.number_of_videos,
+                "aspect_ratio": prompt.aspect_ratio,
+                "duration": prompt.duration,
+                "negative_prompt": prompt.negative_prompt,
+                "model": model_name,
+            },
+        )
+
+        ai_message = AIMessageFactory.from_video(
+            output=raw_dump or final_response,
+            files=saved_files,
+            media=saved_files,
+            input=prompt.prompt,
+            model=model_name,
+            provider="openai",
+            usage=usage,
+            response_time=execution_time,
+            raw_response=raw_dump,
+        )
+
+        return ai_message
