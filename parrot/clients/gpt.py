@@ -351,6 +351,19 @@ class OpenAIClient(AbstractClient):
             req["parallel_tool_calls"] = args["parallel_tool_calls"]
         return req
 
+    async def _call_responses_create(self, payloads: Iterable[Dict[str, Any]]):
+        last_exc: Optional[TypeError] = None
+        for payload in payloads:
+            try:
+                return await self.client.responses.create(**payload)
+            except TypeError as exc:
+                last_exc = exc
+                continue
+
+        if last_exc is not None:
+            raise last_exc
+        raise RuntimeError("OpenAI responses.create call failed without response")
+
     async def _responses_completion(self, *, model: str, messages, **args):
         """
         Adapter around OpenAI Responses API that mimics Chat Completions:
@@ -380,20 +393,7 @@ class OpenAIClient(AbstractClient):
         else:
             attempts.append(payload_base)
 
-        resp = None
-        last_exc: Optional[TypeError] = None
-        for payload in attempts:
-            try:
-                resp = await self.client.responses.create(**payload)
-                break
-            except TypeError as exc:
-                last_exc = exc
-                continue
-
-        if resp is None:
-            if last_exc is not None:
-                raise last_exc
-            raise RuntimeError("OpenAI responses.create call failed without response")
+        resp = await self._call_responses_create(attempts)
 
         # 3) Extract best-effort text
         output_text = getattr(resp, "output_text", None)
@@ -1642,7 +1642,26 @@ class OpenAIClient(AbstractClient):
             if video_options:
                 responses_payload["video"] = video_options
 
-            final_response = await responses_resource.create(**responses_payload)
+            attempts: List[Dict[str, Any]] = [dict(responses_payload)]
+
+            modalities = responses_payload.get("modalities")
+            video_config = responses_payload.get("video")
+            if modalities or video_config:
+                migrated_payload = {
+                    k: v
+                    for k, v in responses_payload.items()
+                    if k not in {"modalities", "video"}
+                }
+                response_block: Dict[str, Any] = dict(migrated_payload.get("response") or {})
+                if modalities:
+                    response_block["modalities"] = modalities
+                if video_config:
+                    response_block["video"] = video_config
+                if response_block:
+                    migrated_payload["response"] = response_block
+                attempts.append(migrated_payload)
+
+            final_response = await self._call_responses_create(attempts)
 
         video_bytes: List[bytes] = []
 
