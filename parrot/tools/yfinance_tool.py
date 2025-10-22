@@ -1,11 +1,8 @@
 """YFinance tool for retrieving market data via Yahoo Finance."""
-
 from __future__ import annotations
-
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Literal, Union
-
 import numpy as np
 import pandas as pd
 import yfinance as yf
@@ -69,10 +66,10 @@ class YFinanceArgs(AbstractToolArgsSchema):
     @field_validator("ticker")
     @classmethod
     def normalize_ticker(cls, value: str) -> str:
-        ticker = value.strip().upper()
-        if not ticker:
-            raise ValueError("Ticker symbol cannot be empty")
-        return ticker
+        if (ticker := value.strip().upper()):
+            return ticker
+        raise ValueError("Ticker symbol cannot be empty")
+
 
 
 class YFinanceTool(AbstractTool):
@@ -94,7 +91,7 @@ class YFinanceTool(AbstractTool):
         ticker = yf.Ticker(args.ticker)
         action = args.action
 
-        retrieved_at = datetime.utcnow().isoformat() + "Z"
+        retrieved_at = datetime.now(tz=timezone.utc).isoformat() + "Z"
 
         if action == "quote":
             payload = self._get_quote(ticker, args, retrieved_at)
@@ -211,12 +208,14 @@ class YFinanceTool(AbstractTool):
         if not history_df.empty:
             history_df = history_df.reset_index()
             for row in history_df.to_dict(orient="records"):
-                cleaned_row = {}
-                for key, value in row.items():
-                    if isinstance(value, (pd.Timestamp, datetime)):
-                        cleaned_row[key] = value.isoformat()
-                    else:
-                        cleaned_row[key] = self._clean_value(value)
+                cleaned_row = {
+                    key: (
+                        value.isoformat()
+                        if isinstance(value, (pd.Timestamp, datetime))
+                        else self._clean_value(value)
+                    )
+                    for key, value in row.items()
+                }
                 records.append(cleaned_row)
 
         return {
@@ -245,12 +244,14 @@ class YFinanceTool(AbstractTool):
             "quarterly_cashflow": getattr(ticker, "quarterly_cashflow", None),
         }
 
-        serialized = {}
-        for name, df in datasets.items():
-            if df is not None and not df.empty:
-                serialized[name] = self._serialize_dataframe(df)
-            else:
-                serialized[name] = {}
+        serialized = {
+            name: (
+                self._serialize_dataframe(df)
+                if df is not None and not df.empty
+                else {}
+            )
+            for name, df in datasets.items()
+        }
 
         return {
             "ticker": args.ticker,
@@ -262,9 +263,7 @@ class YFinanceTool(AbstractTool):
     def _format_datetime(value: Optional[Union[datetime, str]]) -> Optional[str]:
         if value is None:
             return None
-        if isinstance(value, datetime):
-            return value.isoformat()
-        return str(value)
+        return value.isoformat() if isinstance(value, datetime) else str(value)
 
     @staticmethod
     def _to_native_number(value: Any) -> Optional[float]:
@@ -300,7 +299,8 @@ class YFinanceTool(AbstractTool):
         cleaned_df.index = cleaned_df.index.map(self._clean_value)
         cleaned_df.columns = [self._clean_value(col) for col in cleaned_df.columns]
         cleaned_df = cleaned_df.applymap(self._clean_value)
-        result: Dict[str, Dict[str, Any]] = {}
-        for column, values in cleaned_df.to_dict().items():
-            result[str(column)] = {str(idx): val for idx, val in values.items()}
+        result: Dict[str, Dict[str, Any]] = {
+            str(column): {str(idx): val for idx, val in values.items()}
+            for column, values in cleaned_df.to_dict().items()
+        }
         return result

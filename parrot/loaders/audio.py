@@ -58,15 +58,14 @@ class AudioLoader(BaseVideoLoader):
             )
         # diarization:
         if self._diarization:
-            srt = self.audio_to_srt(
+            if (srt := self.audio_to_srt(
                 audio_path=wav_path,
                 asr=transcript_whisper,
                 output_srt_path=srt_path,
                 max_gap_s=0.5,
                 max_chars=90,
                 max_duration_s=0.9,
-            )
-            if srt:
+            )):
                 doc = Document(
                     page_content=srt,
                     metadata={

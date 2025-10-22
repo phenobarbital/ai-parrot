@@ -49,14 +49,16 @@ class VideoLocalLoader(BaseVideoLoader):
     def __init__(
         self,
         *args,
+        source: List[Union[str, PurePath]] = None,
         tokenizer: Union[str, Callable] = None,
         text_splitter: Union[str, Callable] = None,
         source_type: str = 'video',
         **kwargs
     ):
         super().__init__(
-            tokenizer,
-            text_splitter,
+            source=source,
+            tokenizer=tokenizer,
+            text_splitter=text_splitter,
             source_type=source_type,
             **kwargs
         )
@@ -84,25 +86,55 @@ class VideoLocalLoader(BaseVideoLoader):
         documents = []
         transcript_path = path.with_suffix('.txt')
         vtt_path = path.with_suffix('.vtt')
+        srt_path = path.with_suffix(".srt")
         summary_path = path.with_suffix('.summary')
-        audio_path = path.with_suffix('.mp3')
+        audio_path = path.with_suffix('.wav')
         # second: extract audio from File
-        self.extract_audio(
-            path,
-            audio_path,
-            compress_speed=self.compress_speed,
-            speed_factor=self.speed_factor
-        )
-        # get the Whisper parser
-        transcript_whisper = self.get_whisper_transcript(audio_path)
-        if transcript_whisper:
-            transcript = transcript_whisper['text']
-        else:
-            transcript = ''
+        try:
+            self.extract_audio(
+                path,
+                audio_path,
+                compress_speed=self.compress_speed,
+                speed_factor=self.speed_factor
+            )
+        except Exception as exc:
+            print(f"Error extracting audio from video: {exc}")
+            raise
+        transcript = ''
+        try:
+            # ensure a clean 16k Hz mono wav file for whisper
+            wav_path = self.ensure_wav_16k_mono(audio_path)
+            # get the Whisper parser
+            transcript_whisper = self.get_whisperx_transcript(wav_path)
+            transcript = transcript_whisper.get('text', '') if transcript_whisper else ''
+        except Exception as exc:
+            print(f"Error transcribing audio from video: {exc}")
+            raise
+        # diarization:
+        if self._diarization:
+            if (srt := self.audio_to_srt(
+                audio_path=wav_path,
+                asr=transcript_whisper,
+                output_srt_path=srt_path,
+                max_gap_s=0.5,
+                max_chars=90,
+                max_duration_s=0.9,
+            )):
+                doc = Document(
+                    page_content=srt,
+                    metadata={
+                        "source": f"{srt_path}",
+                        "url": f"{srt_path.name}",
+                        "filename": f"{srt_path}",
+                        "origin": f"{path}",
+                        'type': 'srt_transcript',
+                        "source_type": 'AUDIO',
+                    }
+                )
         # Summarize the transcript
         if transcript:
             # first: extract summary, saving summary as a document:
-            summary = self.summary_from_text(transcript)
+            summary = await self.summary_from_text(transcript)
             self.saving_file(summary_path, summary.encode('utf-8'))
             # second: saving transcript to a file:
             self.saving_file(transcript_path, transcript.encode('utf-8'))
@@ -137,13 +169,13 @@ class VideoLocalLoader(BaseVideoLoader):
             # Third is VTT:
         if transcript_whisper:
             # VTT version:
-            transcript = self.transcript_to_vtt(transcript_whisper, vtt_path)
+            vtt_text = self.transcript_to_vtt(transcript_whisper, vtt_path)
             _meta = {
                 **metadata,
                 "type": 'video subte vtt'
             }
-            if len(transcript) > 65535:
-                transcript_chunks = split_text(transcript, 65535)
+            if len(vtt_text) > 65535:
+                transcript_chunks = split_text(vtt_text, 65535)
                 for chunk in transcript_chunks:
                     doc = Document(
                         page_content=chunk,
@@ -152,7 +184,7 @@ class VideoLocalLoader(BaseVideoLoader):
                     documents.append(doc)
             else:
                 doc = Document(
-                    page_content=transcript,
+                    page_content=vtt_text,
                     metadata=_meta
                 )
                 documents.append(doc)

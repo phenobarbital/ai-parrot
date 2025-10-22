@@ -113,7 +113,7 @@ class Chatbot(AbstractBot):
                 return pool
 
             pool = AsyncPool('pg', dsn=default_dsn)
-            await pool.connect()
+            await pool.connect()  # pylint: disable=E1101 # noqa
             cls._db_pool = pool
             return pool
 

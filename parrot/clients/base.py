@@ -139,10 +139,10 @@ class TokenRetryMixin:
         """Check if the error is related to token limits."""
         error_message = str(error).upper()
 
-        for pattern in self.retry_config.error_patterns:
-            if re.search(pattern, error_message):
-                return True
-        return False
+        return any(
+            re.search(pattern, error_message)
+            for pattern in self.retry_config.error_patterns
+        )
 
     def should_retry_with_more_tokens(self, current_tokens: int, retry_count: int) -> bool:
         """Determine if we should retry with increased tokens."""
@@ -154,11 +154,13 @@ class TokenRetryMixin:
     def get_increased_token_limit(self, current_tokens: int) -> int:
         """Calculate the new token limit for retry."""
         if current_tokens <= 1024:
-            return 8192
+            return 4096
         elif current_tokens <= 4096:
-            return 16384
+            return 8192
+        elif current_tokens <= 8192:
+            return 12288
         else:
-            return min(current_tokens * 2, 32768)  # Cap at 32k tokens
+            return min(current_tokens * 2, 16384)  # Cap at 16k tokens
 
 @dataclass
 class BatchRequest:
@@ -221,13 +223,13 @@ class AbstractClient(ABC):
             self.temperature = preset_config.get('temperature', 0.4)
             self.top_k = preset_config.get('top_k', 30)
             self.top_p = preset_config.get('top_p', 0.2)
-            self.max_tokens = preset_config.get('max_tokens', 8192)
+            self.max_tokens = preset_config.get('max_tokens', 4096)
         else:
             # define default values from preset default:
             self.temperature = kwargs.get('temperature', 0)
             self.top_k = kwargs.get('top_k', 30)
             self.top_p = kwargs.get('top_p', 0.2)
-            self.max_tokens = kwargs.get('max_tokens', 8192)
+            self.max_tokens = kwargs.get('max_tokens', 4096)
         self.conversation_memory = conversation_memory or InMemoryConversation()
         self.base_headers.update(kwargs.get('headers', {}))
         self.api_key = kwargs.get('api_key', None)

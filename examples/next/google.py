@@ -540,6 +540,36 @@ Market expansion into Europe has been slower than projected, with only a 5% mark
         else:
             print("❌ Failed to generate multi-voice speech.")
 
+async def create_image(prompt):
+    print(' --- Image Features --- ')
+    async with GoogleGenAIClient() as client:
+        # Image Generation:
+        prompt_data = ImageGenerationPrompt(
+            prompt=prompt,
+            styles=["photorealistic", "vibrant"],
+            model=GoogleModel.IMAGEN_4,
+            aspect_ratio="16:9",
+            negative_prompt="no buildings"
+        )
+        output_directory = BASE_DIR.joinpath('static', 'generated_images')
+        output_directory.mkdir(parents=True, exist_ok=True)
+
+        response = await client.generate_images(
+            prompt_data=prompt_data,
+            output_directory=output_directory,
+            # output_mime_type="image/jpeg",
+            number_of_images=1,  # Generate 1 image
+            user_id="user123",
+            session_id="session001"
+        )
+        print("Generated images:")
+        for img in response.images:
+            print(f"- {img}")
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    # asyncio.run(main())
     # asyncio.run(test_scripter())
+    prompt = """
+Generate an image of a TROC-GLOBAL brand ambassador at a Best Buy retail environment wearing smart glasses with a prominent Best Buy logo in the background.
+    """
+    asyncio.run(create_image(prompt))

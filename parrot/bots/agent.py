@@ -325,6 +325,34 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
         )
         return result
 
+
+    async def markdown_report(
+        self,
+        content: str,
+        filename: Optional[str] = None,
+        filename_prefix: str = 'report',
+        subdir: str = 'documents',
+        **kwargs
+    ) -> str:
+        """Saving Markdown report based on provided file."""
+        # Create a unique filename for the report
+        directory = STATIC_DIR.joinpath(self.agent_id, subdir)
+        directory.mkdir(parents=True, exist_ok=True)
+        # Create a unique filename if not provided
+        if not filename:
+            filename = self._create_filename(prefix=filename_prefix, extension='md')
+        file_path = directory.joinpath(filename)
+        try:
+            async with aiofiles.open(file_path, 'w') as f:
+                await f.write(content)
+            self.logger.info(f"Transcript saved to {file_path}")
+            return file_path
+        except Exception as e:
+            self.logger.error(f"Error saving transcript: {e}")
+            raise RuntimeError(
+                f"Failed to save transcript: {e}"
+            ) from e
+
     async def speech_report(
         self,
         report: str,
