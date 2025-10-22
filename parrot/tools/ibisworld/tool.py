@@ -3,9 +3,12 @@ IBISWorld Tool for AI-Parrot
 Search and extract content from IBISWorld industry research articles.
 """
 from typing import Dict, Any
+from pathlib import Path
+import tempfile
 import aiohttp
 from bs4 import BeautifulSoup
 from pydantic import BaseModel, Field
+from markitdown import MarkItDown
 from ..google.tools import GoogleSiteSearchTool, GoogleSiteSearchArgs
 from ..abstract import AbstractTool
 
@@ -74,24 +77,64 @@ class IBISWorldTool(GoogleSiteSearchTool):
                             'content': None
                         }
 
-                    html = await response.text()
-                    soup = BeautifulSoup(html, 'html.parser')
+                    # Check if content is a PDF
+                    content_type = response.headers.get('Content-Type', '').lower()
+                    is_pdf = url.lower().endswith('.pdf') or 'application/pdf' in content_type
 
-                    # Extract article content
-                    content_data = {
-                        'url': url,
-                        'title': self._extract_title(soup),
-                        'content': self._extract_main_content(soup),
-                        'metadata': self._extract_metadata(soup),
-                    }
+                    if is_pdf:
+                        # Handle PDF content using markitdown
+                        try:
+                            # Download PDF content to a temporary file
+                            pdf_content = await response.read()
+                            with tempfile.NamedTemporaryFile(mode='wb', suffix='.pdf', delete=False) as tmp_file:
+                                tmp_file.write(pdf_content)
+                                tmp_file_path = tmp_file.name
 
-                    if include_tables:
-                        content_data['tables'] = self._extract_tables(soup)
+                            # Extract content using markitdown
+                            markitdown = MarkItDown()
+                            result = markitdown.convert(tmp_file_path)
 
-                    # Extract key statistics if available
-                    content_data['statistics'] = self._extract_statistics(soup)
+                            # Clean up temporary file
+                            Path(tmp_file_path).unlink(missing_ok=True)
 
-                    return content_data
+                            # Return PDF content in a structured format
+                            content_data = {
+                                'url': url,
+                                'title': self._extract_pdf_title(url),
+                                'content': result.text_content if result.text_content else "PDF content could not be extracted",
+                                'metadata': {'content_type': 'application/pdf', 'source': 'markitdown'},
+                                'statistics': {},
+                                'tables': []
+                            }
+
+                            return content_data
+
+                        except Exception as pdf_error:
+                            self.logger.error(f"Error extracting PDF content from {url}: {pdf_error}")
+                            return {
+                                'error': f'PDF extraction error: {str(pdf_error)}',
+                                'content': None
+                            }
+                    else:
+                        # Handle regular HTML content
+                        html = await response.text()
+                        soup = BeautifulSoup(html, 'html.parser')
+
+                        # Extract article content
+                        content_data = {
+                            'url': url,
+                            'title': self._extract_title(soup),
+                            'content': self._extract_main_content(soup),
+                            'metadata': self._extract_metadata(soup),
+                        }
+
+                        if include_tables:
+                            content_data['tables'] = self._extract_tables(soup)
+
+                        # Extract key statistics if available
+                        content_data['statistics'] = self._extract_statistics(soup)
+
+                        return content_data
 
         except Exception as e:
             self.logger.error(f"Error extracting content from {url}: {e}")
@@ -99,6 +142,15 @@ class IBISWorldTool(GoogleSiteSearchTool):
                 'error': str(e),
                 'content': None
             }
+
+    def _extract_pdf_title(self, url: str) -> str:
+        """Extract title from PDF URL."""
+        # Get the filename from the URL
+        filename = url.split('/')[-1]
+        # Remove .pdf extension and convert hyphens/underscores to spaces
+        title = filename.replace('.pdf', '').replace('-', ' ').replace('_', ' ')
+        # Capitalize words
+        return title.title()
 
     def _extract_title(self, soup: BeautifulSoup) -> str:
         """Extract article title."""
