@@ -3,6 +3,7 @@ from dataclasses import dataclass
 import asyncio
 from pydantic import BaseModel
 from parrot.clients.gpt import OpenAIClient, OpenAIModel
+from parrot.models import VideoGenerationPrompt
 
 
 # Example usage and helper functions
@@ -138,6 +139,27 @@ async def example_usage():
             tools=[repl_tool],
         )
         print(response)
+
+
+async def example_video_generation():
+    """Example of generating a video using Sora via the OpenAI client."""
+
+    async with OpenAIClient() as client:
+        video_prompt = VideoGenerationPrompt(
+            prompt=(
+                "A timelapse of a city skyline transitioning from dusk to night, "
+                "with neon lights gradually illuminating the streets."
+            ),
+            model=OpenAIModel.SORA.value,
+            number_of_videos=1,
+            aspect_ratio="16:9",
+            duration=10,
+        )
+
+        response = await client.generate_video(video_prompt)
+
+        print("Video generation metadata:", response.output)
+        print("Saved video files:", [str(path) for path in response.media or []])
 
 
 if __name__ == "__main__":
