@@ -543,18 +543,18 @@ async def example_hybrid_approach():
     report_crew = AgentCrew(name="ReportGeneration", agents=report_agents)
 
     report_result = await report_crew.run_sequential(
-        initial_query=f"Create report from analysis: {analysis_result['results']['strategic_synthesizer']}",
+        query=f"Create report from analysis: {analysis_result['results']['strategic_synthesizer']}",
         pass_full_context=True
     )
 
-    print(f"✓ Phase 3 complete: Final report ready\n")
+    print("✓ Phase 3 complete: Final report ready\n")
 
     print("\n" + "="*70)
     print("HYBRID WORKFLOW COMPLETE")
     print("="*70)
     print(f"\nPhase 1 (Parallel): {data_result['total_execution_time']:.2f}s")
-    print(f"Phase 2 (Flow): Multiple stages with auto-parallelization")
-    print(f"Phase 3 (Sequential): Pipeline refinement")
+    print("Phase 2 (Flow): Multiple stages with auto-parallelization")
+    print("Phase 3 (Sequential): Pipeline refinement")
     print(f"\nFinal Report (first 400 chars):\n{report_result['final_result'][:400]}...")
 
 

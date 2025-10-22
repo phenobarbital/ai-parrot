@@ -411,6 +411,7 @@ class AgentCrew:
         synthesis_prompt: Optional[str] = None,
         max_tokens: int = 4096,
         temperature: float = 0.1,
+        model: Optional[str] = 'gemini-2.5-pro',
         **kwargs
     ) -> CrewResult:
         """
@@ -512,7 +513,7 @@ Current task: {current_input}"""
 
                 # Execute agent
                 response = await self._execute_agent(
-                    agent, agent_input, session_id, user_id, i, crew_context
+                    agent, agent_input, session_id, user_id, i, crew_context, model, max_tokens
                 )
 
                 result = self._extract_result(response)
@@ -1497,7 +1498,9 @@ Current task: {current_input}"""
         session_id: str,
         user_id: str,
         index: int,
-        context: AgentContext
+        context: AgentContext,
+        model: Optional[str] = None,
+        max_tokens: Optional[int] = None
     ) -> Any:
         """
         Execute a single agent with proper rate limiting and error handling.
@@ -1514,14 +1517,18 @@ Current task: {current_input}"""
                     session_id=f"{session_id}_agent_{index}",
                     user_id=user_id,
                     use_conversation_history=True,
+                    model=model,
+                    max_tokens=max_tokens,
                     **context.shared_data
                 )
-            elif hasattr(agent, 'ask'):
+            if hasattr(agent, 'ask'):
                 return await agent.ask(
                     question=query,
                     session_id=f"{session_id}_agent_{index}",
                     user_id=user_id,
                     use_conversation_history=True,
+                    model=model,
+                    max_tokens=max_tokens,
                     **context.shared_data
                 )
             elif hasattr(agent, 'invoke'):

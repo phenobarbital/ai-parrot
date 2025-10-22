@@ -139,10 +139,10 @@ class TokenRetryMixin:
         """Check if the error is related to token limits."""
         error_message = str(error).upper()
 
-        for pattern in self.retry_config.error_patterns:
-            if re.search(pattern, error_message):
-                return True
-        return False
+        return any(
+            re.search(pattern, error_message)
+            for pattern in self.retry_config.error_patterns
+        )
 
     def should_retry_with_more_tokens(self, current_tokens: int, retry_count: int) -> bool:
         """Determine if we should retry with increased tokens."""

@@ -2,7 +2,6 @@ from typing import Union, List, Optional
 from collections.abc import Callable
 import re
 import json
-import asyncio
 from pathlib import PurePath, Path
 from datetime import datetime
 from ..stores.models import Document
@@ -51,7 +50,7 @@ def extract_scenes_from_response(response_text: str) -> List[dict]:
     Attempts to parse JSON-like structures or creates scenes from the text.
     """
     scenes = []
-    
+
     # Try to extract JSON from the response
     try:
         # Look for JSON blocks
@@ -62,20 +61,20 @@ def extract_scenes_from_response(response_text: str) -> List[dict]:
                 return json_data['scenes']
     except json.JSONDecodeError:
         pass
-    
+
     # Fallback: Parse text-based scenes
     # Look for scene markers like "Scene 1:", "Step 1:", etc.
     scene_pattern = r'(?:Scene|Step)\s*(\d+)[:.]?\s*(.*?)(?=(?:Scene|Step)\s*\d+|$)'
     matches = re.findall(scene_pattern, response_text, re.DOTALL | re.IGNORECASE)
-    
+
     for i, (scene_num, content) in enumerate(matches):
         # Extract quoted text (spoken text)
         quotes = re.findall(r'"([^"]*)"', content)
-        
+
         # Extract instructions (non-quoted text)
         instructions = re.sub(r'"[^"]*"', '', content).strip()
         instructions = re.sub(r'\s+', ' ', instructions)
-        
+
         scene_data = {
             'scene_number': int(scene_num) if scene_num.isdigit() else i + 1,
             'instructions': instructions,
@@ -84,7 +83,7 @@ def extract_scenes_from_response(response_text: str) -> List[dict]:
             'timestamp': f"Scene {scene_num}" if scene_num else f"Scene {i + 1}"
         }
         scenes.append(scene_data)
-    
+
     # If no scenes found, create one scene with all content
     if not scenes:
         scenes.append({
@@ -94,7 +93,7 @@ def extract_scenes_from_response(response_text: str) -> List[dict]:
             'content': response_text,
             'timestamp': 'Full Video'
         })
-    
+
     return scenes
 
 
@@ -114,8 +113,8 @@ class VideoUnderstandingLoader(BaseVideoLoader):
         source_type: str = 'video_understanding',
         model: Union[str, GoogleModel] = GoogleModel.GEMINI_2_5_FLASH_IMAGE_PREVIEW,
         temperature: float = 0.2,
-        custom_prompt: Optional[str] = None,
-        custom_instruction: Optional[str] = None,
+        prompt: Optional[str] = None,
+        custom_instructions: Optional[str] = None,
         **kwargs
     ):
         super().__init__(
@@ -125,23 +124,23 @@ class VideoUnderstandingLoader(BaseVideoLoader):
             source_type=source_type,
             **kwargs
         )
-        
+
         # Google GenAI configuration
         self.model = model
         self.temperature = temperature
         self.google_client = None
-        
+
         # Custom prompts
-        self.custom_prompt = custom_prompt
-        self.custom_instruction = custom_instruction
-        
+        self.prompt = prompt
+        self.custom_instructions = custom_instructions
+
         # Default prompt for video analysis
         self.default_prompt = """
 Analyze the video and extract step-by-step instructions for employees to follow, and the spoken text into quotation marks, related to the training content shown in this video.
 """
-        
+
         # Default instruction for video analysis
-        self.default_instruction = """
+        self.default_instructions = """
 Video Analysis Instructions:
             1. Videos are training materials for employees to learn how to use Workday.
             2. There are several step-by-step processes shown in the video, with screenshots and spoken text.
@@ -160,41 +159,38 @@ Video Analysis Instructions:
         """Analyze video using Google GenAI."""
         try:
             client = await self._get_google_client()
-            
+
             # Use custom prompt or default
-            prompt = self.custom_prompt or self.default_prompt
-            instruction = self.custom_instruction or self.default_instruction
-            
+            prompt = self.prompt or self.default_prompt
+            instructions = self.custom_instructions or self.default_instructions
+
             async with client as ai_client:
                 self.logger.info(f"Analyzing video with Google GenAI: {video_path.name}")
-                
+
                 response = await ai_client.video_understanding(
                     video=video_path,
                     prompt=prompt,
-                    prompt_instruction=instruction,
+                    prompt_instruction=instructions,
                     temperature=self.temperature,
                     stateless=True
                 )
-                
+
                 return response.output if hasattr(response, 'output') else str(response)
-                
+
         except Exception as e:
             self.logger.error(f"Error analyzing video with AI: {e}")
             return f"Error analyzing video: {str(e)}"
 
     async def _load(self, path: Union[str, PurePath, List[PurePath]], **kwargs) -> List[Document]:
         """Load and analyze video file."""
-        if isinstance(path, str):
+        if isinstance(path, (str, PurePath)):
             path = Path(path)
-        elif isinstance(path, PurePath):
-            path = Path(path)
-            
         if not path.exists():
             self.logger.error(f"Video file not found: {path}")
             return []
 
         self.logger.info(f"Processing video: {path.name}")
-        
+
         # Base metadata
         base_metadata = {
             "url": f"file://{path}",
@@ -213,18 +209,18 @@ Video Analysis Instructions:
         }
 
         documents = []
-        
+
         try:
             # Analyze video with Google GenAI
             ai_response = await self._analyze_video_with_ai(path)
-            
+
             # Save AI response to file
             response_path = path.with_suffix('.ai_analysis.txt')
             self.saving_file(response_path, ai_response.encode('utf-8'))
-            
+
             # Extract scenes from AI response
             scenes = extract_scenes_from_response(ai_response)
-            
+
             # Create main analysis document
             main_doc_metadata = {
                 **base_metadata,
@@ -235,7 +231,7 @@ Video Analysis Instructions:
                     "analysis_timestamp": datetime.now().isoformat()
                 }
             }
-            
+
             # Split if too long
             if len(ai_response) > 65534:
                 chunks = split_text(ai_response, 32767)
@@ -260,7 +256,7 @@ Video Analysis Instructions:
                     metadata=main_doc_metadata
                 )
                 documents.append(doc)
-            
+
             # Create individual scene documents
             for scene in scenes:
                 scene_metadata = {
@@ -275,35 +271,35 @@ Video Analysis Instructions:
                         "has_instructions": bool(scene.get('instructions', '').strip())
                     }
                 }
-                
+
                 # Create content combining instructions and spoken text
                 content_parts = []
-                
+
                 if scene.get('instructions'):
                     content_parts.append(f"INSTRUCTIONS:\n{scene['instructions']}")
-                
+
                 if scene.get('spoken_text'):
                     content_parts.append(f"SPOKEN TEXT:\n\"{scene['spoken_text']}\"")
-                
+
                 scene_content = "\n\n".join(content_parts) if content_parts else scene.get('content', '')
-                
+
                 if scene_content.strip():
                     scene_doc = Document(
                         page_content=scene_content,
                         metadata=scene_metadata
                     )
                     documents.append(scene_doc)
-            
+
             # Create separate documents for instructions and spoken text if needed
             all_instructions = []
             all_spoken = []
-            
+
             for scene in scenes:
                 if scene.get('instructions'):
                     all_instructions.append(f"Scene {scene.get('scene_number', '')}: {scene['instructions']}")
                 if scene.get('spoken_text'):
                     all_spoken.append(f"Scene {scene.get('scene_number', '')}: \"{scene['spoken_text']}\"")
-            
+
             # Instructions summary document
             if all_instructions:
                 instructions_metadata = {
@@ -315,15 +311,15 @@ Video Analysis Instructions:
                         "scene_count": len(all_instructions)
                     }
                 }
-                
+
                 instructions_content = "STEP-BY-STEP INSTRUCTIONS:\n\n" + "\n\n".join(all_instructions)
-                
+
                 instructions_doc = Document(
                     page_content=instructions_content,
                     metadata=instructions_metadata
                 )
                 documents.append(instructions_doc)
-            
+
             # Spoken text summary document
             if all_spoken:
                 spoken_metadata = {
@@ -335,17 +331,17 @@ Video Analysis Instructions:
                         "scene_count": len(all_spoken)
                     }
                 }
-                
+
                 spoken_content = "SPOKEN TEXT TRANSCRIPT:\n\n" + "\n\n".join(all_spoken)
-                
+
                 spoken_doc = Document(
                     page_content=spoken_content,
                     metadata=spoken_metadata
                 )
                 documents.append(spoken_doc)
-            
+
             self.logger.info(f"Generated {len(documents)} documents from video analysis")
-            
+
         except Exception as e:
             self.logger.error(f"Error processing video {path}: {e}")
             # Create error document
@@ -358,13 +354,13 @@ Video Analysis Instructions:
                     "error_timestamp": datetime.now().isoformat()
                 }
             }
-            
+
             error_doc = Document(
                 page_content=f"Error analyzing video {path.name}: {str(e)}",
                 metadata=error_metadata
             )
             documents.append(error_doc)
-        
+
         return documents
 
     async def load_video(self, url: str, video_title: str, transcript: str) -> list:
@@ -378,9 +374,4 @@ Video Analysis Instructions:
 
     async def close(self):
         """Clean up resources."""
-        if self.google_client:
-            try:
-                await self.google_client.aclose()
-            except Exception as e:
-                self.logger.error(f"Error closing Google client: {e}")
         super().clear_cuda()

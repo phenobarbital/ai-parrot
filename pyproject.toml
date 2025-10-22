@@ -201,7 +201,7 @@ anthropic = [
 ]
 
 openai = [
-    "openai==1.102.0",
+    "openai==2.6.0",
     "tiktoken==0.9.0"
 ]
 

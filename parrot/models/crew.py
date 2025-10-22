@@ -95,7 +95,7 @@ class CrewResult:
 
     def __str__(self) -> str:
         """String representation showing the final output."""
-        return self.content
+        return str(self.content)
 
     def __repr__(self) -> str:
         """Detailed representation for debugging."""

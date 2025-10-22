@@ -1687,12 +1687,15 @@ Use the following information about user's data to guide your responses:
                 llm_kwargs = {
                     "prompt": question,
                     "system_prompt": system_prompt,
-                    "model": kwargs.get('model', self._llm_model),
+                    # "model": kwargs.get('model', self._llm_model),
                     "temperature": kwargs.get('temperature', self._llm_temp),
                     "user_id": user_id,
                     "session_id": session_id,
                     "use_tools": use_tools,
                 }
+
+                if (_model := kwargs.get('model', self._llm_model)):
+                    llm_kwargs["model"] = _model
 
                 max_tokens = kwargs.get('max_tokens', self._max_tokens)
                 if max_tokens is not None:

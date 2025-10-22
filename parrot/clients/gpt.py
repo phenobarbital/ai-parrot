@@ -513,7 +513,8 @@ class OpenAIClient(AbstractClient):
 
         if model_str != 'gpt-5-nano':
             args['max_tokens'] = max_tokens or self.max_tokens
-            args['temperature'] = temperature or self.temperature
+        if temperature:
+            args['temperature'] = temperature
 
         # -------- ROUTING: Responses-only vs Chat -----------
         use_responses = self._is_responses_model(model_str)
