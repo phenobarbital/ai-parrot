@@ -51,6 +51,8 @@
   let statusMessage = '';
   let jobError = '';
   let isSubmitting = false;
+  let rawAgentResponses: [string, AgentResponse][] = [];
+  let agentResponses: AgentResponseView[] = [];
 
   $: selectedCrew = crews.find((crewItem) => crewItem.crew_id === selectedCrewId) ?? null;
   $: finalOutputHtml = jobStatus?.result?.output ? markdownToHtml(jobStatus.result.output) : '';
@@ -58,7 +60,7 @@
     jobStatus?.result?.response && typeof jobStatus.result.response === 'object'
       ? (Object.entries(jobStatus.result.response) as [string, AgentResponse][])
       : [];
-  $: agentResponses: AgentResponseView[] = rawAgentResponses.map(([name, details]) => ({
+  $: agentResponses = rawAgentResponses.map(([name, details]) => ({
     name,
     input: typeof details?.input === 'string' ? details.input : undefined,
     outputHtml:
