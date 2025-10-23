@@ -3,6 +3,8 @@ from .tools import (
     GoogleSiteSearchTool,
     GoogleLocationTool,
     GoogleRoutesTool,
+    GoogleReviewsTool,
+    GoogleTrafficTool,
 )
 from .base import GoogleBaseTool
 
@@ -11,4 +13,6 @@ __all__ = (
     "GoogleSiteSearchTool",
     "GoogleLocationTool",
     "GoogleRoutesTool",
+    "GoogleReviewsTool",
+    "GoogleTrafficTool",
 )

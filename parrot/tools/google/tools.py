@@ -1,12 +1,15 @@
 """
 Migrated Google Tools using the AbstractTool framework.
 """
+import asyncio
+import re
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 import urllib.parse
 import string
 import tempfile
 import aiohttp
+import orjson
 from pydantic import BaseModel, Field, field_validator
 from googleapiclient.discovery import build
 from navconfig import config
@@ -96,7 +99,76 @@ class GoogleRouteArgs(BaseModel):
         """Get map_size as list."""
         return [self.map_width, self.map_height]
 
+
+class GooglePlaceReviewsArgs(BaseModel):
+    """Arguments schema for Google Place Reviews tool."""
+
+    place_id: str = Field(description="Google Place identifier")
+    language: Optional[str] = Field(
+        default=None,
+        description="Optional language code for the returned reviews",
+    )
+    reviews_limit: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=10,
+        description="Optional limit for the number of reviews to return",
+    )
+
+
+class GoogleTrafficArgs(BaseModel):
+    """Arguments schema for Google Place traffic tool."""
+
+    place_id: str = Field(description="Google Place identifier")
+    language: Optional[str] = Field(
+        default=None,
+        description="Optional language code for the returned place details",
+    )
+    include_popular_times: bool = Field(
+        default=True,
+        description="Fetch Google popular times data to estimate traffic",
+    )
+
 # Google Search Tool
+class GooglePlacesBaseTool(AbstractTool):
+    """Shared helpers for Google Places based tools."""
+
+    base_url: str = "https://maps.googleapis.com/maps/api/place/details/json"
+
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        request_timeout: int = 30,
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        self.api_key = api_key or GOOGLE_API_KEY
+        if not self.api_key:
+            raise ValueError("Google API key is required for Google Places tools")
+        self.request_timeout = request_timeout
+
+    async def _fetch_place_details(
+        self,
+        place_id: str,
+        fields: str,
+        language: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        params = {
+            "placeid": place_id,
+            "key": self.api_key,
+            "fields": fields,
+        }
+        if language:
+            params["language"] = language
+
+        timeout = aiohttp.ClientTimeout(total=self.request_timeout)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(self.base_url, params=params) as response:
+                payload = await response.json(content_type=None)
+                payload.setdefault("http_status", response.status)
+                return payload
+
+
 class GoogleSearchTool(AbstractTool):
     """Enhanced Google Search tool with content preview capabilities."""
 
@@ -344,6 +416,335 @@ class GoogleLocationTool(AbstractTool):
                     'results': processed_results,
                     'raw_response': result  # Include original response for reference
                 }
+
+
+class GoogleReviewsTool(GooglePlacesBaseTool):
+    """Retrieve reviews, rating, and metadata for a Google Place."""
+
+    name = "google_place_reviews"
+    description = "Extract reviews and rating details for a Google Place via the Places Details API"
+    args_schema = GooglePlaceReviewsArgs
+
+    async def _execute(self, **kwargs) -> Dict[str, Any]:
+        place_id = kwargs['place_id']
+        language = kwargs.get('language')
+        reviews_limit = kwargs.get('reviews_limit')
+
+        fields = "rating,reviews,user_ratings_total,name"
+        response = await self._fetch_place_details(
+            place_id=place_id,
+            fields=fields,
+            language=language,
+        )
+
+        status = response.get('status', 'UNKNOWN')
+        if status != 'OK':
+            return {
+                'status': status,
+                'place_id': place_id,
+                'error_message': response.get('error_message'),
+                'http_status': response.get('http_status'),
+            }
+
+        result = response.get('result', {})
+        reviews: List[Dict[str, Any]] = result.get('reviews', []) or []
+
+        if reviews_limit is not None:
+            reviews = reviews[:reviews_limit]
+
+        simplified_reviews = [
+            {
+                'author_name': review.get('author_name'),
+                'author_url': review.get('author_url'),
+                'language': review.get('language'),
+                'profile_photo_url': review.get('profile_photo_url'),
+                'rating': review.get('rating'),
+                'relative_time_description': review.get('relative_time_description'),
+                'text': review.get('text'),
+                'time': review.get('time'),
+            }
+            for review in reviews
+        ]
+
+        return {
+            'status': status,
+            'place_id': place_id,
+            'name': result.get('name'),
+            'rating': result.get('rating'),
+            'user_ratings_total': result.get('user_ratings_total'),
+            'reviews_returned': len(simplified_reviews),
+            'reviews': simplified_reviews,
+            'raw_response': response,
+        }
+
+
+class GoogleTrafficTool(GooglePlacesBaseTool):
+    """Retrieve Google popular times data to estimate venue traffic."""
+
+    name = "google_place_traffic"
+    description = "Extract current popularity and popular times for a Google Place"
+    args_schema = GoogleTrafficArgs
+
+    day_mapping = {
+        "1": "Monday",
+        "2": "Tuesday",
+        "3": "Wednesday",
+        "4": "Thursday",
+        "5": "Friday",
+        "6": "Saturday",
+        "7": "Sunday",
+    }
+
+    async def _execute(self, **kwargs) -> Dict[str, Any]:
+        place_id = kwargs['place_id']
+        language = kwargs.get('language')
+        include_popular_times = kwargs['include_popular_times']
+
+        fields = (
+            "name,place_id,address_components,formatted_address,geometry,types,"
+            "vicinity,rating,user_ratings_total"
+        )
+
+        response = await self._fetch_place_details(
+            place_id=place_id,
+            fields=fields,
+            language=language,
+        )
+
+        status = response.get('status', 'UNKNOWN')
+        if status != 'OK':
+            return {
+                'status': status,
+                'place_id': place_id,
+                'error_message': response.get('error_message'),
+                'http_status': response.get('http_status'),
+            }
+
+        place_info = response.get('result', {})
+
+        structured_popular_times: Optional[Dict[str, Dict[str, Dict[str, Any]]]] = None
+        traffic_schedule: Optional[Dict[str, Dict[str, Dict[str, Any]]]] = None
+
+        if include_popular_times:
+            address_parts = [
+                place_info.get('name'),
+                place_info.get('formatted_address') or place_info.get('vicinity'),
+            ]
+            address = ', '.join([part for part in address_parts if part])
+            try:
+                search_data = await self._make_google_search(address) if address else None
+            except ValueError as exc:
+                self.logger.warning(f"Google popular times search failed: {exc}")
+                search_data = None
+
+            if search_data:
+                self._get_populartimes(place_info, search_data)
+                popular_times_raw = place_info.get('popular_times')
+
+                structured_popular_times = self._normalize_popular_times(popular_times_raw)
+                if structured_popular_times:
+                    try:
+                        traffic_schedule = self.convert_populartimes(structured_popular_times)
+                    except Exception as exc:
+                        self.logger.error(f"Error formatting traffic data: {exc}")
+                        traffic_schedule = None
+
+        result_payload = {
+            'status': status,
+            'place_id': place_id,
+            'name': place_info.get('name'),
+            'formatted_address': place_info.get('formatted_address') or place_info.get('vicinity'),
+            'address_components': place_info.get('address_components'),
+            'geometry': place_info.get('geometry'),
+            'types': place_info.get('types'),
+            'rating': place_info.get('rating'),
+            'rating_n': place_info.get('rating_n'),
+            'user_ratings_total': place_info.get('user_ratings_total'),
+            'current_popularity': place_info.get('current_popularity'),
+            'popular_times': structured_popular_times,
+            'traffic': traffic_schedule,
+            'time_spent': place_info.get('time_spent'),
+            'raw_response': response,
+        }
+
+        return result_payload
+
+    def _normalize_popular_times(
+        self,
+        popular_times: Optional[Any],
+    ) -> Optional[Dict[str, Dict[str, Dict[str, Any]]]]:
+        if not popular_times:
+            return None
+
+        normalized: Dict[str, Dict[str, Dict[str, Any]]] = {}
+
+        if isinstance(popular_times, dict):
+            iterator = popular_times.items()
+        else:
+            iterator = []
+            for entry in popular_times:
+                if isinstance(entry, (list, tuple)) and len(entry) >= 2:
+                    day_key = str(entry[0])
+                    iterator.append((day_key, entry[1]))
+
+        for day_key, entries in iterator:
+            day_data: Dict[str, Dict[str, Any]] = {}
+            if isinstance(entries, dict):
+                for hour_key, value in entries.items():
+                    if isinstance(value, dict):
+                        hour_str = str(hour_key)
+                        day_data[hour_str] = {
+                            'hour': value.get('hour', int(hour_str) if hour_str.isdigit() else value.get('hour')),
+                            'human_hour': value.get('human_hour'),
+                            'traffic': value.get('traffic'),
+                            'traffic_status': value.get('traffic_status'),
+                        }
+                    elif isinstance(value, (list, tuple)) and len(value) >= 5:
+                        hour_str = str(value[0])
+                        day_data[hour_str] = {
+                            'human_hour': value[4],
+                            'traffic': value[1],
+                            'traffic_status': value[2],
+                        }
+            elif isinstance(entries, list):
+                for value in entries:
+                    if isinstance(value, (list, tuple)) and len(value) >= 5:
+                        hour_str = str(value[0])
+                        day_data[hour_str] = {
+                            'human_hour': value[4],
+                            'traffic': value[1],
+                            'traffic_status': value[2],
+                        }
+
+            if day_data:
+                normalized[str(day_key)] = day_data
+
+        return normalized or None
+
+    def convert_populartimes(
+        self,
+        popular_times: Dict[str, Dict[str, Dict[str, Any]]]
+    ) -> Dict[str, Dict[str, Dict[str, Any]]]:
+        converted_data: Dict[str, Dict[str, Dict[str, Any]]] = {}
+
+        for day_number, hours in popular_times.items():
+            day_name = self.day_mapping.get(str(day_number), "Unknown")
+            converted_data[day_name] = {}
+
+            for hour, data in hours.items():
+                time_str = f"{int(hour):02}:00:00" if str(hour).isdigit() else str(hour)
+                converted_data[day_name][time_str] = {
+                    'hour': data.get('hour', int(hour) if str(hour).isdigit() else hour),
+                    'human_hour': data.get('human_hour'),
+                    'traffic': data.get('traffic'),
+                    'traffic_status': data.get('traffic_status'),
+                }
+
+        return converted_data
+
+    @staticmethod
+    def index_get(array: Any, *argv: int) -> Optional[Any]:
+        try:
+            for index in argv:
+                array = array[index]
+            return array
+        except (IndexError, TypeError):
+            return None
+
+    def _get_populartimes(self, place_info: Dict[str, Any], data: Any) -> None:
+        info = self.index_get(data, 0, 1, 0, 14)
+        rating = self.index_get(info, 4, 7)
+        rating_n = self.index_get(info, 4, 8)
+        popular_times = self.index_get(info, 84, 0)
+        current_popularity = self.index_get(info, 84, 7, 1)
+        time_spent = self.index_get(info, 117, 0)
+
+        if time_spent:
+            time_spent_str = str(time_spent).lower()
+            nums = [
+                float(value)
+                for value in re.findall(r'\d*\.\d+|\d+', time_spent_str.replace(',', '.'))
+            ]
+            contains_min = 'min' in time_spent_str
+            contains_hour = 'hour' in time_spent_str or 'hr' in time_spent_str
+            parsed_time: Optional[List[int]] = None
+
+            if contains_min and contains_hour and len(nums) >= 2:
+                parsed_time = [int(nums[0]), int(nums[1] * 60)]
+            elif contains_hour and nums:
+                upper = nums[0] if len(nums) == 1 else nums[1]
+                parsed_time = [int(nums[0] * 60), int(upper * 60)]
+            elif contains_min and nums:
+                upper = nums[0] if len(nums) == 1 else nums[1]
+                parsed_time = [int(nums[0]), int(upper)]
+
+            time_spent = parsed_time if parsed_time is not None else time_spent
+
+        place_info.update(
+            **{
+                'rating': rating if rating is not None else place_info.get('rating'),
+                'rating_n': rating_n,
+                'current_popularity': current_popularity,
+                'popular_times': popular_times,
+                'time_spent': time_spent,
+            }
+        )
+
+    async def _make_google_search(self, query_string: str) -> Optional[Any]:
+        params_url = {
+            "tbm": "map",
+            "tch": 1,
+            "hl": "en",
+            "q": urllib.parse.quote_plus(query_string),
+            "pb": "!4m12!1m3!1d4005.9771522653964!2d-122.42072974863942!3d37.8077459796541!2m3!1f0!2f0!3f0!3m2!1i1125!2i976"
+                  "!4f13.1!7i20!10b1!12m6!2m3!5m1!6e2!20e3!10b1!16b1!19m3!2m2!1i392!2i106!20m61!2m2!1i203!2i100!3m2!2i4!5b1"
+                  "!6m6!1m2!1i86!2i86!1m2!1i408!2i200!7m46!1m3!1e1!2b0!3e3!1m3!1e2!2b1!3e2!1m3!1e2!2b0!3e3!1m3!1e3!2b0!3e3!"
+                  "1m3!1e4!2b0!3e3!1m3!1e8!2b0!3e3!1m3!1e3!2b1!3e2!1m3!1e9!2b1!3e2!1m3!1e10!2b0!3e3!1m3!1e10!2b1!3e2!1m3!1e"
+                  "10!2b0!3e4!2b1!4b1!9b0!22m6!1sa9fVWea_MsX8adX8j8AE%3A1!2zMWk6Mix0OjExODg3LGU6MSxwOmE5ZlZXZWFfTXNYOGFkWDh"
+                  "qOEFFOjE!7e81!12e3!17sa9fVWea_MsX8adX8j8AE%3A564!18e15!24m15!2b1!5m4!2b1!3b1!5b1!6b1!10m1!8e3!17b1!24b1!"
+                  "25b1!26b1!30m1!2b1!36b1!26m3!2m2!1i80!2i92!30m28!1m6!1m2!1i0!2i0!2m2!1i458!2i976!1m6!1m2!1i1075!2i0!2m2!"
+                  "1i1125!2i976!1m6!1m2!1i0!2i0!2m2!1i1125!2i20!1m6!1m2!1i0!2i956!2m2!1i1125!2i976!37m1!1e81!42b1!47m0!49m1"
+                  "!3b1"
+        }
+        search_url = "https://www.google.com/search?" + "&".join(
+            f"{key}={value}" for key, value in params_url.items()
+        )
+
+        headers = {
+            'User-Agent': (
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                'AppleWebKit/537.36 (KHTML, like Gecko) '
+                'Chrome/120.0.0.0 Safari/537.36'
+            )
+        }
+
+        timeout = aiohttp.ClientTimeout(total=self.request_timeout)
+        async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
+            async with session.get(search_url) as response:
+                raw_content = await response.read()
+                if response.status != 200:
+                    raise ValueError(f"HTTP {response.status}: Unable to fetch Google search results")
+
+        await asyncio.sleep(0.5)
+
+        if not raw_content:
+            raise ValueError("Empty response from Google Search")
+
+        result = raw_content.decode('utf-8', errors='ignore')
+        data = result.split('/*""*/')[0].strip()
+        if not data:
+            raise ValueError("Empty response from Google Search")
+
+        jend = data.rfind("}")
+        if jend >= 0:
+            data = data[:jend + 1]
+
+        parsed = orjson.loads(data)
+        payload = parsed.get('d')
+        if not payload:
+            return None
+
+        return orjson.loads(payload[4:])
 
 
 class GoogleRoutesTool(AbstractTool):
