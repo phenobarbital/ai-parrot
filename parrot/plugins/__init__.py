@@ -1,8 +1,13 @@
 import sys
 import contextlib
 from importlib import import_module
-from ..conf import PLUGINS_DIR
+from navconfig.logging import Logger
+from parrot.conf import PLUGINS_DIR
 from .importer import PluginImporter, list_plugins
+
+
+Logger().notice(f"Plugins Directory: {PLUGINS_DIR}")
+print('::: PLUGINS EXISTS  ::: ', PLUGINS_DIR.exists())
 
 # Add plugins directory to sys.path
 sys.path.insert(0, str(PLUGINS_DIR))
@@ -53,7 +58,7 @@ def setup_plugin_importer(package_name: str, plugin_subdir: str):
         )
 
         return True
-    except Exception as e:
+    except Exception:
         # During package build, dependencies might not be available
         # This is fine - plugins just won't be available until runtime
         return False
@@ -88,4 +93,6 @@ def dynamic_import_helper(package_name: str, attr_name: str):
             return getattr(module, attr_name)
 
     # If not found, raise the appropriate error
-    raise AttributeError(f"module '{package_name}' has no attribute '{attr_name}'")
+    raise AttributeError(
+        f"module '{package_name}' has no attribute '{attr_name}'"
+    )
