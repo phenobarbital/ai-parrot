@@ -172,7 +172,7 @@ class GooglePlacesBaseTool(AbstractTool):
 class GoogleSearchTool(AbstractTool):
     """Enhanced Google Search tool with content preview capabilities."""
 
-    name = "google_search"
+    name = "GoogleSearchTool"
     description = "Search the web using Google Custom Search API with optional content preview"
     args_schema = GoogleSearchArgs
 
