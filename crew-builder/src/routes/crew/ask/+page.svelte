@@ -188,12 +188,17 @@
 
 <div class="min-h-screen bg-base-200/60 py-10">
   <div class="mx-auto max-w-5xl space-y-8 px-4">
-    <div>
-      <h1 class="text-3xl font-bold text-base-content">Ask a Crew</h1>
-      <p class="mt-2 text-base text-base-content/70">
-        Select one of your existing crews and send a Markdown-formatted question. We'll execute the crew and
-        display the collective response alongside each agent's contribution.
-      </p>
+    <div class="flex flex-wrap items-start justify-between gap-3">
+      <div>
+        <h1 class="text-3xl font-bold text-base-content">Ask a Crew</h1>
+        <p class="mt-2 text-base text-base-content/70">
+          Select one of your existing crews and send a Markdown-formatted question. We'll execute the crew and
+          display the collective response alongside each agent's contribution.
+        </p>
+      </div>
+      <a class="btn btn-ghost" href="/">
+        ← Back to dashboard
+      </a>
     </div>
 
     <section class="rounded-xl bg-base-100 p-6 shadow">
