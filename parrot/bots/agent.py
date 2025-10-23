@@ -123,7 +123,7 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
         tools.extend(
             [
                 PythonREPLTool(
-                    report_dir=STATIC_DIR.joinpath(self.agent_id, 'documents')
+                    report_dir=AGENTS_DIR.joinpath(self.agent_id, 'documents')
                 ),
             ]
         )
@@ -218,8 +218,7 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
             raise ValueError("No query specified.")
         try:
             query_file = AGENTS_DIR.joinpath(self.agent_id, 'queries', query)
-            formatted_query = query_file.read_text().format(**kwargs)
-            return formatted_query
+            return query_file.read_text().format(**kwargs)
         except Exception as e:
             self.logger.error(
                 f"Failed to format query: {e}"
@@ -301,7 +300,9 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
             return file_path
         except Exception as e:
             self.logger.error(f"Error saving transcript: {e}")
-            raise RuntimeError(f"Failed to save transcript: {e}")
+            raise RuntimeError(
+                f"Failed to save transcript: {e}"
+            ) from e
 
     async def pdf_report(
         self,

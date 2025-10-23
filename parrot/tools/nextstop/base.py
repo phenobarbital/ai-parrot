@@ -4,11 +4,11 @@ from pathlib import Path
 from pydantic import BaseModel
 import aiofiles
 import pandas as pd
-from navconfig import BASE_DIR
 from asyncdb import AsyncDB
 from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611
 from querysource.conf import default_dsn
 from ..toolkit import AbstractToolkit
+from ...conf import AGENTS_DIR
 
 
 def is_collection_model(structured_obj: type) -> bool:
@@ -62,8 +62,7 @@ def get_model_from_collection(collection_model: type) -> type:
     if 'records' in fields:
         field_info = fields['records']
         field_type = field_info.annotation if hasattr(field_info, 'annotation') else field_info.type_
-        args = get_args(field_type)
-        if args:
+        if (args := get_args(field_type)):
             return args[0]  # Return the type inside List[Type]
 
     raise ValueError(f"Could not extract record model from {collection_model}")
@@ -87,7 +86,7 @@ class BaseNextStop(AbstractToolkit):
         """
         super().__init__(**kwargs)
         self.default_dsn = dsn or default_dsn
-        self.program = program or 'hisense'
+        self.program = program or ''
         self.agent_name: str = kwargs.get('agent_name', 'nextstop')
         self._json_encoder = json_encoder
         self._json_decoder = json_decoder
@@ -111,18 +110,23 @@ class BaseNextStop(AbstractToolkit):
             async with aiofiles.open(file_path, mode='r', encoding='utf-8') as f:
                 content = await f.read()
             return content
-        except FileNotFoundError:
-            raise FileNotFoundError(f"File not found: {file_path}")
+        except FileNotFoundError as e:
+            raise FileNotFoundError(
+                f"File not found: {file_path}"
+            ) from e
         except Exception as e:
-            raise Exception(f"Error reading file {file_path}: {e}")
+            raise RuntimeError(
+                f"Error reading file {file_path}: {e}"
+            ) from e
 
     async def _get_prompt(self, prompt_file: str) -> str:
         """Fetch the prompt content from the specified file."""
-        prompt_path = BASE_DIR.joinpath(
-            'agents',
+        print('AQUI > ', AGENTS_DIR)
+        prompt_path = AGENTS_DIR.joinpath(
             self.agent_name,
             self.program,
-            'prompts', f"{prompt_file}.txt"
+            'prompts',
+            f"{prompt_file}.txt"
         )
         return await self._open_file(prompt_path)
 
@@ -141,8 +145,7 @@ class BaseNextStop(AbstractToolkit):
         Raises:
             FileNotFoundError: If the query file does not exist
         """
-        query_path = BASE_DIR.joinpath(
-            'agents',
+        query_path = AGENTS_DIR.joinpath(
             self.agent_name,
             self.program,
             'queries',
@@ -178,7 +181,7 @@ class BaseNextStop(AbstractToolkit):
             conn.output_format(frmt)
             result, error = await conn.query(query)
             if error:
-                raise Exception(
+                raise RuntimeError(
                     f"Error fetching record: {error}"
                 )
             if isinstance(result, pd.DataFrame) and result.empty:
@@ -223,14 +226,14 @@ class BaseNextStop(AbstractToolkit):
             Exception: If there's an error executing the query
         """
         frmt = output_format.lower()
-        if frmt in ('structured', 'json'):
+        if frmt in {'structured', 'json'}:
             frmt = 'pandas'  # Default to pandas for structured output
         db = AsyncDB('pg', dsn=self.default_dsn)
         async with await db.connection() as conn:  # pylint: disable=E1101  # noqa
             conn.output_format(frmt)
             result, error = await conn.query(query)
             if error:
-                raise Exception(
+                raise RuntimeError(
                     f"Error fetching dataset: {error}"
                 )
             if result.empty:
@@ -239,11 +242,11 @@ class BaseNextStop(AbstractToolkit):
                 )
             if output_format == "pandas":
                 return result
-            elif output_format == "json":
+            if output_format == "json":
                 return json_encoder(
                     result.to_dict(orient='records')
                 )
-            elif output_format == "structured":
+            if output_format == "structured":
                 # Convert DataFrame to Pydantic models
                 data = []
                 try:
