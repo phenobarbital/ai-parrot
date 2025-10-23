@@ -499,6 +499,34 @@ class CrewHandler(BaseView):
                             tasks=tasks,
                             **execution_kwargs
                         )
+                    elif mode == ExecutionMode.LOOP:
+                        if not isinstance(query, str):
+                            raise ValueError("Loop execution requires a string query for the initial task")
+
+                        loop_condition = execution_kwargs.pop('condition', None)
+                        if not loop_condition or not isinstance(loop_condition, str):
+                            raise ValueError("Loop execution requires a 'condition' string in kwargs")
+
+                        agent_sequence = execution_kwargs.pop('agent_sequence', None)
+                        if agent_sequence is not None:
+                            if not isinstance(agent_sequence, list):
+                                raise ValueError("'agent_sequence' must be a list of agent identifiers")
+                            if not all(isinstance(agent_id, str) for agent_id in agent_sequence):
+                                raise ValueError("'agent_sequence' values must be strings")
+
+                        max_iterations = execution_kwargs.pop('max_iterations', None)
+                        if max_iterations is None:
+                            max_iterations = 2
+                        elif not isinstance(max_iterations, int):
+                            raise ValueError("'max_iterations' must be an integer")
+
+                        result = await crew.run_loop(
+                            initial_task=query,
+                            condition=loop_condition,
+                            agent_sequence=agent_sequence,
+                            max_iterations=max_iterations,
+                            **execution_kwargs
+                        )
                     elif mode == ExecutionMode.FLOW:
                         result = await crew.run_flow(
                             initial_task=query,

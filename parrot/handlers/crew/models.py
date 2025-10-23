@@ -16,6 +16,7 @@ class ExecutionMode(str, Enum):
     SEQUENTIAL = "sequential"
     PARALLEL = "parallel"
     FLOW = "flow"
+    LOOP = "loop"
 
 
 class JobStatus(str, Enum):
