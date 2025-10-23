@@ -1,7 +1,3 @@
-<script lang="ts" context="module">
-  export const ssr = false;
-</script>
-
 <script lang="ts">
   import { onMount } from 'svelte';
   import { get } from 'svelte/store';
@@ -53,6 +49,7 @@
   let isSubmitting = false;
   let rawAgentResponses: [string, AgentResponse][] = [];
   let agentResponses: AgentResponseView[] = [];
+  const crewSelectId = 'crew-select';
 
   $: selectedCrew = crews.find((crewItem) => crewItem.crew_id === selectedCrewId) ?? null;
   $: finalOutputHtml = jobStatus?.result?.output ? markdownToHtml(jobStatus.result.output) : '';
@@ -204,7 +201,7 @@
     <section class="rounded-xl bg-base-100 p-6 shadow">
       <form class="space-y-6" on:submit={handleSubmit}>
         <div class="space-y-2">
-          <label class="block text-sm font-semibold text-base-content/80">Select crew</label>
+          <label class="block text-sm font-semibold text-base-content/80" for={crewSelectId}>Select crew</label>
           {#if crewsLoading}
             <div class="flex items-center gap-3 rounded-lg border border-dashed border-base-300 p-4 text-sm text-base-content/70">
               <LoadingSpinner size="sm" center={false} />
@@ -220,6 +217,7 @@
           {:else}
             <select
               class="select select-bordered w-full"
+              id={crewSelectId}
               bind:value={selectedCrewId}
             >
               <option value="" disabled selected={!selectedCrewId}>
