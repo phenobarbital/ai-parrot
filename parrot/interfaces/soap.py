@@ -2,13 +2,16 @@
 
 import base64
 from abc import ABC
-from typing import Any, Optional
+from typing import Any, Optional, Union
+from pathlib import Path
 import httpx
 import redis.asyncio as aioredis
 from navconfig.logging import logging
 from zeep import AsyncClient as ZeepAsyncClient, Settings
 from zeep.transports import AsyncTransport as ZeepAsyncTransport
 from ..conf import REDIS_SERVICES_URL
+
+logging.getLogger(name='zeep').setLevel(logging.WARNING)
 
 
 class NoProxyAsyncTransport(ZeepAsyncTransport):
@@ -39,10 +42,7 @@ class NoProxyAsyncTransport(ZeepAsyncTransport):
         self.logger = logging.getLogger("zeep.transports")
         # Store headers for debugging
         self._debug_headers = headers or {}
-        # Build the sync client for WSDL parsing with headers
-        transport = getattr(client, "_transport", None)
         self.wsdl_client = httpx.Client(
-            transport=transport,
             timeout=timeout,
             headers=headers or {},  # Pasar los headers
         )
@@ -118,7 +118,7 @@ class SOAPClient(ABC):
         self.client_secret = credentials["client_secret"]
         self.token_url     = credentials["token_url"]
         # Accept Path or str, but Zeep needs a str
-        self.wsdl_path     = str(credentials["wsdl_path"])
+        self.wsdl_path = self._resolve_wsdl_path(credentials["wsdl_path"])
         self.refresh_token = credentials["refresh_token"]
 
         self._httpx_client = httpx_client
@@ -139,6 +139,12 @@ class SOAPClient(ABC):
         self._client: Optional[ZeepAsyncClient]           = None
         self._service: Any                                = None
         self._result: Any                                 = None
+
+    def _resolve_wsdl_path(self, wsdl: Union[str, Path]) -> str:
+        """
+        Convert Path objects to strings and resolve relative paths.
+        """
+        return str(wsdl.resolve()) if isinstance(wsdl, Path) else str(wsdl)
 
     async def start(self) -> None:
         """
@@ -202,7 +208,8 @@ class SOAPClient(ABC):
             timeout=self.timeout,
         )
         return NoProxyAsyncTransport(
-            client=client, headers={"Authorization": f"Bearer {self._token}"}
+            client=client,
+            headers={"Authorization": f"Bearer {self._token}"}
         )
 
     def get_settings(self) -> Settings:
