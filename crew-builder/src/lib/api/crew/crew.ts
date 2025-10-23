@@ -62,7 +62,7 @@ export interface ExecuteCrewOptions {
 
 export async function executeCrew(
   crewId: string,
-  query: string,
+  query: string | Record<string, unknown>,
   options: ExecuteCrewOptions = {}
 ) {
   const payload = {
