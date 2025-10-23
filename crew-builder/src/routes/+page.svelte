@@ -340,6 +340,9 @@
                           <a class="btn btn-ghost btn-xs" href={`/builder?crew_id=${crewItem.crew_id}`}>
                             View
                           </a>
+                          <a class="btn btn-primary btn-xs" href={`/crew/ask?crew_id=${crewItem.crew_id}`}>
+                            Ask
+                          </a>
                         </div>
                       </td>
                     </tr>
@@ -419,6 +422,25 @@
                 />
               </svg>
               Crew Builder
+            </a>
+          </li>
+          <li>
+            <a href="/crew/ask">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                class="h-5 w-5"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M7 8h10M7 12h6m-5 8l-4 4v-4H4a3 3 0 01-3-3V5a3 3 0 013-3h16a3 3 0 013 3v10a3 3 0 01-3 3H9z"
+                />
+              </svg>
+              Ask a Crew
             </a>
           </li>
           <li>
