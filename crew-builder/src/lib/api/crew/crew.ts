@@ -2,10 +2,12 @@ import apiClient from '../client';
 
 const API_PATH = '/api/v1/crew';
 
+export type CrewExecutionMode = 'sequential' | 'parallel' | 'loop' | 'flow';
+
 export interface CrewDefinition {
   name: string;
   description: string;
-  execution_mode: string;
+  execution_mode: CrewExecutionMode;
   agents: unknown[];
 }
 
@@ -58,14 +60,23 @@ export interface ExecuteCrewOptions {
   session_id?: string;
   synthesis_prompt?: string;
   kwargs?: Record<string, unknown>;
+  execution_mode?: CrewExecutionMode;
 }
 
 export async function executeCrew(
   crewId: string,
-  query: string,
+  query: string | Record<string, unknown>,
   options: ExecuteCrewOptions = {}
 ) {
-  const payload = {
+  const payload: {
+    crew_id: string;
+    query: string | Record<string, unknown>;
+    user_id?: string;
+    session_id?: string;
+    synthesis_prompt?: string;
+    kwargs: Record<string, unknown>;
+    execution_mode?: CrewExecutionMode;
+  } = {
     crew_id: crewId,
     query,
     user_id: options.user_id,
@@ -73,6 +84,10 @@ export async function executeCrew(
     synthesis_prompt: options.synthesis_prompt,
     kwargs: options.kwargs ?? {}
   };
+
+  if (options.execution_mode) {
+    payload.execution_mode = options.execution_mode;
+  }
 
   const { data } = await apiClient.post(API_PATH, payload);
   return data;

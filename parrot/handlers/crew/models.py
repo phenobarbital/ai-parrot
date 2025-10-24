@@ -16,6 +16,7 @@ class ExecutionMode(str, Enum):
     SEQUENTIAL = "sequential"
     PARALLEL = "parallel"
     FLOW = "flow"
+    LOOP = "loop"
 
 
 class JobStatus(str, Enum):
@@ -118,6 +119,10 @@ class CrewQueryRequest(BaseModel):
     query: Union[str, Dict[str, str]] = Field(
         description="Query for the crew (string for all agents, dict for specific agents)"
     )
+    execution_mode: Optional[ExecutionMode] = Field(
+        default=None,
+        description="Override the crew's default execution mode"
+    )
     user_id: Optional[str] = Field(
         default=None,
         description="User identifier"
@@ -194,6 +199,7 @@ class CrewJobResponse(BaseModel):
     status: JobStatus = Field(description="Current job status")
     message: str = Field(description="Human-readable message")
     created_at: str = Field(description="Job creation timestamp")
+    execution_mode: ExecutionMode = Field(description="Execution mode used for this job")
 
 
 class CrewJobStatusResponse(BaseModel):
@@ -216,4 +222,8 @@ class CrewJobStatusResponse(BaseModel):
     metadata: Dict[str, Any] = Field(
         default_factory=dict,
         description="Additional execution metadata"
+    )
+    execution_mode: Optional[ExecutionMode] = Field(
+        default=None,
+        description="Execution mode used for this job"
     )
