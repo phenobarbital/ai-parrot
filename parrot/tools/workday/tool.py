@@ -633,7 +633,13 @@ class WorkdayToolkit(AbstractToolkit):
                 "Worker_Reference": self.soap_client._build_worker_reference(worker_id)
             },
             "Response_Group": {
-                "Include_Time_Off_Balance": True
+                # Some Workday tenants/WSDL versions do not expose
+                # Include_Time_Off_Balance on the Worker response group.  Keep
+                # the response group minimal to avoid zeep TypeError for
+                # unsupported fields while still returning the worker payload
+                # (which may contain Time_Off_Balance_Data when the tenant is
+                # licensed for Absence Management).
+                "Include_Reference": True
             }
         }
 
