@@ -37,13 +37,20 @@ Example usage:
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Dict, List, Optional
+import contextlib
+from typing import Any, Dict, List, Optional, Type, Union
 from datetime import datetime
 from pydantic import BaseModel, Field
 from zeep import helpers
 from ..toolkit import AbstractToolkit
 from ..decorators import tool_schema
 from ...interfaces.soap import SOAPClient
+from .models import (
+    WorkdayReference,
+    WorkerModel,
+    OrganizationModel,
+    WorkdayResponseParser
+)
 
 
 # -----------------------------
@@ -67,9 +74,9 @@ class GetWorkerInput(BaseModel):
     worker_id: str = Field(
         description="Worker ID (Employee ID, Contingent Worker ID, or WID)"
     )
-    include_inactive: bool = Field(
-        default=False,
-        description="Include inactive workers in the search"
+    output_format: Optional[Type[BaseModel]] = Field(
+        default=None,
+        description="Optional Pydantic model to format the output"
     )
 
 
@@ -341,8 +348,8 @@ class WorkdayToolkit(AbstractToolkit):
     async def get_worker(
         self,
         worker_id: str,
-        include_inactive: bool = False
-    ) -> Dict[str, Any]:
+        output_format: Optional[Type[BaseModel]] = None,
+    ) -> Union[WorkerModel, BaseModel]:
         """
         Get detailed information about a specific worker by ID.
 
@@ -351,7 +358,6 @@ class WorkdayToolkit(AbstractToolkit):
 
         Args:
             worker_id: Worker identifier (Employee ID, Contingent Worker ID, or WID)
-            include_inactive: Whether to include inactive workers
 
         Returns:
             Worker data dictionary with all available fields
@@ -379,7 +385,12 @@ class WorkdayToolkit(AbstractToolkit):
         }
 
         result = await self.soap_client.run("Get_Workers", **request)
-        return self.soap_client._parse_worker_response(result)
+        # Use parser for structured output
+        return WorkdayResponseParser.parse_worker_response(
+            result,
+            output_format=output_format
+        )
+        # return self.soap_client._parse_worker_response(result)
 
     @tool_schema(SearchWorkersInput)
     async def search_workers(
@@ -435,10 +446,10 @@ class WorkdayToolkit(AbstractToolkit):
         # Add hire date filters if provided
         if hire_date_from or hire_date_to:
             request["Request_Criteria"]["Hire_Date_Range"] = {}
-            if hire_date_from:
-                request["Request_Criteria"]["Hire_Date_Range"]["From"] = hire_date_from
-            if hire_date_to:
-                request["Request_Criteria"]["Hire_Date_Range"]["To"] = hire_date_to
+        if hire_date_from:
+            request["Request_Criteria"]["Hire_Date_Range"]["From"] = hire_date_from
+        if hire_date_to:
+            request["Request_Criteria"]["Hire_Date_Range"]["To"] = hire_date_to
 
         result = await self.soap_client.run("Get_Workers", **request)
 
@@ -919,19 +930,14 @@ class WorkdayToolkit(AbstractToolkit):
         # Handle single worker vs array
         if not isinstance(worker_data, list):
             worker_data = [worker_data] if worker_data else []
-
-        for worker in worker_data:
-            workers.append(worker)
-
+        workers.extend(iter(worker_data))
         return workers
 
     def _extract_termination_date(self, worker_data: Dict[str, Any]) -> Optional[str]:
         """Extract termination date from worker data."""
-        try:
+        with contextlib.suppress(Exception):
             employment = worker_data.get("Worker_Data", {}).get("Employment_Data", {})
             status_data = employment.get("Worker_Status_Data", {})
             if status_data.get("Terminated"):
                 return status_data.get("Termination_Date")
-        except Exception:
-            pass
         return None
