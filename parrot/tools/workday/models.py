@@ -176,6 +176,55 @@ class WorkdayResponseParser:
         "organization": OrganizationModel,
     }
 
+    @staticmethod
+    def _safe_get(obj: Any, key: str, default: Any = None) -> Any:
+        """
+        Safely get a value from obj[key], handling both dicts and lists.
+
+        If obj is a list, takes first element before getting key.
+        Returns default if obj is None, key doesn't exist, or obj is empty list.
+        """
+        if obj is None:
+            return default
+
+        # If it's a list, take first element
+        if isinstance(obj, list):
+            if not obj:
+                return default
+            obj = obj[0]
+
+        # Now try to get the key
+        return obj.get(key, default) if isinstance(obj, dict) else default
+
+    @staticmethod
+    def _safe_navigate(obj: Any, *path: str, default: Any = None) -> Any:
+        """
+        Safely navigate a deeply nested structure with mixed dicts/lists.
+
+        Example:
+            _safe_navigate(data, "Personal_Data", "Contact_Data", "Email_Address_Data")
+
+        Each step handles both dict keys and list indexing (takes [0] if list).
+        """
+        current = obj
+        for key in path:
+            if current is None:
+                return default
+
+            # Handle list - take first element
+            if isinstance(current, list):
+                if not current:
+                    return default
+                current = current[0]
+
+            # Handle dict - get key
+            if isinstance(current, dict):
+                current = current.get(key)
+            else:
+                return default
+
+        return current if current is not None else default
+
     @classmethod
     def parse_worker_response(
         cls,
@@ -348,21 +397,24 @@ class WorkdayResponseParser:
             business_title = primary_position.get("Business_Title")
 
             # Job Profile
-            job_profile_data = primary_position.get("Job_Profile_Summary_Data", {})
-            if job_profile_data:
+            if job_profile_data := primary_position.get("Job_Profile_Summary_Data", {}):
+                # Use safe navigation for potentially list-valued fields
+                job_profile_ref = job_profile_data.get("Job_Profile_Reference", {})
+                profile_id = cls._extract_id(job_profile_ref)
+
                 job_profile = JobProfile(
-                    id=cls._extract_id(job_profile_data.get("Job_Profile_Reference", {})),
+                    id=profile_id or "",
                     name=job_profile_data.get("Job_Profile_Name", ""),
-                    job_family=job_profile_data.get("Job_Family_Reference", {}).get("descriptor"),
-                    management_level=job_profile_data.get("Management_Level_Reference", {}).get("descriptor")
+                    job_family=cls._safe_navigate(job_profile_data, "Job_Family_Reference", "descriptor"),
+                    management_level=cls._safe_navigate(job_profile_data, "Management_Level_Reference", "descriptor")
                 )
 
             # Location
             location_data = primary_position.get("Business_Site_Summary_Data", {})
-            location = location_data.get("Name")
+            location = location_data.get("Name") if isinstance(location_data, dict) else None
 
-            # Time type
-            time_type = primary_position.get("Position_Time_Type_Reference", {}).get("descriptor")
+            # Time type - use safe navigation
+            time_type = cls._safe_navigate(primary_position, "Position_Time_Type_Reference", "descriptor")
 
         # Manager
         manager = None
@@ -371,11 +423,10 @@ class WorkdayResponseParser:
             if not isinstance(manager_data, list):
                 manager_data = [manager_data]
 
-            manager_ref = manager_data[0].get("Position_Data", {}).get("Manager_as_of_last_detected_manager_change_Reference")
-            if manager_ref:
+            if manager_ref := manager_data[0].get("Position_Data", {}).get("Manager_as_of_last_detected_manager_change_Reference"):
                 manager = Manager(
-                    worker_id=cls._extract_id(manager_ref),
-                    name=manager_ref.get("descriptor", ""),
+                    worker_id=cls._extract_id(manager_ref) or "",
+                    name=cls._safe_get(manager_ref, "descriptor", "") or cls._safe_get(manager_ref, "Descriptor", ""),
                     email=None  # Would need separate lookup
                 )
 
@@ -466,8 +517,7 @@ class WorkdayResponseParser:
             email_data = [email_data] if email_data else []
 
         for email_obj in email_data:
-            email_addr = email_obj.get("Email_Address")
-            if email_addr:
+            if email_addr := email_obj.get("Email_Address"):
                 # Safe navigation through Usage_Data -> Type_Data nested lists
                 email_type = None
                 is_primary = False
@@ -509,8 +559,7 @@ class WorkdayResponseParser:
             phone_data = [phone_data] if phone_data else []
 
         for phone_obj in phone_data:
-            formatted_phone = phone_obj.get("Formatted_Phone")
-            if formatted_phone:
+            if formatted_phone := phone_obj.get("Formatted_Phone"):
                 # Safe navigation through Usage_Data -> Type_Data
                 phone_type = None
                 is_primary = False
@@ -548,8 +597,7 @@ class WorkdayResponseParser:
             address_data = [address_data] if address_data else []
 
         for addr_obj in address_data:
-            formatted = addr_obj.get("Formatted_Address")
-            if formatted:
+            if formatted := addr_obj.get("Formatted_Address"):
                 # Extract address lines
                 address_line_1 = None
                 address_lines = addr_obj.get("Address_Line_Data", [])
