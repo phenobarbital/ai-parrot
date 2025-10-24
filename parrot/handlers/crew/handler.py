@@ -10,7 +10,7 @@ Endpoints:
     PATCH /api/v1/crew/job - Get job status and results
     DELETE /api/v1/crew - Delete a crew
 """
-from typing import Any, List
+from typing import Any, List, Optional
 import uuid
 import json
 from aiohttp import web
@@ -399,6 +399,7 @@ class CrewHandler(BaseView):
         {
             "crew_id": "uuid" or "name": "crew_name",
             "query": "What is the status of AI research?" or {"agent1": "task1", "agent2": "task2"},
+            "execution_mode": "sequential|parallel|loop|flow",
             "user_id": "optional_user_id",
             "session_id": "optional_session_id",
             "synthesis_prompt": "optional synthesis prompt for research mode",
@@ -445,6 +446,18 @@ class CrewHandler(BaseView):
                 )
 
             crew, crew_def = crew_data
+            requested_mode = data.get('execution_mode')
+            override_mode: Optional[ExecutionMode] = None
+            if requested_mode:
+                try:
+                    override_mode = ExecutionMode(requested_mode)
+                except ValueError:
+                    return self.error(
+                        response={"message": f"Invalid execution mode: {requested_mode}"},
+                        status=400
+                    )
+
+            selected_mode = override_mode or crew_def.execution_mode
             # Create a job for async execution
             job_id = str(uuid.uuid4())
 
@@ -455,7 +468,7 @@ class CrewHandler(BaseView):
                 query=query,
                 user_id=data.get('user_id'),
                 session_id=data.get('session_id'),
-                execution_mode=crew_def.execution_mode.value
+                execution_mode=selected_mode.value
             )
 
             # Execute asynchronously
@@ -475,7 +488,7 @@ class CrewHandler(BaseView):
                 """Async execution function."""
                 try:
                     # Determine execution mode
-                    mode = crew_def.execution_mode
+                    mode = override_mode or crew_def.execution_mode
 
                     if mode == ExecutionMode.SEQUENTIAL:
                         result = await crew.run_sequential(
@@ -563,7 +576,8 @@ class CrewHandler(BaseView):
                     "crew_id": crew_def.crew_id,
                     "status": job.status.value,
                     "message": "Crew execution started",
-                    "created_at": job.created_at.isoformat()
+                    "created_at": job.created_at.isoformat(),
+                    "execution_mode": selected_mode.value
                 },
                 status=202
             )
@@ -618,7 +632,8 @@ class CrewHandler(BaseView):
                 "status": job.status.value,
                 "elapsed_time": job.elapsed_time,
                 "created_at": job.created_at.isoformat(),
-                "metadata": job.metadata
+                "metadata": job.metadata,
+                "execution_mode": job.execution_mode
             }
 
             # Add result if completed

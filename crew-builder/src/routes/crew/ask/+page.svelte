@@ -3,10 +3,11 @@
   import { get } from 'svelte/store';
   import { page } from '$app/stores';
   import { crew as crewApi } from '$lib/api';
+  import type { CrewExecutionMode } from '$lib/api/crew/crew';
   import MarkdownEditor from '$lib/components/MarkdownEditor.svelte';
   import JsonViewer from '$lib/components/JsonViewer.svelte';
   import { markdownToHtml } from '$lib/utils/markdown';
-  import { LoadingSpinner } from '../../../components';
+  import { LoadingSpinner } from '$lib/components';
 
   type CrewExecutionMode = 'sequential' | 'parallel' | 'loop' | 'flow';
 
@@ -35,6 +36,7 @@
       output?: unknown;
       response?: Record<string, { input?: string; output?: string }>;
     };
+    execution_mode?: string;
     [key: string]: unknown;
   }
 
@@ -85,7 +87,32 @@
   const crewSelectId = 'crew-select';
 
   let selectedCrew: CrewSummary | null = null;
+  const executionModeMeta = {
+    sequential: {
+      label: 'Sequential',
+      description: 'Run agents one after another using the crew\'s defined order.'
+    },
+    parallel: {
+      label: 'Parallel',
+      description: 'Execute agents simultaneously with shared or per-agent prompts.'
+    },
+    loop: {
+      label: 'Loop',
+      description: 'Iterate through agents until the stop condition is met.'
+    },
+    flow: {
+      label: 'Flow',
+      description: 'Follow the crew\'s flow configuration to determine execution order.'
+    }
+  } satisfies Record<CrewExecutionMode, { label: string; description: string }>;
+
+  const executionModeOptions = (
+    Object.entries(executionModeMeta) as [CrewExecutionMode, { label: string; description: string }][]
+  ).map(([value, meta]) => ({ value, ...meta }));
+
   let currentMode: CrewExecutionMode = 'sequential';
+  let modeLocked = false;
+  let lastModeCrewId: string | null = null;
   let finalOutputRaw: unknown = null;
   let finalOutputHtml = '';
   let finalOutputList: unknown[] = [];
@@ -93,7 +120,20 @@
   let draggingIndex: number | null = null;
 
   $: selectedCrew = crews.find((crewItem) => crewItem.crew_id === selectedCrewId) ?? null;
-  $: currentMode = (crewDetails?.execution_mode ?? selectedCrew?.execution_mode ?? 'sequential') as CrewExecutionMode;
+  $: if (selectedCrewId !== lastModeCrewId) {
+    modeLocked = false;
+    lastModeCrewId = selectedCrewId || null;
+  }
+  $: if (!selectedCrewId) {
+    if (currentMode !== 'sequential') {
+      currentMode = 'sequential';
+    }
+  } else if (!modeLocked) {
+    const defaultMode = (crewDetails?.execution_mode ?? selectedCrew?.execution_mode ?? 'sequential') as CrewExecutionMode;
+    if (currentMode !== defaultMode) {
+      currentMode = defaultMode;
+    }
+  }
   $: rawAgentResponses =
     jobStatus?.result?.response && typeof jobStatus.result.response === 'object'
       ? (Object.entries(jobStatus.result.response) as [string, AgentResponse][])
@@ -186,6 +226,14 @@
   function getAgentDisplayName(agentId: string) {
     const agent = crewDetails?.agents?.find((item) => item.agent_id === agentId);
     return agent?.name?.trim() || agentId;
+  }
+
+  function getExecutionModeLabel(mode?: string | null) {
+    if (!mode) {
+      return '';
+    }
+    const meta = executionModeMeta[mode as CrewExecutionMode];
+    return meta?.label ?? mode;
   }
 
   function moveAgentInSequence(fromIndex: number, toIndex: number) {
@@ -353,7 +401,7 @@
     }
 
     const executionOptions: crewApi.ExecuteCrewOptions = {
-      kwargs: {}
+      execution_mode: currentMode
     };
     let queryPayload: string | Record<string, string>;
 
@@ -483,6 +531,16 @@
     statusMessage = '';
   }
 
+  function handleModeChange(mode: CrewExecutionMode) {
+    if (currentMode !== mode) {
+      currentMode = mode;
+    }
+    modeLocked = true;
+    jobStatus = null;
+    jobError = '';
+    statusMessage = '';
+  }
+
   function retryLoadCrewDetails() {
     if (!selectedCrewId) {
       return;
@@ -553,7 +611,7 @@
                 <p>
                   <span class="font-semibold">Crew ID:</span> {selectedCrew.crew_id}
                   <span class="mx-2">·</span>
-                  <span class="font-semibold">Mode:</span> {selectedCrew.execution_mode || '—'}
+                  <span class="font-semibold">Default mode:</span> {selectedCrew.execution_mode || 'sequential'}
                 </p>
                 <p class="text-xs text-base-content/60">
                   {selectedCrew.description || 'No description provided'}
@@ -582,13 +640,38 @@
         </div>
 
         {#if selectedCrew}
-          <div class="rounded-lg border border-base-300 bg-base-200/60 px-4 py-3 text-sm text-base-content/70">
-            <span class="font-semibold text-base-content">Execution mode:</span>
-            <span class="ml-2 capitalize">{currentMode}</span>
+          <div class="rounded-lg border border-base-300 bg-base-200/60 px-4 py-4 text-sm text-base-content/70">
+            <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+              <div class="space-y-1">
+                <span class="block text-sm font-semibold uppercase tracking-wide text-base-content/80">
+                  Execution mode
+                </span>
+                <p class="text-xs text-base-content/60">
+                  {executionModeMeta[currentMode].description}
+                </p>
+              </div>
+              <div class="w-full max-w-xs">
+                <label class="form-control w-full">
+                  <span class="label-text text-xs font-semibold text-base-content/60">Mode</span>
+                  <select
+                    class="select select-bordered mt-1 w-full capitalize"
+                    bind:value={currentMode}
+                    on:change={(event) =>
+                      handleModeChange((event.target as HTMLSelectElement).value as CrewExecutionMode)
+                    }
+                    disabled={isSubmitting || crewsLoading || crewDetailsLoading}
+                  >
+                    {#each executionModeOptions as option (option.value)}
+                      <option value={option.value} class="capitalize">{option.label}</option>
+                    {/each}
+                  </select>
+                </label>
+              </div>
+            </div>
             {#if crewDetails?.agents}
-              <span class="ml-4 text-base-content/60">
+              <p class="mt-4 text-xs text-base-content/60">
                 <span class="font-semibold text-base-content">Agents:</span> {crewDetails.agents.length}
-              </span>
+              </p>
             {/if}
           </div>
         {/if}
@@ -897,6 +980,11 @@
             <div>
               <h2 class="text-2xl font-semibold text-base-content">Crew response</h2>
               <p class="text-sm text-base-content/70">Job ID: {jobStatus.job_id}</p>
+              {#if jobStatus.execution_mode}
+                <p class="text-sm text-base-content/60">
+                  Execution mode: {getExecutionModeLabel(jobStatus.execution_mode)}
+                </p>
+              {/if}
             </div>
             <div class="badge badge-primary badge-outline text-base-content">
               {jobStatus.status}
