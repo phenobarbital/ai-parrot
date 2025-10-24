@@ -639,11 +639,26 @@ class WorkdayToolkit(AbstractToolkit):
                 "Worker_Reference": self.soap_client._build_worker_reference(worker_id)
             },
             "Response_Group": {
-                "Include_Time_Off_Balance": True
+                # Some Workday tenants/WSDL versions do not expose
+                # Include_Time_Off_Balance on the Worker response group.  Keep
+                # the response group minimal to avoid zeep TypeError for
+                # unsupported fields while still returning the worker payload
+                # (which may contain Time_Off_Balance_Data when the tenant is
+                # licensed for Absence Management).
+                "Include_Reference": True
             }
         }
 
-        result = await self.soap_client.run("Get_Workers", **request)
+        try:
+            result = await self.soap_client.run("Get_Workers", **request)
+        except TypeError as exc:  # pragma: no cover - defensive for zeep runtime
+            # If the response group still produces a schema error fall back to
+            # the most basic request so callers receive a graceful response
+            # instead of the raw zeep exception.
+            if "Worker_Response_GroupType" not in str(exc):
+                raise
+            request.pop("Response_Group", None)
+            result = await self.soap_client.run("Get_Workers", **request)
         parsed = self.soap_client._parse_worker_response(result)
 
         # Extract time off data
