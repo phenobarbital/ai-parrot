@@ -468,7 +468,8 @@ class WorkdayToolkit(AbstractToolkit):
         self,
         worker_id: str,
         include_personal: bool = True,
-        include_work: bool = True
+        include_work: bool = True,
+        output_format: Optional[Type[BaseModel]] = None,
     ) -> Dict[str, Any]:
         """
         Get contact information for a specific worker.
@@ -499,20 +500,12 @@ class WorkdayToolkit(AbstractToolkit):
         }
 
         result = await self.soap_client.run("Get_Workers", **request)
-        parsed = self.soap_client._parse_worker_response(result)
-
-        # Extract only contact-related fields
-        if parsed and "Worker_Data" in parsed:
-            worker_data = parsed["Worker_Data"]
-            return {
-                "worker_id": worker_id,
-                "email_addresses": worker_data.get("Email_Address_Data", []),
-                "phone_numbers": worker_data.get("Phone_Data", []),
-                "addresses": worker_data.get("Address_Data", []),
-                "instant_messengers": worker_data.get("Instant_Messenger_Data", [])
-            }
-
-        return {"worker_id": worker_id, "contact_data": parsed}
+        # parsed = self.soap_client._parse_worker_response(result)
+        return WorkdayResponseParser.parse_contact_response(
+            result,
+            worker_id=worker_id,
+            output_format=output_format
+        )
 
     @tool_schema(GetWorkerJobDataInput)
     async def get_worker_job_data(
@@ -617,7 +610,8 @@ class WorkdayToolkit(AbstractToolkit):
 
     async def get_worker_time_off_balance(
         self,
-        worker_id: str
+        worker_id: str,
+        output_format: Optional[Type[BaseModel]] = None
     ) -> Dict[str, Any]:
         """
         Get time off balance for a worker.
@@ -644,20 +638,16 @@ class WorkdayToolkit(AbstractToolkit):
         }
 
         result = await self.soap_client.run("Get_Workers", **request)
-        parsed = self.soap_client._parse_worker_response(result)
-
-        # Extract time off data
-        if parsed and "Worker_Data" in parsed:
-            return {
-                "worker_id": worker_id,
-                "time_off_balances": parsed["Worker_Data"].get("Time_Off_Balance_Data", [])
-            }
-
-        return {"worker_id": worker_id, "time_off_data": parsed}
+        return WorkdayResponseParser.parse_time_off_balance_response(
+            result,
+            worker_id=worker_id,
+            output_format=output_format
+        )
 
     async def get_workers_by_organization(
         self,
         org_id: str,
+        output_format: Optional[Type[BaseModel]] = None,
         include_subordinate: bool = True,
         exclude_inactive: bool = True,
         max_results: int = 100
@@ -702,7 +692,11 @@ class WorkdayToolkit(AbstractToolkit):
         }
 
         result = await self.soap_client.run("Get_Workers", **request)
-        return self._parse_workers_response(result)
+        # Use parser for structured output
+        return WorkdayResponseParser.parse_workers_response(
+            result,
+            output_format=output_format
+        )
 
     async def get_workers_by_ids(
         self,

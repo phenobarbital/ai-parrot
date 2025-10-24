@@ -85,6 +85,79 @@ class Compensation(BaseModel):
     pay_frequency: Optional[str] = Field(default=None, description="Annual, Monthly, etc.")
     effective_date: Optional[date] = None
 
+class TimeOffBalance(BaseModel):
+    """Individual time off balance for a specific time off type."""
+    time_off_type: str = Field(description="Time off type name (e.g., 'Vacation', 'Sick', 'PTO')")
+    time_off_type_id: Optional[str] = Field(default=None, description="Time off type ID")
+    # Balance information
+    balance: float = Field(description="Current balance in hours or days")
+    balance_unit: str = Field(default="Hours", description="Unit of measurement (Hours, Days)")
+    # Additional balance details
+    scheduled: Optional[float] = Field(default=None, description="Scheduled/pending time off")
+    available: Optional[float] = Field(default=None, description="Available balance (balance - scheduled)")
+    # Accrual information
+    accrued_ytd: Optional[float] = Field(default=None, description="Accrued year-to-date")
+    used_ytd: Optional[float] = Field(default=None, description="Used year-to-date")
+    # Carryover
+    carryover: Optional[float] = Field(default=None, description="Carried over from previous period")
+    carryover_limit: Optional[float] = Field(default=None, description="Maximum carryover allowed")
+    # Effective dates
+    as_of_date: Optional[date] = Field(default=None, description="Balance as of this date")
+    plan_year_start: Optional[date] = Field(default=None, description="Plan year start date")
+    plan_year_end: Optional[date] = Field(default=None, description="Plan year end date")
+
+
+class TimeOffBalanceModel(BaseModel):
+    """
+    Clean Time Off Balance model - Default output for time off information.
+
+    Provides structured view of a worker's time off balances across all types.
+    """
+    worker_id: str = Field(description="Worker ID")
+    as_of_date: date = Field(description="Date these balances are calculated as of")
+
+    # Time off balances by type
+    balances: List[TimeOffBalance] = Field(
+        default_factory=list,
+        description="List of time off balances by type"
+    )
+    # Quick access to common types
+    vacation_balance: Optional[float] = Field(
+        default=None,
+        description="Vacation/PTO balance if available"
+    )
+    sick_balance: Optional[float] = Field(
+        default=None,
+        description="Sick leave balance if available"
+    )
+    personal_balance: Optional[float] = Field(
+        default=None,
+        description="Personal time balance if available"
+    )
+    # Summary
+    total_available_hours: Optional[float] = Field(
+        default=None,
+        description="Total available time off across all types"
+    )
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "worker_id": "12345",
+                "as_of_date": "2025-10-24",
+                "vacation_balance": 120.0,
+                "sick_balance": 80.0,
+                "balances": [
+                    {
+                        "time_off_type": "Vacation",
+                        "balance": 120.0,
+                        "balance_unit": "Hours",
+                        "available": 112.0,
+                        "scheduled": 8.0
+                    }
+                ]
+            }
+        }
 
 class WorkerModel(BaseModel):
     """
@@ -153,6 +226,48 @@ class OrganizationModel(BaseModel):
     is_active: bool = Field(default=True)
 
 
+class ContactModel(BaseModel):
+    """
+    Clean Contact model - Default output for contact information.
+
+    Simplified representation of a worker's contact details.
+    """
+    worker_id: str = Field(description="Worker ID")
+
+    # Email addresses
+    primary_email: Optional[str] = None
+    work_email: Optional[str] = None
+    personal_email: Optional[str] = None
+    emails: List[EmailAddress] = Field(default_factory=list, description="All email addresses")
+
+    # Phone numbers
+    primary_phone: Optional[str] = None
+    work_phone: Optional[str] = None
+    mobile_phone: Optional[str] = None
+    phones: List[PhoneNumber] = Field(default_factory=list, description="All phone numbers")
+
+    # Addresses
+    primary_address: Optional[Address] = None
+    work_address: Optional[Address] = None
+    home_address: Optional[Address] = None
+    addresses: List[Address] = Field(default_factory=list, description="All addresses")
+
+    # Additional contact info
+    instant_messengers: List[Dict[str, str]] = Field(default_factory=list, description="IM handles")
+    social_networks: List[Dict[str, str]] = Field(default_factory=list, description="Social media")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "worker_id": "12345",
+                "primary_email": "john.doe@company.com",
+                "work_phone": "+1 (555) 123-4567",
+                "mobile_phone": "+1 (555) 987-6543"
+            }
+        }
+
+
+
 # ==========================================
 # Response Parser with Structured Outputs
 # ==========================================
@@ -174,6 +289,7 @@ class WorkdayResponseParser:
     DEFAULT_MODELS = {
         "worker": WorkerModel,
         "organization": OrganizationModel,
+        "contact": ContactModel,
     }
 
     @staticmethod
@@ -299,6 +415,159 @@ class WorkdayResponseParser:
             workers.append(model_class(**extracted))
 
         return workers
+
+    @classmethod
+    def parse_contact_response(
+        cls,
+        response: Any,
+        worker_id: str,
+        output_format: Optional[Type[T]] = None
+    ) -> Union[ContactModel, T]:
+        """
+        Parse contact information from Get_Workers response.
+
+        Args:
+            response: Raw Zeep Get_Workers response
+            worker_id: Worker ID for reference
+            output_format: Optional custom model. Defaults to ContactModel.
+
+        Returns:
+            Parsed contact information
+        """
+        model_class = output_format or cls.DEFAULT_MODELS["contact"]
+
+        # Get worker element (same navigation as parse_worker_response)
+        raw = helpers.serialize_object(response)
+        response_data = raw.get("Response_Data", {})
+        workers = response_data.get("Worker", [])
+
+        if not workers:
+            raise ValueError("No worker found in response")
+
+        worker_element = workers[0] if isinstance(workers, list) else workers
+
+        # Extract contact data
+        extracted = cls._extract_contact_data(worker_element, worker_id)
+
+        # Instantiate the model
+        return model_class(**extracted)
+
+    @classmethod
+    def _extract_contact_data(cls, worker_element: Dict[str, Any], worker_id: str) -> Dict[str, Any]:
+        """
+        Extract contact information from worker element.
+
+        Args:
+            worker_element: Single Worker element
+            worker_id: Worker ID for reference
+
+        Returns:
+            Dict with contact data for ContactModel
+        """
+        worker_data = worker_element.get("Worker_Data", {})
+        personal = worker_data.get("Personal_Data", {})
+        contact_data = personal.get("Contact_Data", {})
+
+        # Extract emails, phones, addresses using existing methods
+        emails = cls._extract_emails(contact_data)
+        phones = cls._extract_phones(contact_data)
+        addresses = cls._extract_addresses(contact_data)
+
+        # Determine primary email
+        primary_email = next((e.email for e in emails if e.primary), None)
+        if not primary_email and emails:
+            primary_email = emails[0].email
+
+        # Find work and personal emails
+        work_email = None
+        personal_email = None
+        for email in emails:
+            if email.type and "work" in email.type.lower():
+                work_email = email.email
+            elif email.type and ("home" in email.type.lower() or "personal" in email.type.lower()):
+                personal_email = email.email
+
+        # Determine primary phone
+        primary_phone = next((p.phone for p in phones if p.primary), None)
+        if not primary_phone and phones:
+            primary_phone = phones[0].phone
+
+        # Find work and mobile phones
+        work_phone = None
+        mobile_phone = None
+        for phone in phones:
+            if phone.type:
+                phone_type_lower = phone.type.lower()
+                if "work" in phone_type_lower:
+                    work_phone = phone.phone
+                elif "mobile" in phone_type_lower or "cell" in phone_type_lower:
+                    mobile_phone = phone.phone
+
+        # Determine primary address
+        primary_address = next((a for a in addresses if a.type and "work" in a.type.lower()), None)
+        if not primary_address and addresses:
+            primary_address = addresses[0]
+
+        # Find work and home addresses
+        work_address = None
+        home_address = None
+        for addr in addresses:
+            if addr.type:
+                addr_type_lower = addr.type.lower()
+                if "work" in addr_type_lower:
+                    work_address = addr
+                elif "home" in addr_type_lower:
+                    home_address = addr
+
+        # Extract instant messengers (if present)
+        instant_messengers = []
+        im_data = contact_data.get("Instant_Messenger_Data", [])
+        if not isinstance(im_data, list):
+            im_data = [im_data] if im_data else []
+
+        for im in im_data:
+            if isinstance(im, dict):
+                im_address = im.get("Instant_Messenger_Address")
+                im_type = cls._safe_navigate(im, "Instant_Messenger_Type_Reference", "descriptor")
+                if im_address:
+                    instant_messengers.append({
+                        "type": im_type or "Unknown",
+                        "address": im_address
+                    })
+
+        # Extract social networks (if present in Web_Address_Data)
+        social_networks = []
+        web_data = contact_data.get("Web_Address_Data", [])
+        if not isinstance(web_data, list):
+            web_data = [web_data] if web_data else []
+
+        for web in web_data:
+            if isinstance(web, dict):
+                web_address = web.get("Web_Address")
+                web_type = cls._safe_navigate(web, "Usage_Data", "Type_Data", "Type_Reference", "descriptor")
+                if web_address:
+                    social_networks.append({
+                        "type": web_type or "Website",
+                        "url": web_address
+                    })
+
+        return {
+            "worker_id": worker_id,
+            "primary_email": primary_email,
+            "work_email": work_email,
+            "personal_email": personal_email,
+            "emails": emails,
+            "primary_phone": primary_phone,
+            "work_phone": work_phone,
+            "mobile_phone": mobile_phone,
+            "phones": phones,
+            "primary_address": primary_address,
+            "work_address": work_address,
+            "home_address": home_address,
+            "addresses": addresses,
+            "instant_messengers": instant_messengers,
+            "social_networks": social_networks
+        }
 
     @classmethod
     def _extract_worker_data(cls, worker_element: Dict[str, Any]) -> Dict[str, Any]:
@@ -502,10 +771,7 @@ class WorkdayResponseParser:
                     return id_obj.get("_value_1")
 
         # Otherwise return first ID
-        if ids and isinstance(ids[0], dict):
-            return ids[0].get("_value_1")
-
-        return None
+        return ids[0].get("_value_1") if ids and isinstance(ids[0], dict) else None
 
     @staticmethod
     def _extract_emails(contact_data: Dict[str, Any]) -> List[EmailAddress]:
@@ -667,9 +933,185 @@ class WorkdayResponseParser:
             return date_value.date()
 
         if isinstance(date_value, str):
-            try:
+            with contextlib.suppress(Exception):
                 return datetime.fromisoformat(date_value.replace('Z', '+00:00')).date()
-            except Exception:
-                pass
-
         return None
+
+    @classmethod
+    def parse_time_off_balance_response(
+        cls,
+        response: Any,
+        worker_id: str,
+        output_format: Optional[Type[T]] = None
+    ) -> Union[TimeOffBalanceModel, T]:
+        """
+        Parse time off balance information from Get_Workers response.
+
+        Args:
+            response: Raw Zeep Get_Workers response
+            worker_id: Worker ID for reference
+            output_format: Optional custom model. Defaults to TimeOffBalanceModel.
+
+        Returns:
+            Parsed time off balance information
+        """
+        model_class = output_format or cls.DEFAULT_MODELS["time_off_balance"]
+        # Get worker element (same navigation as other parsers)
+        raw = helpers.serialize_object(response)
+        response_data = raw.get("Response_Data", {})
+        workers = response_data.get("Worker", [])
+
+        if not workers:
+            raise ValueError("No worker found in response")
+
+        worker_element = workers[0] if isinstance(workers, list) else workers
+        # Extract time off balance data
+        extracted = cls._extract_time_off_balance_data(worker_element, worker_id)
+        # Instantiate the model
+        return model_class(**extracted)
+
+    @classmethod
+    def _extract_time_off_balance_data(
+        cls,
+        worker_element: Dict[str, Any],
+        worker_id: str
+    ) -> Dict[str, Any]:
+        """
+        Extract time off balance information from worker element.
+
+        Args:
+            worker_element: Single Worker element
+            worker_id: Worker ID for reference
+
+        Returns:
+            Dict with time off balance data for TimeOffBalanceModel
+        """
+        worker_data = worker_element.get("Worker_Data", {})
+
+        # Time off balance data is typically in a dedicated section
+        # The exact structure varies by Workday configuration
+        time_off_data = worker_data.get("Time_Off_Balance_Data", [])
+
+        if not isinstance(time_off_data, list):
+            time_off_data = [time_off_data] if time_off_data else []
+
+        # Parse each time off type balance
+        balances = []
+        vacation_balance = None
+        sick_balance = None
+        personal_balance = None
+        total_available = 0.0
+
+        for balance_item in time_off_data:
+            if not isinstance(balance_item, dict):
+                continue
+
+            # Extract time off type
+            time_off_type_ref = balance_item.get("Time_Off_Type_Reference", {})
+            time_off_type = cls._safe_navigate(time_off_type_ref, "descriptor") or "Unknown"
+            time_off_type_id = cls._extract_id(time_off_type_ref)
+
+            # Extract balance values
+            balance = balance_item.get("Balance", 0.0)
+            if balance and not isinstance(balance, (int, float)):
+                try:
+                    balance = float(balance)
+                except (ValueError, TypeError):
+                    balance = 0.0
+
+            # Extract unit
+            balance_unit_ref = balance_item.get("Unit_Reference", {})
+            balance_unit = cls._safe_navigate(balance_unit_ref, "descriptor") or "Hours"
+
+            # Extract scheduled/pending
+            scheduled = balance_item.get("Scheduled_Balance", 0.0)
+            if scheduled and not isinstance(scheduled, (int, float)):
+                try:
+                    scheduled = float(scheduled)
+                except (ValueError, TypeError):
+                    scheduled = 0.0
+
+            # Calculate available
+            available = balance - scheduled if balance and scheduled else balance
+
+            # Extract accrual information
+            accrued_ytd = balance_item.get("Accrued_Year_to_Date")
+            if accrued_ytd and not isinstance(accrued_ytd, (int, float)):
+                try:
+                    accrued_ytd = float(accrued_ytd)
+                except (ValueError, TypeError):
+                    accrued_ytd = None
+
+            used_ytd = balance_item.get("Used_Year_to_Date")
+            if used_ytd and not isinstance(used_ytd, (int, float)):
+                try:
+                    used_ytd = float(used_ytd)
+                except (ValueError, TypeError):
+                    used_ytd = None
+
+            # Extract carryover
+            carryover = balance_item.get("Carryover_Balance")
+            if carryover and not isinstance(carryover, (int, float)):
+                try:
+                    carryover = float(carryover)
+                except (ValueError, TypeError):
+                    carryover = None
+
+            carryover_limit = balance_item.get("Maximum_Carryover_Balance")
+            if carryover_limit and not isinstance(carryover_limit, (int, float)):
+                try:
+                    carryover_limit = float(carryover_limit)
+                except (ValueError, TypeError):
+                    carryover_limit = None
+
+            # Extract dates
+            as_of_date = cls._parse_date(balance_item.get("As_of_Date"))
+            plan_year_start = cls._parse_date(balance_item.get("Plan_Year_Start_Date"))
+            plan_year_end = cls._parse_date(balance_item.get("Plan_Year_End_Date"))
+
+            # Create TimeOffBalance object
+            time_off_balance = TimeOffBalance(
+                time_off_type=time_off_type,
+                time_off_type_id=time_off_type_id,
+                balance=balance or 0.0,
+                balance_unit=balance_unit,
+                scheduled=scheduled,
+                available=available,
+                accrued_ytd=accrued_ytd,
+                used_ytd=used_ytd,
+                carryover=carryover,
+                carryover_limit=carryover_limit,
+                as_of_date=as_of_date,
+                plan_year_start=plan_year_start,
+                plan_year_end=plan_year_end
+            )
+
+            balances.append(time_off_balance)
+
+            # Track quick-access balances
+            time_off_type_lower = time_off_type.lower()
+            if "vacation" in time_off_type_lower or "pto" in time_off_type_lower:
+                vacation_balance = available or balance
+            elif "sick" in time_off_type_lower:
+                sick_balance = available or balance
+            elif "personal" in time_off_type_lower:
+                personal_balance = available or balance
+
+            # Add to total available
+            if available:
+                total_available += available
+
+        # Determine as_of_date
+        as_of_date = datetime.now().date()
+        if balances and balances[0].as_of_date:
+            as_of_date = balances[0].as_of_date
+
+        return {
+            "worker_id": worker_id,
+            "as_of_date": as_of_date,
+            "balances": balances,
+            "vacation_balance": vacation_balance,
+            "sick_balance": sick_balance,
+            "personal_balance": personal_balance,
+            "total_available_hours": total_available if total_available > 0 else None
+        }
