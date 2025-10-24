@@ -9,6 +9,8 @@
   import { markdownToHtml } from '$lib/utils/markdown';
   import { LoadingSpinner } from '$lib/components';
 
+  type CrewExecutionMode = 'sequential' | 'parallel' | 'loop' | 'flow';
+
   interface CrewSummary {
     crew_id: string;
     name: string;

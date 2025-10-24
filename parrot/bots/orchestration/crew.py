@@ -1177,13 +1177,13 @@ Current task: {current_input}"""
         Args:
             initial_task: The initial task/prompt to start the workflow
             max_iterations: Maximum number of execution rounds (safety limit to prevent infinite loops)
-            on_agent_complete: Optional callback function called when an agent completes.
             synthesis_prompt: Optional prompt to synthesize all results with LLM
             user_id: User identifier (used for synthesis)
             session_id: Session identifier (used for synthesis)
             max_tokens: Max tokens for synthesis
             temperature: Temperature for synthesis LLM
-            Signature: async def callback(agent_name: str, result: Any, context: FlowContext)
+            on_agent_complete: Optional callback function called when an agent completes.
+                Signature: async def callback(agent_name: str, result: Any, context: FlowContext)
 
         Returns:
             CrewResult: Standardized execution payload containing outputs,
