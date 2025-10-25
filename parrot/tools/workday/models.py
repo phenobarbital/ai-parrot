@@ -290,6 +290,7 @@ class WorkdayResponseParser:
         "worker": WorkerModel,
         "organization": OrganizationModel,
         "contact": ContactModel,
+        "time_off_balance": TimeOffBalanceModel
     }
 
     @staticmethod
