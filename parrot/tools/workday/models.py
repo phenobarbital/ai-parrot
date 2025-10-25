@@ -290,6 +290,7 @@ class WorkdayResponseParser:
         "worker": WorkerModel,
         "organization": OrganizationModel,
         "contact": ContactModel,
+        "time_off_balance": TimeOffBalanceModel,
     }
 
     @staticmethod
@@ -465,6 +466,12 @@ class WorkdayResponseParser:
             Dict with contact data for ContactModel
         """
         worker_data = worker_element.get("Worker_Data", {})
+        if not isinstance(worker_data, dict):
+            # Some Workday tenants return an explicit null for Worker_Data when
+            # the response group omits most sections (e.g. only requesting time
+            # off balance data).  Treat these the same as an empty payload so
+            # downstream parsing logic can continue gracefully.
+            worker_data = {}
         personal = worker_data.get("Personal_Data", {})
         contact_data = personal.get("Contact_Data", {})
 
@@ -987,6 +994,11 @@ class WorkdayResponseParser:
             Dict with time off balance data for TimeOffBalanceModel
         """
         worker_data = worker_element.get("Worker_Data", {})
+        if not isinstance(worker_data, dict):
+            # Some Workday tenants may explicitly return null for Worker_Data
+            # when only a subset of response groups are requested. Treat this
+            # as an empty payload so balance parsing can continue.
+            worker_data = {}
 
         # Time off balance data is typically in a dedicated section
         # The exact structure varies by Workday configuration
