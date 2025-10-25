@@ -4,7 +4,7 @@ Abstract Bot interface.
 from abc import ABC
 import contextlib
 import importlib
-from typing import Any, Dict, List, Tuple, Union, Optional, AsyncIterator
+from typing import Any, Dict, List, Tuple, Type, Union, Optional, AsyncIterator
 from collections.abc import Callable
 from contextlib import asynccontextmanager
 import uuid
@@ -15,6 +15,7 @@ import copy
 from aiohttp import web
 from navconfig.logging import logging
 from navigator_auth.conf import AUTH_SESSION_OBJECT
+from pydantic import BaseModel
 from parrot.tools.math import MathTool  # pylint: disable=E0611
 from ..interfaces import DBInterface
 from ..exceptions import ConfigError  # pylint: disable=E0611
@@ -32,7 +33,8 @@ from .prompts import (
 from ..clients import LLM_PRESETS, SUPPORTED_CLIENTS, AbstractClient
 from ..models import (
     AIMessage,
-    SourceDocument
+    SourceDocument,
+    StructuredOutputConfig
 )
 from ..stores import AbstractStore, supported_stores
 from ..stores.kb import AbstractKnowledgeBase
@@ -2139,6 +2141,7 @@ Use the following information about user's data to guide your responses:
         use_conversation_history: bool = True,
         memory: Optional[Callable] = None,
         ctx: Optional[RequestContext] = None,
+        response_model: Optional[Type[BaseModel]] = None,
         **kwargs
     ) -> AIMessage:
         """
@@ -2217,6 +2220,11 @@ Use the following information about user's data to guide your responses:
                 if max_tokens is not None:
                     llm_kwargs["max_tokens"] = max_tokens
 
+                if response_model:
+                    llm_kwargs["response_model"] = StructuredOutputConfig(
+                        output_type=response_model
+                    )
+
                 response = await client.ask(**llm_kwargs)
 
                 # Set conversation context info
@@ -2228,6 +2236,9 @@ Use the following information about user's data to guide your responses:
                 # Set additional metadata
                 response.session_id = session_id
                 response.turn_id = turn_id
+
+                if response_model:
+                    return response  # return structured response directly
 
                 # Return the response
                 return self.get_response(
