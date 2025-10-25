@@ -99,6 +99,10 @@ agents = [
     "aiogoogle==5.17.0",
     "rq==2.6.0",
     "zeep[async]==4.3.1",
+    "branca==0.8.2",
+    "folium==0.20.0",
+    "webdriver-manager==4.0.2"
+
 ]
 
 # Update the loaders optional dependency section with pinned versions
@@ -212,7 +216,7 @@ google = [
 ]
 
 groq = [
-    "groq==0.30.0",
+    "groq==0.33.0",
     "typing_extensions>=4.13.2,<=4.14.1",
 ]
 
