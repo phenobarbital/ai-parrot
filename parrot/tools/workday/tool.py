@@ -644,6 +644,7 @@ class WorkdayToolkit(AbstractToolkit):
         }
 
         result = await self.soap_client.run("Get_Workers", **request)
+        print('RESULT > ', result)
         return WorkdayResponseParser.parse_time_off_balance_response(
             result,
             worker_id=worker_id,
