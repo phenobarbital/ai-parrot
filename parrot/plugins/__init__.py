@@ -3,11 +3,7 @@ import contextlib
 from importlib import import_module
 from navconfig.logging import Logger
 from parrot.conf import PLUGINS_DIR
-from .importer import PluginImporter, list_plugins
-
-
-Logger().notice(f"Plugins Directory: {PLUGINS_DIR}")
-print('::: PLUGINS EXISTS  ::: ', PLUGINS_DIR.exists())
+from .importer import PluginImporter
 
 # Add plugins directory to sys.path
 sys.path.insert(0, str(PLUGINS_DIR))
