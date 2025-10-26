@@ -2,7 +2,7 @@ from typing import Any, Optional, Union
 from dataclasses import is_dataclass, asdict
 from pydantic import BaseModel
 try:
-    import yaml_rs._rust as _yaml
+    from . import yaml_rs as _yaml
     _dumps = _yaml.dumps
     _loads = _yaml.loads
     dumps_formatted = _yaml.dumps_formatted
