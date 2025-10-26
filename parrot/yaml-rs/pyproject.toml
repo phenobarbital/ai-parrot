@@ -3,7 +3,7 @@ requires = ["maturin>=1.0,<2.0"]
 build-backend = "maturin"
 
 [project]
-name = "yaml-rs"
+name = "yaml_rs"
 version = "0.1.0"
 description = "Fast YAML serialization using Rust and PyO3"
 requires-python = ">=3.8"
