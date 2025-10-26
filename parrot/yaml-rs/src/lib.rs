@@ -1,22 +1,22 @@
 /// File: yaml-rs/src/lib.rs
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
-use serde_yaml;
 use serde_json;
-
+use serde_yaml;
 
 /// Convert Python object to YAML string
 #[pyfunction]
 fn dumps(py: Python, obj: &PyAny) -> PyResult<String> {
-// Convert Python object to serde_json::Value first
-let json_value = python_to_json(py, obj)?;
-// Serialize to YAML using serde_yaml
-match serde_yaml::to_string(&json_value) {
-    Ok(yaml_string) => Ok(yaml_string),
-    Err(e) => Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-        format!("YAML serialization error: {}", e)
-    ))
-}
+    // Convert Python object to serde_json::Value first
+    let json_value = python_to_json(py, obj)?;
+    // Serialize to YAML using serde_yaml
+    match serde_yaml::to_string(&json_value) {
+        Ok(yaml_string) => Ok(yaml_string),
+        Err(e) => Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+            "YAML serialization error: {}",
+            e
+        ))),
+    }
 }
 
 // Convert Python object to YAML with custom formatting
@@ -27,24 +27,35 @@ fn dumps_formatted(
     obj: &PyAny,
     indent: usize,
     flow_style: bool,
-    sort_keys: bool
+    sort_keys: bool,
 ) -> PyResult<String> {
-let json_value = python_to_json(py, obj)?;
-// Configure serializer
-let mut serializer = serde_yaml::Serializer::new(Vec::new());
-
-// Apply formatting options
-// Note: serde_yaml has limited formatting options
-// May need custom implementation for advanced formatting
-match serde_yaml::to_writer(&mut serializer, &json_value) {
-    Ok(_) => {
-        let bytes = serializer.into_inner().unwrap();
-        Ok(String::from_utf8(bytes).unwrap())
+    if flow_style {
+        return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+            "flow_style formatting is not supported by serde_yaml",
+        ));
     }
-    Err(e) => Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-        format!("YAML serialization error: {}", e)
-    ))
-}
+
+    let mut json_value = python_to_json(py, obj)?;
+
+    if sort_keys {
+        sort_json_value(&mut json_value);
+    }
+
+    let yaml_string = match serde_yaml::to_string(&json_value) {
+        Ok(s) => s,
+        Err(e) => {
+            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                "YAML serialization error: {}",
+                e
+            )))
+        }
+    };
+
+    if indent == 2 {
+        Ok(yaml_string)
+    } else {
+        Ok(adjust_yaml_indent(&yaml_string, indent))
+    }
 }
 
 /// Convert YAML string to Python object
@@ -53,9 +64,12 @@ fn loads(py: Python, yaml_str: &str) -> PyResult<PyObject> {
     // Parse YAML to serde_json::Value
     let value: serde_json::Value = match serde_yaml::from_str(yaml_str) {
         Ok(v) => v,
-        Err(e) => return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-        format!("YAML parse error: {}", e)
-        ))
+        Err(e) => {
+            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                "YAML parse error: {}",
+                e
+            )))
+        }
     };
     // Convert to Python object
     json_to_python(py, &value)
@@ -123,7 +137,7 @@ fn json_to_python(py: Python, value: &serde_json::Value) -> PyResult<PyObject> {
         serde_json::Value::Array(arr) => {
             let list = PyList::empty(py);
             for item in arr {
-            list.append(json_to_python(py, item)?)?;
+                list.append(json_to_python(py, item)?)?;
             }
             Ok(list.into())
         }
@@ -135,6 +149,61 @@ fn json_to_python(py: Python, value: &serde_json::Value) -> PyResult<PyObject> {
             Ok(dict.into())
         }
     }
+}
+
+fn sort_json_value(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Object(map) => {
+            let mut original = std::mem::take(map);
+            let mut keys: Vec<_> = original.keys().cloned().collect();
+            keys.sort();
+
+            for key in keys {
+                if let Some(mut entry) = original.remove(&key) {
+                    sort_json_value(&mut entry);
+                    map.insert(key, entry);
+                }
+            }
+        }
+        serde_json::Value::Array(arr) => {
+            for item in arr {
+                sort_json_value(item);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn adjust_yaml_indent(yaml: &str, indent: usize) -> String {
+    if indent == 0 {
+        return yaml.to_string();
+    }
+
+    let lines: Vec<&str> = yaml.lines().collect();
+    let trailing_newline = yaml.ends_with('\n');
+
+    let mut adjusted = String::with_capacity(yaml.len());
+    for (idx, line) in lines.iter().enumerate() {
+        let line = *line;
+        let mut space_count = 0;
+        for ch in line.chars() {
+            if ch == ' ' {
+                space_count += 1;
+            } else {
+                break;
+            }
+        }
+
+        let level = if space_count == 0 { 0 } else { space_count / 2 };
+        let trimmed = &line[space_count..];
+        adjusted.push_str(&" ".repeat(level * indent));
+        adjusted.push_str(trimmed);
+        if idx + 1 < lines.len() || trailing_newline {
+            adjusted.push('\n');
+        }
+    }
+
+    adjusted
 }
 
 /// Module definition
