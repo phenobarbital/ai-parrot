@@ -2,12 +2,14 @@ from typing import Any, Optional, Union
 from dataclasses import is_dataclass, asdict
 from pydantic import BaseModel
 try:
-    from yaml_rs import dumps as _dumps, loads as _loads, dumps_formatted
+    import yaml_rs._rust as _yaml
+    _dumps = _yaml.dumps
+    _loads = _yaml.loads
+    dumps_formatted = _yaml.dumps_formatted
     RUST_AVAILABLE = True
 except ImportError:
+    import yaml as _yaml
     RUST_AVAILABLE = False
-
-import yaml as _yaml
 
 
 def dumps(

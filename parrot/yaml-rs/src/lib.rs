@@ -108,6 +108,12 @@ fn python_to_json(py: Python, obj: &PyAny) -> PyResult<serde_json::Value> {
         // Handle Pydantic BaseModel
         let dict = obj.call_method0("model_dump")?;
         python_to_json(py, dict)
+    } else if obj.hasattr("__dataclass_fields__")? {
+        // Handle dataclass objects
+        let dataclasses = py.import("dataclasses")?;
+        let asdict = dataclasses.getattr("asdict")?;
+        let dict = asdict.call1((obj,))?;
+        python_to_json(py, dict)
     } else if obj.hasattr("dict")? {
         // Handle dataclass or regular objects
         let dict = obj.getattr("dict")?;
