@@ -34,6 +34,10 @@ def get_renderer(mode: OutputMode) -> Type[Renderer]:
                 import_module('.markdown', 'parrot.outputs.formats')
             elif mode == OutputMode.YAML:
                 import_module('.yaml', 'parrot.outputs.formats')
+            elif mode == OutputMode.CHART:
+                import_module('.charts', 'parrot.outputs.formats')
+            elif mode == OutputMode.MAP:
+                import_module('.map', 'parrot.outputs.formats')
     try:
         return RENDERERS[mode]
     except KeyError as exc:
