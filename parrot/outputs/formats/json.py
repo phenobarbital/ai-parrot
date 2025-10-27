@@ -1,6 +1,6 @@
 from typing import Any
 import orjson
-from datamodel.parsers.json import JSONContent, json_encoder  # pylint: disable=E0611 # noqa
+from datamodel.parsers.json import JSONContent, json_encoder, json_decoder  # pylint: disable=E0611 # noqa
 from . import register_renderer
 from .base import BaseRenderer
 from ...models.outputs import OutputMode
@@ -28,6 +28,8 @@ class JSONRenderer(BaseRenderer):
         indent = kwargs.get('indent')
         include_metadata = kwargs.get('include_metadata', False)
         data = JSONRenderer._prepare_data(response, include_metadata)
+        if isinstance(data, str):
+            data = json_decoder(data)
         try:
             options = orjson.OPT_INDENT_2 if indent else None  # pylint: disable=E1101 # noqa
             return JSONContent().dumps(data, option=options)
