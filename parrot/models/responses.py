@@ -192,13 +192,9 @@ class AIMessage(BaseModel):
         default_factory=dict,
         description="Additional metadata associated with the response"
     )
-    output_format: Optional[str] = Field(
-        default=None,
-        description="Format of the output (markdown, html, json, etc.)"
-    )
     output_mode: OutputMode = Field(
         default=OutputMode.DEFAULT,
-        description="The output mode used for rendering"
+        description="The output mode used for rendering (markdown, html, json, etc.)"
     )
 
     class Config:
@@ -521,8 +517,7 @@ class AIMessageFactory:
             session_id=session_id,
             turn_id=turn_id,
             raw_response=response,
-            response=content,
-            structured_output=structured_output
+            response=content if isinstance(content, str) else str(content)
         )
 
     @staticmethod

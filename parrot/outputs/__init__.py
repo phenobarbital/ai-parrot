@@ -21,14 +21,12 @@ Automatically detects and renders:
 Each output type is rendered appropriately based on the output mode (Terminal, HTML, Jupyter).
 HTML mode generates embeddable widgets for integration with Streamlit, Gradio, web apps, etc.
 """
-from .base import OutputMode, OutputType
-from .base import OutputDetector
+from ..models.outputs import OutputMode, OutputType
 from .formatter import OutputFormatter
 
 
 __all__ = (
     'OutputMode',
     'OutputType',
-    'OutputDetector',
     'OutputFormatter',
 )

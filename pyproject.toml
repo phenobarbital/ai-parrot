@@ -65,6 +65,7 @@ dependencies = [
     "pytesseract>=0.3.13",
     "python-statemachine==2.5.0",
     "aiohttp-swagger3==0.10.0",
+    "PyYAML>=6.0.2",
 ]
 
 [project.optional-dependencies]
@@ -346,3 +347,16 @@ disable = ["C0330", "C0326"]
 python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
+
+[tool.maturin]
+python-source = "parrot/yaml_rs"
+module-name = "parrot.yaml_rs._yaml_rs"
+bindings = "pyo3"
+features = ["pyo3/extension-module"]
+
+[tool.cibuildwheel]
+build = "cp3{10,11,12,13}-manylinux_x86_64"
+skip = "pp*"
+
+[tool.cibuildwheel.linux]
+archs = ["x86_64"]
