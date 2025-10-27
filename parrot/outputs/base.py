@@ -3,78 +3,6 @@ from typing import Any, List, Optional, Dict
 from enum import Enum
 from dataclasses import dataclass
 
-try:
-    import panel as pn
-    PANEL_AVAILABLE = True
-except ImportError:
-    PANEL_AVAILABLE = False
-
-# Visualization library imports
-try:
-    import folium
-    FOLIUM_AVAILABLE = True
-except ImportError:
-    FOLIUM_AVAILABLE = False
-
-try:
-    import plotly.graph_objects as go
-    import plotly.io as pio
-    PLOTLY_AVAILABLE = True
-except ImportError:
-    PLOTLY_AVAILABLE = False
-
-try:
-    import matplotlib as mp
-    MATPLOTLIB_AVAILABLE = True
-except ImportError:
-    MATPLOTLIB_AVAILABLE = False
-
-try:
-    import pandas as pd
-    PANDAS_AVAILABLE = True
-except ImportError:
-    PANDAS_AVAILABLE = False
-
-try:
-    import bokeh as bk
-    BOKEH_AVAILABLE = True
-except ImportError:
-    BOKEH_AVAILABLE = False
-
-try:
-    import altair as alt
-    ALTAIR_AVAILABLE = True
-except ImportError:
-    ALTAIR_AVAILABLE = False
-
-
-class OutputType(str, Enum):
-    """Types of outputs that can be rendered"""
-    TEXT = "text"
-    MARKDOWN = "markdown"
-    DATAFRAME = "dataframe"
-    FOLIUM_MAP = "folium_map"
-    PLOTLY_CHART = "plotly_chart"
-    MATPLOTLIB_FIGURE = "matplotlib_figure"
-    BOKEH_PLOT = "bokeh_plot"
-    ALTAIR_CHART = "altair_chart"
-    PANEL_DASHBOARD = "panel_dashboard"
-    HTML_WIDGET = "html_widget"
-    IMAGE = "image"
-    JSON_DATA = "json_data"
-    MIXED = "mixed"  # Multiple output types
-
-
-class OutputMode(str, Enum):
-    """Output mode enumeration"""
-    DEFAULT = "default"
-    TERMINAL = "terminal"
-    HTML = "html"
-    JUPYTER = "jupyter"
-    NOTEBOOK = "notebook"
-    JSON = "json"
-
-
 @dataclass
 class RenderableOutput:
     """Container for a renderable output with metadata"""
@@ -226,7 +154,7 @@ class OutputDetector:
                 renderables.append(RenderableOutput(obj=obj, output_type=output_type))
 
         # Return None if no visualizations found (just text/markdown)
-        return renderables if renderables else None
+        return renderables or None
 
 
 class BaseRenderer:

@@ -1,5 +1,3 @@
-# parrot/outputs/templates/base.py
-
 from typing import Dict, Any, List, Optional
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, Template
