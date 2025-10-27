@@ -1,15 +1,23 @@
+from __future__ import annotations
 from typing import Any, Optional, Union
 from dataclasses import is_dataclass, asdict
 from pydantic import BaseModel
 try:
-    from . import yaml_rs as _yaml
+    from . import yaml_rs as _yaml  # type: ignore[attr-defined]
     _dumps = _yaml.dumps
     _loads = _yaml.loads
     dumps_formatted = _yaml.dumps_formatted
     RUST_AVAILABLE = True
-except ImportError:
+except ImportError:  # pragma: no cover - exercised only when the wheel lacks Rust
     import yaml as _yaml
     RUST_AVAILABLE = False
+
+
+def _prepare_object(obj: Any) -> Any:
+    """Convert dataclasses and pydantic models to dictionaries before dumping."""
+    if isinstance(obj, BaseModel):
+        return obj.model_dump()
+    return asdict(obj) if is_dataclass(obj) else obj
 
 
 def dumps(
@@ -34,11 +42,7 @@ def dumps(
         - Falls back to PyYAML if Rust extension not available
     """
     # Convert BaseModel or dataclass to dict
-    if isinstance(obj, BaseModel):
-        obj = obj.model_dump()
-    elif is_dataclass(obj):
-        obj = asdict(obj)
-
+    obj = _prepare_object(obj)
     if RUST_AVAILABLE:
         return dumps_formatted(
             obj,
@@ -55,7 +59,7 @@ def dumps(
             sort_keys=sort_keys
         )
 
-def loads(yaml_str: str) -> Any:
+def loads(yaml_str: str, loader: Optional[Any] = None) -> Any:
     """
     Deserialize YAML string to Python object.
 
@@ -71,8 +75,7 @@ def loads(yaml_str: str) -> Any:
     """
     if RUST_AVAILABLE:
         return _loads(yaml_str)
-    else:
-        # Fallback to PyYAML
-        return _yaml.safe_load(yaml_str)
+    kwargs = {"Loader": loader} if loader is not None else {}
+    return _yaml.safe_load(yaml_str) if loader is None else _yaml.load(yaml_str, **kwargs)
 
 __all__ = ["dumps", "loads", "RUST_AVAILABLE"]

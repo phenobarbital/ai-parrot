@@ -1,8 +1,43 @@
 from datetime import datetime
 from typing import Dict, List, Optional, Any, Callable, Literal
+from enum import Enum
 from dataclasses import dataclass
 from pydantic import BaseModel, Field
 from .basic import OutputFormat
+
+
+class OutputType(str, Enum):
+    """Types of outputs that can be rendered"""
+    TEXT = "text"
+    MARKDOWN = "markdown"
+    DATAFRAME = "dataframe"
+    FOLIUM_MAP = "folium_map"
+    PLOTLY_CHART = "plotly_chart"
+    MATPLOTLIB_FIGURE = "matplotlib_figure"
+    BOKEH_PLOT = "bokeh_plot"
+    ALTAIR_CHART = "altair_chart"
+    PANEL_DASHBOARD = "panel_dashboard"
+    HTML_WIDGET = "html_widget"
+    IMAGE = "image"
+    JSON_DATA = "json_data"
+    MIXED = "mixed"  # Multiple output types
+
+
+class OutputMode(str, Enum):
+    """Output mode enumeration"""
+    DEFAULT = "default"          # Keep as-is (BaseModel/dataclass)
+    JSON = "json"               # Serialize to JSON (using orjson)
+    TERMINAL = "terminal"       # Render for terminal display (using Rich)
+    MARKDOWN = "markdown"       # Convert to markdown
+    YAML = "yaml"               # Serialize to YAML (using yaml-rs)
+    HTML = "html"               # Convert to HTML elements (using Panel)
+    JUPYTER = "jupyter"         # Render for Jupyter notebook
+    NOTEBOOK = "notebook"       # Render for Jupyter notebook
+    TEMPLATE_REPORT = "template_report"  # Pass to Jinja2 template (using jinja2 templates)
+    APPLICATION = "application"  # Wrap in app (Streamlit/React/Svelte/HTML+TS)
+    CHART = "chart"               # Generate chart visualization
+    MAP = "map"                   # Generate map visualization
+    IMAGE = "image"             # render the image as a base64 embed into HTML <img>
 
 
 @dataclass
