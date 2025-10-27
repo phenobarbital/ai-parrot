@@ -30,6 +30,10 @@ def get_renderer(mode: OutputMode) -> Type[Renderer]:
                 import_module('.html', 'parrot.outputs.formats')
             elif mode == OutputMode.JSON:
                 import_module('.json', 'parrot.outputs.formats')
+            elif mode == OutputMode.MARKDOWN:
+                import_module('.markdown', 'parrot.outputs.formats')
+            elif mode == OutputMode.YAML:
+                import_module('.yaml', 'parrot.outputs.formats')
     try:
         return RENDERERS[mode]
     except KeyError as exc:
