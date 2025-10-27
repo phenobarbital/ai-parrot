@@ -18,7 +18,6 @@ class TerminalRenderer(BaseRenderer):
             from rich.table import Table
             from rich.json import JSON
             from rich.pretty import Pretty
-            show_metadata = kwargs.get('show_metadata', True)
             show_sources = kwargs.get('show_sources', True)
             show_context = kwargs.get('show_context', False)
             show_tools = kwargs.get('show_tools', False)
@@ -29,7 +28,7 @@ class TerminalRenderer(BaseRenderer):
                     width=100  # Fixed width for Jupyter
                 )
             else:
-                console = Console()
+                console = Console(force_terminal=True)
 
             content = TerminalRenderer._get_content(response)
             with console.capture() as capture:
@@ -55,7 +54,7 @@ class TerminalRenderer(BaseRenderer):
                         tools_table.add_row(tool["No."], tool["Tool Name"], tool["Status"])
                     console.print(tools_table)
                 # Show metadata if requested
-                if show_metadata:
+                if kwargs.get('show_metadata', False):
                     metadata_table = Table(
                         title="📊 Metadata",
                         show_header=True,
