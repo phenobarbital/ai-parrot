@@ -3,8 +3,9 @@ from pathlib import Path
 from datetime import datetime
 from dataclasses import dataclass
 from pydantic import BaseModel, Field, model_validator
-import aiofiles
 from .basic import CompletionUsage, ToolCall
+from .outputs import OutputMode
+
 
 @dataclass
 class SourceDocument:
@@ -179,9 +180,13 @@ class AIMessage(BaseModel):
         default_factory=list,
         description="List of detailed source documents used for context"
     )
-    structured_output: Any = Field(
+    structured_output: Optional[Union[BaseModel, Any]] = Field(
         default=None,
-        description="Structured output if applicable (e.g. JSON, DataFrame)"
+        description="Immutable original structured output (BaseModel, dataclass, DataFrame)"
+    )
+    is_structured: bool = Field(
+        default=False,
+        description="Whether the output is structured"
     )
     metadata: Dict[str, Any] = Field(
         default_factory=dict,
@@ -190,6 +195,10 @@ class AIMessage(BaseModel):
     output_format: Optional[str] = Field(
         default=None,
         description="Format of the output (markdown, html, json, etc.)"
+    )
+    output_mode: OutputMode = Field(
+        default=OutputMode.DEFAULT,
+        description="The output mode used for rendering"
     )
 
     class Config:
@@ -222,6 +231,8 @@ class AIMessage(BaseModel):
     @property
     def to_text(self) -> str:
         """Get text representation of output."""
+        if self.response:
+            return self.response
         if isinstance(self.output, str):
             return self.output
         elif isinstance(self.output, dict) and 'content' in self.output:
@@ -236,11 +247,6 @@ class AIMessage(BaseModel):
         else:
             # Return the output *as is*
             return str(self.output)
-
-    @property
-    def is_structured(self) -> bool:
-        """Check if output is structured data."""
-        return not isinstance(self.output, str)
 
     @property
     def has_tools(self) -> bool:
@@ -330,9 +336,61 @@ class AIMessage(BaseModel):
             }
         }
 
+    def render_as(
+        self,
+        mode: OutputMode,
+        formatter: Any,
+        **kwargs
+    ) -> 'AIMessage':
+        """
+        Create a new AIMessage with different rendering.
+        Preserves structured_output.
+        """
+        source = self.structured_output if self.is_structured else self.output
+
+        return AIMessage(
+            **{
+                **self.model_dump(exclude={'output', 'output_mode'}),
+                'output': formatter.format(mode, source, **kwargs),
+                'output_mode': mode
+            }
+        )
+
 # Factory functions to create AIMessage from different providers
 class AIMessageFactory:
     """Factory to create AIMessage from different provider responses."""
+
+    @staticmethod
+    def from_completion(
+        response: Any,
+        input_text: str,
+        structured_output: Optional[Any] = None,
+        output_mode: OutputMode = OutputMode.DEFAULT,
+        formatter: Optional[Any] = None,
+        **kwargs
+    ) -> AIMessage:
+        """Create AIMessage with proper separation of concerns"""
+
+        # Determine the raw output
+        raw_output = structured_output or response.content
+
+        # Create base message
+        message = AIMessage(
+            input=input_text,
+            output=raw_output,  # Initially set to raw
+            structured_output=structured_output,
+            is_structured=structured_output is not None,
+            output_mode=output_mode,
+            **kwargs
+        )
+
+        # Apply formatting if needed
+        if output_mode != OutputMode.DEFAULT and formatter:
+            # Render from structured_output if available, else from output
+            source = message.structured_output if message.is_structured else message.output
+            message.output = formatter.format(output_mode, source)
+
+        return message
 
     @staticmethod
     def from_openai(
@@ -350,22 +408,27 @@ class AIMessageFactory:
         # Handle tool calls
         tool_calls = []
         if hasattr(message, 'tool_calls') and message.tool_calls:
-            for tc in message.tool_calls:
-                tool_calls.append(
-                    ToolCall(
-                        id=tc.id,
-                        name=tc.function.name,
-                        arguments=tc.function.arguments if isinstance(tc.function.arguments, dict)
-                                else eval(tc.function.arguments)
-                    )
+            tool_calls.extend(
+                ToolCall(
+                    id=tc.id,
+                    name=tc.function.name,
+                    arguments=(
+                        tc.function.arguments
+                        if isinstance(tc.function.arguments, dict)
+                        else eval(tc.function.arguments)
+                    ),
                 )
+                for tc in message.tool_calls
+            )
 
         finish_reason = getattr(response.choices[0], "finish_reason", None)
         stop_reason = getattr(response.choices[0], "stop_reason", None)
 
         return AIMessage(
             input=input_text,
-            output=structured_output if structured_output else message.content,
+            output=structured_output or message.content,
+            is_structured=structured_output is not None,
+            structured_output=structured_output,
             model=model,
             provider="openai",
             usage=CompletionUsage.from_openai(response.usage),
@@ -394,19 +457,24 @@ class AIMessageFactory:
         # Handle tool calls
         tool_calls = []
         if hasattr(message, 'tool_calls') and message.tool_calls:
-            for tc in message.tool_calls:
-                tool_calls.append(
-                    ToolCall(
-                        id=tc.id,
-                        name=tc.function.name,
-                        arguments=tc.function.arguments if isinstance(tc.function.arguments, dict)
-                                else eval(tc.function.arguments)
-                    )
+            tool_calls.extend(
+                ToolCall(
+                    id=tc.id,
+                    name=tc.function.name,
+                    arguments=(
+                        tc.function.arguments
+                        if isinstance(tc.function.arguments, dict)
+                        else eval(tc.function.arguments)
+                    ),
                 )
+                for tc in message.tool_calls
+            )
 
         return AIMessage(
             input=input_text,
-            output=structured_output if structured_output else message.content,
+            output=structured_output or message.content,
+            is_structured=structured_output is not None,
+            structured_output=structured_output,
             model=model,
             provider="groq",
             usage=CompletionUsage.from_groq(response.usage),
@@ -440,7 +508,9 @@ class AIMessageFactory:
 
         return AIMessage(
             input=input_text,
-            output=structured_output if structured_output else content,
+            output=structured_output or content,
+            is_structured=structured_output is not None,
+            structured_output=structured_output,
             model=model,
             provider="claude",
             usage=CompletionUsage.from_claude(response.get("usage", {})),
@@ -494,7 +564,9 @@ class AIMessageFactory:
 
         ai_message = AIMessage(
             input=input_text,
-            output=structured_output if structured_output else content,
+            output=structured_output or content,
+            is_structured=structured_output is not None,
+            structured_output=structured_output,
             model=model,
             provider="gemini",  # Will be overridden to "vertex_ai" in VertexAIClient
             usage=CompletionUsage.from_gemini(usage_dict),
@@ -540,6 +612,8 @@ class AIMessageFactory:
         ai_message = AIMessage(
             input=input_text,
             output=structured_output,
+            is_structured=structured_output is not None,
+            structured_output=structured_output,
             model=model,
             provider=provider,
             stop_reason="completed",
@@ -550,7 +624,7 @@ class AIMessageFactory:
             turn_id=turn_id,
             raw_response=response.__dict__ if hasattr(response, '__dict__') else {"result": text_response},
             response=text_response,
-            usage=usage if usage else CompletionUsage.from_response(response),
+            usage=usage or CompletionUsage.from_response(response),
             response_time=response_time
         )
         if conversation_history:
