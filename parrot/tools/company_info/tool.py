@@ -66,11 +66,20 @@ except ImportError as e:
 
 from ..toolkit import AbstractToolkit
 from ..decorators import tool_schema
+from ..scraping.driver import SeleniumSetup
 
 
 # ===========================
 # Pydantic Models
 # ===========================
+
+class CompanyInput(BaseModel):
+    """Input model for company scraping tools."""
+    company_name: str = Field(..., description="Name of the company to search for")
+    return_json: bool = Field(
+        False,
+        description="If True, return JSON string instead of CompanyInfo object"
+    )
 
 class CompanyInfo(BaseModel):
     """
@@ -168,10 +177,13 @@ class CompanyInfoToolkit(AbstractToolkit):
         self,
         google_api_key: Optional[str] = None,
         google_cse_id: Optional[str] = None,
-        use_proxy: bool = False,
-        proxy_url: Optional[str] = None,
+        browser: str = 'chrome',
         headless: bool = True,
         timeout: int = 30,
+        auto_install: bool = True,
+        mobile: bool = False,
+        mobile_device: Optional[str] = None,
+        use_undetected: bool = False,
         **kwargs
     ):
         """
@@ -180,11 +192,14 @@ class CompanyInfoToolkit(AbstractToolkit):
         Args:
             google_api_key: Google Custom Search API key
             google_cse_id: Google Custom Search Engine ID
-            use_proxy: Whether to use a proxy for Selenium
-            proxy_url: Proxy URL if use_proxy=True
+            browser: Browser type ('chrome', 'firefox', 'edge', 'safari', 'undetected')
             headless: Run browser in headless mode
             timeout: Default timeout for page loads (seconds)
-            **kwargs: Additional arguments passed to AbstractToolkit
+            auto_install: Auto-install webdriver if not found
+            mobile: Enable mobile emulation (Chrome only)
+            mobile_device: Specific mobile device to emulate
+            use_undetected: Use undetected-chromedriver (requires package)
+            **kwargs: Additional arguments passed to AbstractToolkit and SeleniumSetup
         """
         super().__init__(**kwargs)
 
@@ -194,11 +209,18 @@ class CompanyInfoToolkit(AbstractToolkit):
         # Service Selection:
         self.service = build("customsearch", "v1", developerKey=self.google_api_key)
 
-        # Selenium configuration
-        self.use_proxy = use_proxy
-        self.proxy_url = proxy_url
-        self.headless = headless
-        self.timeout = timeout
+        # Browser configuration for SeleniumSetup
+        self.browser_config = {
+            'browser': 'undetected' if use_undetected else browser,
+            'headless': headless,
+            'auto_install': auto_install,
+            'mobile': mobile,
+            'mobile_device': mobile_device,
+            'timeout': timeout,
+            **kwargs  # Pass through any additional kwargs
+        }
+        # Selenium setup instance and driver
+        self._selenium_setup: Optional[SeleniumSetup] = None
 
         # Current driver instance
         self._driver = None
@@ -209,43 +231,24 @@ class CompanyInfoToolkit(AbstractToolkit):
     # ===========================
     # Core Utility Methods
     # ===========================
-
-    def _get_driver_options(self) -> Options:
-        """Configure Chrome options for Selenium."""
-        options = Options()
-
-        if self.headless:
-            options.add_argument('--headless=new')
-
-        options.add_argument('--no-sandbox')
-        options.add_argument('--disable-dev-shm-usage')
-        options.add_argument('--disable-gpu')
-        options.add_argument('--disable-blink-features=AutomationControlled')
-        options.add_experimental_option("excludeSwitches", ["enable-automation"])
-        options.add_experimental_option('useAutomationExtension', False)
-
-        # User agent
-        options.add_argument(
-            'user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-            'AppleWebKit/537.36 (KHTML, like Gecko) '
-            'Chrome/120.0.0.0 Safari/537.36'
-        )
-
-        if self.use_proxy and self.proxy_url:
-            options.add_argument(f'--proxy-server={self.proxy_url}')
-
-        return options
-
     async def _get_driver(self) -> webdriver.Chrome:
-        """Get or create Selenium WebDriver instance."""
+        """Get or create Selenium WebDriver instance using SeleniumSetup."""
         if self._driver is None:
-            loop = asyncio.get_running_loop()
-            options = self._get_driver_options()
-            self._driver = await loop.run_in_executor(
-                None,
-                lambda: webdriver.Chrome(options=options)
-            )
-            self._driver.set_page_load_timeout(self.timeout)
+            if SeleniumSetup is None:
+                raise ImportError(
+                    "SeleniumSetup not available. Please ensure parrot.tools.scraping.driver is installed."
+                )
+
+            self.logger.info("Initializing Selenium WebDriver...")
+
+            # Create SeleniumSetup instance
+            self._selenium_setup = SeleniumSetup(**self.browser_config)
+
+            # Get driver using SeleniumSetup's async method
+            self._driver = await self._selenium_setup.get_driver()
+
+            self.logger.info("Selenium WebDriver initialized successfully")
+
         return self._driver
 
     async def _close_driver(self):
@@ -254,10 +257,12 @@ class CompanyInfoToolkit(AbstractToolkit):
             try:
                 loop = asyncio.get_running_loop()
                 await loop.run_in_executor(None, self._driver.quit)
+                self.logger.info("Selenium WebDriver closed")
             except Exception as e:
                 self.logger.warning(f"Error closing driver: {e}")
             finally:
                 self._driver = None
+                self._selenium_setup = None
 
     async def _google_site_search(
         self,
@@ -354,7 +359,6 @@ class CompanyInfoToolkit(AbstractToolkit):
                 None,
                 lambda: driver.page_source
             )
-
             # Parse with BeautifulSoup
             return bs(page_source, 'html.parser')
 
@@ -422,7 +426,7 @@ class CompanyInfoToolkit(AbstractToolkit):
     # Platform-Specific Methods (Tools)
     # ===========================
 
-    @tool_schema
+    @tool_schema(CompanyInput)
     async def scrape_zoominfo(
         self,
         company_name: str,
@@ -547,7 +551,7 @@ class CompanyInfoToolkit(AbstractToolkit):
 
         return result.to_json() if return_json else result
 
-    @tool_schema
+    @tool_schema(CompanyInput)
     async def scrape_explorium(
         self,
         company_name: str,
@@ -578,7 +582,7 @@ class CompanyInfoToolkit(AbstractToolkit):
             search_result = await self._google_site_search(
                 company_name=company_name,
                 site=site,
-                additional_terms="overview services"
+                additional_terms="overview - services"
             )
 
             if not search_result.url:
@@ -669,7 +673,7 @@ class CompanyInfoToolkit(AbstractToolkit):
 
         return result.to_json() if return_json else result
 
-    @tool_schema
+    @tool_schema(CompanyInput)
     async def scrape_leadiq(
         self,
         company_name: str,
@@ -701,7 +705,7 @@ class CompanyInfoToolkit(AbstractToolkit):
             search_result = await self._google_site_search(
                 company_name=standardized_name,
                 site=site,
-                additional_terms="Email Format"
+                additional_terms="Company Overview"
             )
 
             if not search_result.url:
@@ -829,7 +833,7 @@ class CompanyInfoToolkit(AbstractToolkit):
 
         return result.to_json() if return_json else result
 
-    @tool_schema
+    @tool_schema(CompanyInput)
     async def scrape_rocketreach(
         self,
         company_name: str,
@@ -860,7 +864,7 @@ class CompanyInfoToolkit(AbstractToolkit):
             search_result = await self._google_site_search(
                 company_name=company_name,
                 site=site,
-                additional_terms="Information"
+                additional_terms=" Information - RocketReach"
             )
 
             if not search_result.url:
@@ -959,7 +963,7 @@ class CompanyInfoToolkit(AbstractToolkit):
 
         return result.to_json() if return_json else result
 
-    @tool_schema
+    @tool_schema(CompanyInput)
     async def scrape_siccode(
         self,
         company_name: str,
@@ -1040,8 +1044,7 @@ class CompanyInfoToolkit(AbstractToolkit):
             # Location details
             if overview := document.find('div', {'id': 'overview'}):
                 # Description
-                desc_elem = overview.select_one("p.p-note")
-                if desc_elem:
+                if desc_elem := overview.select_one("p.p-note"):
                     result.company_description = desc_elem.text.strip()
 
                 # Location fields
@@ -1085,7 +1088,7 @@ class CompanyInfoToolkit(AbstractToolkit):
 
         return result.to_json() if return_json else result
 
-    @tool_schema
+    @tool_schema(CompanyInput)
     async def scrape_all_sources(
         self,
         company_name: str,
