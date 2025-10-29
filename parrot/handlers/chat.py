@@ -404,10 +404,8 @@ class ChatHandler(BaseView):
                         )
                         if isinstance(response, web.Response):
                             return response
-                        formatter = OutputFormatter(mode=OutputMode.JSON)
-                        formatted_result = formatter.format(response)
                         return web.json_response(
-                            formatted_result, dumps=json_encoder
+                            response, dumps=json_encoder
                         )
                     except Exception as exc:
                         self.error(
@@ -472,10 +470,8 @@ class ChatHandler(BaseView):
                     request=self.request,
                     **data
                 )
-                formatter = OutputFormatter(mode=OutputMode.JSON)
-                formatted_result = formatter.format(response)
                 return web.json_response(
-                    formatted_result,
+                    response,
                     dumps=json_encoder
                 )
         except ValueError as exc:
@@ -697,11 +693,12 @@ class BotManagement(BaseView):
         """
         by_loader = defaultdict(list)
         files = []
-        for a in attachments or []:
-            p = a.get("file_path")
-            if p is None:
-                continue
-            files.append(Path(p))
+        for _, values in attachments.items():
+            for a in values or []:
+                p = a.get("file_path")
+                if p is None:
+                    continue
+                files.append(Path(p))
 
         if default_loader_cls:
             if not issubclass(default_loader_cls, AbstractLoader):
@@ -728,7 +725,7 @@ class BotManagement(BaseView):
         except web.HTTPUnsupportedMediaType:
             # if no file is provided, then is a JSON request:
             form_data = await self.request.json()
-            attachments = []
+            attachments = {}
         try:
             manager = self.request.app['bot_manager']
         except KeyError:
@@ -886,7 +883,13 @@ class BotManagement(BaseView):
                         exception=exc,
                         status=400
                     )
-            files_list = [str(a["file_path"]) for a in attachments]
+            files_list = []
+            for _, values in attachments.items():
+                for a in values or []:
+                    p = a.get("file_path")
+                    if p is None:
+                        continue
+                    files_list.append(str(p))
             loaders_used = [cls.__name__ for cls in by_loader.keys()]
         # Load documents into the chatbot
         try:
@@ -907,5 +910,5 @@ class BotManagement(BaseView):
         }
         return self.json_response(
             payload,
-            status=200 if not errors else 207
+            status=207 if errors else 200
         )

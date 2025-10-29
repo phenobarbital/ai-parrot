@@ -4,7 +4,7 @@ AgentTalk - HTTP Handler for Agent Conversations
 Provides a flexible HTTP interface for talking with agents/bots using the ask() method
 with support for multiple output modes and MCP server integration.
 """
-from typing import Dict, Any
+from typing import Dict, Any, Union
 import tempfile
 import os
 import json
@@ -14,7 +14,7 @@ from datamodel.parsers.json import json_encoder  # noqa  pylint: disable=E0611
 from navigator_auth.decorators import is_authenticated, user_session
 from navigator.views import BaseView
 from ..bots.abstract import AbstractBot
-from ..models.responses import AIMessage
+from ..models.responses import AIMessage, AgentResponse
 from ..outputs import OutputMode, OutputFormatter
 from ..mcp.integration import MCPServerConfig
 
@@ -142,7 +142,7 @@ class AgentTalk(BaseView):
             output_mode: The desired output format
             format_kwargs: Additional formatting options
         """
-        formatter = OutputFormatter(mode=output_mode)
+        formatter = OutputFormatter()
 
         if output_mode == OutputMode.JSON:
             # Return structured JSON response
@@ -165,7 +165,11 @@ class AgentTalk(BaseView):
 
         elif output_mode == OutputMode.HTML:
             # Return formatted HTML
-            formatted_content = formatter.format(ai_message, **(format_kwargs or {}))
+            formatted_content = formatter.format(
+                mode=output_mode,
+                data=ai_message,
+                **(format_kwargs or {})
+            )
 
             # Create complete HTML page
             html_template = f"""
@@ -542,7 +546,7 @@ class AgentTalk(BaseView):
 
     def _format_response(
         self,
-        response: AIMessage,
+        response: Union[AIMessage, AgentResponse],
         output_format: str,
         format_kwargs: Dict[str, Any]
     ) -> web.Response:
@@ -557,6 +561,9 @@ class AgentTalk(BaseView):
         Returns:
             web.Response with appropriate content type
         """
+        if isinstance(response, AgentResponse):
+            response = response.response
+
         if output_format == 'json':
             # Return structured JSON response
             return web.json_response({

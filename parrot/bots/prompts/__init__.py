@@ -2,6 +2,7 @@
 Collection of useful prompts for Chatbots.
 """
 from .agents import AGENT_PROMPT, AGENT_PROMPT_SUFFIX, FORMAT_INSTRUCTIONS
+from .output_generation import OUTPUT_SYSTEM_PROMPT
 
 
 BASIC_SYSTEM_PROMPT = """
