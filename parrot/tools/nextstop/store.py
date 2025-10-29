@@ -39,6 +39,25 @@ class FootTrafficData(BaseModel):
     visits_by_day_of_week_sunday: Optional[int] = Field(default=None, description="Sunday visits")
 
 
+class FootTrafficSearch(BaseModel):
+    """Foot traffic search model."""
+    state_code: str = Field(description="State code")
+    retailer_name: str = Field(description="Retailer name")
+    limit: int = Field(default=10, description="Number of results to return")
+
+
+class FootTrafficInfo(BaseModel):
+    """Foot traffic information model."""
+    store_id: str = Field(description="Store identifier")
+    store_number: Optional[str] = Field(default=None, description="Store number")
+    store_name: Optional[str] = Field(default=None, description="Store name")
+    state_name: Optional[str] = Field(default=None, description="State name")
+    city: Optional[str] = Field(default=None, description="City name")
+    state_code: Optional[str] = Field(default=None, description="State code")
+    zipcode: Optional[str] = Field(default=None, description="ZIP code")
+    street_address: Optional[str] = Field(default=None, description="Street address")
+    foottraffic: Optional[int] = Field(default=None, description="Average of foot traffic")
+
 class VisitInfo(BaseModel):
     """Visit information model."""
     # Basic visit info
@@ -190,6 +209,33 @@ class StoreInfo(BaseNextStop):
                 sql,
                 output_format=output_format,
                 structured_obj=FootTrafficData if output_format == "structured" else None
+            )
+        except ValueError as ve:
+            return f"No Traffic data found for the specified store, error: {ve}"
+        except Exception as e:
+            return f"Error fetching foot traffic data: {e}"
+
+    @tool_schema(FootTrafficSearch)
+    async def get_foot_traffic_average(
+        self,
+        state_code: str,
+        retailer_name: str,
+        limit: int = 10,
+        output_format: str = "structured"
+    ) -> Union[pd.DataFrame, List[FootTrafficInfo]]:
+        """Get foot traffic data for a specific store.
+        This method retrieves the foot traffic data for the specified store,
+        including the number of visitors and average visits per day.
+        """
+        sql = await self._get_query("foot_traffic_avg")
+        sql = sql.format(state_code=state_code, retailer_name=retailer_name, limit=limit)
+
+        # Fetch the foot traffic data
+        try:
+            return await self._get_dataset(
+                sql,
+                output_format=output_format,
+                structured_obj=FootTrafficInfo if output_format == "structured" else None
             )
         except ValueError as ve:
             return f"No Traffic data found for the specified store, error: {ve}"
