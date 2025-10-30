@@ -880,14 +880,17 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
             "max_output_tokens": default_tokens,
             "temperature": temperature or self.temperature
         }
+        base_temperature = generation_config["temperature"]
 
         # Prepare structured output configuration
         output_config = self._get_structured_config(structured_output)
 
         # Tool selection
+        requested_tools = tools
+
         if _use_tools:
-            if tools and isinstance(tools, list):
-                for tool in tools:
+            if requested_tools and isinstance(requested_tools, list):
+                for tool in requested_tools:
                     self.register_tool(tool)
             tool_type = "custom_functions"
             # if Tools, reduce temperature to avoid hallucinations.
@@ -899,6 +902,17 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
             tool_type = 'builtin_tools' if _use_tools else None
 
         tools = self._build_tools(tool_type) if tool_type else []
+
+        if _use_tools and tool_type == "custom_functions" and not tools:
+            self.logger.info(
+                "Tool usage requested but no tools are registered - disabling tools for this request."
+            )
+            _use_tools = False
+            tool_type = None
+            tools = []
+            generation_config["temperature"] = base_temperature
+
+        use_tools = _use_tools
 
         self.logger.debug(
             f"Using model: {model}, max_tokens: {default_tokens}, temperature: {temperature}, "
