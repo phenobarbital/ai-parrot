@@ -198,19 +198,29 @@ class GoogleGenAIClient(AbstractClient):
         if 'anyOf' in schema:
             # Try to find a non-null type from anyOf
             for option in schema['anyOf']:
-                if isinstance(option, dict) and option.get('type') != 'null':
-                    cleaned['type'] = option['type']
-                    # If it's an array, also copy the items
-                    if option.get('type') == 'array' and 'items' in option:
-                        cleaned['items'] = self.clean_google_schema(option['items'])
-                    # Copy other relevant fields
-                    for field in ['description', 'enum', 'default']:
-                        if field in option:
-                            cleaned[field] = option[field]
-                    break
+                if not isinstance(option, dict):
+                    continue
+
+                option_type = option.get('type')
+                if option_type is None or option_type == 'null':
+                    continue
+
+                cleaned['type'] = option_type
+                # If it's an array, also copy the items
+                if option_type == 'array' and 'items' in option:
+                    cleaned['items'] = self.clean_google_schema(option['items'])
+                # Copy other relevant fields
+                for field in ['description', 'enum', 'default']:
+                    if field in option:
+                        cleaned[field] = option[field]
+                break
             else:
                 # Fallback to string if no good type found
                 cleaned['type'] = 'string'
+
+        # Ensure object-like schemas always advertise an object type
+        if 'properties' in cleaned and cleaned.get('type') != 'object':
+            cleaned['type'] = 'object'
 
         # Remove problematic fields that Google doesn't support
         problematic_fields = {
