@@ -21,7 +21,7 @@ async def main():
     print("Available tools:", [tool.name for tool in tools])
 
     # Example: Get issue by key
-    issue = await toolkit.get_issue(
+    issue = await toolkit.jira_get_issue(
         "NAV-5932",
         structured={
         "mapping": {

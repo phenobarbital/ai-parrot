@@ -18,7 +18,7 @@ Example usage:
         default_project="JRA"
     )
     tools = toolkit.get_tools()
-    issue = await toolkit.get_issue("JRA-1330")
+    issue = await toolkit.jira_get_issue("JRA-1330")
 
 Notes:
 - All public async methods become tools via AbstractToolkit.
@@ -413,7 +413,7 @@ class JiraToolkit(AbstractToolkit):
     # Tools (public async methods)
     # -----------------------------
     @tool_schema(GetIssueInput)
-    async def get_issue(
+    async def jira_get_issue(
         self,
         issue: str,
         fields: Optional[str] = None,
@@ -436,7 +436,7 @@ class JiraToolkit(AbstractToolkit):
         return self._apply_structured_output(raw, structured) if structured else raw
 
     @tool_schema(SearchIssuesInput)
-    async def search_issues(
+    async def jira_search_issues(
         self,
         jql: str,
         start_at: int = 0,
@@ -467,7 +467,7 @@ class JiraToolkit(AbstractToolkit):
         return {"total": getattr(results, "total", len(items)), "issues": items}
 
     @tool_schema(TransitionIssueInput)
-    async def transition_issue(
+    async def jira_transition_issue(
         self,
         issue: str,
         transition: Union[str, int],
@@ -495,10 +495,10 @@ class JiraToolkit(AbstractToolkit):
 
         await asyncio.to_thread(_run)
         # Return the latest state of the issue
-        return await self.get_issue(issue)
+        return await self.jira_get_issue(issue)
 
     @tool_schema(AddAttachmentInput)
-    async def add_attachment(self, issue: str, attachment: str) -> Dict[str, Any]:
+    async def jira_add_attachment(self, issue: str, attachment: str) -> Dict[str, Any]:
         """Add an attachment to an issue.
 
         Example: jira.add_attachment(issue=issue, attachment='/path/to/file.txt')
@@ -510,7 +510,7 @@ class JiraToolkit(AbstractToolkit):
         return {"ok": True, "issue": issue, "attachment": attachment}
 
     @tool_schema(AssignIssueInput)
-    async def assign_issue(self, issue: str, assignee: str) -> Dict[str, Any]:
+    async def jira_assign_issue(self, issue: str, assignee: str) -> Dict[str, Any]:
         """Assign an issue to a user.
 
         Example: jira.assign_issue(issue, 'newassignee')
@@ -522,7 +522,7 @@ class JiraToolkit(AbstractToolkit):
         return {"ok": True, "issue": issue, "assignee": assignee}
 
     @tool_schema(CreateIssueInput)
-    async def create_issue(self, fields: Dict[str, Any]) -> Dict[str, Any]:
+    async def jira_create_issue(self, fields: Dict[str, Any]) -> Dict[str, Any]:
         """Create a new issue.
 
         Example:
@@ -542,7 +542,7 @@ class JiraToolkit(AbstractToolkit):
         return {"ok": True, "id": data.get("id"), "key": data.get("key"), "issue": data}
 
     @tool_schema(UpdateIssueInput)
-    async def update_issue(
+    async def jira_update_issue(
         self,
         issue: str,
         summary: Optional[str] = None,
@@ -576,10 +576,10 @@ class JiraToolkit(AbstractToolkit):
         return self._issue_to_dict(obj)
 
     @tool_schema(FindIssuesByAssigneeInput)
-    async def find_issues_by_assignee(
+    async def jira_find_issues_by_assignee(
         self, assignee: str, project: Optional[str] = None, max_results: int = 50
     ) -> Dict[str, Any]:
-        """Find issues assigned to a given user (thin wrapper over search_issues).
+        """Find issues assigned to a given user (thin wrapper over jira_search_issues).
 
         Example: jira.search_issues("assignee=admin")
         """
@@ -587,7 +587,7 @@ class JiraToolkit(AbstractToolkit):
         if project or self.default_project:
             proj = project or self.default_project
             jql = f"project={proj} AND ({jql})"
-        return await self.search_issues(jql=jql, max_results=max_results)
+        return await self.jira_search_issues(jql=jql, max_results=max_results)
 
 
 __all__ = [
