@@ -1,5 +1,5 @@
 """
-ArangoDBVectorStore: Vector Store implementation for ArangoDB.
+ArangoDBStore: Vector Store implementation for ArangoDB.
 
 Provides comprehensive vector storage with graph support, including:
 - Database and collection management
@@ -23,7 +23,7 @@ from .models import Document, SearchResult, DistanceStrategy
 from ..conf import EMBEDDING_DEFAULT_MODEL
 
 
-class ArangoDBVectorStore(AbstractStore):
+class ArangoDBStore(AbstractStore):
     """
     ArangoDB Vector Store with native graph support.
 
@@ -121,7 +121,7 @@ class ArangoDBVectorStore(AbstractStore):
         self._db: Optional[AsyncDB] = None
         self._connection = None
 
-        self.logger = logging.getLogger("ArangoDBVectorStore")
+        self.logger = logging.getLogger("ArangoDBStore")
 
     async def connection(self) -> tuple:
         """
@@ -870,7 +870,7 @@ class ArangoDBVectorStore(AbstractStore):
         documents: List[Any],
         collection: Union[str, None] = None,
         **kwargs
-    ) -> 'ArangoDBVectorStore':
+    ) -> 'ArangoDBStore':
         """
         Create vector store from documents.
 
