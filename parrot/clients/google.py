@@ -1043,8 +1043,15 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                         raise e
                     retry_count += 1
 
+            has_function_calls = False
+            if response and getattr(response, "candidates", None):
+                candidate = response.candidates[0] if response.candidates else None
+                content = getattr(candidate, "content", None) if candidate else None
+                parts = getattr(content, "parts", None) if content else None
+                has_function_calls = bool(parts)
+
             self.logger.debug(
-                f"Initial response has function calls: {bool(getattr(response, 'candidates', [{}])[0].content.parts if hasattr(response, 'candidates') else False)}"
+                f"Initial response has function calls: {has_function_calls}"
             )
 
             # Multi-turn function calling loop
