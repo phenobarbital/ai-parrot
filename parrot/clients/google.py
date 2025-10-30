@@ -218,6 +218,10 @@ class GoogleGenAIClient(AbstractClient):
                 # Fallback to string if no good type found
                 cleaned['type'] = 'string'
 
+        # Ensure object-like schemas always advertise an object type
+        if 'properties' in cleaned and cleaned.get('type') != 'object':
+            cleaned['type'] = 'object'
+
         # Remove problematic fields that Google doesn't support
         problematic_fields = {
             'prefixItems', 'additionalItems', 'minItems', 'maxItems',
