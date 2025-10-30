@@ -52,6 +52,31 @@ from .decorators import tool_schema
 # -----------------------------
 # Input models (schemas)
 # -----------------------------
+STRUCTURED_OUTPUT_FIELD_SCHEMA: Dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "include": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Whitelist of dot-paths to include"
+        },
+        "mapping": {
+            "type": "object",
+            "description": "dest_key -> dot-path mapping",
+            "additionalProperties": {"type": "string"}
+        },
+        "model_path": {
+            "type": "string",
+            "description": "Dotted path to a Pydantic BaseModel subclass"
+        },
+        "strict": {
+            "type": "boolean",
+            "description": "If True, missing paths raise; otherwise they become None"
+        }
+    }
+}
+
+
 class StructuredOutputOptions(BaseModel):
     """Options to shape the output of Jira items into either a whitelist or a Pydantic model.
 
@@ -102,7 +127,11 @@ class GetIssueInput(BaseModel):
     issue: str = Field(description="Issue key or id, e.g., 'JRA-1330'")
     fields: Optional[str] = Field(default=None, description="Fields to fetch (comma-separated) or '*' ")
     expand: Optional[str] = Field(default=None, description="Entities to expand, e.g. 'renderedFields' ")
-    structured: Optional[Union[StructuredOutputOptions, Dict[str, Any]]] = Field(default=None, description="Optional structured output mapping")
+    structured: Optional[StructuredOutputOptions] = Field(
+        default=None,
+        description="Optional structured output mapping",
+        json_schema_extra=STRUCTURED_OUTPUT_FIELD_SCHEMA
+    )
 
 
 class SearchIssuesInput(BaseModel):
@@ -112,7 +141,11 @@ class SearchIssuesInput(BaseModel):
     max_results: int = Field(default=50, description="Max results per page (Jira default 50)")
     fields: Optional[str] = Field(default=None, description="Fields to return (comma-separated) or '*'")
     expand: Optional[str] = Field(default=None, description="Expand options")
-    structured: Optional[Union[StructuredOutputOptions, Dict[str, Any]]] = Field(default=None, description="Optional structured output mapping")
+    structured: Optional[StructuredOutputOptions] = Field(
+        default=None,
+        description="Optional structured output mapping",
+        json_schema_extra=STRUCTURED_OUTPUT_FIELD_SCHEMA
+    )
 
 
 class TransitionIssueInput(BaseModel):
