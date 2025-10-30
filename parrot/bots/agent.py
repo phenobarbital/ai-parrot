@@ -32,6 +32,9 @@ from ..notifications import NotificationMixin
 
 
 class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
+    max_tokens: int = 8192
+    model_name: str = "gemini-2.5-flash"
+
     """Represents an Agent in Navigator.
 
         Agents are chatbots that can access to Tools and execute commands.
@@ -87,6 +90,8 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
         self.agent_id = self.agent_id or agent_id
         self.agent_name = self.agent_name or name
         tools = self._get_default_tools(tools)
+        kwargs.setdefault('model', self.model_name)
+        kwargs.setdefault('max_tokens', self.max_tokens)
         super().__init__(
             name=name,
             llm=llm,
@@ -465,7 +470,11 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
         )
         return await self._generate_report(response)
 
-    async def _generate_report(self, response: AgentResponse) -> AgentResponse:
+    async def _generate_report(
+        self,
+        response: AgentResponse,
+        with_speech: bool = True
+    ) -> AgentResponse:
         """Generate a report from the response data."""
         final_report = response.output.strip()
         if not final_report:
@@ -491,19 +500,20 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
         except Exception as e:
             self.logger.error(f"Error generating PDF: {e}")
         # generate the podcast file:
-        try:
-            podcast_output = await self.speech_report(
-                report=final_report,
-                max_lines=self.speech_length,
-                num_speakers=self.num_speakers
-            )
-            response.podcast_path = str(podcast_output.get('podcast_path', None))
-            response.script_path = str(podcast_output.get('script_path', None))
-            response.set_podcast_path(podcast_output.get('podcast_path', None))
-        except Exception as e:
-            self.logger.error(
-                f"Error generating podcast: {e}"
-            )
+        if with_speech:
+            try:
+                podcast_output = await self.speech_report(
+                    report=final_report,
+                    max_lines=self.speech_length,
+                    num_speakers=self.num_speakers
+                )
+                response.podcast_path = str(podcast_output.get('podcast_path', None))
+                response.script_path = str(podcast_output.get('script_path', None))
+                response.set_podcast_path(podcast_output.get('podcast_path', None))
+            except Exception as e:
+                self.logger.error(
+                    f"Error generating podcast: {e}"
+                )
         # Save the final report to the response
         response.output = textwrap.fill(final_report, width=80)
         response.status = "success"

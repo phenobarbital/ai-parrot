@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 
 # Decorator for custom argument schemas
-def tool_schema(schema: Type[BaseModel]):
+def tool_schema(schema: Type[BaseModel], description: Optional[str] = None):
     """
     Decorator to specify a custom argument schema for a toolkit method.
 
@@ -19,6 +19,7 @@ def tool_schema(schema: Type[BaseModel]):
     """
     def decorator(func):
         func._args_schema = schema
+        func._tool_description = description or func.__doc__ or f"Tool: {func.__name__}"
         return func
     return decorator
 
