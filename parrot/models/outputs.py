@@ -36,6 +36,7 @@ class OutputMode(str, Enum):
     TEMPLATE_REPORT = "template_report"  # Pass to Jinja2 template (using jinja2 templates)
     APPLICATION = "application"  # Wrap in app (Streamlit/React/Svelte/HTML+TS)
     CHART = "chart"               # Generate chart visualization
+    ALTAIR = "altair"           # Generate Altair chart visualization
     MAP = "map"                   # Generate map visualization
     IMAGE = "image"             # render the image as a base64 embed into HTML <img>
 

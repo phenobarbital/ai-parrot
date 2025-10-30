@@ -322,6 +322,7 @@ Question: "Tell me about the iPhone 15 Pro - specs and price"
     return orchestrator
 
 async def test_fsm():
+    # DAG:
     crew = AgentsFlow(name="ResearchCrew")
 
     # Create agents
@@ -503,20 +504,20 @@ async def run_examples():
     # print("="*80)
     # await quick_flow_example()
 
-    print("\n" + "="*80)
-    print("EXAMPLE 3: ORCHESTRATOR")
-    print("="*80)
-    await orchestrator_example()
-
-    print("\n" + "="*80)
-    print("EXAMPLE 4: SIMPLE DELEGATION")
-    print("="*80)
-    await test_simple_delegation()
+    # print("\n" + "="*80)
+    # print("EXAMPLE 3: ORCHESTRATOR")
+    # print("="*80)
+    # await orchestrator_example()
 
     # print("\n" + "="*80)
-    # print("EXAMPLE 5: FSM WORKFLOW")
+    # print("EXAMPLE 4: SIMPLE DELEGATION")
     # print("="*80)
-    # await test_fsm()
+    # await test_simple_delegation()
+
+    print("\n" + "="*80)
+    print("EXAMPLE 5: FSM WORKFLOW")
+    print("="*80)
+    await test_fsm()
 
 
 if __name__ == "__main__":

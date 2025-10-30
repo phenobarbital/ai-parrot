@@ -1,6 +1,18 @@
-from typing import Any, List, Dict, Any
+from typing import Any, List, Dict, Any, Optional, Tuple
 from abc import ABC, abstractmethod
+import re
 from dataclasses import asdict
+import html
+from pygments import highlight
+from pygments.lexers.python import PythonLexer
+from pygments.formatters.html import HtmlFormatter
+
+
+try:
+    from ipywidgets import HTML as IPyHTML
+    IPYWIDGETS_AVAILABLE = True
+except ImportError:
+    IPYWIDGETS_AVAILABLE = False
 
 
 class BaseRenderer(ABC):
@@ -139,37 +151,180 @@ class BaseRenderer(ABC):
         Returns:
             Dictionary ready for YAML serialization
         """
+        if not hasattr(response, 'model_dump'):
+            # Handle other types
+            return BaseRenderer._serialize_any(response)
         # If it's an AIMessage, extract relevant data
-        if hasattr(response, 'model_dump'):
-            # It's a Pydantic model
-            data = response.model_dump(
-                exclude_none=True,
-                exclude_unset=True
-            )
+        data = response.model_dump(
+            exclude_none=True,
+            exclude_unset=True
+        )
 
-            if not include_metadata:
-                # Return simplified version
-                result = {
-                    'input': data.get('input'),
-                    'output': data.get('output'),
-                }
+        if not include_metadata:
+            # Return simplified version
+            result = {
+                'input': data.get('input'),
+                'output': data.get('output'),
+            }
 
-                # Add essential metadata
-                if data.get('model'):
-                    result['model'] = data['model']
-                if data.get('provider'):
-                    result['provider'] = data['provider']
-                if data.get('usage'):
-                    result['usage'] = data['usage']
+            # Add essential metadata
+            if data.get('model'):
+                result['model'] = data['model']
+            if data.get('provider'):
+                result['provider'] = data['provider']
+            if data.get('usage'):
+                result['usage'] = data['usage']
 
-                return result
+            return result
 
-            # Full metadata mode
-            return BaseRenderer._clean_data(data)
-
-        # Handle other types
-        return BaseRenderer._serialize_any(response)
+        # Full metadata mode
+        return BaseRenderer._clean_data(data)
 
     @abstractmethod
     def render(self, response: Any, **kwargs) -> str:
         pass
+
+
+
+class BaseChart(BaseRenderer):
+    """Base class for chart renderers - extends BaseRenderer with chart-specific methods"""
+
+    @staticmethod
+    def _extract_code(content: str) -> Optional[str]:
+        """Extract Python code from markdown blocks."""
+        pattern = r'```(?:python)?\n(.*?)```'
+        matches = re.findall(pattern, content, re.DOTALL)
+        return matches[0].strip() if matches else None
+
+    @staticmethod
+    def _highlight_code(code: str, theme: str = 'monokai') -> str:
+        """Apply syntax highlighting to code."""
+        try:
+            formatter = HtmlFormatter(style=theme, noclasses=True, cssclass='code')
+            return highlight(code, PythonLexer(), formatter)
+        except ImportError:
+            escaped = html.escape(code)
+            return f'<pre class="code"><code>{escaped}</code></pre>'
+
+    @staticmethod
+    def _wrap_for_environment(content: Any, environment: str) -> Any:
+        """Wrap content based on environment."""
+        if isinstance(content, str) and environment in {'jupyter', 'colab'} and IPYWIDGETS_AVAILABLE:
+                return IPyHTML(value=content)
+        return content
+
+    @staticmethod
+    def _build_code_section(code: str, theme: str, icon: str = "📊") -> str:
+        """Build collapsible code section."""
+        highlighted = BaseChart._highlight_code(code, theme)
+        return f'''
+        <details class="code-accordion">
+            <summary class="code-header">
+                <span>{icon} View Python Code</span>
+                <span class="toggle-icon">▶</span>
+            </summary>
+            <div class="code-content">
+                {highlighted}
+            </div>
+        </details>
+        '''
+
+    @staticmethod
+    def _render_error(error: str, code: str, theme: str) -> str:
+        """Render error message with code."""
+        highlighted = BaseChart._highlight_code(code, theme)
+        return f'''
+        {BaseChart._get_chart_styles()}
+        <div class="error-container">
+            <h3>⚠️ Chart Generation Error</h3>
+            <p class="error-message">{error}</p>
+            <details class="code-accordion" open>
+                <summary class="code-header">Code with Error</summary>
+                <div class="code-content">{highlighted}</div>
+            </details>
+        </div>
+        '''
+
+    @staticmethod
+    def _get_chart_styles() -> str:
+        """CSS styles specific to charts."""
+        return '''
+        <style>
+            .chart-container {
+                background: white;
+                border-radius: 8px;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+                padding: 20px;
+                margin: 20px 0;
+            }
+            .chart-wrapper {
+                min-height: 400px;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+            }
+            .code-accordion {
+                margin-top: 20px;
+                border: 1px solid #e0e0e0;
+                border-radius: 6px;
+                overflow: hidden;
+            }
+            .code-header {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                padding: 12px 20px;
+                cursor: pointer;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                font-weight: 600;
+                user-select: none;
+            }
+            .code-header:hover {
+                background: linear-gradient(135deg, #5568d3 0%, #653a8e 100%);
+            }
+            .toggle-icon {
+                transition: transform 0.3s ease;
+            }
+            details[open] .toggle-icon {
+                transform: rotate(90deg);
+            }
+            .code-content {
+                background: #272822;
+                padding: 15px;
+                overflow-x: auto;
+            }
+            .code-content pre {
+                margin: 0;
+                font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+                font-size: 13px;
+                line-height: 1.5;
+            }
+            .error-container {
+                background: #fff3cd;
+                border: 1px solid #ffc107;
+                border-radius: 8px;
+                padding: 20px;
+                margin: 20px 0;
+            }
+            .error-message {
+                color: #856404;
+                font-weight: 500;
+                margin: 10px 0;
+            }
+        </style>
+        '''
+
+    @abstractmethod
+    def execute_code(self, code: str) -> Tuple[Any, Optional[str]]:
+        """Execute chart code and return chart object or error."""
+        pass
+
+    @abstractmethod
+    def to_html(self, chart_obj: Any, **kwargs) -> str:
+        """Convert chart object to HTML."""
+        pass
+
+    def to_json(self, chart_obj: Any) -> Optional[Dict]:
+        """Convert chart object to JSON (optional, not all charts support this)."""
+        return None

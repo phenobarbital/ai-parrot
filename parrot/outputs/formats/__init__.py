@@ -38,6 +38,8 @@ def get_renderer(mode: OutputMode) -> Type[Renderer]:
                 import_module('.charts', 'parrot.outputs.formats')
             elif mode == OutputMode.MAP:
                 import_module('.map', 'parrot.outputs.formats')
+            elif mode == OutputMode.ALTAIR:
+                import_module('.altair', 'parrot.outputs.formats')
     try:
         return RENDERERS[mode]
     except KeyError as exc:
