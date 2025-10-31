@@ -19,6 +19,7 @@ from ..handlers.chat import ChatHandler, BotHandler
 from ..handlers.agent import AgentTalk
 from ..handlers import ChatbotHandler
 from ..handlers.models import BotModel
+from ..handlers.stream import StreamHandler
 from ..registry import agent_registry, AgentRegistry
 # Crew:
 from ..bots.orchestration.crew import AgentCrew
@@ -450,6 +451,17 @@ class BotManager:
             '/api/v1/chatbots/{name}',
             BotHandler
         )
+        # Streaming Handler:
+        st = StreamHandler()
+        # websocket endpoint
+        router.add_get('/ws/stream/{bot_id}', st.stream_websocket)
+        # sse endpoint
+        router.add_post('/api/v1/stream/sse/{bot_id}', st.stream_sse)
+        # ndjson endpoint
+        router.add_post('/api/v1/stream/ndjson/{bot_id}', st.stream_ndjson)
+        # chunked endpoint
+        router.add_post('/api/v1/stream/chunked/{bot_id}', st.stream_chunked)
+        # Crew Configuration
         CrewHandler.configure(self.app, '/api/v1/crew')
         if ENABLE_SWAGGER:
             self.logger.info("Setting up OpenAPI documentation...")
