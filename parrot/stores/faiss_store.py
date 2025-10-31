@@ -57,8 +57,6 @@ class FAISSStore(AbstractStore):
         embedding: Optional[Callable] = None,
         distance_strategy: DistanceStrategy = DistanceStrategy.COSINE,
         index_type: str = "Flat",  # Options: "Flat", "IVF", "HNSW"
-        use_gpu: bool = False,
-        gpu_id: int = 0,
         nlist: int = 100,  # For IVF indexes
         nprobe: int = 10,  # For IVF search
         m: int = 32,  # For HNSW
@@ -80,8 +78,6 @@ class FAISSStore(AbstractStore):
             embedding: Custom embedding function
             distance_strategy: Distance metric to use (COSINE, EUCLIDEAN_DISTANCE, etc.)
             index_type: Type of FAISS index ("Flat", "IVF", "HNSW")
-            use_gpu: Deprecated. GPU acceleration has been removed; the value is ignored.
-            gpu_id: Deprecated. GPU acceleration has been removed; the value is ignored.
             nlist: Number of clusters for IVF indexes
             nprobe: Number of clusters to probe for IVF search
             m: Number of connections per layer for HNSW
@@ -103,12 +99,6 @@ class FAISSStore(AbstractStore):
 
         # FAISS configuration
         self.index_type = index_type
-        if use_gpu:
-            logging.getLogger("FAISSStore").warning(
-                "FAISS GPU support has been removed. Continuing with CPU execution."
-            )
-        self.use_gpu = False
-        self.gpu_id = 0
         self.nlist = nlist
         self.nprobe = nprobe
         self.m = m
@@ -266,7 +256,7 @@ class FAISSStore(AbstractStore):
         if not self._connected:
             return
         # Clear indexes
-        for collection_name, collection in self._collections.items():
+        for _, collection in self._collections.items():
             if collection.get('index'):
                 del collection['index']
 
