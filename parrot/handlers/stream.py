@@ -1,4 +1,4 @@
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Dict, Any
 import asyncio
 from aiohttp import web
 from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611 # noqa
@@ -37,13 +37,20 @@ class StreamHandler(BaseHandler):
             )
         return bot
 
+    def _extract_stream_params(self, payload: Dict[str, Any], *extra_ignored_keys: str):
+        """Split incoming payload into prompt and kwargs for ask_stream."""
+        ignored_keys = {"prompt", *extra_ignored_keys}
+        prompt = payload.get('prompt', '')
+        kwargs = {k: v for k, v in payload.items() if k not in ignored_keys}
+        return prompt, kwargs
+
     async def stream_sse(self, request: web.Request) -> web.StreamResponse:
         """
         Server-Sent Events (SSE) streaming endpoint
         Best for: Unidirectional streaming, HTTP/1.1 compatible
         """
         data = await request.json()
-        prompt = data.get('prompt', '')
+        prompt, ask_kwargs = self._extract_stream_params(data)
         bot = self._get_bot(request)
         response = web.StreamResponse(
             status=200,
@@ -58,7 +65,7 @@ class StreamHandler(BaseHandler):
         )
         await response.prepare(request)
         try:
-            async for chunk in bot.ask_stream(prompt):
+            async for chunk in bot.ask_stream(prompt, **ask_kwargs):
                 # Format as SSE
                 sse_data = f"data: {json_encoder({'content': chunk})}\n\n"
                 await response.write(sse_data.encode('utf-8'))
@@ -85,7 +92,7 @@ class StreamHandler(BaseHandler):
         Best for: Clients that can parse JSON lines, more flexible than SSE
         """
         data = await request.json()
-        prompt = data.get('prompt', '')
+        prompt, ask_kwargs = self._extract_stream_params(data)
         bot = self._get_bot(request)
         response = web.StreamResponse(
             status=200,
@@ -99,7 +106,7 @@ class StreamHandler(BaseHandler):
         )
         await response.prepare(request)
         try:
-            async for chunk in bot.ask_stream(prompt):
+            async for chunk in bot.ask_stream(prompt, **ask_kwargs):
                 # Each line is a complete JSON object
                 line = json_encoder({
                     'type': 'content',
@@ -131,7 +138,7 @@ class StreamHandler(BaseHandler):
         Best for: Simple text streaming without special formatting
         """
         data = await request.json()
-        prompt = data.get('prompt', '')
+        prompt, ask_kwargs = self._extract_stream_params(data)
         bot = self._get_bot(request)
         response = web.StreamResponse(
             status=200,
@@ -146,7 +153,7 @@ class StreamHandler(BaseHandler):
         )
         await response.prepare(request)
         try:
-            async for chunk in bot.ask_stream(prompt):
+            async for chunk in bot.ask_stream(prompt, **ask_kwargs):
                 await response.write(chunk.encode('utf-8'))
                 await response.drain()
 
@@ -209,7 +216,7 @@ class StreamHandler(BaseHandler):
         msg_type = data.get('type')
 
         if msg_type == 'stream_request':
-            prompt = data.get('prompt', '')
+            prompt, ask_kwargs = self._extract_stream_params(data, 'type')
 
             # Send acknowledgment
             await ws.send_json({
@@ -219,7 +226,7 @@ class StreamHandler(BaseHandler):
 
             try:
                 # Stream the LLM response
-                async for chunk in bot.ask_stream(prompt):
+                async for chunk in bot.ask_stream(prompt, **ask_kwargs):
                     await ws.send_json({
                         'type': 'content',
                         'data': chunk
