@@ -4,7 +4,7 @@ FAISSStore: In-memory Vector Store implementation using FAISS.
 Provides high-performance vector similarity search with:
 - In-memory vector storage with FAISS indexes
 - Multiple distance metrics (Cosine, L2, Inner Product)
-- CPU and GPU support
+- CPU-only execution (GPU support removed)
 - MMR (Maximal Marginal Relevance) search
 - Metadata filtering
 - Collection management
@@ -34,11 +34,11 @@ class FAISSStore(AbstractStore):
     An in-memory FAISS vector store implementation, completely independent of Langchain.
 
     This store provides high-performance vector similarity search using FAISS indexes
-    with support for multiple distance metrics, GPU acceleration, and metadata filtering.
+    with support for multiple distance metrics and metadata filtering.
 
     Features:
     - Multiple FAISS index types (Flat, IVF, HNSW)
-    - CPU and GPU support
+    - CPU-only execution
     - Cosine, L2, and Inner Product distance metrics
     - MMR (Maximal Marginal Relevance) search
     - Metadata filtering
@@ -80,8 +80,8 @@ class FAISSStore(AbstractStore):
             embedding: Custom embedding function
             distance_strategy: Distance metric to use (COSINE, EUCLIDEAN_DISTANCE, etc.)
             index_type: Type of FAISS index ("Flat", "IVF", "HNSW")
-            use_gpu: Whether to use GPU acceleration
-            gpu_id: GPU device ID to use
+            use_gpu: Deprecated. GPU acceleration has been removed; the value is ignored.
+            gpu_id: Deprecated. GPU acceleration has been removed; the value is ignored.
             nlist: Number of clusters for IVF indexes
             nprobe: Number of clusters to probe for IVF search
             m: Number of connections per layer for HNSW
@@ -90,7 +90,7 @@ class FAISSStore(AbstractStore):
         """
         if not FAISS_AVAILABLE:
             raise ImportError(
-                "FAISS is not installed. Please install it with: pip install faiss-cpu or faiss-gpu"
+                "FAISS is not installed. Please install it with: pip install faiss-cpu"
             )
 
         # Store configuration
@@ -103,8 +103,12 @@ class FAISSStore(AbstractStore):
 
         # FAISS configuration
         self.index_type = index_type
-        self.use_gpu = use_gpu
-        self.gpu_id = gpu_id
+        if use_gpu:
+            logging.getLogger("FAISSStore").warning(
+                "FAISS GPU support has been removed. Continuing with CPU execution."
+            )
+        self.use_gpu = False
+        self.gpu_id = 0
         self.nlist = nlist
         self.nprobe = nprobe
         self.m = m
@@ -146,7 +150,6 @@ class FAISSStore(AbstractStore):
                 'id_to_idx': {},  # {id: faiss_index_position}
                 'idx_to_id': {},  # {faiss_index_position: id}
                 'dimension': None,
-                'gpu_resource': None,
                 'is_trained': False,
             }
             self.logger.info(f"Initialized collection: {collection_name}")
@@ -232,44 +235,12 @@ class FAISSStore(AbstractStore):
         else:
             raise ValueError(f"Unsupported index type: {self.index_type}")
 
-        # Move to GPU if requested
-        if self.use_gpu:
-            index = self._move_index_to_gpu(index)
-
         self.logger.info(
             f"Created FAISS index: type={self.index_type}, "
-            f"metric={metric}, dimension={dimension}, gpu={self.use_gpu}"
+            f"metric={metric}, dimension={dimension}, cpu_only=True"
         )
 
         return index
-
-    def _move_index_to_gpu(self, index: Any) -> Any:
-        """
-        Move FAISS index to GPU.
-
-        Args:
-            index: CPU FAISS index
-
-        Returns:
-            GPU FAISS index
-        """
-        try:
-            if not hasattr(faiss, 'StandardGpuResources'):
-                self.logger.warning("GPU support not available, using CPU")
-                return index
-
-            # Create GPU resources
-            gpu_resource = faiss.gpu.StandardGpuResources()
-
-            # Move index to GPU
-            gpu_index = faiss.index_cpu_to_gpu(gpu_resource, self.gpu_id, index)
-
-            self.logger.info(f"Moved index to GPU {self.gpu_id}")
-            return gpu_index
-
-        except Exception as e:
-            self.logger.warning(f"Failed to move index to GPU: {e}. Using CPU.")
-            return index
 
     async def connection(self) -> bool:
         """
@@ -290,14 +261,12 @@ class FAISSStore(AbstractStore):
         """
         Disconnect and cleanup resources.
 
-        Clears all in-memory data and GPU resources.
+        Clears all in-memory data.
         """
         if not self._connected:
             return
-        # Clear GPU resources
+        # Clear indexes
         for collection_name, collection in self._collections.items():
-            if collection.get('gpu_resource'):
-                del collection['gpu_resource']
             if collection.get('index'):
                 del collection['index']
 
@@ -1010,12 +979,7 @@ class FAISSStore(AbstractStore):
             # Save FAISS index
             index_path = file_path.parent / f"{file_path.stem}_{coll_name}.index"
             if coll_data['index'] is not None:
-                # Move to CPU if on GPU
-                if self.use_gpu:
-                    cpu_index = faiss.index_gpu_to_cpu(coll_data['index'])
-                    faiss.write_index(cpu_index, str(index_path))
-                else:
-                    faiss.write_index(coll_data['index'], str(index_path))
+                faiss.write_index(coll_data['index'], str(index_path))
 
             # Save metadata and documents
             save_data['collections'][coll_name] = {
@@ -1060,10 +1024,6 @@ class FAISSStore(AbstractStore):
             if Path(index_path).exists():
                 index = faiss.read_index(index_path)
 
-                # Move to GPU if requested
-                if self.use_gpu:
-                    index = self._move_index_to_gpu(index)
-
                 self._collections[coll_name]['index'] = index
 
             # Load metadata and documents
@@ -1088,5 +1048,5 @@ class FAISSStore(AbstractStore):
             f"<FAISSStore(collection='{self.collection_name}', "
             f"index_type='{self.index_type}', "
             f"distance_strategy='{self.distance_strategy.value}', "
-            f"use_gpu={self.use_gpu})>"
+            "cpu_only=True)>"
         )
