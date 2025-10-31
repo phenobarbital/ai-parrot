@@ -66,6 +66,7 @@ dependencies = [
     "python-statemachine==2.5.0",
     "aiohttp-swagger3==0.10.0",
     "PyYAML>=6.0.2",
+    "pytector[gguf]==0.2.0",
 ]
 
 [project.optional-dependencies]

@@ -54,11 +54,16 @@ from ..utils.helpers import RequestContext, RequestBot
 from ..models.outputs import OutputMode
 from ..outputs import OutputFormatter
 from ..security import (
-    PromptInjectionDetector,
     SecurityEventLogger,
     ThreatLevel,
     PromptInjectionException
 )
+try:
+    from pytector import PromptInjectionDetector
+    PYTECTOR_ENABLED = True
+except ImportError:
+    from parrot.security.prompt_injection import PromptInjectionDetector
+    PYTECTOR_ENABLED = False
 
 logging.getLogger(name='primp').setLevel(logging.INFO)
 logging.getLogger(name='rquest').setLevel(logging.INFO)
@@ -267,9 +272,15 @@ class AbstractBot(DBInterface, ABC):
         # Security Mechanisms
         self.strict_mode = strict_mode
         self.block_on_threat = block_on_threat
-        self._injection_detector = PromptInjectionDetector(
-            logger=self.logger
-        )
+        if PYTECTOR_ENABLED:
+            self._injection_detector = PromptInjectionDetector(
+                model_name_or_url="deberta",
+                enable_keyword_blocking=True
+            )
+        else:
+            self._injection_detector = PromptInjectionDetector(
+                logger=self.logger,
+            )
         self._security_logger = SecurityEventLogger(
             db_pool=getattr(self, 'db_pool', None),
             logger=self.logger
@@ -909,10 +920,23 @@ class AbstractBot(DBInterface, ABC):
             return question
 
         # Detect threats
-        sanitized_question, threats = self._injection_detector.sanitize(
-            question,
-            strict=True
-        )
+        sanitized_question = ''
+        threats = []
+        if PYTECTOR_ENABLED:
+            is_injection, probability = self._injection_detector.detect_injection(question)
+            if is_injection and probability > 0.95:
+                sanitized_question = ""
+                threats = [{
+                    'type': 'prompt_injection',
+                    'level': ThreatLevel.CRITICAL,
+                    'description': 'High probability prompt injection detected',
+                    'probability': probability
+                }]
+        else:
+            sanitized_question, threats = self._injection_detector.sanitize(
+                question,
+                strict=True
+            )
 
         if threats:
             # Log the security event
@@ -1140,15 +1164,15 @@ class AbstractBot(DBInterface, ABC):
             else:
                 # Keep original behavior for backward compatibility
                 metadata['context_sources'] = sources
-                metadata.update({
+                metadata |= {
                     'search_results_count': len(search_results),
                     'sources': sources
-                })
+                }
 
-            metadata.update({
+            metadata |= {
                 'search_results_count': len(search_results),
                 'sources': sources
-            })
+            }
 
             # Template for final logging message
             final_log_template = Template(
