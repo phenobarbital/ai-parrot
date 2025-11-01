@@ -21,9 +21,11 @@ from dataclasses import dataclass, field
 import asyncio
 import uuid
 from navconfig.logging import logging
+from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611 # noqa
+from faiss import IndexFlatL2
 from ..agent import BasicAgent
 from ..abstract import AbstractBot
-from ...clients.base import AbstractClient
+from ...clients import SUPPORTED_CLIENTS, AbstractClient
 from ...clients.google import GoogleGenAIClient
 from ...tools.manager import ToolManager
 from ...tools.abstract import AbstractTool
@@ -37,6 +39,7 @@ from ...models.crew import (
     AgentExecutionInfo,
     build_agent_metadata,
     determine_run_status,
+    AgentExecutionResult
 )
 
 
@@ -250,7 +253,7 @@ class AgentCrew:
         agents: List[Union[BasicAgent, AbstractBot]] = None,
         shared_tool_manager: ToolManager = None,
         max_parallel_tasks: int = 10,
-        llm: Optional[AbstractClient] = None,
+        llm: Optional[Union[str, AbstractClient]] = None,
         auto_configure: bool = True,
         truncation_length: Optional[int] = None,
         truncate_context_summary: bool = True
@@ -272,7 +275,12 @@ class AgentCrew:
         self.execution_log: List[Dict[str, Any]] = []
         self.logger = logging.getLogger(f"parrot.crews.{self.name}")
         self.semaphore = asyncio.Semaphore(max_parallel_tasks)
-        self._llm = llm  # Optional LLM for orchestration tasks
+        if isinstance(llm, str):
+            self._llm = SUPPORTED_CLIENTS.get(llm.lower(), None)
+        elif isinstance(llm, AbstractClient):
+            self._llm = llm  # Optional LLM for orchestration tasks
+        else:
+            self._llm = None
         self.truncation_length = (
             truncation_length
             if truncation_length is not None
