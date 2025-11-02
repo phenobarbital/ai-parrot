@@ -5,6 +5,7 @@ from typing import Dict, List, Any, Optional, Literal, Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import time
+import json
 from pydantic import BaseModel, Field
 from .abstract import AbstractTool
 from ..models.crew import AgentResult
@@ -146,6 +147,7 @@ class AgentTool(AbstractTool):
         # Extract question from kwargs (validated by args_schema)
         question = kwargs.pop('question', '')
         mode = kwargs.pop('mode', 'replace')
+        context = None
 
         if not question:
             return "Error: No question provided to agent tool"
@@ -153,8 +155,10 @@ class AgentTool(AbstractTool):
         # Get context from execution memory if available
         if self.execution_memory:
             context = self.execution_memory.get_context_for_agent(self.agent.name)
+            # Create a text description of the context for the prompt
+            context_description = self._describe_context(context)
             # Combine context with question
-            question = f"{context}\n\nAdditional request: {question}"
+            question = f"{context_description}\n\nAdditional request: {question}"
 
         try:
             # Auto-construct context from kwargs
@@ -167,13 +171,20 @@ class AgentTool(AbstractTool):
                 user_id=user_id,
                 session_id=session_id,
                 original_query=question,
-                shared_data=kwargs,
+                shared_data={
+                    **kwargs,
+                    'execution_memory': self.execution_memory,
+                    'previous_result': context
+                },
                 agent_results={}
             )
 
             # Apply context filter if provided
             if self.context_filter:
                 agent_context = self.context_filter(agent_context)
+
+            # Inject structured data into PythonREPL if agent has it
+            await self._inject_context_to_repl(context)
 
             # Choose method based on configuration and availability
             if self.use_conversation_method and hasattr(self.agent, 'conversation'):
@@ -227,7 +238,8 @@ class AgentTool(AbstractTool):
                     metadata={
                         "user_id": user_id,
                         "session_id": session_id,
-                        "call_count": self.call_count
+                        "call_count": self.call_count,
+                        "result_type": type(result).__name__
                     },
                     execution_time=execution_time
                 )
@@ -257,3 +269,95 @@ class AgentTool(AbstractTool):
             'call_count': self.call_count,
             'last_response_length': len(self.last_response) if self.last_response else 0
         }
+
+    def _describe_context(self, context: Any) -> str:
+        """Create a textual description of structured context for the prompt"""
+        import pandas as pd
+
+        if context is None:
+            return "No previous context available."
+
+        if isinstance(context, str):
+            return f"Previous context:\n{context}"
+
+        if isinstance(context, pd.DataFrame):
+            return f"""Previous agent returned a DataFrame:
+    - Shape: {context.shape[0]} rows × {context.shape[1]} columns
+    - Columns: {', '.join(context.columns)}
+    - Data types: {', '.join(f"{col}: {dtype}" for col, dtype in context.dtypes.items())}
+    - Available as variable 'previous_result' for processing
+
+    Sample data (first 5 rows):
+    {context.head(5).to_string()}
+    """
+
+        if isinstance(context, dict):
+            keys = list(context.keys())[:10]
+            return f"""Previous agent returned a dictionary:
+    - Keys ({len(context)} total): {', '.join(keys)}{'...' if len(context) > 10 else ''}
+    - Available as variable 'previous_result' for processing
+
+    Sample content:
+    {json.dumps({k: context[k] for k in keys}, indent=2, default=str)}
+    """
+
+        if isinstance(context, list):
+            return f"""Previous agent returned a list:
+    - Length: {len(context)} items
+    - Type of items: {type(context[0]).__name__ if context else 'empty'}
+    - Available as variable 'previous_result' for processing
+
+    First few items:
+    {context[:5]}
+    """
+
+        # Fallback
+        return f"""Previous agent returned: {type(context).__name__}
+    Available as variable 'previous_result' for processing
+    Preview: {str(context)[:500]}
+    """
+
+    async def _inject_context_to_repl(self, context: Any):
+        """Inject structured context into agent's PythonREPL if available"""
+        if context is None:
+            return
+
+        # Check if agent has PythonREPL tool
+        python_repl = None
+        if hasattr(self.agent, 'tool_manager'):
+            python_repl = self.agent.tool_manager.get_tool('python_repl')
+
+        if python_repl and hasattr(python_repl, 'globals'):
+            # Inject the structured data as a global variable
+            python_repl.globals['previous_result'] = context
+
+            # Also inject all results from execution memory with agent names
+            if self.execution_memory:
+                for agent_id, agent_result in self.execution_memory.results.items():
+                    safe_name = agent_id.replace('-', '_').replace(' ', '_')
+                    python_repl.globals[f'{safe_name}_result'] = agent_result.result
+
+    def _append_results(self, existing: Any, new: Any) -> Any:
+        """Intelligently append results based on their types"""
+        import pandas as pd
+
+        # Both are strings
+        if isinstance(existing, str) and isinstance(new, str):
+            return f"{existing}\n\n{new}"
+
+        # Both are DataFrames
+        if isinstance(existing, pd.DataFrame) and isinstance(new, pd.DataFrame):
+            return pd.concat([existing, new], ignore_index=True)
+
+        # Both are dicts
+        if isinstance(existing, dict) and isinstance(new, dict):
+            return {**existing, **new}
+
+        # Both are lists
+        if isinstance(existing, list) and isinstance(new, list):
+            return existing + new
+
+        # Mixed types - convert to list
+        if not isinstance(existing, list):
+            existing = [existing]
+        return existing + [new]

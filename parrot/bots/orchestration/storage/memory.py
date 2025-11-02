@@ -52,7 +52,7 @@ class ExecutionMemory(VectorStoreMixin):
         """Get only results from re-executions triggered by ask()"""
         return [r for r in self.results.values() if r.parent_execution_id is not None]
 
-    def get_context_for_agent(self, agent_id: str) -> str:
+    def get_context_for_agent(self, agent_id: str) -> Any:
         idx = self.execution_order.index(agent_id)
         if idx == 0:
             return self.original_query

@@ -79,7 +79,7 @@ class CrewResult:
 
     output: str
     response: Dict[str, ResponseType] = field(default_factory=dict)
-    results: List[str] = field(default_factory=list)
+    results: List[Any] = field(default_factory=list)
     agent_ids: List[str] = field(default_factory=list)
     agents: List[AgentExecutionInfo] = field(default_factory=list)
     """Detailed information about each agent's execution"""
@@ -341,14 +341,52 @@ class AgentResult:
 
     def to_text(self) -> str:
         """Convert execution result to text for vectorization"""
-        return f"""
-Agent: {self.agent_name}
+        from pandas import DataFrame  # noqa F401
+
+        result_type = type(self.result).__name__
+
+        base_info = f"""Agent: {self.agent_name}
 Task: {self.task}
-Result: {json_encoder(self.result) if isinstance(self.result, dict) else str(self.result)}
-Executed at: {self.timestamp.isoformat()}
-Execution time: {self.execution_time}s
-Metadata: {json_encoder(self.metadata)}
-"""
+Result Type: {result_type}
+Execution Time: {self.execution_time}s
+Timestamp: {self.timestamp.isoformat()}
+        """
+
+        if isinstance(self.result, DataFrame):
+            df = self.result
+            content = f"""
+Shape: {df.shape[0]} rows × {df.shape[1]} columns
+Columns: {', '.join(df.columns)}
+
+Data Types:
+{df.dtypes.to_string()}
+
+Statistics:
+{df.describe().to_string() if len(df) > 0 else 'No numerical data'}
+
+Sample Data (first 10 rows):
+{df.head(10).to_string()}
+            """
+        elif isinstance(self.result, dict):
+            content = f"""
+Keys: {', '.join(self.result.keys())}
+Content:
+{json_encoder(self.result)}
+            """
+        elif isinstance(self.result, list):
+            content = f"""
+Length: {len(self.result)} items
+Item Types: {', '.join(set(type(item).__name__ for item in self.result[:100]))}
+Sample Items:
+{json_encoder(self.result[:10]) if len(self.result) > 0 else '[]'}
+            """
+        else:
+            content = f"""
+Content:
+{str(self.result)}
+            """
+
+        return base_info + content
 
 
 class VectorStoreProtocol(Protocol):

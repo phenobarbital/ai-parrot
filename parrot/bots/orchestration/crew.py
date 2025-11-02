@@ -1466,12 +1466,29 @@ Current task: {current_input}"""
         """
         session_id = session_id or str(uuid.uuid4())
         user_id = user_id or 'crew_user'
+        original_query = tasks[0]['query'] if tasks else ""
+
+        # initialize execution log
+        self.execution_memory = ExecutionMemory(
+            original_query=original_query,
+            embedding_model=self.embedding_model if self.enable_analysis else None,
+            dimension=getattr(self, 'dimension', 384),
+            index_type=getattr(self, 'index_type', 'Flat')
+        )
+        # Set execution order for parallel mode (all agents at same level)
+        self.execution_memory.execution_order = [
+            task.get('agent_id') for task in tasks
+            if task.get('agent_id') in self.agents
+        ]
 
         crew_context = AgentContext(
             user_id=user_id,
             session_id=session_id,
-            original_query=tasks[0]['query'] if tasks else "",
-            shared_data=kwargs,
+            original_query=original_query,
+            shared_data={
+                **kwargs,
+                'execution_memory': self.execution_memory,
+            },
             agent_results={}
         )
 
@@ -1529,18 +1546,40 @@ Current task: {current_input}"""
 
         for i, (result, metadata) in enumerate(zip(results, task_metadata)):
             agent_id = metadata['agent_id']
+            agent_name = metadata['agent_name']
             agent_ids.append(agent_id)
+            _query = metadata['query']
+            execution_time = end_time - start_time  # Total parallel time
 
             if isinstance(result, Exception):
                 # Handle exceptions from failed agents
                 error_msg = f"Error: {str(result)}"
                 parallel_results[agent_id] = error_msg
                 errors[agent_id] = str(result)
+                # Save failed execution to memory
+                agent_result = AgentResult(
+                    agent_id=agent_id,
+                    agent_name=agent_name,
+                    task=_query,
+                    result=error_msg,
+                    metadata={
+                        'success': False,
+                        'error': str(result),
+                        'mode': 'parallel',
+                        'user_id': user_id,
+                        'session_id': session_id
+                    },
+                    execution_time=0.0
+                )
+                self.execution_memory.add_result(
+                    agent_result,
+                    vectorize=False
+                )
                 log_entry = {
                     'agent_id': agent_id,
-                    'agent_name': metadata['agent_name'],
+                    'agent_name': agent_name,
                     'agent_index': i,
-                    'input': metadata['query'],
+                    'input': _query,
                     'output': error_msg,
                     'execution_time': 0,
                     'success': False,
@@ -1567,11 +1606,33 @@ Current task: {current_input}"""
                 parallel_results[agent_id] = extracted_result
                 crew_context.agent_results[agent_id] = extracted_result
 
+                # Save successful execution to memory
+                agent_result = AgentResult(
+                    agent_id=agent_id,
+                    agent_name=agent_name,
+                    task=metadata['query'],
+                    result=extracted_result,
+                    metadata={
+                        'success': True,
+                        'mode': 'parallel',
+                        'user_id': user_id,
+                        'session_id': session_id,
+                        'index': i,
+                        'result_type': type(extracted_result).__name__
+                    },
+                    execution_time=execution_time
+                )
+                # Vectorize only if analysis enabled (handled internally by ExecutionMemory)
+                self.execution_memory.add_result(
+                    agent_result,
+                    vectorize=True
+                )
+
                 log_entry = {
                     'agent_id': agent_id,
-                    'agent_name': metadata['agent_name'],
+                    'agent_name': agent_name,
                     'agent_index': i,
-                    'input': metadata['query'],
+                    'input': _query,
                     'output': self._truncate_text(extracted_result),
                     'full_output': extracted_result,
                     'execution_time': end_time - start_time,  # Total parallel time
@@ -1613,7 +1674,7 @@ Current task: {current_input}"""
                 'requested_tasks': len(tasks),
             }
         )
-        if synthesis_prompt:
+        if generate_summary and self._llm and synthesis_prompt:
             result = await self._synthesize_results(
                 crew_result=result,
                 synthesis_prompt=synthesis_prompt,
