@@ -334,8 +334,8 @@ class AgentResult:
     task: str
     result: Any
     metadata: Dict[str, Any]
-    timestamp: datetime = field(default_factory=datetime.utcnow)
     execution_time: float
+    timestamp: datetime = field(default_factory=datetime.utcnow)
     parent_execution_id: Optional[str] = None  # For tracking re-executions
     execution_id: str = field(default_factory=lambda: str(uuid.uuid4()))
 

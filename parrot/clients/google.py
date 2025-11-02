@@ -837,7 +837,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
         # If use_tools is None, use the instance default
         _use_tools = use_tools if use_tools is not None else self.enable_tools
         if not model:
-            model = self.model
+            model = self.model or GoogleModel.GEMINI_2_5_FLASH.value
         # Generate unique turn ID for tracking
         turn_id = str(uuid.uuid4())
         original_prompt = prompt
