@@ -32,9 +32,6 @@ from ..notifications import NotificationMixin
 
 
 class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
-    max_tokens: int = 8192
-    model_name: str = "gemini-2.5-flash"
-
     """Represents an Agent in Navigator.
 
         Agents are chatbots that can access to Tools and execute commands.
@@ -72,6 +69,8 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
             "gender": "male"
         }
     }
+    max_tokens: int = None # Use default max tokens from Chatbot
+    model_name: str = None  # Use default model from Chatbot
     report_template: str = "report_template.html"
 
     def __init__(

@@ -4,10 +4,11 @@ Data models for Agent Crew execution results.
 Provides standardized output format for all crew execution modes.
 """
 from __future__ import annotations
-from typing import List, Dict, Any, Optional, Literal, Union
+from typing import List, Dict, Any, Optional, Literal, Union, Protocol
 from datetime import datetime
 import uuid
 from dataclasses import dataclass, field
+import numpy as np
 from datamodel.parsers.json import json_encoder  # pylint: disable=E0611 # noqa
 from .responses import AIMessage, AgentResponse
 from ..bots.abstract import AbstractBot
@@ -326,14 +327,14 @@ def build_agent_metadata(
     )
 
 @dataclass
-class AgentExecutionResult:
+class AgentResult:
     """Captures a single agent execution with full context"""
     agent_id: str
     agent_name: str
     task: str
     result: Any
     metadata: Dict[str, Any]
-    timestamp: datetime
+    timestamp: datetime = field(default_factory=datetime.utcnow)
     execution_time: float
     parent_execution_id: Optional[str] = None  # For tracking re-executions
     execution_id: str = field(default_factory=lambda: str(uuid.uuid4()))
@@ -350,29 +351,8 @@ Metadata: {json_encoder(self.metadata)}
 """
 
 
-@dataclass
-class ExecutionMemory:
-    """In-memory storage for execution history"""
-    results: List[AgentExecutionResult] = field(default_factory=list)
-    summary: str = ""
-    execution_graph: Dict[str, List[str]] = field(default_factory=dict)
-
-    def add_result(self, result: AgentExecutionResult):
-        """Add a result and update execution graph"""
-        self.results.append(result)
-        if result.parent_execution_id:
-            if result.parent_execution_id not in self.execution_graph:
-                self.execution_graph[result.parent_execution_id] = []
-            self.execution_graph[result.parent_execution_id].append(result.execution_id)
-
-    def get_results_by_agent(self, agent_id: str) -> List[AgentExecutionResult]:
-        """Retrieve all results from a specific agent"""
-        return [r for r in self.results if r.agent_id == agent_id]
-
-    def get_original_results(self) -> List[AgentExecutionResult]:
-        """Get only results from the initial execution (not re-executions)"""
-        return [r for r in self.results if r.parent_execution_id is None]
-
-    def get_reexecuted_results(self) -> List[AgentExecutionResult]:
-        """Get only results from re-executions triggered by ask()"""
-        return [r for r in self.results if r.parent_execution_id is not None]
+class VectorStoreProtocol(Protocol):
+    """Protocol for vector store implementations"""
+    def encode(self, texts: List[str]) -> np.ndarray:
+        """Encode texts to embeddings"""
+        ...

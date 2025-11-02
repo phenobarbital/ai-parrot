@@ -18,6 +18,7 @@ from typing import (
 )
 from enum import Enum
 from dataclasses import dataclass, field
+import contextlib
 import asyncio
 import uuid
 from navconfig.logging import logging
@@ -28,6 +29,7 @@ from ..abstract import AbstractBot
 from ...clients import SUPPORTED_CLIENTS, AbstractClient
 from ...clients.google import GoogleGenAIClient
 from ...tools.manager import ToolManager
+from ...tools.agent import AgentTool
 from ...tools.abstract import AbstractTool
 from ...tools.agent import AgentContext
 from ...models.responses import (
@@ -39,8 +41,9 @@ from ...models.crew import (
     AgentExecutionInfo,
     build_agent_metadata,
     determine_run_status,
-    AgentExecutionResult
+    AgentResult
 )
+from .storage import ExecutionMemory
 
 
 AgentRef = Union[str, BasicAgent, AbstractBot]
@@ -256,7 +259,10 @@ class AgentCrew:
         llm: Optional[Union[str, AbstractClient]] = None,
         auto_configure: bool = True,
         truncation_length: Optional[int] = None,
-        truncate_context_summary: bool = True
+        truncate_context_summary: bool = True,
+        embedding_model: Any = None,
+        dimension: int = 384,  # NEW
+        index_type: str = "Flat",  # NEW: "Flat", "FlatIP", o "HNSW"
     ):
         """
         Initialize the AgentCrew.
@@ -270,6 +276,8 @@ class AgentCrew:
         self.name = name or 'AgentCrew'
         self.agents: Dict[str, Union[BasicAgent, AbstractBot]] = {}
         self._auto_configure: bool = auto_configure
+        # internal tools:
+        self.tools: List[AbstractTool] = []
         self.shared_tool_manager = shared_tool_manager or ToolManager()
         self.max_parallel_tasks = max_parallel_tasks
         self.execution_log: List[Dict[str, Any]] = []
@@ -287,13 +295,19 @@ class AgentCrew:
             else self.__class__.default_truncation_length
         )
         self.truncate_context_summary = truncate_context_summary
-
         # Workflow graph for flow-based execution
         self.workflow_graph: Dict[str, AgentNode] = {}
         self.initial_agent: Optional[str] = None
         self.final_agents: Set[str] = set()
         # Internal tracking of per-agent initialization guards
         self._agent_locks: Dict[int, asyncio.Lock] = {}
+        # Execution Memory:
+        self.embedding_model = embedding_model
+        self.execution_memory = ExecutionMemory(
+            embedding_model=embedding_model,
+            dimension=dimension,
+            index_type=index_type
+        )
         # Add agents if provided
         if agents:
             for agent in agents:
@@ -312,6 +326,16 @@ class AgentCrew:
                 if tool and not agent.tool_manager.get_tool(tool_name):
                     agent.tool_manager.add_tool(tool, tool_name)
 
+        # wrap agent as tool for use by main Agent:
+        agent_tool = AgentTool(
+            agent=agent,
+            tool_name=agent_id,
+            tool_description=getattr(agent, 'description', f"Execute {agent.name}"),
+            use_conversation_method=True,
+            execution_memory=self.execution_memory
+        )
+
+        self.tools.append(agent_tool)
         self.logger.info(f"Added agent '{agent_id}' to crew")
 
     def remove_agent(self, agent_id: str) -> bool:
@@ -409,6 +433,462 @@ class AgentCrew:
             if not node.successors
         }
 
+    async def _execute_parallel_agents(
+        self,
+        agent_names: Set[str],
+        context: FlowContext
+    ) -> CrewResult:
+        """
+        Execute multiple agents in parallel and collect their results.
+
+        This is the internal method that enables parallel execution of agents
+        within the flow-based execution mode. It's called by run_flow() whenever
+        multiple agents are ready to execute simultaneously.
+
+        Args:
+            agent_names: Set of agent names that are ready to execute
+            context: The current FlowContext tracking execution state
+        Returns:
+            CrewResult with results from all executed agents
+        """
+        tasks = []
+        agent_name_map = []
+
+        for agent_name in agent_names:
+            node = self.workflow_graph[agent_name]
+            # get readiness of agent in AgentNode:
+            agent = node.agent
+            if agent_name not in self.agents:
+                self.logger.warning(f"Agent '{agent_name}' not found in crew, skipping")
+                continue
+            await self._ensure_agent_ready(agent)
+            # Double-check dependencies are satisfied (defensive programming)
+            if context.can_execute(agent_name, node.dependencies):
+                context.active_tasks.add(agent_name)
+                tasks.append(node.execute(context))
+                agent_name_map.append(agent_name)
+
+        # Execute all tasks in parallel
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Process results and handle errors
+        execution_results = {}
+        for agent_name, result in zip(agent_name_map, results):
+            node = self.workflow_graph[agent_name]
+            if isinstance(result, Exception):
+                context.errors[agent_name] = result
+                context.active_tasks.discard(agent_name)
+                self.logger.error(
+                    f"Error executing {agent_name}: {result}"
+                )
+                context.responses[agent_name] = None
+                context.agent_metadata[agent_name] = build_agent_metadata(
+                    agent_name,
+                    node.agent,
+                    None,
+                    None,
+                    0.0,
+                    'failed',
+                    str(result)
+                )
+                self.execution_log.append({
+                    'agent_id': agent_name,
+                    'agent_name': node.agent.name,
+                    'output': str(result),
+                    'execution_time': 0,
+                    'success': False,
+                    'error': str(result)
+                })
+            else:
+                output = result.get('output') if isinstance(result, dict) else result
+                raw_response = result.get('response') if isinstance(result, dict) else result
+                execution_time = result.get('execution_time', 0.0) if isinstance(result, dict) else 0.0
+                metadata = build_agent_metadata(
+                    agent_name,
+                    node.agent,
+                    raw_response,
+                    output,
+                    execution_time,
+                    'completed'
+                )
+                context.mark_completed(
+                    agent_name,
+                    output,
+                    raw_response,
+                    metadata
+                )
+                context.active_tasks.discard(agent_name)
+                execution_results[agent_name] = output
+                self.execution_log.append({
+                    'agent_id': agent_name,
+                    'agent_name': node.agent.name,
+                    'input': self._truncate_text(result.get('prompt', '') if isinstance(result, dict) else ''),
+                    'output': self._truncate_text(output),
+                    'execution_time': execution_time,
+                    'success': True
+                })
+
+        return execution_results
+
+    async def _get_ready_agents(self, context: FlowContext) -> Set[str]:
+        """
+        Get all agents that are ready to execute based on their dependencies.
+
+        An agent is ready if:
+        1. All its dependencies are completed
+        2. It hasn't been executed yet
+        3. It's not currently executing
+
+        This method is called repeatedly by run_flow() to determine which agents
+        can execute in the next wave of parallel execution.
+        """
+        return {
+            agent_name
+            for agent_name, node in self.workflow_graph.items()
+            if (
+                agent_name not in context.completed_tasks
+                and agent_name not in context.active_tasks
+                and context.can_execute(agent_name, node.dependencies)
+            )
+        }
+
+    def _agent_is_configured(self, agent: Union[BasicAgent, AbstractBot]) -> bool:
+        """Check if an agent is configured, using a lock to prevent race conditions."""
+        status = getattr(agent, "is_configured", False)
+        if callable(status):
+            with contextlib.suppress(TypeError):
+                status = status()
+        return bool(status)
+
+    async def _ensure_agent_ready(self, agent: Union[BasicAgent, AbstractBot]) -> None:
+        """Ensure the agent is configured before execution.
+
+        Agents require their underlying LLM client to be instantiated before
+        they can answer questions. Many examples explicitly call
+        ``await agent.configure()`` during setup, but it is easy to forget this
+        step when building complex flows programmatically. When configuration
+        is skipped the agent's ``_llm`` attribute remains ``None`` (or points to
+        an un-instantiated client class), leading to runtime errors such as
+        ``'NoneType' object does not support the asynchronous context manager
+        protocol`` when ``agent.ask`` is executed.
+
+        To make the crew orchestration more robust we lazily configure agents
+        the first time they are used. We guard the configuration with a
+        per-agent lock so that concurrent executions of the same agent do not
+        race to configure it multiple times.
+        """
+
+        if self._agent_is_configured(agent):
+            return
+
+        agent_id = id(agent)
+        lock = self._agent_locks.get(agent_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._agent_locks[agent_id] = lock
+
+        async with lock:
+            if not self._agent_is_configured(agent):
+                try:
+                    self.logger.info(
+                        f"Auto-configuring agent '{agent.name}'"
+                    )
+                    await agent.configure()
+                    self.logger.info(
+                        f"Agent '{agent.name}' configured successfully"
+                    )
+                except Exception as e:
+                    self.logger.error(
+                        f"Failed to configure agent '{agent.name}': {e}",
+                        exc_info=True,
+                    )
+                    raise
+
+    async def _execute_agent(
+        self,
+        agent: Union[BasicAgent, AbstractBot],
+        query: str,
+        session_id: str,
+        user_id: str,
+        index: int,
+        context: AgentContext,
+        model: Optional[str] = None,
+        max_tokens: Optional[int] = None
+    ) -> Any:
+        """
+        Execute a single agent with proper rate limiting and error handling.
+
+        This internal method wraps the agent execution with a semaphore for
+        rate limiting and handles the different execution methods that agents
+        might implement.
+        """
+        await self._ensure_agent_ready(agent)
+        async with self.semaphore:
+            if hasattr(agent, 'conversation'):
+                return await agent.conversation(
+                    question=query,
+                    session_id=f"{session_id}_agent_{index}",
+                    user_id=user_id,
+                    use_conversation_history=True,
+                    model=model,
+                    max_tokens=max_tokens,
+                    **context.shared_data
+                )
+            if hasattr(agent, 'ask'):
+                return await agent.ask(
+                    question=query,
+                    session_id=f"{session_id}_agent_{index}",
+                    user_id=user_id,
+                    use_conversation_history=True,
+                    model=model,
+                    max_tokens=max_tokens,
+                    **context.shared_data
+                )
+            elif hasattr(agent, 'invoke'):
+                return await agent.invoke(
+                    question=query,
+                    session_id=f"{session_id}_agent_{index}",
+                    user_id=user_id,
+                    use_conversation_history=False,
+                    **context.shared_data
+                )
+            else:
+                raise ValueError(
+                    f"Agent {agent.name} does not support conversation, ask, or invoke methods"
+                )
+
+    def _extract_result(self, response: Any) -> str:
+        """Extract result string from response."""
+        if isinstance(response, (AIMessage, AgentResponse)) or hasattr(
+            response, 'content'
+        ):
+            return response.content
+        else:
+            return str(response)
+
+    def _build_context_summary(self, context: AgentContext) -> str:
+        """Build summary of previous results."""
+        summaries = []
+        for agent_name, result in context.agent_results.items():
+            truncated = self._truncate_text(
+                result,
+                enabled=self.truncate_context_summary
+            )
+            summaries.append(f"- {agent_name}: {truncated}")
+        return "\n".join(summaries)
+
+    def _truncate_text(self, text: Optional[str], *, enabled: bool = True) -> str:
+        """Truncate text using configured length."""
+        if text is None or not enabled:
+            return text or ""
+
+        if self.truncation_length is None or self.truncation_length <= 0:
+            return text
+
+        if len(text) <= self.truncation_length:
+            return text
+
+        return f"{text[:self.truncation_length]}..."
+
+    def _build_loop_first_agent_prompt(
+        self,
+        *,
+        initial_task: str,
+        iteration_input: str,
+        iteration_number: int,
+    ) -> str:
+        """Compose the prompt for the first agent in each loop iteration."""
+        if iteration_number == 1:
+            return iteration_input
+
+        return (
+            f"Initial task: {initial_task}\n"
+            f"This is loop iteration {iteration_number}."
+            f"\nPrevious iteration output:\n{iteration_input}"
+        )
+
+    def _build_shared_state_summary(self, shared_state: Dict[str, Any]) -> str:
+        """Create a human-readable summary from the shared loop state."""
+        history = shared_state.get('history', [])
+        if not history:
+            return "No prior agent outputs."
+
+        lines = []
+        for entry in history[-10:]:
+            iteration = entry.get('iteration')
+            agent_id = entry.get('agent_id')
+            output = entry.get('output')
+            lines.append(
+                f"Iteration {iteration} - {agent_id}: {self._truncate_text(str(output))}"
+            )
+        return "\n".join(lines)
+
+    async def _evaluate_loop_condition(
+        self,
+        *,
+        condition: str,
+        shared_state: Dict[str, Any],
+        last_output: Optional[str],
+        iteration: int,
+        user_id: Optional[str],
+        session_id: Optional[str],
+        max_tokens: int,
+        temperature: float,
+    ) -> bool:
+        """Ask the configured LLM whether the loop condition has been satisfied."""
+        if not condition:
+            return False
+
+        history_summary = []
+        for entry in shared_state.get('history', []):
+            iteration_no = entry.get('iteration')
+            agent_id = entry.get('agent_id')
+            output = entry.get('output')
+            history_summary.append(
+                f"Iteration {iteration_no} - {agent_id}: {output}"
+            )
+
+        history_text = "\n".join(history_summary) or "(no outputs yet)"
+        prompt = (
+            "You are monitoring an autonomous team of agents running in a loop.\n"
+            f"Initial task: {shared_state.get('initial_task')}\n"
+            f"Stopping condition: {condition}\n"
+            f"Current iteration: {iteration}\n"
+            "Shared state history:\n"
+            f"{history_text}\n\n"
+            f"Most recent output: {last_output}\n\n"
+            "Decide if the loop should stop. Respond with a single word:"
+            " YES to stop the loop because the condition is met, or NO to"
+            " continue running."
+        )
+
+        try:
+            async with self._llm as client:
+                response = await client.ask(
+                    prompt=prompt,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    user_id=user_id,
+                    session_id=f"{session_id}_loop_condition",
+                )
+        except Exception as exc:
+            self.logger.error(
+                f"Failed to evaluate loop condition with LLM: {exc}",
+                exc_info=True
+            )
+            return False
+
+        decision_text = self._extract_result(response).strip().lower()
+        if not decision_text:
+            return False
+
+        if decision_text.startswith('yes') or ' stop' in decision_text:
+            return True
+
+        return False
+
+    async def _synthesize_results(
+        self,
+        crew_result: CrewResult,
+        synthesis_prompt: Optional[str] = None,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        max_tokens: int = 4096,
+        temperature: float = 0.1,
+        **kwargs
+    ) -> CrewResult:
+        """
+        Synthesize crew results using LLM if synthesis_prompt is provided.
+
+        This method takes the results from any execution mode and uses an LLM
+        to create a synthesized, coherent response.
+
+        Args:
+            crew_result: Result from run_sequential/parallel/flow
+            synthesis_prompt: Prompt for synthesis (if None, returns original result)
+            user_id: User identifier
+            session_id: Session identifier
+            max_tokens: Max tokens for synthesis
+            temperature: Temperature for synthesis
+            **kwargs: Additional LLM arguments
+
+        Returns:
+            CrewResult with synthesized output if synthesis was performed,
+            otherwise returns original crew_result
+        """
+        # If no synthesis prompt or no LLM, return original result
+        if not synthesis_prompt or not self._llm:
+            return crew_result
+
+        # Build context from agent results
+        context_parts = ["# Agent Execution Results\n"]
+
+        for i, (agent_id, result) in enumerate(zip(crew_result.agent_ids, crew_result.results)):
+            agent = self.agents.get(agent_id)
+            agent_name = agent.name if agent else agent_id
+
+            context_parts.extend([
+                f"\n## Agent {i+1}: {agent_name}\n",
+                str(result),
+                "\n---\n"
+            ])
+
+        research_context = "\n".join(context_parts)
+
+        # Build final prompt
+        final_prompt = f"""{research_context}
+
+{synthesis_prompt}"""
+
+        # Call LLM for synthesis
+        self.logger.info("Synthesizing results with LLM")
+
+        try:
+            async with self._llm as client:
+                synthesis_response = await client.ask(
+                    prompt=final_prompt,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    user_id=user_id or 'crew_user',
+                    session_id=session_id or str(uuid.uuid4()),
+                    **kwargs
+                )
+
+            # Extract synthesized content
+            synthesized_output = (
+                synthesis_response.content
+                if hasattr(synthesis_response, 'content')
+                else str(synthesis_response)
+            )
+
+            # Return updated CrewResult with synthesized output
+            return CrewResult(
+                output=synthesized_output,  # Synthesized output
+                response=crew_result.response,
+                results=crew_result.results,  # Keep original results
+                agent_ids=crew_result.agent_ids,
+                agents=crew_result.agents,
+                errors=crew_result.errors,
+                execution_log=crew_result.execution_log,
+                total_time=crew_result.total_time,
+                status=crew_result.status,
+                metadata={
+                    **crew_result.metadata,
+                    'synthesized': True,
+                    'synthesis_prompt': synthesis_prompt,
+                    'original_output': crew_result.output
+                }
+            )
+
+        except Exception as e:
+            self.logger.error(f"Error during synthesis: {e}", exc_info=True)
+            # Return original result if synthesis fails
+            return crew_result
+
+    # -------------------------------
+    # Execution Methods (run_parallel, sequential, loop, flow)
+    # -------------------------------
+
     async def run_sequential(
         self,
         query: str,
@@ -417,6 +897,7 @@ class AgentCrew:
         session_id: str = None,
         pass_full_context: bool = True,
         synthesis_prompt: Optional[str] = None,
+        generate_summary: bool = True,
         max_tokens: int = 4096,
         temperature: float = 0.1,
         model: Optional[str] = 'gemini-2.5-pro',
@@ -629,6 +1110,7 @@ Current task: {current_input}"""
         user_id: str = None,
         session_id: str = None,
         pass_full_context: bool = True,
+        generate_summary: bool = True,
         synthesis_prompt: Optional[str] = None,
         max_tokens: int = 4096,
         temperature: float = 0.1,
@@ -946,6 +1428,7 @@ Current task: {current_input}"""
         all_results: Optional[bool] = False,
         user_id: str = None,
         session_id: str = None,
+        generate_summary: bool = True,
         synthesis_prompt: Optional[str] = None,
         max_tokens: int = 4096,
         temperature: float = 0.1,
@@ -1146,6 +1629,7 @@ Current task: {current_input}"""
         initial_task: str,
         max_iterations: int = 100,
         on_agent_complete: Optional[Callable] = None,
+        generate_summary: bool = True,
         synthesis_prompt: Optional[str] = None,
         user_id: str = None,
         session_id: str = None,
@@ -1323,365 +1807,6 @@ Current task: {current_input}"""
 
         return result
 
-
-    async def _execute_parallel_agents(
-        self,
-        agent_names: Set[str],
-        context: FlowContext
-    ) -> CrewResult:
-        """
-        Execute multiple agents in parallel and collect their results.
-
-        This is the internal method that enables parallel execution of agents
-        within the flow-based execution mode. It's called by run_flow() whenever
-        multiple agents are ready to execute simultaneously.
-
-        Args:
-            agent_names: Set of agent names that are ready to execute
-            context: The current FlowContext tracking execution state
-        Returns:
-            CrewResult with results from all executed agents
-        """
-        tasks = []
-        agent_name_map = []
-
-        for agent_name in agent_names:
-            node = self.workflow_graph[agent_name]
-            # get readiness of agent in AgentNode:
-            agent = node.agent
-            if agent_name not in self.agents:
-                self.logger.warning(f"Agent '{agent_name}' not found in crew, skipping")
-                continue
-            await self._ensure_agent_ready(agent)
-            # Double-check dependencies are satisfied (defensive programming)
-            if context.can_execute(agent_name, node.dependencies):
-                context.active_tasks.add(agent_name)
-                tasks.append(node.execute(context))
-                agent_name_map.append(agent_name)
-
-        # Execute all tasks in parallel
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        # Process results and handle errors
-        execution_results = {}
-        for agent_name, result in zip(agent_name_map, results):
-            node = self.workflow_graph[agent_name]
-            if isinstance(result, Exception):
-                context.errors[agent_name] = result
-                context.active_tasks.discard(agent_name)
-                self.logger.error(
-                    f"Error executing {agent_name}: {result}"
-                )
-                context.responses[agent_name] = None
-                context.agent_metadata[agent_name] = build_agent_metadata(
-                    agent_name,
-                    node.agent,
-                    None,
-                    None,
-                    0.0,
-                    'failed',
-                    str(result)
-                )
-                self.execution_log.append({
-                    'agent_id': agent_name,
-                    'agent_name': node.agent.name,
-                    'output': str(result),
-                    'execution_time': 0,
-                    'success': False,
-                    'error': str(result)
-                })
-            else:
-                output = result.get('output') if isinstance(result, dict) else result
-                raw_response = result.get('response') if isinstance(result, dict) else result
-                execution_time = result.get('execution_time', 0.0) if isinstance(result, dict) else 0.0
-                metadata = build_agent_metadata(
-                    agent_name,
-                    node.agent,
-                    raw_response,
-                    output,
-                    execution_time,
-                    'completed'
-                )
-                context.mark_completed(
-                    agent_name,
-                    output,
-                    raw_response,
-                    metadata
-                )
-                context.active_tasks.discard(agent_name)
-                execution_results[agent_name] = output
-                self.execution_log.append({
-                    'agent_id': agent_name,
-                    'agent_name': node.agent.name,
-                    'input': self._truncate_text(result.get('prompt', '') if isinstance(result, dict) else ''),
-                    'output': self._truncate_text(output),
-                    'execution_time': execution_time,
-                    'success': True
-                })
-
-        return execution_results
-
-    async def _get_ready_agents(self, context: FlowContext) -> Set[str]:
-        """
-        Get all agents that are ready to execute based on their dependencies.
-
-        An agent is ready if:
-        1. All its dependencies are completed
-        2. It hasn't been executed yet
-        3. It's not currently executing
-
-        This method is called repeatedly by run_flow() to determine which agents
-        can execute in the next wave of parallel execution.
-        """
-        return {
-            agent_name
-            for agent_name, node in self.workflow_graph.items()
-            if (
-                agent_name not in context.completed_tasks
-                and agent_name not in context.active_tasks
-                and context.can_execute(agent_name, node.dependencies)
-            )
-        }
-
-    def _agent_is_configured(self, agent: Union[BasicAgent, AbstractBot]) -> bool:
-        """Check if an agent is configured, using a lock to prevent race conditions."""
-        status = getattr(agent, "is_configured", False)
-        if callable(status):
-            try:
-                status = status()
-            except TypeError:
-                # Some agents expose ``is_configured`` as a property; if calling fails,
-                # fall back to the original value.
-                pass
-        return bool(status)
-
-    async def _ensure_agent_ready(self, agent: Union[BasicAgent, AbstractBot]) -> None:
-        """Ensure the agent is configured before execution.
-
-        Agents require their underlying LLM client to be instantiated before
-        they can answer questions. Many examples explicitly call
-        ``await agent.configure()`` during setup, but it is easy to forget this
-        step when building complex flows programmatically. When configuration
-        is skipped the agent's ``_llm`` attribute remains ``None`` (or points to
-        an un-instantiated client class), leading to runtime errors such as
-        ``'NoneType' object does not support the asynchronous context manager
-        protocol`` when ``agent.ask`` is executed.
-
-        To make the crew orchestration more robust we lazily configure agents
-        the first time they are used. We guard the configuration with a
-        per-agent lock so that concurrent executions of the same agent do not
-        race to configure it multiple times.
-        """
-
-        if self._agent_is_configured(agent):
-            return
-
-        agent_id = id(agent)
-        lock = self._agent_locks.get(agent_id)
-        if lock is None:
-            lock = asyncio.Lock()
-            self._agent_locks[agent_id] = lock
-
-        async with lock:
-            if not self._agent_is_configured(agent):
-                try:
-                    self.logger.info(
-                        f"Auto-configuring agent '{agent.name}'"
-                    )
-                    await agent.configure()
-                    self.logger.info(
-                        f"Agent '{agent.name}' configured successfully"
-                    )
-                except Exception as e:
-                    self.logger.error(
-                        f"Failed to configure agent '{agent.name}': {e}",
-                        exc_info=True,
-                    )
-                    raise
-
-    async def _execute_agent(
-        self,
-        agent: Union[BasicAgent, AbstractBot],
-        query: str,
-        session_id: str,
-        user_id: str,
-        index: int,
-        context: AgentContext,
-        model: Optional[str] = None,
-        max_tokens: Optional[int] = None
-    ) -> Any:
-        """
-        Execute a single agent with proper rate limiting and error handling.
-
-        This internal method wraps the agent execution with a semaphore for
-        rate limiting and handles the different execution methods that agents
-        might implement.
-        """
-        await self._ensure_agent_ready(agent)
-        async with self.semaphore:
-            if hasattr(agent, 'conversation'):
-                return await agent.conversation(
-                    question=query,
-                    session_id=f"{session_id}_agent_{index}",
-                    user_id=user_id,
-                    use_conversation_history=True,
-                    model=model,
-                    max_tokens=max_tokens,
-                    **context.shared_data
-                )
-            if hasattr(agent, 'ask'):
-                return await agent.ask(
-                    question=query,
-                    session_id=f"{session_id}_agent_{index}",
-                    user_id=user_id,
-                    use_conversation_history=True,
-                    model=model,
-                    max_tokens=max_tokens,
-                    **context.shared_data
-                )
-            elif hasattr(agent, 'invoke'):
-                return await agent.invoke(
-                    question=query,
-                    session_id=f"{session_id}_agent_{index}",
-                    user_id=user_id,
-                    use_conversation_history=False,
-                    **context.shared_data
-                )
-            else:
-                raise ValueError(
-                    f"Agent {agent.name} does not support conversation, ask, or invoke methods"
-                )
-
-    def _extract_result(self, response: Any) -> str:
-        """Extract result string from response."""
-        if isinstance(response, (AIMessage, AgentResponse)) or hasattr(
-            response, 'content'
-        ):
-            return response.content
-        else:
-            return str(response)
-
-    def _build_context_summary(self, context: AgentContext) -> str:
-        """Build summary of previous results."""
-        summaries = []
-        for agent_name, result in context.agent_results.items():
-            truncated = self._truncate_text(
-                result,
-                enabled=self.truncate_context_summary
-            )
-            summaries.append(f"- {agent_name}: {truncated}")
-        return "\n".join(summaries)
-
-    def _truncate_text(self, text: Optional[str], *, enabled: bool = True) -> str:
-        """Truncate text using configured length."""
-        if text is None or not enabled:
-            return text or ""
-
-        if self.truncation_length is None or self.truncation_length <= 0:
-            return text
-
-        if len(text) <= self.truncation_length:
-            return text
-
-        return f"{text[:self.truncation_length]}..."
-
-    def _build_loop_first_agent_prompt(
-        self,
-        *,
-        initial_task: str,
-        iteration_input: str,
-        iteration_number: int,
-    ) -> str:
-        """Compose the prompt for the first agent in each loop iteration."""
-        if iteration_number == 1:
-            return iteration_input
-
-        return (
-            f"Initial task: {initial_task}\n"
-            f"This is loop iteration {iteration_number}."
-            f"\nPrevious iteration output:\n{iteration_input}"
-        )
-
-    def _build_shared_state_summary(self, shared_state: Dict[str, Any]) -> str:
-        """Create a human-readable summary from the shared loop state."""
-        history = shared_state.get('history', [])
-        if not history:
-            return "No prior agent outputs."
-
-        lines = []
-        for entry in history[-10:]:
-            iteration = entry.get('iteration')
-            agent_id = entry.get('agent_id')
-            output = entry.get('output')
-            lines.append(
-                f"Iteration {iteration} - {agent_id}: {self._truncate_text(str(output))}"
-            )
-        return "\n".join(lines)
-
-    async def _evaluate_loop_condition(
-        self,
-        *,
-        condition: str,
-        shared_state: Dict[str, Any],
-        last_output: Optional[str],
-        iteration: int,
-        user_id: Optional[str],
-        session_id: Optional[str],
-        max_tokens: int,
-        temperature: float,
-    ) -> bool:
-        """Ask the configured LLM whether the loop condition has been satisfied."""
-        if not condition:
-            return False
-
-        history_summary = []
-        for entry in shared_state.get('history', []):
-            iteration_no = entry.get('iteration')
-            agent_id = entry.get('agent_id')
-            output = entry.get('output')
-            history_summary.append(
-                f"Iteration {iteration_no} - {agent_id}: {output}"
-            )
-
-        history_text = "\n".join(history_summary) or "(no outputs yet)"
-        prompt = (
-            "You are monitoring an autonomous team of agents running in a loop.\n"
-            f"Initial task: {shared_state.get('initial_task')}\n"
-            f"Stopping condition: {condition}\n"
-            f"Current iteration: {iteration}\n"
-            "Shared state history:\n"
-            f"{history_text}\n\n"
-            f"Most recent output: {last_output}\n\n"
-            "Decide if the loop should stop. Respond with a single word:"
-            " YES to stop the loop because the condition is met, or NO to"
-            " continue running."
-        )
-
-        try:
-            async with self._llm as client:
-                response = await client.ask(
-                    prompt=prompt,
-                    max_tokens=max_tokens,
-                    temperature=temperature,
-                    user_id=user_id,
-                    session_id=f"{session_id}_loop_condition",
-                )
-        except Exception as exc:
-            self.logger.error(
-                f"Failed to evaluate loop condition with LLM: {exc}",
-                exc_info=True
-            )
-            return False
-
-        decision_text = self._extract_result(response).strip().lower()
-        if not decision_text:
-            return False
-
-        if decision_text.startswith('yes') or ' stop' in decision_text:
-            return True
-
-        return False
-
     def visualize_workflow(self) -> str:
         """
         Generate a text representation of the workflow graph.
@@ -1750,104 +1875,6 @@ Current task: {current_input}"""
                 )
 
         return True
-
-    async def _synthesize_results(
-        self,
-        crew_result: CrewResult,
-        synthesis_prompt: Optional[str] = None,
-        user_id: Optional[str] = None,
-        session_id: Optional[str] = None,
-        max_tokens: int = 4096,
-        temperature: float = 0.1,
-        **kwargs
-    ) -> CrewResult:
-        """
-        Synthesize crew results using LLM if synthesis_prompt is provided.
-
-        This method takes the results from any execution mode and uses an LLM
-        to create a synthesized, coherent response.
-
-        Args:
-            crew_result: Result from run_sequential/parallel/flow
-            synthesis_prompt: Prompt for synthesis (if None, returns original result)
-            user_id: User identifier
-            session_id: Session identifier
-            max_tokens: Max tokens for synthesis
-            temperature: Temperature for synthesis
-            **kwargs: Additional LLM arguments
-
-        Returns:
-            CrewResult with synthesized output if synthesis was performed,
-            otherwise returns original crew_result
-        """
-        # If no synthesis prompt or no LLM, return original result
-        if not synthesis_prompt or not self._llm:
-            return crew_result
-
-        # Build context from agent results
-        context_parts = ["# Agent Execution Results\n"]
-
-        for i, (agent_id, result) in enumerate(zip(crew_result.agent_ids, crew_result.results)):
-            agent = self.agents.get(agent_id)
-            agent_name = agent.name if agent else agent_id
-
-            context_parts.extend([
-                f"\n## Agent {i+1}: {agent_name}\n",
-                str(result),
-                "\n---\n"
-            ])
-
-        research_context = "\n".join(context_parts)
-
-        # Build final prompt
-        final_prompt = f"""{research_context}
-
-{synthesis_prompt}"""
-
-        # Call LLM for synthesis
-        self.logger.info("Synthesizing results with LLM")
-
-        try:
-            async with self._llm as client:
-                synthesis_response = await client.ask(
-                    prompt=final_prompt,
-                    max_tokens=max_tokens,
-                    temperature=temperature,
-                    user_id=user_id or 'crew_user',
-                    session_id=session_id or str(uuid.uuid4()),
-                    **kwargs
-                )
-
-            # Extract synthesized content
-            synthesized_output = (
-                synthesis_response.content
-                if hasattr(synthesis_response, 'content')
-                else str(synthesis_response)
-            )
-
-            # Return updated CrewResult with synthesized output
-            return CrewResult(
-                output=synthesized_output,  # Synthesized output
-                response=crew_result.response,
-                results=crew_result.results,  # Keep original results
-                agent_ids=crew_result.agent_ids,
-                agents=crew_result.agents,
-                errors=crew_result.errors,
-                execution_log=crew_result.execution_log,
-                total_time=crew_result.total_time,
-                status=crew_result.status,
-                metadata={
-                    **crew_result.metadata,
-                    'synthesized': True,
-                    'synthesis_prompt': synthesis_prompt,
-                    'original_output': crew_result.output
-                }
-            )
-
-        except Exception as e:
-            self.logger.error(f"Error during synthesis: {e}", exc_info=True)
-            # Return original result if synthesis fails
-            return crew_result
 
     def get_execution_summary(self) -> Dict[str, Any]:
         """
@@ -2025,3 +2052,18 @@ Create a clear, well-structured response."""
             synthesis_response.metadata['total_execution_time'] = parallel_result['total_execution_time']
 
         return synthesis_response
+
+    def clear_memory(self, keep_summary=False):
+        """Limpia execution memory y FAISS"""
+        self.execution_memory.clear()
+        # self.faiss_store.clear()
+        if not keep_summary:
+            self.summary = None
+
+    def get_memory_snapshot(self) -> Dict:
+        """Retorna estado completo del memory para inspección"""
+        return {
+            "results": self.execution_memory.results,
+            "summary": self.summary,
+            "execution_order": self.execution_memory.execution_order
+        }
