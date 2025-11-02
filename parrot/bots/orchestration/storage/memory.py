@@ -39,7 +39,7 @@ class ExecutionMemory(VectorStoreMixin):
             self.execution_graph[result.parent_execution_id].append(result.execution_id)
 
         # Async vectorization if enabled
-        if vectorize:
+        if vectorize and self.embedding_model:
             asyncio.create_task(
                 self._vectorize_result_async(result)
             )

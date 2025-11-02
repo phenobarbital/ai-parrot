@@ -261,6 +261,7 @@ class AgentCrew:
         truncation_length: Optional[int] = None,
         truncate_context_summary: bool = True,
         embedding_model: Any = None,
+        enable_analysis: bool = False,
         dimension: int = 384,  # NEW
         index_type: str = "Flat",  # NEW: "Flat", "FlatIP", o "HNSW"
     ):
@@ -302,7 +303,8 @@ class AgentCrew:
         # Internal tracking of per-agent initialization guards
         self._agent_locks: Dict[int, asyncio.Lock] = {}
         # Execution Memory:
-        self.embedding_model = embedding_model
+        self.enable_analysis = enable_analysis
+        self.embedding_model = embedding_model if enable_analysis else None
         self.execution_memory = ExecutionMemory(
             embedding_model=embedding_model,
             dimension=dimension,

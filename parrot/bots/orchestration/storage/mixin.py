@@ -15,6 +15,9 @@ class VectorStoreMixin:
         self._vector_chunks: List[Tuple[str, str]] = []  # (chunk_text, agent_id)
 
         if embedding_model:
+            from sentence_transformers import SentenceTransformer
+            if isinstance(embedding_model, str):
+                self.embedding_model = SentenceTransformer(embedding_model)
             try:
                 # Initialize FAISS index based on type
                 if index_type == "FlatIP":
