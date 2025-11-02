@@ -7,7 +7,14 @@ from ....models.crew import AgentResult, VectorStoreProtocol
 class VectorStoreMixin:
     """Mixin to add FAISS vector store capabilities to ExecutionMemory"""
 
-    def __init__(self, *args, embedding_model=None, dimension: int = 384, index_type: str = "Flat", **kwargs):
+    def __init__(
+        self,
+        *args,
+        embedding_model: Optional[VectorStoreProtocol] = None,
+        dimension: int = 384,
+        index_type: str = "Flat",
+        **kwargs
+    ):
         super().__init__(*args, **kwargs)
         self.embedding_model = embedding_model
         self.dimension = dimension
@@ -101,8 +108,7 @@ class VectorStoreMixin:
         for idx, distance in zip(I[0], D[0]):
             if idx < len(self._vector_chunks) and idx >= 0:  # idx puede ser -1 si no hay suficientes resultados
                 chunk_text, agent_id = self._vector_chunks[idx]
-                agent_result = self.results.get(agent_id)
-                if agent_result:
+                if (agent_result := self.results.get(agent_id)):
                     results.append((chunk_text, agent_result, float(distance)))
 
         return results
