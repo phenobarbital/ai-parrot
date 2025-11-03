@@ -3,6 +3,7 @@ from typing import Dict, List, Tuple, Any, Optional, Union, Callable
 from datetime import datetime
 from pathlib import Path
 import aiofiles
+import pandas as pd
 from navconfig import BASE_DIR
 from navconfig.logging import logging
 from ..models.responses import AIMessage, AgentResponse
@@ -11,6 +12,7 @@ from .chatbot import Chatbot
 from .prompts import AGENT_PROMPT
 from ..tools.abstract import AbstractTool
 from ..tools.pythonrepl import PythonREPLTool
+from ..tools.pythonpandas import PythonPandasTool
 from ..tools.pdfprint import PDFPrintTool
 from ..tools.powerpoint import PowerPointTool
 from ..tools.agent import AgentTool, AgentContext
@@ -119,6 +121,9 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
         self.mcp_manager = MCPToolManager(
             self.tool_manager
         )
+        # to work with dataframes:
+        self.dataframes = {}  # dict to store dataframes with names
+        self._dataframe_info_cache = None
 
     def _get_default_tools(self, tools: list) -> List[AbstractTool]:
         """Return Agent-specific tools."""
@@ -321,14 +326,13 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
             templates_dir=BASE_DIR.joinpath('templates'),
             output_dir=STATIC_DIR.joinpath(self.agent_id, 'documents')
         )
-        result = await pdf_tool.execute(
+        return await pdf_tool.execute(
             text=content,
             template_vars={"title": title or 'Report'},
             template_name=self.report_template,
             file_prefix=filename_prefix,
 
         )
-        return result
 
 
     async def markdown_report(
@@ -532,7 +536,7 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
             templates_dir=BASE_DIR.joinpath('templates'),
             output_dir=STATIC_DIR.joinpath(self.agent_id, 'documents')
         )
-        result = await tool.execute(
+        return await tool.execute(
             content=content,
             template_name=None,  # Explicitly disable HTML template
             template_vars=None,  # No template variables
@@ -554,7 +558,6 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
             max_slides=20,
             file_prefix=filename_prefix,
         )
-        return result
 
     async def create_speech(
         self,
@@ -571,7 +574,7 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
         try:
             async with self.client as client:
                 # 1. Generate the conversational script and podcast:
-                response = await client.create_speech(
+                return await client.create_speech(
                     content=content,
                     output_directory=output_directory,
                     only_script=only_script,
@@ -579,14 +582,13 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
                     podcast_file=podcast_name,
                     language=language,
                 )
-                return response
         except Exception as e:
             self.logger.error(
                 f"Error generating speech: {e}"
             )
             raise RuntimeError(
                 f"Failed to generate speech: {e}"
-            )
+            ) from e
 
     # =================================================================
     # MCP Server Management Methods
@@ -916,6 +918,119 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
             f"Registered {self.name} as tool '{agent_tool.name}' "
             f"in {target_agent.name}'s tool manager"
         )
+
+    def add_dataframe(self, df, name: str = None):
+        """
+        Add a dataframe to the agent and configure PythonPandasTool.
+
+        Args:
+            df: pandas DataFrame to add
+            name: Optional name for the dataframe. If None, uses df{index}
+        """
+        if not isinstance(df, pd.DataFrame):
+            raise ValueError("Input must be a pandas DataFrame")
+
+        # Generate name if not provided
+        if name is None:
+            name = f"df{len(self.dataframes)}"
+
+        # Store dataframe
+        self.dataframes[name] = df
+
+        # Clear cache to regenerate dataframe info
+        self._dataframe_info_cache = None
+
+        # Add or update PythonPandasTool
+        self._configure_pandas_tool()
+
+        # Update system prompt
+        self._update_system_prompt_with_dataframes()
+
+        return self
+
+    def _configure_pandas_tool(self):
+        """Add or reconfigure PythonPandasTool with current dataframes."""
+        # Check if tool already exists
+        pandas_tool = next(
+            (tool for tool in self.tools if isinstance(tool, PythonPandasTool)),
+            None,
+        )
+
+        if pandas_tool is None:
+            # Create new PythonPandasTool
+            pandas_tool = PythonPandasTool(
+                dataframes=self.dataframes
+            )
+            self.tool_manager.add_tool(pandas_tool)
+        else:
+            # Update existing tool with new dataframes
+            pandas_tool.dataframes = self.dataframes
+
+    def _generate_dataframe_info(self) -> str:
+        """Generate dataframe information for system prompt."""
+        if not self.dataframes:
+            return ""
+
+        if self._dataframe_info_cache is not None:
+            return self._dataframe_info_cache
+
+        info_parts = ["# Available DataFrames\n"]
+
+        for name, df in self.dataframes.items():
+            info_parts.extend(
+                (
+                    f"\n## DataFrame: `{name}`",
+                    f"- Shape: {df.shape[0]} rows × {df.shape[1]} columns",
+                    f"- Columns: {', '.join(df.columns.tolist())}",
+                    "- Column Types:",
+                )
+            )
+            info_parts.extend(f"  - {col}: {dtype}" for col, dtype in df.dtypes.items())
+
+            # Add sample statistics for numeric columns
+            numeric_cols = df.select_dtypes(include=['number']).columns
+            if len(numeric_cols) > 0:
+                info_parts.append("- Summary Statistics (numeric columns):")
+                info_parts.extend(
+                    f"  - {col}: min={df[col].min():.2f}, max={df[col].max():.2f}, mean={df[col].mean():.2f}"
+                    for col in numeric_cols[:5]
+                )
+            # Add sample rows
+            info_parts.append(f"- Sample (first 3 rows):\n{df.head(3).to_string()}")
+
+        info_parts.append("\nUse PythonPandasTool to query and analyze these dataframes.")
+
+        self._dataframe_info_cache = "\n".join(info_parts)
+        return self._dataframe_info_cache
+
+    def _update_system_prompt_with_dataframes(self):
+        """Inject dataframe information into system prompt."""
+        df_info = self._generate_dataframe_info()
+
+        if not df_info:
+            return
+
+        # Find the position to inject (before $pre_context or $context)
+        if "$pre_context" in self.system_prompt_template:
+            marker = "$pre_context"
+        elif "$context" in self.system_prompt_template:
+            marker = "$context"
+        else:
+            # Append at the end if no markers found
+            self.system_prompt_template += f"\n\n{df_info}"
+            return
+
+        # Inject before the marker
+        parts = self.system_prompt_template.split(marker, 1)
+        self.system_prompt_template = f"{parts[0]}{df_info}\n\n{marker}{parts[1]}"
+
+    def remove_dataframe(self, name: str):
+        """Remove a dataframe by name."""
+        if name in self.dataframes:
+            del self.dataframes[name]
+            self._dataframe_info_cache = None
+            self._configure_pandas_tool()
+            self._update_system_prompt_with_dataframes()
 
 class Agent(BasicAgent):
     """A general-purpose agent with no additional tools."""
