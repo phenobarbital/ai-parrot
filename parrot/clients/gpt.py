@@ -28,7 +28,9 @@ from ..models import (
     AIMessageFactory,
     ToolCall,
     CompletionUsage,
-    VideoGenerationPrompt
+    VideoGenerationPrompt,
+    StructuredOutputConfig,
+    OutputFormat
 )
 from ..models.openai import OpenAIModel
 from ..models.outputs import (
@@ -532,7 +534,7 @@ class OpenAIClient(AbstractClient):
         temperature: Optional[float] = None,
         files: Optional[List[Union[str, Path]]] = None,
         system_prompt: Optional[str] = None,
-        structured_output: Optional[type] = None,
+        structured_output: Union[type, StructuredOutputConfig, None] = None,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
@@ -547,7 +549,9 @@ class OpenAIClient(AbstractClient):
             temperature (Optional[float], optional): Sampling temperature. Defaults to None.
             files (Optional[List[Union[str, Path]]], optional): Files to upload. Defaults to None.
             system_prompt (Optional[str], optional): System prompt to prepend. Defaults to None.
-            structured_output (Optional[type], optional): Pydantic model for structured output. Defaults to None.
+            structured_output (Union[type, StructuredOutputConfig, None], optional):
+                Structured output definition, supporting Pydantic models, dataclasses,
+                or explicit StructuredOutputConfig instances. Defaults to None.
             user_id (Optional[str], optional): User ID for conversation memory. Defaults to None.
             session_id (Optional[str], optional): Session ID for conversation memory. Defaults to None.
             tools (Optional[List[Dict[str, Any]]], optional): Tools to register for this call. Defaults to None.
@@ -580,6 +584,8 @@ class OpenAIClient(AbstractClient):
 
         all_tool_calls = []
 
+        output_config = self._get_structured_config(structured_output)
+
         # tools prep
         if tools and isinstance(tools, list):
             for tool in tools:
@@ -598,14 +604,18 @@ class OpenAIClient(AbstractClient):
             args['tool_choice'] = "auto"
             args['parallel_tool_calls'] = True
 
-        if structured_output and hasattr(structured_output, 'model_json_schema'):
-            args['response_format'] = {
-                "type": "json_schema",
-                "json_schema": {
-                    "name": structured_output.__name__.lower(),
-                    "schema": structured_output.model_json_schema()
+        if output_config and output_config.format == OutputFormat.JSON:
+            output_type = output_config.output_type
+            if output_type and hasattr(output_type, 'model_json_schema'):
+                args['response_format'] = {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": output_type.__name__.lower(),
+                        "schema": output_type.model_json_schema()
+                    }
                 }
-            }
+            else:
+                args['response_format'] = {"type": "json_object"}
 
         if model_str != 'gpt-5-nano':
             args['max_tokens'] = max_tokens or self.max_tokens
@@ -719,18 +729,16 @@ class OpenAIClient(AbstractClient):
         # ---------- Finalization (unchanged) ----------
         messages.append({"role": "assistant", "content": result.content})
 
+        response_text = result.content if isinstance(result.content, str) else self._json.dumps(result.content)
         final_output = None
-        if structured_output:
+        if output_config:
             try:
-                if hasattr(structured_output, 'model_validate_json'):
-                    final_output = structured_output.model_validate_json(result.content)
-                elif hasattr(structured_output, 'model_validate'):
-                    parsed_json = self._json.loads(result.content)
-                    final_output = structured_output.model_validate(parsed_json)
-                else:
-                    final_output = self._json.loads(result.content)
-            except Exception:
-                final_output = result.content
+                final_output = await self._parse_structured_output(
+                    response_text,
+                    output_config
+                )
+            except Exception:  # pylint: disable=broad-except
+                final_output = response_text
 
         tools_used = [tc.name for tc in all_tool_calls]
         assistant_response_text = result.content if isinstance(result.content, str) else self._json.dumps(result.content)
@@ -746,6 +754,12 @@ class OpenAIClient(AbstractClient):
             tools_used
         )
 
+        structured_payload = None
+        if final_output is not None and not (
+            isinstance(final_output, str) and final_output == response_text
+        ):
+            structured_payload = final_output
+
         ai_message = AIMessageFactory.from_openai(
             response=response,
             input_text=original_prompt,
@@ -753,7 +767,7 @@ class OpenAIClient(AbstractClient):
             user_id=user_id,
             session_id=session_id,
             turn_id=turn_id,
-            structured_output=final_output if final_output != result.content else None
+            structured_output=structured_payload
         )
 
         ai_message.tool_calls = all_tool_calls
