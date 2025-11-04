@@ -40,6 +40,8 @@ def get_renderer(mode: OutputMode) -> Type[Renderer]:
                 import_module('.map', 'parrot.outputs.formats')
             elif mode == OutputMode.ALTAIR:
                 import_module('.altair', 'parrot.outputs.formats')
+            elif mode == OutputMode.JINJA2:
+                import_module('.jinja2', 'parrot.outputs.formats')
     try:
         return RENDERERS[mode]
     except KeyError as exc:

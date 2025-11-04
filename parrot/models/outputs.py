@@ -31,6 +31,7 @@ class OutputMode(str, Enum):
     MARKDOWN = "markdown"       # Convert to markdown
     YAML = "yaml"               # Serialize to YAML (using yaml-rs)
     HTML = "html"               # Convert to HTML elements (using Panel)
+    JINJA2 = "jinja2"           # Pass to Jinja2 template (using jinja2 templates)
     JUPYTER = "jupyter"         # Render for Jupyter notebook
     NOTEBOOK = "notebook"       # Render for Jupyter notebook
     TEMPLATE_REPORT = "template_report"  # Pass to Jinja2 template (using jinja2 templates)

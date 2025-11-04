@@ -131,9 +131,10 @@ class Evaluate(BrowserAction):
 
     @field_validator('script', 'script_file')
     @classmethod
-    def validate_script_source(cls, v, values):
+    def validate_script_source(cls, v, info):
         """Ensure either script or script_file is provided, but not both"""
-        if 'script' in values and values['script'] and v:
+        script = info.data.get('script')
+        if script and v:
             raise ValueError("Provide either 'script' or 'script_file', not both")
         return v
 
