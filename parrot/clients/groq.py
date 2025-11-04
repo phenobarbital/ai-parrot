@@ -5,6 +5,8 @@ from logging import getLogger
 import uuid
 import time
 import json
+from dataclasses import is_dataclass
+from pydantic import BaseModel, TypeAdapter
 from datamodel.parsers.json import json_decoder  # pylint: disable=E0611 # noqa
 from navconfig import config
 from groq import AsyncGroq
@@ -26,6 +28,16 @@ from ..models.outputs import (
 getLogger('httpx').setLevel('WARNING')
 getLogger('httpcore').setLevel('WARNING')
 getLogger('groq').setLevel('INFO')
+
+
+STRUCTURED_OUTPUT_COMPATIBLE_MODELS = {
+    GroqModel.LLAMA_4_SCOUT_17B,
+    GroqModel.LLAMA_4_MAVERICK_17B,
+    GroqModel.KIMI_K2_INSTRUCT,
+    GroqModel.OPENAI_GPT_OSS_SAFEGUARD_20B,
+    GroqModel.OPENAI_GPT_OSS_20B,
+    GroqModel.OPENAI_GPT_OSS_120B,
+}
 
 
 class GroqClient(AbstractClient):
@@ -85,9 +97,10 @@ class GroqClient(AbstractClient):
 
             # Recursively fix nested properties
             if "properties" in fixed_schema:
-                fixed_properties = {}
-                for key, value in fixed_schema["properties"].items():
-                    fixed_properties[key] = self._fix_schema_for_groq(value)
+                fixed_properties = {
+                    key: self._fix_schema_for_groq(value)
+                    for key, value in fixed_schema["properties"].items()
+                }
                 fixed_schema["properties"] = fixed_properties
 
             # Fix array items
@@ -136,16 +149,19 @@ class GroqClient(AbstractClient):
         return groq_tools
 
     def _prepare_structured_output_format(self, structured_output: type) -> dict:
-        """Prepare response format for structured output with Groq-compliant schema."""
         if not structured_output:
             return {}
 
-        # Handle Pydantic models
-        if hasattr(structured_output, 'model_json_schema'):
-            schema = structured_output.model_json_schema()
-            # Fix the schema for Groq compliance
-            fixed_schema = self._fix_schema_for_groq(schema)
+        # Normalize instance → class
+        if isinstance(structured_output, BaseModel):
+            structured_output = structured_output.__class__
+        if is_dataclass(structured_output) and not isinstance(structured_output, type):
+            structured_output = structured_output.__class__
 
+        # Pydantic models
+        if isinstance(structured_output, type) and hasattr(structured_output, 'model_json_schema'):
+            schema = structured_output.model_json_schema()
+            fixed_schema = self._fix_schema_for_groq(schema)
             return {
                 "response_format": {
                     "type": "json_schema",
@@ -157,12 +173,23 @@ class GroqClient(AbstractClient):
                 }
             }
 
-        # Fallback for other types
-        return {
-            "response_format": {
-                "type": "json_object"
+        # Dataclasses
+        if is_dataclass(structured_output):
+            schema = TypeAdapter(structured_output).json_schema()
+            fixed_schema = self._fix_schema_for_groq(schema)
+            return {
+                "response_format": {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": structured_output.__name__.lower(),
+                        "schema": fixed_schema,
+                        "strict": True
+                    }
+                }
             }
-        }
+
+        # Fallback
+        return {"response_format": {"type": "json_object"}}
 
     async def ask(
         self,
@@ -205,9 +232,18 @@ class GroqClient(AbstractClient):
 
         # Groq doesn't support combining structured output with tools
         # Priority: tools first, then structured output in separate request if needed
-        output_config = self._get_structured_config(structured_output)
+        output_config = self._get_structured_config(
+            structured_output
+        )
         use_tools = _use_tools
         use_structured_output = bool(output_config)
+
+        if use_structured_output and model not in STRUCTURED_OUTPUT_COMPATIBLE_MODELS:
+            self.logger.error(
+                f"The model '{model}' does not support structured output. "
+                "Please choose a compatible model."
+            )
+            model = GroqModel.LLAMA_4_SCOUT_17B.value
 
         structured_output_for_later: Optional[StructuredOutputConfig] = None
         request_output_config: Optional[StructuredOutputConfig] = output_config
@@ -255,8 +291,7 @@ class GroqClient(AbstractClient):
                 "Please respond with a valid JSON object that matches the requested schema."
             )
             if request_output_config.format == OutputFormat.JSON:
-                output_type = request_output_config.output_type
-                if output_type:
+                if output_type := request_output_config.output_type:
                     request_args.update(
                         self._prepare_structured_output_format(output_type)
                     )

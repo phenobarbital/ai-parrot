@@ -9,9 +9,10 @@ import time
 import asyncio
 from logging import getLogger
 from enum import Enum
+from dataclasses import is_dataclass
 from PIL import Image
 import pytesseract
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ValidationError, TypeAdapter
 from datamodel.parsers.json import json_decoder, json_decoder  # pylint: disable=E0611 # noqa
 from navconfig import config, BASE_DIR
 from tenacity import (
@@ -57,9 +58,8 @@ RESPONSES_ONLY_MODELS = {
     "o3-deep-research",
     "o4-mini",
     "o4-mini-deep-research",
-    "gpt-4.1",
-    "gpt-4.1-mini",
-    "gpt-5-pro"
+    "gpt-5-pro",
+    "gpt-5-mini",
 }
 
 STRUCTURED_OUTPUT_COMPATIBLE_MODELS = {
@@ -199,16 +199,22 @@ class OpenAIClient(AbstractClient):
                 purpose=purpose
             )
 
-    async def _chat_completion(self, model: str, messages: Any, **kwargs):
+    async def _chat_completion(
+        self,
+        model: str,
+        messages: Any,
+        **kwargs
+    ):
         retry_policy = AsyncRetrying(
             retry=retry_if_exception_type((APIConnectionError, RateLimitError, APIError)),
             wait=wait_exponential(multiplier=1, min=2, max=10),
             stop=stop_after_attempt(5),
             reraise=True
         )
+        method = getattr(self.client.chat.completions, 'parse', self.client.chat.completions.create)
         async for attempt in retry_policy:
             with attempt:
-                return await self.client.chat.completions.create(
+                return await method(
                     model=model,
                     messages=messages,
                     **kwargs
@@ -434,7 +440,13 @@ class OpenAIClient(AbstractClient):
             "OpenAI responses.stream call failed without response"
         )
 
-    async def _responses_completion(self, *, model: str, messages, **args):
+    async def _responses_completion(
+        self,
+        *,
+        model: str,
+        messages,
+        **args
+    ):
         """
         Adapter around OpenAI Responses API that mimics Chat Completions:
         returns an object with `.choices[0].message` where `message` has
@@ -597,9 +609,13 @@ class OpenAIClient(AbstractClient):
         if system_prompt:
             messages.insert(0, {"role": "system", "content": system_prompt})
 
+        messages.append({"role": "user", "content": prompt})
+
         all_tool_calls = []
 
-        output_config = self._get_structured_config(structured_output)
+        output_config = self._get_structured_config(
+            structured_output
+        )
 
         # tools prep
         if tools and isinstance(tools, list):
@@ -622,25 +638,13 @@ class OpenAIClient(AbstractClient):
             args['tool_choice'] = "auto"
             args['parallel_tool_calls'] = True
 
-        if output_config and output_config.format == OutputFormat.JSON:
-            if model_str not in STRUCTURED_OUTPUT_COMPATIBLE_MODELS:
-                self.logger.warning(
-                    "Model %s does not support structured outputs; switching to %s",
-                    model_str,
-                    DEFAULT_STRUCTURED_OUTPUT_MODEL
-                )
-                model_str = DEFAULT_STRUCTURED_OUTPUT_MODEL
-            args["response_format"] = {"type": "json_object"}
-            output_type = output_config.output_type
-            if output_type and hasattr(output_type, 'model_json_schema'):
-                args['response_format'] = {
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": output_type.__name__.lower(),
-                        "schema": output_type.model_json_schema(),
-                        "strict": True
-                    }
-                }
+        if output_config and output_config.format == OutputFormat.JSON and model_str not in STRUCTURED_OUTPUT_COMPATIBLE_MODELS:
+            self.logger.warning(
+                "Model %s does not support structured outputs; switching to %s",
+                model_str,
+                DEFAULT_STRUCTURED_OUTPUT_MODEL
+            )
+            model_str = DEFAULT_STRUCTURED_OUTPUT_MODEL
 
         if model_str != 'gpt-5-nano':
             args['max_tokens'] = max_tokens or self.max_tokens
@@ -649,18 +653,22 @@ class OpenAIClient(AbstractClient):
 
         # -------- ROUTING: Responses-only vs Chat -----------
         use_responses = self._is_responses_model(model_str)
+        resp_format = self._build_response_format_from(output_config) if output_config else None
 
         if use_responses:
+            if output_config:
+                args['response_format'] = resp_format
             response = await self._responses_completion(
                 model=model_str,
                 messages=messages,
                 **args
             )
         else:
+            if output_config:
+                args['response_format'] = resp_format
             response = await self._chat_completion(
                 model=model_str,
                 messages=messages,
-                stream=False,
                 **args
             )
 
@@ -737,16 +745,19 @@ class OpenAIClient(AbstractClient):
 
             # continue via the same routed API
             if use_responses:
+                if output_config:
+                    args['response_format'] = resp_format
                 response = await self._responses_completion(
                     model=model_str,
                     messages=messages,
                     **args
                 )
             else:
+                if output_config:
+                    args['response_format'] = resp_format
                 response = await self._chat_completion(
                     model=model_str,
                     messages=messages,
-                    stream=False,
                     **args
                 )
             result = response.choices[0].message
@@ -758,10 +769,13 @@ class OpenAIClient(AbstractClient):
         final_output = None
         if output_config:
             try:
-                final_output = await self._parse_structured_output(
-                    response_text,
-                    output_config
-                )
+                if output_config.custom_parser:
+                    final_output = output_config.custom_parser(response_text)
+                else:
+                    final_output = await self._parse_structured_output(
+                        response_text,
+                        output_config
+                    )
             except Exception:  # pylint: disable=broad-except
                 final_output = response_text
 
@@ -808,7 +822,8 @@ class OpenAIClient(AbstractClient):
         system_prompt: Optional[str] = None,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
-        tools: Optional[List[Dict[str, Any]]] = None
+        tools: Optional[List[Dict[str, Any]]] = None,
+        structured_output: Optional[StructuredOutputConfig] = None,
     ) -> AsyncIterator[str]:
         """Stream OpenAI's response with optional conversation memory."""
 
