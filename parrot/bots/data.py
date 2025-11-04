@@ -52,13 +52,31 @@ $df_info
 **Your Capabilities:**
 $capabilities
 
-**Guidelines:**
+**CRITICAL GUIDELINES - READ CAREFULLY:**
+
+⚠️ **ANTI-HALLUCINATION RULES** ⚠️
+1. **NEVER** make assumptions about column names - ALWAYS use the exact column names from the metadata provided above
+2. **NEVER** invent or guess column names - if you're unsure, check the DataFrame columns first using `df.columns.tolist()`
+3. **ALWAYS** refer to the DataFrame metadata for column names, data types, and structure
+4. **ALWAYS** validate your understanding by checking the actual DataFrame structure before performing operations
+5. If you are uncertain about anything, inspect the DataFrame first using commands like `df.head()`, `df.info()`, or `df.columns`
+
+**Standard Guidelines:**
 1. Always reference DataFrames using their standardized keys (df1, df2, etc.)
 2. Use the python_repl_pandas tool for all data operations
-3. Create visualizations when helpful for understanding
-4. Explain your analysis clearly
-5. Store important results in execution_results dictionary
-6. Save plots using save_current_plot() for sharing
+3. Use EXACT column names as shown in the DataFrame metadata - do not modify or assume variations
+4. Before performing any operation, verify column names exist in the DataFrame
+5. Create visualizations when helpful for understanding
+6. Explain your analysis clearly and show your work step-by-step
+7. Store important results in execution_results dictionary
+8. Save plots using save_current_plot() for sharing
+
+**Best Practices:**
+- Start by examining the DataFrame structure if you haven't seen it yet
+- Double-check column names against the metadata before writing code
+- Use descriptive variable names for intermediate results
+- Comment your code to explain complex operations
+- Handle missing values appropriately
 
 **Today's Date:** $today_date
 
@@ -76,6 +94,7 @@ $backstory
         capabilities: str = None,
         generate_eda: bool = True,
         cache_expiration: int = 24,
+        temperature: float = 0.0,  # Default to 0 for deterministic behavior and reduced hallucinations
         **kwargs
     ):
         """
@@ -108,6 +127,7 @@ $backstory
             llm=llm,
             system_prompt=system_prompt,
             tools=tools,
+            temperature=temperature,
             **kwargs
         )
 
@@ -387,6 +407,294 @@ $backstory
             )
 
         return response
+
+    async def ask(
+        self,
+        question: str,
+        session_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        use_conversation_history: bool = True,
+        memory: Optional[Any] = None,
+        ctx: Optional[Any] = None,
+        structured_output: Optional[Any] = None,
+        output_mode: Any = None,
+        format_kwargs: dict = None,
+        **kwargs
+    ) -> AgentResponse:
+        """
+        Override ask() method to ensure PythonPandasTool is always used.
+
+        This method is specialized for PandasAgent and differs from AbstractBot.ask():
+        - Always uses tools (specifically PythonPandasTool)
+        - Does NOT use vector search/knowledge base context
+        - Returns AgentResponse instead of AIMessage
+        - Focuses on DataFrame analysis with the pre-loaded data
+
+        Args:
+            question: The user's question about the data
+            session_id: Session identifier for conversation history
+            user_id: User identifier
+            use_conversation_history: Whether to use conversation history
+            memory: Optional memory handler
+            ctx: Request context
+            structured_output: Structured output configuration or model
+            output_mode: Output formatting mode
+            format_kwargs: Additional kwargs for formatter
+            **kwargs: Additional arguments (temperature, max_tokens, etc.)
+
+        Returns:
+            AgentResponse with the analysis result
+        """
+        # Import here to avoid circular imports
+        from ..models.outputs import OutputMode
+        from parrot.models.responses import StructuredOutputConfig
+        from pydantic import BaseModel
+        from typing import Type
+
+        # Generate IDs if not provided
+        session_id = session_id or str(uuid.uuid4())
+        user_id = user_id or "anonymous"
+        turn_id = str(uuid.uuid4())
+
+        # Use default temperature of 0 if not specified
+        if 'temperature' not in kwargs:
+            kwargs['temperature'] = 0.0
+
+        try:
+            # Get conversation history (no vector search for PandasAgent)
+            conversation_history = None
+            conversation_context = ""
+            memory = memory or self.conversation_memory
+
+            if use_conversation_history and memory:
+                conversation_history = await self.get_conversation_history(user_id, session_id) or await self.create_conversation_history(user_id, session_id)
+                conversation_context = self.build_conversation_context(conversation_history)
+
+            # Determine output mode
+            if output_mode is None:
+                output_mode = OutputMode.DEFAULT
+
+            _mode = output_mode if isinstance(output_mode, str) else getattr(output_mode, 'value', 'default')
+
+            # Build system prompt with DataFrame context (no vector context)
+            system_prompt = self.system_prompt
+            if conversation_context:
+                system_prompt = f"{system_prompt}\n\n**Conversation Context:**\n{conversation_context}"
+
+            # Handle output mode in system prompt
+            if output_mode != OutputMode.DEFAULT:
+                from ..bots.prompts import OUTPUT_SYSTEM_PROMPT
+                system_prompt += OUTPUT_SYSTEM_PROMPT.format(output_mode=_mode)
+
+            # Configure LLM if needed
+            if (new_llm := kwargs.pop('llm', None)):
+                self.configure_llm(llm=new_llm, **kwargs.pop('llm_config', {}))
+
+            # Make the LLM call with tools ALWAYS enabled
+            async with self._llm as client:
+                llm_kwargs = {
+                    "prompt": question,
+                    "system_prompt": system_prompt,
+                    "model": kwargs.get('model', self._llm_model),
+                    "temperature": kwargs.get('temperature', 0.0),
+                    "user_id": user_id,
+                    "session_id": session_id,
+                    "use_tools": True,  # ALWAYS use tools for PandasAgent
+                }
+
+                # Add max_tokens if specified
+                max_tokens = kwargs.get('max_tokens', self._max_tokens)
+                if max_tokens is not None:
+                    llm_kwargs["max_tokens"] = max_tokens
+
+                # Handle structured output
+                if structured_output:
+                    if isinstance(structured_output, type) and issubclass(structured_output, BaseModel):
+                        llm_kwargs["structured_output"] = StructuredOutputConfig(
+                            output_type=structured_output
+                        )
+                    elif isinstance(structured_output, StructuredOutputConfig):
+                        llm_kwargs["structured_output"] = structured_output
+
+                # Call the LLM
+                response = await client.ask(**llm_kwargs)
+
+                # Enhance response with conversation context metadata
+                response.set_conversation_context_info(
+                    used=bool(conversation_context),
+                    context_length=len(conversation_context) if conversation_context else 0
+                )
+
+                response.session_id = session_id
+                response.turn_id = turn_id
+
+                # Format output based on mode if not default
+                if output_mode != OutputMode.DEFAULT:
+                    format_kwargs = format_kwargs or {}
+                    response.content = self.formatter.format(output_mode, response, **format_kwargs)
+                    response.output_mode = output_mode
+
+                # Build AgentResponse
+                agent_response = AgentResponse(
+                    agent_id=self.agent_id,
+                    agent_name=self.agent_name,
+                    status='success',
+                    response=response,  # The AIMessage
+                    question=question,
+                    data=response.content,
+                    output=response.output,  # Always use response.output
+                    metadata=response.metadata,
+                    turn_id=turn_id,
+                    session_id=session_id,
+                    user_id=user_id
+                )
+
+                return agent_response
+
+        except Exception as e:
+            self.logger.error(f"Error in PandasAgent.ask(): {e}")
+            # Return error response
+            return AgentResponse(
+                agent_id=self.agent_id,
+                agent_name=self.agent_name,
+                status='error',
+                question=question,
+                data=f"Error: {str(e)}",
+                output=None,
+                metadata={'error': str(e)},
+                turn_id=turn_id,
+                session_id=session_id,
+                user_id=user_id
+            )
+
+    def add_dataframe(
+        self,
+        name: str,
+        df: pd.DataFrame,
+        regenerate_guide: bool = True
+    ) -> str:
+        """
+        Add a new DataFrame to the agent's context.
+
+        This updates both the agent's dataframes dict and the PythonPandasTool's
+        execution environment so the LLM can immediately use the new DataFrame.
+
+        Args:
+            name: Name for the DataFrame
+            df: The pandas DataFrame to add
+            regenerate_guide: Whether to regenerate the DataFrame guide
+
+        Returns:
+            Success message with the standardized DataFrame key
+
+        Example:
+            >>> agent.add_dataframe("sales_data", sales_df)
+            "DataFrame 'sales_data' added successfully as 'df3'"
+        """
+        if not isinstance(df, pd.DataFrame):
+            raise ValueError("Object must be a pandas DataFrame")
+
+        # Add to agent's dataframes dict
+        self.dataframes[name] = df
+
+        # Find the PythonPandasTool in the tools list
+        pandas_tool = None
+        for tool in self.tool_manager.tools:
+            if isinstance(tool, PythonPandasTool):
+                pandas_tool = tool
+                break
+
+        if pandas_tool:
+            # Update the tool's dataframes
+            result = pandas_tool.add_dataframe(name, df, regenerate_guide)
+
+            # Regenerate system prompt with updated DataFrame info
+            self._define_prompt()
+
+            return result
+        else:
+            raise RuntimeError("PythonPandasTool not found in agent's tools")
+
+    def delete_dataframe(self, name: str, regenerate_guide: bool = True) -> str:
+        """
+        Remove a DataFrame from the agent's context.
+
+        This removes the DataFrame from both the agent's dataframes dict and
+        the PythonPandasTool's execution environment.
+
+        Args:
+            name: Name of the DataFrame to remove
+            regenerate_guide: Whether to regenerate the DataFrame guide
+
+        Returns:
+            Success message
+
+        Example:
+            >>> agent.delete_dataframe("sales_data")
+            "DataFrame 'sales_data' removed successfully"
+        """
+        if name not in self.dataframes:
+            raise ValueError(f"DataFrame '{name}' not found")
+
+        # Remove from agent's dataframes dict
+        del self.dataframes[name]
+
+        # Find the PythonPandasTool in the tools list
+        pandas_tool = None
+        for tool in self.tool_manager.tools:
+            if isinstance(tool, PythonPandasTool):
+                pandas_tool = tool
+                break
+
+        if pandas_tool:
+            # Update the tool's dataframes
+            result = pandas_tool.remove_dataframe(name, regenerate_guide)
+
+            # Regenerate system prompt with updated DataFrame info
+            self._define_prompt()
+
+            return result
+        else:
+            raise RuntimeError("PythonPandasTool not found in agent's tools")
+
+    def list_dataframes(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Get a list of all DataFrames loaded in the agent's context.
+
+        Returns:
+            Dictionary mapping standardized keys (df1, df2, etc.) to DataFrame info:
+            - original_name: The original name of the DataFrame
+            - standardized_key: The standardized key (df1, df2, etc.)
+            - shape: Tuple of (rows, columns)
+            - columns: List of column names
+            - memory_usage_mb: Memory usage in megabytes
+            - null_count: Total number of null values
+
+        Example:
+            >>> agent.list_dataframes()
+            {
+                'df1': {
+                    'original_name': 'sales_data',
+                    'standardized_key': 'df1',
+                    'shape': (1000, 5),
+                    'columns': ['date', 'product', 'quantity', 'price', 'region'],
+                    'memory_usage_mb': 0.04,
+                    'null_count': 12
+                }
+            }
+        """
+        result = {}
+        for i, (df_name, df) in enumerate(self.dataframes.items()):
+            df_key = f"df{i + 1}"
+            result[df_key] = {
+                'original_name': df_name,
+                'standardized_key': df_key,
+                'shape': df.shape,
+                'columns': df.columns.tolist(),
+                'memory_usage_mb': df.memory_usage(deep=True).sum() / 1024 / 1024,
+                'null_count': df.isnull().sum().sum(),
+            }
+        return result
 
     def default_backstory(self) -> str:
         """Return default backstory for the agent."""
