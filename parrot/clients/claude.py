@@ -68,7 +68,7 @@ class ClaudeClient(AbstractClient):
         temperature: Optional[float] = None,
         files: Optional[List[Union[str, Path]]] = None,
         system_prompt: Optional[str] = None,
-        structured_output: Optional[type] = None,
+        structured_output: Union[type, StructuredOutputConfig, None] = None,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
