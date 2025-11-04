@@ -11,7 +11,6 @@ from dataclasses import dataclass, field
 import numpy as np
 from datamodel.parsers.json import json_encoder  # pylint: disable=E0611 # noqa
 from .responses import AIMessage, AgentResponse
-from ..bots.abstract import AbstractBot
 
 
 ResponseType = Union[AIMessage, AgentResponse, Any]
@@ -234,7 +233,7 @@ def _serialise_tool_calls(tool_calls: Any) -> List[Any]:
     return serialised
 
 
-def _get_llm_info(agent: Optional[AbstractBot]) -> Dict[str, Any]:
+def _get_llm_info(agent: Optional[Any]) -> Dict[str, Any]:
     """Extract lightweight information about the agent LLM/client."""
 
     if agent is None:
@@ -273,7 +272,7 @@ def _normalise_agent_status(
 
 def build_agent_metadata(
     agent_id: str,
-    agent: Optional[AbstractBot],
+    agent: Optional[Any],
     response: Optional[ResponseType],
     output: Optional[Any],
     execution_time: float,
