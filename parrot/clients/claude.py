@@ -97,6 +97,19 @@ class ClaudeClient(AbstractClient):
             structured_output
         )
 
+        json_instruction = None
+        if output_config and output_config.format == OutputFormat.JSON:
+            json_instruction = (
+                "Respond with a valid JSON object that strictly matches the requested schema. "
+                "Do not include any extra commentary."
+            )
+            self._ensure_json_instruction(messages, json_instruction)
+            if system_prompt:
+                if json_instruction.lower() not in system_prompt.lower():
+                    system_prompt = f"{system_prompt}\n\n{json_instruction}"
+            else:
+                system_prompt = json_instruction
+
         payload = {
             "model": model.value if isinstance(model, Enum) else model,
             "max_tokens": max_tokens or self.max_tokens,

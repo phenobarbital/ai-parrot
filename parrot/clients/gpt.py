@@ -62,6 +62,21 @@ RESPONSES_ONLY_MODELS = {
     "gpt-5-pro"
 }
 
+STRUCTURED_OUTPUT_COMPATIBLE_MODELS = {
+    OpenAIModel.GPT_4O_MINI.value,
+    OpenAIModel.GPT_O4.value,
+    OpenAIModel.GPT_4O.value,
+    OpenAIModel.GPT4_1.value,
+    OpenAIModel.GPT_4_1_MINI.value,
+    OpenAIModel.GPT_4_1_NANO.value,
+    OpenAIModel.GPT5_MINI.value,
+    OpenAIModel.GPT5.value,
+    OpenAIModel.GPT5_CHAT.value,
+    OpenAIModel.GPT5_PRO.value,
+}
+
+DEFAULT_STRUCTURED_OUTPUT_MODEL = OpenAIModel.GPT_4O_MINI.value
+
 
 class OpenAIClient(AbstractClient):
     """Client for interacting with OpenAI's API."""
@@ -566,7 +581,7 @@ class OpenAIClient(AbstractClient):
         original_prompt = prompt
         _use_tools = use_tools if use_tools is not None else self.enable_tools
 
-        model_str = model.value if isinstance(model, Enum) else model
+        model_str = model.value if isinstance(model, Enum) else str(model)
 
         messages, conversation_session, system_prompt = await self._prepare_conversation_context(
             prompt, files, user_id, session_id, system_prompt
@@ -593,7 +608,10 @@ class OpenAIClient(AbstractClient):
         tools = self._prepare_tools() if (_use_tools) else None
 
         args = {}
-        if model in [OpenAIModel.GPT_4O_MINI_SEARCH, OpenAIModel.GPT_4O_SEARCH]:
+        if model_str in {
+            OpenAIModel.GPT_4O_MINI_SEARCH.value,
+            OpenAIModel.GPT_4O_SEARCH.value
+        }:
             args['web_search_options'] = {
                 "web_search": True,
                 "web_search_model": "gpt-4o-mini"
@@ -605,17 +623,24 @@ class OpenAIClient(AbstractClient):
             args['parallel_tool_calls'] = True
 
         if output_config and output_config.format == OutputFormat.JSON:
+            if model_str not in STRUCTURED_OUTPUT_COMPATIBLE_MODELS:
+                self.logger.warning(
+                    "Model %s does not support structured outputs; switching to %s",
+                    model_str,
+                    DEFAULT_STRUCTURED_OUTPUT_MODEL
+                )
+                model_str = DEFAULT_STRUCTURED_OUTPUT_MODEL
+            args["response_format"] = {"type": "json_object"}
             output_type = output_config.output_type
             if output_type and hasattr(output_type, 'model_json_schema'):
                 args['response_format'] = {
                     "type": "json_schema",
                     "json_schema": {
                         "name": output_type.__name__.lower(),
-                        "schema": output_type.model_json_schema()
+                        "schema": output_type.model_json_schema(),
+                        "strict": True
                     }
                 }
-            else:
-                args['response_format'] = {"type": "json_object"}
 
         if model_str != 'gpt-5-nano':
             args['max_tokens'] = max_tokens or self.max_tokens
