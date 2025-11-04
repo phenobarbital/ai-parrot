@@ -1,7 +1,18 @@
 from datetime import datetime
-from typing import Dict, List, Optional, Any, Callable, Literal
+from typing import (
+    List,
+    Optional,
+    Any,
+    Union,
+    Callable,
+    Literal,
+    get_type_hints,
+    get_origin,
+    get_args
+)
 from enum import Enum
-from dataclasses import dataclass
+from dataclasses import dataclass, fields, is_dataclass, MISSING
+import json
 from pydantic import BaseModel, Field
 from .basic import OutputFormat
 
@@ -41,13 +52,123 @@ class OutputMode(str, Enum):
     MAP = "map"                   # Generate map visualization
     IMAGE = "image"             # render the image as a base64 embed into HTML <img>
 
-
 @dataclass
 class StructuredOutputConfig:
     """Configuration for structured output parsing."""
     output_type: type
     format: OutputFormat = OutputFormat.JSON
     custom_parser: Optional[Callable[[str], Any]] = None
+
+    def get_schema(self) -> dict[str, Any]:
+        """
+        Extract JSON schema from output_type.
+        Supports both Pydantic models and dataclasses.
+        """
+        # Check if it's a Pydantic model
+        if hasattr(self.output_type, 'model_json_schema'):
+            # Pydantic v2
+            return self.output_type.model_json_schema()
+        elif hasattr(self.output_type, 'schema'):
+            # Pydantic v1
+            return self.output_type.schema()
+
+        # Check if it's a dataclass
+        elif is_dataclass(self.output_type):
+            return self._dataclass_to_schema(self.output_type)
+
+        else:
+            raise ValueError(
+                f"output_type must be a Pydantic model or dataclass, "
+                f"got {type(self.output_type)}"
+            )
+
+    def _dataclass_to_schema(self, dc: type) -> dict[str, Any]:
+        """Convert a dataclass to JSON schema."""
+        type_hints = get_type_hints(dc)
+        properties = {}
+        required = []
+
+        for field in fields(dc):
+            field_type = type_hints.get(field.name, Any)
+            field_schema = self._python_type_to_json_schema(field_type)
+
+            # Add description from field metadata if available
+            if field.metadata:
+                field_schema["description"] = field.metadata.get("description", "")
+
+            properties[field.name] = field_schema
+
+            # Check if field is required (no default value)
+            if field.default == field.default_factory == MISSING:
+                required.append(field.name)
+
+        schema = {
+            "type": "object",
+            "properties": properties,
+            "required": required,
+            "title": dc.__name__
+        }
+
+        # Add docstring as description if available
+        if dc.__doc__:
+            schema["description"] = dc.__doc__.strip()
+
+        return schema
+
+    def _python_type_to_json_schema(self, py_type: Any) -> dict[str, Any]:
+        """Convert Python type hints to JSON schema types."""
+        origin = get_origin(py_type)
+
+        # Handle Optional types
+        if origin is Union:
+            args = get_args(py_type)
+            if type(None) in args:
+                # It's Optional[T]
+                non_none_types = [t for t in args if t is not type(None)]
+                if len(non_none_types) == 1:
+                    return self._python_type_to_json_schema(non_none_types[0])
+
+        # Handle List types
+        if origin is list:
+            item_type = get_args(py_type)[0] if get_args(py_type) else Any
+            return {
+                "type": "array",
+                "items": self._python_type_to_json_schema(item_type)
+            }
+
+        # Handle Dict types
+        if origin is dict:
+            return {"type": "object"}
+
+        # Basic type mappings
+        type_map = {
+            str: {"type": "string"},
+            int: {"type": "integer"},
+            float: {"type": "number"},
+            bool: {"type": "boolean"},
+            list: {"type": "array"},
+            dict: {"type": "object"},
+        }
+
+        return type_map.get(py_type, {"type": "string"})
+
+    def format_schema_instruction(self) -> str:
+        """
+        Format the schema as an instruction for the system prompt.
+        """
+        schema = self.get_schema()
+        return f"""Respond with a valid JSON object that strictly matches the requested schema.
+
+Schema:
+```json
+{json.dumps(schema, indent=2)}
+```
+
+Rules:
+- Output ONLY valid JSON matching this schema
+- Do not include any explanatory text before or after the JSON
+- All required fields must be present
+- Field types must match exactly"""
 
 
 class BoundingBox(BaseModel):
