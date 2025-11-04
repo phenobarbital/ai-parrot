@@ -1,7 +1,17 @@
+from __future__ import annotations
+from typing import (
+    AsyncIterator,
+    Dict,
+    List,
+    Optional,
+    Union,
+    TypedDict,
+    Any,
+    Callable
+)
 from datetime import datetime
 import json
 import random
-from typing import AsyncIterator, Dict, List, Optional, Union, TypedDict, Any, Callable
 import re
 import mimetypes
 import asyncio
@@ -11,11 +21,15 @@ from dataclasses import dataclass, is_dataclass
 from abc import ABC, abstractmethod
 import io
 import wave
+import yaml
 from click import prompt
 from pydub import AudioSegment
 import ffmpeg  # pylint: disable=E1101 # noqa
-from pydantic import ValidationError
-import yaml
+from pydantic import (
+    BaseModel,
+    ValidationError,
+    TypeAdapter
+)
 from datamodel.exceptions import ParserError  # pylint: disable=E0611 # noqa
 from datamodel.parsers.json import json_decoder, JSONContent  # pylint: disable=E0611 # noqa
 from navconfig import config
@@ -273,9 +287,7 @@ class AbstractClient(ABC):
     def _get_chatbot_key(self, chatbot_id: Optional[str] = None) -> Optional[str]:
         """Resolve chatbot identifier for memory operations."""
         key = chatbot_id or getattr(self, 'chatbot_id', None)
-        if key is None:
-            return None
-        return str(key)
+        return None if key is None else str(key)
 
     async def start_conversation(
         self,
@@ -360,16 +372,12 @@ class AbstractClient(ABC):
     def get_tool(self, name: str) -> Optional[AbstractTool]:
         """Get a tool by name from ToolManager or legacy tools."""
         # Try ToolManager first
-        tool = self.tool_manager.get_tool(name)
-        if tool:
+        if tool := self.tool_manager.get_tool(name):
             return tool
 
         # Fall back to legacy tools
         legacy_tool = self.tools.get(name)
-        if isinstance(legacy_tool, AbstractTool):
-            return legacy_tool
-
-        return None
+        return legacy_tool if isinstance(legacy_tool, AbstractTool) else None
 
     def register_tool(
         self,
@@ -447,7 +455,9 @@ class AbstractClient(ABC):
         """Clear all registered tools."""
         self.tool_manager.clear_tools()
         self.tools.clear()
-        self.logger.info(f"Cleared all tools")
+        self.logger.info(
+            "Cleared all tools"
+        )
 
     def _encode_file(self, file_path: Union[str, Path]) -> Dict[str, Any]:
         """Encode file for API upload."""
@@ -570,8 +580,7 @@ class AbstractClient(ABC):
         content = [{"type": "text", "text": prompt}]
 
         if files:
-            for file_path in files:
-                content.append(self._encode_file(file_path))
+            content.extend(self._encode_file(file_path) for file_path in files)
 
         return [{"role": "user", "content": content}]
 
@@ -680,17 +689,17 @@ class AbstractClient(ABC):
         if not structured_output:
             return result
 
-        text_content = ""
-        for content_block in result["content"]:
-            if content_block["type"] == "text":
-                text_content += content_block["text"]
+        text_content = "".join(
+            content_block["text"]
+            for content_block in result["content"]
+            if content_block["type"] == "text"
+        )
 
         try:
-            if hasattr(structured_output, '__annotations__'):
-                parsed = json_decoder(text_content)
-                return self._coerce_mapping_to_type(structured_output, parsed)
-            else:
+            if not hasattr(structured_output, '__annotations__'):
                 return structured_output(text_content)
+            parsed = json_decoder(text_content)
+            return self._coerce_mapping_to_type(structured_output, parsed)
         except Exception:  # pylint: disable=broad-except
             return result
 
@@ -813,8 +822,12 @@ class AbstractClient(ABC):
                 # Create a summary of the conversation context
                 recent_context = []
                 for turn in conversation_history.turns[-3:]:  # Last 3 turns for context
-                    recent_context.append(f"User: {turn.user_message}")
-                    recent_context.append(f"Assistant: {turn.assistant_response}")
+                    recent_context.extend(
+                        (
+                            f"User: {turn.user_message}",
+                            f"Assistant: {turn.assistant_response}",
+                        )
+                    )
 
                 system_prompt = (
                         "You are a helpful AI assistant. You have access to the following conversation history:\n\n"
@@ -969,12 +982,10 @@ class AbstractClient(ABC):
                     response_text = response_text.strip()
                     if response_text.startswith('```json'):
                         response_text = response_text[7:-3]
-                    if hasattr(output_type, 'model_validate_json'):
+                    if hasattr(output_type, 'model_validate_json') or hasattr(output_type, 'model_validate'):
                         # For model_validate_json, we need to parse first to unwrap
-                        parsed_json = self._json.loads(response_text)
-                        parsed_json = self._unwrap_nested_response(parsed_json, output_type)
-                        return output_type.model_validate(parsed_json)
-                    elif hasattr(output_type, 'model_validate'):
+                        if not isinstance(output_type, type):
+                            output_type = output_type.__class__
                         parsed_json = self._json.loads(response_text)
                         parsed_json = self._unwrap_nested_response(parsed_json, output_type)
                         return output_type.model_validate(parsed_json)
@@ -1228,3 +1239,85 @@ class AbstractClient(ABC):
         m = re.search(r"(\{.*\}|\[.*\])", s, flags=re.S)
         s = m.group(1) if m else s
         return json_decoder(s)
+
+    def _oai_normalize_schema(self, schema: dict) -> dict:
+        """OpenAI requires 'additionalProperties': false on every object."""
+        def visit(node):
+            if isinstance(node, dict):
+                t = node.get("type")
+                if t == "object":
+                    # enforce additionalProperties: false
+                    if node.get("additionalProperties") is not False:
+                        node["additionalProperties"] = False
+                    # dive into object children
+                    for key in ("properties", "patternProperties"):
+                        if key in node and isinstance(node[key], dict):
+                            for sub in node[key].values():
+                                visit(sub)
+                    # handle composite keywords
+                    for key in ("allOf", "anyOf", "oneOf"):
+                        if key in node and isinstance(node[key], list):
+                            for sub in node[key]:
+                                visit(sub)
+                    # handle definitions
+                    for key in ("$defs", "definitions"):
+                        if key in node and isinstance(node[key], dict):
+                            for sub in node[key].values():
+                                visit(sub)
+                elif t == "array" and "items" in node:
+                    visit(node["items"])
+                else:
+                    # still check nested defs even if no explicit type
+                    for key in ("$defs", "definitions"):
+                        if key in node and isinstance(node[key], dict):
+                            for sub in node[key].values():
+                                visit(sub)
+            elif isinstance(node, list):
+                for item in node:
+                    visit(item)
+            return node
+        # copy defensively
+        return visit(dict(schema))
+
+    def _build_response_format_from(self, output_config):
+        """
+        Build a valid OpenAI response_format payload from a StructuredOutputConfig
+        or a direct Pydantic/dataclass type. Ensures additionalProperties:false.
+        """
+        if not output_config:
+            return None
+
+        # Explicit JSON-only request (no schema)
+        fmt = getattr(output_config, "format", None)
+        if fmt and str(fmt).lower().endswith("json_object"):
+            return {"type": "json_object"}
+
+        ot = getattr(output_config, "output_type", None) or output_config
+
+        # Pydantic model -> JSON Schema
+        if isinstance(ot, type) and issubclass(ot, BaseModel):
+            raw = ot.model_json_schema()
+            schema = self._oai_normalize_schema(raw)
+            return {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": getattr(output_config, "name", None) or ot.__name__,
+                    "schema": schema,
+                    "strict": True,
+                },
+            }
+        # Python dataclass -> JSON Schema
+        if is_dataclass(ot):
+            ta = TypeAdapter(ot)
+            raw = ta.json_schema()
+            schema = self._oai_normalize_schema(raw)
+            return {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": getattr(output_config, "name", None) or ot.__name__,
+                        "schema": schema,
+                        "strict": True,
+                    },
+            }
+        # Fallback: at least constrain to JSON object
+        return {"type": "json_object"}

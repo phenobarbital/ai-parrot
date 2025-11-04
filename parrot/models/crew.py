@@ -4,13 +4,13 @@ Data models for Agent Crew execution results.
 Provides standardized output format for all crew execution modes.
 """
 from __future__ import annotations
-from typing import List, Dict, Any, Optional, Literal, Union
+from typing import List, Dict, Any, Optional, Literal, Union, Protocol
 from datetime import datetime
 import uuid
 from dataclasses import dataclass, field
+import numpy as np
 from datamodel.parsers.json import json_encoder  # pylint: disable=E0611 # noqa
 from .responses import AIMessage, AgentResponse
-from ..bots.abstract import AbstractBot
 
 
 ResponseType = Union[AIMessage, AgentResponse, Any]
@@ -78,7 +78,7 @@ class CrewResult:
 
     output: str
     response: Dict[str, ResponseType] = field(default_factory=dict)
-    results: List[str] = field(default_factory=list)
+    results: List[Any] = field(default_factory=list)
     agent_ids: List[str] = field(default_factory=list)
     agents: List[AgentExecutionInfo] = field(default_factory=list)
     """Detailed information about each agent's execution"""
@@ -233,7 +233,7 @@ def _serialise_tool_calls(tool_calls: Any) -> List[Any]:
     return serialised
 
 
-def _get_llm_info(agent: Optional[AbstractBot]) -> Dict[str, Any]:
+def _get_llm_info(agent: Optional[Any]) -> Dict[str, Any]:
     """Extract lightweight information about the agent LLM/client."""
 
     if agent is None:
@@ -272,7 +272,7 @@ def _normalise_agent_status(
 
 def build_agent_metadata(
     agent_id: str,
-    agent: Optional[AbstractBot],
+    agent: Optional[Any],
     response: Optional[ResponseType],
     output: Optional[Any],
     execution_time: float,
@@ -326,53 +326,70 @@ def build_agent_metadata(
     )
 
 @dataclass
-class AgentExecutionResult:
+class AgentResult:
     """Captures a single agent execution with full context"""
     agent_id: str
     agent_name: str
     task: str
     result: Any
     metadata: Dict[str, Any]
-    timestamp: datetime
     execution_time: float
+    timestamp: datetime = field(default_factory=datetime.utcnow)
     parent_execution_id: Optional[str] = None  # For tracking re-executions
     execution_id: str = field(default_factory=lambda: str(uuid.uuid4()))
 
     def to_text(self) -> str:
         """Convert execution result to text for vectorization"""
-        return f"""
-Agent: {self.agent_name}
+        from pandas import DataFrame  # noqa F401
+
+        result_type = type(self.result).__name__
+
+        base_info = f"""Agent: {self.agent_name}
 Task: {self.task}
-Result: {json_encoder(self.result) if isinstance(self.result, dict) else str(self.result)}
-Executed at: {self.timestamp.isoformat()}
-Execution time: {self.execution_time}s
-Metadata: {json_encoder(self.metadata)}
-"""
+Result Type: {result_type}
+Execution Time: {self.execution_time}s
+Timestamp: {self.timestamp.isoformat()}
+        """
+
+        if isinstance(self.result, DataFrame):
+            df = self.result
+            content = f"""
+Shape: {df.shape[0]} rows × {df.shape[1]} columns
+Columns: {', '.join(df.columns)}
+
+Data Types:
+{df.dtypes.to_string()}
+
+Statistics:
+{df.describe().to_string() if len(df) > 0 else 'No numerical data'}
+
+Sample Data (first 10 rows):
+{df.head(10).to_string()}
+            """
+        elif isinstance(self.result, dict):
+            content = f"""
+Keys: {', '.join(self.result.keys())}
+Content:
+{json_encoder(self.result)}
+            """
+        elif isinstance(self.result, list):
+            content = f"""
+Length: {len(self.result)} items
+Item Types: {', '.join(set(type(item).__name__ for item in self.result[:100]))}
+Sample Items:
+{json_encoder(self.result[:10]) if len(self.result) > 0 else '[]'}
+            """
+        else:
+            content = f"""
+Content:
+{str(self.result)}
+            """
+
+        return base_info + content
 
 
-@dataclass
-class ExecutionMemory:
-    """In-memory storage for execution history"""
-    results: List[AgentExecutionResult] = field(default_factory=list)
-    summary: str = ""
-    execution_graph: Dict[str, List[str]] = field(default_factory=dict)
-
-    def add_result(self, result: AgentExecutionResult):
-        """Add a result and update execution graph"""
-        self.results.append(result)
-        if result.parent_execution_id:
-            if result.parent_execution_id not in self.execution_graph:
-                self.execution_graph[result.parent_execution_id] = []
-            self.execution_graph[result.parent_execution_id].append(result.execution_id)
-
-    def get_results_by_agent(self, agent_id: str) -> List[AgentExecutionResult]:
-        """Retrieve all results from a specific agent"""
-        return [r for r in self.results if r.agent_id == agent_id]
-
-    def get_original_results(self) -> List[AgentExecutionResult]:
-        """Get only results from the initial execution (not re-executions)"""
-        return [r for r in self.results if r.parent_execution_id is None]
-
-    def get_reexecuted_results(self) -> List[AgentExecutionResult]:
-        """Get only results from re-executions triggered by ask()"""
-        return [r for r in self.results if r.parent_execution_id is not None]
+class VectorStoreProtocol(Protocol):
+    """Protocol for vector store implementations"""
+    def encode(self, texts: List[str]) -> np.ndarray:
+        """Encode texts to embeddings"""
+        ...

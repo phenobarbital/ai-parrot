@@ -83,6 +83,7 @@ class AbstractBot(DBInterface, ABC):
     llm_client: str = 'google'
     default_model: str = 'gemini-2.5-flash'
     temperature: float = 0.1
+    description: str = None
 
     def __init__(
         self,
@@ -117,6 +118,12 @@ class AbstractBot(DBInterface, ABC):
 
         # Basic Bot Information:
         self.name: str = name
+
+        # Bot Description:
+        self.description: str = kwargs.get(
+            'description',
+            self.description or f"{self.name} Chatbot"
+        )
 
         ##  Logging:
         self.logger = logging.getLogger(

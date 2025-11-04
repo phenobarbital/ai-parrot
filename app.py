@@ -24,6 +24,7 @@ from parrot.handlers.o365_auth import (
 from parrot.services.o365_remote_auth import RemoteAuthManager
 from parrot.handlers.jobs.worker import configure_redis_queue, configure_job_manager
 from resources.example import ExampleAsyncView
+from resources.nextstop import NextStopAgent
 
 class Main(AppHandler):
     """
@@ -105,6 +106,9 @@ class Main(AppHandler):
             ExampleAsyncView,
             name='example_async'
         )
+        ## NextStop
+        nextstop = NextStopAgent(app=self.app)
+        nextstop.setup(self.app, '/api/v1/agents/nextstop')
 
     async def on_prepare(self, request, response):
         """

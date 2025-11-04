@@ -97,18 +97,13 @@ class ClaudeClient(AbstractClient):
             structured_output
         )
 
-        json_instruction = None
-        if output_config and output_config.format == OutputFormat.JSON:
-            json_instruction = (
-                "Respond with a valid JSON object that strictly matches the requested schema. "
-                "Do not include any extra commentary."
+        if structured_output:
+            schema_instruction = output_config.format_schema_instruction()
+            system_prompt = (
+                f"{system_prompt}\n\n{schema_instruction}"
+                if system_prompt
+                else schema_instruction
             )
-            self._ensure_json_instruction(messages, json_instruction)
-            if system_prompt:
-                if json_instruction.lower() not in system_prompt.lower():
-                    system_prompt = f"{system_prompt}\n\n{json_instruction}"
-            else:
-                system_prompt = json_instruction
 
         payload = {
             "model": model.value if isinstance(model, Enum) else model,
@@ -120,10 +115,9 @@ class ClaudeClient(AbstractClient):
         if system_prompt:
             payload["system"] = system_prompt
 
-        if _use_tools:
-            if tools and isinstance(tools, list):
-                for tool in tools:
-                    self.register_tool(tool)
+        if _use_tools and (tools and isinstance(tools, list)):
+            for tool in tools:
+                self.register_tool(tool)
 
         if _use_tools:
             payload["tools"] = self._prepare_tools()
@@ -190,14 +184,16 @@ class ClaudeClient(AbstractClient):
         final_output = None
         if structured_output:
             # Extract text content from Claude's response
-            text_content = ""
-            for content_block in result["content"]:
-                if content_block["type"] == "text":
-                    text_content += content_block["text"]
-
-
-        if structured_output:
+            text_content = "".join(
+                content_block["text"]
+                for content_block in result["content"]
+                if content_block["type"] == "text"
+            )
             try:
+                if output_config.custom_parser:
+                    final_output = await output_config.custom_parser(
+                        text_content
+                    )
                 final_output = await self._parse_structured_output(
                     text_content,
                     output_config
@@ -206,10 +202,11 @@ class ClaudeClient(AbstractClient):
                 final_output = text_content
 
         # Extract assistant response text for conversation memory
-        assistant_response_text = ""
-        for content_block in result.get("content", []):
-            if content_block.get("type") == "text":
-                assistant_response_text += content_block.get("text", "")
+        assistant_response_text = "".join(
+            content_block.get("text", "")
+            for content_block in result.get("content", [])
+            if content_block.get("type") == "text"
+        )
 
         # Update conversation memory with unified system
         tools_used = [tc.name for tc in all_tool_calls]

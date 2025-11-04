@@ -104,7 +104,7 @@ async def quick_sequential_example():
     print(f"\nResearching {product} sequentially...")
 
     result = await crew.run_sequential(
-        initial_query=f"Research {product}",
+        query=f"Research {product}",
         pass_full_context=True
     )
 
@@ -489,10 +489,10 @@ User: "What is the capital of France?"
 async def run_examples():
     """Run all quick examples."""
 
-    # print("="*80)
-    # print("EXAMPLE 1: PARALLEL EXECUTION")
-    # print("="*80)
-    # await quick_parallel_example()
+    print("="*80)
+    print("EXAMPLE 1: PARALLEL EXECUTION")
+    print("="*80)
+    await quick_parallel_example()
 
     # print("\n" + "="*80)
     # print("EXAMPLE 2: SEQUENTIAL EXECUTION")
@@ -514,10 +514,10 @@ async def run_examples():
     # print("="*80)
     # await test_simple_delegation()
 
-    print("\n" + "="*80)
-    print("EXAMPLE 5: FSM WORKFLOW")
-    print("="*80)
-    await test_fsm()
+    # print("\n" + "="*80)
+    # print("EXAMPLE 5: FSM WORKFLOW")
+    # print("="*80)
+    # await test_fsm()
 
 
 if __name__ == "__main__":

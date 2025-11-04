@@ -9,9 +9,10 @@ import time
 import asyncio
 from logging import getLogger
 from enum import Enum
+from dataclasses import is_dataclass
 from PIL import Image
 import pytesseract
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ValidationError, TypeAdapter
 from datamodel.parsers.json import json_decoder, json_decoder  # pylint: disable=E0611 # noqa
 from navconfig import config, BASE_DIR
 from tenacity import (
@@ -57,9 +58,8 @@ RESPONSES_ONLY_MODELS = {
     "o3-deep-research",
     "o4-mini",
     "o4-mini-deep-research",
-    "gpt-4.1",
-    "gpt-4.1-mini",
-    "gpt-5-pro"
+    "gpt-5-pro",
+    "gpt-5-mini",
 }
 
 STRUCTURED_OUTPUT_COMPATIBLE_MODELS = {
@@ -134,9 +134,9 @@ class OpenAIClient(AbstractClient):
 
         arg_permutations = [
             ((file_id,), {}),
-            (tuple(), {"id": file_id}),
-            (tuple(), {"file_id": file_id}),
-            (tuple(), {"file": file_id}),
+            ((), {"id": file_id}),
+            ((), {"id": file_id}),
+            ((), {"file": file_id}),
         ]
 
         for method in candidate_methods:
@@ -199,16 +199,22 @@ class OpenAIClient(AbstractClient):
                 purpose=purpose
             )
 
-    async def _chat_completion(self, model: str, messages: Any, **kwargs):
+    async def _chat_completion(
+        self,
+        model: str,
+        messages: Any,
+        **kwargs
+    ):
         retry_policy = AsyncRetrying(
             retry=retry_if_exception_type((APIConnectionError, RateLimitError, APIError)),
             wait=wait_exponential(multiplier=1, min=2, max=10),
             stop=stop_after_attempt(5),
             reraise=True
         )
+        method = getattr(self.client.chat.completions, 'parse', self.client.chat.completions.create)
         async for attempt in retry_policy:
             with attempt:
-                return await self.client.chat.completions.create(
+                return await method(
                     model=model,
                     messages=messages,
                     **kwargs
@@ -434,7 +440,13 @@ class OpenAIClient(AbstractClient):
             "OpenAI responses.stream call failed without response"
         )
 
-    async def _responses_completion(self, *, model: str, messages, **args):
+    async def _responses_completion(
+        self,
+        *,
+        model: str,
+        messages,
+        **args
+    ):
         """
         Adapter around OpenAI Responses API that mimics Chat Completions:
         returns an object with `.choices[0].message` where `message` has
@@ -544,7 +556,7 @@ class OpenAIClient(AbstractClient):
     async def ask(
         self,
         prompt: str,
-        model: Union[str, OpenAIModel] = OpenAIModel.GPT4_TURBO,
+        model: Union[str, OpenAIModel] = OpenAIModel.GPT4_1,
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
         files: Optional[List[Union[str, Path]]] = None,
@@ -597,9 +609,13 @@ class OpenAIClient(AbstractClient):
         if system_prompt:
             messages.insert(0, {"role": "system", "content": system_prompt})
 
+        messages.append({"role": "user", "content": prompt})
+
         all_tool_calls = []
 
-        output_config = self._get_structured_config(structured_output)
+        output_config = self._get_structured_config(
+            structured_output
+        )
 
         # tools prep
         if tools and isinstance(tools, list):
@@ -622,25 +638,13 @@ class OpenAIClient(AbstractClient):
             args['tool_choice'] = "auto"
             args['parallel_tool_calls'] = True
 
-        if output_config and output_config.format == OutputFormat.JSON:
-            if model_str not in STRUCTURED_OUTPUT_COMPATIBLE_MODELS:
-                self.logger.warning(
-                    "Model %s does not support structured outputs; switching to %s",
-                    model_str,
-                    DEFAULT_STRUCTURED_OUTPUT_MODEL
-                )
-                model_str = DEFAULT_STRUCTURED_OUTPUT_MODEL
-            args["response_format"] = {"type": "json_object"}
-            output_type = output_config.output_type
-            if output_type and hasattr(output_type, 'model_json_schema'):
-                args['response_format'] = {
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": output_type.__name__.lower(),
-                        "schema": output_type.model_json_schema(),
-                        "strict": True
-                    }
-                }
+        if output_config and output_config.format == OutputFormat.JSON and model_str not in STRUCTURED_OUTPUT_COMPATIBLE_MODELS:
+            self.logger.warning(
+                "Model %s does not support structured outputs; switching to %s",
+                model_str,
+                DEFAULT_STRUCTURED_OUTPUT_MODEL
+            )
+            model_str = DEFAULT_STRUCTURED_OUTPUT_MODEL
 
         if model_str != 'gpt-5-nano':
             args['max_tokens'] = max_tokens or self.max_tokens
@@ -649,18 +653,22 @@ class OpenAIClient(AbstractClient):
 
         # -------- ROUTING: Responses-only vs Chat -----------
         use_responses = self._is_responses_model(model_str)
+        resp_format = self._build_response_format_from(output_config) if output_config else None
 
         if use_responses:
+            if output_config:
+                args['response_format'] = resp_format
             response = await self._responses_completion(
                 model=model_str,
                 messages=messages,
                 **args
             )
         else:
+            if output_config:
+                args['response_format'] = resp_format
             response = await self._chat_completion(
                 model=model_str,
                 messages=messages,
-                stream=False,
                 **args
             )
 
@@ -737,16 +745,19 @@ class OpenAIClient(AbstractClient):
 
             # continue via the same routed API
             if use_responses:
+                if output_config:
+                    args['response_format'] = resp_format
                 response = await self._responses_completion(
                     model=model_str,
                     messages=messages,
                     **args
                 )
             else:
+                if output_config:
+                    args['response_format'] = resp_format
                 response = await self._chat_completion(
                     model=model_str,
                     messages=messages,
-                    stream=False,
                     **args
                 )
             result = response.choices[0].message
@@ -758,10 +769,13 @@ class OpenAIClient(AbstractClient):
         final_output = None
         if output_config:
             try:
-                final_output = await self._parse_structured_output(
-                    response_text,
-                    output_config
-                )
+                if output_config.custom_parser:
+                    final_output = output_config.custom_parser(response_text)
+                else:
+                    final_output = await self._parse_structured_output(
+                        response_text,
+                        output_config
+                    )
             except Exception:  # pylint: disable=broad-except
                 final_output = response_text
 
@@ -808,13 +822,13 @@ class OpenAIClient(AbstractClient):
         system_prompt: Optional[str] = None,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
-        tools: Optional[List[Dict[str, Any]]] = None
+        tools: Optional[List[Dict[str, Any]]] = None,
+        structured_output: Union[type, StructuredOutputConfig, None] = None,
     ) -> AsyncIterator[str]:
         """Stream OpenAI's response with optional conversation memory."""
 
         # Generate unique turn ID for tracking
         turn_id = str(uuid.uuid4())
-
         # Extract model value if it's an enum
         model_str = model.value if isinstance(model, Enum) else model
 
@@ -837,12 +851,14 @@ class OpenAIClient(AbstractClient):
         if tools and isinstance(tools, list):
             for tool in tools:
                 self.register_tool(tool)
-        tools = self._prepare_tools() if self.tools else None
+        tools_payload = self._prepare_tools() if self.tools else None
+
         args: Dict[str, Any] = {}
 
-        if tools:
-            args['tools'] = tools
+        if tools_payload:
+            args['tools'] = tools_payload
             args['tool_choice'] = "auto"
+            args["parallel_tool_calls"] = True
 
         max_tokens_value = max_tokens if max_tokens is not None else self.max_tokens
         if max_tokens_value is not None:
@@ -852,8 +868,20 @@ class OpenAIClient(AbstractClient):
         if temperature_value is not None:
             args['temperature'] = temperature_value
 
-        use_responses = self._is_responses_model(model_str)
+        # -------- structured output config (normalize + model guard) --------
+        output_config = self._get_structured_config(structured_output)
+        if output_config and output_config.format == OutputFormat.JSON and model_str not in STRUCTURED_OUTPUT_COMPATIBLE_MODELS:
+            self.logger.warning(
+                "Model %s does not support structured outputs; switching to %s",
+                model_str,
+                DEFAULT_STRUCTURED_OUTPUT_MODEL
+            )
+            model_str = DEFAULT_STRUCTURED_OUTPUT_MODEL
 
+        # Build the OpenAI response_format payload (dict) once
+        resp_format = self._build_response_format_from(output_config) if output_config else None
+
+        use_responses = self._is_responses_model(model_str)
         assistant_content = ""
 
         if use_responses:
@@ -861,7 +889,21 @@ class OpenAIClient(AbstractClient):
             req["model"] = model_str
 
             payload_base = dict(req)
-            attempts: List[Dict[str, Any]] = [dict(payload_base)]
+            payload_base.pop("response", None)
+            payload_base.pop("response_format", None)
+            attempts: List[Dict[str, Any]] = []
+            if resp_format:
+                attempts.extend(
+                    (
+                        {**payload_base, "response_format": resp_format},
+                        self._with_extra_body(
+                            payload_base, {"response": {"format": resp_format}}
+                        ),
+                        dict(payload_base),
+                    )
+                )
+            else:
+                attempts: List[Dict[str, Any]] = [dict(payload_base)]
 
             stream_cm = await self._call_responses_stream(attempts)
 
@@ -889,8 +931,6 @@ class OpenAIClient(AbstractClient):
                 final_response = None
                 try:
                     final_response = await stream.get_final_response()
-                except AttributeError:
-                    final_response = None
                 except Exception:  # pylint: disable=broad-except
                     final_response = None
 
@@ -912,12 +952,30 @@ class OpenAIClient(AbstractClient):
                     yield output_text
         else:
             chat_args = dict(args)
-            response_stream = await self.client.chat.completions.create(
-                model=model_str,
-                messages=messages,
-                stream=True,
-                **chat_args
-            )
+            method = getattr(
+                self.client.chat.completions, "parse",
+                None
+            ) if output_config else None
+            if callable(method):
+                try:
+                    response_stream = await method(  # pylint: disable=E1102 # noqa
+                        model=model_str,
+                        messages=messages,
+                        stream=True,
+                        response_format=(output_config.output_type if output_config else None),
+                        **chat_args
+                    )
+                except TypeError:
+                    # parse() in this SDK may not accept stream=True → fallback to create()
+                    method = None
+            else:
+                response_stream = await self.client.chat.completions.create(
+                    model=model_str,
+                    messages=messages,
+                    stream=True,
+                    response_format=(output_config.output_type if output_config else None),
+                    **chat_args
+                )
 
             async for chunk in response_stream:
                 if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:

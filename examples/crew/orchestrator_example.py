@@ -72,9 +72,33 @@ Response format:
         use_llm='google'
     )
 
+    review_specialist = BasicAgent(
+        name="ReviewSpecialist",
+        agent_id="review_specialist",
+        role="Product Review Expert",
+        goal="Find and summarize product reviews",
+        capabilities="Customer reviews, expert opinions, pros and cons",
+        system_prompt="""You are a product review expert.
+
+Your expertise:
+- Analyzing customer reviews
+- Summarizing expert opinions
+- Identifying pros and cons
+
+IMPORTANT: Always use your web search tool to find current, accurate information.
+
+Response format:
+- Start with product name
+- List key points from reviews
+- Include sources and dates
+- Be specific with quotes and citations""",
+        use_llm='google'
+    )
+
     # Add search tools to specialists
     search_tool = GoogleSearchTool()
-    for specialist in [tech_specialist, price_specialist]:
+    agents = [tech_specialist, price_specialist, review_specialist]
+    for specialist in agents:
         specialist.tool_manager.add_tool(search_tool)
         await specialist.configure()
 
@@ -108,6 +132,11 @@ Response format:
    Purpose: Find current prices and deals
    Use for: prices, costs, deals, availability
    Example: pricespecialist(question="What is the price of iPhone 15 Pro?")
+
+3. reviewspecialist
+   Purpose: Find and summarize product reviews
+   Use for: customer reviews, expert opinions, pros and cons
+   Example: reviewspecialist(question="What do customers say about iPhone 15 Pro?")
 
 📋 HOW TO ANSWER QUESTIONS:
 
@@ -160,6 +189,12 @@ User: "Tell me about the iPhone 15 Pro - I want specs and price"
         tool_description="Pricing research expert. Use this to find current product prices, deals, availability, and pricing information from retailers."
     )
 
+    review_specialist.register_as_tool(
+        orchestrator,
+        tool_name="reviewspecialist",
+        tool_description="Product review expert. Use this to find and summarize customer reviews, expert opinions, and pros and cons of products."
+    )
+
     # Verify registration
     registered_tools = orchestrator.tool_manager.list_tools()
     print(f"✅ Registered tools: {registered_tools}")
@@ -178,21 +213,26 @@ async def test_orchestrator():
 
     # Test queries
     test_queries = [
+        # {
+        #     "name": "Specs Only",
+        #     "query": "What are the technical specifications of the iPad Pro M2?",
+        #     "expected_tools": ["techspecialist"]
+        # },
+        # {
+        #     "name": "Price Only",
+        #     "query": "How much does the iPhone 15 Pro cost?",
+        #     "expected_tools": ["pricespecialist"]
+        # },
+        # {
+        #     "name": "Both Specs and Price",
+        #     "query": "Tell me about the MacBook Pro M3 - I need both specs and pricing information",
+        #     "expected_tools": ["techspecialist", "pricespecialist"]
+        # },
         {
-            "name": "Specs Only",
-            "query": "What are the technical specifications of the iPad Pro M2?",
-            "expected_tools": ["techspecialist"]
+            "name": "Specs, Price, and Reviews",
+            "query": "What are the specs, price, and customer reviews for the Samsung Galaxy S23 Ultra?",
+            "expected_tools": ["techspecialist", "pricespecialist", "reviewspecialist"]
         },
-        {
-            "name": "Price Only",
-            "query": "How much does the iPhone 15 Pro cost?",
-            "expected_tools": ["pricespecialist"]
-        },
-        {
-            "name": "Both Specs and Price",
-            "query": "Tell me about the MacBook Pro M3 - I need both specs and pricing information",
-            "expected_tools": ["techspecialist", "pricespecialist"]
-        }
     ]
 
     print("\n" + "="*80)
@@ -236,8 +276,8 @@ async def test_orchestrator():
                 print(f"\n  🔧 {tc.name}:")
                 print(f"     Input: {tc.arguments}")
         else:
-            print(f"❌ FAILED: No tools were used!")
-            print(f"   This is a problem - orchestrator should always use tools")
+            print("❌ FAILED: No tools were used!")
+            print("   This is a problem - orchestrator should always use tools")
 
         print()
 

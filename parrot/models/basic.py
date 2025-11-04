@@ -6,9 +6,9 @@ from pydantic import BaseModel, Field
 class OutputFormat(Enum):
     """Supported output formats for structured responses."""
     JSON = "json"
+    XML = "xml"
     CSV = "csv"
     YAML = "yaml"
-    XML = "xml"
     CODE = "code"
     CUSTOM = "custom"
     TEXT = "text"
