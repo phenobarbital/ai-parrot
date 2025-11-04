@@ -594,6 +594,44 @@ class AbstractClient(ABC):
             )
         return None
 
+    def _ensure_json_instruction(
+        self,
+        messages: List[Dict[str, Any]],
+        instruction: str
+    ) -> None:
+        """Ensure the latest user message explicitly requests JSON output."""
+        if not instruction:
+            return
+
+        lowered_instruction = instruction.lower()
+
+        for message in reversed(messages):
+            if message.get("role") != "user":
+                continue
+
+            existing_content = message.get("content")
+            if isinstance(existing_content, str):
+                if lowered_instruction in existing_content.lower():
+                    return
+                message["content"] = [{"type": "text", "text": existing_content}]
+
+            content = message.setdefault("content", [])
+            for block in content:
+                if block.get("type") == "text":
+                    text = block.get("text", "")
+                    if lowered_instruction in text.lower():
+                        return
+                    block["text"] = f"{text}\n\n{instruction}" if text else instruction
+                    return
+
+            content.append({"type": "text", "text": instruction})
+            return
+
+        messages.append({
+            "role": "user",
+            "content": [{"type": "text", "text": instruction}]
+        })
+
     @abstractmethod
     async def ask(
         self,

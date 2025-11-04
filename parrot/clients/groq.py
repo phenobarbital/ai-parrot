@@ -250,6 +250,10 @@ class GroqClient(AbstractClient):
 
         # Add structured output format if no tools
         if request_output_config and not use_tools:
+            self._ensure_json_instruction(
+                messages,
+                "Please respond with a valid JSON object that matches the requested schema."
+            )
             if request_output_config.format == OutputFormat.JSON:
                 output_type = request_output_config.output_type
                 if output_type:
@@ -367,10 +371,15 @@ class GroqClient(AbstractClient):
                 })
 
             # Make a new request for structured output
+            json_followup_instruction = (
+                "Please format the above response as valid JSON that matches the requested structure."
+            )
             messages.append({
                 "role": "user",
-                "content": "Please format the above response according to the requested structure."
+                "content": [{"type": "text", "text": json_followup_instruction}]
             })
+
+            self._ensure_json_instruction(messages, json_followup_instruction)
 
             structured_args = {
                 "model": model,
