@@ -9,7 +9,7 @@ from .base import BaseRenderer
 
 
 @register_renderer(OutputMode.JINJA2)
-class Jinja2OutputFormatter(BaseRenderer):
+class Jinja2Renderer(BaseRenderer):
     """
     Renders the output using a Jinja2 template.
     """
@@ -36,9 +36,11 @@ class Jinja2OutputFormatter(BaseRenderer):
         try:
             template = env.get_template(template_name)
         except Exception as e:
-            raise ValueError(f"Failed to load Jinja2 template '{template_name}': {e}") from e
+            raise ValueError(
+                f"Failed to load Jinja2 template '{template_name}': {e}"
+            ) from e
 
         content_type = mimetypes.guess_type(template_name)[0] or "text/plain"
 
-        rendered_content = await template.render_async(data=data)
+        rendered_content = await template.render_async(**data)
         return rendered_content, content_type
