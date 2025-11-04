@@ -529,7 +529,7 @@ class OpenAIClient(AbstractClient):
     async def ask(
         self,
         prompt: str,
-        model: Union[str, OpenAIModel] = OpenAIModel.GPT4_TURBO,
+        model: Union[str, OpenAIModel] = OpenAIModel.GPT4_1,
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
         files: Optional[List[Union[str, Path]]] = None,

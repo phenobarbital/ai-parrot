@@ -48,12 +48,6 @@ async def run_example(
     structured_output: Union[type, StructuredOutputConfig],
 ) -> None:
     """Execute a single structured output request and display the result."""
-
-    api_key = getattr(client, "api_key", None)
-    if not api_key:
-        print(f"[{name}] Skipping example because no API key was found.")
-        return
-
     try:
         async with client:
             response = await client.ask(
