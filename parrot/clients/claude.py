@@ -68,7 +68,7 @@ class ClaudeClient(AbstractClient):
         temperature: Optional[float] = None,
         files: Optional[List[Union[str, Path]]] = None,
         system_prompt: Optional[str] = None,
-        structured_output: Optional[type] = None,
+        structured_output: Union[type, StructuredOutputConfig, None] = None,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
@@ -96,6 +96,19 @@ class ClaudeClient(AbstractClient):
         output_config = self._get_structured_config(
             structured_output
         )
+
+        json_instruction = None
+        if output_config and output_config.format == OutputFormat.JSON:
+            json_instruction = (
+                "Respond with a valid JSON object that strictly matches the requested schema. "
+                "Do not include any extra commentary."
+            )
+            self._ensure_json_instruction(messages, json_instruction)
+            if system_prompt:
+                if json_instruction.lower() not in system_prompt.lower():
+                    system_prompt = f"{system_prompt}\n\n{json_instruction}"
+            else:
+                system_prompt = json_instruction
 
         payload = {
             "model": model.value if isinstance(model, Enum) else model,

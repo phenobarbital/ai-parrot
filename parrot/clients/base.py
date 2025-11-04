@@ -7,7 +7,7 @@ import mimetypes
 import asyncio
 import base64
 from pathlib import Path
-from dataclasses import dataclass
+from dataclasses import dataclass, is_dataclass
 from abc import ABC, abstractmethod
 import io
 import wave
@@ -594,6 +594,44 @@ class AbstractClient(ABC):
             )
         return None
 
+    def _ensure_json_instruction(
+        self,
+        messages: List[Dict[str, Any]],
+        instruction: str
+    ) -> None:
+        """Ensure the latest user message explicitly requests JSON output."""
+        if not instruction:
+            return
+
+        lowered_instruction = instruction.lower()
+
+        for message in reversed(messages):
+            if message.get("role") != "user":
+                continue
+
+            existing_content = message.get("content")
+            if isinstance(existing_content, str):
+                if lowered_instruction in existing_content.lower():
+                    return
+                message["content"] = [{"type": "text", "text": existing_content}]
+
+            content = message.setdefault("content", [])
+            for block in content:
+                if block.get("type") == "text":
+                    text = block.get("text", "")
+                    if lowered_instruction in text.lower():
+                        return
+                    block["text"] = f"{text}\n\n{instruction}" if text else instruction
+                    return
+
+            content.append({"type": "text", "text": instruction})
+            return
+
+        messages.append({
+            "role": "user",
+            "content": [{"type": "text", "text": instruction}]
+        })
+
     @abstractmethod
     async def ask(
         self,
@@ -603,6 +641,7 @@ class AbstractClient(ABC):
         temperature: float = 0.7,
         files: Optional[List[Union[str, Path]]] = None,
         system_prompt: Optional[str] = None,
+        structured_output: Union[type, StructuredOutputConfig, None] = None,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
@@ -649,13 +688,46 @@ class AbstractClient(ABC):
         try:
             if hasattr(structured_output, '__annotations__'):
                 parsed = json_decoder(text_content)
-                return structured_output(**parsed) if hasattr(
-                    structured_output, '__dataclass_fields__'
-                ) else parsed
+                return self._coerce_mapping_to_type(structured_output, parsed)
             else:
                 return structured_output(text_content)
-        except:
+        except Exception:  # pylint: disable=broad-except
             return result
+
+    def _coerce_mapping_to_type(self, output_type: type, data: Any) -> Any:
+        """Attempt to instantiate output_type from mapping-like data."""
+        if data is None:
+            return None
+
+        if is_dataclass(output_type):
+            try:
+                if isinstance(data, list):
+                    return [self._coerce_mapping_to_type(output_type, item) for item in data]
+                if isinstance(data, dict):
+                    return output_type(**data)
+            except TypeError:
+                return data
+            return data
+
+        if hasattr(output_type, '__annotations__'):
+            if isinstance(data, list):
+                coerced = []
+                for item in data:
+                    if isinstance(item, dict):
+                        try:
+                            coerced.append(output_type(**item))
+                        except TypeError:
+                            coerced.append(item)
+                    else:
+                        coerced.append(item)
+                return coerced
+            if isinstance(data, dict):
+                try:
+                    return output_type(**data)
+                except TypeError:
+                    return data
+
+        return data
 
     async def _process_tool_calls(
         self,
@@ -864,8 +936,10 @@ class AbstractClient(ABC):
                         parsed_json = self._json.loads(response_text)
                         return output_type.model_validate(parsed_json)
                     else:
-                        # then, try to parse the JSON directly
-                        return self._json.loads(response_text)
+                        parsed_json = self._json.loads(response_text)
+                        if is_dataclass(output_type) or hasattr(output_type, '__annotations__'):
+                            return self._coerce_mapping_to_type(output_type, parsed_json)
+                        return parsed_json
                 except (ParserError, ValidationError, json.JSONDecodeError) as e:
                     self.logger.warning(f"Standard parsing failed: {e}")
                     try:
@@ -874,6 +948,8 @@ class AbstractClient(ABC):
                         parsed_json = self._json.loads(json_text)
                         if hasattr(output_type, 'model_validate'):
                             return output_type.model_validate(parsed_json)
+                        if is_dataclass(output_type) or hasattr(output_type, '__annotations__'):
+                            return self._coerce_mapping_to_type(output_type, parsed_json)
                         return parsed_json
                     except (ParserError, ValidationError, json.JSONDecodeError) as e:
                         self.logger.warning(
@@ -893,6 +969,8 @@ class AbstractClient(ABC):
                 data = yaml.safe_load(response_text)
                 if hasattr(output_type, 'model_validate'):
                     return output_type.model_validate(data)
+                if is_dataclass(output_type) or hasattr(output_type, '__annotations__'):
+                    return self._coerce_mapping_to_type(output_type, data)
                 return data
             elif structured_output.format == OutputFormat.CUSTOM:
                 if structured_output.custom_parser:

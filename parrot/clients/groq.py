@@ -13,6 +13,8 @@ from ..models import (
     AIMessage,
     AIMessageFactory,
     ToolCall,
+    StructuredOutputConfig,
+    OutputFormat,
 )
 from ..models.groq import GroqModel
 from ..models.outputs import (
@@ -171,7 +173,7 @@ class GroqClient(AbstractClient):
         top_p: float = 0.9,
         files: Optional[List[Union[str, Path]]] = None,
         system_prompt: Optional[str] = None,
-        structured_output: Optional[type] = None,
+        structured_output: Union[type, StructuredOutputConfig, None] = None,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
         tools: Optional[List[dict]] = None,
@@ -203,15 +205,17 @@ class GroqClient(AbstractClient):
 
         # Groq doesn't support combining structured output with tools
         # Priority: tools first, then structured output in separate request if needed
+        output_config = self._get_structured_config(structured_output)
         use_tools = _use_tools
-        use_structured_output = bool(structured_output)
+        use_structured_output = bool(output_config)
+
+        structured_output_for_later: Optional[StructuredOutputConfig] = None
+        request_output_config: Optional[StructuredOutputConfig] = output_config
 
         if use_tools and use_structured_output:
             # Handle tools first, structured output later
-            structured_output_for_later = structured_output
-            structured_output = None
-        else:
-            structured_output_for_later = None
+            structured_output_for_later = output_config
+            request_output_config = None
 
         # Track tool calls for the response
         all_tool_calls = []
@@ -245,10 +249,19 @@ class GroqClient(AbstractClient):
                 ]
 
         # Add structured output format if no tools
-        if structured_output and not use_tools:
-            request_args.update(
-                self._prepare_structured_output_format(structured_output)
+        if request_output_config and not use_tools:
+            self._ensure_json_instruction(
+                messages,
+                "Please respond with a valid JSON object that matches the requested schema."
             )
+            if request_output_config.format == OutputFormat.JSON:
+                output_type = request_output_config.output_type
+                if output_type:
+                    request_args.update(
+                        self._prepare_structured_output_format(output_type)
+                    )
+                else:
+                    request_args["response_format"] = {"type": "json_object"}
 
         # Make initial request
         response = await self.client.chat.completions.create(**request_args)
@@ -348,6 +361,7 @@ class GroqClient(AbstractClient):
 
         # Handle structured output after tools if needed
         final_output = None
+        parsed_config: Optional[StructuredOutputConfig] = None
         if structured_output_for_later and use_tools:
             # Add the final tool response to messages
             if result.content:
@@ -357,10 +371,15 @@ class GroqClient(AbstractClient):
                 })
 
             # Make a new request for structured output
+            json_followup_instruction = (
+                "Please format the above response as valid JSON that matches the requested structure."
+            )
             messages.append({
                 "role": "user",
-                "content": "Please format the above response according to the requested structure."
+                "content": [{"type": "text", "text": json_followup_instruction}]
             })
+
+            self._ensure_json_instruction(messages, json_followup_instruction)
 
             structured_args = {
                 "model": model,
@@ -371,9 +390,14 @@ class GroqClient(AbstractClient):
                 "stream": False
             }
 
-            structured_args.update(
-                self._prepare_structured_output_format(structured_output_for_later)
-            )
+            if structured_output_for_later.format == OutputFormat.JSON:
+                output_type = structured_output_for_later.output_type
+                if output_type:
+                    structured_args.update(
+                        self._prepare_structured_output_format(output_type)
+                    )
+                else:
+                    structured_args["response_format"] = {"type": "json_object"}
 
             structured_response = await self.client.chat.completions.create(**structured_args)
             result = structured_response.message if hasattr(
@@ -381,30 +405,19 @@ class GroqClient(AbstractClient):
                 'message'
             ) else structured_response.choices[0].message
 
-            # Parse structured output
-            try:
-                if hasattr(structured_output_for_later, 'model_validate_json'):
-                    final_output = structured_output_for_later.model_validate_json(result.content)
-                elif hasattr(structured_output_for_later, 'model_validate'):
-                    parsed_json = json.loads(result.content)
-                    final_output = structured_output_for_later.model_validate(parsed_json)
-                else:
-                    final_output = json.loads(result.content)
-            except:
-                final_output = result.content
+            parsed_config = structured_output_for_later
+        else:
+            parsed_config = request_output_config
 
-        elif structured_output:
-            # Handle structured output for non-tool requests
+        response_text = result.content if isinstance(result.content, str) else self._json.dumps(result.content)
+        if parsed_config:
             try:
-                if hasattr(structured_output, 'model_validate_json'):
-                    final_output = structured_output.model_validate_json(result.content)
-                elif hasattr(structured_output, 'model_validate'):
-                    parsed_json = json.loads(result.content)
-                    final_output = structured_output.model_validate(parsed_json)
-                else:
-                    final_output = json.loads(result.content)
-            except:
-                final_output = result.content
+                final_output = await self._parse_structured_output(
+                    response_text,
+                    parsed_config
+                )
+            except Exception:  # pylint: disable=broad-except
+                final_output = response_text
         else:
             final_output = result.content
 
@@ -432,6 +445,12 @@ class GroqClient(AbstractClient):
         )
 
         # Create AIMessage using factory
+        structured_payload = None
+        if parsed_config and final_output is not None and not (
+            isinstance(final_output, str) and final_output == response_text
+        ):
+            structured_payload = final_output
+
         ai_message = AIMessageFactory.from_groq(
             response=response,
             input_text=original_prompt,
@@ -439,7 +458,7 @@ class GroqClient(AbstractClient):
             user_id=user_id,
             session_id=session_id,
             turn_id=turn_id,
-            structured_output=final_output if final_output != result.content else None
+            structured_output=structured_payload
         )
 
         # Add tool calls to the response
