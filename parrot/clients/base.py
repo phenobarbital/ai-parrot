@@ -909,6 +909,45 @@ class AbstractClient(ABC):
         # If no JSON found, return the original text
         return text.strip()
 
+    def _unwrap_nested_response(self, parsed_json: Any, output_type: type) -> Any:
+        """Unwrap JSON responses that are nested under a single key.
+
+        Some LLMs (especially Claude) wrap their response in an extra key layer.
+        For example: {"dinner_plan": {"appetizer": "...", ...}}
+        instead of: {"appetizer": "...", ...}
+
+        This method detects and unwraps such responses.
+        """
+        if not isinstance(parsed_json, dict):
+            return parsed_json
+
+        # If the JSON has exactly one key and it's a dict, check if unwrapping makes sense
+        if len(parsed_json) == 1:
+            single_key = list(parsed_json.keys())[0]
+            nested_value = parsed_json[single_key]
+
+            # Only unwrap if the nested value is a dict
+            if isinstance(nested_value, dict):
+                # Try to validate the nested value against the expected type
+                if hasattr(output_type, 'model_validate'):
+                    try:
+                        # If this succeeds, the nested value is the correct structure
+                        output_type.model_validate(nested_value)
+                        return nested_value
+                    except (ValidationError, Exception):
+                        # If validation fails, return original
+                        pass
+                elif hasattr(output_type, '__annotations__'):
+                    # For dataclasses, check if fields match
+                    expected_fields = set(output_type.__annotations__.keys())
+                    nested_fields = set(nested_value.keys())
+
+                    # If nested value has the expected fields, unwrap it
+                    if expected_fields & nested_fields:  # If there's any overlap
+                        return nested_value
+
+        return parsed_json
+
     async def _parse_structured_output(
         self,
         response_text: str,
@@ -931,12 +970,17 @@ class AbstractClient(ABC):
                     if response_text.startswith('```json'):
                         response_text = response_text[7:-3]
                     if hasattr(output_type, 'model_validate_json'):
-                        return output_type.model_validate_json(response_text)
+                        # For model_validate_json, we need to parse first to unwrap
+                        parsed_json = self._json.loads(response_text)
+                        parsed_json = self._unwrap_nested_response(parsed_json, output_type)
+                        return output_type.model_validate(parsed_json)
                     elif hasattr(output_type, 'model_validate'):
                         parsed_json = self._json.loads(response_text)
+                        parsed_json = self._unwrap_nested_response(parsed_json, output_type)
                         return output_type.model_validate(parsed_json)
                     else:
                         parsed_json = self._json.loads(response_text)
+                        parsed_json = self._unwrap_nested_response(parsed_json, output_type)
                         if is_dataclass(output_type) or hasattr(output_type, '__annotations__'):
                             return self._coerce_mapping_to_type(output_type, parsed_json)
                         return parsed_json
@@ -946,6 +990,7 @@ class AbstractClient(ABC):
                         # Try fallback with field mapping
                         json_text = self._extract_json_from_response(response_text)
                         parsed_json = self._json.loads(json_text)
+                        parsed_json = self._unwrap_nested_response(parsed_json, output_type)
                         if hasattr(output_type, 'model_validate'):
                             return output_type.model_validate(parsed_json)
                         if is_dataclass(output_type) or hasattr(output_type, '__annotations__'):
