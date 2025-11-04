@@ -21,7 +21,7 @@ if __name__ == '__main__':
     file = BASE_DIR.joinpath('documents', 'ga_reporting.xlsx')
     data = pd.read_excel(file)
     agent = asyncio.run(get_agent(data))
-    prompt = f"""
+    prompt = """
 
     Generate a business-style narrative based on the data provided in the Pandas DataFrame, considering the above description.
     The narrative should include the following sections:

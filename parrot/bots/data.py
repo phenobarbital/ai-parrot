@@ -5,8 +5,8 @@ A specialized agent for data analysis using pandas DataFrames.
 from pathlib import Path
 from typing import Any, List, Dict, Union, Optional
 from datetime import datetime, timezone, timedelta
-import uuid
 from string import Template
+from pydantic import BaseModel
 import redis.asyncio as aioredis
 import pandas as pd
 import numpy as np
@@ -349,6 +349,7 @@ $backstory
     async def invoke(
         self,
         question: str,
+        response_model: type[BaseModel] | None = None,
         **kwargs
     ) -> AgentResponse:
         """
@@ -362,9 +363,10 @@ $backstory
             AgentResponse with answer and metadata
         """
         # Use the conversation method from BasicAgent
-        response = await self.conversation(
+        response = await super().invoke(
             question=question,
             use_conversation_history=kwargs.get('use_conversation_history', True),
+            response_model=response_model,
             **kwargs
         )
         if isinstance(response, AgentResponse):
