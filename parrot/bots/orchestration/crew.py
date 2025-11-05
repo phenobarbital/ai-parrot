@@ -501,6 +501,27 @@ class AgentCrew:
                     'success': False,
                     'error': str(result)
                 })
+
+                # Save failed execution to memory if context has execution_memory
+                if hasattr(context, 'execution_memory') and context.execution_memory:
+                    agent_result = AgentResult(
+                        agent_id=agent_name,
+                        agent_name=node.agent.name,
+                        task=context.initial_task,
+                        result=str(result),
+                        metadata={
+                            'success': False,
+                            'error': str(result),
+                            'mode': 'flow',
+                            'user_id': getattr(context, 'user_id', 'crew_user'),
+                            'session_id': getattr(context, 'session_id', 'unknown')
+                        },
+                        execution_time=0.0
+                    )
+                    context.execution_memory.add_result(
+                        agent_result,
+                        vectorize=False
+                    )
             else:
                 output = result.get('output') if isinstance(result, dict) else result
                 raw_response = result.get('response') if isinstance(result, dict) else result
@@ -529,6 +550,32 @@ class AgentCrew:
                     'execution_time': execution_time,
                     'success': True
                 })
+
+                # Save successful execution to memory if context has execution_memory
+                if hasattr(context, 'execution_memory') and context.execution_memory:
+                    agent_input = result.get('prompt', '') if isinstance(result, dict) else context.initial_task
+                    agent_result = AgentResult(
+                        agent_id=agent_name,
+                        agent_name=node.agent.name,
+                        task=agent_input,
+                        result=output,
+                        metadata={
+                            'success': True,
+                            'mode': 'flow',
+                            'user_id': getattr(context, 'user_id', 'crew_user'),
+                            'session_id': getattr(context, 'session_id', 'unknown'),
+                            'result_type': type(output).__name__
+                        },
+                        execution_time=execution_time
+                    )
+                    # Vectorize only if analysis enabled
+                    context.execution_memory.add_result(
+                        agent_result,
+                        vectorize=True
+                    )
+                    # Update execution order
+                    if agent_name not in context.execution_memory.execution_order:
+                        context.execution_memory.execution_order.append(agent_name)
 
         return execution_results
 
@@ -954,13 +1001,30 @@ class AgentCrew:
         session_id = session_id or str(uuid.uuid4())
         user_id = user_id or 'crew_user'
 
+        # Initialize execution memory
+        self.execution_memory = ExecutionMemory(
+            original_query=query,
+            embedding_model=self.embedding_model if self.enable_analysis else None,
+            dimension=getattr(self, 'dimension', 384),
+            index_type=getattr(self, 'index_type', 'Flat')
+        )
+        # Set execution order for sequential mode
+        agent_sequence_ids = agent_sequence if agent_sequence is not None else list(self.agents.keys())
+        self.execution_memory.execution_order = [
+            agent_id for agent_id in agent_sequence_ids
+            if agent_id in self.agents
+        ]
+
         # Initialize context to track execution across agents
         current_input = query
         crew_context = AgentContext(
             user_id=user_id,
             session_id=session_id,
             original_query=query,
-            shared_data=kwargs,
+            shared_data={
+                **kwargs,
+                'execution_memory': self.execution_memory,
+            },
             agent_results={}
         )
 
@@ -1040,6 +1104,29 @@ Current task: {current_input}"""
                 )
                 results.append(result)
                 agent_ids.append(agent_id)
+
+                # Save successful execution to memory
+                agent_result = AgentResult(
+                    agent_id=agent_id,
+                    agent_name=agent.name,
+                    task=agent_input,
+                    result=result,
+                    metadata={
+                        'success': True,
+                        'mode': 'sequential',
+                        'user_id': user_id,
+                        'session_id': session_id,
+                        'index': i,
+                        'result_type': type(result).__name__
+                    },
+                    execution_time=execution_time
+                )
+                # Vectorize only if analysis enabled
+                self.execution_memory.add_result(
+                    agent_result,
+                    vectorize=True
+                )
+
                 success_count += 1
 
             except Exception as e:
@@ -1072,6 +1159,28 @@ Current task: {current_input}"""
                 )
                 results.append(error_msg)
                 agent_ids.append(agent_id)
+
+                # Save failed execution to memory
+                agent_result = AgentResult(
+                    agent_id=agent_id,
+                    agent_name=agent.name,
+                    task=current_input,
+                    result=error_msg,
+                    metadata={
+                        'success': False,
+                        'error': str(e),
+                        'mode': 'sequential',
+                        'user_id': user_id,
+                        'session_id': session_id,
+                        'index': i
+                    },
+                    execution_time=0.0
+                )
+                self.execution_memory.add_result(
+                    agent_result,
+                    vectorize=False
+                )
+
                 failure_count += 1
 
         end_time = asyncio.get_event_loop().time()
@@ -1175,6 +1284,19 @@ Current task: {current_input}"""
         session_id = session_id or str(uuid.uuid4())
         user_id = user_id or 'crew_user'
 
+        # Initialize execution memory
+        self.execution_memory = ExecutionMemory(
+            original_query=initial_task,
+            embedding_model=self.embedding_model if self.enable_analysis else None,
+            dimension=getattr(self, 'dimension', 384),
+            index_type=getattr(self, 'index_type', 'Flat')
+        )
+        # Set execution order for loop mode (agents in sequence, repeated per iteration)
+        self.execution_memory.execution_order = [
+            agent_id for agent_id in agent_sequence
+            if agent_id in self.agents
+        ]
+
         self.execution_log = []
         overall_start = asyncio.get_event_loop().time()
 
@@ -1207,7 +1329,11 @@ Current task: {current_input}"""
                 user_id=user_id,
                 session_id=session_id,
                 original_query=initial_task,
-                shared_data={**kwargs, 'shared_state': shared_state},
+                shared_data={
+                    **kwargs,
+                    'shared_state': shared_state,
+                    'execution_memory': self.execution_memory,
+                },
                 agent_results={}
             )
 
@@ -1248,6 +1374,29 @@ Current task: {current_input}"""
                     results.append(error_message)
                     agent_ids.append(execution_id)
                     errors[execution_id] = error_message
+
+                    # Save failed execution to memory
+                    agent_result = AgentResult(
+                        agent_id=execution_id,
+                        agent_name=agent_id,
+                        task=current_input,
+                        result=error_message,
+                        metadata={
+                            'success': False,
+                            'error': error_message,
+                            'mode': 'loop',
+                            'iteration': iterations_run,
+                            'user_id': user_id,
+                            'session_id': session_id,
+                            'agent_position': agent_position
+                        },
+                        execution_time=0.0
+                    )
+                    self.execution_memory.add_result(
+                        agent_result,
+                        vectorize=False
+                    )
+
                     failure_count += 1
                     continue
 
@@ -1323,6 +1472,30 @@ Current task: {current_input}"""
                         'agent_id': agent_id,
                         'output': result,
                     })
+
+                    # Save successful execution to memory
+                    agent_result = AgentResult(
+                        agent_id=execution_id,
+                        agent_name=agent.name,
+                        task=agent_input,
+                        result=result,
+                        metadata={
+                            'success': True,
+                            'mode': 'loop',
+                            'iteration': iterations_run,
+                            'user_id': user_id,
+                            'session_id': session_id,
+                            'agent_position': agent_position,
+                            'result_type': type(result).__name__
+                        },
+                        execution_time=execution_time
+                    )
+                    # Vectorize only if analysis enabled
+                    self.execution_memory.add_result(
+                        agent_result,
+                        vectorize=True
+                    )
+
                     success_count += 1
                 except Exception as exc:
                     execution_id = f"{agent_id}#iteration{iterations_run}"
@@ -1354,6 +1527,29 @@ Current task: {current_input}"""
                     results.append(error_msg)
                     agent_ids.append(execution_id)
                     errors[execution_id] = str(exc)
+
+                    # Save failed execution to memory
+                    agent_result = AgentResult(
+                        agent_id=execution_id,
+                        agent_name=agent.name,
+                        task=agent_input,
+                        result=error_msg,
+                        metadata={
+                            'success': False,
+                            'error': str(exc),
+                            'mode': 'loop',
+                            'iteration': iterations_run,
+                            'user_id': user_id,
+                            'session_id': session_id,
+                            'agent_position': agent_position
+                        },
+                        execution_time=0.0
+                    )
+                    self.execution_memory.add_result(
+                        agent_result,
+                        vectorize=False
+                    )
+
                     failure_count += 1
                     iteration_success = False
                     current_input = error_msg
@@ -1749,8 +1945,27 @@ Current task: {current_input}"""
             ValueError: If no initial agent is found (no workflow defined)
             RuntimeError: If workflow gets stuck or exceeds max_iterations
         """
+        # Setup session identifiers
+        session_id = session_id or str(uuid.uuid4())
+        user_id = user_id or 'crew_user'
+
+        # Initialize execution memory
+        self.execution_memory = ExecutionMemory(
+            original_query=initial_task,
+            embedding_model=self.embedding_model if self.enable_analysis else None,
+            dimension=getattr(self, 'dimension', 384),
+            index_type=getattr(self, 'index_type', 'Flat')
+        )
+        # Set execution order for flow mode (will be updated as agents complete)
+        self.execution_memory.execution_order = []
+
         # Initialize execution context to track the workflow state
         context = FlowContext(initial_task=initial_task)
+        # Store execution metadata in context for use in _execute_parallel_agents
+        context.execution_memory = self.execution_memory
+        context.user_id = user_id
+        context.session_id = session_id
+
         self.execution_log = []
         start_time = asyncio.get_event_loop().time()
 
