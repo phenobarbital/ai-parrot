@@ -1605,12 +1605,13 @@ Current task: {current_input}"""
                 extracted_result = self._extract_result(result)
                 parallel_results[agent_id] = extracted_result
                 crew_context.agent_results[agent_id] = extracted_result
+                _query = metadata['query']
 
                 # Save successful execution to memory
                 agent_result = AgentResult(
                     agent_id=agent_id,
                     agent_name=agent_name,
-                    task=metadata['query'],
+                    task=_query,
                     result=extracted_result,
                     metadata={
                         'success': True,
