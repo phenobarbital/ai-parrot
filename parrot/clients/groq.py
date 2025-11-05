@@ -266,11 +266,12 @@ class GroqClient(AbstractClient):
             "stream": False
         }
 
-        # Add tools if available and not conflicting with structured output
         if use_tools and not use_structured_output:
             request_args["tool_choice"] = "auto"
+            request_args["tools"] = tools or []
             # Enable parallel tool calls for supported models
-            if model != GroqModel.GEMMA2_9B_IT:
+            if model != getattr(GroqModel, "GEMMA2_9B_IT", None) and \
+               model != getattr(GroqModel, "GEMMA2_9B_IT", "google/gemma-2-9b-it"):
                 request_args["parallel_tool_calls"] = True
         elif use_code_interpreter:
             if model in ("openai/gpt-oss-20b", "openai/gpt-oss-120b"):

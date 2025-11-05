@@ -673,16 +673,6 @@ class AgentCrew:
         """
         await self._ensure_agent_ready(agent)
         async with self.semaphore:
-            if hasattr(agent, 'conversation'):
-                return await agent.conversation(
-                    question=query,
-                    session_id=f"{session_id}_agent_{index}",
-                    user_id=user_id,
-                    use_conversation_history=True,
-                    model=model,
-                    max_tokens=max_tokens,
-                    **context.shared_data
-                )
             if hasattr(agent, 'ask'):
                 return await agent.ask(
                     question=query,
@@ -693,7 +683,17 @@ class AgentCrew:
                     max_tokens=max_tokens,
                     **context.shared_data
                 )
-            elif hasattr(agent, 'invoke'):
+            if hasattr(agent, 'conversation'):
+                return await agent.conversation(
+                    question=query,
+                    session_id=f"{session_id}_agent_{index}",
+                    user_id=user_id,
+                    use_conversation_history=True,
+                    model=model,
+                    max_tokens=max_tokens,
+                    **context.shared_data
+                )
+            if hasattr(agent, 'invoke'):
                 return await agent.invoke(
                     question=query,
                     session_id=f"{session_id}_agent_{index}",
