@@ -156,6 +156,7 @@ vectors = [
     "simsimd>=4.3.1",
     "opencv-python==4.10.0.84",
     "chromadb==0.6.3",
+    "bm25s[full]==0.2.14",
 ]
 
 images = [

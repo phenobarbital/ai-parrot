@@ -14,16 +14,17 @@ This implementation uses a graph-based approach for flexibility with dynamic wor
 """
 from __future__ import annotations
 from typing import (
-    List, Dict, Any, Union, Optional, Literal, Set, Callable, Awaitable
+    List, Dict, Any, Union, Optional, Literal, Set, Callable, Awaitable, Tuple
 )
 from enum import Enum
 from dataclasses import dataclass, field
+from datetime import datetime
 import contextlib
 import asyncio
 import uuid
+from tqdm.asyncio import tqdm as async_tqdm
 from navconfig.logging import logging
 from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611 # noqa
-from faiss import IndexFlatL2
 from ..agent import BasicAgent
 from ..abstract import AbstractBot
 from ...clients import SUPPORTED_CLIENTS, AbstractClient
@@ -199,6 +200,7 @@ class AgentNode:
             end_time = asyncio.get_event_loop().time()
             execution_time = end_time - start_time
             # Build agent metadata for failed execution
+            # TODO: Save the error of execution
             agent_info = build_agent_metadata(
                 agent_id=self.agent.name,
                 agent=self.agent,
@@ -264,6 +266,7 @@ class AgentCrew:
         enable_analysis: bool = False,
         dimension: int = 384,  # NEW
         index_type: str = "Flat",  # NEW: "Flat", "FlatIP", o "HNSW"
+        **kwargs
     ):
         """
         Initialize the AgentCrew.
@@ -300,6 +303,7 @@ class AgentCrew:
         self.workflow_graph: Dict[str, AgentNode] = {}
         self.initial_agent: Optional[str] = None
         self.final_agents: Set[str] = set()
+        self.use_tqdm: bool = kwargs.get('use_tqdm', True)
         # Internal tracking of per-agent initialization guards
         self._agent_locks: Dict[int, asyncio.Lock] = {}
         # Execution Memory:
@@ -310,11 +314,44 @@ class AgentCrew:
             dimension=dimension,
             index_type=index_type
         )
+        self._summary = None
+        self.last_crew_result: Optional[CrewResult] = None
         # Add agents if provided
         if agents:
             for agent in agents:
                 self.add_agent(agent)
                 self.workflow_graph[agent.name] = AgentNode(agent)
+
+    def _register_agents_as_tools(self):
+        """
+        Register each agent as a tool in the LLM's tool manager.
+        """
+        if not self._llm:
+            return
+
+        for agent_id, agent in self.agents.items():
+            try:
+                agent_tool = agent.as_tool(
+                    tool_name=f"agent_{agent_id}",
+                    tool_description=(
+                        f"Agent {agent.name}: {agent.description} "
+                        f"Re-execute to gather additional information. "
+                        f"Use when the user needs more details or updated data from this agent."
+                    ),
+                    use_conversation_method=False  # no conversation history
+                )
+
+                # Add to LLM's tool manager
+                if hasattr(self._llm, 'tool_manager'):
+                    self._llm.tool_manager.add_tool(agent_tool)
+
+                self.logger.debug(
+                    f"Registered {agent.name} as tool 'agent_{agent_id}' in LLM orchestrator"
+                )
+            except Exception as e:
+                self.logger.warning(
+                    f"Failed to register {agent.name} as tool: {e}"
+                )
 
     def add_agent(self, agent: Union[BasicAgent, AbstractBot], agent_id: str = None) -> None:
         """Add an agent to the crew."""
@@ -340,11 +377,19 @@ class AgentCrew:
         self.tools.append(agent_tool)
         self.logger.info(f"Added agent '{agent_id}' to crew")
 
+        # Register as tool in LLM orchestrator (if exists)
+        if self._llm:
+            self._register_agents_as_tools()
+
+        self.logger.info(f"Added agent '{agent_id}' to crew")
+
     def remove_agent(self, agent_id: str) -> bool:
         """Remove an agent from the crew."""
         if agent_id in self.agents:
             del self.agents[agent_id]
-            self.logger.info(f"Removed agent '{agent_id}' from crew")
+            self.logger.info(
+                f"Removed agent '{agent_id}' from crew"
+            )
             return True
         return False
 
@@ -461,7 +506,9 @@ class AgentCrew:
             # get readiness of agent in AgentNode:
             agent = node.agent
             if agent_name not in self.agents:
-                self.logger.warning(f"Agent '{agent_name}' not found in crew, skipping")
+                self.logger.warning(
+                    f"Agent '{agent_name}' not found in crew, skipping"
+                )
                 continue
             await self._ensure_agent_ready(agent)
             # Double-check dependencies are satisfied (defensive programming)
@@ -819,6 +866,7 @@ class AgentCrew:
                     temperature=temperature,
                     user_id=user_id,
                     session_id=f"{session_id}_loop_condition",
+                    use_conversation_history=False
                 )
         except Exception as exc:
             self.logger.error(
@@ -900,6 +948,7 @@ class AgentCrew:
                     temperature=temperature,
                     user_id=user_id or 'crew_user',
                     session_id=session_id or str(uuid.uuid4()),
+                    use_conversation_history=False,
                     **kwargs
                 )
 
@@ -946,7 +995,6 @@ class AgentCrew:
         session_id: str = None,
         pass_full_context: bool = True,
         synthesis_prompt: Optional[str] = None,
-        generate_summary: bool = True,
         max_tokens: int = 4096,
         temperature: float = 0.1,
         model: Optional[str] = 'gemini-2.5-pro',
@@ -1221,7 +1269,6 @@ Current task: {current_input}"""
         user_id: str = None,
         session_id: str = None,
         pass_full_context: bool = True,
-        generate_summary: bool = True,
         synthesis_prompt: Optional[str] = None,
         max_tokens: int = 4096,
         temperature: float = 0.1,
@@ -1337,9 +1384,7 @@ Current task: {current_input}"""
                 agent_results={}
             )
 
-            iteration_start = asyncio.get_event_loop().time()
             iteration_success = True
-
             for agent_position, agent_id in enumerate(agent_sequence):
                 if agent_id not in self.agents:
                     self.logger.warning(
@@ -1556,8 +1601,6 @@ Current task: {current_input}"""
 
             shared_state['last_output'] = current_input
             shared_state['iteration_outputs'].append(current_input)
-            iteration_end = asyncio.get_event_loop().time()
-
             if condition:
                 condition_met = await self._evaluate_loop_condition(
                     condition=condition,
@@ -1889,7 +1932,6 @@ Current task: {current_input}"""
         initial_task: str,
         max_iterations: int = 100,
         on_agent_complete: Optional[Callable] = None,
-        generate_summary: bool = True,
         synthesis_prompt: Optional[str] = None,
         user_id: str = None,
         session_id: str = None,
@@ -2337,12 +2379,951 @@ Create a clear, well-structured response."""
         self.execution_memory.clear()
         # self.faiss_store.clear()
         if not keep_summary:
-            self.summary = None
+            self._summary = None
 
     def get_memory_snapshot(self) -> Dict:
         """Retorna estado completo del memory para inspección"""
         return {
             "results": self.execution_memory.results,
-            "summary": self.summary,
+            "summary": self._summary,
             "execution_order": self.execution_memory.execution_order
         }
+
+    def _build_ask_context(
+        self,
+        semantic_results: List[Tuple[str, AgentResult, float]],
+        textual_context: Dict[str, Any],
+        question: str
+    ) -> Dict[str, Any]:
+        """
+        Construye el contexto combinado para el LLM principal.
+
+        Integra resultados de búsqueda semántica (FAISS), contexto textual
+        del CrewResult, información de agentes disponibles, y metadata de ejecución.
+        """
+        context = {
+            'question': question,
+            'semantic_matches': [],
+            'crew_summary': {},
+            'agents_available': [],
+            'execution_metadata': {}
+        }
+
+        # 1. Procesar resultados semánticos de FAISS
+        seen_agents = set()
+        for chunk_text, agent_result, score in semantic_results:
+            if agent_result.agent_id not in seen_agents:
+                context['semantic_matches'].append({
+                    'agent_id': agent_result.agent_id,
+                    'agent_name': agent_result.agent_name,
+                    'relevant_content': chunk_text,
+                    'similarity_score': round(score, 3),
+                    'task_executed': agent_result.task,
+                    'execution_time': agent_result.execution_time
+                })
+                seen_agents.add(agent_result.agent_id)
+
+        # 2. Agregar contexto del CrewResult
+        if textual_context:
+            context['crew_summary'] = {
+                'final_output': textual_context.get('final_output', ''),
+                'relevant_logs': textual_context.get('relevant_logs', []),
+                'relevant_agents': [
+                    {
+                        'agent_id': info.agent_id,
+                        'agent_name': info.agent_name,
+                        'status': info.status,
+                        'execution_time': info.execution_time
+                    }
+                    for info in textual_context.get('relevant_agents', [])
+                ]
+            }
+
+        # 3. Listar agentes disponibles para re-ejecución
+        context['agents_available'] = [
+            {
+                'agent_id': agent_id,
+                'agent_name': agent.name,
+                'tool_name': f"agent_{agent_id}",
+                'previous_result': (
+                    self.execution_memory.get_results_by_agent(agent_id).result
+                    if self.execution_memory.get_results_by_agent(agent_id)
+                    else None
+                )
+            }
+            for agent_id, agent in self.agents.items()
+        ]
+
+        # 4. Metadata de ejecución
+        if self.last_crew_result:
+            context['execution_metadata'] = {
+                'total_agents': len(self.agents),
+                'execution_mode': self.last_crew_result.metadata.get('mode', 'unknown'),
+                'total_time': self.last_crew_result.total_time,
+                'status': self.last_crew_result.status,
+                'completed_agents': len([
+                    a for a in self.last_crew_result.agents if a.status == 'completed'
+                ]),
+                'failed_agents': len([
+                    a for a in self.last_crew_result.agents if a.status == 'failed'
+                ])
+            }
+
+        return context
+
+    def _build_ask_system_prompt(self, enable_reexecution: bool = True) -> str:
+        """Construye el system prompt para el LLM principal en ask()."""
+        base_prompt = f"""You are an intelligent orchestrator for the AgentCrew named "{self.name}".
+
+Your role is to answer questions about the execution results from a team of specialized agents.
+You have access to:
+
+1. **Execution History**: Detailed results from each agent's previous execution
+2. **Semantic Search**: Relevant content chunks from agent outputs based on similarity
+3. **Crew Metadata**: Execution times, status, and workflow information
+
+**IMPORTANT GUIDELINES:**
+
+1. **Answer directly**: Use the provided context to answer the user's question accurately
+2. **Cite sources**: Reference which agent(s) provided the information
+3. **Be precise**: If information is not in the results, clearly state so
+4. **Synthesize**: Combine information from multiple agents when relevant
+"""
+
+        if enable_reexecution:
+            base_prompt += """
+5. **Re-execute when needed**: If the user asks for MORE information or the existing results
+   are insufficient, you can call the agent tools to get fresh data. When re-executing:
+   - Use the tool named "agent_<agent_id>" to re-execute that specific agent
+   - Pass a clear, focused query that addresses what information is missing
+   - The agent will receive: original query + their previous result + your new question
+   - Re-executed results REPLACE previous results in the execution memory
+
+**Available Agent Tools:**
+You have access to tools for each agent in the crew. Use them strategically when:
+- User explicitly asks for "more information" or "additional details"
+- Current results don't answer the question completely
+- User wants to explore a new angle not covered in original execution
+
+**Tool Usage Pattern:**
+```
+Call: agent_<agent_id>(query="Specific question for this agent")
+```
+
+The agent will provide updated information that supersedes their previous result.
+"""
+        else:
+            base_prompt += """
+5. **No re-execution**: You can only answer based on existing results.
+   If information is missing, inform the user they need to run the crew again.
+"""
+
+        base_prompt += """
+**Response Format:**
+- Start with a direct answer to the user's question
+- Reference agent sources: "According to [Agent Name]..." or "[Agent Name] found that..."
+- Use markdown for readability (headers, lists, bold for key points)
+- If re-executing agents, explain what new information you're gathering
+
+Remember: You're a knowledge orchestrator, not just a data retriever. Synthesize,
+analyze, and present information in the most helpful way for the user.
+"""
+
+        return base_prompt.strip()
+
+    def _build_ask_user_prompt(self, question: str, context: Dict[str, Any]) -> str:
+        """Construye el user prompt con la pregunta y contexto recuperado."""
+        prompt_parts = [
+            "# User Question",
+            f"{question}",
+            "",
+            "---",
+            ""
+        ]
+
+        # 1. Resultados semánticos (más importantes primero)
+        if context.get('semantic_matches'):
+            prompt_parts.extend([
+                "# Relevant Information from Agents (Semantic Search)",
+                ""
+            ])
+
+            for i, match in enumerate(context['semantic_matches'], 1):
+                prompt_parts.extend([
+                    f"## Match {i}: {match['agent_name']} (Similarity: {match['similarity_score']})",
+                    f"**Task Executed**: {match['task_executed']}",
+                    f"**Execution Time**: {match['execution_time']:.2f}s",
+                    "",
+                    "**Relevant Content**:",
+                    f"```",
+                    match['relevant_content'],
+                    "```",
+                    ""
+                ])
+        else:
+            prompt_parts.extend([
+                "# Relevant Information from Agents",
+                "*No semantically similar content found. Answering based on crew summary.*",
+                ""
+            ])
+
+        # 2. Resumen del crew (si existe)
+        crew_summary = context.get('crew_summary', {})
+        if crew_summary.get('final_output'):
+            prompt_parts.extend([
+                "---",
+                "",
+                "# Final Crew Output",
+                crew_summary['final_output'],
+                ""
+            ])
+
+        if crew_summary.get('relevant_agents'):
+            prompt_parts.extend([
+                "## Agents Involved",
+                ""
+            ])
+            prompt_parts.extend(
+                f"- **{agent_info['agent_name']}** ({agent_info['status']}, {agent_info['execution_time']:.2f}s)"
+                for agent_info in crew_summary['relevant_agents']
+            )
+            prompt_parts.append("")
+
+        # 3. Metadata de ejecución
+        if exec_meta := context.get('execution_metadata', {}):
+            prompt_parts.extend([
+                "---",
+                "",
+                "# Execution Metadata",
+                f"- **Mode**: {exec_meta.get('execution_mode', 'unknown')}",
+                f"- **Total Agents**: {exec_meta.get('total_agents', 0)}",
+                f"- **Completed**: {exec_meta.get('completed_agents', 0)}",
+                f"- **Failed**: {exec_meta.get('failed_agents', 0)}",
+                f"- **Total Time**: {exec_meta.get('total_time', 0):.2f}s",
+                f"- **Status**: {exec_meta.get('status', 'unknown')}",
+                ""
+            ])
+
+        # 4. Agentes disponibles para re-ejecución
+        if agents_available := context.get('agents_available', []):
+            prompt_parts.extend([
+                "---",
+                "",
+                "# Available Agents for Re-execution",
+                ""
+            ])
+            for agent_info in agents_available:
+                has_result = agent_info['previous_result'] is not None
+                status_emoji = "✅" if has_result else "⚠️"
+
+                prompt_parts.append(
+                    f"{status_emoji} **{agent_info['agent_name']}** "
+                    f"(tool: `{agent_info['tool_name']}`)"
+                )
+
+                if has_result:
+                    # Truncar resultado previo
+                    prev_result = str(agent_info['previous_result'])
+                    if len(prev_result) > 200:
+                        prev_result = f"{prev_result[:200]}..."
+                    prompt_parts.append(f"  - Previous result: {prev_result}")
+                else:
+                    prompt_parts.append("  - No previous execution")
+
+            prompt_parts.append("")
+
+        # 5. Instrucciones finales
+        prompt_parts.extend([
+            "---",
+            "",
+            "**Instructions**: Based on the information above, answer the user's question. ",
+            "If you need additional information and agent re-execution is enabled, ",
+            "call the appropriate agent tools with specific queries.",
+            ""
+        ])
+
+        return "\n".join(prompt_parts)
+
+    def _textual_search(
+        self,
+        query: str,
+        crew_result: Optional[CrewResult] = None
+    ) -> Dict[str, Any]:
+        """Búsqueda textual básica en el CrewResult usando keywords."""
+        if crew_result is None:
+            crew_result = self.last_crew_result
+
+        if not crew_result:
+            return {}
+
+        # Extraer keywords simples (minúsculas, sin stopwords comunes)
+        stopwords = {
+            'el', 'la', 'de', 'que', 'en', 'y', 'a', 'los', 'las',
+            'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for'
+        }
+
+        keywords = [
+            word.lower()
+            for word in query.split()
+            if len(word) > 2 and word.lower() not in stopwords
+        ]
+
+        if not keywords:
+            keywords = [query.lower()]
+
+        context = {
+            'final_output': crew_result.output,
+            'relevant_logs': [],
+            'relevant_agents': []
+        }
+
+        # Buscar en execution_log
+        for log_entry in crew_result.execution_log:
+            log_text = json_encoder(log_entry).lower()
+
+            # Si encuentra al menos 2 keywords o 1 keyword en logs cortos
+            matches = sum(kw in log_text for kw in keywords)
+            if matches >= 2 or (matches >= 1 and len(log_entry) < 500):
+                context['relevant_logs'].append(log_entry)
+
+        # Limitar logs relevantes a los más importantes
+        context['relevant_logs'] = context['relevant_logs'][:5]
+
+        # Buscar en agent metadata
+        for agent_info in crew_result.agents:
+            agent_text = f"{agent_info.agent_name} {agent_info.agent_id}".lower()
+
+            if any(kw in agent_text for kw in keywords):
+                context['relevant_agents'].append(agent_info)
+
+        return context
+
+    async def ask(
+        self,
+        question: str,
+        *,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        top_k: int = 5,
+        score_threshold: float = 0.7,
+        enable_agent_reexecution: bool = True,
+        max_tokens: Optional[int] = None,
+        temperature: Optional[float] = None,
+        **llm_kwargs
+    ) -> AIMessage:
+        """
+        Interactive execution query against the crew's execution memory.
+
+        This method allows users to ask questions about the results of previous
+        agent executions. It combines semantic search over the execution memory
+        with textual search in the last CrewResult to build a context for the LLM.
+        The LLM then generates a response based on this context.
+
+        Args:
+            question: User question about the results
+            user_id: User identification (optional)
+            session_id: Session identifier (optional)
+            top_k: number of top semantic results to retrieve
+            score_threshold: Score for semantic results
+            enable_agent_reexecution: Allow re-executing agents via tools
+            max_tokens: Maximum tokens for LLM response
+            temperature: LLM Temperature
+            **llm_kwargs: Additional arguments for LLM
+
+        Returns:
+            AIMessage: response of LLM.
+
+        Raises:
+            ValueError: Error if LLM is not configured or not results.
+
+        Example:
+            >>> crew = AgentCrew(agents=[...], llm=GoogleGenAIClient())
+            >>> await crew.run_parallel(...)
+            >>> response = await crew.ask("What found the Research Agent?")
+            >>> print(response.content)
+        """
+        # 1. Validaciones
+        if not self._llm:
+            raise ValueError(
+                "No LLM configured for ask(). "
+                "Pass llm parameter to AgentCrew constructor."
+            )
+
+        if not self.execution_memory.results:
+            raise ValueError(
+                "No execution results available. Run crew first using "
+                "run_sequential(), run_parallel(), run_flow(), or run_loop()."
+            )
+
+        self.logger.info(
+            f"Processing ask() query: {question[:100]}..."
+        )
+        start_time = asyncio.get_event_loop().time()
+
+        # 2. Búsqueda semántica en FAISS (ExecutionMemory)
+        self.logger.debug(
+            f"Performing semantic search with top_k={top_k}"
+        )
+        semantic_results = self.execution_memory.search_similar(
+            query=question,
+            top_k=top_k
+        )
+
+        # Filtrar por score_threshold
+        semantic_results = [
+            (chunk, result, score)
+            for chunk, result, score in semantic_results
+            if score >= score_threshold
+        ]
+
+        self.logger.info(
+            f"Found {len(semantic_results)} semantic matches above threshold {score_threshold}"
+        )
+
+        # 3. Búsqueda textual en CrewResult
+        textual_context = self._textual_search(
+            query=question,
+            crew_result=self.last_crew_result
+        )
+
+        # 4. Construir contexto combinado
+        context = self._build_ask_context(
+            semantic_results=semantic_results,
+            textual_context=textual_context,
+            question=question
+        )
+
+        # 5. Construir prompts
+        system_prompt = self._build_ask_system_prompt(
+            enable_reexecution=enable_agent_reexecution
+        )
+
+        user_prompt = self._build_ask_user_prompt(
+            question=question,
+            context=context
+        )
+
+        # 6. Ejecutar LLM principal
+        session_id = session_id or str(uuid.uuid4())
+        user_id = user_id or 'crew_ask_user'
+
+        self.logger.info(
+            f"Calling LLM orchestrator (tools_enabled={enable_agent_reexecution})"
+        )
+
+        async with self._llm as client:
+            response = await client.ask(
+                question=user_prompt,
+                system_prompt=system_prompt,
+                use_tools=enable_agent_reexecution,
+                use_conversation_history=False,
+                max_tokens=max_tokens or 4096,
+                temperature=temperature or 0.2,
+                user_id=user_id,
+                session_id=f"{session_id}_ask",
+                **llm_kwargs
+            )
+
+        # 7. Agregar metadata a la respuesta
+        end_time = asyncio.get_event_loop().time()
+
+        if not hasattr(response, 'metadata'):
+            response.metadata = {}
+
+        response.metadata.update(
+            {
+                'ask_execution_time': end_time - start_time,
+                'semantic_results_count': len(semantic_results),
+                'semantic_results': [
+                    {
+                        'agent_id': result.agent_id,
+                        'agent_name': result.agent_name,
+                        'score': float(score),
+                    }
+                    for _, result, score in semantic_results
+                ],
+                'agents_consulted': list(
+                    {result.agent_id for _, result, _ in semantic_results}
+                ),
+                'textual_context_used': bool(textual_context.get('relevant_logs')),
+                'reexecution_enabled': enable_agent_reexecution,
+                'crew_name': self.name,
+            }
+        )
+
+        # Detectar si hubo re-ejecuciones (tool calls)
+        if hasattr(response, 'tool_calls') and response.tool_calls:
+            reexecuted_agents = []
+            for call in response.tool_calls:
+                tool_name = call.get('name', '') if isinstance(call, dict) else getattr(call, 'name', '')  # noqa
+                if tool_name.startswith('agent_'):
+                    agent_id = tool_name.replace('agent_', '')
+                    reexecuted_agents.append(agent_id)
+
+            if reexecuted_agents:
+                response.metadata['agents_reexecuted'] = reexecuted_agents
+                self.logger.info(
+                    f"Agents re-executed during ask(): {reexecuted_agents}"
+                )
+
+        self.logger.info(
+            f"ask() completed in {end_time - start_time:.2f}s"
+        )
+
+        return response
+
+    # =================== SUMMARY() SYSTEM METHODS ===================
+    def _chunk_results_adaptive(
+        self,
+        max_tokens_per_chunk: int = 4000
+    ) -> List[List[AgentResult]]:
+        """
+        Divide resultados en chunks adaptativos respetando execution_order.
+
+        Estrategia:
+        - Respetar orden de ejecución estrictamente
+        - Estimar tokens por resultado (~4 chars = 1 token)
+        - Agrupar hasta max_tokens_per_chunk
+        - Omitir resultados con errores
+
+        Args:
+            max_tokens_per_chunk: Máximo de tokens por chunk
+
+        Returns:
+            Lista de chunks, cada chunk es lista de AgentResult
+        """
+        chunks = []
+        current_chunk = []
+        current_tokens = 0
+
+        # Iterar en orden de ejecución
+        for agent_id in self.execution_memory.execution_order:
+            result = self.execution_memory.get_results_by_agent(agent_id)
+
+            if not result:
+                continue
+
+            # Omitir resultados con errores
+            if hasattr(result, 'metadata') and result.metadata.get('status') == 'failed':
+                self.logger.debug(f"Skipping failed agent: {agent_id}")
+                continue
+
+            # Estimar tokens (método simple: ~4 chars = 1 token)
+            result_text = result.to_text()
+            estimated_tokens = len(result_text) // 4
+
+            # Si agregar este resultado excede el límite y ya hay resultados en el chunk
+            if current_tokens + estimated_tokens > max_tokens_per_chunk and current_chunk:
+                chunks.append(current_chunk)
+                current_chunk = [result]
+                current_tokens = estimated_tokens
+            else:
+                current_chunk.append(result)
+                current_tokens += estimated_tokens
+
+        # Agregar último chunk si no está vacío
+        if current_chunk:
+            chunks.append(current_chunk)
+
+        return chunks
+
+    def _format_result_for_report(
+        self,
+        result: AgentResult,
+        include_metadata: bool = False
+    ) -> str:
+        """
+        Formatea un AgentResult como markdown para el reporte.
+
+        Args:
+            result: AgentResult a formatear
+            include_metadata: Si incluir metadata (tiempo, status, etc.)
+
+        Returns:
+            String markdown formateado
+        """
+        parts = [
+            f"## {result.agent_name}",
+            "",
+            f"**Task**: {result.task}",
+            ""
+        ]
+
+        if include_metadata:
+            parts.extend([
+                f"**Execution Time**: {result.execution_time:.2f}s",
+                f"**Timestamp**: {result.timestamp.isoformat()}",
+                ""
+            ])
+
+        # Formatear resultado
+        result_content = str(result.result)
+
+        # Si es muy largo, agregar en bloque de código
+        if len(result_content) > 500:
+            parts.extend([
+                "**Result**:",
+                "```",
+                result_content,
+                "```"
+            ])
+        else:
+            parts.extend([
+                "**Result**:",
+                result_content
+            ])
+
+        parts.append("")  # Línea en blanco al final
+
+        return "\n".join(parts)
+
+    def _generate_full_report(self) -> str:
+        """
+        Genera reporte completo concatenando todos los resultados.
+
+        No usa LLM, simplemente formatea y concatena en orden.
+        Omite agentes con errores.
+
+        Returns:
+            String markdown con reporte completo
+        """
+        self.logger.info("Generating full report (no LLM)...")
+
+        report_parts = [
+            f"# {self.name} - Full Execution Report",
+            "",
+            f"**Generated**: {datetime.now().isoformat()}",
+            ""
+        ]
+
+        # Agregar metadata del último crew result si existe
+        if self.last_crew_result:
+            report_parts.extend([
+                "## Execution Summary",
+                "",
+                f"- **Mode**: {self.last_crew_result.metadata.get('mode', 'unknown')}",
+                f"- **Total Agents**: {len(self.agents)}",
+                f"- **Status**: {self.last_crew_result.status}",
+                f"- **Total Time**: {self.last_crew_result.total_time:.2f}s",
+                "",
+                "---",
+                ""
+            ])
+
+        report_parts.extend(("## Agent Results", ""))
+        results_added = 0
+        for agent_id in self.execution_memory.execution_order:
+            result = self.execution_memory.get_results_by_agent(agent_id)
+
+            if not result:
+                continue
+
+            # Omitir errores
+            if hasattr(result, 'metadata') and result.metadata.get('status') == 'failed':
+                continue
+
+            formatted = self._format_result_for_report(result, include_metadata=False)
+            report_parts.append(formatted)
+            report_parts.append("---")
+            report_parts.append("")
+            results_added += 1
+
+        self.logger.info(f"Full report generated with {results_added} agent results")
+
+        return "\n".join(report_parts)
+
+    async def _generate_executive_summary(
+        self,
+        summary_prompt: Optional[str] = None,
+        max_tokens_per_chunk: int = 4000,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        **llm_kwargs
+    ) -> str:
+        """
+        Genera executive summary usando LLM iterativo con chunks.
+
+        Proceso:
+        1. Dividir resultados en chunks
+        2. Para cada chunk: LLM genera mini-summary
+        3. Final pass: LLM combina mini-summaries en executive summary
+
+        Garantiza completitud sin truncamiento por max_tokens.
+
+        Args:
+            summary_prompt: Prompt personalizado (usa default si None)
+            max_tokens_per_chunk: Tokens máximos por chunk
+            user_id: User ID
+            session_id: Session ID
+
+        Returns:
+            String markdown con executive summary
+        """
+        if not self._llm:
+            raise ValueError(
+                "No LLM configured. Pass llm parameter to AgentCrew constructor."
+            )
+
+        self.logger.info("Generating executive summary with iterative LLM...")
+
+        # Default summary prompt
+        if not summary_prompt:
+            summary_prompt = """Based on the research findings from our specialist agents above,
+provide a comprehensive synthesis that:
+1. Integrates all the key findings
+2. Highlights the most important insights
+3. Identifies any patterns or contradictions
+4. Provides actionable conclusions
+
+Create a clear, well-structured response."""
+
+        # 1. Dividir en chunks
+        chunks = self._chunk_results_adaptive(max_tokens_per_chunk)
+
+        if not chunks:
+            return "No results available to summarize."
+
+        self.logger.info(
+            f"Processing {len(chunks)} chunks for executive summary"
+        )
+
+        # 2. Procesar cada chunk con progress feedback
+        mini_summaries = []
+        session_id = session_id or str(uuid.uuid4())
+        user_id = user_id or 'crew_summary_user'
+        # Progress tracking
+        if self.use_tqdm:
+            chunk_iterator = async_tqdm(
+                enumerate(chunks, 1),
+                total=len(chunks),
+                desc="Summarizing chunks"
+            )
+        else:
+            chunk_iterator = enumerate(chunks, 1)
+        for chunk_idx, chunk in chunk_iterator:
+            if not self.use_tqdm:
+                self.logger.info(f"Processing chunk {chunk_idx}/{len(chunks)}...")
+
+            # Construir contexto del chunk
+            chunk_context_parts = [
+                f"# Chunk {chunk_idx} of {len(chunks)} - Agent Results",
+                ""
+            ]
+
+            for result in chunk:
+                formatted = self._format_result_for_report(
+                    result,
+                    include_metadata=False
+                )
+                chunk_context_parts.append(formatted)
+
+            chunk_context = "\n".join(chunk_context_parts)
+
+            # Prompt para mini-summary
+            chunk_prompt = f"""{chunk_context}
+---
+**Task**: Provide a concise summary of the key findings from these agents.
+Focus on main insights and important information. This summary will be combined
+with other summaries to create a final executive summary.
+
+Keep your summary clear, structured, and focused on the most valuable information."""
+
+            # Llamar LLM
+            async with self._llm as client:
+                try:
+                    response = await client.ask(
+                        question=chunk_prompt,
+                        use_conversation_history=False,
+                        max_tokens=4096,
+                        temperature=0.3,
+                        user_id=user_id,
+                        session_id=f"{session_id}_chunk_{chunk_idx}",
+                        **llm_kwargs
+                    )
+                    mini_summaries.append({
+                        'chunk_idx': chunk_idx,
+                        'summary': response.content,
+                        'agents': [r.agent_name for r in chunk]
+                    })
+                except Exception as e:
+                    self.logger.error(f"Error processing chunk {chunk_idx}: {e}")
+                    # Agregar placeholder
+                    mini_summaries.append({
+                        'chunk_idx': chunk_idx,
+                        'summary': f"[Error processing chunk {chunk_idx}]",
+                        'agents': [r.agent_name for r in chunk]
+                    })
+
+        # 3. Final pass: Combinar mini-summaries
+        self.logger.info("Generating final executive summary...")
+
+        final_context_parts = [
+            f"# {self.name} - Agent Summaries to Synthesize",
+            ""
+        ]
+
+        for mini in mini_summaries:
+            final_context_parts.extend([
+                f"## Summary Part {mini['chunk_idx']}",
+                f"*Agents: {', '.join(mini['agents'])}*",
+                "",
+                mini['summary'],
+                "",
+                "---",
+                ""
+            ])
+
+        final_context = "\n".join(final_context_parts)
+
+        # Final synthesis prompt
+        final_prompt = f"""{final_context}
+
+---
+
+{summary_prompt}
+
+**Important**: Create a cohesive executive summary that synthesizes ALL the information
+above. Ensure the summary:
+- Is well-structured with clear sections
+- Integrates findings from all agent summaries
+- Highlights the most critical insights
+- Provides actionable recommendations
+- Maintains a professional, executive-level tone"""
+
+        # Final LLM call
+        async with self._llm as client:
+            final_response = await client.ask(
+                question=final_prompt,
+                use_conversation_history=False,
+                max_tokens=llm_kwargs.get('max_tokens', 4096),
+                temperature=0.3,
+                user_id=user_id,
+                session_id=f"{session_id}_final",
+                **llm_kwargs
+            )
+
+        self.logger.info("Executive summary generated successfully")
+
+        # Construir reporte final con metadata
+        final_report_parts = [
+            f"# {self.name} - Executive Summary",
+            "",
+            f"**Generated**: {datetime.now().isoformat()}",
+            ""
+        ]
+
+        if self.last_crew_result:
+            final_report_parts.extend([
+                "## Execution Overview",
+                "",
+                f"- **Mode**: {self.last_crew_result.metadata.get('mode', 'unknown')}",
+                f"- **Total Agents**: {len(self.agents)}",
+                f"- **Status**: {self.last_crew_result.status}",
+                f"- **Chunks Processed**: {len(chunks)}",
+                "",
+                "---",
+                ""
+            ])
+
+        final_report_parts.extend([
+            "## Summary",
+            "",
+            final_response.content
+        ])
+
+        return "\n".join(final_report_parts)
+
+    async def summary(
+        self,
+        mode: Literal["full_report", "executive_summary"] = "executive_summary",
+        summary_prompt: Optional[str] = None,
+        max_tokens_per_chunk: int = 4000,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        **llm_kwargs
+    ) -> str:
+        """
+        Genera reporte completo o executive summary de todos los resultados.
+
+        Dos modos de operación:
+
+        1. **full_report** (sin LLM):
+        - Itera en orden por execution_memory.execution_order
+        - Concatena todos los resultados formateados
+        - Retorna documento completo markdown
+        - Rápido, no requiere LLM
+
+        2. **executive_summary** (con LLM iterativo):
+        - Divide resultados en chunks (respetando max_tokens)
+        - LLM procesa cada chunk → genera mini-summary
+        - Combina mini-summaries → executive summary final
+        - Garantiza completitud sin truncamiento
+        - Usa progress feedback (tqdm si disponible)
+
+        Características:
+        - Respeta execution_order estrictamente
+        - Omite agentes con errores
+        - No incluye metadata por default (simplificado)
+        - Retorna markdown estructurado
+
+        Args:
+            mode: Tipo de reporte ('full_report' o 'executive_summary')
+            summary_prompt: Prompt personalizado para executive summary
+                        (usa default si None)
+            max_tokens_per_chunk: Tokens máximos por chunk para executive_summary
+            user_id: User identifier
+            session_id: Session identifier
+            **llm_kwargs: Argumentos adicionales para LLM
+
+        Returns:
+            String markdown con el reporte completo
+
+        Raises:
+            ValueError: Si mode='executive_summary' pero no hay LLM configurado
+            ValueError: Si no hay resultados en execution_memory
+
+        Example:
+            >>> # Full report sin LLM
+            >>> report = await crew.summary(mode="full_report")
+            >>> print(report)
+
+            >>> # Executive summary con LLM
+            >>> summary = await crew.summary(
+            ...     mode="executive_summary",
+            ...     summary_prompt="Create executive summary highlighting ROI"
+            ... )
+            >>> print(summary)
+        """
+        # Validaciones
+        if not self.execution_memory.results:
+            raise ValueError(
+                "No execution results available. Run crew first using "
+                "run_sequential(), run_parallel(), run_flow(), or run_loop()."
+            )
+
+        if mode == "executive_summary" and not self._llm:
+            raise ValueError(
+                "executive_summary mode requires LLM. "
+                "Either use mode='full_report' or pass llm to AgentCrew constructor."
+            )
+
+        self.logger.info(
+            f"Generating {mode} from {len(self.execution_memory.results)} results"
+        )
+
+        # Ejecutar según modo
+        if mode == "full_report":
+            result = self._generate_full_report()
+        else:  # executive_summary
+            result = await self._generate_executive_summary(
+                summary_prompt=summary_prompt,
+                max_tokens_per_chunk=max_tokens_per_chunk,
+                user_id=user_id,
+                session_id=session_id,
+                **llm_kwargs
+            )
+
+        # Save in self._summary
+        self._summary = result
+
+        return result
