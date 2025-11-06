@@ -203,6 +203,7 @@ class OpenAIClient(AbstractClient):
         self,
         model: str,
         messages: Any,
+        use_tool: bool = False,
         **kwargs
     ):
         retry_policy = AsyncRetrying(
@@ -211,7 +212,10 @@ class OpenAIClient(AbstractClient):
             stop=stop_after_attempt(5),
             reraise=True
         )
-        method = getattr(self.client.chat.completions, 'parse', self.client.chat.completions.create)
+        if use_tool:
+            method = self.client.chat.completions.create
+        else:
+            method = getattr(self.client.chat.completions, 'parse', self.client.chat.completions.create)
         async for attempt in retry_policy:
             with attempt:
                 return await method(
@@ -669,6 +673,7 @@ class OpenAIClient(AbstractClient):
             response = await self._chat_completion(
                 model=model_str,
                 messages=messages,
+                use_tools=_use_tools,
                 **args
             )
 
@@ -758,6 +763,7 @@ class OpenAIClient(AbstractClient):
                 response = await self._chat_completion(
                     model=model_str,
                     messages=messages,
+                    use_tools=_use_tools,
                     **args
                 )
             result = response.choices[0].message
@@ -1218,6 +1224,7 @@ class OpenAIClient(AbstractClient):
             messages=messages,
             max_tokens=self.max_tokens,
             temperature=temperature or self.temperature,
+            use_tools=False,
         )
 
         result = response.choices[0].message
