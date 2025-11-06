@@ -236,6 +236,28 @@ class GoogleGenAIClient(AbstractClient):
 
         return cleaned
 
+    def _apply_structured_output_schema(
+        self,
+        generation_config: Dict[str, Any],
+        output_config: Optional[StructuredOutputConfig]
+    ) -> Optional[Dict[str, Any]]:
+        """Apply a cleaned structured output schema to the generation config."""
+        if not output_config or output_config.format != OutputFormat.JSON:
+            return None
+
+        try:
+            raw_schema = output_config.get_schema()
+            cleaned_schema = self.clean_google_schema(raw_schema)
+        except Exception as exc:
+            self.logger.error(
+                f"Failed to generate structured output schema for Gemini: {exc}"
+            )
+            return None
+
+        generation_config["response_mime_type"] = "application/json"
+        generation_config["response_schema"] = cleaned_schema
+        return cleaned_schema
+
     def _build_tools(self, tool_type: str) -> Optional[List[types.Tool]]:
         """Build tools based on the specified type."""
         if tool_type == "custom_functions":
@@ -930,7 +952,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
             f"use_tools: {_use_tools}, tool_type: {tool_type}, toolbox: {len(tools)}, "
         )
 
-        use_structured_output = bool(structured_output)
+        use_structured_output = bool(output_config)
         # Google limitation: Cannot combine tools with structured output
         # Strategy: If both are requested, use tools first, then apply structured output to final result
         if _use_tools and use_structured_output:
@@ -938,22 +960,14 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                 "Google Gemini doesn't support tools + structured output simultaneously. "
                 "Using tools first, then applying structured output to the final result."
             )
-            structured_output_for_later = structured_output
+            structured_output_for_later = output_config
             # Don't set structured output in initial config
-            structured_output = None
             output_config = None
         else:
             structured_output_for_later = None
             # Set structured output in generation config if no tools conflict
-            if structured_output:
-                if isinstance(structured_output, type):
-                    # Pydantic model passed directly
-                    generation_config["response_mime_type"] = "application/json"
-                    generation_config["response_schema"] = structured_output
-                elif isinstance(structured_output, StructuredOutputConfig):
-                    if structured_output.format == OutputFormat.JSON:
-                        generation_config["response_mime_type"] = "application/json"
-                        generation_config["response_schema"] = structured_output.output_type
+            if output_config:
+                self._apply_structured_output_schema(generation_config, output_config)
 
         # Track tool calls for the response
         all_tool_calls = []
@@ -1110,11 +1124,13 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                     "response_mime_type": "application/json"
                 }
                 # Set the schema based on the type of structured output
-                if isinstance(structured_output_for_later, type):
-                    structured_config["response_schema"] = structured_output_for_later
-                elif isinstance(structured_output_for_later, StructuredOutputConfig):
-                    if structured_output_for_later.format == OutputFormat.JSON:
-                        structured_config["response_schema"] = structured_output_for_later.output_type
+                schema_config = (
+                    structured_output_for_later
+                    if isinstance(structured_output_for_later, StructuredOutputConfig)
+                    else self._get_structured_config(structured_output_for_later)
+                )
+                if schema_config:
+                    self._apply_structured_output_schema(structured_config, schema_config)
                 # Create a new client call without tools for structured output
                 format_prompt = (
                     f"Please format the following information according to the requested JSON structure. "
@@ -1128,7 +1144,12 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                 # Extract structured text
                 if structured_text := self._safe_extract_text(structured_response):
                     # Parse the structured output
-                    if isinstance(structured_output_for_later, type):
+                    if isinstance(structured_output_for_later, StructuredOutputConfig):
+                        final_output = await self._parse_structured_output(
+                            structured_text,
+                            structured_output_for_later
+                        )
+                    elif isinstance(structured_output_for_later, type):
                         if hasattr(structured_output_for_later, 'model_validate_json'):
                             final_output = structured_output_for_later.model_validate_json(structured_text)
                         elif hasattr(structured_output_for_later, 'model_validate'):
@@ -1136,11 +1157,6 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                             final_output = structured_output_for_later.model_validate(parsed_json)
                         else:
                             final_output = self._json.loads(structured_text)
-                    elif isinstance(structured_output_for_later, StructuredOutputConfig):
-                        final_output = await self._parse_structured_output(
-                            structured_text,
-                            structured_output_for_later
-                        )
                     else:
                         final_output = self._json.loads(structured_text)
                 else:
@@ -1150,7 +1166,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                 self.logger.error(f"Error parsing structured output: {e}")
                 # Fallback to original text if structured output fails
                 final_output = assistant_response_text
-        elif structured_output and not use_tools:
+        elif output_config and not use_tools:
             try:
                 final_output = await self._parse_structured_output(
                     assistant_response_text,
@@ -1519,22 +1535,15 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
             "temperature": temperature or self.temperature,
         }
         output_config = self._get_structured_config(structured_output)
+        structured_output_config = output_config
         # Vision models generally don't support tools, so we focus on structured output
-        if structured_output:
+        if structured_output_config:
             self.logger.debug("Structured output requested for vision task.")
-            output_config = (
-                structured_output
-                if isinstance(structured_output, StructuredOutputConfig)
-                else StructuredOutputConfig(output_type=structured_output)
-            )
-            if output_config.format == OutputFormat.JSON:
-                generation_config["response_mime_type"] = "application/json"
-                generation_config["response_schema"] = output_config.output_type
+            self._apply_structured_output_schema(generation_config, structured_output_config)
         elif count_objects:
             # Default to JSON for structured output if not specified
-            generation_config["response_mime_type"] = "application/json"
-            generation_config["response_schema"] = ObjectDetectionResult
-            structured_output = ObjectDetectionResult
+            structured_output_config = StructuredOutputConfig(output_type=ObjectDetectionResult)
+            self._apply_structured_output_schema(generation_config, structured_output_config)
 
         # Create the stateful chat session
         chat = self.client.aio.chats.create(model=model, history=history)
@@ -1549,16 +1558,11 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
 
         # --- Response Handling ---
         final_output = None
-        if structured_output:
+        if structured_output_config:
             try:
-                if not isinstance(structured_output, StructuredOutputConfig):
-                    structured_output = StructuredOutputConfig(
-                        output_type=structured_output,
-                        format=OutputFormat.JSON
-                    )
                 final_output = await self._parse_structured_output(
                     response.text,
-                    structured_output
+                    structured_output_config
                 )
             except Exception as e:
                 self.logger.error(
@@ -2380,14 +2384,8 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             "temperature": temperature or self.temperature,
         }
 
-        if structured_output:
-            if isinstance(structured_output, type):
-                generation_config["response_mime_type"] = "application/json"
-                generation_config["response_schema"] = structured_output
-            elif isinstance(structured_output, StructuredOutputConfig):
-                if structured_output.format == OutputFormat.JSON:
-                    generation_config["response_mime_type"] = "application/json"
-                    generation_config["response_schema"] = structured_output.output_type
+        if output_config:
+            self._apply_structured_output_schema(generation_config, output_config)
 
         tools = None
         if use_internal_tools:
@@ -2474,7 +2472,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                 pass # We're not doing a multi-turn here for stateless
 
         final_output = None
-        if structured_output:
+        if output_config:
             try:
                 final_output = await self._parse_structured_output(
                     response.text,
