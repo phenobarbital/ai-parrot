@@ -666,7 +666,7 @@ class AgentResponse(BaseModel):
         description="Question made by User"
     )
     response: Optional[AIMessage] = Field(
-        ...,
+        default=None,
         description="Response returned by the agent"
     )
     data: Optional[str] = Field(
