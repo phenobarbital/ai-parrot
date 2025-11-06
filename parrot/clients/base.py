@@ -476,6 +476,36 @@ class AbstractClient(ABC):
             }
         }
 
+    def _make_openai_strict_tool(self, schema: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Ensure the tool schema matches OpenAI strict function-tool requirements:
+        - type=function
+        - function.strict = True
+        - function.parameters is an object schema with additionalProperties = False
+        """
+        if schema.get("type") != "function":
+            return schema  # Only wrap function tools
+
+        fn = schema.setdefault("function", {})
+        params = fn.setdefault("parameters", {})
+
+        # Ensure JSON Schema object shape
+        # If your ToolSchemaAdapter already sets this, we won't override it.
+        if params.get("type") is None:
+            params["type"] = "object"
+        if "properties" not in params:
+            # If no properties defined, keep empty; model won't be able to send args anyway.
+            params["properties"] = {}
+
+        # Critical for strict tools: must be present and false
+        if "additionalProperties" not in params:
+            params["additionalProperties"] = False
+
+        # Mark the function as strict
+        fn["strict"] = True
+
+        return schema
+
     def _prepare_tools(self) -> List[Dict[str, Any]]:
         """Convert registered tools to API format."""
         tool_schemas = []
@@ -514,6 +544,9 @@ class AbstractClient(ABC):
                             "parameters": clean_schema.get("parameters", {})
                         }
                     }
+                    formatted_schema = self._make_openai_strict_tool(
+                        formatted_schema
+                    )
                 else:
                     # Claude/Anthropic and others use direct format
                     formatted_schema = {
