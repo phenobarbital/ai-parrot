@@ -241,13 +241,14 @@ class GoogleGenAIClient(AbstractClient):
         generation_config: Dict[str, Any],
         output_config: Optional[StructuredOutputConfig]
     ) -> Optional[Dict[str, Any]]:
-        """Apply a cleaned structured output schema to the generation config."""
+        """Apply a cleaned structured output schema to the generationho config."""
         if not output_config or output_config.format != OutputFormat.JSON:
             return None
 
         try:
             raw_schema = output_config.get_schema()
             cleaned_schema = self.clean_google_schema(raw_schema)
+            fixed_schema = self._fix_tool_schema(cleaned_schema)
         except Exception as exc:
             self.logger.error(
                 f"Failed to generate structured output schema for Gemini: {exc}"
@@ -255,8 +256,8 @@ class GoogleGenAIClient(AbstractClient):
             return None
 
         generation_config["response_mime_type"] = "application/json"
-        generation_config["response_schema"] = cleaned_schema
-        return cleaned_schema
+        generation_config["response_schema"] = fixed_schema
+        return fixed_schema
 
     def _build_tools(self, tool_type: str) -> Optional[List[types.Tool]]:
         """Build tools based on the specified type."""

@@ -334,7 +334,6 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
 
         )
 
-
     async def markdown_report(
         self,
         content: str,
@@ -469,6 +468,7 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
             status="success",
             created_at=datetime.now(),
             output=response.output,
+            response=response,
             **kwargs
         )
         return await self._generate_report(response)

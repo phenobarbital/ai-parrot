@@ -114,6 +114,7 @@ BIGQUERY_DATASET = config.get('BIGQUERY_DATASET', fallback='navigator')
 REDIS_HOST = config.get('REDIS_HOST', fallback='localhost')
 REDIS_PORT = config.get('REDIS_PORT', fallback=6379)
 REDIS_DB = config.get('REDIS_DB', fallback=1)
+REDIS_URL = config.get('REDIS_URL', fallback=f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}")
 REDIS_HISTORY_DB = config.get('REDIS_HISTORY_DB', fallback=3)
 REDIS_HISTORY_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_HISTORY_DB}"
 REDIS_SERVICES_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/4"
