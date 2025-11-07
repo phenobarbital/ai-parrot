@@ -1,5 +1,6 @@
 from typing import Any, Optional, Callable, TypeVar, ParamSpec
 from functools import wraps
+from abc import ABC
 import asyncio
 import hashlib
 import inspect
@@ -12,11 +13,10 @@ P = ParamSpec('P')
 T = TypeVar('T')
 
 
-class CacheMixin:
+class CacheMixin(ABC):
     """Mixin to add caching capabilities using Redis."""
 
     def __init__(self, redis_url: str = None, **kwargs):
-        super().__init__(**kwargs)
         # Redis connection for caching
         self.redis = aioredis.from_url(
             redis_url or REDIS_URL,
@@ -31,7 +31,7 @@ class CacheMixin:
         Generate a unique cache key based on the query type and parameters.
         """
         # Ordenar params para consistencia
-        sorted_params = json_encoder(params, sort_keys=True)
+        sorted_params = json_encoder(params)
         param_hash = hashlib.md5(sorted_params.encode()).hexdigest()
         return f"{self.key_prefix}{query_type}:{param_hash}"
 

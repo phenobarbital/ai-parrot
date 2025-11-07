@@ -1,7 +1,5 @@
 from typing import List, Dict, Optional, TypeVar, ParamSpec
 from dataclasses import dataclass
-from functools import wraps
-import hashlib
 from arango import ArangoClient
 from asyncdb import AsyncDB
 from ..conf import default_dsn
@@ -75,7 +73,7 @@ class EmployeeHierarchyManager(CacheMixin):
         # postgreSQL connection:
         self.pg_client = AsyncDB('pg', dsn=default_dsn)
         # postgreSQL employees table:
-        self.employees_table = kwargs.get('pg_employees_table', 'troc.employees')
+        self.employees_table = kwargs.get('v', 'troc.employees')
 
         # Setup collections and graph
         self._setup_collections()
@@ -157,8 +155,15 @@ class EmployeeHierarchyManager(CacheMixin):
         oid_to_id = {}
         # First Step: insert employees
         for row in employees_data:
+            # Clean whitespace from IDs
             _id = row.get(self._primary_key, 'associate_oid')
+            if isinstance(_id, str):
+                _id = _id.strip()
+
             reports_to = row['reports_to']
+            if isinstance(reports_to, str):
+                reports_to = reports_to.strip() if reports_to else None
+
             employee_doc = {
                 '_key': _id,  # Associate_oid is the primary key
                 self._primary_key: _id,
@@ -180,9 +185,26 @@ class EmployeeHierarchyManager(CacheMixin):
 
         # Second pass: create edges (reports_to relationships)
         edges_created = 0
+        skipped_edges = 0
+        missing_bosses = set()
+
         for row in employees_data:
+            # Clean whitespace from IDs (consistent with first pass)
             _id = row.get(self._primary_key, 'associate_oid')
-            if reports_to := row['reports_to']:  # If has a boss
+            if isinstance(_id, str):
+                _id = _id.strip()
+
+            reports_to = row['reports_to']
+            if isinstance(reports_to, str):
+                reports_to = reports_to.strip() if reports_to else None
+
+            if reports_to:  # If has a boss
+                # Verify that the boss exists in the database
+                if reports_to not in oid_to_id:
+                    skipped_edges += 1
+                    missing_bosses.add(reports_to)
+                    continue
+
                 edge_doc = {
                     '_from': oid_to_id[_id],  # Employee
                     '_to': oid_to_id[reports_to],  # His boss
@@ -192,6 +214,10 @@ class EmployeeHierarchyManager(CacheMixin):
                 edges_created += 1
 
         print(f"✓ {edges_created} 'reports_to' edges created")
+
+        if skipped_edges > 0:
+            print(f"⚠ {skipped_edges} edges skipped (boss not found)")
+            print(f"⚠ Missing boss IDs: {missing_bosses}")
 
     def insert_employee(self, employee: Employee) -> str:
         """
@@ -233,8 +259,8 @@ class EmployeeHierarchyManager(CacheMixin):
 
     # ============= Hierarchical Queries =============
 
-    @cached_query("does_report_to", ttl=3600)
-    def does_report_to(self, employee_oid: str, boss_oid: str) -> bool:
+    # @cached_query("does_report_to", ttl=3600)
+    async def does_report_to(self, employee_oid: str, boss_oid: str) -> bool:
         """
         Check if employee_oid reports directly or indirectly to boss_oid.
 
@@ -267,8 +293,8 @@ class EmployeeHierarchyManager(CacheMixin):
         results = list(cursor)
         return len(results) > 0
 
-    @cached_query("get_all_superiors", ttl=3600)
-    def get_all_superiors(self, employee_oid: str) -> List[Dict]:
+    # @cached_query("get_all_superiors", ttl=3600)
+    async def get_all_superiors(self, employee_oid: str) -> List[Dict]:
         """
         Return all superiors of an employee up to the CEO.
 
@@ -450,6 +476,131 @@ FOR v, e, p IN 1..@max_depth INBOUND
         )
 
         return list(cursor)
+
+    @cached_query("get_employee_info", ttl=7200)  # Cache por 2 horas
+    def get_employee_info(self, employee_oid: str) -> Optional[Dict]:
+        """
+        Get detailed information about an employee.
+
+        Args:
+            employee_oid: Employee ID (associate_oid)
+
+        Returns:
+            Dict with employee information or None if not found
+            {
+                'associate_oid': str,
+                'display_name': str,
+                'first_name': str,
+                'last_name': str,
+                'email': str,
+                'department': str,
+                'program': str,
+                'position_id': str,
+                'job_code': str
+            }
+
+        Example:
+        ```python
+        manager = EmployeeHierarchyManager(...)
+
+        # First call - query ArangoDB
+        info = await manager.get_employee_info('E003')
+
+        # Second call - from Redis cache
+        info = await manager.get_employee_info('E003')  # ⚡
+        ```
+        """
+        query = """
+        FOR emp IN @@collection
+            FILTER emp.associate_oid == @employee_oid
+            LIMIT 1
+            RETURN {
+                associate_oid: emp.associate_oid,
+                display_name: emp.display_name,
+                first_name: emp.first_name,
+                last_name: emp.last_name,
+                email: emp.email,
+                department: emp.department,
+                program: emp.program,
+                position_id: emp.position_id,
+                job_code: emp.job_code
+            }
+        """
+
+        cursor = self.db.aql.execute(
+            query,
+            bind_vars={
+                '@collection': self.employees_collection,
+                'employee_oid': employee_oid
+            }
+        )
+
+        results = list(cursor)
+        return results[0] if results else None
+
+    async def get_department_context(self, employee_oid: str) -> Dict:
+        """
+        Get a summary of the employee's department context, including
+        superiors, colleagues, direct reports, and all subordinates.
+        """
+        # 1. Get employee info (async)
+        employee_info = await self.get_employee_info(employee_oid)
+
+        if not employee_info:
+            # Employee not found
+            return {
+                'employee': {'associate_oid': employee_oid},
+                'reports_to_chain': [],
+                'colleagues': [],
+                'manages': [],
+                'all_subordinates': [],
+                'department': 'Unknown',
+                'program': 'Unknown',
+                'total_subordinates': 0,
+                'direct_reports_count': 0,
+                'colleagues_count': 0,
+                'reporting_levels': 0
+            }
+
+        # 2. Get superiors (async)
+        superiors = await self.get_all_superiors(employee_oid)
+
+        # 3. Get colleagues (async)
+        colleagues = await self.get_colleagues(employee_oid)
+
+        # 4. Get direct reports (async)
+        direct_reports = await self.get_direct_reports(employee_oid)
+
+        # 5. Get all subordinates (async)
+        all_subordinates = await self.get_all_subordinates(employee_oid)
+
+        return {
+            'employee': {
+                'associate_oid': employee_info['associate_oid'],
+                'display_name': employee_info['display_name'],
+                'email': employee_info.get('email'),
+                'position_id': employee_info.get('position_id')
+            },
+
+            'reports_to_chain': [
+                f"{s['display_name']} ({s['department']} - {s['program']})"
+                for s in superiors
+            ],
+
+            'colleagues': [c['display_name'] for c in colleagues],
+            'manages': [r['display_name'] for r in direct_reports],
+            'all_subordinates': all_subordinates,
+
+            # Usar department/program del empleado directamente
+            'department': employee_info['department'],
+            'program': employee_info['program'],
+
+            # Stats
+            'total_subordinates': len(all_subordinates),
+            'direct_reports_count': len(direct_reports),
+            'colleagues_count': len(colleagues),
+            'reporting_levels': len(superiors)
+        }
 
 
 # # ============= EJEMPLO DE USO =============

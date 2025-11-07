@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Tuple
+from navconfig.logging import logging
 from ...utils.helpers import RequestContext
 
 
@@ -21,6 +22,7 @@ class AbstractKnowledgeBase(ABC):
         self.description = description or f"{name} knowledge base"
         self.always_active = always_active
         self.priority = priority  # Higher = included first
+        self.logger = logging.getLogger(__name__)
 
     @abstractmethod
     async def should_activate(
