@@ -148,6 +148,9 @@ class EmployeeHierarchyManager(CacheMixin):
         async with await self.pg_client.connection() as conn:  # pylint: disable=E1101 # noqa
             employees_data = await conn.fetchall(query)
 
+        # cleanup collection before import
+        self.truncate_hierarchy()
+
         employees_collection = self.db.collection(self.employees_collection)
         reports_to_collection = self.db.collection(self.reports_to_collection)
 
@@ -156,7 +159,7 @@ class EmployeeHierarchyManager(CacheMixin):
         # First Step: insert employees
         for row in employees_data:
             # Clean whitespace from IDs
-            _id = row.get(self._primary_key, 'associate_oid')
+            _id = row.get(self._primary_key, 'associate_oid').strip()
             if isinstance(_id, str):
                 _id = _id.strip()
 
@@ -214,10 +217,39 @@ class EmployeeHierarchyManager(CacheMixin):
                 edges_created += 1
 
         print(f"✓ {edges_created} 'reports_to' edges created")
+        print(
+            f"✓ {self.db.collection(self.reports_to_collection).count()} total 'reports_to' edges"
+        )
 
         if skipped_edges > 0:
             print(f"⚠ {skipped_edges} edges skipped (boss not found)")
             print(f"⚠ Missing boss IDs: {missing_bosses}")
+
+    def truncate_hierarchy(self) -> None:
+        """
+        Truncate employees and reports_to collections.
+
+        This:
+        - Deletes all employee vertices.
+        - Deletes all reports_to edges.
+        - Keeps:
+            - Collections
+            - Indexes
+            - Graph definition
+
+        Use this when you want a clean reload from PostgreSQL.
+        """
+        # Truncate edges first (good practice to avoid dangling edges mid-operation)
+        if self.db.has_collection(self.reports_to_collection):
+            edges = self.db.collection(self.reports_to_collection)
+            edges.truncate()
+
+        if self.db.has_collection(self.employees_collection):
+            employees = self.db.collection(self.employees_collection)
+            employees.truncate()
+
+        print("✓ Hierarchy data truncated (employees + reports_to)")
+
 
     def insert_employee(self, employee: Employee) -> str:
         """
@@ -258,6 +290,10 @@ class EmployeeHierarchyManager(CacheMixin):
         return employee_id
 
     # ============= Hierarchical Queries =============
+    def _vertex_id(self, oid: str) -> str:
+        # If user already passed full _id, keep it
+        return oid if '/' in oid else f"{self.employees_collection}/{oid}"
+
 
     # @cached_query("does_report_to", ttl=3600)
     async def does_report_to(self, employee_oid: str, boss_oid: str) -> bool:
@@ -279,16 +315,18 @@ class EmployeeHierarchyManager(CacheMixin):
             LIMIT 1
             RETURN true
         """
+        start_vertex = self._vertex_id(employee_oid)
 
         cursor = self.db.aql.execute(
             query,
             bind_vars={
                 'collection': self.employees_collection,
-                'employee_oid': employee_oid,
+                'employee_oid': start_vertex,
                 'boss_oid': boss_oid,
                 'graph_name': self.graph_name
             }
         )
+        print(cursor)
 
         results = list(cursor)
         return len(results) > 0
@@ -351,7 +389,7 @@ FOR v, e, p IN 1..1 INBOUND
 
         return list(cursor)
 
-    @cached_query("get_all_subordinates", ttl=3600)
+    # @cached_query("get_all_subordinates", ttl=3600)
     def get_all_subordinates(self, boss_oid: str, max_depth: int = 10) -> List[Dict]:
         """
         Return all subordinates (direct and indirect) of a boss
@@ -381,7 +419,7 @@ FOR v, e, p IN 1..@max_depth INBOUND
 
         return list(cursor)
 
-    @cached_query("get_org_chart", ttl=3600)
+    # @cached_query("get_org_chart", ttl=3600)
     def get_org_chart(self, root_oid: Optional[str] = None) -> Dict:
         """
         Build the complete org chart as a hierarchical tree
