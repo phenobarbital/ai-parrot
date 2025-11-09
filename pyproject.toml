@@ -66,6 +66,7 @@ dependencies = [
     "python-statemachine==2.5.0",
     "aiohttp-swagger3==0.10.0",
     "PyYAML>=6.0.2",
+    "python-arango-async==1.0.3",
 ]
 
 [project.optional-dependencies]
