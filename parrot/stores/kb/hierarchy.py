@@ -1,4 +1,6 @@
 from typing import Tuple, List, Dict, Any, Optional
+import json
+
 from navigator_auth.conf import AUTH_SESSION_OBJECT
 from .abstract import AbstractKnowledgeBase
 from ...utils.helpers import RequestContext
@@ -40,24 +42,16 @@ class EmployeeHierarchyKB(AbstractKnowledgeBase):
         priority: int = 10,
         **kwargs
     ):
-        """
-
-
-        Args:
-            permission_service: EmployeeHierarchyManager instance.
-            always_active: if True, always active (default True)
-            priority: Priority of the KB (higher = included first)
-        """
         super().__init__(
             name="Employee Hierarchy",
             category="organizational_context",
             description=(
-                "Add employee hierarchy context, "
-                "including their boss, department, colleagues, and direct reports."
+                "Add employee hierarchy context, including their manager, "
+                "department, colleagues, and direct reports."
             ),
             activation_patterns=[
                 "jefe", "boss", "manager", "reports",
-                "department", "department", "unit", "program",
+                "department", "unit", "program",
                 "colega", "colleague", "equipo", "team",
                 "subordinado", "subordinate", "reporte", "organigrama"
             ],
@@ -72,21 +66,15 @@ class EmployeeHierarchyKB(AbstractKnowledgeBase):
         query: str,
         context: Dict[str, Any]
     ) -> Tuple[bool, float]:
-        """
-        Determina si este KB debe activarse para la consulta.
-
-        Como always_active=True, siempre se activa con alta confianza.
-        """
         if self.always_active:
             return True, 1.0
 
-        # Buscar patrones de activación en la query
-        query_lower = query.lower()
+        q = query.lower()
         return next(
             (
                 (True, 0.9)
                 for pattern in self.activation_patterns
-                if pattern.lower() in query_lower
+                if pattern.lower() in q
             ),
             (False, 0.0),
         )
@@ -119,7 +107,14 @@ class EmployeeHierarchyKB(AbstractKnowledgeBase):
         )
 
         if not employee_id:
-            # There is no employee_id, cannot provide hierarchy context
+            return []
+
+        # Ensure async hierarchy manager is connected
+        try:
+            if not getattr(self.service, "db", None):
+                await self.service.connection()
+        except Exception as e:
+            self.logger.error(f"Error connecting to hierarchy service: {e}")
             return []
 
         try:
@@ -127,7 +122,6 @@ class EmployeeHierarchyKB(AbstractKnowledgeBase):
             if not emp_context or 'employee' not in emp_context:
                 return []
 
-            # Build structured facts for User Context
             return self._build_hierarchy_facts(emp_context, employee_id)
 
         except Exception as e:
@@ -150,7 +144,7 @@ class EmployeeHierarchyKB(AbstractKnowledgeBase):
         3. From user_id (if it has associate_oid format)
         4. search in DB by user_id
         """
-        # From kwargs (explicit)
+        # 1. From kwargs (explicit)
         if 'associate_oid' in kwargs:
             return kwargs['associate_oid']
 
@@ -158,14 +152,13 @@ class EmployeeHierarchyKB(AbstractKnowledgeBase):
         if ctx and ctx.request:
             if session := getattr(ctx.request, 'session', None):
                 auth_obj = session.get(AUTH_SESSION_OBJECT, {})
-                # Find Employee OID
                 if associate_oid := (
                     auth_obj.get('associate_oid') or
                     session.get('associate_oid')
                 ):
                     return associate_oid
 
-        # 3. From user_id (if it has associate_oid format)
+        # 3. From user_id if it looks like an associate_oid
         if user_id and isinstance(user_id, str) and user_id.startswith(('E', 'EMP', 'A')):
             return user_id
 
@@ -177,113 +170,172 @@ class EmployeeHierarchyKB(AbstractKnowledgeBase):
         associate_oid: str
     ) -> List[Dict[str, Any]]:
         """
-        Build Facts from the employee context.
+        Produce a compact, LLM-friendly hierarchy summary + a few readable facts.
 
-        Args:
-            emp_context: Employee context dictionary
-            associate_oid: Employee ID
-
-        Returns:
-            List of facts with content and metadata
+        This is meant to be injected directly into the Agent System Prompt.
         """
-        facts = []
-        # Fact 1: Basic employee info
-        facts.append({
-            'content': (
-                f"Employee: {associate_oid} "
-                f"works in {emp_context['department']} - {emp_context['program']}."
-            ),
-            'metadata': {
-                'category': 'employee_info',
-                'entity_type': 'employee',
-                'confidence': 1.0,
-                'tags': ['employee', 'department', 'program']
-            }
-        })
+        emp = emp_context.get('employee', {}) or {}
+        dept = emp_context.get('department')
+        prog = emp_context.get('program')
 
-        # Fact 2: Reporting chain (supervisors)
-        reports_to = emp_context.get('reports_to_chain', [])
-        if reports_to:
-            if len(reports_to) == 1:
-                facts.append({
-                    'content': f"Direct manager is {reports_to[0]}.",
-                    'metadata': {
-                        'category': 'reporting_structure',
-                        'entity_type': 'manager',
-                        'confidence': 1.0,
-                        'tags': ['manager', 'direct_report']
-                    }
-                })
-            else:
-                chain = " → ".join(reports_to)
-                facts.append({
-                    'content': f"Reporting chain: {chain}.",
-                    'metadata': {
-                        'category': 'reporting_structure',
-                        'entity_type': 'hierarchy',
-                        'confidence': 1.0,
-                        'tags': ['hierarchy', 'management_chain']
-                    }
-                })
-        else:
+        reports_chain = emp_context.get('reports_to_chain') or []
+        colleagues = emp_context.get('colleagues') or []
+        direct_reports = emp_context.get('manages') or []
+        total_subordinates = emp_context.get(
+            'total_subordinates',
+            len(emp_context.get('all_subordinates') or [])
+        )
+        direct_reports_count = emp_context.get(
+            'direct_reports_count',
+            len(direct_reports)
+        )
+
+        direct_manager = reports_chain[0] if reports_chain else None
+
+        compact = {
+            "employee_id": emp.get("employee_id") or associate_oid,
+            "associate_oid": emp.get("associate_oid") or associate_oid,
+            "name": emp.get("display_name"),
+            "email": emp.get("email"),
+            "department": dept,
+            "program": prog,
+            "position_id": emp.get("position_id"),
+            "job_code": emp.get("job_code"),
+            "direct_manager": direct_manager,
+            "manager_chain": reports_chain,            # ordered, closest first
+            "colleagues_sample": colleagues[:8],       # peers w/ same boss
+            "colleagues_count": len(colleagues),
+            "direct_reports_sample": direct_reports[:8],
+            "direct_reports_count": direct_reports_count,
+            "total_subordinates": total_subordinates,
+        }
+
+        facts: List[Dict[str, Any]] = [
+            {
+                "content": "EmployeeHierarchyContext:: "
+                + json.dumps(compact, ensure_ascii=False),
+                "metadata": {
+                    "category": "employee_hierarchy_compact",
+                    "entity_type": "employee_hierarchy",
+                    "confidence": 1.0,
+                    "tags": [
+                        "employee",
+                        "hierarchy",
+                        "compact_context",
+                        "manager",
+                        "colleagues",
+                        "subordinates",
+                    ],
+                },
+            }
+        ]
+
+        # 2) Minimal human-readable facts (still concise)
+        if compact.get("name") and dept and prog:
             facts.append({
-                'content': "Is a high-level executive with no direct reports.",
-                'metadata': {
-                    'category': 'reporting_structure',
-                    'entity_type': 'executive',
-                    'confidence': 1.0,
-                    'tags': ['executive', 'leadership']
-                }
+                "content": (
+                    f"{compact['name']} ({compact['employee_id']}) "
+                    f"works in {dept} - {prog}."
+                ),
+                "metadata": {
+                    "category": "employee_info",
+                    "entity_type": "employee",
+                    "confidence": 1.0,
+                    "tags": ["employee", "department", "program"],
+                },
             })
 
-        # Fact 4: Direct reports (if manager)
-        if manages := emp_context.get('manages', []):
-            reports_str = ", ".join(manages[:5])
-            more = len(manages) - 5
+        if direct_manager:
             facts.append({
-                'content': (
-                    f"Has {len(manages)} direct report(s): {reports_str}"
-                    f"{f' and {more} more' if more > 0 else ''}."
-                ),
-                'metadata': {
-                    'category': 'management',
-                    'entity_type': 'direct_reports',
-                    'confidence': 1.0,
-                    'tags': ['manager', 'direct_reports', 'leadership']
-                }
+                "content": f"Direct manager: {direct_manager}.",
+                "metadata": {
+                    "category": "reporting_structure",
+                    "entity_type": "manager",
+                    "confidence": 1.0,
+                    "tags": ["manager", "direct_manager"],
+                },
+            })
+
+        if direct_reports_count > 0:
+            text = f"{direct_reports_count} direct report(s)"
+            if sample := ", ".join(direct_reports[:5]):
+                text += f": {sample}"
+            if more := max(0, direct_reports_count - 5):
+                text += f" and {more} more"
+            text += "."
+            facts.append({
+                "content": text,
+                "metadata": {
+                    "category": "management",
+                    "entity_type": "direct_reports",
+                    "confidence": 1.0,
+                    "tags": ["manager", "direct_reports", "team"],
+                },
+            })
+
+        if colleagues:
+            sample = ", ".join(colleagues[:5])
+            more = max(0, len(colleagues) - 5)
+            text = f"Colleagues with the same manager: {sample}"
+            if more:
+                text += f" and {more} more"
+            text += "."
+            facts.append({
+                "content": text,
+                "metadata": {
+                    "category": "colleagues",
+                    "entity_type": "peers",
+                    "confidence": 0.9,
+                    "tags": ["colleagues", "team", "peers"],
+                },
             })
 
         return facts
 
-    def format_context(self, results: List[Dict]) -> str:
+    def format_context(self, results: List[Dict[str, Any]]) -> str:
         """
-        Format the results for injection into the prompt.
+        Final string injected into the Agent System Prompt.
 
-        Override the base method for a more readable format.
+        Puts the compact JSON-like context first so tools/LLM can parse it,
+        then short readable bullets.
         """
         if not results:
             return ""
 
-        lines = [f"## {self.name}:"]
+        by_category: Dict[str, List[str]] = {}
+        for r in results:
+            cat = r.get("metadata", {}).get("category", "general")
+            by_category.setdefault(cat, []).append(r["content"])
 
-        # Group by category
-        by_category = {}
-        for result in results:
-            category = result.get('metadata', {}).get('category', 'general')
-            if category not in by_category:
-                by_category[category] = []
-            by_category[category].append(result['content'])
+        lines: List[str] = [f"## {self.name}"]
 
-        # Format by category
-        category_names = {
-            'employee_info': 'Employee Information',
-            'reporting_structure': 'Reporting Structure',
-            'management': 'Direct Reports'
-        }
+        # 1) Compact block (highest priority for LLM)
+        compact = by_category.get("employee_hierarchy_compact")
+        if compact:
+            lines.append("### Compact Hierarchy Context")
+            lines.extend(iter(compact))
 
-        for category, contents in by_category.items():
-            category_title = category_names.get(category, category.title())
-            lines.append(f"\n**{category_title}:**")
-            lines.extend(f"  • {content}" for content in contents)
+        # 2) Other concise sections (only if present)
+        ordered = [
+            ("employee_info", "Employee Information"),
+            ("reporting_structure", "Reporting Structure"),
+            ("management", "Direct Reports"),
+            ("colleagues", "Colleagues"),
+        ]
+
+        for key, title in ordered:
+            contents = by_category.get(key)
+            if not contents:
+                continue
+            lines.append(f"\n**{title}:**")
+            lines.extend(f"  • {c}" for c in contents)
+
+        # 3) Any remaining categories
+        for key, contents in by_category.items():
+            if key in {"employee_hierarchy_compact", "employee_info",
+                       "reporting_structure", "management", "colleagues"}:
+                continue
+            lines.append(f"\n**{key.title()}:**")
+            lines.extend(f"  • {c}" for c in contents)
 
         return "\n".join(lines)
