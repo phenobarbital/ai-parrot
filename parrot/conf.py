@@ -288,3 +288,6 @@ SHAREPOINT_TENANT_ID = config.get('SHAREPOINT_TENANT_ID')
 SHAREPOINT_TENANT_NAME = config.get('SHAREPOINT_TENANT_NAME')
 SHAREPOINT_SITE_ID = config.get('SHAREPOINT_SITE_ID')
 SHAREPOINT_DEFAULT_HOST = config.get('SHAREPOINT_DEFAULT_HOST')
+
+# Employee Hierarchy Configuration:
+EMPLOYEES_TABLE = config.get('EMPLOYEES_TABLE', fallback='troc.troc_employees')
