@@ -74,6 +74,7 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
     max_tokens: int = None # Use default max tokens from Chatbot
     model_name: str = None  # Use default model from Chatbot
     report_template: str = "report_template.html"
+    system_prompt_template: str = AGENT_PROMPT
 
     def __init__(
         self,
@@ -84,8 +85,8 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
         tools: List[AbstractTool] = None,
         system_prompt: str = None,
         human_prompt: str = None,
-        prompt_template: str = None,
         use_tools: bool = True,
+        instructions: Optional[str] = None,
         **kwargs
     ):
         self.agent_id = self.agent_id or agent_id
@@ -103,8 +104,8 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
             use_tools=use_tools,
             **kwargs
         )
-        self.system_prompt_template = prompt_template or AGENT_PROMPT
-        self._system_prompt_base = system_prompt or ''
+        if instructions:
+            self.goal = instructions
         self.enable_tools = True  # Enable tools by default
         self.operation_mode = 'agentic' # Default operation mode
         self.auto_tool_detection = True  # Enable auto tool detection by default
@@ -185,15 +186,18 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
         content: str,
         prefix: str = 'report',
         extension: str = 'txt',
+        directory: Optional[Path] = None,
         subdir: str = 'documents'
     ) -> None:
         """Save the document to a file."""
         report_filename = self._create_filename(
             prefix=prefix, extension=extension
         )
+        if not directory:
+            directory = STATIC_DIR.joinpath(self.agent_id, subdir)
         try:
             async with aiofiles.open(
-                STATIC_DIR.joinpath(self.agent_id, subdir, report_filename),
+                directory.joinpath(report_filename),
                 'w'
             ) as report_file:
                 await report_file.write(content)
@@ -219,14 +223,16 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
             )
             return None
 
-    async def open_query(self, query: str, **kwargs) -> str:
+    async def open_query(self, query: str, directory: Optional[Path] = None, **kwargs) -> str:
         """
         Opens a query string and formats it with provided keyword arguments.
         """
         if not query:
             raise ValueError("No query specified.")
+        if not directory:
+            directory = AGENTS_DIR.joinpath(self.agent_id, 'queries')
         try:
-            query_file = AGENTS_DIR.joinpath(self.agent_id, 'queries', query)
+            query_file = directory.joinpath(query)
             return query_file.read_text().format(**kwargs)
         except Exception as e:
             self.logger.error(
@@ -238,6 +244,7 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
         self,
         prompt_file: str,
         save: bool = False,
+        directory: Optional[Path] = None,
         **kwargs
     ) -> Tuple[AIMessage, AgentResponse]:
         """Generate a report based on the provided prompt."""
@@ -249,6 +256,8 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
             return str(e)
         # Format the question based on keyword arguments:
         question = query.format(**kwargs)
+        if not directory:
+            directory = STATIC_DIR.joinpath(self.agent_id, 'documents')
         try:
             response = await self.invoke(
                 question=question,
@@ -275,7 +284,7 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
                         prefix='report', extension='txt'
                     )
                     async with aiofiles.open(
-                        STATIC_DIR.joinpath(self.agent_id, 'documents', report_filename),
+                        directory.joinpath(report_filename),
                         'w'
                     ) as report_file:
                         await report_file.write(final_report)
@@ -317,14 +326,17 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
         self,
         content: str,
         filename_prefix: str = 'report',
+        directory: Optional[Path] = None,
         title: str = None,
         **kwargs
     ) -> str:
         """Generate a report based on the provided prompt."""
         # Create a unique filename for the report
+        if not directory:
+            directory = STATIC_DIR.joinpath(self.agent_id, 'documents')
         pdf_tool = PDFPrintTool(
             templates_dir=BASE_DIR.joinpath('templates'),
-            output_dir=STATIC_DIR.joinpath(self.agent_id, 'documents')
+            output_dir=directory
         )
         return await pdf_tool.execute(
             text=content,
@@ -339,12 +351,14 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
         content: str,
         filename: Optional[str] = None,
         filename_prefix: str = 'report',
+        directory: Optional[Path] = None,
         subdir: str = 'documents',
         **kwargs
     ) -> str:
         """Saving Markdown report based on provided file."""
         # Create a unique filename for the report
-        directory = STATIC_DIR.joinpath(self.agent_id, subdir)
+        if not directory:
+            directory = STATIC_DIR.joinpath(self.agent_id, subdir)
         directory.mkdir(parents=True, exist_ok=True)
         # Create a unique filename if not provided
         if not filename:
@@ -367,10 +381,14 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
         max_lines: int = 15,
         num_speakers: int = 2,
         podcast_instructions: Optional[str] = 'for_podcast.txt',
+        directory: Optional[Path] = None,
         **kwargs
     ) -> Dict[str, Any]:
         """Generate a Transcript Report and a Podcast based on findings."""
-        output_directory = STATIC_DIR.joinpath(self.agent_id, 'generated_scripts')
+        if directory:
+            output_directory = directory
+        else:
+            output_directory = STATIC_DIR.joinpath(self.agent_id, 'generated_scripts')
         output_directory.mkdir(parents=True, exist_ok=True)
         script_name = self._create_filename(prefix='script', extension='txt')
         # creation of speakers:

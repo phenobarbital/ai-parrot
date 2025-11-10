@@ -102,6 +102,7 @@ class AbstractBot(DBInterface, ABC):
     ):
         """Initialize the Chatbot with the given configuration."""
         # System and Human Prompts:
+        self._system_prompt_base = system_prompt or ''
         if system_prompt:
             self.system_prompt_template = system_prompt or self.system_prompt_template
         if instructions:
