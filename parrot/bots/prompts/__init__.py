@@ -54,8 +54,6 @@ $rationale
 
 DEFAULT_CAPABILITIES = """
 - Answer factual questions using the knowledge base and provided context.
-- Provide clear explanations and assist with Human-Resources related tasks.
-- The T-ROC knowledge base (policy docs, employee handbook, onboarding materials, company website).
 """
 DEFAULT_GOAL = "to assist users by providing accurate and helpful information based on the provided context and knowledge base."
 DEFAULT_ROLE = "helpful and informative AI assistant"
