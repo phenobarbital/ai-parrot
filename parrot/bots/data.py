@@ -4,6 +4,7 @@ A specialized agent for data analysis using pandas DataFrames.
 """
 from pathlib import Path
 from typing import Any, List, Dict, Union, Optional
+import uuid
 from datetime import datetime, timezone, timedelta
 from string import Template
 from pydantic import BaseModel
@@ -20,6 +21,7 @@ from ..tools import AbstractTool
 from ..tools.pythonpandas import PythonPandasTool
 from .agent import BasicAgent
 from ..models.responses import AIMessage, AgentResponse
+from ..models.outputs import OutputMode, StructuredOutputConfig
 from ..conf import REDIS_HISTORY_URL, STATIC_DIR
 
 
@@ -445,12 +447,6 @@ $backstory
         Returns:
             AgentResponse with the analysis result
         """
-        # Import here to avoid circular imports
-        from ..models.outputs import OutputMode
-        from parrot.models.responses import StructuredOutputConfig
-        from pydantic import BaseModel
-        from typing import Type
-
         # Generate IDs if not provided
         session_id = session_id or str(uuid.uuid4())
         user_id = user_id or "anonymous"
@@ -599,7 +595,7 @@ $backstory
 
         # Find the PythonPandasTool in the tools list
         pandas_tool = None
-        for tool in self.tool_manager.tools:
+        for tool in self.tool_manager.get_tools():
             if isinstance(tool, PythonPandasTool):
                 pandas_tool = tool
                 break

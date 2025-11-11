@@ -205,6 +205,11 @@ class ToolManager:
             ]
         self.register_tools(tools)
 
+    @property
+    def tools(self) -> List[AbstractTool]:
+        """Get list of registered tool instances."""
+        return self._tools
+
     def sync(self, other_manager: 'ToolManager') -> None:
         """
         Sync tools from another ToolManager instance.
