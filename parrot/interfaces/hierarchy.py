@@ -1,3 +1,5 @@
+"""Utilities for managing the employee hierarchy stored in ArangoDB."""
+from __future__ import annotations
 import asyncio
 from typing import List, Dict, Optional, Any, TypeVar, ParamSpec
 import logging
