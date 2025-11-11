@@ -302,10 +302,12 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
         transcript: str,
         filename: str = None,
         prefix: str = 'transcript',
+        directory: Optional[str] = None,
         subdir='transcripts'
     ) -> str:
         """Save the transcript to a file."""
-        directory = STATIC_DIR.joinpath(self.agent_id, subdir)
+        if not directory:
+            directory = STATIC_DIR.joinpath(self.agent_id, subdir)
         directory.mkdir(parents=True, exist_ok=True)
         # Create a unique filename if not provided
         if not filename:
@@ -546,13 +548,16 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
         filename_prefix: str = 'report',
         template_name: Optional[str] = None,
         pptx_template: str = "corporate_template.pptx",
+        output_dir: Optional[Path] = None,
         title: str = None,
         **kwargs
     ):
         """Generate a PowerPoint presentation using the provided tool."""
+        if not output_dir:
+            output_dir = STATIC_DIR.joinpath(self.agent_id, 'documents')
         tool = PowerPointTool(
             templates_dir=BASE_DIR.joinpath('templates'),
-            output_dir=STATIC_DIR.joinpath(self.agent_id, 'documents')
+            output_dir=output_dir
         )
         return await tool.execute(
             content=content,
