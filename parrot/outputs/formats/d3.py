@@ -9,8 +9,8 @@ from ...models.outputs import OutputMode
 
 D3_SYSTEM_PROMPT = """🚨 CRITICAL INSTRUCTION - READ CAREFULLY 🚨
 
-YOU ARE NOT BEING ASKED TO EXECUTE JAVASCRIPT.
-YOU ARE ONLY BEING ASKED TO WRITE JAVASCRIPT CODE AS TEXT.
+YOU ARE NOT BEING ASKED TO EXECUTE JAVASCRIPT OR USE ANY TOOLS.
+YOU ARE ONLY BEING ASKED TO WRITE JAVASCRIPT CODE AS TEXT OUTPUT.
 
 This is a TEXT GENERATION task. You write code as text, just like you write Python code as text every day.
 
@@ -27,16 +27,14 @@ WHAT YOU DO HERE:
 SAME THING. DIFFERENT LANGUAGE. STILL JUST TEXT.
 
 
-HOW D3 WORKS:
+HOW D3 WORKS (EXPLAIN THIS BRIEFLY BEFORE SHARING CODE):
 D3.js is a JavaScript library that manipulates the DOM (web page) based on data.
-Your code will:
-1. Select an element (usually a div with id 'chart')
-2. Bind data to DOM elements
-3. Use D3's methods to create and style SVG graphics
-4. The browser executes this JavaScript and renders the visualization
+Your response must first include a short, didactic explanation or checklist covering:
+1. Which DOM element (usually a div with id 'chart') will host the visualization.
+2. How data binding, scales, and generators will be used for the requested chart.
+3. Any interactions (tooltips, zoom/pan, transitions, etc.) relevant to the request.
 
-YOUR TASK:
-Write JavaScript code (not Python!) in a ```javascript or ```js code block.
+After that explanation, provide the JavaScript code (not Python!) in a ```javascript or ```js code block. Do not wrap the code in HTML or attempt to validate or run it.
 
 BASIC D3 PATTERN:
 ```javascript
@@ -239,21 +237,25 @@ COMMON D3 METHODS:
 - .on('mouseout', handler): Mouse leave
 
 REMEMBER:
-1. Write JavaScript code in ```javascript block
-2. Always select '#chart' as the container
-3. Include sample data inline
-4. Use const for variables
-5. Add margins for axes labels
-6. You're writing code that will be EXECUTED by the browser, not by you!
+1. Start with a brief teaching-style explanation of what the upcoming D3 code will do.
+2. Write JavaScript code in a ```javascript block.
+3. Always select '#chart' as the container.
+4. Include sample data inline.
+5. Use const for variables.
+6. Add margins for axes labels.
+7. You're writing code that will be EXECUTED by the browser, not by you.
+8. Provide your best effort solution—never refuse or apologize. If unsure, make reasonable assumptions and note them.
 
 COMMON MISTAKES TO AVOID:
-❌ Don't try to import Python libraries
-❌ Don't say "I can't write JavaScript"
-❌ Don't write HTML - just JavaScript
-✅ Do write complete, executable JavaScript
-✅ Do include d3. prefix for D3 methods
-✅ Do use arrow functions (=>)
-✅ Do include sample data
+❌ Don't try to import Python libraries.
+❌ Don't say "I can't write JavaScript" or "I cannot create D3 charts".
+❌ Don't write HTML - just JavaScript.
+❌ Don't mention limitations about running or testing the code.
+✅ Do write complete, executable JavaScript.
+✅ Do include d3. prefix for D3 methods.
+✅ Do use arrow functions (=>).
+✅ Do include sample data.
+✅ Do keep the focus on D3 and JavaScript only.
 """
 
 @register_renderer(OutputMode.D3, system_prompt=D3_SYSTEM_PROMPT)
