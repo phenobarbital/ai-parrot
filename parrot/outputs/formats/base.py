@@ -1,11 +1,13 @@
-from typing import Any, List, Dict, Any, Optional, Tuple
+from typing import Any, List, Dict, Any, Optional, Tuple, Type
 from abc import ABC, abstractmethod
+import contextlib
 import re
 from dataclasses import asdict
 import html
 from pygments import highlight
 from pygments.lexers.python import PythonLexer
 from pygments.formatters.html import HtmlFormatter
+import pandas as pd
 
 
 try:
@@ -18,30 +20,67 @@ except ImportError:
 class BaseRenderer(ABC):
     """Base class for output renderers."""
 
-    @staticmethod
-    def _get_content(response: Any) -> str:
+    @classmethod
+    def get_expected_content_type(cls) -> Type:
         """
-        Extract content from response safely.
+        Define what type of content this renderer expects.
+        Override in subclasses to specify expected type.
+
+        Returns:
+            Type: The expected type (str, pd.DataFrame, dict, etc.)
+        """
+        return str
+
+    @classmethod
+    def _get_content(cls, response: Any) -> Any:
+        """
+        Extract content from response based on expected type.
 
         Args:
             response: AIMessage response object
 
         Returns:
-            String content from the response
+            Content in the expected type
         """
-        # If response has 'response' attribute
-        if hasattr(response, 'response'):
-            return response.response or response.output
-        if hasattr(response, 'content'):
-            return response.content
-        # Try to_text property
-        if hasattr(response, 'to_text'):
-            return response.to_text
-        # Try output attribute
-        if hasattr(response, 'output'):
+        expected_type = cls.get_expected_content_type()
+
+        # First, try to get the output attribute (structured data)
+        if hasattr(response, 'output') and response.output is not None:
             output = response.output
-            return output if isinstance(output, str) else str(output)
-        # Fallback
+
+            # If output matches expected type, return it
+            if isinstance(output, expected_type):
+                return output
+
+            # Special handling for DataFrames
+            if expected_type == pd.DataFrame:
+                if isinstance(output, pd.DataFrame):
+                    return output
+                # Try to convert dict/list to DataFrame
+                elif isinstance(output, (dict, list)):
+                    with contextlib.suppress(Exception):
+                        return pd.DataFrame(output)
+
+        # Fallback to string extraction for code-based renderers
+        if expected_type == str:
+            # If response has 'response' attribute (string content)
+            if hasattr(response, 'response') and response.response:
+                return response.response
+
+            # Try content attribute
+            if hasattr(response, 'content'):
+                return response.content
+
+            # Try to_text property
+            if hasattr(response, 'to_text'):
+                return response.to_text
+
+            # Try output as string
+            if hasattr(response, 'output'):
+                output = response.output
+                return output if isinstance(output, str) else str(output)
+
+        # Last resort: string conversion
         return str(response)
 
     @staticmethod
@@ -329,15 +368,224 @@ class BaseChart(BaseRenderer):
         </style>
         '''
 
+    @staticmethod
+    def _build_html_document(
+        chart_content: str,
+        code_section: str = '',
+        title: str = 'AI-Parrot Chart',
+        extra_head: str = '',
+        mode: str = 'partial'
+    ) -> str:
+        """Build HTML document wrapper for charts."""
+        if mode == 'partial':
+            return f'''
+            {BaseChart._get_chart_styles()}
+            <div class="chart-container">
+                <div class="chart-wrapper">
+                    {chart_content}
+                </div>
+            </div>
+            {code_section}
+            '''
+
+        elif mode == 'complete':
+            return f'''<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{title}</title>
+
+    {extra_head}
+
+    <style>
+        * {{
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }}
+
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+                         'Helvetica Neue', Arial, sans-serif;
+            background: #f5f7fa;
+            padding: 20px;
+            line-height: 1.6;
+        }}
+
+        .container {{
+            max-width: 1200px;
+            margin: 0 auto;
+        }}
+
+        .chart-container {{
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.07), 0 2px 4px rgba(0,0,0,0.05);
+            padding: 30px;
+            margin-bottom: 20px;
+        }}
+
+        .chart-wrapper {{
+            min-height: 400px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }}
+
+        .code-accordion {{
+            margin-top: 20px;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            overflow: hidden;
+            background: white;
+        }}
+
+        .code-header {{
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 14px 20px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-weight: 600;
+            user-select: none;
+            transition: all 0.3s ease;
+        }}
+
+        .code-header:hover {{
+            background: linear-gradient(135deg, #5568d3 0%, #653a8e 100%);
+        }}
+
+        .toggle-icon {{
+            transition: transform 0.3s ease;
+            font-size: 12px;
+        }}
+
+        details[open] .toggle-icon {{
+            transform: rotate(90deg);
+        }}
+
+        .code-content {{
+            background: #272822;
+            padding: 20px;
+            overflow-x: auto;
+        }}
+
+        .code-content pre {{
+            margin: 0;
+            font-family: 'Monaco', 'Menlo', 'Consolas', 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 1.6;
+        }}
+
+        .error-container {{
+            background: #fff3cd;
+            border: 2px solid #ffc107;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }}
+
+        .error-container h3 {{
+            color: #856404;
+            margin-bottom: 10px;
+        }}
+
+        .error-message {{
+            color: #856404;
+            font-weight: 500;
+            margin: 10px 0;
+        }}
+
+        @media (max-width: 768px) {{
+            body {{
+                padding: 10px;
+            }}
+
+            .chart-container {{
+                padding: 15px;
+            }}
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="chart-container">
+            <div class="chart-wrapper">
+                {chart_content}
+            </div>
+        </div>
+
+        {code_section}
+    </div>
+</body>
+</html>'''
+
+        else:
+            raise ValueError(f"Invalid mode: {mode}. Must be 'partial' or 'complete'")
+
     @abstractmethod
     def execute_code(self, code: str) -> Tuple[Any, Optional[str]]:
         """Execute chart code and return chart object or error."""
         pass
 
     @abstractmethod
-    def to_html(self, chart_obj: Any, **kwargs) -> str:
-        """Convert chart object to HTML."""
+    def _render_chart_content(self, chart_obj: Any, **kwargs) -> str:
+        """
+        Render the chart-specific content (to be embedded in HTML).
+        This should return just the chart div/script, not the full HTML document.
+
+        Each chart renderer must implement this method to generate their
+        specific chart content (Altair vega-embed, Plotly div, etc.)
+        """
         pass
+
+    def to_html(
+        self,
+        chart_obj: Any,
+        mode: str = 'partial',
+        include_code: bool = False,
+        code: Optional[str] = None,
+        theme: str = 'monokai',
+        title: str = 'AI-Parrot Chart',
+        **kwargs
+    ) -> str:
+        """
+        Convert chart object to HTML.
+
+        Args:
+            chart_obj: Chart object to render
+            mode: 'partial' for embeddable HTML or 'complete' for full document
+            include_code: Whether to include code section
+            code: Python code to display
+            theme: Code highlighting theme
+            title: Document title (for complete mode)
+            **kwargs: Additional parameters passed to _render_chart_content
+
+        Returns:
+            HTML string based on mode
+        """
+        # Get chart-specific content from subclass
+        chart_content = self._render_chart_content(chart_obj, **kwargs)
+
+        # Build code section if requested
+        code_section = ''
+        if include_code and code:
+            code_section = self._build_code_section(code, theme, kwargs.get('icon', '📊'))
+
+        # Get extra head content if provided by subclass
+        extra_head = kwargs.get('extra_head', '')
+
+        # Build final HTML
+        return self._build_html_document(
+            chart_content=chart_content,
+            code_section=code_section,
+            title=title,
+            extra_head=extra_head,
+            mode=mode
+        )
 
     def to_json(self, chart_obj: Any) -> Optional[Dict]:
         """Convert chart object to JSON (optional, not all charts support this)."""

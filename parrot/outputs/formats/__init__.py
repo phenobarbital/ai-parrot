@@ -54,6 +54,16 @@ def get_renderer(mode: OutputMode) -> Type[Renderer]:
                 import_module('.jinja2', 'parrot.outputs.formats')
             elif mode == OutputMode.TEMPLATE_REPORT:
                 import_module('.template_report', 'parrot.outputs.formats')
+            elif mode == OutputMode.BOKEH:
+                import_module('.bokeh', 'parrot.outputs.formats')
+            elif mode == OutputMode.PLOTLY:
+                import_module('.plotly', 'parrot.outputs.formats')
+            elif mode == OutputMode.MATPLOTLIB:
+                import_module('.matplotlib', 'parrot.outputs.formats')
+            elif mode == OutputMode.D3:
+                import_module('.d3', 'parrot.outputs.formats')
+            elif mode == OutputMode.ECHARTS:
+                import_module('.echarts', 'parrot.outputs.formats')
     try:
         return RENDERERS[mode]
     except KeyError as exc:
