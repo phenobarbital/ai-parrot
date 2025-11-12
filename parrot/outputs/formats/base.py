@@ -181,9 +181,23 @@ class BaseRenderer(ABC):
         return BaseRenderer._clean_data(data)
 
     @abstractmethod
-    def render(self, response: Any, **kwargs) -> str:
-        pass
+    async def render(
+        self,
+        response: Any,
+        environment: str = 'terminal',
+        export_format: str = 'html',
+        return_code: bool = True,
+        **kwargs,
+    ) -> Tuple[Any, Optional[Any]]:
+        """
+        Render response in the appropriate format.
 
+        Returns:
+            Tuple[Any, Optional[Any]]: (content, wrapped)
+            - content: Primary formatted output
+            - wrapped: Optional wrapped version (e.g., HTML, standalone file)
+        """
+        pass
 
 
 class BaseChart(BaseRenderer):

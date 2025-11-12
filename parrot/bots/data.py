@@ -23,6 +23,7 @@ from .agent import BasicAgent
 from ..models.responses import AIMessage, AgentResponse
 from ..models.outputs import OutputMode, StructuredOutputConfig
 from ..conf import REDIS_HISTORY_URL, STATIC_DIR
+from ..bots.prompts import OUTPUT_SYSTEM_PROMPT
 
 
 def brace_escape(text: str) -> str:
@@ -479,7 +480,6 @@ $backstory
 
             # Handle output mode in system prompt
             if output_mode != OutputMode.DEFAULT:
-                from ..bots.prompts import OUTPUT_SYSTEM_PROMPT
                 system_prompt += OUTPUT_SYSTEM_PROMPT.format(output_mode=_mode)
 
             # Configure LLM if needed
@@ -527,11 +527,13 @@ $backstory
                 # Format output based on mode if not default
                 if output_mode != OutputMode.DEFAULT:
                     format_kwargs = format_kwargs or {}
-                    response.content = self.formatter.format(output_mode, response, **format_kwargs)
+                    response.content = self.formatter.format(
+                        output_mode, response, **format_kwargs
+                    )
                     response.output_mode = output_mode
 
                 # Build AgentResponse
-                agent_response = AgentResponse(
+                return AgentResponse(
                     agent_id=self.agent_id,
                     agent_name=self.agent_name,
                     status='success',
@@ -544,8 +546,6 @@ $backstory
                     session_id=session_id,
                     user_id=user_id
                 )
-
-                return agent_response
 
         except Exception as e:
             self.logger.error(f"Error in PandasAgent.ask(): {e}")
