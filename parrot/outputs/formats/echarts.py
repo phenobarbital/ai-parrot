@@ -208,7 +208,7 @@ class EChartsRenderer(BaseChart):
             include_code=return_code,
             code=code,
             theme=theme,
-            title=kwargs.get('title', 'ECharts Visualization'),
+            title=kwargs.pop('title', 'ECharts Visualization'),
             icon='📊',
             **kwargs
         )
