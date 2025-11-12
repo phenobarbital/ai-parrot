@@ -316,6 +316,36 @@ class BaseChart(BaseRenderer):
                 justify-content: center;
                 align-items: center;
             }
+            .chart-guidance {
+                background: #f0f4ff;
+                border-left: 4px solid #667eea;
+                padding: 16px 20px;
+                margin-bottom: 20px;
+                border-radius: 6px;
+            }
+            .chart-guidance h3 {
+                margin-bottom: 10px;
+                font-size: 16px;
+                font-weight: 600;
+                color: #364152;
+            }
+            .chart-guidance ol {
+                margin: 0 0 0 20px;
+                padding: 0;
+            }
+            .chart-guidance li {
+                margin-bottom: 6px;
+                line-height: 1.4;
+            }
+            .chart-note {
+                background: #fffaf0;
+                border-left: 4px solid #f6ad55;
+                padding: 12px 16px;
+                border-radius: 6px;
+                margin-bottom: 20px;
+                color: #744210;
+                font-size: 14px;
+            }
             .code-accordion {
                 margin-top: 20px;
                 border: 1px solid #e0e0e0;
