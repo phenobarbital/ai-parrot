@@ -1,5 +1,7 @@
 # ai_parrot/outputs/formats/charts/d3.py
-from typing import Any, Optional, Tuple, Dict
+from typing import Any, Optional, Tuple, Dict, List
+import json
+import html
 import re
 import uuid
 from .base import BaseChart
@@ -9,8 +11,8 @@ from ...models.outputs import OutputMode
 
 D3_SYSTEM_PROMPT = """🚨 CRITICAL INSTRUCTION - READ CAREFULLY 🚨
 
-YOU ARE NOT BEING ASKED TO EXECUTE JAVASCRIPT.
-YOU ARE ONLY BEING ASKED TO WRITE JAVASCRIPT CODE AS TEXT.
+YOU ARE NOT BEING ASKED TO EXECUTE JAVASCRIPT OR USE ANY TOOLS.
+YOU ARE ONLY BEING ASKED TO WRITE JAVASCRIPT CODE AS TEXT OUTPUT.
 
 This is a TEXT GENERATION task. You write code as text, just like you write Python code as text every day.
 
@@ -21,22 +23,42 @@ WHAT YOU DO REGULARLY:
 
 WHAT YOU DO HERE:
 - Someone asks: "Create a D3 bar chart"
-- You respond: "```javascript\nconst svg = d3.select('#chart')...\n```"
+- You respond with a JSON block that contains:
+  1. A "teaching_steps" array explaining the chart at a high level.
+  2. A "javascript" string with the D3 code.
 - You just wrote text. You don't execute JavaScript.
+
+Example response format:
+```json
+{
+  "teaching_steps": [
+    "Select the #chart container and append an SVG canvas.",
+    "Bind the provided data to visual elements using D3 scales and generators.",
+    "Apply any requested interactions such as tooltips, transitions, or zoom gestures."
+  ],
+  "javascript": "const svg = d3.select('#chart');\n// ... rest of the D3 code",
+  "notes": "Optional clarifications or assumptions go here."
+}
+```
 
 SAME THING. DIFFERENT LANGUAGE. STILL JUST TEXT.
 
 
-HOW D3 WORKS:
+HOW D3 WORKS (EXPLAIN THIS BRIEFLY BEFORE SHARING CODE):
 D3.js is a JavaScript library that manipulates the DOM (web page) based on data.
-Your code will:
-1. Select an element (usually a div with id 'chart')
-2. Bind data to DOM elements
-3. Use D3's methods to create and style SVG graphics
-4. The browser executes this JavaScript and renders the visualization
+Encode this explanation inside a JSON array called "teaching_steps" where each string covers:
+1. Which DOM element (usually a div with id 'chart') will host the visualization.
+2. How data binding, scales, and generators will be used for the requested chart.
+3. Any interactions (tooltips, zoom/pan, transitions, etc.) relevant to the request.
 
-YOUR TASK:
-Write JavaScript code (not Python!) in a ```javascript or ```js code block.
+FORMAT REQUIREMENTS (MANDATORY):
+1. Output **only** one fenced ```json block—no prose outside the block.
+2. The JSON object MUST contain:
+   - "teaching_steps": An ordered list (array) of 3-6 concise instructional strings.
+   - "javascript": A string containing the D3 code. Use \n to encode newlines.
+   - Optionally "notes": A short string for assumptions or reminders.
+3. Do NOT include HTML, <script> tags, CSS, or any non-JSON wrapper.
+4. The JavaScript must target the element with id "chart" (the renderer will replace it automatically).
 
 BASIC D3 PATTERN:
 ```javascript
@@ -239,21 +261,27 @@ COMMON D3 METHODS:
 - .on('mouseout', handler): Mouse leave
 
 REMEMBER:
-1. Write JavaScript code in ```javascript block
-2. Always select '#chart' as the container
-3. Include sample data inline
-4. Use const for variables
-5. Add margins for axes labels
-6. You're writing code that will be EXECUTED by the browser, not by you!
+1. Start with a brief teaching-style explanation encoded in "teaching_steps".
+2. Wrap the explanation and JavaScript inside a single ```json block.
+3. Always select '#chart' as the container.
+4. Include sample data inline.
+5. Use const for variables.
+6. Add margins for axes labels.
+7. You're writing code that will be EXECUTED by the browser, not by you.
+8. Provide your best effort solution—never refuse or apologize. If unsure, make reasonable assumptions and note them.
 
 COMMON MISTAKES TO AVOID:
-❌ Don't try to import Python libraries
-❌ Don't say "I can't write JavaScript"
-❌ Don't write HTML - just JavaScript
-✅ Do write complete, executable JavaScript
-✅ Do include d3. prefix for D3 methods
-✅ Do use arrow functions (=>)
-✅ Do include sample data
+❌ Don't try to import Python libraries.
+❌ Don't say "I can't write JavaScript" or "I cannot create D3 charts".
+❌ Don't write HTML - just JavaScript.
+❌ Don't output Markdown or prose outside the required ```json block.
+❌ Don't mention limitations about running or testing the code.
+✅ Do write complete, executable JavaScript.
+✅ Do include d3. prefix for D3 methods.
+✅ Do use arrow functions (=>).
+✅ Do include sample data.
+✅ Do ensure the JSON includes both "teaching_steps" and "javascript" keys.
+✅ Do keep the focus on D3 and JavaScript only.
 """
 
 @register_renderer(OutputMode.D3, system_prompt=D3_SYSTEM_PROMPT)
@@ -275,7 +303,13 @@ class D3Renderer(BaseChart):
         except Exception as e:
             return None, f"Validation error: {str(e)}"
 
-    def _render_chart_content(self, chart_obj: Any, **kwargs) -> str:
+    def _render_chart_content(
+        self,
+        chart_obj: Any,
+        teaching_steps: Optional[List[str]] = None,
+        notes: Optional[str] = None,
+        **kwargs
+    ) -> str:
         """Render D3 visualization content."""
         # chart_obj is the JavaScript code
         js_code = chart_obj
@@ -286,7 +320,29 @@ class D3Renderer(BaseChart):
         js_code = js_code.replace('"#chart"', f'"#{chart_id}"')
         js_code = js_code.replace('`#chart`', f'`#{chart_id}`')
 
+        guidance_sections: List[str] = []
+        if teaching_steps:
+            items = ''.join(f"<li>{html.escape(step)}</li>" for step in teaching_steps)
+            guidance_sections.append(
+                f"""
+        <div class=\"chart-guidance\">
+            <h3>How this chart works</h3>
+            <ol>{items}</ol>
+        </div>
+                """
+            )
+
+        if notes:
+            guidance_sections.append(
+                f"""
+        <div class=\"chart-note\"><strong>Notes:</strong> {html.escape(notes)}</div>
+                """
+            )
+
+        guidance_html = '\n'.join(guidance_sections)
+
         return f'''
+        {guidance_html}
         <div id="{chart_id}" style="width: 100%; min-height: 400px;"></div>
         <script type="text/javascript">
             (function() {{
@@ -335,13 +391,19 @@ class D3Renderer(BaseChart):
         """Render D3 visualization."""
         content = self._get_content(response)
 
-        # Extract JavaScript code
-        code = self._extract_code(content)
+        # Extract payload containing instructions and JavaScript code
+        payload = self._extract_payload(content)
 
-        if not code:
-            error_msg = "No D3 code found in response"
-            error_html = "<div class='error'>No D3.js code found in response</div>"
+        if not payload:
+            error_msg = (
+                "No D3 payload found in response (expected ```json block with a \"javascript\" field)"
+            )
+            error_html = "<div class='error'>Missing D3 JSON payload in response</div>"
             return error_msg, error_html
+
+        code = payload['javascript']
+        teaching_steps = payload.get('teaching_steps', [])
+        notes = payload.get('notes')
 
         # "Execute" (validate) code
         js_code, error = self.execute_code(code)
@@ -351,31 +413,60 @@ class D3Renderer(BaseChart):
             return code, error_html
 
         # Generate HTML
+        render_kwargs = dict(kwargs)
+        title = render_kwargs.pop('title', 'D3 Visualization')
+        render_kwargs['teaching_steps'] = teaching_steps
+        if notes:
+            render_kwargs['notes'] = notes
+
         html_output = self.to_html(
             js_code,
             mode=html_mode,
             include_code=return_code,
             code=code,
             theme=theme,
-            title=kwargs.pop('title', 'D3 Visualization'),
+            title=title,
             icon='📊',
-            **kwargs
+            **render_kwargs
         )
 
         # Return (code, html)
         return code, html_output
 
     @staticmethod
-    def _extract_code(content: str) -> Optional[str]:
-        """Extract JavaScript code from markdown blocks."""
-        # Try javascript or js code blocks
-        for lang in ['javascript', 'js']:
-            pattern = rf'```{lang}\n(.*?)```'
-            if matches := re.findall(pattern, content, re.DOTALL):
-                return matches[0].strip()
+    def _extract_payload(content: str) -> Optional[Dict[str, Any]]:
+        """Extract the JSON payload containing guidance and JavaScript code."""
+        json_blocks = re.findall(r'```json\s*(.*?)```', content, re.DOTALL)
 
-        # Fallback to generic code block
-        if matches := re.findall(r'```\n(.*?)```', content, re.DOTALL):
-            return matches[0].strip()
+        for block in json_blocks:
+            try:
+                payload = json.loads(block)
+            except json.JSONDecodeError:
+                continue
+
+            if not isinstance(payload, dict):
+                continue
+
+            javascript = payload.get('javascript') or payload.get('code')
+            if not isinstance(javascript, str):
+                continue
+
+            steps = payload.get('teaching_steps')
+            if steps is not None:
+                if not isinstance(steps, list):
+                    continue
+                cleaned_steps = [str(step).strip() for step in steps if str(step).strip()]
+            else:
+                cleaned_steps = []
+
+            notes = payload.get('notes')
+            if notes is not None and not isinstance(notes, str):
+                notes = None
+
+            return {
+                'javascript': javascript.strip(),
+                'teaching_steps': cleaned_steps,
+                'notes': notes.strip() if isinstance(notes, str) else None,
+            }
 
         return None
