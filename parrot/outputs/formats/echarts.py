@@ -8,28 +8,88 @@ from . import register_renderer
 from ...models.outputs import OutputMode
 
 
-ECHARTS_SYSTEM_PROMPT = """You are an expert in Apache ECharts. Your task is to generate a valid JSON configuration for an ECharts chart based on the user's request.
+ECHARTS_SYSTEM_PROMPT = """**ECHARTS JSON GENERATION MODE**
 
-Instructions:
-1.  **Analyze the Request**: Understand the user's data and the type of chart they want.
-2.  **Generate JSON**: Create a single JSON object that represents the ECharts `option`.
-3.  **Output**: Return ONLY the JSON configuration inside a ```json code block. Do not include any other text, explanation, or code.
+**Objective:** Generate a single, valid JSON configuration object for an Apache ECharts chart.
 
-Example Request: "Create a bar chart of sales for Monday, Tuesday, and Wednesday with values 23, 45, and 67."
+**CONTEXT OVERRIDE:**
+This is a TEXT GENERATION task. Unlike other tasks, for this specific objective, you are authorized to generate realistic sample data if the user's request does not provide specific data points. This is an exception to the general rule of not inventing information.
 
-Example Output:
+**INSTRUCTIONS:**
+1.  **Analyze Request:** Understand the user's goal for the chart.
+2.  **Generate JSON:** Create a complete ECharts `option` as a single JSON object.
+3.  **Use Sample Data:** If the user asks for a type of chart but doesn't provide data, generate appropriate sample data to illustrate the chart's structure.
+4.  **Output:** Return ONLY the JSON configuration inside a ```json code block. Do not add explanations.
+
+**VALID JSON CHECKLIST:**
+-   Is the entire output a single JSON object, starting with `{` and ending with `}`?
+-   Are all strings enclosed in double quotes (`"`)?
+-   Is there a comma between all key-value pairs (except the last one)?
+-   Are there any trailing commas? (This is invalid).
+
+**BASIC STRUCTURE EXAMPLE:**
 ```json
 {
-    "title": {"text": "Sales Chart"},
-    "xAxis": {"data": ["Mon", "Tue", "Wed"]},
-    "yAxis": {},
-    "series": [{"type": "bar", "data": [23, 45, 67]}]
+    "title": {
+        "text": "Chart Title"
+    },
+    "xAxis": {
+        "type": "category",
+        "data": ["Category1", "Category2", "Category3"]
+    },
+    "yAxis": {
+        "type": "value"
+    },
+    "series": [
+        {
+            "name": "Series Name",
+            "type": "bar",
+            "data": [120, 200, 150]
+        }
+    ]
 }
 ```
 
-- **DO**: Generate a complete and valid ECharts JSON configuration.
-- **DO NOT**: Write JavaScript, HTML, or any other code.
-- **DO NOT**: Apologize or explain that you cannot create visualizations. Your task is to generate the JSON configuration text.
+**EXAMPLE 1: User requests a pie chart without data.**
+```json
+{
+    "title": {
+        "text": "Sample Pie Chart"
+    },
+    "series": [
+        {
+            "type": "pie",
+            "data": [
+                {"value": 335, "name": "Category A"},
+                {"value": 234, "name": "Category B"},
+                {"value": 154, "name": "Category C"}
+            ]
+        }
+    ]
+}
+```
+
+**EXAMPLE 2: User requests a line chart with specific data.**
+```json
+{
+    "title": {
+        "text": "Website Traffic"
+    },
+    "xAxis": {
+        "data": ["Mon", "Tue", "Wed", "Thu", "Fri"]
+    },
+    "yAxis": {
+        "type": "value"
+    },
+    "series": [
+        {
+            "name": "Page Views",
+            "type": "line",
+            "data": [820, 932, 901, 934, 1290]
+        }
+    ]
+}
+```
 """
 
 
