@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Folium Map</title>
+
+    
+    
+    <meta http-equiv="content-type" content="text/html; charset=UTF-8" />
+    
+        <script>
+            L_NO_TOUCH = false;
+            L_DISABLE_3D = false;
+        </script>
+    
+    <style>html, body {width: 100%;height: 100%;margin: 0;padding: 0;}</style>
+    <style>#map {position:absolute;top:0;bottom:0;right:0;left:0;}</style>
+    <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.js"></script>
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.css"/>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/css/bootstrap.min.css"/>
+    <link rel="stylesheet" href="https://netdna.bootstrapcdn.com/bootstrap/3.0.0/css/bootstrap-glyphicons.css"/>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.2.0/css/all.min.css"/>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.css"/>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/python-visualization/folium/folium/templates/leaflet.awesome.rotate.min.css"/>
+    
+            <meta name="viewport" content="width=device-width,
+                initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+            <style>
+                #map_c321035ad1f27852b6f2f9b2c0d3ab3f {
+                    position: relative;
+                    width: 100.0%;
+                    height: 100.0%;
+                    left: 0.0%;
+                    top: 0.0%;
+                }
+                .leaflet-container { font-size: 1rem; }
+            </style>
+        
+
+
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+                         'Helvetica Neue', Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f5f7fa;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .map-container {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.07), 0 2px 4px rgba(0,0,0,0.05);
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        /* Override Folium's absolute positioning */
+        .folium-map {
+            position: relative !important;
+            width: 100% !important;
+            height: 600px !important;
+            border-radius: 8px;
+        }
+
+        .code-accordion {
+            margin-top: 20px;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            overflow: hidden;
+            background: white;
+        }
+
+        .code-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 14px 20px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-weight: 600;
+            user-select: none;
+            transition: all 0.3s ease;
+        }
+
+        .code-header:hover {
+            background: linear-gradient(135deg, #5568d3 0%, #653a8e 100%);
+        }
+
+        .toggle-icon {
+            transition: transform 0.3s ease;
+            font-size: 12px;
+        }
+
+        details[open] .toggle-icon {
+            transform: rotate(90deg);
+        }
+
+        .code-content {
+            background: #272822;
+            padding: 20px;
+            overflow-x: auto;
+        }
+
+        .code-content pre {
+            margin: 0;
+            font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        @media (max-width: 768px) {
+            body {
+                padding: 10px;
+            }
+            .map-container {
+                padding: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="map-container">
+            <div class="folium-map" id="map_c321035ad1f27852b6f2f9b2c0d3ab3f" ></div>
+        
+</body>
+<script>
+    
+    
+            var map_c321035ad1f27852b6f2f9b2c0d3ab3f = L.map(
+                "map_c321035ad1f27852b6f2f9b2c0d3ab3f",
+                {
+                    center: [41.53645, -72.53245],
+                    crs: L.CRS.EPSG3857,
+                    zoom: 7,
+                    zoomControl: true,
+                    preferCanvas: false,
+                }
+            );
+
+            
+
+        
+    
+            var tile_layer_3044e7a61d6ee1e7d67789c89a1e778c = L.tileLayer(
+                "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+                {"attribution": "\u0026copy; \u003ca href=\"https://www.openstreetmap.org/copyright\"\u003eOpenStreetMap\u003c/a\u003e contributors", "detectRetina": false, "maxNativeZoom": 19, "maxZoom": 19, "minZoom": 0, "noWrap": false, "opacity": 1, "subdomains": "abc", "tms": false}
+            );
+        
+    
+            tile_layer_3044e7a61d6ee1e7d67789c89a1e778c.addTo(map_c321035ad1f27852b6f2f9b2c0d3ab3f);
+        
+    
+            var marker_340cee1e463d78362865e75fd4e3c883 = L.marker(
+                [42.3601, -71.0589],
+                {}
+            ).addTo(map_c321035ad1f27852b6f2f9b2c0d3ab3f);
+        
+    
+            var icon_2e44b906fdfc6956fde1602e8dbca543 = L.AwesomeMarkers.icon(
+                {"extraClasses": "fa-rotate-0", "icon": "play", "iconColor": "white", "markerColor": "green", "prefix": "glyphicon"}
+            );
+            marker_340cee1e463d78362865e75fd4e3c883.setIcon(icon_2e44b906fdfc6956fde1602e8dbca543);
+        
+    
+        var popup_c867ca04fa841d577f9943f96983a01e = L.popup({"maxWidth": "100%"});
+
+        
+            
+                var html_fa9010d7bf0e4d622cd5e3a3991387c2 = $(`<div id="html_fa9010d7bf0e4d622cd5e3a3991387c2" style="width: 100.0%; height: 100.0%;">Boston (Start)</div>`)[0];
+                popup_c867ca04fa841d577f9943f96983a01e.setContent(html_fa9010d7bf0e4d622cd5e3a3991387c2);
+            
+        
+
+        marker_340cee1e463d78362865e75fd4e3c883.bindPopup(popup_c867ca04fa841d577f9943f96983a01e)
+        ;
+
+        
+    
+    
+            marker_340cee1e463d78362865e75fd4e3c883.bindTooltip(
+                `<div>
+                     Boston
+                 </div>`,
+                {"sticky": true}
+            );
+        
+    
+            var marker_6efaeb55b8206425dbbad975f78dce95 = L.marker(
+                [40.7128, -74.006],
+                {}
+            ).addTo(map_c321035ad1f27852b6f2f9b2c0d3ab3f);
+        
+    
+            var icon_a2aa6b5d5403486ddf6dc431fa3d23f9 = L.AwesomeMarkers.icon(
+                {"extraClasses": "fa-rotate-0", "icon": "stop", "iconColor": "white", "markerColor": "red", "prefix": "glyphicon"}
+            );
+            marker_6efaeb55b8206425dbbad975f78dce95.setIcon(icon_a2aa6b5d5403486ddf6dc431fa3d23f9);
+        
+    
+        var popup_3598610601e586cdea06a55a18786c0e = L.popup({"maxWidth": "100%"});
+
+        
+            
+                var html_99b78f07faf0196580a5f0a2253ad6e7 = $(`<div id="html_99b78f07faf0196580a5f0a2253ad6e7" style="width: 100.0%; height: 100.0%;">New York (End)</div>`)[0];
+                popup_3598610601e586cdea06a55a18786c0e.setContent(html_99b78f07faf0196580a5f0a2253ad6e7);
+            
+        
+
+        marker_6efaeb55b8206425dbbad975f78dce95.bindPopup(popup_3598610601e586cdea06a55a18786c0e)
+        ;
+
+        
+    
+    
+            marker_6efaeb55b8206425dbbad975f78dce95.bindTooltip(
+                `<div>
+                     New York
+                 </div>`,
+                {"sticky": true}
+            );
+        
+    
+            var poly_line_c5facf0b6b1c619429c1b64125126eec = L.polyline(
+                [[42.3601, -71.0589], [40.7128, -74.006]],
+                {"bubblingMouseEvents": true, "color": "blue", "dashArray": null, "dashOffset": null, "fill": false, "fillColor": "blue", "fillOpacity": 0.2, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "noClip": false, "opacity": 0.7, "smoothFactor": 1.0, "stroke": true, "weight": 5}
+            ).addTo(map_c321035ad1f27852b6f2f9b2c0d3ab3f);
+        
+    
+            var marker_71ec9710ad65a768a17ad0f54d4281d2 = L.marker(
+                [41.927611480657575, -71.83264304337646],
+                {}
+            ).addTo(map_c321035ad1f27852b6f2f9b2c0d3ab3f);
+        
+    
+            var icon_b1d7b2597a1d9a441b0f96584d007978 = L.AwesomeMarkers.icon(
+                {"extraClasses": "fa-rotate-0", "icon": "info-sign", "iconColor": "white", "markerColor": "blue", "prefix": "glyphicon"}
+            );
+            marker_71ec9710ad65a768a17ad0f54d4281d2.setIcon(icon_b1d7b2597a1d9a441b0f96584d007978);
+        
+    
+        var popup_9a72f922034dcd5b7a74dfeb8335e110 = L.popup({"maxWidth": "100%"});
+
+        
+            
+                var html_5a73322848516de79e61b9fba750e151 = $(`<div id="html_5a73322848516de79e61b9fba750e151" style="width: 100.0%; height: 100.0%;">50 miles</div>`)[0];
+                popup_9a72f922034dcd5b7a74dfeb8335e110.setContent(html_5a73322848516de79e61b9fba750e151);
+            
+        
+
+        marker_71ec9710ad65a768a17ad0f54d4281d2.bindPopup(popup_9a72f922034dcd5b7a74dfeb8335e110)
+        ;
+
+        
+    
+    
+            marker_71ec9710ad65a768a17ad0f54d4281d2.bindTooltip(
+                `<div>
+                     50 miles from Boston
+                 </div>`,
+                {"sticky": true}
+            );
+        
+    
+            var marker_ad316bfadd0baa6ab24151d04dd606bc = L.marker(
+                [41.49512296131515, -72.60638608675295],
+                {}
+            ).addTo(map_c321035ad1f27852b6f2f9b2c0d3ab3f);
+        
+    
+            var icon_a3bfad86456b026549718ac2a3c0667a = L.AwesomeMarkers.icon(
+                {"extraClasses": "fa-rotate-0", "icon": "info-sign", "iconColor": "white", "markerColor": "blue", "prefix": "glyphicon"}
+            );
+            marker_ad316bfadd0baa6ab24151d04dd606bc.setIcon(icon_a3bfad86456b026549718ac2a3c0667a);
+        
+    
+        var popup_7466e591455830c64def2d8896b02084 = L.popup({"maxWidth": "100%"});
+
+        
+            
+                var html_3b086a826a461e0d320b69557e96fac8 = $(`<div id="html_3b086a826a461e0d320b69557e96fac8" style="width: 100.0%; height: 100.0%;">100 miles</div>`)[0];
+                popup_7466e591455830c64def2d8896b02084.setContent(html_3b086a826a461e0d320b69557e96fac8);
+            
+        
+
+        marker_ad316bfadd0baa6ab24151d04dd606bc.bindPopup(popup_7466e591455830c64def2d8896b02084)
+        ;
+
+        
+    
+    
+            marker_ad316bfadd0baa6ab24151d04dd606bc.bindTooltip(
+                `<div>
+                     100 miles from Boston
+                 </div>`,
+                {"sticky": true}
+            );
+        
+    
+            var marker_c3b355f4979f967c783b80c713acd20b = L.marker(
+                [41.062634441972726, -73.38012913012942],
+                {}
+            ).addTo(map_c321035ad1f27852b6f2f9b2c0d3ab3f);
+        
+    
+            var icon_872f48dd5432d4cd3b9cf37980acadb5 = L.AwesomeMarkers.icon(
+                {"extraClasses": "fa-rotate-0", "icon": "info-sign", "iconColor": "white", "markerColor": "blue", "prefix": "glyphicon"}
+            );
+            marker_c3b355f4979f967c783b80c713acd20b.setIcon(icon_872f48dd5432d4cd3b9cf37980acadb5);
+        
+    
+        var popup_3767249ce1e00036d9e2f6d5bf6c1b34 = L.popup({"maxWidth": "100%"});
+
+        
+            
+                var html_a4005a114c039b905ca03ef8a25832df = $(`<div id="html_a4005a114c039b905ca03ef8a25832df" style="width: 100.0%; height: 100.0%;">150 miles</div>`)[0];
+                popup_3767249ce1e00036d9e2f6d5bf6c1b34.setContent(html_a4005a114c039b905ca03ef8a25832df);
+            
+        
+
+        marker_c3b355f4979f967c783b80c713acd20b.bindPopup(popup_3767249ce1e00036d9e2f6d5bf6c1b34)
+        ;
+
+        
+    
+    
+            marker_c3b355f4979f967c783b80c713acd20b.bindTooltip(
+                `<div>
+                     150 miles from Boston
+                 </div>`,
+                {"sticky": true}
+            );
+        
+</script>
+</html>
+        </div>
+        
+        <details class="code-accordion">
+            <summary class="code-header">
+                <span>🗺️ View Python Code</span>
+                <span class="toggle-icon">▶</span>
+            </summary>
+            <div class="code-content">
+                <div class="code" style="background: #272822"><pre style="line-height: 125%;"><span></span><span style="color: #FF4689">import</span><span style="color: #F8F8F2"> folium</span>
+<span style="color: #FF4689">from</span><span style="color: #F8F8F2"> geopy.distance </span><span style="color: #FF4689">import</span> <span style="color: #F8F8F2">geodesic</span>
+
+<span style="color: #959077"># Coordinates for Boston and New York</span>
+<span style="color: #F8F8F2">boston_coords</span> <span style="color: #FF4689">=</span> <span style="color: #F8F8F2">(</span><span style="color: #AE81FF">42.3601</span><span style="color: #F8F8F2">,</span> <span style="color: #FF4689">-</span><span style="color: #AE81FF">71.0589</span><span style="color: #F8F8F2">)</span>
+<span style="color: #F8F8F2">new_york_coords</span> <span style="color: #FF4689">=</span> <span style="color: #F8F8F2">(</span><span style="color: #AE81FF">40.7128</span><span style="color: #F8F8F2">,</span> <span style="color: #FF4689">-</span><span style="color: #AE81FF">74.0060</span><span style="color: #F8F8F2">)</span>
+
+<span style="color: #959077"># Create base map centered between Boston and New York</span>
+<span style="color: #F8F8F2">m</span> <span style="color: #FF4689">=</span> <span style="color: #F8F8F2">folium</span><span style="color: #FF4689">.</span><span style="color: #F8F8F2">Map(</span>
+    <span style="color: #F8F8F2">location</span><span style="color: #FF4689">=</span><span style="color: #F8F8F2">[(boston_coords[</span><span style="color: #AE81FF">0</span><span style="color: #F8F8F2">]</span> <span style="color: #FF4689">+</span> <span style="color: #F8F8F2">new_york_coords[</span><span style="color: #AE81FF">0</span><span style="color: #F8F8F2">])</span> <span style="color: #FF4689">/</span> <span style="color: #AE81FF">2</span><span style="color: #F8F8F2">,</span> <span style="color: #F8F8F2">(boston_coords[</span><span style="color: #AE81FF">1</span><span style="color: #F8F8F2">]</span> <span style="color: #FF4689">+</span> <span style="color: #F8F8F2">new_york_coords[</span><span style="color: #AE81FF">1</span><span style="color: #F8F8F2">])</span> <span style="color: #FF4689">/</span> <span style="color: #AE81FF">2</span><span style="color: #F8F8F2">],</span>
+    <span style="color: #F8F8F2">zoom_start</span><span style="color: #FF4689">=</span><span style="color: #AE81FF">7</span><span style="color: #F8F8F2">,</span>
+    <span style="color: #F8F8F2">tiles</span><span style="color: #FF4689">=</span><span style="color: #E6DB74">&#39;OpenStreetMap&#39;</span>
+<span style="color: #F8F8F2">)</span>
+
+<span style="color: #959077"># Add start marker (Boston)</span>
+<span style="color: #F8F8F2">folium</span><span style="color: #FF4689">.</span><span style="color: #F8F8F2">Marker(</span>
+    <span style="color: #F8F8F2">location</span><span style="color: #FF4689">=</span><span style="color: #F8F8F2">boston_coords,</span>
+    <span style="color: #F8F8F2">popup</span><span style="color: #FF4689">=</span><span style="color: #E6DB74">&#39;Boston (Start)&#39;</span><span style="color: #F8F8F2">,</span>
+    <span style="color: #F8F8F2">tooltip</span><span style="color: #FF4689">=</span><span style="color: #E6DB74">&#39;Boston&#39;</span><span style="color: #F8F8F2">,</span>
+    <span style="color: #F8F8F2">icon</span><span style="color: #FF4689">=</span><span style="color: #F8F8F2">folium</span><span style="color: #FF4689">.</span><span style="color: #F8F8F2">Icon(color</span><span style="color: #FF4689">=</span><span style="color: #E6DB74">&#39;green&#39;</span><span style="color: #F8F8F2">,</span> <span style="color: #F8F8F2">icon</span><span style="color: #FF4689">=</span><span style="color: #E6DB74">&#39;play&#39;</span><span style="color: #F8F8F2">)</span>
+<span style="color: #F8F8F2">)</span><span style="color: #FF4689">.</span><span style="color: #F8F8F2">add_to(m)</span>
+
+<span style="color: #959077"># Add end marker (New York)</span>
+<span style="color: #F8F8F2">folium</span><span style="color: #FF4689">.</span><span style="color: #F8F8F2">Marker(</span>
+    <span style="color: #F8F8F2">location</span><span style="color: #FF4689">=</span><span style="color: #F8F8F2">new_york_coords,</span>
+    <span style="color: #F8F8F2">popup</span><span style="color: #FF4689">=</span><span style="color: #E6DB74">&#39;New York (End)&#39;</span><span style="color: #F8F8F2">,</span>
+    <span style="color: #F8F8F2">tooltip</span><span style="color: #FF4689">=</span><span style="color: #E6DB74">&#39;New York&#39;</span><span style="color: #F8F8F2">,</span>
+    <span style="color: #F8F8F2">icon</span><span style="color: #FF4689">=</span><span style="color: #F8F8F2">folium</span><span style="color: #FF4689">.</span><span style="color: #F8F8F2">Icon(color</span><span style="color: #FF4689">=</span><span style="color: #E6DB74">&#39;red&#39;</span><span style="color: #F8F8F2">,</span> <span style="color: #F8F8F2">icon</span><span style="color: #FF4689">=</span><span style="color: #E6DB74">&#39;stop&#39;</span><span style="color: #F8F8F2">)</span>
+<span style="color: #F8F8F2">)</span><span style="color: #FF4689">.</span><span style="color: #F8F8F2">add_to(m)</span>
+
+<span style="color: #959077"># Add polyline for the route</span>
+<span style="color: #F8F8F2">folium</span><span style="color: #FF4689">.</span><span style="color: #F8F8F2">PolyLine(</span>
+    <span style="color: #F8F8F2">locations</span><span style="color: #FF4689">=</span><span style="color: #F8F8F2">[boston_coords,</span> <span style="color: #F8F8F2">new_york_coords],</span>
+    <span style="color: #F8F8F2">color</span><span style="color: #FF4689">=</span><span style="color: #E6DB74">&#39;blue&#39;</span><span style="color: #F8F8F2">,</span>
+    <span style="color: #F8F8F2">weight</span><span style="color: #FF4689">=</span><span style="color: #AE81FF">5</span><span style="color: #F8F8F2">,</span>
+    <span style="color: #F8F8F2">opacity</span><span style="color: #FF4689">=</span><span style="color: #AE81FF">0.7</span>
+<span style="color: #F8F8F2">)</span><span style="color: #FF4689">.</span><span style="color: #F8F8F2">add_to(m)</span>
+
+<span style="color: #959077"># Calculate total distance between Boston and New York</span>
+<span style="color: #F8F8F2">total_distance_miles</span> <span style="color: #FF4689">=</span> <span style="color: #F8F8F2">geodesic(boston_coords,</span> <span style="color: #F8F8F2">new_york_coords)</span><span style="color: #FF4689">.</span><span style="color: #F8F8F2">miles</span>
+
+<span style="color: #959077"># Add distance markers every 50 miles</span>
+<span style="color: #F8F8F2">segment_length_miles</span> <span style="color: #FF4689">=</span> <span style="color: #AE81FF">50</span>
+<span style="color: #F8F8F2">num_markers</span> <span style="color: #FF4689">=</span> <span style="color: #F8F8F2">int(total_distance_miles</span> <span style="color: #FF4689">/</span> <span style="color: #F8F8F2">segment_length_miles)</span>
+
+<span style="color: #66D9EF">for</span> <span style="color: #F8F8F2">i</span> <span style="color: #FF4689">in</span> <span style="color: #F8F8F2">range(</span><span style="color: #AE81FF">1</span><span style="color: #F8F8F2">,</span> <span style="color: #F8F8F2">num_markers</span> <span style="color: #FF4689">+</span> <span style="color: #AE81FF">1</span><span style="color: #F8F8F2">):</span>
+    <span style="color: #F8F8F2">fraction</span> <span style="color: #FF4689">=</span> <span style="color: #F8F8F2">(i</span> <span style="color: #FF4689">*</span> <span style="color: #F8F8F2">segment_length_miles)</span> <span style="color: #FF4689">/</span> <span style="color: #F8F8F2">total_distance_miles</span>
+    
+    <span style="color: #959077"># Linear interpolation of latitude and longitude for intermediate points</span>
+    <span style="color: #F8F8F2">inter_lat</span> <span style="color: #FF4689">=</span> <span style="color: #F8F8F2">boston_coords[</span><span style="color: #AE81FF">0</span><span style="color: #F8F8F2">]</span> <span style="color: #FF4689">+</span> <span style="color: #F8F8F2">(new_york_coords[</span><span style="color: #AE81FF">0</span><span style="color: #F8F8F2">]</span> <span style="color: #FF4689">-</span> <span style="color: #F8F8F2">boston_coords[</span><span style="color: #AE81FF">0</span><span style="color: #F8F8F2">])</span> <span style="color: #FF4689">*</span> <span style="color: #F8F8F2">fraction</span>
+    <span style="color: #F8F8F2">inter_lon</span> <span style="color: #FF4689">=</span> <span style="color: #F8F8F2">boston_coords[</span><span style="color: #AE81FF">1</span><span style="color: #F8F8F2">]</span> <span style="color: #FF4689">+</span> <span style="color: #F8F8F2">(new_york_coords[</span><span style="color: #AE81FF">1</span><span style="color: #F8F8F2">]</span> <span style="color: #FF4689">-</span> <span style="color: #F8F8F2">boston_coords[</span><span style="color: #AE81FF">1</span><span style="color: #F8F8F2">])</span> <span style="color: #FF4689">*</span> <span style="color: #F8F8F2">fraction</span>
+    
+    <span style="color: #F8F8F2">marker_location</span> <span style="color: #FF4689">=</span> <span style="color: #F8F8F2">(inter_lat,</span> <span style="color: #F8F8F2">inter_lon)</span>
+    
+    <span style="color: #F8F8F2">folium</span><span style="color: #FF4689">.</span><span style="color: #F8F8F2">Marker(</span>
+        <span style="color: #F8F8F2">location</span><span style="color: #FF4689">=</span><span style="color: #F8F8F2">marker_location,</span>
+        <span style="color: #F8F8F2">popup</span><span style="color: #FF4689">=</span><span style="color: #E6DB74">f&#39;{</span><span style="color: #F8F8F2">i </span><span style="color: #FF4689">*</span><span style="color: #F8F8F2"> segment_length_miles</span><span style="color: #E6DB74">} miles&#39;</span><span style="color: #F8F8F2">,</span>
+        <span style="color: #F8F8F2">tooltip</span><span style="color: #FF4689">=</span><span style="color: #E6DB74">f&#39;{</span><span style="color: #F8F8F2">i </span><span style="color: #FF4689">*</span><span style="color: #F8F8F2"> segment_length_miles</span><span style="color: #E6DB74">} miles from Boston&#39;</span><span style="color: #F8F8F2">,</span>
+        <span style="color: #F8F8F2">icon</span><span style="color: #FF4689">=</span><span style="color: #F8F8F2">folium</span><span style="color: #FF4689">.</span><span style="color: #F8F8F2">Icon(color</span><span style="color: #FF4689">=</span><span style="color: #E6DB74">&#39;blue&#39;</span><span style="color: #F8F8F2">,</span> <span style="color: #F8F8F2">icon</span><span style="color: #FF4689">=</span><span style="color: #E6DB74">&#39;info-sign&#39;</span><span style="color: #F8F8F2">)</span>
+    <span style="color: #F8F8F2">)</span><span style="color: #FF4689">.</span><span style="color: #F8F8F2">add_to(m)</span>
+</pre></div>
+
+            </div>
+        </details>
+        
+    </div>
+</body>
+</html>

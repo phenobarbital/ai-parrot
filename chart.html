@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Revenue & Profit Analysis</title>
+
+    
+    <!-- Apache ECharts -->
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+        
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+                         'Helvetica Neue', Arial, sans-serif;
+            background: #f5f7fa;
+            padding: 20px;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .chart-container {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.07), 0 2px 4px rgba(0,0,0,0.05);
+            padding: 30px;
+            margin-bottom: 20px;
+        }
+
+        .chart-wrapper {
+            min-height: 400px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .code-accordion {
+            margin-top: 20px;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            overflow: hidden;
+            background: white;
+        }
+
+        .code-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 14px 20px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-weight: 600;
+            user-select: none;
+            transition: all 0.3s ease;
+        }
+
+        .code-header:hover {
+            background: linear-gradient(135deg, #5568d3 0%, #653a8e 100%);
+        }
+
+        .toggle-icon {
+            transition: transform 0.3s ease;
+            font-size: 12px;
+        }
+
+        details[open] .toggle-icon {
+            transform: rotate(90deg);
+        }
+
+        .code-content {
+            background: #272822;
+            padding: 20px;
+            overflow-x: auto;
+        }
+
+        .code-content pre {
+            margin: 0;
+            font-family: 'Monaco', 'Menlo', 'Consolas', 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        .error-container {
+            background: #fff3cd;
+            border: 2px solid #ffc107;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+
+        .error-container h3 {
+            color: #856404;
+            margin-bottom: 10px;
+        }
+
+        .error-message {
+            color: #856404;
+            font-weight: 500;
+            margin: 10px 0;
+        }
+
+        @media (max-width: 768px) {
+            body {
+                padding: 10px;
+            }
+
+            .chart-container {
+                padding: 15px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="chart-container">
+            <div class="chart-wrapper">
+                
+        <div id="echarts-ae0aefc9" style="width: 100%; height: 600px;"></div>
+        <script type="text/javascript">
+            (function() {
+                var chartDom = document.getElementById('echarts-ae0aefc9');
+                var myChart = echarts.init(chartDom);
+                var option = {
+  "title": {
+    "text": "Monthly Revenue and Profit Margin (Last 12 Months)"
+  },
+  "tooltip": {
+    "trigger": "axis",
+    "axisPointer": {
+      "type": "cross",
+      "crossStyle": {
+        "color": "#999"
+      }
+    },
+    "formatter": "{b}<br/>{a0}: {c0} USD<br/>{a1}: {c1}%"
+  },
+  "legend": {
+    "data": [
+      "Revenue",
+      "Profit Margin"
+    ]
+  },
+  "xAxis": [
+    {
+      "type": "category",
+      "data": [
+        "Jan",
+        "Feb",
+        "Mar",
+        "Apr",
+        "May",
+        "Jun",
+        "Jul",
+        "Aug",
+        "Sep",
+        "Oct",
+        "Nov",
+        "Dec"
+      ],
+      "axisPointer": {
+        "type": "shadow"
+      }
+    }
+  ],
+  "yAxis": [
+    {
+      "type": "value",
+      "name": "Revenue (USD)",
+      "min": 0,
+      "max": 100000,
+      "interval": 20000,
+      "axisLabel": {
+        "formatter": "{value} USD"
+      }
+    },
+    {
+      "type": "value",
+      "name": "Profit Margin (%)",
+      "min": 0,
+      "max": 50,
+      "interval": 10,
+      "axisLabel": {
+        "formatter": "{value} %"
+      }
+    }
+  ],
+  "series": [
+    {
+      "name": "Revenue",
+      "type": "bar",
+      "data": [
+        80000,
+        75000,
+        85000,
+        90000,
+        92000,
+        88000,
+        95000,
+        93000,
+        98000,
+        100000,
+        97000,
+        96000
+      ]
+    },
+    {
+      "name": "Profit Margin",
+      "type": "line",
+      "yAxisIndex": 1,
+      "data": [
+        25,
+        28,
+        27,
+        30,
+        32,
+        31,
+        33,
+        30,
+        35,
+        34,
+        32,
+        33
+      ]
+    }
+  ]
+};
+
+                myChart.setOption(option);
+
+                // Resize handler
+                window.addEventListener('resize', function() {
+                    myChart.resize();
+                });
+
+                console.log('ECharts rendered successfully');
+            })();
+        </script>
+        
+            </div>
+        </div>
+
+        
+        <details class="code-accordion">
+            <summary class="code-header">
+                <span>📊 View Python Code</span>
+                <span class="toggle-icon">▶</span>
+            </summary>
+            <div class="code-content">
+                <div class="code" style="background: #272822"><pre style="line-height: 125%;"><span></span><span style="color: #F8F8F2">{</span>
+  <span style="color: #E6DB74">&quot;title&quot;</span><span style="color: #F8F8F2">:</span> <span style="color: #F8F8F2">{</span>
+    <span style="color: #E6DB74">&quot;text&quot;</span><span style="color: #F8F8F2">:</span> <span style="color: #E6DB74">&quot;Monthly Revenue and Profit Margin (Last 12 Months)&quot;</span>
+  <span style="color: #F8F8F2">},</span>
+  <span style="color: #E6DB74">&quot;tooltip&quot;</span><span style="color: #F8F8F2">:</span> <span style="color: #F8F8F2">{</span>
+    <span style="color: #E6DB74">&quot;trigger&quot;</span><span style="color: #F8F8F2">:</span> <span style="color: #E6DB74">&quot;axis&quot;</span><span style="color: #F8F8F2">,</span>
+    <span style="color: #E6DB74">&quot;axisPointer&quot;</span><span style="color: #F8F8F2">:</span> <span style="color: #F8F8F2">{</span>
+      <span style="color: #E6DB74">&quot;type&quot;</span><span style="color: #F8F8F2">:</span> <span style="color: #E6DB74">&quot;cross&quot;</span><span style="color: #F8F8F2">,</span>
+      <span style="color: #E6DB74">&quot;crossStyle&quot;</span><span style="color: #F8F8F2">:</span> <span style="color: #F8F8F2">{</span>
+        <span style="color: #E6DB74">&quot;color&quot;</span><span style="color: #F8F8F2">:</span> <span style="color: #E6DB74">&quot;#999&quot;</span>
+      <span style="color: #F8F8F2">}</span>
+    <span style="color: #F8F8F2">},</span>
+    <span style="color: #E6DB74">&quot;formatter&quot;</span><span style="color: #F8F8F2">:</span> <span style="color: #E6DB74">&quot;{b}&lt;br/&gt;{a0}: {c0} USD&lt;br/&gt;{a1}: {c1}%&quot;</span>
+  <span style="color: #F8F8F2">},</span>
+  <span style="color: #E6DB74">&quot;legend&quot;</span><span style="color: #F8F8F2">:</span> <span style="color: #F8F8F2">{</span>
+    <span style="color: #E6DB74">&quot;data&quot;</span><span style="color: #F8F8F2">:</span> <span style="color: #F8F8F2">[</span><span style="color: #E6DB74">&quot;Revenue&quot;</span><span style="color: #F8F8F2">,</span> <span style="color: #E6DB74">&quot;Profit Margin&quot;</span><span style="color: #F8F8F2">]</span>
+  <span style="color: #F8F8F2">},</span>
+  <span style="color: #E6DB74">&quot;xAxis&quot;</span><span style="color: #F8F8F2">:</span> <span style="color: #F8F8F2">[</span>
+    <span style="color: #F8F8F2">{</span>
+      <span style="color: #E6DB74">&quot;type&quot;</span><span style="color: #F8F8F2">:</span> <span style="color: #E6DB74">&quot;category&quot;</span><span style="color: #F8F8F2">,</span>
+      <span style="color: #E6DB74">&quot;data&quot;</span><span style="color: #F8F8F2">:</span> <span style="color: #F8F8F2">[</span><span style="color: #E6DB74">&quot;Jan&quot;</span><span style="color: #F8F8F2">,</span> <span style="color: #E6DB74">&quot;Feb&quot;</span><span style="color: #F8F8F2">,</span> <span style="color: #E6DB74">&quot;Mar&quot;</span><span style="color: #F8F8F2">,</span> <span style="color: #E6DB74">&quot;Apr&quot;</span><span style="color: #F8F8F2">,</span> <span style="color: #E6DB74">&quot;May&quot;</span><span style="color: #F8F8F2">,</span> <span style="color: #E6DB74">&quot;Jun&quot;</span><span style="color: #F8F8F2">,</span> <span style="color: #E6DB74">&quot;Jul&quot;</span><span style="color: #F8F8F2">,</span> <span style="color: #E6DB74">&quot;Aug&quot;</span><span style="color: #F8F8F2">,</span> <span style="color: #E6DB74">&quot;Sep&quot;</span><span style="color: #F8F8F2">,</span> <span style="color: #E6DB74">&quot;Oct&quot;</span><span style="color: #F8F8F2">,</span> <span style="color: #E6DB74">&quot;Nov&quot;</span><span style="color: #F8F8F2">,</span> <span style="color: #E6DB74">&quot;Dec&quot;</span><span style="color: #F8F8F2">],</span>
+      <span style="color: #E6DB74">&quot;axisPointer&quot;</span><span style="color: #F8F8F2">:</span> <span style="color: #F8F8F2">{</span>
+        <span style="color: #E6DB74">&quot;type&quot;</span><span style="color: #F8F8F2">:</span> <span style="color: #E6DB74">&quot;shadow&quot;</span>
+      <span style="color: #F8F8F2">}</span>
+    <span style="color: #F8F8F2">}</span>
+  <span style="color: #F8F8F2">],</span>
+  <span style="color: #E6DB74">&quot;yAxis&quot;</span><span style="color: #F8F8F2">:</span> <span style="color: #F8F8F2">[</span>
+    <span style="color: #F8F8F2">{</span>
+      <span style="color: #E6DB74">&quot;type&quot;</span><span style="color: #F8F8F2">:</span> <span style="color: #E6DB74">&quot;value&quot;</span><span style="color: #F8F8F2">,</span>
+      <span style="color: #E6DB74">&quot;name&quot;</span><span style="color: #F8F8F2">:</span> <span style="color: #E6DB74">&quot;Revenue (USD)&quot;</span><span style="color: #F8F8F2">,</span>
+      <span style="color: #E6DB74">&quot;min&quot;</span><span style="color: #F8F8F2">:</span> <span style="color: #AE81FF">0</span><span style="color: #F8F8F2">,</span>
+      <span style="color: #E6DB74">&quot;max&quot;</span><span style="color: #F8F8F2">:</span> <span style="color: #AE81FF">100000</span><span style="color: #F8F8F2">,</span>
+      <span style="color: #E6DB74">&quot;interval&quot;</span><span style="color: #F8F8F2">:</span> <span style="color: #AE81FF">20000</span><span style="color: #F8F8F2">,</span>
+      <span style="color: #E6DB74">&quot;axisLabel&quot;</span><span style="color: #F8F8F2">:</span> <span style="color: #F8F8F2">{</span>
+        <span style="color: #E6DB74">&quot;formatter&quot;</span><span style="color: #F8F8F2">:</span> <span style="color: #E6DB74">&quot;{value} USD&quot;</span>
+      <span style="color: #F8F8F2">}</span>
+    <span style="color: #F8F8F2">},</span>
+    <span style="color: #F8F8F2">{</span>
+      <span style="color: #E6DB74">&quot;type&quot;</span><span style="color: #F8F8F2">:</span> <span style="color: #E6DB74">&quot;value&quot;</span><span style="color: #F8F8F2">,</span>
+      <span style="color: #E6DB74">&quot;name&quot;</span><span style="color: #F8F8F2">:</span> <span style="color: #E6DB74">&quot;Profit Margin (%)&quot;</span><span style="color: #F8F8F2">,</span>
+      <span style="color: #E6DB74">&quot;min&quot;</span><span style="color: #F8F8F2">:</span> <span style="color: #AE81FF">0</span><span style="color: #F8F8F2">,</span>
+      <span style="color: #E6DB74">&quot;max&quot;</span><span style="color: #F8F8F2">:</span> <span style="color: #AE81FF">50</span><span style="color: #F8F8F2">,</span>
+      <span style="color: #E6DB74">&quot;interval&quot;</span><span style="color: #F8F8F2">:</span> <span style="color: #AE81FF">10</span><span style="color: #F8F8F2">,</span>
+      <span style="color: #E6DB74">&quot;axisLabel&quot;</span><span style="color: #F8F8F2">:</span> <span style="color: #F8F8F2">{</span>
+        <span style="color: #E6DB74">&quot;formatter&quot;</span><span style="color: #F8F8F2">:</span> <span style="color: #E6DB74">&quot;{value} %&quot;</span>
+      <span style="color: #F8F8F2">}</span>
+    <span style="color: #F8F8F2">}</span>
+  <span style="color: #F8F8F2">],</span>
+  <span style="color: #E6DB74">&quot;series&quot;</span><span style="color: #F8F8F2">:</span> <span style="color: #F8F8F2">[</span>
+    <span style="color: #F8F8F2">{</span>
+      <span style="color: #E6DB74">&quot;name&quot;</span><span style="color: #F8F8F2">:</span> <span style="color: #E6DB74">&quot;Revenue&quot;</span><span style="color: #F8F8F2">,</span>
+      <span style="color: #E6DB74">&quot;type&quot;</span><span style="color: #F8F8F2">:</span> <span style="color: #E6DB74">&quot;bar&quot;</span><span style="color: #F8F8F2">,</span>
+      <span style="color: #E6DB74">&quot;data&quot;</span><span style="color: #F8F8F2">:</span> <span style="color: #F8F8F2">[</span>
+        <span style="color: #AE81FF">80000</span><span style="color: #F8F8F2">,</span> <span style="color: #AE81FF">75000</span><span style="color: #F8F8F2">,</span> <span style="color: #AE81FF">85000</span><span style="color: #F8F8F2">,</span> <span style="color: #AE81FF">90000</span><span style="color: #F8F8F2">,</span> <span style="color: #AE81FF">92000</span><span style="color: #F8F8F2">,</span> <span style="color: #AE81FF">88000</span><span style="color: #F8F8F2">,</span> <span style="color: #AE81FF">95000</span><span style="color: #F8F8F2">,</span> <span style="color: #AE81FF">93000</span><span style="color: #F8F8F2">,</span> <span style="color: #AE81FF">98000</span><span style="color: #F8F8F2">,</span> <span style="color: #AE81FF">100000</span><span style="color: #F8F8F2">,</span> <span style="color: #AE81FF">97000</span><span style="color: #F8F8F2">,</span> <span style="color: #AE81FF">96000</span>
+      <span style="color: #F8F8F2">]</span>
+    <span style="color: #F8F8F2">},</span>
+    <span style="color: #F8F8F2">{</span>
+      <span style="color: #E6DB74">&quot;name&quot;</span><span style="color: #F8F8F2">:</span> <span style="color: #E6DB74">&quot;Profit Margin&quot;</span><span style="color: #F8F8F2">,</span>
+      <span style="color: #E6DB74">&quot;type&quot;</span><span style="color: #F8F8F2">:</span> <span style="color: #E6DB74">&quot;line&quot;</span><span style="color: #F8F8F2">,</span>
+      <span style="color: #E6DB74">&quot;yAxisIndex&quot;</span><span style="color: #F8F8F2">:</span> <span style="color: #AE81FF">1</span><span style="color: #F8F8F2">,</span>
+      <span style="color: #E6DB74">&quot;data&quot;</span><span style="color: #F8F8F2">:</span> <span style="color: #F8F8F2">[</span>
+        <span style="color: #AE81FF">25</span><span style="color: #F8F8F2">,</span> <span style="color: #AE81FF">28</span><span style="color: #F8F8F2">,</span> <span style="color: #AE81FF">27</span><span style="color: #F8F8F2">,</span> <span style="color: #AE81FF">30</span><span style="color: #F8F8F2">,</span> <span style="color: #AE81FF">32</span><span style="color: #F8F8F2">,</span> <span style="color: #AE81FF">31</span><span style="color: #F8F8F2">,</span> <span style="color: #AE81FF">33</span><span style="color: #F8F8F2">,</span> <span style="color: #AE81FF">30</span><span style="color: #F8F8F2">,</span> <span style="color: #AE81FF">35</span><span style="color: #F8F8F2">,</span> <span style="color: #AE81FF">34</span><span style="color: #F8F8F2">,</span> <span style="color: #AE81FF">32</span><span style="color: #F8F8F2">,</span> <span style="color: #AE81FF">33</span>
+      <span style="color: #F8F8F2">]</span>
+    <span style="color: #F8F8F2">}</span>
+  <span style="color: #F8F8F2">]</span>
+<span style="color: #F8F8F2">}</span>
+</pre></div>
+
+            </div>
+        </details>
+        
+    </div>
+</body>
+</html>
