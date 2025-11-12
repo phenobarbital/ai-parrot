@@ -273,7 +273,7 @@ class BaseChart(BaseRenderer):
         return f'''
         <details class="code-accordion">
             <summary class="code-header">
-                <span>{icon} View Python Code</span>
+                <span>{icon} View Code</span>
                 <span class="toggle-icon">▶</span>
             </summary>
             <div class="code-content">
