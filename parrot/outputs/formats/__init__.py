@@ -1,5 +1,5 @@
 import contextlib
-from typing import Protocol, Dict, Type, Any
+from typing import Protocol, Dict, Type, Any, Optional
 from importlib import import_module
 from ...models.outputs import OutputMode
 
@@ -11,11 +11,21 @@ class Renderer(Protocol):
 
 
 RENDERERS: Dict[OutputMode, Type[Renderer]] = {}
+_PROMPTS: Dict[OutputMode, str] = {}
 
 
-def register_renderer(mode: OutputMode):
+def register_renderer(mode: OutputMode, system_prompt: Optional[str] = None):
+    """
+    Decorator to register a renderer class and optionally its system prompt.
+
+    Args:
+        mode: OutputMode enum value
+        system_prompt: Optional system prompt to inject when using this mode
+    """
     def decorator(cls):
         RENDERERS[mode] = cls
+        if system_prompt:
+            _PROMPTS[mode] = system_prompt
         return cls
     return decorator
 
@@ -44,6 +54,16 @@ def get_renderer(mode: OutputMode) -> Type[Renderer]:
                 import_module('.jinja2', 'parrot.outputs.formats')
             elif mode == OutputMode.TEMPLATE_REPORT:
                 import_module('.template_report', 'parrot.outputs.formats')
+            elif mode == OutputMode.BOKEH:
+                import_module('.bokeh', 'parrot.outputs.formats')
+            elif mode == OutputMode.PLOTLY:
+                import_module('.plotly', 'parrot.outputs.formats')
+            elif mode == OutputMode.MATPLOTLIB:
+                import_module('.matplotlib', 'parrot.outputs.formats')
+            elif mode == OutputMode.D3:
+                import_module('.d3', 'parrot.outputs.formats')
+            elif mode == OutputMode.ECHARTS:
+                import_module('.echarts', 'parrot.outputs.formats')
     try:
         return RENDERERS[mode]
     except KeyError as exc:
@@ -52,9 +72,20 @@ def get_renderer(mode: OutputMode) -> Type[Renderer]:
         ) from exc
 
 
+def get_output_prompt(mode: OutputMode) -> Optional[str]:
+    """Get system prompt for mode."""
+    return _PROMPTS.get(mode)
+
+def has_system_prompt(mode: OutputMode) -> bool:
+    """Check if mode has a registered system prompt."""
+    return mode in _PROMPTS
+
+
 __all__ = (
     'RENDERERS',
     'register_renderer',
     'get_renderer',
     'Renderer',
+    'get_output_prompt',
+    'has_system_prompt',
 )

@@ -1,8 +1,7 @@
 from __future__ import annotations
 import sys
-from typing import Any, Optional
-
-from .formats import get_renderer
+from typing import Any, Optional, Tuple
+from .formats import get_renderer, get_output_prompt, has_system_prompt
 from ..models.outputs import OutputMode
 from ..template.engine import TemplateEngine
 
@@ -18,7 +17,7 @@ class OutputFormatter:
 
         Args:
             template_engine: Optional TemplateEngine instance for template-based rendering.
-                           If not provided, a new one will be created when needed.
+            If not provided, a new one will be created when needed.
         """
         self._is_ipython = self._detect_ipython()
         self._is_notebook = self._detect_notebook()
@@ -49,6 +48,15 @@ class OutputFormatter:
             return False
 
     def _get_renderer(self, mode: OutputMode):
+        """
+        Get or create a renderer instance for the specified output mode.
+
+        Args:
+            mode: OutputMode enum value
+
+        Returns:
+            Renderer instance for the given mode
+        """
         if mode not in self._renderers:
             renderer_cls = get_renderer(mode)
             # Special handling for TEMPLATE_REPORT renderer to pass TemplateEngine
@@ -56,36 +64,58 @@ class OutputFormatter:
                 # Lazy initialize TemplateEngine if not provided
                 if self._template_engine is None:
                     self._template_engine = TemplateEngine()
-                self._renderers[mode] = renderer_cls(template_engine=self._template_engine)
+                self._renderers[mode] = renderer_cls(
+                    template_engine=self._template_engine
+                )
             else:
                 self._renderers[mode] = renderer_cls()
         return self._renderers[mode]
 
-    def format(self, mode: OutputMode, data: Any, **kwargs) -> Any:
+    def get_system_prompt(self, mode: OutputMode) -> Optional[str]:
+        """
+        Get the system prompt for a given output mode.
+
+        Args:
+            mode: OutputMode enum value
+
+        Returns:
+            System prompt string or None if mode has no specific prompt
+        """
+        return get_output_prompt(mode)
+
+    def has_system_prompt(self, mode: OutputMode) -> bool:
+        """
+        Check if an output mode has a registered system prompt.
+
+        Args:
+            mode: OutputMode enum value
+
+        Returns:
+            True if mode has a system prompt
+        """
+        return has_system_prompt(mode)
+
+    async def format(
+        self,
+        mode: OutputMode,
+        data: Any,
+        **kwargs
+    ) -> Tuple[str, Optional[str]]:
+        """
+        Format output based on mode
+
+        Returns:
+            Tuple[str, Optional[str]]: (content, wrapped_content)
+            - content: main formatted output
+            - wrapped_content: optional wrapped version (e.g., HTML)
+        """
         if mode == OutputMode.DEFAULT:
-            return data
-
-        renderer = self._get_renderer(mode)
-        if hasattr(renderer, "render_async"):
-            raise TypeError(
-                f"Renderer for mode '{mode}' requires async execution. Use 'format_async' instead."
-            )
-
-        return renderer.render(
-            data,
-            environment=self._environment,
-            is_ipython=self._is_ipython,
-            is_notebook=self._is_notebook,
-            **kwargs,
-        )
-
-    async def format_async(self, mode: OutputMode, data: Any, **kwargs) -> Any:
-        if mode == OutputMode.DEFAULT:
-            return data
+            return data, None
 
         renderer = self._get_renderer(mode)
         render_method = getattr(renderer, "render_async", renderer.render)
 
+        # Call renderer and get tuple response
         return await render_method(
             data,
             environment=self._environment,

@@ -4,6 +4,7 @@ A specialized agent for data analysis using pandas DataFrames.
 """
 from pathlib import Path
 from typing import Any, List, Dict, Union, Optional
+import uuid
 from datetime import datetime, timezone, timedelta
 from string import Template
 from pydantic import BaseModel
@@ -20,7 +21,9 @@ from ..tools import AbstractTool
 from ..tools.pythonpandas import PythonPandasTool
 from .agent import BasicAgent
 from ..models.responses import AIMessage, AgentResponse
+from ..models.outputs import OutputMode, StructuredOutputConfig
 from ..conf import REDIS_HISTORY_URL, STATIC_DIR
+from ..bots.prompts import OUTPUT_SYSTEM_PROMPT
 
 
 def brace_escape(text: str) -> str:
@@ -445,12 +448,6 @@ $backstory
         Returns:
             AgentResponse with the analysis result
         """
-        # Import here to avoid circular imports
-        from ..models.outputs import OutputMode
-        from parrot.models.responses import StructuredOutputConfig
-        from pydantic import BaseModel
-        from typing import Type
-
         # Generate IDs if not provided
         session_id = session_id or str(uuid.uuid4())
         user_id = user_id or "anonymous"
@@ -483,7 +480,6 @@ $backstory
 
             # Handle output mode in system prompt
             if output_mode != OutputMode.DEFAULT:
-                from ..bots.prompts import OUTPUT_SYSTEM_PROMPT
                 system_prompt += OUTPUT_SYSTEM_PROMPT.format(output_mode=_mode)
 
             # Configure LLM if needed
@@ -531,11 +527,13 @@ $backstory
                 # Format output based on mode if not default
                 if output_mode != OutputMode.DEFAULT:
                     format_kwargs = format_kwargs or {}
-                    response.content = self.formatter.format(output_mode, response, **format_kwargs)
+                    response.content = self.formatter.format(
+                        output_mode, response, **format_kwargs
+                    )
                     response.output_mode = output_mode
 
                 # Build AgentResponse
-                agent_response = AgentResponse(
+                return AgentResponse(
                     agent_id=self.agent_id,
                     agent_name=self.agent_name,
                     status='success',
@@ -548,8 +546,6 @@ $backstory
                     session_id=session_id,
                     user_id=user_id
                 )
-
-                return agent_response
 
         except Exception as e:
             self.logger.error(f"Error in PandasAgent.ask(): {e}")
@@ -599,7 +595,7 @@ $backstory
 
         # Find the PythonPandasTool in the tools list
         pandas_tool = None
-        for tool in self.tool_manager.tools:
+        for tool in self.tool_manager.get_tools():
             if isinstance(tool, PythonPandasTool):
                 pandas_tool = tool
                 break

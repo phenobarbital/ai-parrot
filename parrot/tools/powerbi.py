@@ -1,17 +1,18 @@
 # parrot/tools/powerbi.py
 from __future__ import annotations
-
+from typing import Any, Dict, List, Optional, Union
 import os
-import io
-import csv
-import time
-import math
 import asyncio
 import random
 import logging
-from typing import Any, Dict, List, Optional, Union
-import aiohttp
+import io
+import csv
+import time
 import requests
+import aiohttp
+import pyarrow as pa
+import pyarrow.parquet as pq
+import pandas as pd
 from pydantic import BaseModel, Field, model_validator, PrivateAttr, ConfigDict
 from .abstract import AbstractTool, AbstractToolArgsSchema, ToolResult
 
@@ -57,44 +58,27 @@ def _rows_to_csv_string(rows: List[Dict[str, Any]]) -> str:
     return output.getvalue()
 
 def _rows_to_dataframe(rows: List[Dict[str, Any]]):
-    try:
-        import pandas as pd  # lazy import
-    except ImportError as exc:
-        raise RuntimeError(
-            "pandas is not installed. Install it to use export_pandas=True."
-        ) from exc
     return pd.DataFrame(rows)
 
 # near other helpers at the top
 def _rows_to_arrow_table(rows: List[Dict[str, Any]]):
-    try:
-        import pyarrow as pa  # lazy import
-    except ImportError as exc:
-        raise RuntimeError("pyarrow is not installed. Install it to use output_format='pyarrow.Table' or 'parquet'.") from exc
     # pyarrow infers schema well from pylist of dicts
     return pa.Table.from_pylist(rows)
 
 def _write_parquet(rows: List[Dict[str, Any]], path: str) -> str:
     # prefer pyarrow directly; fallback to pandas if pyarrow not available
     try:
-        import pyarrow as pa
-        import pyarrow.parquet as pq
         table = pa.Table.from_pylist(rows)
         pq.write_table(table, path)
         return path
     except ImportError:
         # fallback via pandas (requires pandas + either pyarrow or fastparquet installed)
-        try:
-            import pandas as pd
-        except ImportError as exc:
-            raise RuntimeError("pandas is not installed. Install it (and pyarrow/fastparquet) to write parquet.") from exc
         df = pd.DataFrame(rows)
         df.to_parquet(path)  # pandas will pick available parquet engine
         return path
 
 
 # ---------------- Core Client ----------------
-
 class PowerBIDatasetClient(BaseModel):
     """Client for executing DAX queries against a Power BI dataset."""
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -203,7 +187,6 @@ class PowerBIDatasetClient(BaseModel):
             return {"error": f"HTTP {status}", "details": err}
 
     # ---------- Async ----------
-
     async def arun(self, command: str, timeout: int = 30) -> Dict[str, Any]:
         headers = self._headers()
         payload = self._payload(command)
@@ -211,7 +194,9 @@ class PowerBIDatasetClient(BaseModel):
         attempt = 1
         while True:
             if self._aiosession:
-                async with self._aiosession.post(self.request_url, headers=headers, json=payload, timeout=timeout) as resp:
+                async with self._aiosession.post(
+                    self.request_url, headers=headers, json=payload, timeout=timeout
+                ) as resp:
                     status = resp.status
                     if status == 403:
                         return {"error": "TokenError: Could not login to Power BI (403)."}
@@ -227,7 +212,9 @@ class PowerBIDatasetClient(BaseModel):
                             except ValueError:
                                 retry_after = None
                         sleep_s = self._compute_sleep(attempt, retry_after)
-                        self._logger.warning("PowerBI %s; retrying in %.2fs (attempt %d/%d)", status, sleep_s, attempt, self.max_attempts)
+                        self._logger.warning(
+                            "PowerBI %s; retrying in %.2fs (attempt %d/%d)", status, sleep_s, attempt, self.max_attempts
+                        )
                         await asyncio.sleep(sleep_s)
                         attempt += 1
                         continue
@@ -265,7 +252,6 @@ class PowerBIDatasetClient(BaseModel):
                     return {"error": f"HTTP {status}", "details": err}
 
     # ---------- Schema-like preview (TOPN sampling) ----------
-
     def get_table_info(self, tables: Optional[Union[str, List[str]]] = None) -> str:
         requested = self._normalize_tables(tables)
         if not requested:
@@ -521,11 +507,9 @@ class PowerBITableInfoTool(AbstractTool):
             max_backoff=kwargs.get("max_backoff", 10.0),
         )
         md = await client.aget_table_info(kwargs.get("tables"))
-
         # Optional export of the preview as CSV/DF by stitching rows from TOPN calls is not included here,
         # since get_table_info returns a joined markdown snapshot of multiple tables. If you want,
         # we can extend this tool to return per-table rows to export individually.
-
         return {
             "status": "success",
             "result": {
