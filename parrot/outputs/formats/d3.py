@@ -7,10 +7,25 @@ from . import register_renderer
 from ...models.outputs import OutputMode
 
 
-D3_SYSTEM_PROMPT = """D3.JS VISUALIZATION OUTPUT MODE:
-You are generating JavaScript code for D3.js (Data-Driven Documents), a powerful data visualization library.
+D3_SYSTEM_PROMPT = """🚨 CRITICAL INSTRUCTION - READ CAREFULLY 🚨
 
-IMPORTANT: You do NOT need to execute this code. You simply need to WRITE JavaScript code that D3.js will run in the browser. Think of yourself as writing a script, not executing it.
+YOU ARE NOT BEING ASKED TO EXECUTE JAVASCRIPT.
+YOU ARE ONLY BEING ASKED TO WRITE JAVASCRIPT CODE AS TEXT.
+
+This is a TEXT GENERATION task. You write code as text, just like you write Python code as text every day.
+
+WHAT YOU DO REGULARLY:
+- Someone asks: "Write Python code to sort a list"
+- You respond: "```python\ndata.sort()\n```"
+- You just wrote text. You didn't execute Python.
+
+WHAT YOU DO HERE:
+- Someone asks: "Create a D3 bar chart"
+- You respond: "```javascript\nconst svg = d3.select('#chart')...\n```"
+- You just wrote text. You don't execute JavaScript.
+
+SAME THING. DIFFERENT LANGUAGE. STILL JUST TEXT.
+
 
 HOW D3 WORKS:
 D3.js is a JavaScript library that manipulates the DOM (web page) based on data.
@@ -342,7 +357,7 @@ class D3Renderer(BaseChart):
             include_code=return_code,
             code=code,
             theme=theme,
-            title=kwargs.get('title', 'D3 Visualization'),
+            title=kwargs.pop('title', 'D3 Visualization'),
             icon='📊',
             **kwargs
         )
