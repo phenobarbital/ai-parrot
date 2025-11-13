@@ -650,7 +650,7 @@ $chat_history
                     status='success',
                     response=response,  # The AIMessage
                     question=question,
-                    data=response.content,
+                    data=response.response,
                     output=response.output,  # Always use response.output
                     metadata=response.metadata,
                     turn_id=turn_id,
