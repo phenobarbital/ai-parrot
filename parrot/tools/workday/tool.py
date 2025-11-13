@@ -153,6 +153,22 @@ class GetWorkerJobDataInput(BaseModel):
     )
 
 
+class GetTimeOffBalanceInput(BaseModel):
+    """Input for retrieving time off balance information."""
+
+    worker_id: str = Field(
+        description="Worker ID to get time off balance for"
+    )
+    time_off_plan_id: Optional[str] = Field(
+        default=None,
+        description="Optional specific time off plan ID to filter by"
+    )
+    output_format: Optional[Type[BaseModel]] = Field(
+        default=None,
+        description="Optional Pydantic model to format the output"
+    )
+
+
 # -----------------------------
 # Workday SOAP Client
 # -----------------------------
@@ -293,6 +309,7 @@ class WorkdayToolkit(AbstractToolkit):
         self,
         credentials: Dict[str, str],
         tenant_name: str,
+        absence_wsdl_path: Optional[str] = None,
         redis_url: Optional[str] = None,
         redis_key: str = "workday:access_token",
         timeout: int = 30,
@@ -302,8 +319,9 @@ class WorkdayToolkit(AbstractToolkit):
         Initialize Workday toolkit.
 
         Args:
-            credentials: Dict with OAuth2 credentials and WSDL path
+            credentials: Dict with OAuth2 credentials and WSDL path (Human Resources)
             tenant_name: Workday tenant name
+            absence_wsdl_path: Optional WSDL path for Absence Management operations
             redis_url: Redis connection URL for token caching
             redis_key: Redis key for storing access token
             timeout: HTTP timeout in seconds
@@ -311,7 +329,18 @@ class WorkdayToolkit(AbstractToolkit):
         """
         super().__init__(**kwargs)
 
-        # Initialize the SOAP client
+        # Store credentials and settings for creating clients
+        self.credentials = credentials
+        self.redis_url = redis_url
+        self.redis_key = redis_key
+        self.timeout = timeout
+        self.tenant_name = tenant_name
+
+        # Store WSDL paths
+        self.hr_wsdl_path = credentials.get("wsdl_path")
+        self.absence_wsdl_path = absence_wsdl_path
+
+        # Initialize the primary SOAP client (Human Resources)
         self.soap_client = WorkdaySOAPClient(
             tenant_name=tenant_name,
             credentials=credentials,
@@ -320,7 +349,9 @@ class WorkdayToolkit(AbstractToolkit):
             timeout=timeout
         )
 
-        self.tenant_name = tenant_name
+        # Secondary client for Absence Management (lazy initialization)
+        self._absence_client: Optional[WorkdaySOAPClient] = None
+
         self._initialized = False
 
     async def start(self) -> None:
@@ -332,13 +363,45 @@ class WorkdayToolkit(AbstractToolkit):
             await self.soap_client.start()
             self._initialized = True
 
+    async def _get_absence_client(self) -> WorkdaySOAPClient:
+        """
+        Get or create the Absence Management SOAP client.
+        Lazy initialization for operations that need Absence Management WSDL.
+        """
+        if self._absence_client is None:
+            if not self.absence_wsdl_path:
+                raise RuntimeError(
+                    "Absence Management WSDL path not configured. "
+                    "Pass 'absence_wsdl_path' when initializing WorkdayToolkit."
+                )
+
+            # Create credentials with Absence Management WSDL
+            absence_credentials = self.credentials.copy()
+            absence_credentials["wsdl_path"] = self.absence_wsdl_path
+
+            # Create and initialize the client
+            self._absence_client = WorkdaySOAPClient(
+                tenant_name=self.tenant_name,
+                credentials=absence_credentials,
+                redis_url=self.redis_url,
+                redis_key=self.redis_key,
+                timeout=self.timeout
+            )
+            await self._absence_client.start()
+
+        return self._absence_client
+
     async def close(self) -> None:
         """
-        Close the SOAP client connection.
+        Close the SOAP client connections.
         """
         if self._initialized:
             await self.soap_client.close()
             self._initialized = False
+
+        if self._absence_client:
+            await self._absence_client.close()
+            self._absence_client = None
 
     # -----------------------------
     # Tool methods (automatically become tools)
@@ -646,6 +709,81 @@ class WorkdayToolkit(AbstractToolkit):
         result = await self.soap_client.run("Get_Workers", **request)
         print('RESULT > ', result)
         return WorkdayResponseParser.parse_time_off_balance_response(
+            result,
+            worker_id=worker_id,
+            output_format=output_format
+        )
+
+    @tool_schema(GetTimeOffBalanceInput)
+    async def get_time_off_balance(
+        self,
+        worker_id: str,
+        time_off_plan_id: Optional[str] = None,
+        output_format: Optional[Type[BaseModel]] = None
+    ) -> Union[Dict[str, Any], BaseModel]:
+        """
+        Get time off plan balances for a worker using Absence Management API.
+
+        This method uses the Get_Time_Off_Plan_Balances operation from the
+        Workday Absence Management WSDL, which provides more detailed balance
+        information than the Get_Workers operation.
+
+        Args:
+            worker_id: Worker identifier (Employee_ID)
+            time_off_plan_id: Optional specific time off plan ID to filter
+            output_format: Optional Pydantic model to format the output
+
+        Returns:
+            Time off balance information formatted according to output_format
+            or default TimeOffBalanceModel
+        """
+        if not self._initialized:
+            raise RuntimeError("Toolkit not initialized. Call start() first.")
+
+        # Get or create the Absence Management client
+        absence_client = await self._get_absence_client()
+
+        # Build the request payload
+        payload = {
+            "Response_Filter": {
+                "As_Of_Entry_DateTime": datetime.now().replace(microsecond=0).isoformat() + "Z"
+            },
+            "Response_Group": {
+                "Include_Reference": True,
+                "Include_Time_Off_Plan_Balance_Data": True,
+            },
+        }
+
+        # Build Request_Criteria
+        request_criteria = {
+            "Employee_Reference": {
+                "ID": [
+                    {
+                        "_value_1": worker_id,
+                        "type": "Employee_ID"
+                    }
+                ]
+            }
+        }
+
+        # Add time off plan filter if provided
+        if time_off_plan_id:
+            request_criteria["Time_Off_Plan_Reference"] = {
+                "ID": [
+                    {
+                        "_value_1": time_off_plan_id,
+                        "type": "Time_Off_Plan_ID"
+                    }
+                ]
+            }
+
+        payload["Request_Criteria"] = request_criteria
+
+        # Execute the SOAP operation
+        result = await absence_client._service.Get_Time_Off_Plan_Balances(**payload)
+
+        # Parse the response using the dedicated parser
+        return WorkdayResponseParser.parse_time_off_plan_balances_response(
             result,
             worker_id=worker_id,
             output_format=output_format

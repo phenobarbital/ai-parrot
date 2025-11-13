@@ -291,3 +291,33 @@ SHAREPOINT_DEFAULT_HOST = config.get('SHAREPOINT_DEFAULT_HOST')
 
 # Employee Hierarchy Configuration:
 EMPLOYEES_TABLE = config.get('EMPLOYEES_TABLE', fallback='troc.troc_employees')
+
+# Workday SOAP settings
+WORKDAY_CLIENT_ID = config.get("WORKDAY_CLIENT_ID")
+WORKDAY_CLIENT_SECRET = config.get("WORKDAY_CLIENT_SECRET")
+WORKDAY_TOKEN_URL = config.get("WORKDAY_TOKEN_URL")
+WORKDAY_WSDL_PATH = config.get(
+    "WORKDAY_WSDL_PATH",
+    fallback=BASE_DIR.joinpath("env", "workday", "staffing_custom_44_2.wsdl")
+)
+WORKDAY_WSDL_TIME = config.get(
+    "WORKDAY_WSDL_TIME",
+    fallback=BASE_DIR.joinpath("env", "workday", "timetracking_custom_44_2.wsdl")
+)
+WORKDAY_WSDL_HUMAN_RESOURCES = config.get(
+    "WORKDAY_WSDL_HUMAN_RESOURCES",
+    fallback=BASE_DIR.joinpath("env", "workday", "humanresources_troc_44_2.wsdl")
+)
+WORKDAY_WSDL_FINANCIAL_MANAGEMENT = config.get(
+    "WORKDAY_WSDL_FINANCIAL_MANAGEMENT",
+    fallback=BASE_DIR.joinpath("env", "workday", "financial_management_45.wsdl")
+)
+WORKDAY_WSDL_RECRUITING = config.get(
+    "WORKDAY_WSDL_RECRUITING",
+    fallback=BASE_DIR.joinpath("env", "workday", "recruiting_44_2.wsdl")
+)
+WORKDAY_WSDL_ABSENCE_MANAGEMENT = config.get(
+    "WORKDAY_WSDL_ABSENCE_MANAGEMENT",
+    fallback=BASE_DIR.joinpath("env", "workday", "absense_management_45_custom.wsdl")
+)
+WORKDAY_REFRESH_TOKEN = config.get("WORKDAY_REFRESH_TOKEN", fallback=None)

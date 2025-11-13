@@ -1127,3 +1127,205 @@ class WorkdayResponseParser:
             "personal_balance": personal_balance,
             "total_available_hours": total_available if total_available > 0 else None
         }
+
+    @classmethod
+    def parse_time_off_plan_balances_response(
+        cls,
+        response: Any,
+        worker_id: str,
+        output_format: Optional[Type[T]] = None
+    ) -> Union[TimeOffBalanceModel, T]:
+        """
+        Parse Get_Time_Off_Plan_Balances response from Absence Management API.
+
+        This parser handles the response from the dedicated Absence Management
+        API which has a different structure than Get_Workers.
+
+        Args:
+            response: Raw Zeep Get_Time_Off_Plan_Balances response
+            worker_id: Worker ID for reference
+            output_format: Optional custom model. Defaults to TimeOffBalanceModel.
+
+        Returns:
+            Parsed time off balance information
+        """
+        model_class = output_format or cls.DEFAULT_MODELS["time_off_balance"]
+
+        # Serialize Zeep object to dict
+        raw = helpers.serialize_object(response)
+
+        # Navigate to Response_Data
+        response_data = raw.get("Response_Data", [])
+
+        # Response_Data is a list of items, each containing Time_Off_Plan_Balance
+        balance_items = []
+        if isinstance(response_data, list):
+            for item in response_data:
+                if isinstance(item, dict):
+                    # Extract Time_Off_Plan_Balance from each item
+                    tof_balance = item.get("Time_Off_Plan_Balance", [])
+                    if isinstance(tof_balance, list):
+                        balance_items.extend(tof_balance)
+                    elif tof_balance:
+                        balance_items.append(tof_balance)
+        elif isinstance(response_data, dict):
+            # Fallback: single dict
+            tof_balance = response_data.get("Time_Off_Plan_Balance", [])
+            if isinstance(tof_balance, list):
+                balance_items.extend(tof_balance)
+            elif tof_balance:
+                balance_items.append(tof_balance)
+
+        # We'll process all balances for this worker
+        all_balances = []
+        vacation_balance = None
+        sick_balance = None
+        personal_balance = None
+        total_available = 0.0
+        as_of_date = datetime.now().date()
+
+        # Process each Time_Off_Plan_Balance
+        for balance_item in balance_items:
+            if not isinstance(balance_item, dict):
+                continue
+
+            # Extract worker information from Employee_Reference
+            employee_ref = balance_item.get("Employee_Reference", {})
+            item_worker_id = None
+            if employee_ref:
+                employee_ids = employee_ref.get("ID", [])
+                if isinstance(employee_ids, list):
+                    for emp_id in employee_ids:
+                        if isinstance(emp_id, dict) and emp_id.get("type") == "Employee_ID":
+                            item_worker_id = emp_id.get("_value_1")
+                            break
+
+            # Skip if this balance isn't for our worker
+            if item_worker_id and item_worker_id != worker_id:
+                continue
+
+            # Get the balance data container (note: it's Time_Off_Plan_Balance_Data, not a separate key)
+            balance_data_container = balance_item.get("Time_Off_Plan_Balance_Data", {})
+            if not isinstance(balance_data_container, dict):
+                balance_data_container = {}
+
+            # Get the list of balance records (one per plan)
+            balance_records = balance_data_container.get("Time_Off_Plan_Balance_Record", [])
+            if not isinstance(balance_records, list):
+                balance_records = [balance_records] if balance_records else []
+
+            # Parse each balance record (one per plan)
+            for record in balance_records:
+                if not isinstance(record, dict):
+                    continue
+
+                # Time Off Plan information
+                time_off_plan_ref = record.get("Time_Off_Plan_Reference", {})
+
+                # Extract time off plan ID and use it as name if Descriptor is not present
+                time_off_type = None
+                time_off_type_id = None
+                plan_ids = time_off_plan_ref.get("ID", [])
+                if isinstance(plan_ids, list):
+                    for plan_id in plan_ids:
+                        if isinstance(plan_id, dict):
+                            if plan_id.get("type") == "Absence_Plan_ID":
+                                time_off_type_id = plan_id.get("_value_1")
+                                # Use Absence_Plan_ID as the type name if no Descriptor
+                                if not time_off_type:
+                                    time_off_type = time_off_type_id
+                                break
+                            elif plan_id.get("type") == "WID" and not time_off_type_id:
+                                time_off_type_id = plan_id.get("_value_1")
+
+                # Override with Descriptor if present
+                if time_off_plan_ref.get("Descriptor"):
+                    time_off_type = time_off_plan_ref.get("Descriptor")
+
+                # Fallback to "Unknown" if still no type found
+                if not time_off_type:
+                    time_off_type = "Unknown"
+
+                # Unit of time
+                unit_ref = record.get("Unit_of_Time_Reference", {})
+                unit_ids = unit_ref.get("ID", [])
+                balance_unit = "Hours"
+                if isinstance(unit_ids, list):
+                    for unit_id in unit_ids:
+                        if isinstance(unit_id, dict) and unit_id.get("type") == "Unit_of_Time_ID":
+                            balance_unit = unit_id.get("_value_1", "Hours")
+                            break
+
+                # Balance from position record (can be list or dict)
+                position_records = record.get("Time_Off_Plan_Balance_Position_Record", [])
+
+                balance_value = 0.0
+                if isinstance(position_records, list) and len(position_records) > 0:
+                    position_record = position_records[0]
+                    if isinstance(position_record, dict):
+                        balance_raw = position_record.get("Time_Off_Plan_Balance")
+                        balance_value = cls._parse_float(balance_raw) or 0.0
+                elif isinstance(position_records, dict):
+                    # Fallback if it's a single dict
+                    balance_raw = position_records.get("Time_Off_Plan_Balance")
+                    balance_value = cls._parse_float(balance_raw) or 0.0
+
+                # Create TimeOffBalance object
+                time_off_balance = TimeOffBalance(
+                    time_off_type=time_off_type,
+                    time_off_type_id=time_off_type_id,
+                    balance=balance_value,
+                    balance_unit=balance_unit,
+                    scheduled=None,  # Not available in this API
+                    available=balance_value,  # Assume full balance is available
+                    accrued_ytd=None,
+                    used_ytd=None,
+                    carryover=None,
+                    carryover_limit=None,
+                    as_of_date=None,
+                    plan_year_start=None,
+                    plan_year_end=None
+                )
+
+                all_balances.append(time_off_balance)
+
+                # Track quick-access balances
+                time_off_type_lower = time_off_type.lower()
+                if "vacation" in time_off_type_lower or "pto" in time_off_type_lower:
+                    vacation_balance = balance_value
+                elif "sick" in time_off_type_lower:
+                    sick_balance = balance_value
+                elif "personal" in time_off_type_lower:
+                    personal_balance = balance_value
+
+                # Add to total available
+                total_available += balance_value
+
+        return model_class(
+            worker_id=worker_id,
+            as_of_date=as_of_date,
+            balances=all_balances,
+            vacation_balance=vacation_balance,
+            sick_balance=sick_balance,
+            personal_balance=personal_balance,
+            total_available_hours=total_available if total_available > 0 else None
+        )
+
+    @staticmethod
+    def _parse_float(value: Any) -> Optional[float]:
+        """Parse float value from Workday response (similar to flowtask)"""
+        from decimal import Decimal
+
+        if value is None:
+            return None
+
+        try:
+            if isinstance(value, (int, float, Decimal)):
+                return float(value)
+            elif isinstance(value, str):
+                return float(value)
+            elif isinstance(value, dict):
+                return float(value.get("_value_1", 0))
+            return None
+        except (ValueError, TypeError):
+            return None
