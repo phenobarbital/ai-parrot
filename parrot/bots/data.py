@@ -453,6 +453,13 @@ $chat_history
                 for name, df in self.dataframes.items()
             }
 
+        if pandas_tool := self._get_python_pandas_tool():
+            # Update the tool's dataframes
+            pandas_tool.dataframes = self.dataframes
+            pandas_tool._process_dataframes()
+            if pandas_tool.generate_guide:
+                pandas_tool.df_guide = pandas_tool._generate_dataframe_guide()
+
         # Call parent configure (handles LLM, tools, memory, etc.)
         await super().configure(app=app)
         # Cache data after configuration
@@ -627,7 +634,7 @@ $chat_history
                 # Format output based on mode if not default
                 if output_mode != OutputMode.DEFAULT:
                     format_kwargs = format_kwargs or {}
-                    response.content = self.formatter.format(
+                    response.content = await self.formatter.format(
                         output_mode, response, **format_kwargs
                     )
                     response.output_mode = output_mode
