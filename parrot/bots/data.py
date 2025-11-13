@@ -506,7 +506,7 @@ $chat_history
 
         # Convert to AgentResponse if needed
         if isinstance(response, AIMessage):
-            return AgentResponse(
+            return self._agent_response(
                 agent_id=self.agent_id,
                 agent_name=self.agent_name,
                 status='success',
