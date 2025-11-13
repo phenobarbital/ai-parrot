@@ -6,11 +6,14 @@ from parrot.bots.data import PandasAgent
 async def get_agent(data):
     agent = PandasAgent(
         name='PandasAgent',
-        # llm='claude',
-        # model='claude-sonnet-4-20250514',
-        llm='openai',
-        model='gpt-4.1',
-        df=[data],
+        # llm='openai',
+        # model='gpt-4.1',
+        df={
+            "ga_reporting": {
+                "data": data,
+                "description": "This dataset contains Google Analytics reporting data including visitor information, visit counts, store names, and frequently asked questions."
+            }
+        },
         max_tokens=16000
     )
     await agent.configure()
@@ -35,7 +38,7 @@ if __name__ == '__main__':
     Ensure the narrative is concise, professional, and directly relevant to business decision-making.
     """
     # prompt = """Return the total rows and list of store names in provided dataframe."""
-    prompt = "Plot the visit count by visitor, return as a png image"
+    # prompt = "Plot the visit count by visitor, return as a png image"
     response = asyncio.run(
         agent.invoke(prompt)
     )

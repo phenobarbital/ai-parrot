@@ -47,7 +47,7 @@ class UserInfo(AbstractKnowledgeBase):
             async with await self.db.connection() as conn:  # pylint: disable=E1101 # noqa
                 result = await conn.fetch_one(
                     """
-                    SELECT display_name, username, email, job_code,
+                    SELECT user_id, display_name, username, email, job_code, associate_id as employee_id,
                     associate_id, associate_oid, title, worker_type, manager_id
                     FROM auth.vw_users WHERE user_id = $1
                     """,

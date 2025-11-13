@@ -109,3 +109,7 @@ class KnowledgeBaseStore:
         """Get all facts related to an entity."""
         indices = self.entity_index.get(entity, [])
         return [self.facts[i] for i in indices]
+
+    async def close(self):
+        """Cleanup resources if needed."""
+        pass
