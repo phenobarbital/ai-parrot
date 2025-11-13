@@ -18,7 +18,7 @@ class PythonPandasTool(PythonREPLTool):
     - Safe DataFrame operations
     """
 
-    name = "python_pandas"
+    name = "python_repl_pandas"
     description = "Execute Python code with pre-loaded DataFrames and enhanced pandas capabilities"
     args_schema = PythonREPLArgs
 
