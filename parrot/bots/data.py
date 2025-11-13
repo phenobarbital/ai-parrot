@@ -18,17 +18,13 @@ from navconfig.logging import logging
 from querysource.queries.qs import QS
 from querysource.queries.multi import MultiQS
 from ..tools import AbstractTool
+from ..tools.metadata import MetadataTool
 from ..tools.pythonpandas import PythonPandasTool
 from .agent import BasicAgent
 from ..models.responses import AIMessage, AgentResponse
 from ..models.outputs import OutputMode, StructuredOutputConfig
 from ..conf import REDIS_HISTORY_URL, STATIC_DIR
 from ..bots.prompts import OUTPUT_SYSTEM_PROMPT
-
-
-def brace_escape(text: str) -> str:
-    """Escape braces for string template formatting."""
-    return text.replace('{', '{{').replace('}', '}}')
 
 
 class PandasAgent(BasicAgent):
@@ -52,22 +48,24 @@ $description
 **Available DataFrames:**
 $df_info
 
+Use the `dataframe_metadata` tool any time you need column details, dataset descriptions, exploratory statistics, or sample rows.
+
 **Your Capabilities:**
 $capabilities
 
 **CRITICAL GUIDELINES - READ CAREFULLY:**
 
 ⚠️ **ANTI-HALLUCINATION RULES** ⚠️
-1. **NEVER** make assumptions about column names - ALWAYS use the exact column names from the metadata provided above
+1. **NEVER** make assumptions about column names - ALWAYS use the exact column names retrieved via the `dataframe_metadata` tool or verified in Python code
 2. **NEVER** invent or guess column names - if you're unsure, check the DataFrame columns first using `df.columns.tolist()`
-3. **ALWAYS** refer to the DataFrame metadata for column names, data types, and structure
+3. **ALWAYS** consult the `dataframe_metadata` tool for column names, data types, structure, EDA stats, and sample data before operating on a DataFrame you haven't inspected in this conversation
 4. **ALWAYS** validate your understanding by checking the actual DataFrame structure before performing operations
 5. If you are uncertain about anything, inspect the DataFrame first using commands like `df.head()`, `df.info()`, or `df.columns`
 
 **Standard Guidelines:**
 1. Always reference DataFrames using their standardized keys (df1, df2, etc.)
 2. Use the python_repl_pandas tool for all data operations
-3. Use EXACT column names as shown in the DataFrame metadata - do not modify or assume variations
+3. Use EXACT column names from the `dataframe_metadata` tool - do not modify or assume variations
 4. Before performing any operation, verify column names exist in the DataFrame
 5. Create visualizations when helpful for understanding
 6. Explain your analysis clearly and show your work step-by-step
@@ -86,13 +84,20 @@ $capabilities
 $backstory
 """
 
+    METADATA_SAMPLE_ROWS = 3
+
     def __init__(
         self,
         name: str = 'Pandas Agent',
         llm: Optional[str] = None,
         tools: List[AbstractTool] = None,
         system_prompt: str = None,
-        df: Union[list[pd.DataFrame], Dict[str, pd.DataFrame], pd.DataFrame] = None,
+        df: Union[
+            List[pd.DataFrame],
+            Dict[str, Union[pd.DataFrame, pd.Series, Dict[str, Any]]],
+            pd.DataFrame,
+            pd.Series
+        ] = None,
         query: Union[List[str], dict] = None,
         capabilities: str = None,
         generate_eda: bool = True,
@@ -120,9 +125,12 @@ $backstory
         self._generate_eda = generate_eda
         self._cache_expiration = cache_expiration
 
-        # Initialize dataframes
-        self.dataframes = self._define_dataframe(df) if df is not None else {}
-        self.df_metadata = {}
+        # Initialize dataframes and metadata
+        self.dataframes, self.df_metadata = (
+            self._define_dataframe(df)
+            if df is not None else
+            ({}, {})
+        )
 
         # Initialize base agent (AbstractBot will set chatbot_id)
         super().__init__(
@@ -168,40 +176,182 @@ $backstory
         # Override the tool description to include DataFrame info
         pandas_tool.description = tool_description
 
+        metadata_tool = MetadataTool(
+            metadata=self.df_metadata,
+            alias_map=self._get_dataframe_alias_map()
+        )
+
         tools.append(pandas_tool)
+        tools.append(metadata_tool)
 
         return tools
 
     def _define_dataframe(
         self,
-        df: Union[list[pd.DataFrame], Dict[str, pd.DataFrame], pd.DataFrame]
-    ) -> Dict[str, pd.DataFrame]:
+        df: Union[
+            List[pd.DataFrame],
+            Dict[str, Union[pd.DataFrame, pd.Series, Dict[str, Any]]],
+            pd.DataFrame,
+            pd.Series
+        ]
+    ) -> tuple[Dict[str, pd.DataFrame], Dict[str, Dict[str, Any]]]:
         """
-        Normalize dataframe input to dictionary format.
+        Normalize dataframe input to dictionary format and build metadata.
 
         Args:
             df: DataFrame(s) in various formats
 
         Returns:
-            Dictionary mapping names to DataFrames
+            Tuple containing:
+                - Dictionary mapping names to DataFrames
+                - Dictionary mapping names to metadata dictionaries
         """
-        _df = {}
+        dataframes: Dict[str, pd.DataFrame] = {}
+        metadata: Dict[str, Dict[str, Any]] = {}
 
         if isinstance(df, pd.DataFrame):
-            _df['df1'] = df
+            dataframes['df1'] = df
+            metadata['df1'] = self._build_metadata_entry('df1', df)
         elif isinstance(df, pd.Series):
-            _df['df1'] = pd.DataFrame(df)
+            dataframe = pd.DataFrame(df)
+            dataframes['df1'] = dataframe
+            metadata['df1'] = self._build_metadata_entry('df1', dataframe)
         elif isinstance(df, list):
             for i, dataframe in enumerate(df):
-                _df[f"df{i + 1}"] = dataframe.copy()
+                dataframe = self._ensure_dataframe(dataframe)
+                df_name = f"df{i + 1}"
+                dataframes[df_name] = dataframe.copy()
+                metadata[df_name] = self._build_metadata_entry(df_name, dataframe)
         elif isinstance(df, dict):
-            _df = df
+            for df_name, payload in df.items():
+                dataframe, df_metadata = self._extract_dataframe_payload(payload)
+                dataframes[df_name] = dataframe
+                metadata[df_name] = self._build_metadata_entry(df_name, dataframe, df_metadata)
         else:
-            raise ValueError(f"Expected pandas DataFrame, got {type(df)}")
+            raise ValueError(f"Expected pandas DataFrame or compatible structure, got {type(df)}")
 
-        return _df
+        return dataframes, metadata
 
-    def _generate_eda_summary(self, df: pd.DataFrame, df_key: str) -> str:
+    def _extract_dataframe_payload(
+        self,
+        payload: Union[pd.DataFrame, pd.Series, Dict[str, Any]]
+    ) -> tuple[pd.DataFrame, Optional[Dict[str, Any]]]:
+        """Extract dataframe and optional metadata from payload."""
+        metadata = None
+
+        if isinstance(payload, dict) and 'data' in payload:
+            dataframe = self._ensure_dataframe(payload['data'])
+            metadata = payload.get('metadata')
+        else:
+            dataframe = self._ensure_dataframe(payload)
+
+        return dataframe.copy(), metadata
+
+    def _ensure_dataframe(self, value: Any) -> pd.DataFrame:
+        """Ensure the provided value is converted to a pandas DataFrame."""
+        if isinstance(value, pd.DataFrame):
+            return value
+        if isinstance(value, pd.Series):
+            return value.to_frame()
+        raise ValueError(f"Expected pandas DataFrame or Series, got {type(value)}")
+
+    def _build_metadata_entry(
+        self,
+        name: str,
+        df: pd.DataFrame,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Build normalized metadata entry for a dataframe."""
+        row_count, column_count = df.shape
+
+        eda_summary = (
+            self._generate_eda_summary(df, name, include_header=False)
+            if self._generate_eda else None
+        )
+
+        entry: Dict[str, Any] = {
+            'name': name,
+            'description': '',
+            'shape': {
+                'rows': int(row_count),
+                'columns': int(column_count)
+            },
+            'row_count': int(row_count),
+            'column_count': int(column_count),
+            'memory_usage_mb': float(df.memory_usage(deep=True).sum() / 1024 / 1024),
+            'eda_summary': eda_summary,
+            'columns': {},
+            'sample_data': self._build_sample_rows(df)
+        }
+
+        provided_description = None
+        provided_eda_summary = None
+        provided_sample_data = None
+        column_metadata: Dict[str, Any] = {}
+
+        if isinstance(metadata, dict):
+            provided_description = metadata.get('description')
+            provided_eda_summary = metadata.get('eda_summary')
+            if isinstance(metadata.get('sample_data'), list):
+                provided_sample_data = metadata['sample_data']
+
+            if isinstance(metadata.get('columns'), dict):
+                column_metadata = metadata['columns']
+            else:
+                column_metadata = {
+                    key: value
+                    for key, value in metadata.items()
+                    if key in df.columns
+                }
+
+        for column in df.columns:
+            column_info = column_metadata.get(column)
+            entry['columns'][column] = self._build_column_metadata(
+                column,
+                df[column],
+                column_info
+            )
+
+        entry['description'] = provided_description or f"Columns available in '{name}'"
+        if provided_eda_summary:
+            entry['eda_summary'] = provided_eda_summary
+        if provided_sample_data is not None:
+            entry['sample_data'] = provided_sample_data
+
+        return entry
+
+    @staticmethod
+    def _build_column_metadata(
+        column_name: str,
+        series: pd.Series,
+        metadata: Optional[Union[str, Dict[str, Any]]] = None
+    ) -> Dict[str, Any]:
+        """Normalize metadata for a single column."""
+        if isinstance(metadata, str):
+            column_meta: Dict[str, Any] = {'description': metadata}
+        elif isinstance(metadata, dict):
+            column_meta = metadata.copy()
+        else:
+            column_meta = {}
+
+        column_meta.setdefault('description', column_name.replace('_', ' ').title())
+        column_meta.setdefault('dtype', str(series.dtype))
+
+        return column_meta
+
+    def _build_sample_rows(self, df: pd.DataFrame) -> List[Dict[str, Any]]:
+        """Return sample rows for metadata responses."""
+        try:
+            return df.head(self.METADATA_SAMPLE_ROWS).to_dict(orient='records')
+        except Exception:
+            return []
+
+    def _generate_eda_summary(
+        self,
+        df: pd.DataFrame,
+        df_key: str,
+        include_header: bool = True
+    ) -> str:
         """
         Generate exploratory data analysis summary for a DataFrame.
 
@@ -218,7 +368,8 @@ $backstory
         numeric_cols = df.select_dtypes(include=[np.number]).columns
         categorical_cols = df.select_dtypes(include=['object', 'category']).columns
 
-        summary_parts.append(f"**{df_key} EDA Summary:**")
+        if include_header:
+            summary_parts.append(f"**{df_key} EDA Summary:**")
         summary_parts.append(f"- Total rows: {len(df):,}")
         summary_parts.append(f"- Total columns: {len(df.columns)}")
         summary_parts.append(f"- Numeric columns: {len(numeric_cols)}")
@@ -272,31 +423,22 @@ $backstory
             Formatted DataFrame information string
         """
         if not self.dataframes:
-            return "No DataFrames loaded."
+            return "No DataFrames loaded. Use `add_dataframe` to register data."
 
-        df_info_parts = [f"**Total DataFrames:** {len(self.dataframes)}\n"]
+        alias_map = self._get_dataframe_alias_map()
+        df_info_parts = [
+            f"**Total DataFrames:** {len(self.dataframes)}",
+            "Use the `dataframe_metadata` tool for column descriptions, shapes, EDA summaries, and sample rows.",
+            "",
+            "**Registered DataFrames:**"
+        ]
 
-        for i, (df_name, df) in enumerate(self.dataframes.items()):
-            df_key = f"df{i + 1}"
-
-            # Basic info
-            df_info_parts.append(f"### {df_key} ('{df_name}')")
-            df_info_parts.append(f"Shape: {df.shape[0]:,} rows × {df.shape[1]} columns\n")
-
-            # EDA summary if enabled
-            if self._generate_eda:
-                df_info_parts.append(self._generate_eda_summary(df, df_key))
-                df_info_parts.append("")
-
-            # Column guide
-            df_info_parts.append(self._generate_column_guide(df_key, df))
-
-            # Sample data (first 3 rows)
-            try:
-                sample = brace_escape(df.head(3).to_markdown())
-                df_info_parts.append(f"\n**Sample Data:**\n```\n{sample}\n```\n")
-            except:
-                df_info_parts.append("*Sample data unavailable*\n")
+        for df_name, df in self.dataframes.items():
+            alias = alias_map.get(df_name)
+            display_name = f"{alias} ('{df_name}')" if alias else f"'{df_name}'"
+            df_info_parts.append(
+                f"- {display_name}: {df.shape[0]:,} rows × {df.shape[1]} columns"
+            )
 
         return "\n".join(df_info_parts)
 
@@ -354,6 +496,10 @@ $backstory
                 agent_name=self.chatbot_id,
                 cache_expiration=self._cache_expiration
             )
+            self.df_metadata = {
+                name: self._build_metadata_entry(name, df)
+                for name, df in self.dataframes.items()
+            }
 
         # Call parent configure (handles LLM, tools, memory, etc.)
         await super().configure(app=app)
@@ -364,6 +510,8 @@ $backstory
                 self.dataframes,
                 cache_expiration=self._cache_expiration
             )
+
+        self._sync_metadata_tool()
 
         self.logger.info(
             f"PandasAgent '{self.name}' configured with {len(self.dataframes)} DataFrame(s)"
@@ -567,6 +715,7 @@ $backstory
         self,
         name: str,
         df: pd.DataFrame,
+        metadata: Optional[Dict[str, Any]] = None,
         regenerate_guide: bool = True
     ) -> str:
         """
@@ -578,6 +727,7 @@ $backstory
         Args:
             name: Name for the DataFrame
             df: The pandas DataFrame to add
+            metadata: Optional column metadata dictionary
             regenerate_guide: Whether to regenerate the DataFrame guide
 
         Returns:
@@ -590,26 +740,24 @@ $backstory
         if not isinstance(df, pd.DataFrame):
             raise ValueError("Object must be a pandas DataFrame")
 
-        # Add to agent's dataframes dict
+        # Add to agent's dataframes dict and update metadata
         self.dataframes[name] = df
+        self.df_metadata[name] = self._build_metadata_entry(name, df, metadata)
 
-        # Find the PythonPandasTool in the tools list
-        pandas_tool = None
-        for tool in self.tool_manager.get_tools():
-            if isinstance(tool, PythonPandasTool):
-                pandas_tool = tool
-                break
+        pandas_tool = self._get_python_pandas_tool()
 
-        if pandas_tool:
-            # Update the tool's dataframes
-            result = pandas_tool.add_dataframe(name, df, regenerate_guide)
-
-            # Regenerate system prompt with updated DataFrame info
-            self._define_prompt()
-
-            return result
-        else:
+        if not pandas_tool:
             raise RuntimeError("PythonPandasTool not found in agent's tools")
+
+        # Update the tool's dataframes
+        result = pandas_tool.add_dataframe(name, df, regenerate_guide)
+
+        self._sync_metadata_tool()
+
+        # Regenerate system prompt with updated DataFrame info
+        self._define_prompt()
+
+        return result
 
     def delete_dataframe(self, name: str, regenerate_guide: bool = True) -> str:
         """
@@ -634,24 +782,52 @@ $backstory
 
         # Remove from agent's dataframes dict
         del self.dataframes[name]
+        self.df_metadata.pop(name, None)
 
-        # Find the PythonPandasTool in the tools list
-        pandas_tool = None
-        for tool in self.tool_manager.tools:
-            if isinstance(tool, PythonPandasTool):
-                pandas_tool = tool
-                break
+        pandas_tool = self._get_python_pandas_tool()
 
-        if pandas_tool:
-            # Update the tool's dataframes
-            result = pandas_tool.remove_dataframe(name, regenerate_guide)
-
-            # Regenerate system prompt with updated DataFrame info
-            self._define_prompt()
-
-            return result
-        else:
+        if not pandas_tool:
             raise RuntimeError("PythonPandasTool not found in agent's tools")
+
+        # Update the tool's dataframes
+        result = pandas_tool.remove_dataframe(name, regenerate_guide)
+
+        self._sync_metadata_tool()
+
+        # Regenerate system prompt with updated DataFrame info
+        self._define_prompt()
+
+        return result
+
+    def _get_python_pandas_tool(self) -> Optional[PythonPandasTool]:
+        """Get the registered PythonPandasTool instance if available."""
+        for tool in self.tool_manager.get_tools():
+            if isinstance(tool, PythonPandasTool):
+                return tool
+        return None
+
+    def _get_metadata_tool(self) -> Optional[MetadataTool]:
+        """Get the MetadataTool instance if registered."""
+        for tool in self.tool_manager.get_tools():
+            if isinstance(tool, MetadataTool):
+                return tool
+        return None
+
+    def _get_dataframe_alias_map(self) -> Dict[str, str]:
+        """Return mapping of dataframe names to standardized dfN aliases."""
+        return {
+            name: f"df{i + 1}"
+            for i, name in enumerate(self.dataframes.keys())
+        }
+
+    def _sync_metadata_tool(self) -> None:
+        """Ensure the metadata tool has the latest metadata."""
+        metadata_tool = self._get_metadata_tool()
+        if metadata_tool:
+            metadata_tool.update_metadata(
+                self.df_metadata,
+                self._get_dataframe_alias_map()
+            )
 
     def list_dataframes(self) -> Dict[str, Dict[str, Any]]:
         """
