@@ -634,9 +634,13 @@ $chat_history
                 # Format output based on mode if not default
                 if output_mode != OutputMode.DEFAULT:
                     format_kwargs = format_kwargs or {}
-                    response.content = await self.formatter.format(
+                    content, wrapped = await self.formatter.format(
                         output_mode, response, **format_kwargs
                     )
+                    response.content = content
+                    if wrapped:
+                        response.response = wrapped
+                    # Store metadata about formatting
                     response.output_mode = output_mode
 
                 # Build AgentResponse
