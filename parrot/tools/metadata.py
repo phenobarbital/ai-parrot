@@ -1,7 +1,9 @@
 """Metadata tool for describing DataFrame schemas to the LLM."""
 from typing import Any, Dict, Optional
+
 from pydantic import Field
-from .abstract import AbstractTool, AbstractToolArgsSchema
+
+from .abstract import AbstractTool, AbstractToolArgsSchema, ToolResult
 
 
 class MetadataToolArgs(AbstractToolArgsSchema):
@@ -50,25 +52,51 @@ class MetadataTool(AbstractTool):
         dataframe: Optional[str] = None,
         column: Optional[str] = None,
         **_: Any
-    ) -> Dict[str, Any]:
+    ) -> ToolResult:
         if not self.metadata:
-            return {"message": "No metadata available"}
+            return ToolResult(
+                status="success",
+                result={"message": "No metadata available"},
+                metadata={"tool_name": self.name}
+            )
 
         if dataframe:
-            return self._describe_dataframe(dataframe, column)
+            try:
+                result = self._describe_dataframe(dataframe, column)
+            except ValueError as exc:
+                return ToolResult(
+                    status="error",
+                    result=None,
+                    error=str(exc),
+                    metadata={
+                        "tool_name": self.name,
+                        "dataframe": dataframe,
+                        "column": column
+                    }
+                )
+        else:
+            result = {
+                "available_dataframes": [
+                    {
+                        "name": name,
+                        "standardized_name": self.alias_map.get(name),
+                        "description": meta.get('description'),
+                        "shape": meta.get('shape'),
+                        "columns": list(meta.get('columns', {}).keys())
+                    }
+                    for name, meta in self.metadata.items()
+                ]
+            }
 
-        return {
-            "available_dataframes": [
-                {
-                    "name": name,
-                    "standardized_name": self.alias_map.get(name),
-                    "description": meta.get('description'),
-                    "shape": meta.get('shape'),
-                    "columns": list(meta.get('columns', {}).keys())
-                }
-                for name, meta in self.metadata.items()
-            ]
-        }
+        return ToolResult(
+            status="success",
+            result=result,
+            metadata={
+                "tool_name": self.name,
+                "dataframe": dataframe,
+                "column": column
+            }
+        )
 
     def _describe_dataframe(self, dataframe: str, column: Optional[str] = None) -> Dict[str, Any]:
         """Describe a dataframe and optionally a specific column."""
