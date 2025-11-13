@@ -495,7 +495,9 @@ $chat_history
         # Use the conversation method from BasicAgent
         response = await super().invoke(
             question=question,
-            use_conversation_history=kwargs.get('use_conversation_history', True),
+            use_conversation_history=kwargs.get(
+                'use_conversation_history', True
+            ),
             response_model=response_model,
             **kwargs
         )
@@ -530,14 +532,14 @@ $chat_history
         output_mode: Any = None,
         format_kwargs: dict = None,
         **kwargs
-    ) -> AgentResponse:
+    ) -> AIMessage:
         """
         Override ask() method to ensure PythonPandasTool is always used.
 
         This method is specialized for PandasAgent and differs from AbstractBot.ask():
         - Always uses tools (specifically PythonPandasTool)
         - Does NOT use vector search/knowledge base context
-        - Returns AgentResponse instead of AIMessage
+        - Returns AIMessage
         - Focuses on DataFrame analysis with the pre-loaded data
 
         Args:
@@ -553,7 +555,7 @@ $chat_history
             **kwargs: Additional arguments (temperature, max_tokens, etc.)
 
         Returns:
-            AgentResponse with the analysis result
+            AIMessage with the analysis result
         """
         # Generate IDs if not provided
         session_id = session_id or str(uuid.uuid4())
@@ -643,36 +645,15 @@ $chat_history
                     # Store metadata about formatting
                     response.output_mode = output_mode
 
-                # Build AgentResponse
-                return AgentResponse(
-                    agent_id=self.agent_id,
-                    agent_name=self.agent_name,
-                    status='success',
-                    response=response,  # The AIMessage
-                    question=question,
-                    data=response.response,
-                    output=response.output,  # Always use response.output
-                    metadata=response.metadata,
-                    turn_id=turn_id,
-                    session_id=session_id,
-                    user_id=user_id
-                )
+                # Build AIMessage response
+                return response
 
         except Exception as e:
-            self.logger.error(f"Error in PandasAgent.ask(): {e}")
-            # Return error response
-            return AgentResponse(
-                agent_id=self.agent_id,
-                agent_name=self.agent_name,
-                status='error',
-                question=question,
-                data=f"Error: {str(e)}",
-                output=None,
-                metadata={'error': str(e)},
-                turn_id=turn_id,
-                session_id=session_id,
-                user_id=user_id
+            self.logger.error(
+                f"Error in PandasAgent.ask(): {e}"
             )
+            # Return error response
+            raise
 
     def add_dataframe(
         self,
