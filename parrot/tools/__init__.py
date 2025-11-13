@@ -4,6 +4,7 @@ Tools infrastructure for building Agents.
 from parrot.plugins import setup_plugin_importer, dynamic_import_helper
 from .pythonrepl import PythonREPLTool
 from .pythonpandas import PythonPandasTool
+from .metadata import MetadataTool
 from .abstract import AbstractTool, ToolResult
 from .google.base import GoogleBaseTool, GoogleToolArgsSchema, GoogleAuthMode
 from .math import MathTool
@@ -31,6 +32,7 @@ __all__ = (
     "DuckDuckGoToolkit",
     "FileReaderTool",
     "YFinanceTool",
+    "MetadataTool",
 )
 
 # Enable dynamic imports
