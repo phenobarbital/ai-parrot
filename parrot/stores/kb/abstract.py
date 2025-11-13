@@ -36,6 +36,10 @@ class AbstractKnowledgeBase(ABC):
         """
         pass
 
+    async def close(self):
+        """Cleanup resources if needed."""
+        pass
+
     @abstractmethod
     async def search(
         self,

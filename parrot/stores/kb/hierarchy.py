@@ -1,10 +1,8 @@
 from typing import Tuple, List, Dict, Any, Optional
 import json
-
 from navigator_auth.conf import AUTH_SESSION_OBJECT
 from .abstract import AbstractKnowledgeBase
 from ...utils.helpers import RequestContext
-from .cache import TTLCache
 from ...interfaces.hierarchy import EmployeeHierarchyManager
 
 
@@ -40,6 +38,7 @@ class EmployeeHierarchyKB(AbstractKnowledgeBase):
         permission_service: EmployeeHierarchyManager,
         always_active: bool = True,
         priority: int = 10,
+        employee_id_field: str = "employee_id",
         **kwargs
     ):
         super().__init__(
@@ -60,6 +59,11 @@ class EmployeeHierarchyKB(AbstractKnowledgeBase):
             **kwargs
         )
         self.service = permission_service
+        self.employee_id_field = employee_id_field
+
+    async def close(self):
+        """Cleanup resources if needed."""
+        await self.service.close()
 
     async def should_activate(
         self,
@@ -105,6 +109,7 @@ class EmployeeHierarchyKB(AbstractKnowledgeBase):
             user_id,
             kwargs
         )
+        print('HERE > ', employee_id)
 
         if not employee_id:
             return []
@@ -136,29 +141,29 @@ class EmployeeHierarchyKB(AbstractKnowledgeBase):
         kwargs: Dict[str, Any]
     ) -> Optional[str]:
         """
-        Extract the employee id (associate_oid) from various sources.
+        Extract the employee id from various sources.
 
         Order of priority:
         1. From kwargs (explicit)
         2. From ctx.request.session (web session)
-        3. From user_id (if it has associate_oid format)
+        3. From user_id (if it has self.employee_id_field format)
         4. search in DB by user_id
         """
         # 1. From kwargs (explicit)
-        if 'associate_oid' in kwargs:
-            return kwargs['associate_oid']
+        if self.employee_id_field in kwargs:
+            return kwargs[self.employee_id_field]
 
         # 2. From RequestContext (web session)
         if ctx and ctx.request:
             if session := getattr(ctx.request, 'session', None):
                 auth_obj = session.get(AUTH_SESSION_OBJECT, {})
-                if associate_oid := (
-                    auth_obj.get('associate_oid') or
-                    session.get('associate_oid')
+                if employee_id := (
+                    auth_obj.get(self.employee_id_field) or
+                    session.get(self.employee_id_field)
                 ):
-                    return associate_oid
+                    return employee_id
 
-        # 3. From user_id if it looks like an associate_oid
+        # 3. From user_id if it looks like an employee id
         if user_id and isinstance(user_id, str) and user_id.startswith(('E', 'EMP', 'A')):
             return user_id
 
@@ -167,7 +172,7 @@ class EmployeeHierarchyKB(AbstractKnowledgeBase):
     def _build_hierarchy_facts(
         self,
         emp_context: Dict[str, Any],
-        associate_oid: str
+        employee_id: str
     ) -> List[Dict[str, Any]]:
         """
         Produce a compact, LLM-friendly hierarchy summary + a few readable facts.
@@ -193,8 +198,8 @@ class EmployeeHierarchyKB(AbstractKnowledgeBase):
         direct_manager = reports_chain[0] if reports_chain else None
 
         compact = {
-            "employee_id": emp.get("employee_id") or associate_oid,
-            "associate_oid": emp.get("associate_oid") or associate_oid,
+            "employee_id": emp.get("employee_id") or employee_id,
+            "associate_oid": emp.get("associate_oid") or employee_id,
             "name": emp.get("display_name"),
             "email": emp.get("email"),
             "department": dept,
