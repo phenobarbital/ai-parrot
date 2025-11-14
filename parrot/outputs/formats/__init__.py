@@ -66,6 +66,8 @@ def get_renderer(mode: OutputMode) -> Type[Renderer]:
                 import_module('.echarts', 'parrot.outputs.formats')
             elif mode == OutputMode.SEABORN:
                 import_module('.seaborn', 'parrot.outputs.formats')
+            elif mode == OutputMode.TABLE:
+                import_module('.table', 'parrot.outputs.formats')
     try:
         return RENDERERS[mode]
     except KeyError as exc:

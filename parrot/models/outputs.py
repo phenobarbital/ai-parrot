@@ -58,6 +58,7 @@ class OutputMode(str, Enum):
     IMAGE = "image"             # render the image as a base64 embed into HTML <img>
     D3 = "d3"                   # Generate D3.js visualization
     ECHARTS = "echarts"         # Generate ECharts visualization
+    TABLE = "table"             # Generate table visualization
 
 @dataclass
 class StructuredOutputConfig:
