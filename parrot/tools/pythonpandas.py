@@ -127,6 +127,10 @@ class PythonPandasTool(PythonREPLTool):
         # Process DataFrames before initializing parent
         self._process_dataframes()
 
+        # ✅ Sync df_locals to execution environment
+        # self.locals.update(self.df_locals)
+        # self.globals.update(self.df_locals)
+
         # Set up locals with DataFrames
         df_locals = kwargs.get('locals_dict', {})
         df_locals.update(self.df_locals)

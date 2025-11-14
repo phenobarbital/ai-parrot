@@ -505,6 +505,9 @@ get_df_guide()  # Shows complete guide with names and aliases
             # Update the tool's dataframes
             pandas_tool.dataframes = self.dataframes
             pandas_tool._process_dataframes()
+            pandas_tool.locals.update(pandas_tool.df_locals)
+            pandas_tool.globals.update(pandas_tool.df_locals)
+            print("DataFrames available:", list(pandas_tool.locals.keys()))
             if pandas_tool.generate_guide:
                 pandas_tool.df_guide = pandas_tool._generate_dataframe_guide()
 
@@ -672,6 +675,8 @@ get_df_guide()  # Shows complete guide with names and aliases
                 # Call the LLM
                 response = await client.ask(**llm_kwargs)
 
+                print('RESPONSE TYPE > ', type(response))
+
                 # Enhance response with conversation context metadata
                 response.set_conversation_context_info(
                     used=bool(conversation_context),
@@ -802,6 +807,11 @@ get_df_guide()  # Shows complete guide with names and aliases
         if pandas_tool := self._get_python_pandas_tool():
             pandas_tool.dataframes = self.dataframes
             pandas_tool._process_dataframes()
+            pandas_tool.locals.update(pandas_tool.df_locals)
+            pandas_tool.globals.update(pandas_tool.df_locals)
+            print(
+                "DataFrames available:", list(pandas_tool.locals.keys())
+            )
             if pandas_tool.generate_guide:
                 pandas_tool.df_guide = pandas_tool._generate_dataframe_guide()
 

@@ -1253,6 +1253,11 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
         else:
             # Multiple calls - show the final result
             final_tc = all_tool_calls[-1]
+            if isinstance(final_tc.result, pd.DataFrame):
+                if not final_tc.result.empty:
+                    return f"Data: {final_tc.result.to_string()}"
+                else:
+                    return f"Final tool {final_tc.name} returned an empty DataFrame."
             if final_tc.result and isinstance(final_tc.result, dict):
                 if 'result' in final_tc.result:
                     return f"Final result: {final_tc.result['result']}"

@@ -415,7 +415,7 @@ class AgentTalk(BaseView):
             # output_mode = self._get_output_mode(self.request)
             # Determine output format
             output_format = self._get_output_format(data, qs)
-            output_mode = self._format_to_output_mode(output_format)
+            output_mode = data.pop('output_mode', OutputMode.DEFAULT)
 
             # Extract parameters for ask()
             search_type = data.pop('search_type', 'similarity')
@@ -477,6 +477,12 @@ class AgentTalk(BaseView):
                         )
                         if isinstance(response, web.Response):
                             return response
+                        return self.json_response(
+                            {
+                                "message": f"Method {method_name} was executed successfully.",
+                                "response": str(response)
+                            }
+                        )
                     except Exception as e:
                         self.logger.error(f"Error calling method {method_name}: {e}", exc_info=True)
                         return self.json_response(
@@ -568,8 +574,12 @@ class AgentTalk(BaseView):
         Returns:
             web.Response with appropriate content type
         """
+        print('::: TYPE ', type(response))
+
         if isinstance(response, AgentResponse):
             response = response.response
+
+        print('::: TYPE ', type(response))
 
         if output_format == 'json':
             # Return structured JSON response
@@ -577,6 +587,7 @@ class AgentTalk(BaseView):
                 "input": response.input,
                 "output": response.output,
                 "content": response.content,
+                "response": response.response,
                 "metadata": {
                     "model": getattr(response, 'model', None),
                     "provider": getattr(response, 'provider', None),
