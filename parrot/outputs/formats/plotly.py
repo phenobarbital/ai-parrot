@@ -2,6 +2,10 @@
 from typing import Any, Optional, Tuple, Dict
 import json
 import uuid
+from io import BytesIO
+import base64
+import pandas as pd
+import numpy as np
 from .base import BaseChart
 from . import register_renderer
 from ...models.outputs import OutputMode
@@ -46,29 +50,66 @@ fig.update_layout(
 class PlotlyRenderer(BaseChart):
     """Renderer for Plotly charts"""
 
-    def execute_code(self, code: str) -> Tuple[Any, Optional[str]]:
+    def execute_code(
+        self,
+        code: str,
+        execution_state: dict = None,
+        **kwargs
+    ) -> Tuple[Any, Optional[str]]:
         """Execute Plotly code and return figure object."""
         try:
+            # Build namespace with execution state
             namespace = {}
-            exec(code, namespace)
+            # Add DataFrames
+            if 'dataframes' in execution_state:
+                namespace |= execution_state['dataframes']
 
+            # Add execution_results
+            if 'execution_results' in execution_state:
+                namespace |= execution_state['execution_results']
+
+            if 'variables' in execution_state:
+                namespace |= execution_state['variables']
+
+            # locals and globals for exec
+            _locals = execution_state.get('locals', kwargs.get('locals', {}))
+
+            # Add standard imports
+            namespace['pd'] = pd
+            namespace['np'] = np
+
+            exec(code, namespace, _locals)
+            # Find figure in locals
             fig = next(
                 (
-                    namespace[var_name]
-                    for var_name in ['fig', 'chart', 'plot', 'figure']
-                    if var_name in namespace
+                    _locals[var_name]
+                    for var_name in ['fig', 'figure', 'chart', 'plot', 'm', 'map']
+                    if var_name in _locals
                 ),
                 None,
             )
 
             if fig is None:
-                return None, "Code must define a figure variable (fig, chart, plot, or figure)"
+                return None, "Code must define a figure variable (fig, chart, plot, m, or map)"
 
-            # Check if it's a Plotly figure
-            if not hasattr(fig, 'to_html') or not hasattr(fig, 'to_json'):
-                return None, f"Object is not a Plotly figure: {type(fig)}"
+            if hasattr(fig, 'to_html'):  # Plotly, Folium
+                return fig.to_html(
+                    include_plotlyjs='cdn' if 'plotly' in str(type(fig)) else False
+                ), None
 
-            return fig, None
+            elif hasattr(fig, 'savefig'):  # Matplotlib
+                buf = BytesIO()
+                fig.savefig(buf, format='png', bbox_inches='tight', dpi=150)
+                buf.seek(0)
+                img_b64 = base64.b64encode(buf.read()).decode()
+                return f'<img src="data:image/png;base64,{img_b64}">', None
+
+            elif hasattr(fig, 'output_backend'):  # Bokeh
+                from bokeh.embed import file_html
+                from bokeh.resources import CDN
+                return file_html(fig, CDN, "Chart"), None
+
+            return None, f"Unsupported figure type: {type(fig)}"
 
         except Exception as e:
             return None, f"Execution error: {str(e)}"
@@ -151,9 +192,9 @@ class PlotlyRenderer(BaseChart):
         response: Any,
         theme: str = 'monokai',
         environment: str = 'html',
-        export_format: str = 'html',
         return_code: bool = True,
         html_mode: str = 'partial',
+        execution_state: Optional[Dict[str, Any]] = None,  # NEW
         **kwargs
     ) -> Tuple[Any, Optional[Any]]:
         """Render Plotly chart."""
@@ -168,13 +209,15 @@ class PlotlyRenderer(BaseChart):
             return error_msg, error_html
 
         # Execute code
-        chart_obj, error = self.execute_code(code)
+        chart_obj, error = self.execute_code(code, execution_state, **kwargs)
+
+        print('END EXECUTION:')
+        print(chart_obj)
+        print('ERROR: ', error)
 
         if error:
             error_html = self._render_error(error, code, theme)
-            if environment == 'terminal':
-                return code, error
-            return code, error_html
+            return (code, error) if environment == 'terminal' else (code, error_html)
 
         if environment == 'terminal':
             return code, code

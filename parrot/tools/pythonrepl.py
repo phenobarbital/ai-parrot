@@ -268,10 +268,12 @@ class PythonREPLTool(AbstractTool):
             self.output_dir.mkdir(parents=True, exist_ok=True)
 
         # Helper functions for plot handling
-        def save_current_plot(filename: Optional[str] = None,
-                            format: str = 'png',
-                            dpi: int = 300,
-                            bbox_inches: str = 'tight') -> Dict[str, Any]:
+        def save_current_plot(
+            filename: Optional[str] = None,
+            format: str = 'png',
+            dpi: int = 300,
+            bbox_inches: str = 'tight'
+        ) -> Dict[str, Any]:
             """Save the current matplotlib plot to a file."""
             if not filename:
                 filename = self.generate_filename("plot", f".{format}")

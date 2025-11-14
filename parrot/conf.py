@@ -59,7 +59,7 @@ if not MCP_SERVER_DIR.exists():
 # MCP Server defaults
 MCP_SERVER_TRANSPORT = config.get('MCP_SERVER_TRANSPORT', fallback='http')
 MCP_SERVER_HOST = config.get('MCP_SERVER_HOST', fallback='127.0.0.1')
-MCP_SERVER_PORT = config.getint('MCP_SERVER_PORT', fallback=8080)
+MCP_SERVER_PORT = config.getint('MCP_SERVER_PORT', fallback=9090)
 MCP_SERVER_NAME = config.get('MCP_SERVER_NAME', fallback='ai-parrot-tools')
 MCP_SERVER_DESCRIPTION = config.get(
     'MCP_SERVER_DESCRIPTION',
