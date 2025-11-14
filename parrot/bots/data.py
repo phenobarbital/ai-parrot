@@ -486,6 +486,9 @@ get_df_guide()  # Shows complete guide with names and aliases
             df: Optional DataFrame(s) to load
             app: Optional aiohttp Application
         """
+        if queries is not None:
+            self._queries = queries
+
         # Load from queries if specified
         if self._queries and not self.dataframes:
             self.dataframes = await self.gen_data(
@@ -497,17 +500,6 @@ get_df_guide()  # Shows complete guide with names and aliases
                 name: self._build_metadata_entry(name, df)
                 for name, df in self.dataframes.items()
             }
-        if not self.dataframes and queries:
-            if queries := queries or self._queries:
-                self.dataframes = await self.gen_data(
-                    query=queries,
-                    agent_name=self.chatbot_id,
-                    cache_expiration=self._cache_expiration
-                )
-                self.df_metadata = {
-                    name: self._build_metadata_entry(name, df)
-                    for name, df in self.dataframes.items()
-                }
 
         if pandas_tool := self._get_python_pandas_tool():
             # Update the tool's dataframes
@@ -761,6 +753,61 @@ get_df_guide()  # Shows complete guide with names and aliases
         self._define_prompt()
 
         return result
+
+    async def add_query(self, query: str) -> Dict[str, pd.DataFrame]:
+        """Register a new QuerySource slug and load its resulting DataFrame."""
+        if not isinstance(query, str) or not query.strip():
+            raise ValueError("Query must be a non-empty string")
+
+        query = query.strip()
+
+        if self._queries is None:
+            self._queries = [query]
+        elif isinstance(self._queries, str):
+            if self._queries == query:
+                return {}
+            self._queries = [self._queries, query]
+        elif isinstance(self._queries, list):
+            if query in self._queries:
+                return {}
+            self._queries.append(query)
+        else:
+            raise ValueError(
+                "add_query only supports simple query slugs configured as strings or lists"
+            )
+
+        new_dataframes = await self.call_qs([query])
+        for name, dataframe in new_dataframes.items():
+            self.add_dataframe(name, dataframe)
+
+        return new_dataframes
+
+    async def refresh_data(self) -> Dict[str, pd.DataFrame]:
+        """Re-run the configured queries and refresh metadata/tool state."""
+        if not self._queries:
+            raise ValueError("No queries configured to refresh data")
+
+        self.dataframes = await self.gen_data(
+            query=self._queries,
+            agent_name=self.chatbot_id,
+            cache_expiration=self._cache_expiration,
+            refresh=True,
+        )
+        self.df_metadata = {
+            name: self._build_metadata_entry(name, df)
+            for name, df in self.dataframes.items()
+        }
+
+        if pandas_tool := self._get_python_pandas_tool():
+            pandas_tool.dataframes = self.dataframes
+            pandas_tool._process_dataframes()
+            if pandas_tool.generate_guide:
+                pandas_tool.df_guide = pandas_tool._generate_dataframe_guide()
+
+        self._sync_metadata_tool()
+        self._define_prompt()
+
+        return self.dataframes
 
     def delete_dataframe(self, name: str, regenerate_guide: bool = True) -> str:
         """
