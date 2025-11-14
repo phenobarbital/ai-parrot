@@ -185,7 +185,7 @@ class BokehRenderer(BaseChart):
         self,
         response: Any,
         theme: str = 'monokai',
-        environment: str = 'terminal',
+        environment: str = 'html',
         export_format: str = 'html',
         return_code: bool = True,
         html_mode: str = 'partial',
@@ -198,6 +198,8 @@ class BokehRenderer(BaseChart):
         if not code:
             error_msg = "No chart code found in response"
             error_html = "<div class='error'>No chart code found in response</div>"
+            if environment == 'terminal':
+                return error_msg, error_msg
             return error_msg, error_html
 
         # Execute code
@@ -205,7 +207,17 @@ class BokehRenderer(BaseChart):
 
         if error:
             error_html = self._render_error(error, code, theme)
+            if environment == 'terminal':
+                return code, error
             return code, error_html
+
+        if environment == 'terminal':
+            return code, code
+
+        if environment == 'jupyter':
+            from bokeh.embed import components
+            script, div = components(chart_obj)
+            return code, f"{script}{div}"
 
         # Generate HTML
         html_output = self.to_html(

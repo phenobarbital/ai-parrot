@@ -150,7 +150,7 @@ class PlotlyRenderer(BaseChart):
         self,
         response: Any,
         theme: str = 'monokai',
-        environment: str = 'terminal',
+        environment: str = 'html',
         export_format: str = 'html',
         return_code: bool = True,
         html_mode: str = 'partial',
@@ -163,6 +163,8 @@ class PlotlyRenderer(BaseChart):
         if not code:
             error_msg = "No chart code found in response"
             error_html = "<div class='error'>No chart code found in response</div>"
+            if environment == 'terminal':
+                return error_msg, error_msg
             return error_msg, error_html
 
         # Execute code
@@ -170,9 +172,19 @@ class PlotlyRenderer(BaseChart):
 
         if error:
             error_html = self._render_error(error, code, theme)
+            if environment == 'terminal':
+                return code, error
             return code, error_html
 
-        # Generate HTML
+        if environment == 'terminal':
+            return code, code
+
+        if environment == 'jupyter':
+            # For Jupyter, return the figure object directly
+            # The frontend will handle rendering it
+            return code, chart_obj
+
+        # Generate HTML for web environments
         html_output = self.to_html(
             chart_obj,
             mode=html_mode,
