@@ -146,7 +146,7 @@ class AltairRenderer(BaseChart):
         self,
         response: Any,
         theme: str = 'monokai',
-        environment: str = 'terminal',
+        environment: str = 'html',
         export_format: str = 'html',
         return_code: bool = True,
         html_mode: str = 'partial',
@@ -166,6 +166,8 @@ class AltairRenderer(BaseChart):
         if not code:
             error_msg = "No chart code found in response"
             error_html = "<div class='error'>No chart code found in response</div>"
+            if environment == 'terminal':
+                return error_msg, error_msg
             return error_msg, error_html
 
         # Execute code to get chart object
@@ -173,7 +175,17 @@ class AltairRenderer(BaseChart):
 
         if error:
             error_html = self._render_error(error, code, theme)
+            if environment == 'terminal':
+                return code, error
             return code, error_html
+
+        if environment == 'terminal':
+            return code, code
+
+        if environment == 'jupyter':
+            # For Jupyter, return the chart object directly.
+            # The frontend (e.g., notebook) will handle rendering it.
+            return code, chart_obj
 
         # Generate HTML with specified mode
         html_output = self.to_html(
