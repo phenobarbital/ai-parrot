@@ -52,6 +52,7 @@ class OutputMode(str, Enum):
     PLOTLY = "plotly"
     MATPLOTLIB = "matplotlib"
     BOKEH = "bokeh"
+    SEABORN = "seaborn"
     CODE = "code"
     MAP = "map"                   # Generate map visualization
     IMAGE = "image"             # render the image as a base64 embed into HTML <img>
