@@ -1,13 +1,18 @@
-from typing import Any, List, Dict, Any, Optional, Tuple, Type
+from typing import Any, List, Dict, Optional, Tuple, Type, TYPE_CHECKING
 from abc import ABC, abstractmethod
 import contextlib
 import re
 from dataclasses import asdict
 import html
+import numpy as np
 from pygments import highlight
 from pygments.lexers.python import PythonLexer
 from pygments.formatters.html import HtmlFormatter
 import pandas as pd
+
+
+if TYPE_CHECKING:
+    from ...tools.pythonpandas import PythonPandasTool
 
 
 try:
@@ -82,6 +87,48 @@ class BaseRenderer(ABC):
 
         # Last resort: string conversion
         return str(response)
+
+    def execute_code(
+        self,
+        code: str,
+        pandas_tool: "PythonPandasTool | None" = None,
+        execution_state: Optional[Dict[str, Any]] = None,
+        extra_namespace: Optional[Dict[str, Any]] = None,
+        **kwargs,
+    ) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+        """Execute code within the PythonPandasTool or fallback namespace."""
+        tool = pandas_tool or kwargs.get('pandas_tool')
+        if tool:
+            try:
+                tool.execute_sync(code, debug=kwargs.get('debug', False))
+                return tool.locals, None
+            except Exception as exc:
+                return None, f"Execution error: {exc}"
+
+        namespace: Dict[str, Any] = {'pd': pd, 'np': np}
+        if extra_namespace:
+            namespace.update(extra_namespace)
+
+        locals_dict: Dict[str, Any] = {}
+        if execution_state:
+            namespace.update(execution_state.get('dataframes', {}))
+            namespace.update(execution_state.get('execution_results', {}))
+            namespace.update(execution_state.get('variables', {}))
+            globals_state = execution_state.get('globals') or {}
+            if isinstance(globals_state, dict):
+                namespace.update(globals_state)
+            locals_state = execution_state.get('locals') or {}
+            if isinstance(locals_state, dict):
+                locals_dict = locals_state.copy()
+
+        try:
+            exec(code, namespace, locals_dict)
+            combined: Dict[str, Any] = {}
+            combined.update(namespace)
+            combined.update(locals_dict)
+            return combined, None
+        except Exception as exc:
+            return None, f"Execution error: {exc}"
 
     @staticmethod
     def _create_tools_list(tool_calls: List[Any]) -> List[Dict[str, str]]:
@@ -555,11 +602,6 @@ class BaseChart(BaseRenderer):
 
         else:
             raise ValueError(f"Invalid mode: {mode}. Must be 'partial' or 'complete'")
-
-    @abstractmethod
-    def execute_code(self, code: str) -> Tuple[Any, Optional[str]]:
-        """Execute chart code and return chart object or error."""
-        pass
 
     @abstractmethod
     def _render_chart_content(self, chart_obj: Any, **kwargs) -> str:

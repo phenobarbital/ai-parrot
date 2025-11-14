@@ -53,66 +53,53 @@ class PlotlyRenderer(BaseChart):
     def execute_code(
         self,
         code: str,
-        execution_state: dict = None,
-        **kwargs
+        pandas_tool: "PythonPandasTool | None" = None,
+        execution_state: Optional[Dict[str, Any]] = None,
+        **kwargs,
     ) -> Tuple[Any, Optional[str]]:
-        """Execute Plotly code and return figure object."""
-        try:
-            # Build namespace with execution state
-            namespace = {}
-            # Add DataFrames
-            if 'dataframes' in execution_state:
-                namespace |= execution_state['dataframes']
+        """Execute Plotly code (leveraging PythonPandasTool when available)."""
+        context, error = super().execute_code(
+            code,
+            pandas_tool=pandas_tool,
+            execution_state=execution_state,
+            **kwargs,
+        )
 
-            # Add execution_results
-            if 'execution_results' in execution_state:
-                namespace |= execution_state['execution_results']
+        if error:
+            return None, error
 
-            if 'variables' in execution_state:
-                namespace |= execution_state['variables']
+        if not context:
+            return None, "Execution context was empty"
 
-            # locals and globals for exec
-            _locals = execution_state.get('locals', kwargs.get('locals', {}))
+        fig = self._find_chart_object(context)
+        if fig is None:
+            return None, "Code must define a figure variable (fig, chart, plot, m, or map)"
 
-            # Add standard imports
-            namespace['pd'] = pd
-            namespace['np'] = np
+        if hasattr(fig, 'to_html'):  # Plotly, Folium
+            return fig.to_html(
+                include_plotlyjs='cdn' if 'plotly' in str(type(fig)) else False
+            ), None
 
-            exec(code, namespace, _locals)
-            # Find figure in locals
-            fig = next(
-                (
-                    _locals[var_name]
-                    for var_name in ['fig', 'figure', 'chart', 'plot', 'm', 'map']
-                    if var_name in _locals
-                ),
-                None,
-            )
+        if hasattr(fig, 'savefig'):  # Matplotlib fallback
+            buf = BytesIO()
+            fig.savefig(buf, format='png', bbox_inches='tight', dpi=150)
+            buf.seek(0)
+            img_b64 = base64.b64encode(buf.read()).decode()
+            return f'<img src="data:image/png;base64,{img_b64}">', None
 
-            if fig is None:
-                return None, "Code must define a figure variable (fig, chart, plot, m, or map)"
+        if hasattr(fig, 'output_backend'):  # Bokeh
+            from bokeh.embed import file_html
+            from bokeh.resources import CDN
+            return file_html(fig, CDN, "Chart"), None
 
-            if hasattr(fig, 'to_html'):  # Plotly, Folium
-                return fig.to_html(
-                    include_plotlyjs='cdn' if 'plotly' in str(type(fig)) else False
-                ), None
+        return None, f"Unsupported figure type: {type(fig)}"
 
-            elif hasattr(fig, 'savefig'):  # Matplotlib
-                buf = BytesIO()
-                fig.savefig(buf, format='png', bbox_inches='tight', dpi=150)
-                buf.seek(0)
-                img_b64 = base64.b64encode(buf.read()).decode()
-                return f'<img src="data:image/png;base64,{img_b64}">', None
-
-            elif hasattr(fig, 'output_backend'):  # Bokeh
-                from bokeh.embed import file_html
-                from bokeh.resources import CDN
-                return file_html(fig, CDN, "Chart"), None
-
-            return None, f"Unsupported figure type: {type(fig)}"
-
-        except Exception as e:
-            return None, f"Execution error: {str(e)}"
+    @staticmethod
+    def _find_chart_object(context: Dict[str, Any]) -> Any:
+        for var_name in ['fig', 'figure', 'chart', 'plot', 'm', 'map']:
+            if var_name in context and context[var_name] is not None:
+                return context[var_name]
+        return None
 
     def _render_chart_content(self, chart_obj: Any, **kwargs) -> str:
         """Render Plotly-specific chart content."""
@@ -209,11 +196,12 @@ class PlotlyRenderer(BaseChart):
             return error_msg, error_html
 
         # Execute code
-        chart_obj, error = self.execute_code(code, execution_state, **kwargs)
-
-        print('END EXECUTION:')
-        print(chart_obj)
-        print('ERROR: ', error)
+        chart_obj, error = self.execute_code(
+            code,
+            pandas_tool=kwargs.get('pandas_tool'),
+            execution_state=kwargs.get('execution_state'),
+            **kwargs,
+        )
 
         if error:
             error_html = self._render_error(error, code, theme)

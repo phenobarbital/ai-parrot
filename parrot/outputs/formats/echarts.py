@@ -97,7 +97,13 @@ This is a TEXT GENERATION task. Unlike other tasks, for this specific objective,
 class EChartsRenderer(BaseChart):
     """Renderer for Apache ECharts"""
 
-    def execute_code(self, code: str) -> Tuple[Any, Optional[str]]:
+    def execute_code(
+        self,
+        code: str,
+        pandas_tool: "PythonPandasTool | None" = None,
+        execution_state: Optional[Dict[str, Any]] = None,
+        **kwargs,
+    ) -> Tuple[Any, Optional[str]]:
         """Parse and validate ECharts JSON configuration."""
         try:
             # Parse JSON

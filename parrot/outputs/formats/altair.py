@@ -47,31 +47,43 @@ chart = alt.Chart(data).mark_bar().encode(
 class AltairRenderer(BaseChart):
     """Renderer for Altair/Vega-Lite charts"""
 
-    def execute_code(self, code: str) -> Tuple[Any, Optional[str]]:
-        """Execute Altair code and return chart object."""
-        try:
-            namespace = {}
-            exec(code, namespace)
+    def execute_code(
+        self,
+        code: str,
+        pandas_tool: "PythonPandasTool | None" = None,
+        execution_state: Optional[Dict[str, Any]] = None,
+        **kwargs,
+    ) -> Tuple[Any, Optional[str]]:
+        """Execute Altair code within the agent's Python environment."""
+        context, error = super().execute_code(
+            code,
+            pandas_tool=pandas_tool,
+            execution_state=execution_state,
+            **kwargs,
+        )
 
-            chart = next(
-                (
-                    namespace[var_name]
-                    for var_name in ['chart', 'fig', 'c', 'plot']
-                    if var_name in namespace
-                ),
-                None,
-            )
+        if error:
+            return None, error
 
-            if chart is None:
-                return None, "Code must define a chart variable (chart, fig, c, or plot)"
+        if not context:
+            return None, "Execution context was empty"
 
-            if not hasattr(chart, 'to_dict'):
-                return None, f"Object is not an Altair chart: {type(chart)}"
+        chart = next(
+            (
+                context[var_name]
+                for var_name in ['chart', 'fig', 'c', 'plot']
+                if var_name in context
+            ),
+            None,
+        )
 
-            return chart, None
+        if chart is None:
+            return None, "Code must define a chart variable (chart, fig, c, or plot)"
 
-        except Exception as e:
-            return None, f"Execution error: {str(e)}"
+        if not hasattr(chart, 'to_dict'):
+            return None, f"Object is not an Altair chart: {type(chart)}"
+
+        return chart, None
 
     def _render_chart_content(self, chart_obj: Any, **kwargs) -> str:
         """Render Altair-specific chart content with vega-embed."""
@@ -171,7 +183,12 @@ class AltairRenderer(BaseChart):
             return error_msg, error_html
 
         # Execute code to get chart object
-        chart_obj, error = self.execute_code(code)
+        chart_obj, error = self.execute_code(
+            code,
+            pandas_tool=kwargs.get('pandas_tool'),
+            execution_state=kwargs.get('execution_state'),
+            **kwargs,
+        )
 
         if error:
             error_html = self._render_error(error, code, theme)

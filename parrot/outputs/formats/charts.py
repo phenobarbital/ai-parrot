@@ -1,5 +1,5 @@
 # parrot/outputs/formats/chart.py
-from typing import Any, Optional, Tuple
+from typing import Any, Optional, Tuple, Dict
 import re
 import base64
 from io import BytesIO
@@ -55,7 +55,8 @@ class ChartRenderer(BaseChart):
             return_code,
             execute_code,
             theme,
-            environment
+            environment,
+            **kwargs,
         )
 
     @staticmethod
@@ -78,7 +79,8 @@ class ChartRenderer(BaseChart):
         return_code: bool,
         execute_code: bool,
         theme: str,
-        environment: str
+        environment: str,
+        **kwargs,
     ) -> Any:
         """Generic rendering for non-Altair charts."""
         code = self._extract_code(content)
@@ -88,7 +90,12 @@ class ChartRenderer(BaseChart):
         if not execute_code:
             return f"<pre>{code}</pre>"
 
-        html_chart, error = self._execute_generic_code(code)
+        html_chart, error = self._execute_generic_code(
+            code,
+            pandas_tool=kwargs.get('pandas_tool'),
+            execution_state=kwargs.get('execution_state'),
+            **kwargs,
+        )
 
         if error:
             return self._render_error(error, code, theme)
@@ -103,9 +110,20 @@ class ChartRenderer(BaseChart):
         final_html = '\n'.join(parts)
         return self._wrap_for_environment(final_html, environment)
 
-    def execute_code(self, code: str) -> Tuple[Any, Optional[str]]:
-        """Required by BaseChart abstract method."""
-        return self._execute_generic_code(code)
+    def execute_code(
+        self,
+        code: str,
+        pandas_tool: "PythonPandasTool | None" = None,
+        execution_state: Optional[Dict[str, Any]] = None,
+        **kwargs,
+    ) -> Tuple[Any, Optional[str]]:
+        """Execute code with optional PythonPandasTool context."""
+        return self._execute_generic_code(
+            code,
+            pandas_tool=pandas_tool,
+            execution_state=execution_state,
+            **kwargs,
+        )
 
     def to_html(self, chart_obj: Any, **kwargs) -> str:
         """Required by BaseChart abstract method."""
@@ -120,39 +138,50 @@ class ChartRenderer(BaseChart):
             return f'<img src="data:image/png;base64,{img_b64}">'
         return str(chart_obj)
 
-    @staticmethod
-    def _execute_generic_code(code: str) -> Tuple[str, Optional[str]]:
+    def _execute_generic_code(
+        self,
+        code: str,
+        pandas_tool: "PythonPandasTool | None" = None,
+        execution_state: Optional[Dict[str, Any]] = None,
+        **kwargs,
+    ) -> Tuple[str, Optional[str]]:
         """Execute code for Plotly/Matplotlib/Bokeh."""
-        try:
-            namespace = {}
-            exec(code, namespace)
+        context, error = super().execute_code(
+            code,
+            pandas_tool=pandas_tool,
+            execution_state=execution_state,
+            **kwargs,
+        )
 
-            fig = next(
-                (
-                    namespace[var_name]
-                    for var_name in ['fig', 'figure', 'chart', 'plot']
-                    if var_name in namespace
-                ),
-                None,
-            )
+        if error:
+            return None, error
 
-            if fig is None:
-                return None, "Code must define a 'fig' variable"
+        if not context:
+            return None, "Execution context was empty"
 
-            if hasattr(fig, 'to_html'):  # Plotly
-                return fig.to_html(include_plotlyjs='cdn', div_id='chart'), None
+        fig = next(
+            (
+                context[var_name]
+                for var_name in ['fig', 'figure', 'chart', 'plot']
+                if var_name in context
+            ),
+            None,
+        )
 
-            elif hasattr(fig, 'savefig'):  # Matplotlib
-                buf = BytesIO()
-                fig.savefig(buf, format='png', bbox_inches='tight', dpi=150)
-                buf.seek(0)
-                img_b64 = base64.b64encode(buf.read()).decode()
-                return f'<img src="data:image/png;base64,{img_b64}">', None
+        if fig is None:
+            return None, "Code must define a 'fig' variable"
 
-            elif hasattr(fig, 'output_backend'):  # Bokeh
-                return file_html(fig, CDN, "Chart"), None
+        if hasattr(fig, 'to_html'):  # Plotly
+            return fig.to_html(include_plotlyjs='cdn', div_id='chart'), None
 
-            return None, f"Unsupported figure type: {type(fig)}"
+        if hasattr(fig, 'savefig'):  # Matplotlib
+            buf = BytesIO()
+            fig.savefig(buf, format='png', bbox_inches='tight', dpi=150)
+            buf.seek(0)
+            img_b64 = base64.b64encode(buf.read()).decode()
+            return f'<img src="data:image/png;base64,{img_b64}">', None
 
-        except Exception as e:
-            return None, f"Execution error: {str(e)}"
+        if hasattr(fig, 'output_backend'):  # Bokeh
+            return file_html(fig, CDN, "Chart"), None
+
+        return None, f"Unsupported figure type: {type(fig)}"

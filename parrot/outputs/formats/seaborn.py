@@ -52,41 +52,56 @@ Explanation:
 class SeabornRenderer(BaseChart):
     """Renderer for Seaborn charts (rendered as static images)."""
 
-    def execute_code(self, code: str) -> Tuple[Any, Optional[str]]:
+    def execute_code(
+        self,
+        code: str,
+        pandas_tool: "PythonPandasTool | None" = None,
+        execution_state: Optional[Dict[str, Any]] = None,
+        **kwargs,
+    ) -> Tuple[Any, Optional[str]]:
         """Execute Seaborn code and return the underlying Matplotlib figure."""
-        try:
+        manual_backend = pandas_tool is None
+        extra_namespace = None
+        if manual_backend:
             import matplotlib
             matplotlib.use('Agg')
             import matplotlib.pyplot as plt
             import seaborn as sns
-
-            namespace = {
+            extra_namespace = {
                 'sns': sns,
                 'plt': plt,
                 'matplotlib': matplotlib,
             }
 
-            exec(code, namespace)
+        context, error = super().execute_code(
+            code,
+            pandas_tool=pandas_tool,
+            execution_state=execution_state,
+            extra_namespace=extra_namespace,
+            **kwargs,
+        )
 
-            fig = (
-                namespace.get('fig')
-                or namespace.get('figure')
-            )
+        try:
+            if error:
+                return None, error
+
+            if not context:
+                return None, "Execution context was empty"
+
+            fig = context.get('fig') or context.get('figure')
 
             if fig is None:
-                # Seaborn functions often return Axes or FacetGrid objects.
-                grid = namespace.get('g') or namespace.get('grid') or namespace.get('chart')
+                grid = context.get('g') or context.get('grid') or context.get('chart')
                 if grid is not None and hasattr(grid, 'fig'):
                     fig = grid.fig
 
             if fig is None:
-                axis = namespace.get('ax') or namespace.get('axes')
+                axis = context.get('ax') or context.get('axes')
                 if axis is not None and hasattr(axis, 'figure'):
                     fig = axis.figure
 
-            if fig is None:
-                # Last resort—use current figure
-                fig = plt.gcf()
+            if fig is None and 'plt' in context:
+                fig = context['plt'].gcf()
 
             if fig is None or not hasattr(fig, 'savefig'):
                 return None, (
@@ -95,13 +110,11 @@ class SeabornRenderer(BaseChart):
                 )
 
             return fig, None
-
-        except Exception as exc:
-            return None, f"Execution error: {exc}"
         finally:
-            with contextlib.suppress(Exception):
-                import matplotlib.pyplot as plt
-                plt.close('all')
+            if manual_backend:
+                with contextlib.suppress(Exception):
+                    import matplotlib.pyplot as plt
+                    plt.close('all')
 
     def _render_chart_content(self, chart_obj: Any, **kwargs) -> str:
         """Render Seaborn chart as an embedded base64 image."""
@@ -160,7 +173,12 @@ class SeabornRenderer(BaseChart):
             )
             return error_html, None
 
-        chart_obj, error = self.execute_code(code)
+        chart_obj, error = self.execute_code(
+            code,
+            pandas_tool=kwargs.get('pandas_tool'),
+            execution_state=kwargs.get('execution_state'),
+            **kwargs,
+        )
 
         if error:
             error_html = self._wrap_for_environment(
