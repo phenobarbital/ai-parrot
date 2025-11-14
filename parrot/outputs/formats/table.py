@@ -4,7 +4,6 @@ from .base import BaseRenderer
 from . import register_renderer
 from ...models.outputs import OutputMode
 import pandas as pd
-import uuid
 
 GRIDJS_SYSTEM_PROMPT = """
 **GRID.JS CODE GENERATION MODE**
