@@ -354,14 +354,19 @@ class WorkdayToolkit(AbstractToolkit):
 
         self._initialized = False
 
-    async def start(self) -> None:
+    async def start(self) -> str:
         """
         Initialize the SOAP client connection.
         Must be called before using any tools.
+
+        Returns:
+            Success message
         """
         if not self._initialized:
             await self.soap_client.start()
             self._initialized = True
+            return "Workday toolkit initialized successfully. Ready to process requests."
+        return "Workday toolkit already initialized."
 
     async def _get_absence_client(self) -> WorkdaySOAPClient:
         """
@@ -426,7 +431,7 @@ class WorkdayToolkit(AbstractToolkit):
             Worker data dictionary with all available fields
         """
         if not self._initialized:
-            raise RuntimeError("Toolkit not initialized. Call start() first.")
+            await self.start()
 
         # Build the Get_Workers request
         request = {
@@ -443,7 +448,8 @@ class WorkdayToolkit(AbstractToolkit):
                 "Include_Employment_Information": True,
                 "Include_Compensation": True,
                 "Include_Organizations": True,
-                "Include_Roles": True
+                "Include_Roles": True,
+                "Include_Management_Chain_Data": True
             }
         }
 
@@ -485,7 +491,7 @@ class WorkdayToolkit(AbstractToolkit):
             List of worker dictionaries matching the search criteria
         """
         if not self._initialized:
-            raise RuntimeError("Toolkit not initialized. Call start() first.")
+            await self.start()
 
         # Build request criteria
         request = {
@@ -549,7 +555,7 @@ class WorkdayToolkit(AbstractToolkit):
             Dictionary containing all contact information
         """
         if not self._initialized:
-            raise RuntimeError("Toolkit not initialized. Call start() first.")
+            await self.start()
 
         request = {
             "Request_References": {
@@ -590,7 +596,7 @@ class WorkdayToolkit(AbstractToolkit):
             Dictionary containing job data
         """
         if not self._initialized:
-            raise RuntimeError("Toolkit not initialized. Call start() first.")
+            await self.start()
 
         if not effective_date:
             effective_date = datetime.now().strftime("%Y-%m-%d")
@@ -652,7 +658,7 @@ class WorkdayToolkit(AbstractToolkit):
             Dictionary containing organization data
         """
         if not self._initialized:
-            raise RuntimeError("Toolkit not initialized. Call start() first.")
+            await self.start()
 
         request = {
             "Request_References": {
@@ -689,7 +695,7 @@ class WorkdayToolkit(AbstractToolkit):
             Dictionary containing time off balances by type
         """
         if not self._initialized:
-            raise RuntimeError("Toolkit not initialized. Call start() first.")
+            await self.start()
 
         request = {
             "Request_References": {
@@ -738,7 +744,7 @@ class WorkdayToolkit(AbstractToolkit):
             or default TimeOffBalanceModel
         """
         if not self._initialized:
-            raise RuntimeError("Toolkit not initialized. Call start() first.")
+            await self.start()
 
         # Get or create the Absence Management client
         absence_client = await self._get_absence_client()
@@ -813,7 +819,7 @@ class WorkdayToolkit(AbstractToolkit):
             List of worker dictionaries
         """
         if not self._initialized:
-            raise RuntimeError("Toolkit not initialized. Call start() first.")
+            await self.start()
 
         request = {
             "Request_Criteria": {
@@ -861,7 +867,7 @@ class WorkdayToolkit(AbstractToolkit):
             List of worker dictionaries
         """
         if not self._initialized:
-            raise RuntimeError("Toolkit not initialized. Call start() first.")
+            await self.start()
 
         request = {
             "Request_References": {
@@ -904,7 +910,7 @@ class WorkdayToolkit(AbstractToolkit):
             List of matching workers
         """
         if not self._initialized:
-            raise RuntimeError("Toolkit not initialized. Call start() first.")
+            await self.start()
 
         request = {
             "Request_Criteria": {
@@ -956,7 +962,7 @@ class WorkdayToolkit(AbstractToolkit):
             List of direct/indirect reports
         """
         if not self._initialized:
-            raise RuntimeError("Toolkit not initialized. Call start() first.")
+            await self.start()
 
         # First, get the manager's data to find their supervisory org
         manager_data = await self.get_worker(manager_id)
@@ -1004,7 +1010,7 @@ class WorkdayToolkit(AbstractToolkit):
             List of inactive workers
         """
         if not self._initialized:
-            raise RuntimeError("Toolkit not initialized. Call start() first.")
+            await self.start()
 
         request = {
             "Request_Criteria": {

@@ -177,6 +177,8 @@ class WorkerModel(BaseModel):
 
     # Contact Information
     primary_email: Optional[str] = None
+    personal_email: Optional[str] = Field(default=None, description="Personal/HOME email")
+    corporate_email: Optional[str] = Field(default=None, description="Corporate/WORK email")
     emails: List[EmailAddress] = Field(default_factory=list)
     primary_phone: Optional[str] = None
     phones: List[PhoneNumber] = Field(default_factory=list)
@@ -637,7 +639,7 @@ class WorkdayResponseParser:
 
         # Contact Data
         contact_data = personal.get("Contact_Data", {})
-        emails = cls._extract_emails(contact_data)
+        emails, personal_email, corporate_email = cls._extract_emails(contact_data)
         phones = cls._extract_phones(contact_data)
         addresses = cls._extract_addresses(contact_data)
 
@@ -678,10 +680,23 @@ class WorkdayResponseParser:
                 job_profile_ref = job_profile_data.get("Job_Profile_Reference", {})
                 profile_id = cls._extract_id(job_profile_ref)
 
+                # Job Family - Based on flowtask, Job_Family_Reference is a list
+                job_family = None
+                job_family_refs = job_profile_data.get("Job_Family_Reference", [])
+                if not isinstance(job_family_refs, list):
+                    job_family_refs = [job_family_refs] if job_family_refs else []
+
+                # Extract first Job_Family_ID
+                for fam_ref in job_family_refs:
+                    if isinstance(fam_ref, dict):
+                        job_family = cls._extract_id(fam_ref, "Job_Family_ID")
+                        if job_family:
+                            break
+
                 job_profile = JobProfile(
                     id=profile_id or "",
                     name=job_profile_data.get("Job_Profile_Name", ""),
-                    job_family=cls._safe_navigate(job_profile_data, "Job_Family_Reference", "descriptor"),
+                    job_family=job_family,
                     management_level=cls._safe_navigate(job_profile_data, "Management_Level_Reference", "descriptor")
                 )
 
@@ -692,28 +707,44 @@ class WorkdayResponseParser:
             # Time type - use safe navigation
             time_type = cls._safe_navigate(primary_position, "Position_Time_Type_Reference", "descriptor")
 
-        # Manager
+        # Manager - Extract from Manager_as_of_last_detected_manager_change_Reference
+        # This is the direct manager, not the management chain
         manager = None
         manager_data = employment_data.get("Worker_Job_Data", [])
         if manager_data:
             if not isinstance(manager_data, list):
                 manager_data = [manager_data]
 
-            if manager_ref := manager_data[0].get("Position_Data", {}).get("Manager_as_of_last_detected_manager_change_Reference"):
-                manager = Manager(
-                    worker_id=cls._extract_id(manager_ref) or "",
-                    name=cls._safe_get(manager_ref, "descriptor", "") or cls._safe_get(manager_ref, "Descriptor", ""),
-                    email=None  # Would need separate lookup
-                )
+            # Get manager reference from Position_Data
+            position_data = manager_data[0].get("Position_Data", {})
+            manager_ref = cls._safe_get(position_data, "Manager_as_of_last_detected_manager_change_Reference")
 
-        # Organizations
-        org_data = worker_data.get("Organization_Data", [])
-        if not isinstance(org_data, list):
-            org_data = [org_data] if org_data else []
+            if manager_ref and isinstance(manager_ref, dict):
+                # Extract Employee_ID specifically (not WID)
+                manager_id = cls._extract_id(manager_ref, "Employee_ID")
+                # Get Descriptor (manager name) directly
+                manager_name = manager_ref.get("Descriptor")
+
+                # Only create Manager object if we have both ID and name
+                if manager_id and manager_name:
+                    manager = Manager(
+                        worker_id=manager_id,
+                        name=manager_name,
+                        email=None  # Would need separate lookup
+                    )
+
+        # Organizations - Based on flowtask structure
+        # Organization_Data is a dict containing Worker_Organization_Data list
+        organization_data = worker_data.get("Organization_Data", {}) or {}
+        worker_orgs = organization_data.get("Worker_Organization_Data", []) or []
+
+        # Ensure worker_orgs is a list
+        if not isinstance(worker_orgs, list):
+            worker_orgs = [worker_orgs] if worker_orgs else []
 
         organizations = [
             org.get("Organization_Data", {}).get("Organization_Name", "")
-            for org in org_data
+            for org in worker_orgs
             if org.get("Organization_Data", {}).get("Organization_Name")
         ]
 
@@ -731,6 +762,8 @@ class WorkdayResponseParser:
             "preferred_name": preferred_name,
             "full_name": full_name,
             "primary_email": primary_email,
+            "personal_email": personal_email,
+            "corporate_email": corporate_email,
             "emails": emails,
             "primary_phone": primary_phone,
             "phones": phones,
@@ -781,9 +814,16 @@ class WorkdayResponseParser:
         return ids[0].get("_value_1") if ids and isinstance(ids[0], dict) else None
 
     @staticmethod
-    def _extract_emails(contact_data: Dict[str, Any]) -> List[EmailAddress]:
-        """Extract email addresses."""
+    def _extract_emails(contact_data: Dict[str, Any]) -> tuple[List[EmailAddress], Optional[str], Optional[str]]:
+        """
+        Extract email addresses and separate personal vs corporate emails.
+
+        Returns:
+            Tuple of (emails_list, personal_email, corporate_email)
+        """
         emails = []
+        personal_email = None
+        corporate_email = None
         email_data = contact_data.get("Email_Address_Data", [])
 
         if not isinstance(email_data, list):
@@ -793,6 +833,7 @@ class WorkdayResponseParser:
             if email_addr := email_obj.get("Email_Address"):
                 # Safe navigation through Usage_Data -> Type_Data nested lists
                 email_type = None
+                usage_type_id = None
                 is_primary = False
                 is_public = True
 
@@ -809,9 +850,26 @@ class WorkdayResponseParser:
                                 if isinstance(type_ref, dict):
                                     email_type = type_ref.get("descriptor") or type_ref.get("Descriptor")
 
+                                    # Extract Communication_Usage_Type_ID (HOME/WORK) - Based on flowtask
+                                    type_ids = type_ref.get("ID", [])
+                                    if not isinstance(type_ids, list):
+                                        type_ids = [type_ids] if type_ids else []
+
+                                    # Find Communication_Usage_Type_ID
+                                    for id_obj in type_ids:
+                                        if isinstance(id_obj, dict) and id_obj.get("type") == "Communication_Usage_Type_ID":
+                                            usage_type_id = id_obj.get("_value_1")
+                                            break
+
                         # Extract Primary flag (at usage_item level, not type_data)
                         is_primary = usage_item.get("Primary", False)
                         is_public = usage_item.get("Public", True)
+
+                # Separate personal vs corporate emails based on Communication_Usage_Type_ID
+                if usage_type_id == "HOME":
+                    personal_email = email_addr
+                elif usage_type_id == "WORK":
+                    corporate_email = email_addr
 
                 emails.append(EmailAddress(
                     email=email_addr,
@@ -820,7 +878,7 @@ class WorkdayResponseParser:
                     public=is_public
                 ))
 
-        return emails
+        return emails, personal_email, corporate_email
 
     @staticmethod
     def _extract_phones(contact_data: Dict[str, Any]) -> List[PhoneNumber]:
