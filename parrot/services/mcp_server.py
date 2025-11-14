@@ -164,12 +164,8 @@ class ParrotMCPServer:
 
     async def _maybe_start_toolkit(self, toolkit: AbstractToolkit, class_name: str) -> None:
         """Call toolkit.start() when available."""
-        start_method = getattr(toolkit, "start", None)
-        if not start_method:
-            return
-
         try:
-            result = start_method()
+            result = toolkit.start()
             if inspect.isawaitable(result):
                 await result
             self.logger.debug("Toolkit %s started", class_name)
