@@ -374,12 +374,6 @@ class AgentTalk(BaseView):
                     status=400
                 )
             query = data.pop('query', None)
-            if not query:
-                return self.json_response(
-                    {"error": "query is required"},
-                    status=400
-                )
-
             # Get the agent
             try:
                 agent: AbstractBot = await manager.get_bot(agent_name)
@@ -492,6 +486,11 @@ class AgentTalk(BaseView):
                             status=500
                         )
                 else:
+                    if not query:
+                        return self.json_response(
+                            {"error": "query is required"},
+                            status=400
+                        )
                     response: AIMessage = await bot.ask(
                         question=query,
                         session_id=session_id,
