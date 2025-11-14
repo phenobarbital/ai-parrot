@@ -101,7 +101,6 @@ class EChartsRenderer(BaseChart):
         self,
         code: str,
         pandas_tool: "PythonPandasTool | None" = None,
-        execution_state: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> Tuple[Any, Optional[str]]:
         """Parse and validate ECharts JSON configuration."""
@@ -112,7 +111,6 @@ class EChartsRenderer(BaseChart):
             # Basic validation - check for required structure
             if not isinstance(config, dict):
                 return None, "ECharts config must be a JSON object"
-
             if 'series' not in config:
                 return None, "ECharts config must include 'series' array"
 
@@ -184,7 +182,6 @@ class EChartsRenderer(BaseChart):
         response: Any,
         theme: str = 'monokai',
         environment: str = 'terminal',
-        export_format: str = 'html',
         return_code: bool = True,
         html_mode: str = 'partial',
         **kwargs
@@ -206,6 +203,11 @@ class EChartsRenderer(BaseChart):
         if error:
             error_html = self._render_error(error, code, theme)
             return code, error_html
+
+        if environment in {'terminal', 'console', 'jupyter', 'notebook', 'ipython', 'colab'}:
+            # For Jupyter, return the figure object directly
+            # The frontend will handle rendering it
+            return code, config
 
         # Generate HTML
         html_output = self.to_html(

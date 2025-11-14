@@ -679,8 +679,8 @@ get_df_guide()  # Shows complete guide with names and aliases
 
                 format_kwargs = format_kwargs or {}
                 if output_mode != OutputMode.DEFAULT:
-                    pandas_tool = self._get_python_pandas_tool()
-                    if pandas_tool:
+                    if pandas_tool := self._get_python_pandas_tool():
+                        # Provide the tool for rendering if needed
                         format_kwargs['pandas_tool'] = pandas_tool
                     else:
                         self.logger.warning(

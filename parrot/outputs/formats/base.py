@@ -97,8 +97,7 @@ class BaseRenderer(ABC):
         **kwargs,
     ) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
         """Execute code within the PythonPandasTool or fallback namespace."""
-        tool = pandas_tool or kwargs.get('pandas_tool')
-        if tool:
+        if tool := pandas_tool:
             try:
                 tool.execute_sync(code, debug=kwargs.get('debug', False))
                 return tool.locals, None
@@ -107,7 +106,7 @@ class BaseRenderer(ABC):
 
         namespace: Dict[str, Any] = {'pd': pd, 'np': np}
         if extra_namespace:
-            namespace.update(extra_namespace)
+            namespace |= extra_namespace
 
         locals_dict: Dict[str, Any] = {}
         if execution_state:
@@ -124,7 +123,7 @@ class BaseRenderer(ABC):
         try:
             exec(code, namespace, locals_dict)
             combined: Dict[str, Any] = {}
-            combined.update(namespace)
+            combined |= namespace
             combined.update(locals_dict)
             return combined, None
         except Exception as exc:

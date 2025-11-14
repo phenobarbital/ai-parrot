@@ -56,7 +56,6 @@ class SeabornRenderer(BaseChart):
         self,
         code: str,
         pandas_tool: "PythonPandasTool | None" = None,
-        execution_state: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> Tuple[Any, Optional[str]]:
         """Execute Seaborn code and return the underlying Matplotlib figure."""
@@ -76,7 +75,6 @@ class SeabornRenderer(BaseChart):
         context, error = super().execute_code(
             code,
             pandas_tool=pandas_tool,
-            execution_state=execution_state,
             extra_namespace=extra_namespace,
             **kwargs,
         )
@@ -187,6 +185,11 @@ class SeabornRenderer(BaseChart):
             )
             return error_html, None
 
+        if environment in {'terminal', 'console', 'jupyter', 'notebook', 'ipython', 'colab'}:
+            # For Jupyter, return the figure object directly
+            # The frontend will handle rendering it
+            return code, chart_obj
+
         html_output = self.to_html(
             chart_obj,
             mode=html_mode,
@@ -210,7 +213,5 @@ class SeabornRenderer(BaseChart):
             return self.to_json(chart_obj), None
         if export_format == 'both':
             return self.to_json(chart_obj), wrapped_html
-        if export_format == 'html':
-            return wrapped_html, None
 
         return code, wrapped_html

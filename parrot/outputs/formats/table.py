@@ -61,13 +61,29 @@ class TableRenderer(BaseRenderer):
         else:
             raise TypeError(f"Unsupported data type for Grid.js table: {type(data)}")
 
-    def _build_html_document(self, table_content: str, table_mode: str, title: str) -> str:
+    def _build_html_document(
+        self,
+        table_content: str,
+        table_mode: str,
+        title: str = "Table",
+        html_mode: str = "partial",
+        ) -> str:
         extra_head = ""
         if table_mode == "grid":
             extra_head = """
                 <link href="https://unpkg.com/gridjs/dist/theme/mermaid.min.css" rel="stylesheet" />
                 <script src="https://unpkg.com/gridjs/dist/gridjs.umd.js"></script>
             """
+        if html_mode == "partial":
+            # return table content with adding extra head for dependencies:
+            return f'''
+            <span>{extra_head}</span>
+            <div id="wrapper">{table_content if table_mode == 'simple' else ''}</div>
+            <script>
+                {table_content if table_mode == 'grid' else ''}
+            </script>
+            '''
+        # complete HTML document
         return f'''<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -89,10 +105,16 @@ class TableRenderer(BaseRenderer):
         response: Any,
         table_mode: str = 'simple',
         title: str = 'Table',
+        theme: str = 'monokai',
+        environment: str = 'terminal',
+        html_mode: str = 'partial',
         **kwargs,
     ) -> Tuple[Any, Optional[Any]]:
         """Render table in the appropriate format."""
         content = self._get_content(response)
+
+        # evaluate if content is html code block
+
 
         if table_mode == 'simple':
             table_content = self._render_simple_table(content)
@@ -101,6 +123,16 @@ class TableRenderer(BaseRenderer):
         else:
             raise ValueError(f"Invalid table mode: {table_mode}")
 
-        wrapped_html = self._build_html_document(table_content, table_mode, title)
+        if environment in {'terminal', 'console', 'jupyter', 'notebook', 'ipython', 'colab'}:
+            # For Jupyter, return the figure object directly
+            # The frontend will handle rendering it
+            return content, table_content
+
+        wrapped_html = self._build_html_document(
+            table_content,
+            table_mode,
+            html_mode=html_mode,
+            title=title
+        )
 
         return table_content, wrapped_html

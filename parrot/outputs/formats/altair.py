@@ -159,7 +159,6 @@ class AltairRenderer(BaseChart):
         response: Any,
         theme: str = 'monokai',
         environment: str = 'html',
-        export_format: str = 'html',
         return_code: bool = True,
         html_mode: str = 'partial',
         **kwargs
@@ -186,22 +185,16 @@ class AltairRenderer(BaseChart):
         chart_obj, error = self.execute_code(
             code,
             pandas_tool=kwargs.get('pandas_tool'),
-            execution_state=kwargs.get('execution_state'),
             **kwargs,
         )
 
         if error:
             error_html = self._render_error(error, code, theme)
-            if environment == 'terminal':
-                return code, error
-            return code, error_html
+            return (code, error) if environment == 'terminal' else (code, error_html)
 
-        if environment == 'terminal':
-            return code, code
-
-        if environment == 'jupyter':
-            # For Jupyter, return the chart object directly.
-            # The frontend (e.g., notebook) will handle rendering it.
+        if environment in {'terminal', 'console', 'jupyter', 'notebook', 'ipython', 'colab'}:
+            # For Jupyter, return the figure object directly
+            # The frontend will handle rendering it
             return code, chart_obj
 
         # Generate HTML with specified mode

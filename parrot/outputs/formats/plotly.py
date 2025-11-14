@@ -54,14 +54,12 @@ class PlotlyRenderer(BaseChart):
         self,
         code: str,
         pandas_tool: "PythonPandasTool | None" = None,
-        execution_state: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> Tuple[Any, Optional[str]]:
         """Execute Plotly code (leveraging PythonPandasTool when available)."""
         context, error = super().execute_code(
             code,
             pandas_tool=pandas_tool,
-            execution_state=execution_state,
             **kwargs,
         )
 
@@ -77,7 +75,9 @@ class PlotlyRenderer(BaseChart):
 
         if hasattr(fig, 'to_html'):  # Plotly, Folium
             return fig.to_html(
-                include_plotlyjs='cdn' if 'plotly' in str(type(fig)) else False
+                include_plotlyjs='cdn' if 'plotly' in str(type(fig)) else False,
+                include_mathjax='cdn',
+                full_html=False
             ), None
 
         if hasattr(fig, 'savefig'):  # Matplotlib fallback
@@ -181,7 +181,6 @@ class PlotlyRenderer(BaseChart):
         environment: str = 'html',
         return_code: bool = True,
         html_mode: str = 'partial',
-        execution_state: Optional[Dict[str, Any]] = None,  # NEW
         **kwargs
     ) -> Tuple[Any, Optional[Any]]:
         """Render Plotly chart."""
@@ -198,8 +197,7 @@ class PlotlyRenderer(BaseChart):
         # Execute code
         chart_obj, error = self.execute_code(
             code,
-            pandas_tool=kwargs.get('pandas_tool'),
-            execution_state=kwargs.get('execution_state'),
+            pandas_tool=kwargs.pop('pandas_tool'),
             **kwargs,
         )
 
@@ -207,10 +205,7 @@ class PlotlyRenderer(BaseChart):
             error_html = self._render_error(error, code, theme)
             return (code, error) if environment == 'terminal' else (code, error_html)
 
-        if environment == 'terminal':
-            return code, code
-
-        if environment == 'jupyter':
+        if environment in {'terminal', 'console', 'jupyter', 'notebook', 'ipython', 'colab'}:
             # For Jupyter, return the figure object directly
             # The frontend will handle rendering it
             return code, chart_obj
