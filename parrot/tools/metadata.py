@@ -45,10 +45,10 @@ class MetadataTool(AbstractTool):
 
     name = "dataframe_metadata"
     description = (
-        "Retrieve comprehensive metadata about DataFrames including schema, "
+        "Retrieve comprehensive metadata about a single DataFrame including schema, "
         "exploratory data analysis (EDA) statistics, column descriptions, and sample rows. "
         "Use this tool to understand DataFrame structure, data types, missing values, "
-        "and basic statistics before performing analysis."
+        "and basic statistics before performing analysis. Call this tool for one DataFrame at a time."
     )
     args_schema = MetadataToolArgs
 

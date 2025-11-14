@@ -604,11 +604,21 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                             config=current_config
                         )
                         finish_reason = getattr(current_response.candidates[0], 'finish_reason', None)
-                        if finish_reason and finish_reason.name == "MAX_TOKENS" and current_config.max_output_tokens == 1024:
-                            self.logger.warning("Hit MAX_TOKENS limit")
-                            retry_count += 1
-                            current_config.max_output_tokens += 8192
-                            continue
+                        if finish_reason:
+                            if finish_reason.name == "MAX_TOKENS" and current_config.max_output_tokens < 8192:
+                                self.logger.warning(
+                                    f"Hit MAX_TOKENS limit. Retrying with increased token limit."
+                                )
+                                retry_count += 1
+                                current_config.max_output_tokens = 8192
+                                continue
+                            elif finish_reason.name == "MALFORMED_FUNCTION_CALL":
+                                self.logger.warning(
+                                    f"Malformed function call detected. Retrying..."
+                                )
+                                retry_count += 1
+                                await asyncio.sleep(2 ** retry_count)
+                                continue
                         break
                     except Exception as e:
                         self.logger.error(f"Error sending message: {e}")
