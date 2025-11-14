@@ -42,7 +42,7 @@ class TableRenderer(BaseRenderer):
             df = pd.DataFrame(data)
             return df.to_html(index=False)
         elif isinstance(data, str):
-             return data
+            return data
         else:
             raise TypeError(f"Unsupported data type for simple table: {type(data)}")
 
