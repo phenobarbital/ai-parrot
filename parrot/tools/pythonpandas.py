@@ -404,11 +404,14 @@ class PythonPandasTool(PythonREPLTool):
             self.df_guide = self._generate_dataframe_guide()
 
         # Find the standardized key for this DataFrame
-        df_key = None
-        for i, (df_name, _) in enumerate(self.dataframes.items()):
-            if df_name == name:
-                df_key = f"{self.df_prefix}{i + 1}"
-                break
+        df_key = next(
+            (
+                f"{self.df_prefix}{i + 1}"
+                for i, (df_name, _) in enumerate(self.dataframes.items())
+                if df_name == name
+            ),
+            None,
+        )
 
         return f"DataFrame '{name}' added successfully as '{df_key}'"
 

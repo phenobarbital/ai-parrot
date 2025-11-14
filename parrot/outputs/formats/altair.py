@@ -186,4 +186,4 @@ class AltairRenderer(BaseChart):
             **kwargs
         )
 
-        return code, html_output
+        return chart_obj, html_output
