@@ -163,7 +163,7 @@ class AbstractToolkit(ABC):
         Optional startup logic for the toolkit.
         Override in subclasses if needed.
         """
-        return None
+        pass
 
     def get_tools(self) -> List[AbstractTool]:
         """
