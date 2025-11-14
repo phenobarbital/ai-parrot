@@ -203,7 +203,7 @@ class OpenAIClient(AbstractClient):
         self,
         model: str,
         messages: Any,
-        use_tool: bool = False,
+        use_tools: bool = False,
         **kwargs
     ):
         retry_policy = AsyncRetrying(
@@ -212,7 +212,7 @@ class OpenAIClient(AbstractClient):
             stop=stop_after_attempt(5),
             reraise=True
         )
-        if use_tool:
+        if use_tools:
             method = self.client.chat.completions.create
         else:
             method = getattr(self.client.chat.completions, 'parse', self.client.chat.completions.create)
