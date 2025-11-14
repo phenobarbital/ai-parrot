@@ -782,15 +782,16 @@ get_df_guide()  # Shows complete guide with names and aliases
 
         return new_dataframes
 
-    async def refresh_data(self) -> Dict[str, pd.DataFrame]:
+    async def refresh_data(self, cache_expiration: int = None, **kwargs) -> Dict[str, pd.DataFrame]:
         """Re-run the configured queries and refresh metadata/tool state."""
         if not self._queries:
             raise ValueError("No queries configured to refresh data")
 
+        cache_expiration = cache_expiration or self._cache_expiration
         self.dataframes = await self.gen_data(
             query=self._queries,
             agent_name=self.chatbot_id,
-            cache_expiration=self._cache_expiration,
+            cache_expiration=cache_expiration,
             refresh=True,
         )
         self.df_metadata = {
