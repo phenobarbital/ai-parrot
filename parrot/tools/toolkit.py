@@ -165,6 +165,20 @@ class AbstractToolkit(ABC):
         """
         pass
 
+    async def stop(self) -> None:
+        """
+        Optional shutdown logic for the toolkit.
+        Override in subclasses if needed.
+        """
+        pass
+
+    async def cleanup(self) -> None:
+        """
+        Optional cleanup logic for the toolkit.
+        Override in subclasses if needed.
+        """
+        pass
+
     def get_tools(self) -> List[AbstractTool]:
         """
         Get all tools from this toolkit.
@@ -186,7 +200,7 @@ class AbstractToolkit(ABC):
                 continue
 
             # Skip toolkit management methods
-            if name in ('get_tools', 'get_tool', 'list_tool_names'):
+            if name in ('get_tools', 'get_tool', 'list_tool_names', 'start', 'stop', 'cleanup'):
                 continue
 
             # Get the attribute

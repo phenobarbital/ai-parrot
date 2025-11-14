@@ -1023,7 +1023,8 @@ get_df_guide()  # Shows complete guide with names and aliases
         agent_name: str,
         refresh: bool = False,
         cache_expiration: int = 48,
-        no_cache: bool = False
+        no_cache: bool = False,
+        **kwargs
     ) -> Dict[str, pd.DataFrame]:
         """
         Generate DataFrames with Redis caching support.
