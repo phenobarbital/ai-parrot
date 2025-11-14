@@ -373,7 +373,7 @@ class AgentTalk(BaseView):
                     "Missing Agent Name",
                     status=400
                 )
-            query = data.pop('query')
+            query = data.pop('query', None)
             if not query:
                 return self.json_response(
                     {"error": "query is required"},
@@ -394,6 +394,9 @@ class AgentTalk(BaseView):
                     f"Error retrieving agent: {e}",
                     status=500
                 )
+
+            # task background:
+            use_background = data.pop('background', False)
 
             # Add MCP servers if provided
             mcp_servers = data.pop('mcp_servers', [])
@@ -470,6 +473,11 @@ class AgentTalk(BaseView):
                             )
                     try:
                         method_params = {**method_params, **data}
+                        if use_background:
+                            self.request.app.loop.create_task(method(**method_params))
+                            return self.json_response(
+                                {"message": "Request is being processed in the background."}
+                            )
                         response = await method(
                             **method_params
                         )

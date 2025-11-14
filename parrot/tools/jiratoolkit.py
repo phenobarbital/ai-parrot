@@ -250,7 +250,7 @@ class JiraToolkit(AbstractToolkit):
                     return str(val)
             return os.getenv(key, default)
 
-        self.server_url = server_url or _cfg("JIRA_SERVER_URL") or ""
+        self.server_url = server_url or _cfg("JIRA_INSTANCE") or ""
         if not self.server_url:
             raise ValueError(
                 "Jira server_url is required (e.g., https://your.atlassian.net)"
@@ -259,7 +259,7 @@ class JiraToolkit(AbstractToolkit):
         self.auth_type = (auth_type or _cfg("JIRA_AUTH_TYPE", "token_auth")).lower()
         self.username = username or _cfg("JIRA_USERNAME")
         self.password = password or _cfg("JIRA_PASSWORD")
-        self.token = token or _cfg("JIRA_TOKEN")
+        self.token = token or _cfg("JIRA_SECRET_TOKEN")
 
         self.oauth_consumer_key = oauth_consumer_key or _cfg("JIRA_OAUTH_CONSUMER_KEY")
         self.oauth_key_cert = oauth_key_cert or _cfg("JIRA_OAUTH_KEY_CERT")
