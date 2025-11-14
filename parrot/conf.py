@@ -56,6 +56,24 @@ if isinstance(MCP_SERVER_DIR, str):
 if not MCP_SERVER_DIR.exists():
     MCP_SERVER_DIR.mkdir(parents=True, exist_ok=True)
 
+# MCP Server defaults
+MCP_SERVER_TRANSPORT = config.get('MCP_SERVER_TRANSPORT', fallback='http')
+MCP_SERVER_HOST = config.get('MCP_SERVER_HOST', fallback='0.0.0.0')
+MCP_SERVER_PORT = config.getint('MCP_SERVER_PORT', fallback=8080)
+MCP_SERVER_NAME = config.get('MCP_SERVER_NAME', fallback='ai-parrot-tools')
+MCP_SERVER_DESCRIPTION = config.get(
+    'MCP_SERVER_DESCRIPTION',
+    fallback='AI-Parrot MCP Tooling'
+)
+MCP_SERVER_LOG_LEVEL = config.get('MCP_SERVER_LOG_LEVEL', fallback='INFO')
+
+# Default tools that should be started with the MCP server
+MCP_STARTED_TOOLS = {
+    'MSTeamsToolkit': 'parrot.tools.msteams',
+    'PDFPrintTool': 'parrot.tools.pdfprint',
+    'JiraToolkit': 'parrot.tools.jiratoolkit',
+}
+
 # Agents-Bots Prompt directory:
 AGENTS_BOTS_PROMPT_DIR = config.get(
     'AGENTS_BOTS_PROMPT_DIR',

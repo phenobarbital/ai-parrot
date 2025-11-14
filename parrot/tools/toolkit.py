@@ -158,6 +158,13 @@ class AbstractToolkit(ABC):
         self._tool_cache: Dict[str, ToolkitTool] = {}
         self._tools_generated = False
 
+    async def start(self) -> None:
+        """
+        Optional startup logic for the toolkit.
+        Override in subclasses if needed.
+        """
+        return None
+
     def get_tools(self) -> List[AbstractTool]:
         """
         Get all tools from this toolkit.
