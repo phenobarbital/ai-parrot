@@ -476,7 +476,8 @@ get_df_guide()  # Shows complete guide with names and aliases
 
     async def configure(
         self,
-        app: web.Application = None
+        app: web.Application = None,
+        queries: Union[List[str], dict] = None,
     ) -> None:
         """
         Configure the PandasAgent.
@@ -496,6 +497,17 @@ get_df_guide()  # Shows complete guide with names and aliases
                 name: self._build_metadata_entry(name, df)
                 for name, df in self.dataframes.items()
             }
+        if not self.dataframes and queries:
+            if queries := queries or self._queries:
+                self.dataframes = await self.gen_data(
+                    query=queries,
+                    agent_name=self.chatbot_id,
+                    cache_expiration=self._cache_expiration
+                )
+                self.df_metadata = {
+                    name: self._build_metadata_entry(name, df)
+                    for name, df in self.dataframes.items()
+                }
 
         if pandas_tool := self._get_python_pandas_tool():
             # Update the tool's dataframes
