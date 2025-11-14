@@ -1,5 +1,5 @@
 from typing import Any, Dict, Optional
-
+from dataclasses import asdict
 from ...models.outputs import OutputMode
 from ...template.engine import TemplateEngine
 from . import register_renderer
@@ -20,7 +20,7 @@ class TemplateReportRenderer(BaseRenderer):
 
         Args:
             template_engine: Optional TemplateEngine instance. If not provided,
-                           one will be created on first use.
+            one will be created on first use.
         """
         self._template_engine = template_engine
 
@@ -93,8 +93,7 @@ class TemplateReportRenderer(BaseRenderer):
 
         # Render the template
         try:
-            rendered_content = await engine.render(template_name, context)
-            return rendered_content
+            return await engine.render(template_name, context)
         except FileNotFoundError as e:
             raise ValueError(
                 f"Template '{template_name}' not found. "
@@ -125,17 +124,13 @@ class TemplateReportRenderer(BaseRenderer):
         # Handle different data types
         if isinstance(data, dict):
             # Merge dict data with kwargs (data takes precedence)
-            context.update(data)
+            context |= data
         elif hasattr(data, 'model_dump'):
             # Pydantic model
-            context.update(data.model_dump())
+            context |= data.model_dump()
         elif hasattr(data, '__dataclass_fields__'):
             # Dataclass
-            from dataclasses import asdict
-            context.update(asdict(data))
-        elif hasattr(data, '__dict__'):
-            # Generic object with attributes
-            context['data'] = data
+            context |= asdict(data)
         else:
             # Primitive or unknown type - wrap as 'data'
             context['data'] = data

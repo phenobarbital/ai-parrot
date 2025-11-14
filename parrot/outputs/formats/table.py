@@ -1,9 +1,9 @@
-
 from typing import Any, Optional, Tuple
+import pandas as pd
 from .base import BaseRenderer
 from . import register_renderer
 from ...models.outputs import OutputMode
-import pandas as pd
+
 
 GRIDJS_SYSTEM_PROMPT = """
 **GRID.JS CODE GENERATION MODE**
