@@ -21,6 +21,7 @@ from parrot.handlers.o365_auth import (
     O365InteractiveAuthSessions,
     O365InteractiveAuthSessionDetail,
 )
+from parrot.services import ParrotMCPServer
 from parrot.services.o365_remote_auth import RemoteAuthManager
 from parrot.handlers.jobs.worker import configure_redis_queue, configure_job_manager
 from resources.example import ExampleAsyncView
@@ -109,6 +110,10 @@ class Main(AppHandler):
         ## NextStop
         nextstop = NextStopAgent(app=self.app)
         nextstop.setup(self.app, '/api/v1/agents/nextstop')
+
+        # MCP server lifecycle management
+        self.mcp_server = ParrotMCPServer()
+        self.mcp_server.setup(self.app)
 
     async def on_prepare(self, request, response):
         """
