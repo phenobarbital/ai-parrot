@@ -52,11 +52,13 @@ class OutputMode(str, Enum):
     PLOTLY = "plotly"
     MATPLOTLIB = "matplotlib"
     BOKEH = "bokeh"
+    SEABORN = "seaborn"
     CODE = "code"
     MAP = "map"                   # Generate map visualization
     IMAGE = "image"             # render the image as a base64 embed into HTML <img>
     D3 = "d3"                   # Generate D3.js visualization
     ECHARTS = "echarts"         # Generate ECharts visualization
+    TABLE = "table"             # Generate table visualization
 
 @dataclass
 class StructuredOutputConfig:
