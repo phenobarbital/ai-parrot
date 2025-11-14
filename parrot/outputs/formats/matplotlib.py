@@ -43,38 +43,52 @@ plt.tight_layout()
 class MatplotlibRenderer(BaseChart):
     """Renderer for Matplotlib charts"""
 
-    def execute_code(self, code: str) -> Tuple[Any, Optional[str]]:
-        """Execute Matplotlib code and return figure object."""
-        try:
-            # Import matplotlib with non-interactive backend
+    def execute_code(
+        self,
+        code: str,
+        pandas_tool: "PythonPandasTool | None" = None,
+        execution_state: Optional[Dict[str, Any]] = None,
+        **kwargs,
+    ) -> Tuple[Any, Optional[str]]:
+        """Execute Matplotlib code within the shared Python environment."""
+        extra_namespace = None
+        manual_backend = pandas_tool is None
+        if manual_backend:
             import matplotlib
             matplotlib.use('Agg')
             import matplotlib.pyplot as plt
+            extra_namespace = {'plt': plt, 'matplotlib': matplotlib}
 
-            namespace = {'plt': plt, 'matplotlib': matplotlib}
-            exec(code, namespace)
+        context, error = super().execute_code(
+            code,
+            pandas_tool=pandas_tool,
+            execution_state=execution_state,
+            extra_namespace=extra_namespace,
+            **kwargs,
+        )
 
-            # Try to find figure
-            fig = namespace.get('fig') or namespace.get('figure')
+        try:
+            if error:
+                return None, error
 
-            # If not found, try to get current figure
-            if fig is None:
-                fig = plt.gcf()
+            if not context:
+                return None, "Execution context was empty"
+
+            fig = context.get('fig') or context.get('figure')
+            if fig is None and 'plt' in context:
+                fig = context['plt'].gcf()
 
             if fig is None or not hasattr(fig, 'savefig'):
                 return None, "Code must create a matplotlib figure (fig) or use plt functions"
 
             return fig, None
-
-        except Exception as e:
-            return None, f"Execution error: {str(e)}"
         finally:
-            # Clean up
-            try:
-                import matplotlib.pyplot as plt
-                plt.close('all')
-            except:
-                pass
+            if manual_backend:
+                try:
+                    import matplotlib.pyplot as plt
+                    plt.close('all')
+                except Exception:
+                    pass
 
     def _render_chart_content(self, chart_obj: Any, **kwargs) -> str:
         """Render Matplotlib chart as base64 embedded image."""
@@ -153,7 +167,12 @@ class MatplotlibRenderer(BaseChart):
             return error_html, None
 
         # Execute code
-        chart_obj, error = self.execute_code(code)
+        chart_obj, error = self.execute_code(
+            code,
+            pandas_tool=kwargs.get('pandas_tool'),
+            execution_state=kwargs.get('execution_state'),
+            **kwargs,
+        )
 
         if error:
             error_html = self._wrap_for_environment(

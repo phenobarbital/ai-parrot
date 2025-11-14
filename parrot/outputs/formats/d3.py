@@ -50,7 +50,13 @@ Remember:
 class D3Renderer(BaseChart):
     """Renderer for D3.js visualizations"""
 
-    def execute_code(self, code: str) -> Tuple[Any, Optional[str]]:
+    def execute_code(
+        self,
+        code: str,
+        pandas_tool: "PythonPandasTool | None" = None,
+        execution_state: Optional[Dict[str, Any]] = None,
+        **kwargs,
+    ) -> Tuple[Any, Optional[str]]:
         """
         For D3, we don't execute JavaScript - just validate and return it.
         """

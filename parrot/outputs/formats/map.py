@@ -96,28 +96,40 @@ class FoliumRenderer(BaseChart):
         """
         return Union[str, pd.DataFrame] if GEOPANDAS_AVAILABLE else str
 
-    def execute_code(self, code: str) -> Tuple[Any, Optional[str]]:
+    def execute_code(
+        self,
+        code: str,
+        pandas_tool: "PythonPandasTool | None" = None,
+        execution_state: Optional[Dict[str, Any]] = None,
+        **kwargs,
+    ) -> Tuple[Any, Optional[str]]:
         """Execute Folium map code and return map object."""
-        try:
-            namespace = {}
-            exec(code, namespace)
+        context, error = super().execute_code(
+            code,
+            pandas_tool=pandas_tool,
+            execution_state=execution_state,
+            **kwargs,
+        )
 
-            map_obj = next(
-                (
-                    namespace[var_name]
-                    for var_name in ['m', 'map', 'folium_map', 'my_map', 'data', 'df']
-                    if var_name in namespace
-                ),
-                None,
-            )
+        if error:
+            return None, error
 
-            if map_obj is None:
-                return None, "Code must define a map variable (m, map, folium_map, my_map)"
+        if not context:
+            return None, "Execution context was empty"
 
-            return map_obj, None
+        map_obj = next(
+            (
+                context[var_name]
+                for var_name in ['m', 'map', 'folium_map', 'my_map', 'data', 'df']
+                if var_name in context
+            ),
+            None,
+        )
 
-        except Exception as e:
-            return None, f"Execution error: {str(e)}"
+        if map_obj is None:
+            return None, "Code must define a map variable (m, map, folium_map, my_map)"
+
+        return map_obj, None
 
     def _create_choropleth_map(
         self,
@@ -516,7 +528,12 @@ class FoliumRenderer(BaseChart):
             return error_msg, error_html
 
         # Execute code
-        result_obj, error = self.execute_code(code)
+        result_obj, error = self.execute_code(
+            code,
+            pandas_tool=kwargs.get('pandas_tool'),
+            execution_state=kwargs.get('execution_state'),
+            **kwargs,
+        )
 
         if error:
             error_html = self._render_error(error, code, theme)

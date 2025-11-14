@@ -52,46 +52,55 @@ p.add_tools(hover)
 class BokehRenderer(BaseChart):
     """Renderer for Bokeh charts"""
 
-    def execute_code(self, code: str) -> Tuple[Any, Optional[str]]:
-        """Execute Bokeh code and return plot object."""
-        try:
-            # Import Bokeh in the namespace
+    def execute_code(
+        self,
+        code: str,
+        pandas_tool: "PythonPandasTool | None" = None,
+        execution_state: Optional[Dict[str, Any]] = None,
+        **kwargs,
+    ) -> Tuple[Any, Optional[str]]:
+        """Execute Bokeh code using the shared Python execution context."""
+        extra_namespace = None
+        if pandas_tool is None:
             from bokeh.plotting import figure as bokeh_figure
             from bokeh import models, plotting
-
-            namespace = {
+            extra_namespace = {
                 'figure': bokeh_figure,
                 'models': models,
-                'plotting': plotting
+                'plotting': plotting,
             }
 
-            exec(code, namespace)
+        context, error = super().execute_code(
+            code,
+            pandas_tool=pandas_tool,
+            execution_state=execution_state,
+            extra_namespace=extra_namespace,
+            **kwargs,
+        )
 
-            # Try to find the plot object - order matters!
-            # Check 'p' first as it's the most common convention
-            plot = None
-            for var_name in ['p', 'plot', 'fig', 'chart']:
-                if var_name in namespace:
-                    candidate = namespace[var_name]
-                    # Check if it's a Bokeh plot by looking for Bokeh-specific attributes
-                    if self._is_bokeh_plot(candidate):
-                        plot = candidate
-                        break
+        if error:
+            return None, error
 
-            if plot is None:
-                # Try to find any Bokeh plot in the namespace
-                for key, value in namespace.items():
-                    if not key.startswith('_') and self._is_bokeh_plot(value):
-                        plot = value
-                        break
+        if not context:
+            return None, "Execution context was empty"
 
-            if plot is None:
-                return None, "Code must define a plot variable (p, plot, fig, or chart)"
+        # Try to find the plot object - order matters!
+        plot = None
+        for var_name in ['p', 'plot', 'fig', 'chart']:
+            if var_name in context and self._is_bokeh_plot(context[var_name]):
+                plot = context[var_name]
+                break
 
-            return plot, None
+        if plot is None:
+            for key, value in context.items():
+                if not key.startswith('_') and self._is_bokeh_plot(value):
+                    plot = value
+                    break
 
-        except Exception as e:
-            return None, f"Execution error: {str(e)}"
+        if plot is None:
+            return None, "Code must define a plot variable (p, plot, fig, or chart)"
+
+        return plot, None
 
     @staticmethod
     def _is_bokeh_plot(obj: Any) -> bool:
@@ -203,7 +212,12 @@ class BokehRenderer(BaseChart):
             return error_msg, error_html
 
         # Execute code
-        chart_obj, error = self.execute_code(code)
+        chart_obj, error = self.execute_code(
+            code,
+            pandas_tool=kwargs.get('pandas_tool'),
+            execution_state=kwargs.get('execution_state'),
+            **kwargs,
+        )
 
         if error:
             error_html = self._render_error(error, code, theme)
