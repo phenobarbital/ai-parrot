@@ -151,7 +151,7 @@ class ParrotMCPServer:
 
         if isinstance(instance, AbstractToolkit):
             await self._maybe_start_toolkit(instance, class_name)
-            return [tool for tool in instance.get_tools() if isinstance(tool, AbstractTool)]
+            return list(instance.get_tools())
 
         if isinstance(instance, AbstractTool):
             return [instance]
