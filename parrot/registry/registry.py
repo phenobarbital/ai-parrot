@@ -81,7 +81,8 @@ class BotMetadata:
                     f"Factory for {self.name} returned {type(instance)!r}, expected AbstractBot."
                 )
             # Configure instance if needed:
-            await instance.configure()
+            if not self.at_startup:
+                await instance.configure()
             # Store instance if singleton
             if self.singleton:
                 self._instance = instance

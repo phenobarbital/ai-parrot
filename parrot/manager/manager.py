@@ -331,6 +331,7 @@ class BotManager:
         if name in self._bots:
             return self._bots[name]
         if self.registry.has(name):
+            print('HERE > Getting bot from registry:', name)
             try:
                 bot_instance = await self.registry.get_instance(name)
                 if bot_instance:

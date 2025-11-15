@@ -26,20 +26,7 @@ from ..conf import REDIS_HISTORY_URL, STATIC_DIR
 from ..bots.prompts import OUTPUT_SYSTEM_PROMPT
 
 
-class PandasAgent(BasicAgent):
-    """
-    A specialized agent for data analysis using pandas DataFrames.
-
-    Features:
-    - Multi-dataframe support
-    - Redis caching for data persistence
-    - Automatic EDA (Exploratory Data Analysis)
-    - DataFrame metadata generation
-    - Query source integration
-    - File loading (CSV, Excel)
-    """
-
-    PANDAS_SYSTEM_PROMPT = """You are a data analysis expert specializing in pandas DataFrames.
+PANDAS_SYSTEM_PROMPT = """You are a data analysis expert specializing in pandas DataFrames.
 <system_instructions>
 **Your Role:**
 $description
@@ -130,6 +117,20 @@ get_df_guide()  # Shows complete guide with names and aliases
 
 **Today's Date:** $today_date
 """
+
+
+class PandasAgent(BasicAgent):
+    """
+    A specialized agent for data analysis using pandas DataFrames.
+
+    Features:
+    - Multi-dataframe support
+    - Redis caching for data persistence
+    - Automatic EDA (Exploratory Data Analysis)
+    - DataFrame metadata generation
+    - Query source integration
+    - File loading (CSV, Excel)
+    """
 
     METADATA_SAMPLE_ROWS = 3
 
@@ -464,7 +465,7 @@ get_df_guide()  # Shows complete guide with names and aliases
         backstory = self.backstory or self.default_backstory()
 
         # Build prompt using string.Template
-        tmpl = Template(self.PANDAS_SYSTEM_PROMPT)
+        tmpl = Template(PANDAS_SYSTEM_PROMPT)
         self.system_prompt = tmpl.safe_substitute(
             description=self.description,
             df_info=df_info,
