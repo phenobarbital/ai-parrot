@@ -654,12 +654,9 @@ class AgentTalk(BaseView):
         Returns:
             web.Response with appropriate content type
         """
-        print('::: TYPE ', type(response))
 
         if isinstance(response, AgentResponse):
             response = response.response
-
-        print('::: TYPE ', type(response))
 
         if output_format == 'json':
             # Return structured JSON response
