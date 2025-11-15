@@ -4,7 +4,7 @@ AgentTalk - HTTP Handler for Agent Conversations
 Provides a flexible HTTP interface for talking with agents/bots using the ask() method
 with support for multiple output modes and MCP server integration.
 """
-from typing import Dict, Any, Union
+from typing import Dict, Any, List, Union
 import tempfile
 import os
 import json
@@ -311,6 +311,92 @@ class AgentTalk(BaseView):
             )
         return method
 
+    async def _execute_agent_method(
+        self,
+        bot: AbstractBot,
+        method_name: str,
+        data: Dict[str, Any],
+        attachments: Dict[str, Any],
+        use_background: bool,
+    ) -> web.Response:
+        """Resolve and invoke an agent method safely."""
+        try:
+            method = self._check_methods(bot, method_name)
+        except (AttributeError, TypeError) as exc:
+            self.logger.error(f"Method {method_name} not available: {exc}")
+            return self.json_response(
+                {"error": f"Method {method_name} not available."},
+                status=400,
+            )
+
+        sig = inspect.signature(method)
+        method_params: Dict[str, Any] = {}
+        missing_required: List[str] = []
+        remaining_kwargs = dict(data)
+
+        for param_name, param in sig.parameters.items():
+            if param_name == 'self' or param_name == 'kwargs':
+                continue
+
+            if param.kind == inspect.Parameter.VAR_POSITIONAL:
+                continue
+            if param.kind == inspect.Parameter.VAR_KEYWORD:
+                continue
+
+            if param_name in remaining_kwargs:
+                method_params[param_name] = remaining_kwargs.pop(param_name)
+            elif param.default == inspect.Parameter.empty:
+                missing_required.append(param_name)
+
+            if param_name in attachments:
+                method_params[param_name] = attachments[param_name]
+                remaining_kwargs.pop(param_name, None)
+
+        if missing_required:
+            return self.json_response(
+                {
+                    "message": (
+                        "Required parameters missing: "
+                        f"{', '.join(missing_required)}"
+                    ),
+                    "required_params": [
+                        p for p in sig.parameters.keys() if p != 'self'
+                    ],
+                },
+                status=400,
+            )
+
+        final_kwargs = {**method_params, **remaining_kwargs}
+
+        try:
+            if use_background:
+                self.request.app.loop.create_task(method(**final_kwargs))
+                return self.json_response(
+                    {"message": "Request is being processed in the background."}
+                )
+
+            response = await method(**final_kwargs)
+            if isinstance(response, web.Response):
+                return response
+
+            return self.json_response(
+                {
+                    "message": (
+                        f"Method {method_name} was executed successfully."
+                    ),
+                    "response": str(response),
+                }
+            )
+        except Exception as exc:  # pylint: disable=broad-except
+            self.logger.error(
+                f"Error calling method {method_name}: {exc}",
+                exc_info=True,
+            )
+            return self.json_response(
+                {"error": f"Error calling method {method_name}: {exc}"},
+                status=500,
+            )
+
     async def post(self):
         """
         POST handler for agent interaction.
@@ -356,6 +442,15 @@ class AgentTalk(BaseView):
                 # if no file is provided, then is a JSON request:
                 data = await self.request.json()
                 attachments = {}
+
+            # Support method invocation via body or query parameter in addition to the
+            # /{agent_id}/{method_name} route so clients don't need to construct a
+            # different URL for maintenance operations like refresh_data.
+            method_name = (
+                method_name
+                or data.pop('method_name', None)
+                or qs.get('method_name')
+            )
             # Get BotManager
             manager = self.request.app.get('bot_manager')
             if not manager:
@@ -434,63 +529,14 @@ class AgentTalk(BaseView):
             format_kwargs = data.pop('format_kwargs', {})
             response = None
             async with agent.retrieval(self.request, app=app) as bot:
-                if method:= self._check_methods(bot, method_name):
-                    sig = inspect.signature(method)
-                    method_params = {}
-                    missing_required = []
-                    for param_name, param in sig.parameters.items():
-                        if param_name == 'self' or param_name in 'kwargs':
-                            continue
-                        # Handle different parameter types
-                        if param.kind == inspect.Parameter.VAR_POSITIONAL:
-                            # *args - skip, we don't handle positional args via JSON
-                            continue
-                        elif param.kind == inspect.Parameter.VAR_KEYWORD:
-                            # **kwargs - pass all remaining data that wasn't matched
-                            continue
-                        # Regular parameters
-                        if param_name in data:
-                            method_params[param_name] = data[param_name]
-                        elif param.default == inspect.Parameter.empty:
-                            # Required parameter missing
-                            missing_required.append(param_name)
-                        if param_name in attachments:
-                            # If the parameter is a file upload, handle accordingly
-                            method_params[param_name] = attachments[param_name]
-                    if missing_required:
-                        return self.json_response(
-                            {
-                                "message": f"Required parameters missing: {', '.join(missing_required)}",
-                                "required_params": [p for p in sig.parameters.keys() if p != 'self']
-                            },
-                                status=400
-                            )
-                    try:
-                        method_params = {**method_params, **data}
-                        if use_background:
-                            self.request.app.loop.create_task(method(**method_params))
-                            return self.json_response(
-                                {"message": "Request is being processed in the background."}
-                            )
-                        response = await method(
-                            **method_params
-                        )
-                        if isinstance(response, web.Response):
-                            return response
-                        return self.json_response(
-                            {
-                                "message": f"Method {method_name} was executed successfully.",
-                                "response": str(response)
-                            }
-                        )
-                    except Exception as e:
-                        self.logger.error(f"Error calling method {method_name}: {e}", exc_info=True)
-                        return self.json_response(
-                            {
-                                "error": f"Error calling method {method_name}: {e}"
-                            },
-                            status=500
-                        )
+                if method_name:
+                    return await self._execute_agent_method(
+                        bot=bot,
+                        method_name=method_name,
+                        data=data,
+                        attachments=attachments,
+                        use_background=use_background,
+                    )
                 else:
                     if not query:
                         return self.json_response(
