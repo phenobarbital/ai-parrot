@@ -548,27 +548,27 @@ print("Use 'execution_results' dict to store intermediate results.")
             if not tree.body:
                 return ""
 
-            # Execute all but the last statement
-            if len(tree.body) > 1:
-                try:
-                    module = ast.Module(tree.body[:-1], type_ignores=[])
-                    exec(ast.unparse(module), self.globals, self.locals)
-                except Exception as e:
-                    return f"ExecutionError: {type(e).__name__}: {str(e)}"
-
-            # Handle the last statement
-            last_statement = tree.body[-1]
-            module_end = ast.Module([last_statement], type_ignores=[])
-            module_end_str = ast.unparse(module_end)
-
+            # ✅ CREATE BUFFER - before any execution
             io_buffer = StringIO()
-            # Check if it's an expression that can be evaluated
-            is_expression = isinstance(last_statement, ast.Expr)
 
-            if is_expression:
-                try:
-                    # Try to evaluate as expression first
-                    with redirect_stdout(io_buffer):
+            with redirect_stdout(io_buffer):
+                # Execute all but the last statement
+                if len(tree.body) > 1:
+                    try:
+                        module = ast.Module(tree.body[:-1], type_ignores=[])
+                        exec(ast.unparse(module), self.globals, self.locals)
+                    except Exception as e:
+                        return f"ExecutionError: {type(e).__name__}: {str(e)}"
+
+                # Handle the last statement
+                last_statement = tree.body[-1]
+                module_end = ast.Module([last_statement], type_ignores=[])
+                module_end_str = ast.unparse(module_end)
+
+                # Check if it's an expression that can be evaluated
+                if is_expression := isinstance(last_statement, ast.Expr):
+                    with contextlib.suppress(Exception):
+                        # Try to evaluate as expression first
                         ret = eval(module_end_str, self.globals, self.locals)
                         output = io_buffer.getvalue()
 
@@ -582,13 +582,9 @@ print("Use 'execution_results' dict to store intermediate results.")
                             return output
                         else:
                             return output + str(ret) if output else str(ret)
-                except Exception:
-                    # Fall back to execution
-                    pass
 
-            try:
-                # Try to evaluate as expression first
-                with redirect_stdout(io_buffer):
+                try:
+                    # Try to evaluate as expression first
                     ret = eval(module_end_str, self.globals, self.locals)
 
                     # Auto-save plots if enabled
@@ -602,10 +598,9 @@ print("Use 'execution_results' dict to store intermediate results.")
                     else:
                         output = io_buffer.getvalue()
                         return output + str(ret) if output else str(ret)
-            except Exception:
-                # Fall back to execution
-                try:
-                    with redirect_stdout(io_buffer):
+                except Exception:
+                    # Fall back to execution
+                    try:
                         exec(module_end_str, self.globals, self.locals)
 
                         # Auto-save plots if enabled
@@ -614,9 +609,9 @@ print("Use 'execution_results' dict to store intermediate results.")
                             plot_msg = f"\n[Plot saved: {plot_info.get('filename', 'unknown')}]"
                             io_buffer.write(plot_msg)
 
-                    return io_buffer.getvalue()
-                except Exception as e:
-                    return f"ExecutionError: {type(e).__name__}: {str(e)}"
+                        return io_buffer.getvalue()
+                    except Exception as e:
+                        return f"ExecutionError: {type(e).__name__}: {str(e)}"
 
             return ""
 
