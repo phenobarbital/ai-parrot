@@ -331,11 +331,12 @@ class BotManager:
         if name in self._bots:
             return self._bots[name]
         if self.registry.has(name):
-            print('HERE > Getting bot from registry:', name)
+            print('::::: HERE > Getting bot from registry:', name)
             try:
                 bot_instance = await self.registry.get_instance(name)
                 if bot_instance:
-                    await bot_instance.configure(self.app)
+                    if not bot_instance.is_configured:
+                        await bot_instance.configure(self.app)
                     self.add_bot(bot_instance)
                     return bot_instance
             except Exception as e:

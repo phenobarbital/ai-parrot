@@ -11,12 +11,16 @@ import json
 import inspect
 from aiohttp import web
 from datamodel.parsers.json import json_encoder  # noqa  pylint: disable=E0611
+from navconfig.logging import logging
 from navigator_auth.decorators import is_authenticated, user_session
 from navigator.views import BaseView
 from ..bots.abstract import AbstractBot
 from ..models.responses import AIMessage, AgentResponse
 from ..outputs import OutputMode, OutputFormatter
 from ..mcp.integration import MCPServerConfig
+
+
+logging.getLogger("parrot").setLevel(logging.DEBUG)
 
 
 @is_authenticated()
@@ -584,6 +588,36 @@ class AgentTalk(BaseView):
 
         Returns information about the AgentTalk endpoint.
         """
+        method_name = self.request.match_info.get('method_name', None)
+        if method_name == 'debug':
+            agent_name = self.request.match_info.get('agent_id', None)
+            if not agent_name:
+                return self.error(
+                    "Missing Agent Name for debug.",
+                    status=400
+                )
+            manager = self.request.app.get('bot_manager')
+            if not manager:
+                return self.json_response(
+                    {"error": "BotManager is not installed."},
+                    status=500
+                )
+            try:
+                agent: AbstractBot = await manager.get_bot(agent_name)
+                if not agent:
+                    return self.error(
+                        f"Agent '{agent_name}' not found.",
+                        status=404
+                    )
+            except Exception as e:
+                self.logger.error(f"Error retrieving agent {agent_name}: {e}")
+                return self.error(
+                    f"Error retrieving agent: {e}",
+                    status=500
+                )
+            debug_info = await self.debug_agent(agent)
+            return self.json_response(debug_info)
+
         return self.json_response({
             "message": "AgentTalk - Universal Agent Conversation Interface",
             "version": "1.0",
@@ -860,3 +894,21 @@ class AgentTalk(BaseView):
                 f"Error rendering interactive dashboard: {e}",
                 status=500
             )
+
+    async def debug_agent(self, agent):
+        return {
+            "dataframes": list(agent.dataframes.keys()),
+            "df_metadata": {k: v['shape'] for k, v in agent.df_metadata.items()},
+            "pandas_tool": {
+                "exists": agent._get_python_pandas_tool() is not None,
+                "dataframes": list(agent._get_python_pandas_tool().dataframes.keys())
+                    if agent._get_python_pandas_tool() else []
+            },
+            "metadata_tool": {
+                "exists": agent._get_metadata_tool() is not None,
+                "dataframes": list(agent._get_metadata_tool().dataframes.keys())
+                    if agent._get_metadata_tool() else [],
+                "metadata": list(agent._get_metadata_tool().metadata.keys())
+                    if agent._get_metadata_tool() else []
+            }
+        }

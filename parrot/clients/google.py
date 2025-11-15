@@ -46,7 +46,7 @@ from ..models import (
     GoogleModel,
     TTSVoice
 )
-from ..tools.abstract import AbstractTool
+from ..tools.abstract import AbstractTool, ToolResult
 from ..models.outputs import (
     SentimentAnalysis,
     ProductReview
@@ -442,6 +442,13 @@ class GoogleGenAIClient(AbstractClient):
         if isinstance(result, Exception):
             return {"result": f"Error: {str(result)}", "error": True}
 
+        if isinstance(result, ToolResult):
+            content = result.result
+            if result.metadata and 'stdout' in result.metadata:
+                # Priorizar stdout si existe
+                content = result.metadata['stdout']
+            return {"result": str(content)}
+
         # Convert complex types to basic Python types
         if isinstance(result, pd.DataFrame):
             clean_result = result.to_dict(orient='records')
@@ -456,6 +463,10 @@ class GoogleGenAIClient(AbstractClient):
                 else item
                 for item in result
             ]
+        if isinstance(result, str):
+            if not result.strip():
+                return {"result": "Code executed successfully (no output)"}
+            return {"result": result}
         else:
             clean_result = result
 
@@ -548,6 +559,7 @@ class GoogleGenAIClient(AbstractClient):
             if not function_calls:
                 # Check if we have any text content in the response
                 final_text = self._safe_extract_text(current_response)
+                self.logger.notice(f"🎯 Final Response from Gemini: {final_text[:200]}...")
                 if not final_text and all_tool_calls:
                     self.logger.warning(
                         "Final response is empty after tool execution, generating summary..."
@@ -613,9 +625,13 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
             function_response_parts = []
             for fc, result in zip(function_calls, tool_results):
                 tool_id = fc.id or f"call_{uuid.uuid4().hex[:8]}"
+                self.logger.notice(f"🔍 Tool: {fc.name}")
+                self.logger.notice(f"📤 Raw Result Type: {type(result)}")
+                self.logger.notice(f"📤 Raw Result: {result}")
 
                 try:
                     response_content = self._process_tool_result_for_api(result)
+                    self.logger.info(f"📦 Processed for API: {response_content}")
 
                     function_response_parts.append(
                         Part(
@@ -1317,7 +1333,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
             # Multiple calls - show the final result
             final_tc = all_tool_calls[-1]
             print('GOOGLE TYPE > ', type(final_tc.result))
-            print(final_tc)
+            print('GOOGLE RAW ', final_tc)
             if isinstance(final_tc.result, pd.DataFrame):
                 if not final_tc.result.empty:
                     return f"Data: {final_tc.result.to_string()}"
