@@ -355,7 +355,8 @@ class GoogleGenAIClient(AbstractClient):
         model: str,
         contents: List,
         config,
-        all_tool_calls: List[ToolCall]
+        all_tool_calls: List[ToolCall],
+        original_prompt: Optional[str] = None
     ) -> Any:
         """Handle function calls in stateless mode (single request-response)."""
         function_calls = self._extract_function_calls(response)
@@ -409,6 +410,13 @@ class GoogleGenAIClient(AbstractClient):
                 )
             )
 
+        if summary_part := self._create_tool_summary_part(
+            function_calls,
+            tool_results,
+            original_prompt
+        ):
+            function_response_parts.append(summary_part)
+
         # Add function call and responses to conversation
         contents.append({
             "role": "model",
@@ -460,6 +468,56 @@ class GoogleGenAIClient(AbstractClient):
             return json_compatible_result
         else:
             return {"result": json_compatible_result}
+
+    def _summarize_tool_result(self, result: Any, max_length: int = 1200) -> str:
+        """Create a short, human-readable summary of a tool result."""
+
+        try:
+            if isinstance(result, Exception):
+                summary = f"Error: {result}"
+            elif isinstance(result, pd.DataFrame):
+                preview = result.head(5)
+                summary = preview.to_string(index=True)
+            elif hasattr(result, 'model_dump'):
+                summary = self._json.dumps(result.model_dump())
+            elif isinstance(result, (dict, list)):
+                summary = self._json.dumps(result)
+            else:
+                summary = str(result)
+        except Exception as exc:  # pylint: disable=broad-except
+            summary = f"Unable to summarize result: {exc}"
+
+        summary = summary.strip() or "[empty result]"
+        if len(summary) > max_length:
+            summary = summary[:max_length].rstrip() + "…"
+        return summary
+
+    def _create_tool_summary_part(
+        self,
+        function_calls,
+        tool_results,
+        original_prompt: Optional[str] = None
+    ) -> Optional[Part]:
+        """Build a textual summary of tool outputs for the model to read easily."""
+
+        if not function_calls or not tool_results:
+            return None
+
+        summary_lines = ["Tool execution summaries:"]
+        for fc, result in zip(function_calls, tool_results):
+            summary_lines.append(
+                f"- {fc.name}: {self._summarize_tool_result(result)}"
+            )
+
+        if original_prompt:
+            summary_lines.append(f"Original Request: {original_prompt}")
+
+        summary_lines.append(
+            "Use the information above to craft the final response without running redundant tool calls."
+        )
+
+        summary_text = "\n".join(summary_lines)
+        return Part(text=summary_text)
 
     async def _handle_multiturn_function_calls(
         self,
@@ -580,16 +638,16 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                             )
                         )
                     )
-            # Add a re-evaluation prompt to remind the model of the full context
-            reevaluation_prompt = (
-                "The previous tool calls have been executed. Please review the results and the original request "
-                "to determine if the full request has been satisfied. If not, perform the next necessary step or tool call. "
-                f"Original Request: '{original_prompt}'"
+
+            summary_part = self._create_tool_summary_part(
+                function_calls,
+                tool_results,
+                original_prompt
             )
-            # Combine the tool results with the re-evaluation prompt
-            # next_prompt_parts = function_response_parts + [Part(text=reevaluation_prompt)]
-            # Don't add extra prompts - just send the tool results back
-            next_prompt_parts = function_response_parts
+            # Combine the tool results with the textual summary prompt
+            next_prompt_parts = function_response_parts.copy()
+            if summary_part:
+                next_prompt_parts.append(summary_part)
 
             # Send responses back
             retry_count = 0
@@ -1059,7 +1117,12 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
 
             # Handle function calls in stateless mode
             final_response = await self._handle_stateless_function_calls(
-                response, model, contents, final_config, all_tool_calls
+                response,
+                model,
+                contents,
+                final_config,
+                all_tool_calls,
+                original_prompt=prompt
             )
         else:
             # MULTI-TURN CONVERSATION MODE
