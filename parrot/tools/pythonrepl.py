@@ -613,7 +613,8 @@ print("Use 'execution_results' dict to store intermediate results.")
                     except Exception as e:
                         return f"ExecutionError: {type(e).__name__}: {str(e)}"
 
-            return ""
+            # Return everything that was captured
+            return io_buffer.getvalue() or ""
 
         except Exception as e:
             return f"{type(e).__name__}: {str(e)}"
