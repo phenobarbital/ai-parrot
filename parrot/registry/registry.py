@@ -15,6 +15,7 @@ import importlib
 import inspect
 from dataclasses import dataclass, field
 import yaml
+import hashlib
 from navconfig.logging import logging
 from navconfig import BASE_DIR
 from ..bots.abstract import AbstractBot
@@ -143,23 +144,28 @@ class AgentRegistry:
         agent = await agent_registry.get_instance("MyAgent")
     """
 
-    def __init__(self, agents_dir: Optional[Path] = None):
+    def __init__(
+        self,
+        agents_dir: Optional[Path] = None,
+        *,
+        extra_agent_dirs: Optional[Iterable[Path]] = None,
+    ):
         self.logger = logging.getLogger('Parrot.AgentRegistry')
         self.agents_dir = agents_dir or BASE_DIR / "agents"
-        # Add Path Agent Dir to Sys path
-        sys.path.append(str(self.agents_dir))
         self._registered_agents: Dict[str, BotMetadata] = {}
         self._config_file: Optional[Path] = None
+        self._discovery_paths: List[Path] = []
 
-        # Ensure agents directory exists
-        self.agents_dir.mkdir(parents=True, exist_ok=True)
+        # Ensure primary discovery directory exists
+        primary_dir = self._prepare_discovery_dir(self.agents_dir)
+        self._discovery_paths.append(primary_dir)
 
-        # Create __init__.py if it doesn't exist
-        init_file = self.agents_dir / "__init__.py"
-        if not init_file.exists():
-            init_file.write_text(
-                "# Auto-generated agents module"
-            )
+        self._extra_agent_dirs: List[Path] = []
+        if extra_agent_dirs:
+            for directory in extra_agent_dirs:
+                prepared_dir = self._prepare_discovery_dir(directory)
+                self._extra_agent_dirs.append(prepared_dir)
+                self._discovery_paths.append(prepared_dir)
         # Create config file if it doesn't exist
         self._config_file: Optional[Path] = self.agents_dir / "agents.yaml"
         if not self._config_file.exists():
@@ -169,6 +175,17 @@ class AgentRegistry:
         self.logger.notice(
             f"AgentRegistry initialized with agents_dir={self.agents_dir}, config_file={self._config_file}"
         )
+
+    def _prepare_discovery_dir(self, directory: Path) -> Path:
+        """Ensure a discovery directory exists and is importable."""
+        resolved = Path(directory).resolve()
+        resolved.mkdir(parents=True, exist_ok=True)
+        init_file = resolved / "__init__.py"
+        if not init_file.exists():
+            init_file.write_text("# Auto-generated agents module")
+        if str(resolved) not in sys.path:
+            sys.path.append(str(resolved))
+        return resolved
 
     def get_bot_instance(self, name: str) -> Optional[AbstractBot]:
         """Get an instantiated bot by name."""
@@ -363,14 +380,29 @@ class AgentRegistry:
 
         return registered_count
 
-    def _import_module_from_path(self, path: Path, package_hint: str = "parrot.dynamic_agents") -> ModuleType:
+    def _import_module_from_path(
+        self,
+        path: Path,
+        *,
+        base_dir: Optional[Path] = None,
+        package_hint: str = "parrot.dynamic_agents",
+    ) -> ModuleType:
         """
         Import a Python module from an arbitrary filesystem path.
         Ensures decorators run at import time.
         """
-        # Build a unique module name (stable across runs)
-        rel = path.relative_to(self.agents_dir)
-        mod_name = f"{package_hint}." + ".".join(rel.with_suffix('').parts)
+        base = (base_dir or self.agents_dir).resolve()
+        resolved_path = path.resolve()
+        try:
+            rel = resolved_path.relative_to(base)
+        except ValueError:
+            rel = Path(resolved_path.name)
+        rel_path = rel if isinstance(rel, Path) else Path(rel)
+        module_suffix = ".".join(rel_path.with_suffix('').parts)
+        if module_suffix:
+            mod_name = f"{package_hint}.{module_suffix}"
+        else:
+            mod_name = package_hint
 
         spec = importlib.util.spec_from_file_location(mod_name, str(path))
         if spec is None or spec.loader is None:
@@ -386,19 +418,19 @@ class AgentRegistry:
         )
         return module
 
-    async def load_modules(self) -> int:
-        """
-        Dynamically import all Python modules in the agents directory.
+    def _namespace_for_directory(self, directory: Path) -> str:
+        digest = hashlib.md5(str(directory.resolve()).encode('utf-8')).hexdigest()
+        return f"parrot.dynamic_agents.dir_{digest}"
 
-        This triggers any decorators in those modules to register agents.
-        """
-        if not self.agents_dir.exists() or not self.agents_dir.is_dir():
-            self.logger.warning(
-                f"Agents directory {self.agents_dir} does not exist"
+    def _load_modules_from_directory(self, directory: Path) -> int:
+        if not directory.exists() or not directory.is_dir():
+            self.logger.debug(
+                f"Agents directory {directory} does not exist, skipping"
             )
             return 0
 
-        module_files = list(self.agents_dir.glob("*.py"))
+        package_hint = self._namespace_for_directory(directory)
+        module_files = list(directory.glob("*.py"))
         imported_count = 0
 
         for file_path in module_files:
@@ -406,14 +438,30 @@ class AgentRegistry:
                 continue  # Skip __init__.py
 
             try:
-                self._import_module_from_path(file_path)
+                self._import_module_from_path(
+                    file_path,
+                    base_dir=directory,
+                    package_hint=package_hint
+                )
                 imported_count += 1
             except Exception as e:
                 self.logger.error(f"Failed to import {file_path}: {e}")
-        self.logger.info(
-            f"Discovered (decorator) agent modules: {imported_count}"
-        )
         return imported_count
+
+    async def load_modules(self) -> int:
+        """
+        Dynamically import all Python modules from every discovery directory.
+
+        This triggers any decorators in those modules to register agents.
+        """
+        total_imported = 0
+        for directory in self._discovery_paths:
+            total_imported += self._load_modules_from_directory(directory)
+
+        self.logger.info(
+            f"Discovered (decorator) agent modules: {total_imported} across {len(self._discovery_paths)} directories"
+        )
+        return total_imported
 
     def register_bot_decorator(
         self,
