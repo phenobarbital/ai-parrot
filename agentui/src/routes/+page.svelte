@@ -32,21 +32,7 @@
     }
   }
 
-  function ensureAuth() {
-    if (!browser) return;
-    if (!$authStore.loading && !$authStore.isAuthenticated) {
-      goto('/login');
-    }
-  }
-
-  $effect(() => {
-    if (!browser) return;
-    if (!$authStore.loading && $authStore.isAuthenticated) {
-      fetchBots();
-    } else {
-      ensureAuth();
-    }
-  });
+  let hasFetchedBots = false;
 
   $effect(() => {
     const uniqueCategories = Array.from(
@@ -90,9 +76,28 @@
 
   onMount(() => {
     if (!browser) return;
-    if (!$authStore.isAuthenticated && !$authStore.loading) {
-      goto('/login');
-    }
+
+    const unsubscribe = authStore.subscribe((state) => {
+      if (state.loading) return;
+
+      if (!state.isAuthenticated) {
+        hasFetchedBots = false;
+        if (window.location.pathname !== '/login') {
+          goto('/login');
+        }
+        return;
+      }
+
+      if (!hasFetchedBots) {
+        hasFetchedBots = true;
+        fetchBots();
+      }
+    });
+
+    return () => {
+      hasFetchedBots = false;
+      unsubscribe();
+    };
   });
 </script>
 
