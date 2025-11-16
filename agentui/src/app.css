@@ -1,0 +1,61 @@
+@import "tailwindcss";
+@plugin "daisyui";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@theme {
+  /* Custom theme extensions */
+}
+
+:root {
+  color-scheme: light dark;
+}
+
+body {
+  min-height: 100vh;
+}
+
+.chat-markdown {
+  @apply space-y-3 text-sm leading-relaxed;
+}
+
+.chat-markdown p {
+  margin: 0;
+}
+
+.chat-markdown pre {
+  background: rgba(0, 0, 0, 0.08);
+  padding: 0.75rem;
+  border-radius: 0.75rem;
+  overflow-x: auto;
+}
+
+.chat-markdown code {
+  font-family: "Fira Code", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
+    monospace;
+  font-size: 0.85rem;
+}
+
+.chat-markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.chat-markdown th,
+.chat-markdown td {
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  padding: 0.5rem;
+  text-align: left;
+}
+
+.chat-markdown ul,
+.chat-markdown ol {
+  padding-left: 1.25rem;
+}
+
+.chat-markdown a {
+  color: hsl(var(--p));
+  text-decoration: underline;
+}
