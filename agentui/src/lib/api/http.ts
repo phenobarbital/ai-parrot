@@ -1,9 +1,8 @@
 import axios from 'axios';
-
-const baseURL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+import { config } from '$lib/config';
 
 const apiClient = axios.create({
-  baseURL,
+  baseURL: config.apiBaseUrl,
   withCredentials: true,
   headers: {
     'Content-Type': 'application/json'
@@ -15,7 +14,7 @@ apiClient.interceptors.request.use((config) => {
     return config;
   }
 
-  const token = localStorage.getItem('agentui.token');
+  const token = localStorage.getItem(config.tokenStorageKey);
   if (token) {
     config.headers = config.headers || {};
     config.headers.Authorization = `Bearer ${token}`;

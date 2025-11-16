@@ -5,13 +5,25 @@
   import { authStore } from '$lib/stores/auth.svelte.ts';
   import { botsApi, type BotSummary } from '$lib/api/bots';
   import { BotCard, LoadingSpinner, ThemeSwitcher } from '../components';
+  import { config } from '$lib/config';
 
   let bots = $state<BotSummary[]>([]);
   let loading = $state(true);
   let error = $state('');
   let searchTerm = $state('');
   let selectedCategory = $state('All');
-  let categories = $state<string[]>(['All']);
+  const categories = $derived(() => {
+    const uniqueCategories = Array.from(
+      new Set(bots.map((bot) => bot.category?.trim() || 'Lifestyle & Wellness'))
+    );
+    return ['All', ...uniqueCategories];
+  });
+
+  $effect(() => {
+    if (!categories.includes(selectedCategory)) {
+      selectedCategory = 'All';
+    }
+  });
 
   async function fetchBots() {
     if (!browser) return;
@@ -33,17 +45,6 @@
   }
 
   let hasFetchedBots = false;
-
-  $effect(() => {
-    const uniqueCategories = Array.from(
-      new Set(bots.map((bot) => bot.category?.trim() || 'Lifestyle & Wellness'))
-    );
-    categories = ['All', ...uniqueCategories];
-
-    if (!categories.includes(selectedCategory)) {
-      selectedCategory = 'All';
-    }
-  });
 
   const filteredBots = $derived(() => {
     let list = bots;
@@ -73,6 +74,8 @@
   function handleLogout() {
     authStore.logout();
   }
+
+  const environmentLabel = config.environmentLabel;
 
   onMount(() => {
     if (!browser) return;
@@ -164,6 +167,11 @@
           <div>
             <p class="text-sm text-base-content/70">All assistants for specific tasks</p>
             <h2 class="text-3xl font-bold">Agents</h2>
+            {#if environmentLabel}
+              <div class="badge badge-outline badge-sm mt-2 uppercase tracking-wide">
+                {environmentLabel}
+              </div>
+            {/if}
           </div>
           <div class="flex items-center gap-3">
             <ThemeSwitcher showLabel={false} buttonClass="btn btn-sm btn-ghost" />

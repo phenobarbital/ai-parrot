@@ -8,6 +8,19 @@ Get up and running with AgentCrew Builder in 5 minutes!
 - Python 3.11+ ([Download](https://www.python.org/))
 - npm (comes with Node.js)
 
+### Configure environment variables
+
+Copy the sample file and adjust it for the backend you want to reach:
+
+```bash
+cp env.example .env
+```
+
+- `VITE_API_URL` – where `/api/v1/bots` and `/api/v1/agents/chat` live (defaults to `http://localhost:5000`)
+- `VITE_AUTH_URL` – optional override for the login endpoint
+- `VITE_AGENTUI_ENV` – label used in the UI badge + storage namespace (e.g., `staging`)
+- `VITE_AGENTUI_USERNAME`/`VITE_AGENTUI_PASSWORD` – optional prefills for local development
+
 ## Setup (Option 1: Local Development)
 
 ### 1. Run Setup Script

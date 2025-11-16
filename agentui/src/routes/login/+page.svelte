@@ -4,12 +4,14 @@
   import { authStore } from '$lib/stores/auth.svelte.ts';
   import { toastStore } from '$lib/stores/toast.svelte.ts';
   import { LoadingSpinner } from '../../components';
+  import { config } from '$lib/config';
 
-  let username = $state('');
-  let password = $state('');
+  let username = $state(config.defaultUsername);
+  let password = $state(config.defaultPassword);
   let error = $state('');
   let loading = $state(false);
   let showPassword = $state(false);
+  const environmentLabel = config.environmentLabel;
 
   // Redirect if already authenticated
   onMount(() => {
@@ -52,6 +54,9 @@
     <div class="mb-8 text-center">
       <h1 class="mb-2 text-4xl font-bold text-primary">AI-Parrot</h1>
       <p class="text-base-content/70">AgentUI</p>
+      {#if environmentLabel}
+        <div class="badge badge-outline mt-2 uppercase tracking-wide">{environmentLabel}</div>
+      {/if}
     </div>
 
     <!-- Login Card -->
