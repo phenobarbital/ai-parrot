@@ -1,5 +1,6 @@
 import apiClient from '$lib/api/http';
 import { writable, get } from 'svelte/store';
+import { config } from '$lib/config';
 
 type AuthState = {
   loading: boolean;
@@ -8,7 +9,7 @@ type AuthState = {
   user: { username: string } | null;
 };
 
-const STORAGE_KEY = 'agentui.token';
+const STORAGE_KEY = config.tokenStorageKey;
 
 function createAuthStore() {
   const internal = writable<AuthState>({
@@ -33,7 +34,7 @@ function createAuthStore() {
   async function login(username: string, password: string) {
     update((state) => ({ ...state, loading: true }));
     try {
-      const { data } = await apiClient.post('/api/v1/login', { username, password });
+      const { data } = await apiClient.post(config.authUrl, { username, password });
       const token = data?.access_token || data?.token;
       if (typeof window !== 'undefined' && token) {
         localStorage.setItem(STORAGE_KEY, token);

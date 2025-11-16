@@ -1,6 +1,7 @@
 import type { ChatResponse } from '$lib/api/chat';
+import { config } from '$lib/config';
 
-const STORAGE_PREFIX = 'agentui.conversation';
+const STORAGE_PREFIX = config.conversationStoragePrefix;
 
 type ConversationPayload = {
   turns: Record<string, ChatResponse>;
