@@ -3,12 +3,21 @@
   import { marked } from 'marked';
   import DOMPurify from 'isomorphic-dompurify';
 
-  export let role: 'user' | 'assistant' = 'user';
-  export let content = '';
-  export let timestamp = '';
-  export let turnId: string | undefined = undefined;
-  export let selectable = false;
-  export let selected = false;
+  const props = $props<{
+    role?: 'user' | 'assistant';
+    content?: string;
+    timestamp?: string;
+    turnId?: string;
+    selectable?: boolean;
+    selected?: boolean;
+  }>();
+
+  const role = $derived(props.role ?? 'user');
+  const content = $derived(props.content ?? '');
+  const timestamp = $derived(props.timestamp ?? '');
+  const turnId = $derived(props.turnId);
+  const selectable = $derived(props.selectable ?? false);
+  const selected = $derived(props.selected ?? false);
 
   const dispatch = createEventDispatcher<{ select: { turnId: string } }>();
 
