@@ -288,6 +288,16 @@
               </div>
             </div>
           </div>
+
+          <div class="card bg-base-100 shadow-xl">
+            <div class="card-body">
+              <h2 class="card-title">Talk to Agents</h2>
+              <p>Browse existing agents and start chatting without leaving Crew Builder.</p>
+              <div class="card-actions justify-end">
+                <a class="btn btn-info" href="/agents">Open Agents</a>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- Recent Crews -->
@@ -441,6 +451,25 @@
                 />
               </svg>
               Ask a Crew
+            </a>
+          </li>
+          <li>
+            <a href="/agents">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                class="h-5 w-5"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M8 10h.01M12 10h.01M16 10h.01M9 16h6m2 5a2 2 0 002-2V6a2 2 0 00-2-2H7a2 2 0 00-2 2v13l3-3h10z"
+                />
+              </svg>
+              Agents
             </a>
           </li>
           <li>
