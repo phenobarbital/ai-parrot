@@ -12,11 +12,13 @@
   let error = $state('');
   let searchTerm = $state('');
   let selectedCategory = $state('All');
-  const categories = $derived(() => {
+  let categories = $state<string[]>(['All']);
+
+  $effect(() => {
     const uniqueCategories = Array.from(
       new Set(bots.map((bot) => bot.category?.trim() || 'Lifestyle & Wellness'))
     );
-    return ['All', ...uniqueCategories];
+    categories = ['All', ...uniqueCategories];
   });
 
   $effect(() => {
@@ -144,7 +146,7 @@
                 selectedCategory === category ? 'bg-primary/10 text-primary' : 'text-base-content/80'
               }`}
               type="button"
-              on:click={() => selectCategory(category)}
+              onclick={() => selectCategory(category)}
             >
               <span>{category}</span>
               {#if selectedCategory === category}
@@ -175,7 +177,7 @@
           </div>
           <div class="flex items-center gap-3">
             <ThemeSwitcher showLabel={false} buttonClass="btn btn-sm btn-ghost" />
-            <button class="btn btn-outline btn-sm" type="button" on:click={handleLogout}>Logout</button>
+            <button class="btn btn-outline btn-sm" type="button" onclick={handleLogout}>Logout</button>
           </div>
         </div>
 
@@ -197,7 +199,7 @@
             />
           </div>
           <div class="flex gap-3">
-            <button class="btn btn-primary" type="button" on:click={() => goto('/builder')}>
+            <button class="btn btn-primary" type="button" onclick={() => goto('/builder')}>
               Create AI agent
             </button>
             <div class="join">
@@ -207,7 +209,7 @@
                     selectedCategory === quickCategory ? 'btn-active text-primary' : 'text-base-content/70'
                   }`}
                   type="button"
-                  on:click={() => selectCategory(quickCategory)}
+                  onclick={() => selectCategory(quickCategory)}
                 >
                   {quickCategory}
                 </button>
@@ -219,13 +221,13 @@
         {#if loading}
           <div class="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
             {#each Array(6) as _, index}
-              <div class="h-48 animate-pulse rounded-3xl bg-base-200/80" aria-hidden="true" />
+              <div class="h-48 animate-pulse rounded-3xl bg-base-200/80" aria-hidden="true"></div>
             {/each}
           </div>
         {:else if error}
           <div class="rounded-3xl border border-error/30 bg-error/10 p-8 text-center text-error">
             <p class="text-lg font-semibold">{error}</p>
-            <button class="btn btn-error mt-4" on:click={fetchBots}>Retry</button>
+            <button class="btn btn-error mt-4" onclick={fetchBots}>Retry</button>
           </div>
         {:else if filteredBots.length === 0}
           <div class="rounded-3xl border border-base-200 bg-base-100 p-10 text-center text-base-content/70">
