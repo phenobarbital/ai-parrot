@@ -8,7 +8,7 @@
   import { getTurn, saveTurn, loadConversation } from '$lib/utils/conversation';
   import { ChatBubble, LoadingSpinner } from '../../../components';
 
-  export let data: { agentId: string };
+  const { data } = $props<{ data: { agentId: string } }>();
 
   let agent: BotSummary | null = $state(null);
   type ChatMessage = {
@@ -30,7 +30,7 @@
   let selectedTurn = $state<ChatResponse | null>(null);
   let storedTurnOrder = $state<string[]>([]);
 
-  const agentId = data.agentId;
+  const agentId = $derived(data.agentId);
 
   async function loadAgent() {
     if (!browser) return;
@@ -136,7 +136,7 @@
 {:else if !agent}
   <div class="flex min-h-screen flex-col items-center justify-center gap-4">
     <p class="text-lg font-semibold text-base-content/80">{error || 'Agent not found.'}</p>
-    <button class="btn btn-primary" on:click={() => goto('/agents')}>Back to agents</button>
+    <button class="btn btn-primary" onclick={() => goto('/agents')}>Back to agents</button>
   </div>
 {:else}
   <div class="min-h-screen bg-base-200/40">
@@ -155,7 +155,7 @@
                 selectedMenu === item ? 'bg-primary/10 text-primary' : 'text-base-content/80'
               }`}
               type="button"
-              on:click={() => (selectedMenu = item)}
+              onclick={() => (selectedMenu = item)}
             >
               {item}
             </button>
@@ -229,7 +229,7 @@
                   Attach
                 </button>
               </div>
-              <button class={`btn btn-primary ${sending ? 'loading' : ''}`} on:click={sendMessage} disabled={sending}>
+              <button class={`btn btn-primary ${sending ? 'loading' : ''}`} onclick={sendMessage} disabled={sending}>
                 {sending ? 'Sending' : 'Send message'}
               </button>
             </div>
@@ -251,7 +251,7 @@
                     selectedTurnId === turnId ? 'bg-primary/10 text-primary' : 'text-base-content/80'
                   }`}
                   type="button"
-                  on:click={() => selectTurn(turnId)}
+                  onclick={() => selectTurn(turnId)}
                 >
                   <span class="truncate">Turn {turnId.slice(0, 6)}</span>
                   <span>→</span>
