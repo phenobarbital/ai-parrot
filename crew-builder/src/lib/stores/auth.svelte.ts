@@ -1,28 +1,105 @@
 import { browser } from '$app/environment';
 import { goto } from '$app/navigation';
+import type { Subscriber } from 'svelte/store';
 import type { LoginResponse, SessionData } from '$lib/auth/auth';
 import { login as loginRequest } from '$lib/auth/auth';
 
+interface AuthState {
+  user: LoginResponse | null;
+  session: SessionData | null;
+  token: string | null;
+  loading: boolean;
+  isAuthenticated: boolean;
+}
+
 class AuthStore {
-  user = $state<LoginResponse | null>(null);
-  session = $state<SessionData | null>(null);
-  token = $state<string | null>(null);
-  loading = $state(true);
-  isAuthenticated = $derived(Boolean(this.token));
-  currentUser = $derived(
-    this.user
-      ? {
-          id: this.user.id,
-          user_id: this.user.user_id,
-          username: this.user.username,
-          email: this.user.email,
-          name: this.user.name
-        }
-      : null
-  );
+  private state: AuthState = {
+    user: null,
+    session: null,
+    token: null,
+    loading: true,
+    isAuthenticated: false
+  };
+
+  private subscribers = new Set<Subscriber<AuthState>>();
+
+  get user() {
+    return this.state.user;
+  }
+
+  set user(value: LoginResponse | null) {
+    this.setState({ user: value });
+  }
+
+  get session() {
+    return this.state.session;
+  }
+
+  set session(value: SessionData | null) {
+    this.setState({ session: value });
+  }
+
+  get token() {
+    return this.state.token;
+  }
+
+  set token(value: string | null) {
+    this.setState({ token: value });
+  }
+
+  get loading() {
+    return this.state.loading;
+  }
+
+  set loading(value: boolean) {
+    this.setState({ loading: value });
+  }
+
+  get isAuthenticated() {
+    return this.state.isAuthenticated;
+  }
+
+  get currentUser() {
+    if (!this.state.user) return null;
+
+    return {
+      id: this.state.user.id,
+      user_id: this.state.user.user_id,
+      username: this.state.user.username,
+      email: this.state.user.email,
+      name: this.state.user.name
+    };
+  }
+
+  subscribe(run: Subscriber<AuthState>) {
+    run(this.state);
+    this.subscribers.add(run);
+
+    return () => {
+      this.subscribers.delete(run);
+    };
+  }
+
+  private notify() {
+    for (const subscriber of this.subscribers) {
+      subscriber(this.state);
+    }
+  }
+
+  private setState(partial: Partial<AuthState>) {
+    this.state = {
+      ...this.state,
+      ...partial
+    };
+    this.state.isAuthenticated = Boolean(this.state.token);
+    this.notify();
+  }
 
   init() {
-    if (!browser) return;
+    if (!browser) {
+      this.loading = false;
+      return;
+    }
 
     const storedToken = localStorage.getItem('token');
     const storedUser = localStorage.getItem('user');
@@ -30,11 +107,12 @@ class AuthStore {
 
     if (storedToken && storedUser) {
       try {
-        this.user = JSON.parse(storedUser);
+        const parsedUser = JSON.parse(storedUser) as LoginResponse;
+        this.user = parsedUser;
         this.token = storedToken;
 
         if (storedSession) {
-          this.session = JSON.parse(storedSession);
+          this.session = JSON.parse(storedSession) as SessionData;
         }
       } catch (error) {
         console.error('Failed to parse stored auth data', error);
@@ -68,18 +146,13 @@ class AuthStore {
   private saveToStorage(data: LoginResponse) {
     if (!browser) return;
 
-    // Save token
     localStorage.setItem('token', data.token);
-
-    // Save full user data
     localStorage.setItem('user', JSON.stringify(data));
 
-    // Save session data
     if (data.session) {
       localStorage.setItem('session', JSON.stringify(data.session));
     }
 
-    // Save basic user info for quick access
     localStorage.setItem('user_id', data.user_id.toString());
     localStorage.setItem('id', data.id);
     localStorage.setItem('username', data.username);
@@ -91,7 +164,6 @@ class AuthStore {
 
     try {
       const response = await loginRequest({ username, password });
-
       const data = response.data;
 
       if (!data?.token) {
@@ -111,24 +183,22 @@ class AuthStore {
     } catch (error: any) {
       this.loading = false;
 
-      // Extract error message from response
       let message = 'Invalid credentials';
 
       if (error.response) {
         const status = error.response.status;
-        const data = error.response.data;
+        const responseData = error.response.data;
 
-        // Handle specific error codes
         if (status === 403) {
-          message = data?.message || 'Access forbidden. Please check your credentials.';
+          message = responseData?.message || 'Access forbidden. Please check your credentials.';
         } else if (status === 401) {
-          message = data?.message || 'Invalid username or password.';
+          message = responseData?.message || 'Invalid username or password.';
         } else if (status === 400) {
-          message = data?.message || 'Invalid request. Please check your input.';
+          message = responseData?.message || 'Invalid request. Please check your input.';
         } else if (status >= 400 && status < 500) {
-          message = data?.message || `Authentication failed (${status}).`;
+          message = responseData?.message || `Authentication failed (${status}).`;
         } else if (status >= 500) {
-          message = data?.message || 'Server error. Please try again later.';
+          message = responseData?.message || 'Server error. Please try again later.';
         }
       } else if (error.message) {
         message = error.message;
