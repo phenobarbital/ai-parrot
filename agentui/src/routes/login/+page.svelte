@@ -34,8 +34,9 @@
       // Show toast notification for better UX
       toastStore.error(result.error, 5000);
     } else {
-      // Success - redirect happens in authStore.login
+      loading = false;
       toastStore.success('Login successful! Redirecting...', 2000);
+      goto('/');
     }
   }
 
