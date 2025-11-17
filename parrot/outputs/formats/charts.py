@@ -92,7 +92,7 @@ class ChartRenderer(BaseChart):
 
         html_chart, error = self._execute_generic_code(
             code,
-            pandas_tool=kwargs.get('pandas_tool'),
+            pandas_tool=kwargs.pop('pandas_tool'),
             execution_state=kwargs.get('execution_state'),
             **kwargs,
         )

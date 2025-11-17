@@ -184,7 +184,7 @@ class AltairRenderer(BaseChart):
         # Execute code to get chart object
         chart_obj, error = self.execute_code(
             code,
-            pandas_tool=kwargs.get('pandas_tool'),
+            pandas_tool=kwargs.pop('pandas_tool'),
             **kwargs,
         )
 

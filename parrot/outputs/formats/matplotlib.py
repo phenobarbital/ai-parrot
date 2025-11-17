@@ -169,7 +169,7 @@ class MatplotlibRenderer(BaseChart):
         # Execute code
         chart_obj, error = self.execute_code(
             code,
-            pandas_tool=kwargs.get('pandas_tool'),
+            pandas_tool=kwargs.pop('pandas_tool'),
             execution_state=kwargs.get('execution_state'),
             **kwargs,
         )
