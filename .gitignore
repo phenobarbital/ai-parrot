@@ -244,6 +244,7 @@ work/
 
 # Custom Agents:
 agents/
+!/crew-builder/src/routes/agents/
 
 
 # SvelteKit build
