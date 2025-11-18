@@ -1275,72 +1275,59 @@ class AbstractClient(ABC):
 
     def _oai_normalize_schema(self, schema: dict) -> dict:
         """
-        Normalize JSON schema for OpenAI `response_format`:
+        Normalize JSON schema for OpenAI `response_format`.
 
-        - For every object with explicit properties:
-          - set additionalProperties: false
-          - ensure `required` exists and includes all property keys.
-        - Recurse through properties, anyOf/allOf/oneOf, $defs/definitions, arrays, etc.
+        Rules inferred from OpenAI errors:
+        - ANY object (type == "object") must have `additionalProperties: false`.
+        - Objects that declare `properties` must also have a `required` array
+        that includes ALL property names.
         """
 
         def visit(node):
             if isinstance(node, dict):
                 t = node.get("type")
 
+                # --- Object handling ---
                 if t == "object":
+                    # 1) ALL object schemas must have additionalProperties = false
+                    node["additionalProperties"] = False
+
+                    # 2) If the object has explicit properties, required must cover them all
                     props = node.get("properties")
-                    has_explicit_props = isinstance(props, dict) and len(props) > 0
-
-                    if has_explicit_props:
-                        # 1) enforce additionalProperties: false
-                        if node.get("additionalProperties") is not False:
-                            node["additionalProperties"] = False
-
-                        # 2) enforce required contains ALL property keys
+                    if isinstance(props, dict) and props:
                         prop_keys = list(props.keys())
                         existing_required = node.get("required") or []
-                        # keep order stable: existing first, then missing
                         missing = [k for k in prop_keys if k not in existing_required]
                         node["required"] = existing_required + missing
 
-                    # recurse into nested schemas
+                    # Recurse into nested object children
                     for key in ("properties", "patternProperties"):
                         if key in node and isinstance(node[key], dict):
                             for sub in node[key].values():
                                 visit(sub)
 
-                    for key in ("allOf", "anyOf", "oneOf"):
-                        if key in node and isinstance(node[key], list):
-                            for sub in node[key]:
-                                visit(sub)
-
-                    for key in ("$defs", "definitions"):
-                        if key in node and isinstance(node[key], dict):
-                            for sub in node[key].values():
-                                visit(sub)
-
-                elif t == "array":
-                    # recurse into items if present
+                # --- Array handling ---
+                if t == "array":
+                    # Recurse into items
                     if "items" in node and isinstance(node["items"], (dict, list)):
                         visit(node["items"])
 
-                    # recurse into prefixItems if present (e.g. from tuples)
+                    # Recurse into prefixItems (tuples)
                     if "prefixItems" in node and isinstance(node["prefixItems"], list):
                         for sub in node["prefixItems"]:
                             visit(sub)
 
-                    # still walk into $defs/definitions if any
-                    for key in ("$defs", "definitions"):
-                        if key in node and isinstance(node[key], dict):
-                            for sub in node[key].values():
-                                visit(sub)
+                # --- Combinators: ALWAYS recurse, regardless of type ---
+                for key in ("anyOf", "allOf", "oneOf"):
+                    if key in node and isinstance(node[key], list):
+                        for sub in node[key]:
+                            visit(sub)
 
-                else:
-                    # other types: still look into definitions
-                    for key in ("$defs", "definitions"):
-                        if key in node and isinstance(node[key], dict):
-                            for sub in node[key].values():
-                                visit(sub)
+                # --- Definitions: ALWAYS recurse ---
+                for key in ("$defs", "definitions"):
+                    if key in node and isinstance(node[key], dict):
+                        for sub in node[key].values():
+                            visit(sub)
 
             elif isinstance(node, list):
                 for item in node:
@@ -1348,6 +1335,7 @@ class AbstractClient(ABC):
 
             return node
 
+        # shallow copy is fine; you don't want to mutate the caller's dict root
         return visit(dict(schema))
 
     def _build_response_format_from(self, output_config):

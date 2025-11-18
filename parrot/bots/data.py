@@ -89,7 +89,7 @@ class PandasAgentResponse(BaseModel):
         )
     )
 
-    data: Optional[List[Dict]] = Field(
+    data: Optional[List[Dict[str, Any]]] = Field(
         default=None,
         description=(
             "The resulting DataFrame serialized as a list of records. "
