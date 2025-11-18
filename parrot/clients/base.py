@@ -1270,46 +1270,72 @@ class AbstractClient(ABC):
         s = re.sub(r"\s*```$", "", s)
         # grab the largest {...} or [...] block if extra prose sneaks in
         m = re.search(r"(\{.*\}|\[.*\])", s, flags=re.S)
-        s = m.group(1) if m else s
+        s = m[1] if m else s
         return json_decoder(s)
 
     def _oai_normalize_schema(self, schema: dict) -> dict:
-        """OpenAI requires 'additionalProperties': false on every object."""
+        """
+        Normalize JSON schema for OpenAI `response_format`.
+
+        Rules inferred from OpenAI errors:
+        - ANY object (type == "object") must have `additionalProperties: false`.
+        - Objects that declare `properties` must also have a `required` array
+        that includes ALL property names.
+        """
+
         def visit(node):
             if isinstance(node, dict):
                 t = node.get("type")
+
+                # --- Object handling ---
                 if t == "object":
-                    # enforce additionalProperties: false
-                    if node.get("additionalProperties") is not False:
-                        node["additionalProperties"] = False
-                    # dive into object children
+                    # 1) ALL object schemas must have additionalProperties = false
+                    node["additionalProperties"] = False
+
+                    # 2) If the object has explicit properties, required must cover them all
+                    props = node.get("properties")
+                    if isinstance(props, dict) and props:
+                        prop_keys = list(props.keys())
+                        existing_required = node.get("required") or []
+                        missing = [k for k in prop_keys if k not in existing_required]
+                        node["required"] = existing_required + missing
+
+                    # Recurse into nested object children
                     for key in ("properties", "patternProperties"):
                         if key in node and isinstance(node[key], dict):
                             for sub in node[key].values():
                                 visit(sub)
-                    # handle composite keywords
-                    for key in ("allOf", "anyOf", "oneOf"):
-                        if key in node and isinstance(node[key], list):
-                            for sub in node[key]:
-                                visit(sub)
-                    # handle definitions
-                    for key in ("$defs", "definitions"):
-                        if key in node and isinstance(node[key], dict):
-                            for sub in node[key].values():
-                                visit(sub)
-                elif t == "array" and "items" in node:
-                    visit(node["items"])
-                else:
-                    # still check nested defs even if no explicit type
-                    for key in ("$defs", "definitions"):
-                        if key in node and isinstance(node[key], dict):
-                            for sub in node[key].values():
-                                visit(sub)
+
+                # --- Array handling ---
+                if t == "array":
+                    # Recurse into items
+                    if "items" in node and isinstance(node["items"], (dict, list)):
+                        visit(node["items"])
+
+                    # Recurse into prefixItems (tuples)
+                    if "prefixItems" in node and isinstance(node["prefixItems"], list):
+                        for sub in node["prefixItems"]:
+                            visit(sub)
+
+                # --- Combinators: ALWAYS recurse, regardless of type ---
+                for key in ("anyOf", "allOf", "oneOf"):
+                    if key in node and isinstance(node[key], list):
+                        for sub in node[key]:
+                            visit(sub)
+
+                # --- Definitions: ALWAYS recurse ---
+                for key in ("$defs", "definitions"):
+                    if key in node and isinstance(node[key], dict):
+                        for sub in node[key].values():
+                            visit(sub)
+
             elif isinstance(node, list):
                 for item in node:
                     visit(item)
+
             return node
-        # copy defensively
+
+        # shallow copy is fine; you don't want to mutate the caller's dict root
         return visit(dict(schema))
 
     def _build_response_format_from(self, output_config):

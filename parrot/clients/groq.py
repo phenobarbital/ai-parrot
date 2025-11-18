@@ -31,12 +31,12 @@ getLogger('groq').setLevel('INFO')
 
 
 STRUCTURED_OUTPUT_COMPATIBLE_MODELS = {
-    GroqModel.LLAMA_4_SCOUT_17B,
-    GroqModel.LLAMA_4_MAVERICK_17B,
-    GroqModel.KIMI_K2_INSTRUCT,
-    GroqModel.OPENAI_GPT_OSS_SAFEGUARD_20B,
-    GroqModel.OPENAI_GPT_OSS_20B,
-    GroqModel.OPENAI_GPT_OSS_120B,
+    GroqModel.LLAMA_4_SCOUT_17B.value,
+    GroqModel.LLAMA_4_MAVERICK_17B.value,
+    GroqModel.KIMI_K2_INSTRUCT.value,
+    GroqModel.OPENAI_GPT_OSS_SAFEGUARD_20B.value,
+    GroqModel.OPENAI_GPT_OSS_20B.value,
+    GroqModel.OPENAI_GPT_OSS_120B.value,
 }
 
 
@@ -71,54 +71,102 @@ class GroqClient(AbstractClient):
 
     def _fix_schema_for_groq(self, schema: dict) -> dict:
         """
-        Fix JSON schema to comply with Groq's requirements.
-        Groq requires additionalProperties: false at all levels and doesn't support
-        certain validation constraints like minimum, maximum, minLength, maxLength, etc.
+        Fix JSON schema to comply with Groq's structured-output validator.
+
+        - Start from the OpenAI-normalized schema (handles additionalProperties, required, etc.).
+        - Collapse Optional[T] patterns:
+            anyOf: [T, {"type": "null"}]  ->  T (keeping default/title/description).
+        - Resolve Groq's ambiguity with integer vs number:
+            anyOf: [{"type": "integer"}, {"type": "number"}, ...] -> drop "integer".
+        - Drop some scalar constraints Groq doesn't care about.
         """
-        if isinstance(schema, dict):
-            # Create a copy to avoid modifying the original
-            fixed_schema = schema.copy()
+        # First apply your generic OpenAI-style normalization
+        schema = self._oai_normalize_schema(schema)
 
-            # Set additionalProperties to false for all object types
-            if fixed_schema.get("type") == "object":
-                fixed_schema["additionalProperties"] = False
+        unsupported_constraints = [
+            "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum",
+            "minLength", "maxLength", "pattern", "format",
+            "minItems", "maxItems", "uniqueItems",
+            "minProperties", "maxProperties",
+        ]
 
-            # Remove validation constraints that Groq doesn't support
-            unsupported_constraints = [
-                "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum",
-                "minLength", "maxLength", "pattern", "format",
-                "minItems", "maxItems", "uniqueItems",
-                "minProperties", "maxProperties"
-            ]
+        def visit(node):
+            if isinstance(node, dict):
+                # Drop constraints Groq doesn't care about
+                for c in unsupported_constraints:
+                    node.pop(c, None)
 
-            for constraint in unsupported_constraints:
-                if constraint in fixed_schema:
-                    del fixed_schema[constraint]
+                # --- Handle anyOf ---
+                if "anyOf" in node and isinstance(node["anyOf"], list):
+                    variants = node["anyOf"]
 
-            # Recursively fix nested properties
-            if "properties" in fixed_schema:
-                fixed_properties = {
-                    key: self._fix_schema_for_groq(value)
-                    for key, value in fixed_schema["properties"].items()
-                }
-                fixed_schema["properties"] = fixed_properties
+                    # 1) Fix integer/number overlap for Groq
+                    type_variants = [
+                        v.get("type") for v in variants
+                        if isinstance(v, dict) and "type" in v
+                    ]
+                    if "number" in type_variants and "integer" in type_variants:
+                        new_variants = []
+                        for v in variants:
+                            if isinstance(v, dict) and v.get("type") == "integer":
+                                # drop integer variant when number is also present
+                                continue
+                            new_variants.append(v)
+                        variants = new_variants
+                        node["anyOf"] = variants
 
-            # Fix array items
-            if "items" in fixed_schema:
-                fixed_schema["items"] = self._fix_schema_for_groq(fixed_schema["items"])
-
-            # Fix anyOf, oneOf, allOf
-            for key in ["anyOf", "oneOf", "allOf"]:
-                if key in fixed_schema:
-                    fixed_schema[key] = [
-                        self._fix_schema_for_groq(item) for item in fixed_schema[key]
+                    # 2) Collapse Optional[T] pattern: anyOf: [T, {"type": "null"}]
+                    non_null = [
+                        v for v in variants
+                        if not (isinstance(v, dict) and v.get("type") == "null")
+                    ]
+                    nulls = [
+                        v for v in variants
+                        if isinstance(v, dict) and v.get("type") == "null"
                     ]
 
-            return fixed_schema
-        elif isinstance(schema, list):
-            return [self._fix_schema_for_groq(item) for item in schema]
-        else:
-            return schema
+                    if len(non_null) == 1 and len(nulls) >= 1:
+                        base = visit(non_null[0])  # recurse into T
+
+                        # Preserve metadata from wrapper (title, default, description...)
+                        for k, v in list(node.items()):
+                            if k == "anyOf":
+                                continue
+                            base.setdefault(k, v)
+
+                        node.clear()
+                        node.update(base)
+                    else:
+                        # Just recurse into each variant
+                        node["anyOf"] = [visit(v) for v in variants]
+
+                # Recurse into object properties / patternProperties
+                for key in ("properties", "patternProperties"):
+                    if key in node and isinstance(node[key], dict):
+                        for k, v in list(node[key].items()):
+                            node[key][k] = visit(v)
+
+                # Recurse into items (array element schemas)
+                if "items" in node and isinstance(node["items"], (dict, list)):
+                    node["items"] = visit(node["items"])
+
+                # Recurse into combinators other than anyOf
+                for key in ("allOf", "oneOf"):
+                    if key in node and isinstance(node[key], list):
+                        node[key] = [visit(v) for v in node[key]]
+
+                # 🔴 IMPORTANT: recurse into $defs / definitions (this is what was missing)
+                for key in ("$defs", "definitions"):
+                    if key in node and isinstance(node[key], dict):
+                        for k, v in list(node[key].items()):
+                            node[key][k] = visit(v)
+
+            elif isinstance(node, list):
+                return [visit(v) for v in node]
+
+            return node
+
+        return visit(dict(schema))
 
     def _prepare_groq_tools(self) -> List[dict]:
         """Convert registered tools to Groq format."""

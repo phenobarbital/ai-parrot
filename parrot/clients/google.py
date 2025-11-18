@@ -20,6 +20,7 @@ from google.genai.types import (
     ModelContent,
     UserContent,
 )
+from google.oauth2 import service_account
 from google.genai import types
 from navconfig import config, BASE_DIR
 import pandas as pd
@@ -78,11 +79,18 @@ class GoogleGenAIClient(AbstractClient):
     Client for interacting with Google's Generative AI, with support for parallel function calling.
 
     Only Gemini-2.5-pro works well with multi-turn function calling.
+    Supports both API Key (Gemini Developer API) and Service Account (Vertex AI).
     """
     client_type: str = 'google'
     client_name: str = 'google'
 
-    def __init__(self, **kwargs):
+    def __init__(self, vertexai: bool = False, **kwargs):
+        self.vertexai: bool = vertexai
+        self.vertex_location = kwargs.get('location', config.get('VERTEX_REGION'))
+        self.vertex_project = kwargs.get('project', config.get('VERTEX_PROJECT_ID'))
+        self._credentials_file = kwargs.get('credentials_file', config.get('VERTEX_CREDENTIALS_FILE'))
+        if isinstance(self._credentials_file, str):
+            self._credentials_file = Path(self._credentials_file).expanduser()
         self.api_key = kwargs.pop('api_key', config.get('GOOGLE_API_KEY'))
         super().__init__(**kwargs)
         self.client = None
@@ -91,6 +99,27 @@ class GoogleGenAIClient(AbstractClient):
 
     def get_client(self) -> genai.Client:
         """Get the underlying Google GenAI client."""
+        if self.vertexai:
+            self.logger.info(
+                f"Initializing Vertex AI for project {self.vertex_project} in {self.vertex_location}"
+            )
+            try:
+                if self._credentials_file and self._credentials_file.exists():
+                    credentials = service_account.Credentials.from_service_account_file(
+                        str(self._credentials_file)
+                    )
+                else:
+                    credentials = None  # Use default credentials
+
+                return genai.Client(
+                    vertexai=True,
+                    project=self.vertex_project,
+                    location=self.vertex_location,
+                    credentials=credentials
+                )
+            except Exception as exc:
+                self.logger.error(f"Failed to initialize Vertex AI client: {exc}")
+                raise
         return genai.Client(
             api_key=self.api_key
         )
@@ -145,21 +174,59 @@ class GoogleGenAIClient(AbstractClient):
             # Mixed intent - prefer custom functions if available, otherwise builtin
             return "custom_functions"
 
+    def _resolve_schema_refs(self, schema: dict, defs: dict = None) -> dict:
+        """
+        Recursively resolves $ref in JSON schema by inlining definitions.
+        This is crucial for Pydantic v2 schemas used with Gemini.
+        """
+        if defs is None:
+            defs = schema.get('$defs', schema.get('definitions', {}))
+
+        if not isinstance(schema, dict):
+            return schema
+
+        # Handle $ref
+        if '$ref' in schema:
+            ref_path = schema['$ref']
+            # Extract definition name (e.g., "#/$defs/MyModel" -> "MyModel")
+            def_name = ref_path.split('/')[-1]
+            if def_name in defs:
+                # Get the definition
+                resolved = self._resolve_schema_refs(defs[def_name], defs)
+                # Merge with any other properties in the current schema (rare but possible)
+                merged = {k: v for k, v in schema.items() if k != '$ref'}
+                merged.update(resolved)
+                return merged
+
+        # Process children
+        new_schema = {}
+        for key, value in schema.items():
+            if key == 'properties' and isinstance(value, dict):
+                new_schema[key] = {
+                    k: self._resolve_schema_refs(v, defs)
+                    for k, v in value.items()
+                }
+            elif key == 'items' and isinstance(value, dict):
+                new_schema[key] = self._resolve_schema_refs(value, defs)
+            elif key in ('anyOf', 'allOf', 'oneOf') and isinstance(value, list):
+                new_schema[key] = [self._resolve_schema_refs(item, defs) for item in value]
+            else:
+                new_schema[key] = value
+
+        return new_schema
+
     def clean_google_schema(self, schema: dict) -> dict:
         """
         Clean a Pydantic-generated schema for Google Function Calling compatibility.
-
-        Google's function calling doesn't support many advanced JSON Schema features
-        that Pydantic generates by default.
-
-        Args:
-            schema: Raw Pydantic schema
-
-        Returns:
-            Cleaned schema compatible with Google Function Calling
+        NOW INCLUDES: Reference resolution.
         """
         if not isinstance(schema, dict):
             return schema
+
+        # 1. Resolve References FIRST
+        # Pydantic v2 uses $defs, v1 uses definitions
+        if '$defs' in schema or 'definitions' in schema:
+            schema = self._resolve_schema_refs(schema)
 
         cleaned = {}
 
@@ -173,56 +240,45 @@ class GoogleGenAIClient(AbstractClient):
         for key, value in schema.items():
             if key in supported_fields:
                 if key == 'properties':
-                    # Recursively clean properties
                     cleaned[key] = {k: self.clean_google_schema(v) for k, v in value.items()}
                 elif key == 'items':
-                    # Clean array items
                     cleaned[key] = self.clean_google_schema(value)
                 else:
                     cleaned[key] = value
 
-        # Handle special cases for type conversion
+        # ... [Rest of your existing type conversion logic stays the same] ...
         if 'type' in cleaned:
-            # Convert complex types to simple ones
             if cleaned['type'] == 'integer':
                 cleaned['type'] = 'number'  # Google prefers 'number' over 'integer'
+            elif cleaned['type'] == 'object' and 'properties' not in cleaned:
+                # Ensure objects have properties field, even if empty, to prevent confusion
+                cleaned['properties'] = {}
             elif isinstance(cleaned['type'], list):
-                # Handle union types - take the first non-null type
                 non_null_types = [t for t in cleaned['type'] if t != 'null']
-                if non_null_types:
-                    cleaned['type'] = non_null_types[0]
-                else:
-                    cleaned['type'] = 'string'  # fallback
+                cleaned['type'] = non_null_types[0] if non_null_types else 'string'
 
-        # Handle anyOf (union types) - convert to simple type
+        # Handle anyOf (union types) - Simplified for Gemini
         if 'anyOf' in schema:
-            # Try to find a non-null type from anyOf
-            for option in schema['anyOf']:
-                if not isinstance(option, dict):
-                    continue
-
+             for option in schema['anyOf']:
+                if not isinstance(option, dict): continue
                 option_type = option.get('type')
-                if option_type is None or option_type == 'null':
-                    continue
-
-                cleaned['type'] = option_type
-                # If it's an array, also copy the items
-                if option_type == 'array' and 'items' in option:
-                    cleaned['items'] = self.clean_google_schema(option['items'])
-                # Copy other relevant fields
-                for field in ['description', 'enum', 'default']:
-                    if field in option:
-                        cleaned[field] = option[field]
-                break
-            else:
-                # Fallback to string if no good type found
-                cleaned['type'] = 'string'
+                if option_type and option_type != 'null':
+                    cleaned['type'] = option_type
+                    if option_type == 'array' and 'items' in option:
+                        cleaned['items'] = self.clean_google_schema(option['items'])
+                    if option_type == 'object' and 'properties' in option:
+                        cleaned['properties'] = {k: self.clean_google_schema(v) for k, v in option['properties'].items()}
+                        if 'required' in option:
+                            cleaned['required'] = option['required']
+                    break
+             if 'type' not in cleaned:
+                 cleaned['type'] = 'string'
 
         # Ensure object-like schemas always advertise an object type
         if 'properties' in cleaned and cleaned.get('type') != 'object':
             cleaned['type'] = 'object'
 
-        # Remove problematic fields that Google doesn't support
+        # Remove problematic fields
         problematic_fields = {
             'prefixItems', 'additionalItems', 'minItems', 'maxItems',
             'minLength', 'maxLength', 'pattern', 'format', 'minimum',
@@ -235,6 +291,29 @@ class GoogleGenAIClient(AbstractClient):
             cleaned.pop(field, None)
 
         return cleaned
+
+    def _recursive_json_repair(self, data: Any) -> Any:
+        """
+        Traverses a dictionary/list and attempts to parse string values
+        that look like JSON objects/lists.
+        """
+        if isinstance(data, dict):
+            return {k: self._recursive_json_repair(v) for k, v in data.items()}
+        elif isinstance(data, list):
+            return [self._recursive_json_repair(item) for item in data]
+        elif isinstance(data, str):
+            data = data.strip()
+            # fast check if it looks like json
+            if (data.startswith('{') and data.endswith('}')) or \
+               (data.startswith('[') and data.endswith(']')):
+                try:
+                    import json
+                    parsed = json.loads(data)
+                    # Recurse into the parsed object in case it has nested strings
+                    return self._recursive_json_repair(parsed)
+                except (json.JSONDecodeError, TypeError):
+                    return data
+        return data
 
     def _apply_structured_output_schema(
         self,
@@ -627,7 +706,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                 tool_id = fc.id or f"call_{uuid.uuid4().hex[:8]}"
                 self.logger.notice(f"🔍 Tool: {fc.name}")
                 self.logger.notice(f"📤 Raw Result Type: {type(result)}")
-                self.logger.notice(f"📤 Raw Result: {result}")
+                # self.logger.notice(f"📤 Raw Result: {result}")
 
                 try:
                     response_content = self._process_tool_result_for_api(result)
@@ -814,13 +893,16 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
         # Method 1: Try response.text first (fastest path)
         try:
             if hasattr(response, 'text') and response.text:
-                text = response.text.strip()
-                if text:
-                    self.logger.debug(f"Extracted text via response.text: '{text[:100]}...'")
+                if (text := response.text.strip()):
+                    self.logger.debug(
+                        f"Extracted text via response.text: '{text[:100]}...'"
+                    )
                     return text
         except Exception as e:
             # This is expected with reasoning models that have mixed content
-            self.logger.debug(f"response.text failed (normal for reasoning models): {e}")
+            self.logger.debug(
+                f"response.text failed (normal for reasoning models): {e}"
+            )
 
         # Method 2: Manual extraction from parts (more robust)
         try:
@@ -839,8 +921,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                 for part in response.candidates[0].content.parts:
                     # Check for regular text content
                     if hasattr(part, 'text') and part.text:
-                        clean_text = part.text.strip()
-                        if clean_text:
+                        if (clean_text := part.text.strip()):
                             text_parts.append(clean_text)
                             self.logger.debug(
                                 f"Found text part: '{clean_text[:50]}...'"
@@ -855,13 +936,16 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
 
                 # Log reasoning model detection
                 if thought_parts_found > 0:
-                    self.logger.debug(f"Detected reasoning model with {thought_parts_found} thought parts")
+                    self.logger.debug(
+                        f"Detected reasoning model with {thought_parts_found} thought parts"
+                    )
 
                 # Combine text parts
                 if text_parts:
-                    combined_text = "".join(text_parts).strip()
-                    if combined_text:
-                        self.logger.debug(f"Successfully extracted text from {len(text_parts)} parts")
+                    if (combined_text := "".join(text_parts).strip()):
+                        self.logger.debug(
+                            f"Successfully extracted text from {len(text_parts)} parts"
+                        )
                         return combined_text
                 else:
                     self.logger.debug("No text parts found in response parts")
