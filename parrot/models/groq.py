@@ -4,7 +4,6 @@ class GroqModel(Enum):
     """Description for Enabled Groq models.
 
     Only these models are supporting Structured Output:
-    - moonshotai/kimi-k2-instruct
     - meta-llama/llama-4-maverick-17b-128e-instruct
     - meta-llama/llama-4-scout-17b-16e-instruct
 
