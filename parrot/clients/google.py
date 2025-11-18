@@ -627,7 +627,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                 tool_id = fc.id or f"call_{uuid.uuid4().hex[:8]}"
                 self.logger.notice(f"🔍 Tool: {fc.name}")
                 self.logger.notice(f"📤 Raw Result Type: {type(result)}")
-                self.logger.notice(f"📤 Raw Result: {result}")
+                # self.logger.notice(f"📤 Raw Result: {result}")
 
                 try:
                     response_content = self._process_tool_result_for_api(result)
@@ -814,9 +814,12 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
         # Method 1: Try response.text first (fastest path)
         try:
             if hasattr(response, 'text') and response.text:
+                print('DEBUG RESPONSE > ', response)
                 text = response.text.strip()
                 if text:
-                    self.logger.debug(f"Extracted text via response.text: '{text[:100]}...'")
+                    self.logger.debug(
+                        f"Extracted text via response.text: '{text[:100]}...'"
+                    )
                     return text
         except Exception as e:
             # This is expected with reasoning models that have mixed content

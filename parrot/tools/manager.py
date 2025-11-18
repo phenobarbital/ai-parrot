@@ -134,21 +134,34 @@ class ToolSchemaAdapter:
         """Clean schema for OpenAI/Anthropic compatibility."""
         cleaned = schema.copy()
 
-        # These providers generally support full JSON Schema
-        # Just ensure additionalProperties is properly set
-        def ensure_additional_properties(obj):
+        def ensure_openai_object(obj):
             if isinstance(obj, dict):
-                if obj.get("type") == "object" and "additionalProperties" not in obj:
-                    obj["additionalProperties"] = False
+                if obj.get("type") == "object":
+                    props = obj.get("properties", {}) or {}
 
-                for key, value in obj.items():
-                    ensure_additional_properties(value)
+                    # Ensure additionalProperties is set
+                    if "additionalProperties" not in obj:
+                        obj["additionalProperties"] = False
+
+                    # 🔑 Ensure 'required' exists and includes ALL properties
+                    prop_keys = list(props.keys())
+                    if "required" not in obj:
+                        obj["required"] = prop_keys
+                    else:
+                        required = obj.get("required") or []
+                        missing = [k for k in prop_keys if k not in required]
+                        obj["required"] = required + missing
+
+                # Recurse into nested dicts/lists
+                for _, value in obj.items():
+                    ensure_openai_object(value)
+
             elif isinstance(obj, list):
                 for item in obj:
-                    ensure_additional_properties(item)
+                    ensure_openai_object(item)
 
         if 'parameters' in cleaned:
-            ensure_additional_properties(cleaned['parameters'])
+            ensure_openai_object(cleaned['parameters'])
 
         return cleaned
 

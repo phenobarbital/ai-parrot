@@ -1274,42 +1274,80 @@ class AbstractClient(ABC):
         return json_decoder(s)
 
     def _oai_normalize_schema(self, schema: dict) -> dict:
-        """OpenAI requires 'additionalProperties': false on every object."""
+        """
+        Normalize JSON schema for OpenAI `response_format`:
+
+        - For every object with explicit properties:
+          - set additionalProperties: false
+          - ensure `required` exists and includes all property keys.
+        - Recurse through properties, anyOf/allOf/oneOf, $defs/definitions, arrays, etc.
+        """
+
         def visit(node):
             if isinstance(node, dict):
                 t = node.get("type")
+
                 if t == "object":
-                    # enforce additionalProperties: false
-                    if node.get("additionalProperties") is not False:
-                        node["additionalProperties"] = False
-                    # dive into object children
+                    props = node.get("properties")
+                    has_explicit_props = isinstance(props, dict) and len(props) > 0
+
+                    if has_explicit_props:
+                        # 1) enforce additionalProperties: false
+                        if node.get("additionalProperties") is not False:
+                            node["additionalProperties"] = False
+
+                        # 2) enforce required contains ALL property keys
+                        prop_keys = list(props.keys())
+                        existing_required = node.get("required") or []
+                        # keep order stable: existing first, then missing
+                        missing = [k for k in prop_keys if k not in existing_required]
+                        node["required"] = existing_required + missing
+
+                    # recurse into nested schemas
                     for key in ("properties", "patternProperties"):
                         if key in node and isinstance(node[key], dict):
                             for sub in node[key].values():
                                 visit(sub)
-                    # handle composite keywords
+
                     for key in ("allOf", "anyOf", "oneOf"):
                         if key in node and isinstance(node[key], list):
                             for sub in node[key]:
                                 visit(sub)
-                    # handle definitions
+
                     for key in ("$defs", "definitions"):
                         if key in node and isinstance(node[key], dict):
                             for sub in node[key].values():
                                 visit(sub)
-                elif t == "array" and "items" in node:
-                    visit(node["items"])
+
+                elif t == "array":
+                    # recurse into items if present
+                    if "items" in node and isinstance(node["items"], (dict, list)):
+                        visit(node["items"])
+
+                    # recurse into prefixItems if present (e.g. from tuples)
+                    if "prefixItems" in node and isinstance(node["prefixItems"], list):
+                        for sub in node["prefixItems"]:
+                            visit(sub)
+
+                    # still walk into $defs/definitions if any
+                    for key in ("$defs", "definitions"):
+                        if key in node and isinstance(node[key], dict):
+                            for sub in node[key].values():
+                                visit(sub)
+
                 else:
-                    # still check nested defs even if no explicit type
+                    # other types: still look into definitions
                     for key in ("$defs", "definitions"):
                         if key in node and isinstance(node[key], dict):
                             for sub in node[key].values():
                                 visit(sub)
+
             elif isinstance(node, list):
                 for item in node:
                     visit(item)
+
             return node
-        # copy defensively
+
         return visit(dict(schema))
 
     def _build_response_format_from(self, output_config):

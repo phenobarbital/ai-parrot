@@ -90,7 +90,7 @@ class PythonREPLArgs(BaseModel):
         description="Python code to execute in the REPL environment"
     )
     debug: bool = Field(
-        default=False,
+        ...,
         description="Enable debug mode for code execution"
     )
 
@@ -642,25 +642,6 @@ print("Use 'execution_results' dict to store intermediate results.")
                 code,
                 debug
             )
-
-            # # Prepare the response
-            # response = {
-            #     "output": result,
-            #     "code_executed": code,
-            #     "debug_mode": debug,
-            #     "execution_successful": not result.startswith(("SyntaxError:", "ExecutionError:", "Error:")),
-            #     "matplotlib_backend": matplotlib.get_backend(),
-            # }
-
-            # # Add information about available variables
-            # if debug:
-            #     response["available_variables"] = {
-            #         "locals_count": len(self.locals),
-            #         "globals_count": len(self.globals),
-            #         "execution_results_keys": list(self.locals.get('execution_results', {}).keys()),
-            #         "open_figures": len(plt.get_fignums())
-            #     }
-
             return result
 
         except Exception as e:

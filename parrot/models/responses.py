@@ -79,6 +79,8 @@ class AIMessage(BaseModel):
     )
 
     response: Optional[str] = None
+    data: Optional[Any] = None
+    data_metadata: Optional[Dict] = None
 
     images: Optional[List[Path]] = Field(
         default_factory=list,
