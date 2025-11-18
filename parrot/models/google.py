@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 class GoogleModel(Enum):
     """Enum for Google AI models."""
+    GEMINI_3_PRO_PREVIEW = "gemini-3-pro-preview"
     GEMINI_2_5_FLASH = "gemini-2.5-flash"
     GEMINI_2_5_FLASH_PREVIEW = "gemini-2.5-flash-preview-09-2025"
     GEMINI_2_5_FLASH_LITE_PREVIEW = "gemini-2.5-flash-lite-preview-09-2025"

@@ -73,12 +73,14 @@ class GroqClient(AbstractClient):
         """
         Fix JSON schema to comply with Groq's structured-output validator.
 
-        - Start from the OpenAI-normalized schema (handles additionalProperties).
+        - Start from the OpenAI-normalized schema (handles additionalProperties, required, etc.).
         - Collapse Optional[T] patterns:
             anyOf: [T, {"type": "null"}]  ->  T (keeping default/title/description).
-        - Drop some constraints Groq doesn't care about.
+        - Resolve Groq's ambiguity with integer vs number:
+            anyOf: [{"type": "integer"}, {"type": "number"}, ...] -> drop "integer".
+        - Drop some scalar constraints Groq doesn't care about.
         """
-        # 1) reuse your OpenAI normalization (with the "has_explicit_props" fix)
+        # First apply your generic OpenAI-style normalization
         schema = self._oai_normalize_schema(schema)
 
         unsupported_constraints = [
@@ -90,14 +92,30 @@ class GroqClient(AbstractClient):
 
         def visit(node):
             if isinstance(node, dict):
-                # Drop unsupported scalar constraints
+                # Drop constraints Groq doesn't care about
                 for c in unsupported_constraints:
                     node.pop(c, None)
 
-                # --- collapse Optional[T] anyOf patterns ---
+                # --- Handle anyOf ---
                 if "anyOf" in node and isinstance(node["anyOf"], list):
                     variants = node["anyOf"]
 
+                    # 1) Fix integer/number overlap for Groq
+                    type_variants = [
+                        v.get("type") for v in variants
+                        if isinstance(v, dict) and "type" in v
+                    ]
+                    if "number" in type_variants and "integer" in type_variants:
+                        new_variants = []
+                        for v in variants:
+                            if isinstance(v, dict) and v.get("type") == "integer":
+                                # drop integer variant when number is also present
+                                continue
+                            new_variants.append(v)
+                        variants = new_variants
+                        node["anyOf"] = variants
+
+                    # 2) Collapse Optional[T] pattern: anyOf: [T, {"type": "null"}]
                     non_null = [
                         v for v in variants
                         if not (isinstance(v, dict) and v.get("type") == "null")
@@ -107,37 +125,41 @@ class GroqClient(AbstractClient):
                         if isinstance(v, dict) and v.get("type") == "null"
                     ]
 
-                    # Pattern: anyOf: [T, {"type": "null"}]  ->  T
                     if len(non_null) == 1 and len(nulls) >= 1:
                         base = visit(non_null[0])  # recurse into T
 
-                        # Preserve metadata from the wrapper node (title, default, description…)
+                        # Preserve metadata from wrapper (title, default, description...)
                         for k, v in list(node.items()):
                             if k == "anyOf":
                                 continue
-                            # don't overwrite keys already set in base
                             base.setdefault(k, v)
 
                         node.clear()
                         node.update(base)
                     else:
-                        # Generic recurse into anyOf if it's not the simple Optional[T] case
+                        # Just recurse into each variant
                         node["anyOf"] = [visit(v) for v in variants]
 
-                # Recurse into properties / patternProperties
+                # Recurse into object properties / patternProperties
                 for key in ("properties", "patternProperties"):
                     if key in node and isinstance(node[key], dict):
                         for k, v in list(node[key].items()):
                             node[key][k] = visit(v)
 
-                # Recurse into items
+                # Recurse into items (array element schemas)
                 if "items" in node and isinstance(node["items"], (dict, list)):
                     node["items"] = visit(node["items"])
 
-                # Recurse into combinators
+                # Recurse into combinators other than anyOf
                 for key in ("allOf", "oneOf"):
                     if key in node and isinstance(node[key], list):
                         node[key] = [visit(v) for v in node[key]]
+
+                # 🔴 IMPORTANT: recurse into $defs / definitions (this is what was missing)
+                for key in ("$defs", "definitions"):
+                    if key in node and isinstance(node[key], dict):
+                        for k, v in list(node[key].items()):
+                            node[key][k] = visit(v)
 
             elif isinstance(node, list):
                 return [visit(v) for v in node]

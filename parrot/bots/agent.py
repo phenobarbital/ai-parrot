@@ -87,6 +87,7 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
         human_prompt: str = None,
         use_tools: bool = True,
         instructions: Optional[str] = None,
+        dataframes: Optional[Dict[str, pd.DataFrame]] = None,
         **kwargs
     ):
         self.agent_id = self.agent_id or agent_id
@@ -123,7 +124,7 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
             self.tool_manager
         )
         # to work with dataframes:
-        self.dataframes = {}  # dict to store dataframes with names
+        self.dataframes = dataframes or {}
         self._dataframe_info_cache = None
 
     def _get_default_tools(self, tools: list) -> List[AbstractTool]:

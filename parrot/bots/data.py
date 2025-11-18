@@ -7,7 +7,7 @@ import uuid
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
 from string import Template
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, field_validator
 import redis.asyncio as aioredis
 import pandas as pd
 import numpy as np
@@ -78,16 +78,21 @@ class PandasAgentResponse(BaseModel):
                     "the $100 threshold. Product C leads with $150 in sales."
                     " Product A and D also perform well."
                 ),
-                "columns": ["store_id", "revenue"],
-                "rows": [
-                    ["TCTX", 801467.93],
-                    ["OMNE", 587654.26],
-                    ...
-                ],
+                "data": {
+                    "columns": ["store_id", "revenue"],
+                    "rows": [
+                        ["TCTX", 801467.93],
+                        ["OMNE", 587654.26]
+                    ]
+                },
                 "metadata": {
                     "shape": [2, 2],
                     "columns": ["id", "value"],
-                    "summary_stats": {"mean": 125.42, "max": 150.00}
+                    "summary_stats": [
+                        {"metric": "mean", "value": 550000},
+                        {"metric": "max", "value": 1000000},
+                        {"metric": "min", "value": 100000}
+                    ]
                 }
             }
         },
@@ -105,7 +110,7 @@ class PandasAgentResponse(BaseModel):
         default=None,
         description=(
             "The resulting DataFrame serialized as a list of records. "
-            "Use this format: [{'col1': val1, 'col2': val2}, ...]. "
+            "Use this format: {'columns': [...], 'rows': [[...], [...], ...]}."
             "Set to null if the response doesn't produce tabular data."
         )
     )
@@ -115,12 +120,36 @@ class PandasAgentResponse(BaseModel):
         description="Additional metadata like shape, dtypes, summary stats"
     )
 
-    def to_dataframe(self) -> Optional[pd.DataFrame]:
-        """Convert data back to DataFrame."""
-        if isinstance(self.data, pd.DataFrame) and self.data.empty:
-            return pd.DataFrame()
-        return pd.DataFrame() if self.data is None else pd.DataFrame(self.data)
+    @field_validator('data', mode='before')
+    @classmethod
+    def parse_data(cls, v):
+        """Handle cases where LLM returns stringified JSON for data."""
+        if isinstance(v, str):
+            try:
+                v = json_decoder(v)
+            except Exception:
+                # If it's not valid JSON, return None to avoid validation error
+                return None
+        if isinstance(v, pd.DataFrame):
+            return cls.data.model_validate(cls.data).from_dataframe(v)
+        return v
 
+    @field_validator('metadata', mode='before')
+    @classmethod
+    def parse_metadata(cls, v):
+        """Handle cases where LLM returns stringified JSON for metadata."""
+        if isinstance(v, str):
+            try:
+                v = json_decoder(v)
+            except Exception:
+                # If it's not valid JSON, return None to avoid validation error
+                return None
+        return v
+
+    def to_dataframe(self) -> Optional[pd.DataFrame]:
+        if not self.data:
+            return pd.DataFrame()
+        return pd.DataFrame(self.data.rows, columns=self.data.columns)
 
 
 PANDAS_SYSTEM_PROMPT = """You are a data analysis expert specializing in pandas DataFrames.
@@ -291,14 +320,11 @@ class PandasAgent(BasicAgent):
         self._capabilities = capabilities
         self._generate_eda = generate_eda
         self._cache_expiration = cache_expiration
-
         # Initialize dataframes and metadata
         self.dataframes, self.df_metadata = (
             self._define_dataframe(df)
-            if df is not None else
-            ({}, {})
+            if df is not None else ({}, {})
         )
-
         # Initialize base agent (AbstractBot will set chatbot_id)
         super().__init__(
             name=name,
@@ -306,19 +332,17 @@ class PandasAgent(BasicAgent):
             system_prompt=system_prompt,
             tools=tools,
             temperature=temperature,
+            dataframes=self.dataframes,
             **kwargs
         )
         self.description = "A specialized agent for data analysis using pandas DataFrames"
 
-    def _get_default_tools(self, tools: list) -> List[AbstractTool]:
+    def agent_tools(self) -> List[AbstractTool]:
         """
         Override to add PythonPandasTool and enhanced MetadataTool.
 
         Key change: MetadataTool now receives dataframes reference for dynamic EDA.
         """
-        if not tools:
-            tools = []
-
         report_dir = STATIC_DIR.joinpath(self.agent_id, 'documents')
         report_dir.mkdir(parents=True, exist_ok=True)
 
@@ -352,10 +376,10 @@ class PandasAgent(BasicAgent):
             dataframes=self.dataframes
         )
 
-        tools.append(pandas_tool)
-        tools.append(metadata_tool)
-
-        return tools
+        return [
+            pandas_tool,
+            metadata_tool
+        ]
 
     def _define_dataframe(
         self,
@@ -540,17 +564,19 @@ class PandasAgent(BasicAgent):
         if self.dataframes:
             first_name = list(self.dataframes.keys())[0]
             first_alias = alias_map.get(first_name, "df1")
-            df_info_parts.extend([
-                f"  ```python",
-                f"  # Using original name (recommended):",
-                f"  result = {first_name}.groupby('column').sum()",
-                f"  ```",
-                f"- ✅ **Also works**: Use aliases for brevity",
-                f"  ```python",
-                f"  # Using alias (convenience):",
-                f"  result = {first_alias}.groupby('column').sum()",
-                f"  ```",
-            ])
+            df_info_parts.extend(
+                [
+                    "  ```python",
+                    "  # Using original name (recommended):",
+                    f"  result = {first_name}.groupby('column').sum()",
+                    "  ```",
+                    "- ✅ **Also works**: Use aliases for brevity",
+                    "  ```python",
+                    "  # Using alias (convenience):",
+                    f"  result = {first_alias}.groupby('column').sum()",
+                    "  ```",
+                ]
+            )
 
         df_info_parts.extend([
             "",
@@ -607,6 +633,7 @@ class PandasAgent(BasicAgent):
             app: Optional aiohttp Application
         """
         if queries is not None:
+            # if queries provided, override existing
             self._queries = queries
 
         # Load from queries if specified
@@ -801,10 +828,9 @@ class PandasAgent(BasicAgent):
                     )
 
                 # Call the LLM
-                print('ARGS > ', llm_kwargs)
+                # print('ARGS > ', llm_kwargs)
                 response = await client.ask(**llm_kwargs)
-
-                print('LLM RESPONSE > ', response)
+                # print('LLM RESPONSE > ', response)
 
                 # Enhance response with conversation context metadata
                 response.set_conversation_context_info(
@@ -1097,9 +1123,9 @@ class PandasAgent(BasicAgent):
         """
         dfs = {}
         for query in queries:
+            print('EXECUTING QUERY SOURCE: ', query)
             if not isinstance(query, str):
                 raise ValueError(f"Query {query} is not a string")
-
             try:
                 qy = QS(slug=query)
                 df, error = await qy.query(output_format='pandas')
@@ -1108,11 +1134,14 @@ class PandasAgent(BasicAgent):
                     raise ValueError(f"Query {query} failed: {error}")
 
                 if not isinstance(df, pd.DataFrame):
-                    raise ValueError(f"Query {query} did not return a DataFrame")
+                    raise ValueError(
+                        f"Query {query} did not return a DataFrame"
+                    )
 
                 dfs[query] = df
 
             except Exception as e:
+                print(f"Error executing query {query}: {e}")
                 raise ValueError(
                     f"Error executing query {query}: {e}"
                 ) from e
@@ -1232,6 +1261,7 @@ class PandasAgent(BasicAgent):
                 logging.info(f"Using cached data for agent {agent_name}")
                 return cached_dfs
 
+        print('GENERATING DATA FOR QUERY: ', query)
         # Generate data
         dfs = await cls._execute_query(query)
 
