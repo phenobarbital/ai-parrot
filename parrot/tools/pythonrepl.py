@@ -90,7 +90,6 @@ class PythonREPLArgs(BaseModel):
         description="Python code to execute in the REPL environment"
     )
     debug: bool = Field(
-        ...,
         description="Enable debug mode for code execution"
     )
 

@@ -1270,7 +1270,7 @@ class AbstractClient(ABC):
         s = re.sub(r"\s*```$", "", s)
         # grab the largest {...} or [...] block if extra prose sneaks in
         m = re.search(r"(\{.*\}|\[.*\])", s, flags=re.S)
-        s = m.group(1) if m else s
+        s = m[1] if m else s
         return json_decoder(s)
 
     def _oai_normalize_schema(self, schema: dict) -> dict:

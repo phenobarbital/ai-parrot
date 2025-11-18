@@ -26,6 +26,17 @@ from ..conf import REDIS_HISTORY_URL, STATIC_DIR
 from ..bots.prompts import OUTPUT_SYSTEM_PROMPT
 
 
+Scalar = Union[str, int, float, bool, None]
+
+class PandasTable(BaseModel):
+    columns: List[str] = Field(
+        description="Column names, in order"
+    )
+    rows: List[List[Scalar]] = Field(
+        description="Rows as lists of scalar values, aligned with `columns`"
+    )
+
+
 class SummaryStat(BaseModel):
     metric: str = Field(
         description="Name of the metric, e.g. 'mean', 'max', 'min', 'std'"
@@ -67,10 +78,11 @@ class PandasAgentResponse(BaseModel):
                     "the $100 threshold. Product C leads with $150 in sales."
                     " Product A and D also perform well."
                 ),
-                "data": [
-                    {"product": "A", "sales": 120.50},
-                    {"product": "C", "sales": 150.00},
-                    {"product": "D", "sales": 105.75}
+                "columns": ["store_id", "revenue"],
+                "rows": [
+                    ["TCTX", 801467.93],
+                    ["OMNE", 587654.26],
+                    ...
                 ],
                 "metadata": {
                     "shape": [2, 2],
@@ -89,7 +101,7 @@ class PandasAgentResponse(BaseModel):
         )
     )
 
-    data: Optional[List[Dict[str, Any]]] = Field(
+    data: Optional[PandasTable] = Field(
         default=None,
         description=(
             "The resulting DataFrame serialized as a list of records. "
