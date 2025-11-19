@@ -287,10 +287,14 @@ class TableRenderer(BaseRenderer):
         if df.empty:
             return "No Data Available", None
 
+        data_content = df.to_dict(orient='records')
+
+        output_format = kwargs.get('output_format', environment)
+
         # 2. Environment: Terminal -> Rich Table
-        if environment == 'terminal':
+        if output_format == 'terminal':
             rich_table = self._render_rich_table(df, title)
-            return df, rich_table
+            return data_content, rich_table
 
         # 3. Prepare Content for HTML/JS
         content = ""
@@ -324,10 +328,10 @@ class TableRenderer(BaseRenderer):
         )
 
         # 5. Environment: Jupyter -> Widget
-        if environment in {'jupyter', 'notebook', 'colab'}:
+        if output_format in {'jupyter', 'notebook', 'colab'}:
             if IPYWIDGETS_AVAILABLE:
                 return df, IPyHTML(value=wrapped_html)
             return df, wrapped_html
 
         # 6. Environment: HTML (return string)
-        return df, wrapped_html
+        return data_content, wrapped_html

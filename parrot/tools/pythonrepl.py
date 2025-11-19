@@ -89,9 +89,7 @@ class PythonREPLArgs(BaseModel):
     code: str = Field(
         description="Python code to execute in the REPL environment"
     )
-    debug: bool = Field(
-        description="Enable debug mode for code execution"
-    )
+    debug: bool = False
 
 
 class PythonREPLTool(AbstractTool):
@@ -245,10 +243,7 @@ class PythonREPLTool(AbstractTool):
         """Execute a function with proper error isolation to prevent crashes."""
         try:
             return func(*args, **kwargs)
-        except SystemExit:
-            # Don't catch SystemExit as it's used for normal program termination
-            raise
-        except KeyboardInterrupt:
+        except (SystemExit, KeyboardInterrupt):
             # Don't catch KeyboardInterrupt as users should be able to interrupt
             raise
         except Exception as e:
@@ -437,8 +432,7 @@ print("Use 'execution_results' dict to store intermediate results.")
 
         try:
             # Save the current plot
-            save_func = self.locals.get('save_current_plot')
-            if save_func:
+            if (save_func := self.locals.get('save_current_plot')):
                 result = save_func()
                 # Clear the plot after saving to prevent memory issues
                 plt.close('all')
@@ -635,13 +629,12 @@ print("Use 'execution_results' dict to store intermediate results.")
 
             # Execute the code in a thread to avoid blocking
             loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(
+            return await loop.run_in_executor(
                 None,
                 self._execute_code,
                 code,
                 debug
             )
-            return result
 
         except Exception as e:
             self.logger.error(f"Error executing Python code: {e}")
@@ -749,7 +742,9 @@ print("Use 'execution_results' dict to store intermediate results.")
             }
 
         except Exception as e:
-            raise ValueError(f"Error saving execution results: {e}")
+            raise ValueError(
+                f"Error saving execution results: {e}"
+            ) from e
 
     def load_execution_results(self, file_path: Union[str, Path]) -> Dict[str, Any]:
         """
@@ -784,7 +779,9 @@ print("Use 'execution_results' dict to store intermediate results.")
             }
 
         except Exception as e:
-            raise ValueError(f"Error loading execution results: {e}")
+            raise ValueError(
+                f"Error loading execution results: {e}"
+            ) from e
 
     def _deserialize_execution_results(self, serialized_results: Dict[str, Any]) -> Dict[str, Any]:
         """

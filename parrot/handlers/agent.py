@@ -10,6 +10,7 @@ import os
 import json
 import inspect
 from aiohttp import web
+import pandas as pd
 from datamodel.parsers.json import json_encoder  # noqa  pylint: disable=E0611
 from navconfig.logging import logging
 from navigator_auth.decorators import is_authenticated, user_session
@@ -18,9 +19,6 @@ from ..bots.abstract import AbstractBot
 from ..models.responses import AIMessage, AgentResponse
 from ..outputs import OutputMode, OutputFormatter
 from ..mcp.integration import MCPServerConfig
-
-
-logging.getLogger("parrot").setLevel(logging.DEBUG)
 
 
 @is_authenticated()
@@ -573,7 +571,9 @@ class AgentTalk(BaseView):
                 status=400
             )
         except Exception as e:
-            self.logger.error(f"Error in AgentTalk: {e}", exc_info=True)
+            self.logger.error(
+                f"Error in AgentTalk: {e}", exc_info=True
+            )
             return self.json_response(
                 {
                     "error": "Internal server error",
@@ -660,7 +660,11 @@ class AgentTalk(BaseView):
 
         if output_format == 'json':
             # Return structured JSON response
-            return web.json_response({
+            print('::::: Formatting response as JSON :::: ')
+            if isinstance(response.output, pd.DataFrame):
+                # Convert DataFrame to dict
+                response.output = response.output.to_dict(orient='records')
+            obj_response = {
                 "input": response.input,
                 "output": response.output,
                 "content": response.content,
@@ -688,7 +692,11 @@ class AgentTalk(BaseView):
                     }
                     for tool in getattr(response, 'tool_calls', [])
                 ] if format_kwargs.get('include_tool_calls', True) else []
-            }, dumps=json_encoder)
+            }
+            print(obj_response)
+            return web.json_response(
+                obj_response, dumps=json_encoder
+            )
 
         elif output_format == 'html':
             interactive = format_kwargs.get('interactive', False)

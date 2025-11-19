@@ -117,6 +117,9 @@ class BotManager:
     async def _process_startup_results(self, startup_results: Dict[str, Any]) -> None:
         """Process startup instantiation results."""
         for agent_name, result in startup_results.items():
+            print('===========================================')
+            print('Agent startup result:', agent_name, result)
+            print('===========================================')
             if result["status"] == "success":
                 if instance := result.get("instance"):
                     self._bots[agent_name] = instance
@@ -331,6 +334,7 @@ class BotManager:
         if name in self._bots:
             return self._bots[name]
         if self.registry.has(name):
+            print(' Getting bot instance from registry:', name)
             try:
                 bot_instance = await self.registry.get_instance(name)
                 if bot_instance:

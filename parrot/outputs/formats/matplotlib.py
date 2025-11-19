@@ -3,13 +3,12 @@ import io
 import base64
 import uuid
 from pathlib import Path
-from .base import BaseChart
+from .chart import BaseChart
 from . import register_renderer
 from ...models.outputs import OutputMode
 
 try:
     from rich.panel import Panel
-    from rich.console import Console
     RICH_AVAILABLE = True
 except ImportError:
     RICH_AVAILABLE = False
@@ -134,19 +133,6 @@ class MatplotlibRenderer(BaseChart):
             style="max-width: 100%; height: auto; display: block; margin: 0 auto; border-radius: 4px;"
             alt="Matplotlib Chart" />
         '''
-
-    def _save_to_disk(self, chart_obj: Any, filename: str = None) -> str:
-        """Save chart to disk for terminal viewing."""
-        if not filename:
-            filename = f"chart_{uuid.uuid4().hex[:8]}.png"
-
-        # Ensure we have a directory
-        output_dir = Path("outputs/charts")
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        filepath = output_dir / filename
-        chart_obj.savefig(str(filepath), bbox_inches='tight', dpi=100)
-        return str(filepath)
 
     def to_html(
         self,
