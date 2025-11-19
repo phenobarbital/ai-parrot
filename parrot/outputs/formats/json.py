@@ -24,8 +24,8 @@ class JSONRenderer(BaseRenderer):
             Tuple[str, Any]: (json_string, wrapped_content)
         """
         indent = kwargs.get('indent')
-        include_metadata = kwargs.get('include_metadata', False)
-        data = self._prepare_data(response, include_metadata)
+        # include_metadata = kwargs.get('include_metadata', False)
+        # data = self._prepare_data(response, include_metadata)
 
         output_format = kwargs.get('output_format', environment)
 
@@ -88,16 +88,3 @@ class JSONRenderer(BaseRenderer):
 
         # Default / Text
         return json_string
-
-    def _wrap_html(self, json_string: str) -> str:
-        """Helper to wrap JSON in HTML with highlighting."""
-        try:
-            from pygments import highlight
-            from pygments.lexers import JsonLexer
-            from pygments.formatters import HtmlFormatter
-
-            formatter = HtmlFormatter(style='default', full=False, noclasses=True)
-            highlighted_code = highlight(json_string, JsonLexer(), formatter)
-            return f'<div class="json-response" style="padding:1em; border:1px solid #ddd; border-radius:4px;">{highlighted_code}</div>'
-        except ImportError:
-            return f'<pre><code class="language-json">{json_string}</code></pre>'

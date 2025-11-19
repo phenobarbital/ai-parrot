@@ -9,7 +9,7 @@ import pandas as pd
 import numpy as np
 from pydantic import BaseModel
 import orjson
-from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611  # noqa
+from datamodel.parsers.json import json_encoder  # pylint: disable=E0611  # noqa
 from pygments import highlight
 from pygments.lexers.python import PythonLexer
 from pygments.formatters.html import HtmlFormatter
@@ -330,6 +330,20 @@ class BaseRenderer(ABC):
             return json_encoder(
                 data
             )
+
+    def _wrap_html(self, content: str) -> str:
+        """Helper to wrap JSON in HTML with highlighting."""
+        try:
+            from pygments import highlight
+            from pygments.lexers import JsonLexer
+            from pygments.formatters import HtmlFormatter
+
+            formatter = HtmlFormatter(style='default', full=False, noclasses=True)
+            highlighted_code = highlight(content, JsonLexer(), formatter)
+            return f'<div class="json-response" style="padding:1em; border:1px solid #ddd; border-radius:4px;">{highlighted_code}</div>'
+        except ImportError:
+            return f'<pre><code class="language-json">{content}</code></pre>'
+
 
     @abstractmethod
     async def render(
