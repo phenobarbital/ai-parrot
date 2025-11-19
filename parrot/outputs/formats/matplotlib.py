@@ -172,7 +172,6 @@ class MatplotlibRenderer(BaseChart):
         response: Any,
         theme: str = 'monokai',
         environment: str = 'terminal',
-        export_format: str = 'html',
         return_code: bool = True,
         html_mode: str = 'partial',
         **kwargs
