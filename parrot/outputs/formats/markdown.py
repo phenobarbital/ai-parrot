@@ -34,7 +34,7 @@ except ImportError:
     IPYTHON_AVAILABLE = False
 
 
-@register_renderer(OutputMode.MARKDOWN)
+@register_renderer(OutputMode.MARKDOWN, system_prompt="MARKDOWN OUTPUT MODE: **IMPORTANT** Generate markdown formatted text.")
 class MarkdownRenderer(BaseRenderer):
     """
     Renderer for Markdown output.
@@ -72,7 +72,7 @@ class MarkdownRenderer(BaseRenderer):
     async def render(
         self,
         response: Any,
-        environment: str = 'terminal',
+        environment: str = 'default',
         **kwargs,
     ) -> Tuple[str, Any]:
         """
