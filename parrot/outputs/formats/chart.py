@@ -40,7 +40,7 @@ class BaseChart(BaseRenderer):
     @staticmethod
     def _wrap_for_environment(content: Any, environment: str) -> Any:
         """Wrap content based on environment."""
-        if isinstance(content, str) and environment in {'jupyter', 'colab'} and IPYWIDGETS_AVAILABLE:
+        if isinstance(content, str) and environment in {'jupyter', 'ipython', 'colab'} and IPYWIDGETS_AVAILABLE:
                 return IPyHTML(value=content)
         return content
 

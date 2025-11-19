@@ -331,14 +331,20 @@ class BotManager:
 
     async def get_bot(self, name: str) -> AbstractBot:
         """Get a Bot by name."""
+        if name not in self._bots:
+            self.logger.warning(
+                f"Bot '{name}' not in _bots. Available: {list(self._bots.keys())}"
+            )
         if name in self._bots:
             return self._bots[name]
         if self.registry.has(name):
-            print(' Getting bot instance from registry:', name)
             try:
+                # Get instance (returns singleton if at_startup=True)
                 bot_instance = await self.registry.get_instance(name)
                 if bot_instance:
-                    if not bot_instance.is_configured:
+                    # Only configure if NOT already configured
+                    if not getattr(bot_instance, 'is_configured', False):
+                        self.logger.info(f"Configuring bot {name} on demand.")
                         await bot_instance.configure(self.app)
                     self.add_bot(bot_instance)
                     return bot_instance
