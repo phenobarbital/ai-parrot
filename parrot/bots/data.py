@@ -97,7 +97,6 @@ class PandasAgentResponse(BaseModel):
             }
         },
     )
-
     explanation: str = Field(
         description=(
             "Clear, text-based explanation of the analysis performed. "
@@ -105,7 +104,6 @@ class PandasAgentResponse(BaseModel):
             "If data is tabular, also generate a markdown table representation. "
         )
     )
-
     data: Optional[PandasTable] = Field(
         default=None,
         description=(
@@ -114,11 +112,14 @@ class PandasAgentResponse(BaseModel):
             "Set to null if the response doesn't produce tabular data."
         )
     )
-
-    metadata: Optional[PandasMetadata] = Field(
+    code: Optional[Union[str, Dict[str, Any]]] = Field(
         default=None,
-        description="Additional metadata like shape, dtypes, summary stats"
+        description="The Python code used for analysis OR the Code generated under request (e.g. JSON definition for a Altair/Vega Chart)."
     )
+    # metadata: Optional[PandasMetadata] = Field(
+    #     default=None,
+    #     description="Additional metadata like shape, dtypes, summary stats"
+    # )
 
     @field_validator('data', mode='before')
     @classmethod
@@ -134,17 +135,17 @@ class PandasAgentResponse(BaseModel):
             return cls.data.model_validate(cls.data).from_dataframe(v)
         return v
 
-    @field_validator('metadata', mode='before')
-    @classmethod
-    def parse_metadata(cls, v):
-        """Handle cases where LLM returns stringified JSON for metadata."""
-        if isinstance(v, str):
-            try:
-                v = json_decoder(v)
-            except Exception:
-                # If it's not valid JSON, return None to avoid validation error
-                return None
-        return v
+    # @field_validator('metadata', mode='before')
+    # @classmethod
+    # def parse_metadata(cls, v):
+    #     """Handle cases where LLM returns stringified JSON for metadata."""
+    #     if isinstance(v, str):
+    #         try:
+    #             v = json_decoder(v)
+    #         except Exception:
+    #             # If it's not valid JSON, return None to avoid validation error
+    #             return None
+    #     return v
 
     def to_dataframe(self) -> Optional[pd.DataFrame]:
         if not self.data:
@@ -153,12 +154,12 @@ class PandasAgentResponse(BaseModel):
 
 
 PANDAS_SYSTEM_PROMPT = """You are a data analysis expert specializing in pandas DataFrames.
+
 <system_instructions>
 **Your Role:**
 $description
 
-**Your Capabilities:**
-$capabilities
+$backstory
 
 **Available Data:**
 $df_info
@@ -241,27 +242,30 @@ get_df_guide()  # Shows complete guide with names and aliases
 
 **STRUCTURED OUTPUT MODE:**
 When structured output is requested, you MUST respond with:
-{
-  "explanation": "Clear text explanation of your analysis, findings, and insights",
-  "data": [
-    {"column1": value1, "column2": value2},
-    ...
-  ],
-    "metadata": {
-        "shape": [rows, columns],
-        "columns": ["col1", "col2", ...]
-    }
-}
 
-** Guidelines for structured responses: **
-- **explanation**: Write a complete narrative of what you did and what you found
-- **data**: Include ONLY the resulting DataFrame as list of dicts or the data result from your analysis
-  - Use this for filtered data, aggregations, or computed results
-  - Set to an escalar value (e.g., null) if no tabular data is produced
-  - Keep it concise - max 100 rows unless specifically requested
-- **metadata**: Include shape and column names of the resulting DataFrame
-- DO NOT include intermediate steps or debug output in the data field
-- Ensure column names in data match the DataFrame exactly
+1.  **`explanation`** (string):
+    - A comprehensive, text-based answer to the user's question.
+    - Include your analysis, insights, and a summary of the findings.
+    - Use markdown formatting (bolding, lists) within this string for readability.
+
+2.  **`data`** (list of dictionaries, optional):
+    - If the user asked for data (e.g., "show me the top 5...", "list the employees..."), provide the resulting dataframe here.
+    - Format: A list of records, e.g., `[{"col1": "val1"}, {"col1": "val2"}]`.
+    - If no tabular data is relevant, set this to `null` or an empty list.
+
+3.  **`code`** (string or JSON, optional):
+    - **MANDATORY** if you generated a visualization (Altair, Plotly) or executed specific Python analysis code that the user might want to see.
+    - If you created a plot, put the chart configuration (JSON) or the Python code used to generate it here.
+    - If you performed complex pandas operations, include the Python code snippet here.
+    - If no code/chart was explicitly requested or relevant for the user to "save", you may leave this empty.
+
+**Example of expected output format:**
+```json
+{
+    "explanation": "I analyzed the sales data. The top region is North America with $5M in revenue...",
+    "data": {"columns": ["Region", "Revenue"], "rows": [["North America", 5000000], ["Europe", 3000000]]},
+    "code": "import altair as alt\nchart = alt.Chart(df).mark_bar()..."
+}
 
 **Today's Date:** $today_date
 """
@@ -599,6 +603,7 @@ class PandasAgent(BasicAgent):
 
         # Default capabilities if not provided
         capabilities = self._capabilities or """
+** Your Capabilities:**
 - Perform complex data analysis and transformations
 - Create visualizations (matplotlib, seaborn, plotly)
 - Generate statistical summaries
@@ -829,7 +834,7 @@ class PandasAgent(BasicAgent):
 
                 # Call the LLM
                 # print('ARGS > ', llm_kwargs)
-                response = await client.ask(**llm_kwargs)
+                response: AIMessage = await client.ask(**llm_kwargs)
                 # print('LLM RESPONSE > ', response)
 
                 # Enhance response with conversation context metadata
@@ -840,6 +845,18 @@ class PandasAgent(BasicAgent):
 
                 response.session_id = session_id
                 response.turn_id = turn_id
+                data_response: Optional[PandasAgentResponse] = response.output \
+                    if isinstance(response.output, PandasAgentResponse) else None
+
+                if data_response:
+                    # Extract the dataframe
+                    response.data = data_response.to_dataframe()
+                    # Extract the textual explanation
+                    response.response = data_response.explanation
+                    # requested code:
+                    response.code = data_response.code if hasattr(data_response, 'code') else None
+                    # declared as "is_structured" response
+                    response.is_structured = True
 
                 format_kwargs = format_kwargs or {}
                 if output_mode != OutputMode.DEFAULT:
@@ -858,7 +875,8 @@ class PandasAgent(BasicAgent):
                     response.response = wrapped
                     response.output_mode = output_mode
 
-                # Build AIMessage response
+                # Return the final AIMessage response
+                response.data = response.data.to_dict(orient='records') if response.data is not None else None
                 return response
 
         except Exception as e:

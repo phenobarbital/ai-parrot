@@ -2,9 +2,17 @@ from typing import Any, Optional, Tuple, Dict
 import io
 import base64
 import uuid
+from pathlib import Path
 from .base import BaseChart
 from . import register_renderer
 from ...models.outputs import OutputMode
+
+try:
+    from rich.panel import Panel
+    from rich.console import Console
+    RICH_AVAILABLE = True
+except ImportError:
+    RICH_AVAILABLE = False
 
 
 MATPLOTLIB_SYSTEM_PROMPT = """MATPLOTLIB CHART OUTPUT MODE:
@@ -46,13 +54,16 @@ class MatplotlibRenderer(BaseChart):
     def execute_code(
         self,
         code: str,
-        pandas_tool: "PythonPandasTool | None" = None,
+        pandas_tool: Any = None,
         execution_state: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> Tuple[Any, Optional[str]]:
         """Execute Matplotlib code within the shared Python environment."""
         extra_namespace = None
+        # If no pandas tool is provided, we need to setup the backend manually
+        # to ensure we don't try to open a GUI window
         manual_backend = pandas_tool is None
+
         if manual_backend:
             import matplotlib
             matplotlib.use('Agg')
@@ -74,18 +85,27 @@ class MatplotlibRenderer(BaseChart):
             if not context:
                 return None, "Execution context was empty"
 
+            # Try to find the figure object in the context
             fig = context.get('fig') or context.get('figure')
-            if fig is None and 'plt' in context:
-                fig = context['plt'].gcf()
+
+            # Fallback: get current figure if available
+            if fig is None:
+                if 'plt' in context:
+                    fig = context['plt'].gcf()
+                elif not manual_backend and pandas_tool:
+                    # Try to get plt from tool locals if available
+                    plt_ref = pandas_tool.locals.get('plt')
+                    if plt_ref:
+                        fig = plt_ref.gcf()
 
             if fig is None or not hasattr(fig, 'savefig'):
                 return None, "Code must create a matplotlib figure (fig) or use plt functions"
 
             return fig, None
         finally:
-            if manual_backend:
+            # Cleanup to avoid memory leaks
+            if manual_backend and 'plt' in locals():
                 try:
-                    import matplotlib.pyplot as plt
                     plt.close('all')
                 except Exception:
                     pass
@@ -110,10 +130,23 @@ class MatplotlibRenderer(BaseChart):
         # Create img tag with base64 data
         return f'''
         <img id="{img_id}"
-             src="data:image/{img_format};base64,{img_base64}"
-             style="max-width: 100%; height: auto; display: block; margin: 0 auto;"
-             alt="Matplotlib Chart" />
+            src="data:image/{img_format};base64,{img_base64}"
+            style="max-width: 100%; height: auto; display: block; margin: 0 auto; border-radius: 4px;"
+            alt="Matplotlib Chart" />
         '''
+
+    def _save_to_disk(self, chart_obj: Any, filename: str = None) -> str:
+        """Save chart to disk for terminal viewing."""
+        if not filename:
+            filename = f"chart_{uuid.uuid4().hex[:8]}.png"
+
+        # Ensure we have a directory
+        output_dir = Path("outputs/charts")
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        filepath = output_dir / filename
+        chart_obj.savefig(str(filepath), bbox_inches='tight', dpi=100)
+        return str(filepath)
 
     def to_html(
         self,
@@ -123,27 +156,16 @@ class MatplotlibRenderer(BaseChart):
     ) -> str:
         """
         Convert Matplotlib chart to HTML.
-
-        Args:
-            chart_obj: Matplotlib figure object
-            mode: 'partial' or 'complete'
-            **kwargs: Additional parameters (dpi, format)
-
-        Returns:
-            HTML string
         """
-        # Matplotlib doesn't need external scripts
+        # Matplotlib doesn't need external scripts in head
         kwargs['extra_head'] = kwargs.get('extra_head', '')
 
         # Call parent to_html
         return super().to_html(chart_obj, mode=mode, **kwargs)
 
     def to_json(self, chart_obj: Any) -> Optional[Dict]:
-        """Matplotlib doesn't have native JSON export."""
-        return {
-            'type': 'matplotlib',
-            'note': 'Matplotlib figures are rendered as images and do not have JSON representation'
-        }
+        """Matplotlib figures don't have a standard native JSON representation."""
+        return None
 
     async def render(
         self,
@@ -156,32 +178,51 @@ class MatplotlibRenderer(BaseChart):
         **kwargs
     ) -> Tuple[Any, Optional[Any]]:
         """Render Matplotlib chart."""
-        content = self._get_content(response)
-        code = self._extract_code(content)
+
+        # 1. Extract Code
+        # Check if code is explicitly provided in the structured response
+        code = getattr(response, 'code', None)
+
+        # Fallback to extracting from text content
+        if not code:
+            content = self._get_content(response)
+            code = self._extract_code(content)
 
         if not code:
-            error_html = self._wrap_for_environment(
-                "<div class='error'>No chart code found in response</div>",
+            error_msg = "No chart code found in response"
+            if environment == 'terminal':
+                return error_msg, None
+            return self._wrap_for_environment(
+                f"<div class='error'>{error_msg}</div>",
                 environment
-            )
-            return error_html, None
+            ), None
 
-        # Execute code
+        # 2. Execute Code
         chart_obj, error = self.execute_code(
             code,
-            pandas_tool=kwargs.pop('pandas_tool'),
-            execution_state=kwargs.get('execution_state'),
+            pandas_tool=kwargs.pop('pandas_tool', None),
+            execution_state=kwargs.pop('execution_state', None),
             **kwargs,
         )
 
         if error:
-            error_html = self._wrap_for_environment(
+            if environment == 'terminal':
+                return f"Error generating chart: {error}", None
+            return self._wrap_for_environment(
                 self._render_error(error, code, theme),
                 environment
-            )
-            return error_html, None
+            ), None
 
-        # Generate HTML
+        # 3. Handle Terminal Environment (Save to Disk)
+        if environment == 'terminal':
+            saved_path = self._save_to_disk(chart_obj)
+            msg = f"Chart generated successfully and saved to: {saved_path}"
+
+            if RICH_AVAILABLE:
+                return Panel(msg, title="📊 Chart Generated", border_style="green"), None
+            return msg, None
+
+        # 4. Generate HTML for Web/Jupyter
         html_output = self.to_html(
             chart_obj,
             mode=html_mode,
@@ -195,18 +236,15 @@ class MatplotlibRenderer(BaseChart):
             **kwargs
         )
 
-        # Wrap for environment
-        if environment in {'jupyter', 'ipython'} and html_mode == 'partial':
+        # 5. Wrap for Environment
+        if environment in {'jupyter', 'notebook', 'ipython', 'colab'}:
             wrapped_html = self._wrap_for_environment(html_output, environment)
         else:
             wrapped_html = html_output
 
-        # Return based on export_format
-        if export_format == 'json':
-            return self.to_json(chart_obj), None
-        elif export_format == 'html':
+        # 6. Return based on export format
+        if export_format == 'html':
             return wrapped_html, None
-        elif export_format == 'both':
-            return self.to_json(chart_obj), wrapped_html
         else:
-            return code, wrapped_html  # Return code as content for matplotlib
+            # Default behavior: Return code as content, HTML widget as wrapped
+            return code, wrapped_html
