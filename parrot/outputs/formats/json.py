@@ -1,10 +1,4 @@
 from typing import Any, Tuple, Optional
-from datetime import datetime
-from dataclasses import is_dataclass, asdict
-import pandas as pd
-from pydantic import BaseModel
-import orjson
-from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611  # noqa
 from . import register_renderer
 from .base import BaseRenderer
 from ...models.outputs import OutputMode
@@ -17,69 +11,6 @@ class JSONRenderer(BaseRenderer):
     Handles PandasAgentResponse, DataFrames, Pydantic models, and generic content.
     Adapts output format to Terminal (Rich), HTML (Pygments), and Jupyter (Widgets).
     """
-    def _default_serializer(self, obj: Any) -> Any:
-        """Custom serializer for non-JSON-serializable objects."""
-        if isinstance(obj, (datetime, pd.Timestamp)):
-            return obj.isoformat()
-        if isinstance(obj, pd.DataFrame):
-            return obj.to_dict(orient='records')
-        if isinstance(obj, set):
-            return list(obj)
-        raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
-
-    def _extract_data(self, response: Any) -> Any:
-        """
-        Extract serializable data based on response content type rules.
-        """
-        # 1. Check for PandasAgentResponse (duck typing to avoid circular imports)
-        # We check for specific attributes that define a PandasAgentResponse
-        output = getattr(response, 'output', None)
-
-        if output is not None:
-            # Handle PandasAgentResponse specifically
-            if hasattr(output, 'to_dataframe') and hasattr(output, 'explanation') and hasattr(output, 'data'):
-                # response.data is usually a PandasTable
-                return output.to_dataframe() if output.data is not None else []
-
-            # 2. Handle direct DataFrame output
-            if isinstance(output, pd.DataFrame):
-                return output.to_dict(orient='records')
-
-            # 3. Handle Pydantic Models
-            if isinstance(output, BaseModel):
-                return output.model_dump()
-
-            # 4. Handle Dataclasses
-            if is_dataclass(output):
-                return asdict(output)
-
-        # 5. Fallback for unstructured/plain text responses
-        # "if there is no 'structured output response', build a JSON with input/output"
-        is_structured = getattr(response, 'is_structured', False)
-        if not is_structured and output:
-            return {
-                "input": getattr(response, 'input', ''),
-                "output": output,
-                "metadata": getattr(response, 'metadata', {})
-            }
-
-        return output
-
-    def _serialize(self, data: Any, indent: Optional[int] = None) -> str:
-        """Serialize data to JSON string using orjson if available."""
-        try:
-            option = orjson.OPT_INDENT_2 if indent is not None else 0
-            # orjson returns bytes, decode to str
-            return orjson.dumps(
-                data,
-                default=self._default_serializer,
-                option=option
-            ).decode('utf-8')
-        except Exception:
-            return json_encoder(
-                data
-            )
-
     async def render(
         self,
         response: Any,
