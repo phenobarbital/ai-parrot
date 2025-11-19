@@ -183,6 +183,8 @@ class MatplotlibRenderer(BaseChart):
         # Check if code is explicitly provided in the structured response
         code = getattr(response, 'code', None)
 
+        output_format = kwargs.get('output_format', environment)
+
         # Fallback to extracting from text content
         if not code:
             content = self._get_content(response)
@@ -190,11 +192,11 @@ class MatplotlibRenderer(BaseChart):
 
         if not code:
             error_msg = "No chart code found in response"
-            if environment == 'terminal':
+            if output_format == 'terminal':
                 return error_msg, None
             return self._wrap_for_environment(
                 f"<div class='error'>{error_msg}</div>",
-                environment
+                output_format
             ), None
 
         # 2. Execute Code
@@ -206,15 +208,15 @@ class MatplotlibRenderer(BaseChart):
         )
 
         if error:
-            if environment == 'terminal':
+            if output_format == 'terminal':
                 return f"Error generating chart: {error}", None
             return self._wrap_for_environment(
                 self._render_error(error, code, theme),
-                environment
+                output_format
             ), None
 
         # 3. Handle Terminal Environment (Save to Disk)
-        if environment == 'terminal':
+        if output_format == 'terminal':
             saved_path = self._save_to_disk(chart_obj)
             msg = f"Chart generated successfully and saved to: {saved_path}"
 
@@ -237,13 +239,13 @@ class MatplotlibRenderer(BaseChart):
         )
 
         # 5. Wrap for Environment
-        if environment in {'jupyter', 'notebook', 'ipython', 'colab'}:
-            wrapped_html = self._wrap_for_environment(html_output, environment)
+        if output_format in {'jupyter', 'notebook', 'ipython', 'colab'}:
+            wrapped_html = self._wrap_for_environment(html_output, output_format)
         else:
             wrapped_html = html_output
 
-        # 6. Return based on export format
-        if export_format == 'html':
+        # 6. Return based on output format
+        if output_format == 'html':
             return wrapped_html, None
         else:
             # Default behavior: Return code as content, HTML widget as wrapped
