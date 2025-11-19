@@ -200,8 +200,8 @@ class MatplotlibRenderer(BaseChart):
         # 2. Execute Code
         chart_obj, error = self.execute_code(
             code,
-            pandas_tool=kwargs.pop('pandas_tool'),
-            execution_state=kwargs.pop('execution_state'),
+            pandas_tool=kwargs.pop('pandas_tool', None),
+            execution_state=kwargs.pop('execution_state', None),
             **kwargs,
         )
 
