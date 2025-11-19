@@ -835,7 +835,7 @@ class PandasAgent(BasicAgent):
                 # Call the LLM
                 # print('ARGS > ', llm_kwargs)
                 response: AIMessage = await client.ask(**llm_kwargs)
-                # print('LLM RESPONSE > ', response)
+                print('LLM RESPONSE > ', response)
 
                 # Enhance response with conversation context metadata
                 response.set_conversation_context_info(

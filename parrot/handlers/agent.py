@@ -38,6 +38,12 @@ class AgentTalk(BaseView):
     - Leverages OutputMode for consistent formatting
     - Session-based conversation management
     """
+    _logger_name: str = "Parrot.AgentTalk"
+
+    def post_init(self, *args, **kwargs):
+        self.logger = logging.getLogger(self._logger_name)
+        self.logger.setLevel(logging.DEBUG)
+
     def _get_output_format(
         self,
         data: Dict[str, Any],
@@ -658,17 +664,24 @@ class AgentTalk(BaseView):
         if isinstance(response, AgentResponse):
             response = response.response
 
+
+        output = response.output
+
         if output_format == 'json':
             # Return structured JSON response
-            print('::::: Formatting response as JSON :::: ')
-            if isinstance(response.output, pd.DataFrame):
+            if isinstance(output, pd.DataFrame):
                 # Convert DataFrame to dict
-                response.output = response.output.to_dict(orient='records')
+                output = output.to_dict(orient='records')
+            elif hasattr(output, 'explanation'):
+                output = output.explanation
+            output_mode = response.output_mode or 'json'
             obj_response = {
                 "input": response.input,
-                "output": response.output,
-                "content": response.content,
+                "output": output,
+                "data": response.data,
                 "response": response.response,
+                "output_mode": output_mode,
+                "code": str(response.code) if response.code else None,
                 "metadata": {
                     "model": getattr(response, 'model', None),
                     "provider": getattr(response, 'provider', None),
@@ -704,7 +717,7 @@ class AgentTalk(BaseView):
                 return self._serve_panel_dashboard(response)
 
             # Return HTML response
-            html_content = response.content
+            html_content = response.response
             if isinstance(html_content, str):
                 html_str = html_content
             elif hasattr(html_content, '_repr_html_'):
@@ -715,11 +728,9 @@ class AgentTalk(BaseView):
                 html_str = str(html_content)
             else:
                 html_str = str(html_content)
-            # Wrap in complete HTML document
-            full_html = self._create_html_document(html_str, response)
 
             return web.Response(
-                text=full_html,
+                text=html_str,
                 content_type='text/html',
                 charset='utf-8'
             )
@@ -744,91 +755,6 @@ class AgentTalk(BaseView):
                 charset='utf-8'
             )
 
-    def _create_html_document(self, content: str, response: AIMessage) -> str:
-        """
-        Create a complete HTML document wrapper.
-
-        Args:
-            content: HTML content to wrap
-            response: AIMessage for metadata
-
-        Returns:
-            Complete HTML document string
-        """
-        if content.startswith("<!DOCTYPE"):
-            # If content is already a complete HTML document, return it as-is
-            return content
-
-        title = f"Agent Response"
-
-        html_template = f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{title}</title>
-    <style>
-        body {{
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            line-height: 1.6;
-            max-width: 900px;
-            margin: 0 auto;
-            padding: 20px;
-            background-color: #f5f5f5;
-        }}
-        .container {{
-            background-color: white;
-            padding: 30px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }}
-        .header {{
-            border-bottom: 2px solid #e0e0e0;
-            padding-bottom: 15px;
-            margin-bottom: 20px;
-        }}
-        .content {{
-            margin-top: 20px;
-        }}
-        pre {{
-            background-color: #f5f5f5;
-            padding: 15px;
-            border-radius: 5px;
-            overflow-x: auto;
-        }}
-        code {{
-            background-color: #f5f5f5;
-            padding: 2px 6px;
-            border-radius: 3px;
-            font-family: 'Courier New', monospace;
-        }}
-        table {{
-            border-collapse: collapse;
-            width: 100%;
-            margin: 15px 0;
-        }}
-        th, td {{
-            border: 1px solid #ddd;
-            padding: 8px;
-            text-align: left;
-        }}
-        th {{
-            background-color: #f0f0f0;
-        }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>{title}</h1>
-        </div>
-        <div class="content">
-            {content}
-        </div>
-    </div>
-</body>
-</html>"""
-
         return html_template
 
     def _serve_panel_dashboard(self, response: AIMessage) -> web.Response:
@@ -845,7 +771,7 @@ class AgentTalk(BaseView):
             web.Response with interactive HTML
         """
         try:
-            panel_obj = response.content
+            panel_obj = response.response
             # Create temporary file for the Panel HTML
             with tempfile.NamedTemporaryFile(
                 mode='w',

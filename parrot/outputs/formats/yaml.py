@@ -100,7 +100,7 @@ class YAMLRenderer(BaseRenderer):
     async def render(
         self,
         response: Any,
-        environment: str = 'terminal',
+        environment: str = 'default',
         **kwargs,
     ) -> Tuple[str, Any]:
         """

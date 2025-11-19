@@ -153,14 +153,9 @@ class MCPServerBase(ABC):
     def __init__(self, config: MCPServerConfig):
         self.config = config
         self.tools: Dict[str, MCPToolAdapter] = {}
-        # Setup logging to stderr ONLY
-        logging.basicConfig(
-            level=logging.ERROR,  # Reduce noise
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            stream=sys.stderr,  # Critical: only stderr
-            force=True  # Override any existing logging config
-        )
         self.logger = logging.getLogger(f"MCPServer.{config.name}")
+        log_level = getattr(logging, config.log_level.upper(), logging.WARNING)
+        self.logger.setLevel(log_level)
 
     def register_tool(self, tool: AbstractTool):
         """Register an AI-Parrot tool with the MCP server."""
