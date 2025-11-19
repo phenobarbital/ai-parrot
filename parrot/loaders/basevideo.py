@@ -81,24 +81,63 @@ class BaseVideoLoader(AbstractLoader):
         self._model_size: str = kwargs.get('model_size', 'small')
         self.summarization_model = "facebook/bart-large-cnn"
         self._model_name: str = kwargs.get('model_name', 'whisper')
+        self._use_summary_pipeline: bool = kwargs.get('use_summary_pipeline', False)
+
+        # Lazy loading: Don't load summarizer until needed
+        # This saves ~1.6GB of VRAM when summarization is disabled
+        self._summarizer = None
+        self._summarizer_device = None
+        self._summarizer_dtype = None
+
+        # Store device info for lazy loading
         device, _, dtype = self._get_device()
-        self.summarizer = pipeline(
-            "summarization",
-            tokenizer=AutoTokenizer.from_pretrained(
-                self.summarization_model
-            ),
-            model=AutoModelForSeq2SeqLM.from_pretrained(
-                self.summarization_model
-            ),
-            device=device,
-            torch_dtype=dtype,
-        )
+        self._summarizer_device = device
+        self._summarizer_dtype = dtype
+
         # language:
         self._language = language
         # directory:
         if isinstance(video_path, str):
             self._video_path = Path(video_path).resolve()
         self._video_path = video_path
+
+    @property
+    def summarizer(self):
+        """
+        Lazy loading property for the summarizer pipeline.
+        Only loads the model when actually needed, saving ~1.6GB VRAM.
+        """
+        if self._summarizer is None:
+            print("[ParrotBot] Loading summarizer model (BART-large-cnn)...")
+            self._summarizer = pipeline(
+                "summarization",
+                tokenizer=AutoTokenizer.from_pretrained(
+                    self.summarization_model
+                ),
+                model=AutoModelForSeq2SeqLM.from_pretrained(
+                    self.summarization_model
+                ),
+                device=self._summarizer_device,
+                torch_dtype=self._summarizer_dtype,
+            )
+            print(f"[ParrotBot] ✓ Summarizer loaded on {self._summarizer_device}")
+        return self._summarizer
+
+    @summarizer.setter
+    def summarizer(self, value):
+        """Allow external setting of summarizer (for compatibility)."""
+        self._summarizer = value
+
+    @summarizer.deleter
+    def summarizer(self):
+        """Delete summarizer and free VRAM."""
+        if self._summarizer is not None:
+            del self._summarizer
+            self._summarizer = None
+            gc.collect()
+            if self._summarizer_device.startswith('cuda'):
+                torch.cuda.empty_cache()
+            print("[ParrotBot] 🧹 Summarizer freed from VRAM")
 
     def transcript_to_vtt(self, transcript: str, transcript_path: Path) -> str:
         """
@@ -1444,6 +1483,41 @@ class BaseVideoLoader(AbstractLoader):
             merged.append(chunk)
 
         return merged
+
+    def clear_cuda(self):
+        """
+        Clear CUDA cache and free all GPU memory used by this loader.
+
+        This method:
+        1. Deletes the summarizer pipeline if loaded
+        2. Forces garbage collection
+        3. Clears PyTorch CUDA cache
+
+        Call this method when done processing to free VRAM for other tasks.
+        """
+        freed_items = []
+
+        # Free summarizer if it was loaded
+        if self._summarizer is not None:
+            del self.summarizer  # Uses the deleter which handles cleanup
+            freed_items.append("summarizer")
+
+        # Force garbage collection
+        gc.collect()
+
+        # Clear CUDA cache if on GPU
+        device = getattr(self, '_summarizer_device', None)
+        if device and (device.startswith('cuda') or isinstance(device, int) and device >= 0):
+            try:
+                torch.cuda.empty_cache()
+                freed_items.append("CUDA cache")
+            except Exception as e:
+                print(f"[ParrotBot] Warning: Failed to clear CUDA cache: {e}")
+
+        if freed_items:
+            print(f"[ParrotBot] 🧹 Cleared: {', '.join(freed_items)}")
+        else:
+            print("[ParrotBot] 🧹 No GPU resources to clear")
 
     @abstractmethod
     async def _load(self, source: str, **kwargs) -> List[Document]:
