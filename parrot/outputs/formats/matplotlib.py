@@ -200,8 +200,8 @@ class MatplotlibRenderer(BaseChart):
         # 2. Execute Code
         chart_obj, error = self.execute_code(
             code,
-            pandas_tool=kwargs.get('pandas_tool'),
-            execution_state=kwargs.get('execution_state'),
+            pandas_tool=kwargs.pop('pandas_tool'),
+            execution_state=kwargs.pop('execution_state'),
             **kwargs,
         )
 
@@ -231,8 +231,8 @@ class MatplotlibRenderer(BaseChart):
             theme=theme,
             title=kwargs.pop('title', 'Matplotlib Chart'),
             icon='📈',
-            dpi=kwargs.get('dpi', 100),
-            format=kwargs.get('img_format', 'png'),
+            dpi=kwargs.pop('dpi', 100),
+            format=kwargs.pop('img_format', 'png'),
             **kwargs
         )
 
