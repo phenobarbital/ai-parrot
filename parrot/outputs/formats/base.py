@@ -319,9 +319,9 @@ class BaseRenderer(ABC):
     def _serialize(self, data: Any, indent: Optional[int] = None) -> str:
         """Serialize data to JSON string using orjson if available."""
         try:
-            option = orjson.OPT_INDENT_2 if indent is not None else 0
+            option = orjson.OPT_INDENT_2 if indent is not None else 0  # pylint: disable=E1101
             # orjson returns bytes, decode to str
-            return orjson.dumps(
+            return orjson.dumps(  # pylint: disable=E1101
                 data,
                 default=self._default_serializer,
                 option=option
@@ -737,7 +737,3 @@ class BaseChart(BaseRenderer):
             extra_head=extra_head,
             mode=mode
         )
-
-    def to_json(self, chart_obj: Any) -> Optional[Dict]:
-        """Convert chart object to JSON (optional, not all charts support this)."""
-        return None
