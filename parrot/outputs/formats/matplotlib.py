@@ -231,7 +231,7 @@ class MatplotlibRenderer(BaseChart):
 
         # 6. Return based on output format
         if output_format == 'html':
-            return wrapped_html, None
+            return None, wrapped_html
         else:
             # Default behavior: Return code as content, HTML widget as wrapped
             return code, wrapped_html

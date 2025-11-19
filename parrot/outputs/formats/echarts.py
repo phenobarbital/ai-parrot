@@ -245,7 +245,7 @@ class EChartsRenderer(BaseChart):
         # 6. Return based on output format
         if output_format == 'html':
             # Just return the HTML
-            return wrapped_html, None
+            return None, wrapped_html
 
         # Default: Return Code + Wrapped Output
         return code, wrapped_html
