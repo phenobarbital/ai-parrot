@@ -157,7 +157,7 @@ class MatplotlibRenderer(BaseChart):
         self,
         response: Any,
         theme: str = 'monokai',
-        environment: str = 'terminal',
+        environment: str = 'html',
         return_code: bool = True,
         html_mode: str = 'partial',
         **kwargs
