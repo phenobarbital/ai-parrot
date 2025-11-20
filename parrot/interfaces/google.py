@@ -221,7 +221,9 @@ class GoogleClient(CredentialsInterface, ABC):
             scopes: Service scopes (e.g., ["drive", "sheets"] or "all")
             **kwargs: Additional arguments
         """
-        self.logger = logging.getLogger(f'Parrot.Interfaces.{self.__class__.__name__}')
+        self.logger = logging.getLogger(
+            f'Parrot.Interfaces.{self.__class__.__name__}'
+        )
 
         # Credential storage
         self.credentials_file: Optional[PurePath] = None

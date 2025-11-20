@@ -4,19 +4,19 @@ from navconfig.logging import logging
 from navigator.conf import default_dsn, CACHE_HOST, CACHE_PORT
 
 
-# disable debug on some libraries:
-logging.getLogger(name='httpcore').setLevel(logging.INFO)
-logging.getLogger(name='httpx').setLevel(logging.INFO)
-logging.getLogger(name='groq').setLevel(logging.INFO)
-logging.getLogger(name='selenium.webdriver').setLevel(logging.WARNING)
-logging.getLogger(name='selenium').setLevel(logging.INFO)
-logging.getLogger(name='matplotlib').setLevel(logging.WARNING)
-logging.getLogger(name='PIL').setLevel(logging.INFO)
-logging.getLogger("grpc").setLevel(logging.CRITICAL)
-logging.getLogger("weasyprint").setLevel(logging.ERROR)  # Suppress WeasyPrint warnings
-# Suppress tiktoken warnings
-logging.getLogger("tiktoken").setLevel(logging.ERROR)
-logging.getLogger("fontTools").setLevel(logging.ERROR)
+# # disable debug on some libraries:
+# logging.getLogger(name='httpcore').setLevel(logging.INFO)
+# logging.getLogger(name='httpx').setLevel(logging.INFO)
+# logging.getLogger(name='groq').setLevel(logging.INFO)
+# logging.getLogger(name='selenium.webdriver').setLevel(logging.WARNING)
+# logging.getLogger(name='selenium').setLevel(logging.INFO)
+# logging.getLogger(name='matplotlib').setLevel(logging.WARNING)
+# logging.getLogger(name='PIL').setLevel(logging.INFO)
+# logging.getLogger("grpc").setLevel(logging.CRITICAL)
+# logging.getLogger("weasyprint").setLevel(logging.ERROR)  # Suppress WeasyPrint warnings
+# # Suppress tiktoken warnings
+# logging.getLogger("tiktoken").setLevel(logging.ERROR)
+# logging.getLogger("fontTools").setLevel(logging.ERROR)
 
 # Project Root:
 PROJECT_ROOT = BASE_DIR

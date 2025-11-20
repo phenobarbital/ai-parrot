@@ -107,7 +107,9 @@ class TransformersClient(AbstractClient):
             eos_token_id=None,  # Will be set after tokenizer is loaded
         )
 
-        self.logger = logging.getLogger(f"parrot.TransformersClient.{self.model_name}")
+        self.logger = logging.getLogger(
+            f"parrot.TransformersClient.{self.model_name}"
+        )
 
     async def __aenter__(self):
         """Initialize the client context and load the model."""

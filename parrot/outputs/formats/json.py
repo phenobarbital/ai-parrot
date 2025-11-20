@@ -14,7 +14,7 @@ class JSONRenderer(BaseRenderer):
     async def render(
         self,
         response: Any,
-        environment: str = 'terminal',
+        environment: str = 'default',
         **kwargs,
     ) -> Tuple[Any, Optional[Any]]:
         """
@@ -24,9 +24,6 @@ class JSONRenderer(BaseRenderer):
             Tuple[str, Any]: (json_string, wrapped_content)
         """
         indent = kwargs.get('indent')
-        # include_metadata = kwargs.get('include_metadata', False)
-        # data = self._prepare_data(response, include_metadata)
-
         output_format = kwargs.get('output_format', environment)
 
         # 1. Extract Data

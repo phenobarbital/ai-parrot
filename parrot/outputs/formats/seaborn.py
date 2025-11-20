@@ -1,10 +1,9 @@
-from typing import Any, Optional, Tuple, Dict
+from typing import Any, Optional, Tuple, Dict, List
 import contextlib
 import io
 import base64
 import uuid
-
-from .base import BaseChart
+from .chart import BaseChart
 from . import register_renderer
 from ...models.outputs import OutputMode
 
@@ -55,12 +54,14 @@ class SeabornRenderer(BaseChart):
     def execute_code(
         self,
         code: str,
-        pandas_tool: "PythonPandasTool | None" = None,
+        pandas_tool: Any = None,
+        execution_state: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> Tuple[Any, Optional[str]]:
-        """Execute Seaborn code and return the underlying Matplotlib figure."""
+        """Execute Seaborn code and return all underlying Matplotlib figures."""
         manual_backend = pandas_tool is None
         extra_namespace = None
+
         if manual_backend:
             import matplotlib
             matplotlib.use('Agg')
@@ -72,66 +73,133 @@ class SeabornRenderer(BaseChart):
                 'matplotlib': matplotlib,
             }
 
-        context, error = super().execute_code(
-            code,
-            pandas_tool=pandas_tool,
-            extra_namespace=extra_namespace,
-            **kwargs,
-        )
-
         try:
+            # Execute using BaseRenderer logic
+            context, error = super().execute_code(
+                code,
+                pandas_tool=pandas_tool,
+                execution_state=execution_state,
+                extra_namespace=extra_namespace,
+                **kwargs,
+            )
+
             if error:
                 return None, error
 
             if not context:
                 return None, "Execution context was empty"
 
-            fig = context.get('fig') or context.get('figure')
+            # Find all figure objects
+            figures = self._find_chart_objects(context)
 
-            if fig is None:
-                grid = context.get('g') or context.get('grid') or context.get('chart')
-                if grid is not None and hasattr(grid, 'fig'):
-                    fig = grid.fig
+            if figures:
+                return figures, None
 
-            if fig is None:
-                axis = context.get('ax') or context.get('axes')
-                if axis is not None and hasattr(axis, 'figure'):
-                    fig = axis.figure
+            return None, "Code must define a figure variable (fig, chart, plot) or create matplotlib figures"
 
-            if fig is None and 'plt' in context:
-                fig = context['plt'].gcf()
-
-            if fig is None or not hasattr(fig, 'savefig'):
-                return None, (
-                    "Code must create a seaborn visualization that exposes a Matplotlib figure "
-                    "(assign to fig, use FacetGrid.fig, or rely on plt.gcf())."
-                )
-
-            return fig, None
         finally:
             if manual_backend:
                 with contextlib.suppress(Exception):
                     import matplotlib.pyplot as plt
                     plt.close('all')
 
-    def _render_chart_content(self, chart_obj: Any, **kwargs) -> str:
-        """Render Seaborn chart as an embedded base64 image."""
-        img_id = f"seaborn-chart-{uuid.uuid4().hex[:8]}"
+    @staticmethod
+    def _find_chart_objects(context: Dict[str, Any]) -> List[Any]:
+        """Locate all matplotlib figure objects in the local namespace."""
+        figures: List[Any] = []
+        seen_ids = set()
+
+        def add_fig(obj: Any) -> None:
+            if obj is None:
+                return
+
+            # Skip renderer / BaseChart instances (like `self`)
+            if isinstance(obj, BaseChart):
+                return
+
+            # Check if it's a matplotlib Figure
+            has_savefig = hasattr(obj, 'savefig')
+            has_axes = hasattr(obj, 'axes')
+
+            # Check if it's a Seaborn FacetGrid or similar
+            has_fig_attr = hasattr(obj, 'fig') and hasattr(obj.fig, 'savefig')
+
+            # Check if it's a matplotlib Axes
+            is_axes = hasattr(obj, 'figure') and hasattr(obj.figure, 'savefig')
+
+            if has_fig_attr:
+                # Handle FacetGrid, PairGrid, etc.
+                fig = obj.fig
+                if id(fig) not in seen_ids:
+                    figures.append(fig)
+                    seen_ids.add(id(fig))
+            elif is_axes:
+                # Handle Axes objects
+                fig = obj.figure
+                if id(fig) not in seen_ids:
+                    figures.append(fig)
+                    seen_ids.add(id(fig))
+            elif has_savefig and has_axes and id(obj) not in seen_ids:
+                # Handle Figure objects directly
+                figures.append(obj)
+                seen_ids.add(id(obj))
+
+        # 1. Priority search for common variable names to preserve order
+        priority_vars = ['fig', 'figure', 'chart', 'plot', 'g', 'grid', 'ax', 'axes']
+        for var_name in priority_vars:
+            if var_name in context:
+                add_fig(context[var_name])
+
+        # 2. Scan all locals for other figure objects
+        for var_name, obj in context.items():
+            if var_name.startswith('_') or var_name in priority_vars:
+                continue
+            add_fig(obj)
+
+        # 3. Fallback: try to get current figure from plt if available
+        if not figures and 'plt' in context:
+            try:
+                fig = context['plt'].gcf()
+                if fig and hasattr(fig, 'savefig') and id(fig) not in seen_ids:
+                    figures.append(fig)
+            except Exception:
+                pass
+
+        return figures
+
+    def _render_chart_content(self, chart_objs: Any, **kwargs) -> str:
+        """
+        Render Seaborn chart(s) as embedded base64 image(s).
+        Handles a single figure or a list of figures.
+        """
+        # Ensure we have a list
+        figures = chart_objs if isinstance(chart_objs, list) else [chart_objs]
+
+        html_parts = []
         img_format = kwargs.get('format', 'png')
         dpi = kwargs.get('dpi', 110)
 
-        buffer = io.BytesIO()
-        chart_obj.savefig(buffer, format=img_format, dpi=dpi, bbox_inches='tight')
-        buffer.seek(0)
-        img_base64 = base64.b64encode(buffer.read()).decode('utf-8')
-        buffer.close()
+        for i, chart_obj in enumerate(figures):
+            img_id = f"seaborn-chart-{uuid.uuid4().hex[:8]}"
 
-        return f'''
-        <img id="{img_id}"
-             src="data:image/{img_format};base64,{img_base64}"
-             style="max-width: 100%; height: auto; display: block; margin: 0 auto;"
-             alt="Seaborn Chart" />
-        '''
+            # Render figure to base64
+            buffer = io.BytesIO()
+            chart_obj.savefig(buffer, format=img_format, dpi=dpi, bbox_inches='tight')
+            buffer.seek(0)
+            img_base64 = base64.b64encode(buffer.read()).decode('utf-8')
+            buffer.close()
+
+            chart_html = f'''
+            <div class="seaborn-chart-wrapper" style="margin-bottom: 20px;">
+                <img id="{img_id}"
+                     src="data:image/{img_format};base64,{img_base64}"
+                     style="max-width: 100%; height: auto; display: block; margin: 0 auto;"
+                     alt="Seaborn Chart {i+1}" />
+            </div>
+            '''
+            html_parts.append(chart_html)
+
+        return "\n".join(html_parts)
 
     def to_html(
         self,
@@ -139,79 +207,104 @@ class SeabornRenderer(BaseChart):
         mode: str = 'partial',
         **kwargs
     ) -> str:
-        """Convert Seaborn chart to HTML."""
+        """Convert Seaborn chart(s) to HTML."""
         kwargs['extra_head'] = kwargs.get('extra_head', '')
+
+        # Call parent to_html (which calls _render_chart_content)
         return super().to_html(chart_obj, mode=mode, **kwargs)
 
-    def to_json(self, chart_obj: Any) -> Optional[Dict]:
+    def to_json(self, chart_obj: Any) -> Optional[Any]:
         """Return metadata noting Seaborn renders as static images."""
-        return {
-            'type': 'seaborn',
-            'note': 'Seaborn visualizations render as Matplotlib figures encoded into base64 images.'
-        }
+        figures = chart_obj if isinstance(chart_obj, list) else [chart_obj]
+
+        results = []
+        for fig in figures:
+            results.append({
+                'type': 'seaborn',
+                'note': 'Seaborn visualizations render as Matplotlib figures encoded into base64 images.',
+                'figure_size': list(fig.get_size_inches()) if hasattr(fig, 'get_size_inches') else None,
+                'dpi': fig.dpi if hasattr(fig, 'dpi') else None,
+            })
+
+        return results if len(results) > 1 else results[0] if results else None
 
     async def render(
         self,
         response: Any,
         theme: str = 'monokai',
-        environment: str = 'terminal',
-        export_format: str = 'html',
-        return_code: bool = True,
+        environment: str = 'html',
+        include_code: bool = False,
         html_mode: str = 'partial',
         **kwargs
     ) -> Tuple[Any, Optional[Any]]:
-        """Render Seaborn chart."""
-        content = self._get_content(response)
-        code = self._extract_code(content)
+        """Render Seaborn chart(s)."""
+
+        # 1. Extract Code
+        code = getattr(response, 'code', None)
+        output_format = kwargs.get('output_format', environment)
+
+        # Fallback to extracting from text content
+        if not code:
+            content = self._get_content(response)
+            code = self._extract_code(content)
 
         if not code:
-            error_html = self._wrap_for_environment(
-                "<div class='error'>No chart code found in response</div>",
-                environment
-            )
-            return error_html, None
+            error_msg = "No chart code found in response"
+            if output_format == 'terminal':
+                return error_msg, None
+            return self._wrap_for_environment(
+                f"<div class='error'>{error_msg}</div>",
+                output_format
+            ), None
 
-        chart_obj, error = self.execute_code(
+        # 2. Execute Code
+        chart_objs, error = self.execute_code(
             code,
-            pandas_tool=kwargs.pop('pandas_tool'),
-            execution_state=kwargs.get('execution_state'),
+            pandas_tool=kwargs.pop('pandas_tool', None),
+            execution_state=kwargs.pop('execution_state', None),
             **kwargs,
         )
 
         if error:
-            error_html = self._wrap_for_environment(
+            if output_format == 'terminal':
+                return f"Error generating chart: {error}", None
+            return self._wrap_for_environment(
                 self._render_error(error, code, theme),
-                environment
-            )
-            return error_html, None
+                output_format
+            ), None
 
-        if environment in {'terminal', 'console', 'jupyter', 'notebook', 'ipython', 'colab'}:
-            # For Jupyter, return the figure object directly
-            # The frontend will handle rendering it
-            return code, chart_obj
+        # 3. Handle Jupyter/Notebook Environment
+        if output_format in {'jupyter', 'notebook', 'ipython', 'colab'}:
+            # For Jupyter, return the figure object(s) directly
+            # The frontend will handle rendering them
+            if isinstance(chart_objs, list):
+                # If multiple figures, return them as a tuple
+                return code, chart_objs if len(chart_objs) > 1 else chart_objs[0]
+            return code, chart_objs
 
+        # 4. Generate HTML for Web/Terminal
         html_output = self.to_html(
-            chart_obj,
+            chart_objs,
             mode=html_mode,
-            include_code=return_code,
+            include_code=include_code,
             code=code,
             theme=theme,
-            title=kwargs.pop('title', 'Seaborn Chart'),
+            title=kwargs.get('title', 'Seaborn Chart'),
             icon='🎨',
-            dpi=kwargs.pop('dpi', 110),
-            format=kwargs.pop('img_format', 'png'),
+            dpi=kwargs.get('dpi', 110),
+            format=kwargs.get('img_format', 'png'),
             **kwargs
         )
 
-        wrapped_html = (
-            self._wrap_for_environment(html_output, environment)
-            if environment in {'jupyter', 'ipython'} and html_mode == 'partial'
-            else html_output
-        )
+        # 5. Return based on output format
+        if output_format == 'html':
+            return code, html_output
+        elif output_format == 'json':
+            return code, self.to_json(chart_objs)
+        elif output_format == 'terminal':
+            # For terminal, could save to file like Plotly does
+            # For now, return the HTML
+            return code, html_output
 
-        if export_format == 'json':
-            return self.to_json(chart_obj), None
-        if export_format == 'both':
-            return self.to_json(chart_obj), wrapped_html
-
-        return code, wrapped_html
+        # Default behavior: Return code as content, HTML as wrapped
+        return code, html_output

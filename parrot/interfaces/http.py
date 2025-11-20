@@ -37,7 +37,7 @@ from ..conf import (
 # Suppress warnings
 logging.getLogger("urllib3").setLevel(logging.WARNING)
 urllib3.disable_warnings()
-for logger_name in ["httpx", "httpcore", "aiohttp", "hpack"]:
+for logger_name in ["httpx", "httpcore", "hpack"]:
     logging.getLogger(logger_name).setLevel(logging.WARNING)
 
 
@@ -159,7 +159,7 @@ class HTTPService:
         self._executor = ThreadPoolExecutor(max_workers=int(HTTPCLIENT_MAX_WORKERS))
         self._semaphore = asyncio.Semaphore(int(HTTPCLIENT_MAX_SEMAPHORE))
         self._debug: bool = kwargs.pop('debug', False)
-        self.logger = logging.getLogger(__name__)
+        self.logger = logging.getLogger('Parrot.HTTPService')
 
         # Store remaining arguments
         self.arguments = kwargs

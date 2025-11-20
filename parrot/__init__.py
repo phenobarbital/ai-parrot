@@ -24,16 +24,4 @@ def get_project_root() -> Path:
 ABS_PATH = get_project_root()
 
 
-# Quiet noisy third-party loggers
-dl = logging.getLogger("h5py")
-dl.setLevel(logging.WARNING)
-dl.propagate = False
-dl = logging.getLogger("h5py._conv")
-dl.setLevel(logging.WARNING)
-dl.propagate = False
-dl = logging.getLogger("datasets")
-dl.setLevel(logging.WARNING)
-dl.propagate = False
-
-
 __all__ = ["__version__"]

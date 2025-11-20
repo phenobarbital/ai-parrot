@@ -1,11 +1,23 @@
-# ai_parrot/outputs/formats/charts/echarts.py
 from typing import Any, Optional, Tuple, Dict
 import re
 import json
 import uuid
-from .base import BaseChart
+from .chart import BaseChart
 from . import register_renderer
 from ...models.outputs import OutputMode
+
+try:
+    from rich.panel import Panel
+    from rich.syntax import Syntax
+    RICH_AVAILABLE = True
+except ImportError:
+    RICH_AVAILABLE = False
+
+try:
+    from ipywidgets import HTML as IPyHTML
+    IPYWIDGETS_AVAILABLE = True
+except ImportError:
+    IPYWIDGETS_AVAILABLE = False
 
 
 ECHARTS_SYSTEM_PROMPT = """**ECHARTS JSON GENERATION MODE**
@@ -68,51 +80,37 @@ This is a TEXT GENERATION task. Unlike other tasks, for this specific objective,
     ]
 }
 ```
-
-**EXAMPLE 2: User requests a line chart with specific data.**
-```json
-{
-    "title": {
-        "text": "Website Traffic"
-    },
-    "xAxis": {
-        "data": ["Mon", "Tue", "Wed", "Thu", "Fri"]
-    },
-    "yAxis": {
-        "type": "value"
-    },
-    "series": [
-        {
-            "name": "Page Views",
-            "type": "line",
-            "data": [820, 932, 901, 934, 1290]
-        }
-    ]
-}
-```
 """
 
 
 @register_renderer(OutputMode.ECHARTS, system_prompt=ECHARTS_SYSTEM_PROMPT)
 class EChartsRenderer(BaseChart):
-    """Renderer for Apache ECharts"""
+    """Renderer for Apache ECharts (JSON Configuration)"""
 
     def execute_code(
         self,
         code: str,
-        pandas_tool: "PythonPandasTool | None" = None,
+        pandas_tool: Any = None,
         **kwargs,
     ) -> Tuple[Any, Optional[str]]:
         """Parse and validate ECharts JSON configuration."""
         try:
+            # Clean up code string if needed (remove markdown blocks if still present)
+            cleaned_code = self._extract_json_code(code) or code
+
             # Parse JSON
-            config = json.loads(code)
+            config = json.loads(cleaned_code)
 
             # Basic validation - check for required structure
             if not isinstance(config, dict):
                 return None, "ECharts config must be a JSON object"
-            if 'series' not in config:
-                return None, "ECharts config must include 'series' array"
+
+            # 'series' is usually required, but 'dataset' or 'options' (for timeline) are also valid
+            if all(
+                k not in config
+                for k in ['series', 'dataset', 'options', 'baseOption']
+            ):
+                return None, "ECharts config must include 'series', 'dataset', or timeline 'options'"
 
             return config, None
 
@@ -122,7 +120,7 @@ class EChartsRenderer(BaseChart):
             return None, f"Validation error: {str(e)}"
 
     def _render_chart_content(self, chart_obj: Any, **kwargs) -> str:
-        """Render ECharts visualization content."""
+        """Render ECharts visualization content (HTML/JS)."""
         # chart_obj is the configuration dict
         config = chart_obj
         chart_id = f"echarts-{uuid.uuid4().hex[:8]}"
@@ -139,17 +137,19 @@ class EChartsRenderer(BaseChart):
         <script type="text/javascript">
             (function() {{
                 var chartDom = document.getElementById('{chart_id}');
+                if (!chartDom) return;
+
                 var myChart = echarts.init(chartDom);
                 var option = {config_json};
 
-                myChart.setOption(option);
+                option && myChart.setOption(option);
 
                 // Resize handler
                 window.addEventListener('resize', function() {{
                     myChart.resize();
                 }});
 
-                console.log('ECharts rendered successfully');
+                console.log('ECharts {chart_id} rendered successfully');
             }})();
         </script>
         '''
@@ -163,57 +163,72 @@ class EChartsRenderer(BaseChart):
         """Convert ECharts to HTML."""
         # ECharts library for <head>
         echarts_version = kwargs.get('echarts_version', '5.4.3')
-        extra_head = f'''
+
+        # Proper CDN URL (no markdown syntax)
+        extra_head = kwargs.get('extra_head', '') + f"""
     <!-- Apache ECharts -->
     <script src="https://cdn.jsdelivr.net/npm/echarts@{echarts_version}/dist/echarts.min.js"></script>
-        '''
+        """
 
         kwargs['extra_head'] = extra_head
 
         # Call parent to_html
         return super().to_html(chart_obj, mode=mode, **kwargs)
 
-    def to_json(self, chart_obj: Any) -> Optional[Dict]:
-        """Return the ECharts configuration."""
-        return chart_obj
-
     async def render(
         self,
         response: Any,
         theme: str = 'monokai',
-        environment: str = 'terminal',
-        return_code: bool = True,
+        environment: str = 'html',
+        include_code: bool = False,
         html_mode: str = 'partial',
         **kwargs
     ) -> Tuple[Any, Optional[Any]]:
         """Render ECharts visualization."""
-        content = self._get_content(response)
 
-        # Extract JSON code
-        code = self._extract_json_code(content)
+        # 1. Extract Code
+        code = getattr(response, 'code', None)
+        output_format = kwargs.get('output_format', environment)
+
+        # Fallback: Extract from text if not in structured output
+        if not code:
+            content = self._get_content(response)
+            code = self._extract_json_code(content)
 
         if not code:
             error_msg = "No ECharts configuration found in response"
-            error_html = "<div class='error'>No ECharts JSON configuration found in response</div>"
-            return error_msg, error_html
+            if output_format == 'terminal':
+                return error_msg, None
+            return self._wrap_for_environment(
+                f"<div class='error'>{error_msg}</div>",
+                output_format
+            ), None
 
-        # Parse and validate
+        # 2. Parse/Execute (Validation)
         config, error = self.execute_code(code)
 
         if error:
-            error_html = self._render_error(error, code, theme)
-            return code, error_html
+            if output_format == 'terminal':
+                return f"Error parsing JSON: {error}\n\n{code}", None
+            return self._wrap_for_environment(
+                self._render_error(error, code, theme),
+                output_format
+            ), None
 
-        if environment in {'terminal', 'console', 'jupyter', 'notebook', 'ipython', 'colab'}:
-            # For Jupyter, return the figure object directly
-            # The frontend will handle rendering it
-            return code, config
+        # 3. Handle Terminal Environment (Show JSON)
+        if output_format == 'terminal':
+            if RICH_AVAILABLE:
+                json_syntax = Syntax(
+                    json.dumps(config, indent=2), "json", theme=theme, line_numbers=True
+                )
+                return Panel(json_syntax, title="📊 ECharts Configuration (JSON)", border_style="blue"), None
+            return json.dumps(config, indent=2), None
 
-        # Generate HTML
+        # 4. Generate HTML for Web/Jupyter
         html_output = self.to_html(
             config,
             mode=html_mode,
-            include_code=return_code,
+            include_code=include_code,
             code=code,
             theme=theme,
             title=kwargs.pop('title', 'ECharts Visualization'),
@@ -221,8 +236,19 @@ class EChartsRenderer(BaseChart):
             **kwargs
         )
 
-        # Return (code, html)
-        return code, html_output
+        # 5. Wrap for Environment
+        if output_format in {'jupyter', 'notebook', 'ipython', 'colab'}:
+            wrapped_html = self._wrap_for_environment(html_output, output_format)
+        else:
+            wrapped_html = html_output
+
+        # 6. Return based on output format
+        if output_format == 'html':
+            # Just return the HTML
+            return None, wrapped_html
+
+        # Default: Return Code + Wrapped Output
+        return code, wrapped_html
 
     @staticmethod
     def _extract_json_code(content: str) -> Optional[str]:
@@ -240,4 +266,6 @@ class EChartsRenderer(BaseChart):
             if potential_json.startswith('{') or potential_json.startswith('['):
                 return potential_json
 
-        return None
+        # Maybe the content IS just the JSON string?
+        content = content.strip()
+        return content if content.startswith('{') and content.endswith('}') else None

@@ -3,13 +3,12 @@ import io
 import base64
 import uuid
 from pathlib import Path
-from .base import BaseChart
+from .chart import BaseChart
 from . import register_renderer
 from ...models.outputs import OutputMode
 
 try:
     from rich.panel import Panel
-    from rich.console import Console
     RICH_AVAILABLE = True
 except ImportError:
     RICH_AVAILABLE = False
@@ -135,19 +134,6 @@ class MatplotlibRenderer(BaseChart):
             alt="Matplotlib Chart" />
         '''
 
-    def _save_to_disk(self, chart_obj: Any, filename: str = None) -> str:
-        """Save chart to disk for terminal viewing."""
-        if not filename:
-            filename = f"chart_{uuid.uuid4().hex[:8]}.png"
-
-        # Ensure we have a directory
-        output_dir = Path("outputs/charts")
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        filepath = output_dir / filename
-        chart_obj.savefig(str(filepath), bbox_inches='tight', dpi=100)
-        return str(filepath)
-
     def to_html(
         self,
         chart_obj: Any,
@@ -171,8 +157,8 @@ class MatplotlibRenderer(BaseChart):
         self,
         response: Any,
         theme: str = 'monokai',
-        environment: str = 'terminal',
-        return_code: bool = True,
+        environment: str = 'html',
+        include_code: bool = False,
         html_mode: str = 'partial',
         **kwargs
     ) -> Tuple[Any, Optional[Any]]:
@@ -227,7 +213,7 @@ class MatplotlibRenderer(BaseChart):
         html_output = self.to_html(
             chart_obj,
             mode=html_mode,
-            include_code=return_code,
+            include_code=include_code,
             code=code,
             theme=theme,
             title=kwargs.pop('title', 'Matplotlib Chart'),
@@ -245,7 +231,7 @@ class MatplotlibRenderer(BaseChart):
 
         # 6. Return based on output format
         if output_format == 'html':
-            return wrapped_html, None
+            return None, wrapped_html
         else:
             # Default behavior: Return code as content, HTML widget as wrapped
             return code, wrapped_html

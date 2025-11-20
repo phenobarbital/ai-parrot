@@ -159,7 +159,9 @@ class TableRenderer(BaseRenderer):
     def _generate_aggrid_code(self, df: pd.DataFrame, element_id: str = "wrapper") -> str:
         """Generate Ag-Grid configuration and render code."""
         # Define columns definition
-        column_defs = [{"headerName": col, "field": col, "sortable": True, "filter": True} for col in df.columns]
+        column_defs = [
+            {"headerName": col, "field": col, "sortable": True, "filter": True} for col in df.columns
+        ]
 
         # Data is list of dicts for Ag-Grid
         row_data = df.to_dict(orient='records')
@@ -168,19 +170,19 @@ class TableRenderer(BaseRenderer):
         json_row_data = json.dumps(row_data)
 
         return f"""
-            const gridOptions = {{
-                columnDefs: {json_col_defs},
-                rowData: {json_row_data},
-                pagination: true,
-                paginationPageSize: 10,
-                defaultColDef: {{
-                    flex: 1,
-                    minWidth: 100,
-                    resizable: true,
-                }}
-            }};
-            const gridDiv = document.getElementById("{element_id}");
-            new agGrid.Grid(gridDiv, gridOptions);
+const gridOptions = {{
+    columnDefs: {json_col_defs},
+    rowData: {json_row_data},
+    pagination: true,
+    paginationPageSize: 10,
+    defaultColDef: {{
+        flex: 1,
+        minWidth: 100,
+        resizable: true,
+    }}
+}};
+const gridDiv = document.getElementById("{element_id}");
+agGrid.createGrid(gridDiv, gridOptions);
         """
 
     def _build_html_document(
@@ -223,10 +225,10 @@ class TableRenderer(BaseRenderer):
             """
             # Note: Ag-Grid requires a height on the container
             body_content = f"""
-                <div id="{element_id}" class="ag-theme-alpine" style="height: 500px; width: 100%;"></div>
                 <script>
                     {table_content}
                 </script>
+                <div id="{element_id}" class="ag-theme-alpine" style="height: 500px; width: 100%;"></div>
             """
 
         else: # simple
@@ -287,10 +289,14 @@ class TableRenderer(BaseRenderer):
         if df.empty:
             return "No Data Available", None
 
+        data_content = df.to_dict(orient='records')
+
+        output_format = kwargs.get('output_format', environment)
+
         # 2. Environment: Terminal -> Rich Table
-        if environment == 'terminal':
+        if output_format == 'terminal':
             rich_table = self._render_rich_table(df, title)
-            return df, rich_table
+            return data_content, rich_table
 
         # 3. Prepare Content for HTML/JS
         content = ""
@@ -324,10 +330,10 @@ class TableRenderer(BaseRenderer):
         )
 
         # 5. Environment: Jupyter -> Widget
-        if environment in {'jupyter', 'notebook', 'colab'}:
+        if output_format in {'jupyter', 'notebook', 'colab'}:
             if IPYWIDGETS_AVAILABLE:
                 return df, IPyHTML(value=wrapped_html)
             return df, wrapped_html
 
         # 6. Environment: HTML (return string)
-        return df, wrapped_html
+        return data_content, wrapped_html
