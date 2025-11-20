@@ -334,7 +334,7 @@ class FoliumRenderer(BaseChart):
         self,
         response: Any,
         theme: str = 'monokai',
-        environment: str = 'terminal',
+        environment: str = 'html',
         include_code: bool = False,
         html_mode: str = 'partial',
         **kwargs
@@ -346,18 +346,51 @@ class FoliumRenderer(BaseChart):
         - code goes to response.output
         - html goes to response.response
         """
-        content = self._get_content(response)
+        # 1. Extract Code - Try response.code first, fallback to content extraction
+        code = None
+        try:
+            code = getattr(response, 'code', None)
+        except Exception:
+            pass
+
+        # Fallback: extract from content if code is not available
+        if not code:
+            try:
+                content = self._get_content(response)
+                code = self._extract_code(content)
+            except Exception:
+                pass
+
+        # 2. Extract DataFrame - Try response.data first, then check content
+        dataframe = None
+        try:
+            dataframe = getattr(response, 'data', None)
+            if dataframe is not None and not isinstance(dataframe, pd.DataFrame):
+                dataframe = None
+        except Exception:
+            pass
+
+        # Fallback: check if content is a DataFrame
+        if dataframe is None:
+            try:
+                content = self._get_content(response)
+                if isinstance(content, pd.DataFrame):
+                    dataframe = content
+            except Exception:
+                pass
+
+        output_format = kwargs.get('output_format', environment)
         geojson_path = kwargs.get('geojson_path') or kwargs.get('geojson')
 
         # --- DATA MODE (DataFrame + GeoJSON) ---
-        if GEOPANDAS_AVAILABLE and isinstance(content, pd.DataFrame) and geojson_path:
+        if GEOPANDAS_AVAILABLE and dataframe is not None and geojson_path:
             try:
                 key_on = kwargs.get('key_on', 'feature.properties.name')
-                join_column = kwargs.get('join_column', content.columns[0])
-                value_column = kwargs.get('value_column', content.columns[1])
+                join_column = kwargs.get('join_column', dataframe.columns[0])
+                value_column = kwargs.get('value_column', dataframe.columns[1])
 
                 map_obj = self._create_choropleth_map(
-                    data=content,
+                    data=dataframe,
                     geojson_path=geojson_path,
                     key_on=key_on,
                     columns=(join_column, value_column),
@@ -369,32 +402,30 @@ class FoliumRenderer(BaseChart):
                     map_obj,
                     mode=html_mode,
                     include_code=False,
-                    title=kwargs.pop('title', 'Choropleth Map'),
+                    title=kwargs.get('title', 'Choropleth Map'),
                     **kwargs
                 )
 
-                data_info = f"Choropleth map with {len(content)} regions"
+                data_info = f"Choropleth map with {len(dataframe)} regions"
                 # Return (code/description, html)
                 return data_info, html_output
 
             except Exception as e:
                 error_msg = f"Error creating choropleth: {str(e)}"
                 error_html = self._wrap_for_environment(
-                    f"<div class='error'>{error_msg}</div>", environment
+                    f"<div class='error'>{error_msg}</div>", output_format
                 )
                 return error_msg, error_html
 
         # --- CODE MODE ---
-        if isinstance(content, pd.DataFrame):
-            # Edge case: DataFrame passed but no GeoJSON, try to find code
-            code = self._extract_code(str(response.content or response.response))
-        else:
-            code = self._extract_code(content)
-
         if not code:
             error_msg = "No map code found in response"
-            error_html = f"<div class='error'>{error_msg}</div>"
-            return error_msg, error_html
+            if output_format == 'terminal':
+                return error_msg, None
+            return self._wrap_for_environment(
+                f"<div class='error'>{error_msg}</div>",
+                output_format
+            ), None
 
         # Execute code
         result_obj, error = self.execute_code(
@@ -405,33 +436,46 @@ class FoliumRenderer(BaseChart):
         )
 
         if error:
-            error_html = self._render_error(error, code, theme)
-            # Return (code, error_html)
-            return code, error_html
+            if output_format == 'terminal':
+                return f"Error generating map: {error}", None
+            return self._wrap_for_environment(
+                self._render_error(error, code, theme),
+                output_format
+            ), None
 
+        # Handle if result is a DataFrame (data mode without GeoJSON)
         if isinstance(result_obj, pd.DataFrame):
-            # Return DataFrame as code, no HTML yet
-            return result_obj, None
+            # Return DataFrame representation
+            df_info = f"DataFrame with {len(result_obj)} rows and {len(result_obj.columns)} columns"
+            return code, df_info
 
         # Result is a Folium map object
         map_obj = result_obj
 
-        if environment in {'terminal', 'console', 'jupyter', 'notebook', 'ipython', 'colab'}:
-            # For Jupyter, return the figure object directly
+        # Handle Jupyter/Notebook Environment
+        if output_format in {'jupyter', 'notebook', 'ipython', 'colab'}:
+            # For Jupyter, return the map object directly
             # The frontend will handle rendering it
             return code, map_obj
 
-        # Generate HTML
+        # Generate HTML for Web/Terminal
         html_output = self.to_html(
             map_obj,
             mode=html_mode,
             include_code=include_code,
             code=code,
             theme=theme,
-            title=kwargs.pop('title', 'Folium Map'),
+            title=kwargs.get('title', 'Folium Map'),
             **kwargs
         )
 
-        # - response.output = code
-        # - response.response = html
+        # Return based on output format
+        if output_format == 'html':
+            return code, html_output
+        elif output_format == 'json':
+            return code, self.to_json(map_obj)
+        elif output_format == 'terminal':
+            return code, html_output
+
+        # Default: Return code and HTML
         return code, html_output
