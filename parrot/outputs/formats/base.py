@@ -337,7 +337,7 @@ class BaseRenderer(ABC):
         response: Any,
         environment: str = 'terminal',
         export_format: str = 'html',
-        return_code: bool = True,
+        include_code: bool = False,
         **kwargs,
     ) -> Tuple[Any, Optional[Any]]:
         """

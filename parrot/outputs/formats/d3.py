@@ -152,7 +152,7 @@ class D3Renderer(BaseChart):
         theme: str = 'monokai',
         environment: str = 'terminal',
         export_format: str = 'html',
-        return_code: bool = True,
+        include_code: bool = False,
         html_mode: str = 'partial',
         **kwargs
     ) -> Tuple[Any, Optional[Any]]:
@@ -190,7 +190,7 @@ class D3Renderer(BaseChart):
         html_output = self.to_html(
             js_code,
             mode=html_mode,
-            include_code=return_code,
+            include_code=include_code,
             code=code,
             theme=theme,
             title=title,

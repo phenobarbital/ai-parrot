@@ -239,7 +239,7 @@ class HoloviewsRenderer(BaseChart):
         response: Any,
         theme: str = 'monokai',
         environment: str = 'html',
-        return_code: bool = True,
+        include_code: bool = False,
         html_mode: str = 'partial',
         **kwargs
     ) -> Tuple[Any, Optional[Any]]:
@@ -292,7 +292,7 @@ class HoloviewsRenderer(BaseChart):
         html_output = self.to_html(
             chart_objs,
             mode=html_mode,
-            include_code=return_code,
+            include_code=include_code,
             code=code,
             theme=theme,
             title=kwargs.get('title', 'HoloViews Chart'),

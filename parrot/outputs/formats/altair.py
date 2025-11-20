@@ -2,7 +2,7 @@
 from typing import Any, Optional, Tuple, Dict
 import json
 import uuid
-from .base import BaseChart
+from .chart import BaseChart
 from . import register_renderer
 from ...models.outputs import OutputMode
 
@@ -50,15 +50,25 @@ class AltairRenderer(BaseChart):
     def execute_code(
         self,
         code: str,
-        pandas_tool: "PythonPandasTool | None" = None,
+        pandas_tool: Any = None,
         execution_state: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> Tuple[Any, Optional[str]]:
         """Execute Altair code within the agent's Python environment."""
+        extra_namespace = None
+        if pandas_tool is None:
+            try:
+                import altair as alt
+                extra_namespace = {'alt': alt}
+            except ImportError:
+                pass
+
+        # Execute using BaseRenderer logic
         context, error = super().execute_code(
             code,
             pandas_tool=pandas_tool,
             execution_state=execution_state,
+            extra_namespace=extra_namespace,
             **kwargs,
         )
 
@@ -68,53 +78,124 @@ class AltairRenderer(BaseChart):
         if not context:
             return None, "Execution context was empty"
 
-        chart = next(
-            (
-                context[var_name]
-                for var_name in ['chart', 'fig', 'c', 'plot']
-                if var_name in context
-            ),
-            None,
-        )
+        # Find the chart object (Altair typically produces single charts)
+        chart = self._find_chart_object(context)
 
-        if chart is None:
-            return None, "Code must define a chart variable (chart, fig, c, or plot)"
+        if chart:
+            print('CHART > ', chart, type(chart))
+            return chart, None
 
-        if not hasattr(chart, 'to_dict'):
-            return None, f"Object is not an Altair chart: {type(chart)}"
+        return None, "Code must define a chart variable (chart, fig, c, or plot)"
 
-        return chart, None
+    @staticmethod
+    def _find_chart_object(context: Dict[str, Any]) -> Optional[Any]:
+        """Locate the Altair chart object in the local namespace."""
+
+        def is_altair_chart(obj: Any) -> bool:
+            """Check if object is an Altair chart."""
+            if obj is None:
+                return False
+
+            # Skip renderer / BaseChart instances
+            if isinstance(obj, BaseChart):
+                return False
+
+            # Altair charts have to_dict method
+            if not hasattr(obj, 'to_dict'):
+                return False
+
+            # Check by class name
+            class_name = obj.__class__.__name__
+            altair_classes = ['Chart', 'LayerChart', 'HConcatChart', 'VConcatChart', 'FacetChart']
+            if any(ac in class_name for ac in altair_classes):
+                return True
+
+            # Check module
+            module = getattr(obj.__class__, '__module__', '')
+            if 'altair' in module or 'vega' in module:
+                return True
+
+            return False
+
+        def is_valid_chart(obj: Any) -> bool:
+            """Verify the chart can be serialized."""
+            try:
+                obj.to_dict()
+                return True
+            except Exception:
+                return False
+
+        # Priority search for common variable names
+        priority_vars = ['chart', 'fig', 'c', 'plot', 'figure']
+        for var_name in priority_vars:
+            if var_name in context:
+                obj = context[var_name]
+                if is_altair_chart(obj) and is_valid_chart(obj):
+                    return obj
+
+        # Scan all locals for chart objects
+        for var_name, obj in context.items():
+            if var_name.startswith('_'):
+                continue
+            if is_altair_chart(obj) and is_valid_chart(obj):
+                return obj
+
+        return None
 
     def _render_chart_content(self, chart_obj: Any, **kwargs) -> str:
         """Render Altair-specific chart content with vega-embed."""
         embed_options = kwargs.get('embed_options', {})
-        spec = chart_obj.to_dict()
-        spec_json = json.dumps(spec, indent=2)
+
+        try:
+            spec = chart_obj.to_dict()
+            spec_json = json.dumps(spec, indent=2)
+        except Exception as e:
+            return f'''
+            <div class="error-container">
+                <h3>⚠️ Chart Serialization Error</h3>
+                <p class="error-message">{str(e)}</p>
+            </div>
+            '''
+
         chart_id = f"altair-chart-{uuid.uuid4().hex[:8]}"
 
         default_options = {
             'actions': {'export': True, 'source': False, 'editor': False},
             'theme': kwargs.get('vega_theme', 'latimes')
         }
-        default_options.update(embed_options)
+        default_options |= embed_options
         options_json = json.dumps(default_options)
 
         return f'''
-        <div id="{chart_id}" style="width: 100%;"></div>
-        <script type="text/javascript">
-            vegaEmbed('#{chart_id}', {spec_json}, {options_json})
-                .then(result => {{
-                    console.log('Altair chart rendered successfully');
-                }})
-                .catch(error => {{
-                    console.error('Error rendering Altair chart:', error);
-                    document.getElementById('{chart_id}').innerHTML =
-                        '<div class="error-container">' +
-                        '<h3>⚠️ Chart Rendering Error</h3>' +
-                        '<p class="error-message">' + error.message + '</p>' +
-                        '</div>';
-                }});
-        </script>
+        <div class="altair-chart-wrapper" style="margin-bottom: 20px;">
+            <div id="{chart_id}" style="width: 100%; min-height: 400px;"></div>
+            <script type="text/javascript">
+                (function() {{
+                    if (typeof vegaEmbed === 'undefined') {{
+                        console.error("Vega-Embed library not loaded");
+                        document.getElementById('{chart_id}').innerHTML =
+                            '<div class="error-container">' +
+                            '<h3>⚠️ Library Error</h3>' +
+                            '<p class="error-message">Vega-Embed library not loaded</p>' +
+                            '</div>';
+                        return;
+                    }}
+
+                    vegaEmbed('#{chart_id}', {spec_json}, {options_json})
+                        .then(result => {{
+                            console.log('Altair chart {chart_id} rendered successfully');
+                        }})
+                        .catch(error => {{
+                            console.error('Error rendering Altair chart:', error);
+                            document.getElementById('{chart_id}').innerHTML =
+                                '<div class="error-container">' +
+                                '<h3>⚠️ Chart Rendering Error</h3>' +
+                                '<p class="error-message">' + error.message + '</p>' +
+                                '</div>';
+                        }});
+                }})();
+            </script>
+        </div>
         '''
 
     def to_html(
@@ -142,7 +223,7 @@ class AltairRenderer(BaseChart):
     <script src="https://cdn.jsdelivr.net/npm/vega-embed@6"></script>
         '''
 
-        kwargs['extra_head'] = extra_head
+        kwargs['extra_head'] = kwargs.get('extra_head', extra_head)
 
         # Call parent to_html which uses _render_chart_content
         return super().to_html(chart_obj, mode=mode, **kwargs)
@@ -159,53 +240,89 @@ class AltairRenderer(BaseChart):
         response: Any,
         theme: str = 'monokai',
         environment: str = 'html',
-        return_code: bool = True,
+        include_code: bool = False,
         html_mode: str = 'partial',
         **kwargs
     ) -> Tuple[Any, Optional[Any]]:
         """
         Render Altair chart.
 
+        Environments:
+        - 'html': Returns HTML with embedded Vega-Embed
+        - 'default': Returns JSON specification (Vega-Lite spec)
+        - 'json': Returns JSON specification
+        - 'jupyter'/'notebook': Returns chart object for native rendering
+        - 'terminal': Returns code only
+
         Returns:
-            Tuple[Any, Optional[Any]]: (code, html)
+            Tuple[Any, Optional[Any]]: (code, output)
             - code goes to response.output
-            - html goes to response.response
+            - output goes to response.response
         """
-        content = self._get_content(response)
-        code = self._extract_code(content)
+
+        # 1. Extract Code
+        code = getattr(response, 'code', None)
+        output_format = kwargs.get('output_format', environment)
+
+        # Fallback to extracting from text content
+        if not code:
+            content = self._get_content(response)
+            code = self._extract_code(content)
 
         if not code:
             error_msg = "No chart code found in response"
-            error_html = "<div class='error'>No chart code found in response</div>"
-            if environment == 'terminal':
-                return error_msg, error_msg
-            return error_msg, error_html
+            if output_format == 'terminal':
+                return error_msg, None
+            return self._wrap_for_environment(
+                f"<div class='error'>{error_msg}</div>",
+                output_format
+            ), None
 
-        # Execute code to get chart object
+        # 2. Execute Code
         chart_obj, error = self.execute_code(
             code,
-            pandas_tool=kwargs.pop('pandas_tool'),
+            pandas_tool=kwargs.pop('pandas_tool', None),
+            execution_state=kwargs.pop('execution_state', None),
             **kwargs,
         )
 
         if error:
-            error_html = self._render_error(error, code, theme)
-            return (code, error) if environment == 'terminal' else (code, error_html)
+            if output_format == 'terminal':
+                return f"Error generating chart: {error}", None
+            return self._wrap_for_environment(
+                self._render_error(error, code, theme),
+                output_format
+            ), None
 
-        if environment in {'terminal', 'console', 'jupyter', 'notebook', 'ipython', 'colab'}:
-            # For Jupyter, return the figure object directly
-            # The frontend will handle rendering it
+        # 3. Handle different output formats
+
+        # Terminal: just return code
+        if output_format == 'terminal':
+            return code, None
+
+        # Jupyter/Notebook: return chart object for native rendering
+        if output_format in {'jupyter', 'notebook', 'ipython', 'colab'}:
             return code, chart_obj
 
-        # Generate HTML with specified mode
+        # Default: return JSON specification (Vega-Lite spec)
+        if output_format == 'default':
+            json_spec = self.to_json(chart_obj)
+            return code, json_spec
+
+        # JSON: explicit JSON request
+        if output_format == 'json':
+            return code, self.to_json(chart_obj)
+
+        # HTML (default): Generate embedded HTML
         html_output = self.to_html(
             chart_obj,
             mode=html_mode,
-            include_code=return_code,
+            include_code=include_code,
             code=code,
             theme=theme,
-            title=kwargs.pop('title', 'Altair Chart'),
+            title=kwargs.get('title', 'Altair Chart'),
+            icon='📊',
             **kwargs
         )
 
-        return chart_obj, html_output
+        return code, html_output

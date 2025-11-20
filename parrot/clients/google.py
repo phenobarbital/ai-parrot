@@ -1416,8 +1416,6 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
         else:
             # Multiple calls - show the final result
             final_tc = all_tool_calls[-1]
-            print('GOOGLE TYPE > ', type(final_tc.result))
-            print('GOOGLE RAW ', final_tc)
             if isinstance(final_tc.result, pd.DataFrame):
                 if not final_tc.result.empty:
                     return f"Data: {final_tc.result.to_string()}"

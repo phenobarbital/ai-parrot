@@ -1,11 +1,11 @@
 from typing import Any, Optional, Tuple, Dict, Union
 import re
 import uuid
-from io import StringIO, BytesIO
+from io import BytesIO
 from pathlib import Path
 import folium
 import pandas as pd
-from .base import BaseChart
+from .chart import BaseChart
 from . import register_renderer
 from ...models.outputs import OutputMode
 
@@ -59,7 +59,7 @@ ADVANCED FEATURES:
 - For heatmaps: use folium.plugins.HeatMap
 - For polylines: use folium.PolyLine
 - For custom tiles: ALWAYS include attribution parameter
-  Example: folium.TileLayer('Stamen Terrain', attr='Map tiles by Stamen Design').add_to(m)
+    Example: folium.TileLayer('Stamen Terrain', attr='Map tiles by Stamen Design').add_to(m)
 """
 
 FOLIUM_DATA_PROMPT = """FOLIUM DATA MODE:
@@ -99,7 +99,7 @@ class FoliumRenderer(BaseChart):
     def execute_code(
         self,
         code: str,
-        pandas_tool: "PythonPandasTool | None" = None,
+        pandas_tool: Any | None = None,
         execution_state: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> Tuple[Any, Optional[str]]:
@@ -212,16 +212,39 @@ class FoliumRenderer(BaseChart):
             )
         ).add_to(map_obj)
 
-    def _render_chart_content(self, chart_obj: Any, **kwargs) -> str:
-        """Render Folium map content."""
-        map_id = f"folium-map-{uuid.uuid4().hex[:8]}"
-        # Get the full HTML from Folium
-        output = BytesIO()
-        chart_obj.save(output, close_file=False)
-        full_html = output.getvalue().decode('utf-8')
-        output.close()
+    def _extract_head_resources(self, full_html: str) -> str:
+        """
+        Extracts scripts and styles from the <head> of the Folium HTML.
+        This allows us to pass them to BaseChart to include in the header.
+        """
+        head_match = re.search(r'<head[^>]*>(.*?)</head>', full_html, re.DOTALL)
+        if not head_match:
+            return ""
 
-        # Extract the essential parts for embedding
+        content = head_match[1]
+
+        # Filter out standard meta tags to avoid duplication, keep scripts/styles
+        resources = []
+        resources.extend(
+            line
+            for line in content.split('\n')
+            if '<script' in line or '<link' in line or '<style' in line
+        )
+
+        return '\n'.join(resources)
+
+    def _render_chart_content(self, chart_obj: Any, **kwargs) -> str:
+        """
+        Render Folium map content (Body + Inline Scripts).
+        This implements the abstract method from BaseChart.
+        """
+        map_id = f"folium-map-{uuid.uuid4().hex[:8]}"
+
+        # Render the map to a complete HTML string
+        full_html = chart_obj.get_root().render()
+
+        # Extract the body content (divs and inline scripts)
+        # We use the same logic as before, but now strictly for the body
         return self._extract_map_content(full_html, map_id)
 
     def to_html(
@@ -230,221 +253,64 @@ class FoliumRenderer(BaseChart):
         mode: str = 'partial',
         **kwargs
     ) -> str:
-        """Convert Folium map to HTML - completely overridden."""
-        # Pop kwargs to avoid duplicates
-        include_code = kwargs.pop('include_code', False)
-        code = kwargs.pop('code', None)
-        theme = kwargs.pop('theme', 'monokai')
-        title = kwargs.pop('title', 'Folium Map')
-        icon = kwargs.pop('icon', '🗺️')
-
-        # Get the complete Folium HTML
+        """
+        Convert Folium map to HTML using BaseChart's standard pipeline.
+        """
+        # 1. Generate the full Folium HTML internally to get resources
         full_html = chart_obj.get_root().render()
 
-        if mode == 'complete':
-            # Build code section if requested
-            code_section = ''
-            if include_code and code:
-                code_section = self._build_code_section(code, theme, icon)
+        # 2. Extract the CDN links and CSS from the head
+        extra_head = self._extract_head_resources(full_html)
 
-            # Return complete standalone HTML
-            return self._build_folium_complete_html(
-                full_html,
-                title=title,
-                code_section=code_section
-            )
-
-        else:  # partial mode
-            # Extract components for embedding
-            map_id = f"folium-map-{uuid.uuid4().hex[:8]}"
-            partial_html = self._extract_map_content(full_html, map_id)
-
-            # Add code section if requested
-            if include_code and code:
-                partial_html += '\n' + self._build_code_section(code, theme, icon)
-
-            return partial_html
-
-    @staticmethod
-    def _build_folium_complete_html(
-        folium_html: str,
-        title: str = 'Folium Map',
-        code_section: str = ''
-    ) -> str:
-        """
-        Build complete HTML document wrapping Folium map.
-        Extract scripts properly to ensure map renders.
-        """
-        # Extract everything between <head> tags
-        head_match = re.search(r'<head[^>]*>(.*?)</head>', folium_html, re.DOTALL)
-        head_content = head_match.group(1) if head_match else ''
-
-        # Extract everything between <body> tags including ALL scripts
-        body_match = re.search(r'<body[^>]*>(.*?)</body>', folium_html, re.DOTALL)
-
-        if body_match:
-            body_content = body_match.group(1)
-        else:
-            # Fallback: extract from </head> to </html>
-            parts = folium_html.split('</head>')
-            if len(parts) > 1:
-                body_part = parts[1].replace('</html>', '').replace('</body>', '').strip()
-                body_content = body_part
-            else:
-                body_content = folium_html
-
-        # Ensure we have content
-        if not body_content or len(body_content.strip()) < 100:
-            # Last resort: use everything after the first div
-            div_start = folium_html.find('<div')
-            if div_start > 0:
-                body_content = folium_html[div_start:]
-
-        return f'''<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{title}</title>
-
-    {head_content}
-
-    <style>
-        body {{
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
-                         'Helvetica Neue', Arial, sans-serif;
-            margin: 0;
-            padding: 20px;
-            background: #f5f7fa;
-        }}
-
-        .container {{
-            max-width: 1400px;
-            margin: 0 auto;
-        }}
-
-        .map-container {{
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.07), 0 2px 4px rgba(0,0,0,0.05);
-            padding: 20px;
-            margin-bottom: 20px;
-        }}
-
-        /* Override Folium's absolute positioning */
-        .folium-map {{
-            position: relative !important;
-            width: 100% !important;
-            height: 600px !important;
-            border-radius: 8px;
-        }}
-
-        .code-accordion {{
-            margin-top: 20px;
-            border: 1px solid #e0e0e0;
-            border-radius: 8px;
-            overflow: hidden;
-            background: white;
-        }}
-
-        .code-header {{
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 14px 20px;
-            cursor: pointer;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            font-weight: 600;
-            user-select: none;
-            transition: all 0.3s ease;
-        }}
-
-        .code-header:hover {{
-            background: linear-gradient(135deg, #5568d3 0%, #653a8e 100%);
-        }}
-
-        .toggle-icon {{
-            transition: transform 0.3s ease;
-            font-size: 12px;
-        }}
-
-        details[open] .toggle-icon {{
-            transform: rotate(90deg);
-        }}
-
-        .code-content {{
-            background: #272822;
-            padding: 20px;
-            overflow-x: auto;
-        }}
-
-        .code-content pre {{
-            margin: 0;
-            font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
-            font-size: 14px;
-            line-height: 1.6;
-        }}
-
-        @media (max-width: 768px) {{
-            body {{
-                padding: 10px;
-            }}
-            .map-container {{
-                padding: 10px;
-            }}
-        }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="map-container">
-            {body_content}
-        </div>
-        {code_section}
-    </div>
-</body>
-</html>'''
+        # 3. Pass to parent to use standard template
+        # Note: parent calls self._render_chart_content internally
+        return super().to_html(
+            chart_obj,
+            mode=mode,
+            extra_head=extra_head,  # Inject Folium JS/CSS here
+            icon='🗺️',
+            **kwargs
+        )
 
     @staticmethod
     def _extract_map_content(full_html: str, map_id: str) -> str:
-        """Extract map content from full Folium HTML for embedding."""
-        # Extract ALL styles
+        """
+        Extract map content (Divs + Script) from full Folium HTML.
+        Renames IDs to prevent collisions in notebooks/web interfaces.
+        """
+        # 1. Extract Custom Styles (defined inside body/head usually)
         styles = []
         for style_match in re.finditer(r'<style[^>]*>(.*?)</style>', full_html, re.DOTALL):
             styles.append(style_match.group(0))
 
-        # Extract external script tags
-        script_pattern = r'<script[^>]*src=[^>]*></script>'
-        external_scripts = re.findall(script_pattern, full_html)
-
-        # Find the map div
+        # 2. Find the map div
         div_pattern = r'<div[^>]*id="(map_[^"]*)"[^>]*>.*?</div>'
         div_match = re.search(div_pattern, full_html, re.DOTALL)
 
         if div_match:
-            original_id = div_match.group(1)
-            map_div = div_match.group(0).replace(f'id="{original_id}"', f'id="{map_id}"')
+            original_id = div_match[1]
+            # Replace ID
+            map_div = div_match[0].replace(f'id="{original_id}"', f'id="{map_id}"')
 
-            # Extract ALL inline scripts
+            # 3. Extract Inline Scripts
             inline_scripts = []
             for script_match in re.finditer(r'<script[^>]*>(.*?)</script>', full_html, re.DOTALL):
                 opening_tag = script_match.group(0)
                 script_content = script_match.group(1)
 
-                # Only process inline scripts (not external ones)
+                # Only process inline scripts (exclude src=...)
                 if 'src=' not in opening_tag and script_content.strip():
-                    # Replace map ID references
+                    # Update ID references in the JS
                     updated_script = script_content.replace(f'"{original_id}"', f'"{map_id}"')
                     updated_script = updated_script.replace(f"'{original_id}'", f"'{map_id}'")
                     inline_scripts.append(updated_script)
         else:
-            map_div = f'<div id="{map_id}" style="width: 100%; height: 600px;"></div>'
+            # Fallback
+            map_div = f'<div id="{map_id}" style="width: 100%; height: 600px;">Map Rendering Error</div>'
             inline_scripts = []
 
-        # Combine all parts
-        parts = styles + external_scripts + [map_div]
-
+        # 4. Combine (Div first, then Scripts)
+        parts = styles + [map_div]
         if inline_scripts:
             parts.append('<script>')
             parts.extend(inline_scripts)
@@ -469,7 +335,7 @@ class FoliumRenderer(BaseChart):
         response: Any,
         theme: str = 'monokai',
         environment: str = 'terminal',
-        return_code: bool = True,
+        include_code: bool = False,
         html_mode: str = 'partial',
         **kwargs
     ) -> Tuple[Any, Optional[Any]]:
@@ -483,7 +349,7 @@ class FoliumRenderer(BaseChart):
         content = self._get_content(response)
         geojson_path = kwargs.get('geojson_path') or kwargs.get('geojson')
 
-        # DATA MODE: DataFrame + GeoJSON = Choropleth
+        # --- DATA MODE (DataFrame + GeoJSON) ---
         if GEOPANDAS_AVAILABLE and isinstance(content, pd.DataFrame) and geojson_path:
             try:
                 key_on = kwargs.get('key_on', 'feature.properties.name')
@@ -498,6 +364,7 @@ class FoliumRenderer(BaseChart):
                     **kwargs
                 )
 
+                # Use to_html (which now uses super().to_html)
                 html_output = self.to_html(
                     map_obj,
                     mode=html_mode,
@@ -512,11 +379,14 @@ class FoliumRenderer(BaseChart):
 
             except Exception as e:
                 error_msg = f"Error creating choropleth: {str(e)}"
-                error_html = f"<div class='error'>{error_msg}</div>"
+                error_html = self._wrap_for_environment(
+                    f"<div class='error'>{error_msg}</div>", environment
+                )
                 return error_msg, error_html
 
-        # CODE MODE
+        # --- CODE MODE ---
         if isinstance(content, pd.DataFrame):
+            # Edge case: DataFrame passed but no GeoJSON, try to find code
             code = self._extract_code(str(response.content or response.response))
         else:
             code = self._extract_code(content)
@@ -529,8 +399,8 @@ class FoliumRenderer(BaseChart):
         # Execute code
         result_obj, error = self.execute_code(
             code,
-            pandas_tool=kwargs.pop('pandas_tool'),
-            execution_state=kwargs.get('execution_state'),
+            pandas_tool=kwargs.pop('pandas_tool', None),
+            execution_state=kwargs.pop('execution_state', None),
             **kwargs,
         )
 
@@ -555,7 +425,7 @@ class FoliumRenderer(BaseChart):
         html_output = self.to_html(
             map_obj,
             mode=html_mode,
-            include_code=return_code,
+            include_code=include_code,
             code=code,
             theme=theme,
             title=kwargs.pop('title', 'Folium Map'),
