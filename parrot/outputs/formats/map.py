@@ -99,15 +99,24 @@ class FoliumRenderer(BaseChart):
     def execute_code(
         self,
         code: str,
-        pandas_tool: Any | None = None,
+        pandas_tool: Any = None,
         execution_state: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> Tuple[Any, Optional[str]]:
         """Execute Folium map code and return map object."""
+        extra_namespace = None
+        if pandas_tool is None:
+            try:
+                import folium
+                extra_namespace = {'folium': folium}
+            except ImportError:
+                return None, "folium library not available"
+
         context, error = super().execute_code(
             code,
             pandas_tool=pandas_tool,
             execution_state=execution_state,
+            extra_namespace=extra_namespace,
             **kwargs,
         )
 
@@ -117,17 +126,44 @@ class FoliumRenderer(BaseChart):
         if not context:
             return None, "Execution context was empty"
 
-        map_obj = next(
-            (
-                context[var_name]
-                for var_name in ['m', 'map', 'folium_map', 'my_map', 'data', 'df']
-                if var_name in context
-            ),
-            None,
-        )
+        # Debug: print all variables in context
+        print(f"CONTEXT KEYS: {list(context.keys())}")
+
+        # Try to find map object
+        map_obj = None
+        for var_name in ['m', 'map', 'folium_map', 'my_map']:
+            if var_name in context:
+                obj = context[var_name]
+                print(f"Found variable '{var_name}': {type(obj)}")
+                # Check if it's a folium Map
+                if hasattr(obj, '_name') and hasattr(obj, 'location'):
+                    map_obj = obj
+                    break
+
+        # If still None, try to find any folium.Map object
+        if map_obj is None:
+            for var_name, obj in context.items():
+                if var_name.startswith('_'):
+                    continue
+                # Check if it's a folium Map by class name
+                if obj.__class__.__name__ == 'Map' and 'folium' in obj.__class__.__module__:
+                    print(f"Found folium Map in variable '{var_name}'")
+                    map_obj = obj
+                    break
+
+        # Handle DataFrame case (for data mode)
+        if map_obj is None:
+            for var_name in ['data', 'df']:
+                if var_name in context and isinstance(context[var_name], pd.DataFrame):
+                    return context[var_name], None
 
         if map_obj is None:
-            return None, "Code must define a map variable (m, map, folium_map, my_map)"
+            # Provide helpful error message
+            available_vars = [k for k in context.keys() if not k.startswith('_')]
+            return None, (
+                f"Code must define a folium Map variable (m, map, folium_map, or my_map). "
+                f"Available variables: {', '.join(available_vars)}"
+            )
 
         return map_obj, None
 
@@ -343,8 +379,8 @@ class FoliumRenderer(BaseChart):
         Render Folium map.
 
         CRITICAL: Always returns (code, html) tuple
-        - code goes to response.output
-        - html goes to response.response
+        - First return (code): Python code string for response.output
+        - Second return (html): HTML content for response.response
         """
         # 1. Extract Code - Try response.code first, fallback to content extraction
         code = None
@@ -406,26 +442,29 @@ class FoliumRenderer(BaseChart):
                     **kwargs
                 )
 
-                data_info = f"Choropleth map with {len(dataframe)} regions"
-                # Return (code/description, html)
+                # CRITICAL: Always return (code_string, html)
+                data_info = f"# Choropleth map with {len(dataframe)} regions"
                 return data_info, html_output
 
             except Exception as e:
                 error_msg = f"Error creating choropleth: {str(e)}"
-                error_html = self._wrap_for_environment(
-                    f"<div class='error'>{error_msg}</div>", output_format
-                )
-                return error_msg, error_html
+                error_html = self._render_error(error_msg, code or "", theme)
+                # CRITICAL: Return code first, then error HTML
+                return code or f"# {error_msg}", error_html
 
         # --- CODE MODE ---
         if not code:
             error_msg = "No map code found in response"
-            if output_format == 'terminal':
-                return error_msg, None
-            return self._wrap_for_environment(
-                f"<div class='error'>{error_msg}</div>",
-                output_format
-            ), None
+            error_html = f"<div class='error'>{error_msg}</div>"
+            # CRITICAL: Return error message as code, error HTML as second value
+            return f"# {error_msg}", error_html
+
+        # Validate code completeness - check if it actually creates a map
+        if 'folium.Map' not in code and 'folium_map' not in code and 'm = ' not in code and 'map = ' not in code:
+            warning_msg = "Warning: Code appears incomplete - no map creation detected"
+            print(f"⚠️  {warning_msg}")
+            print(f"CODE PREVIEW: {code[:200]}...")
+            # Continue execution anyway - maybe the map is created differently
 
         # Execute code
         result_obj, error = self.execute_code(
@@ -436,17 +475,14 @@ class FoliumRenderer(BaseChart):
         )
 
         if error:
-            if output_format == 'terminal':
-                return f"Error generating map: {error}", None
-            return self._wrap_for_environment(
-                self._render_error(error, code, theme),
-                output_format
-            ), None
+            error_html = self._render_error(error, code, theme)
+            # CRITICAL: Always return original code first, error HTML second
+            return code, error_html
 
         # Handle if result is a DataFrame (data mode without GeoJSON)
         if isinstance(result_obj, pd.DataFrame):
-            # Return DataFrame representation
-            df_info = f"DataFrame with {len(result_obj)} rows and {len(result_obj.columns)} columns"
+            # Return code and DataFrame info
+            df_info = f"<div>DataFrame with {len(result_obj)} rows and {len(result_obj.columns)} columns</div>"
             return code, df_info
 
         # Result is a Folium map object
@@ -454,8 +490,7 @@ class FoliumRenderer(BaseChart):
 
         # Handle Jupyter/Notebook Environment
         if output_format in {'jupyter', 'notebook', 'ipython', 'colab'}:
-            # For Jupyter, return the map object directly
-            # The frontend will handle rendering it
+            # For Jupyter, return code and map object
             return code, map_obj
 
         # Generate HTML for Web/Terminal
@@ -469,13 +504,13 @@ class FoliumRenderer(BaseChart):
             **kwargs
         )
 
-        # Return based on output format
-        if output_format == 'html':
-            return code, html_output
-        elif output_format == 'json':
-            return code, self.to_json(map_obj)
-        elif output_format == 'terminal':
-            return code, html_output
+        print(f'CODE LENGTH: {len(code)}')
+        print(f'HTML LENGTH: {len(html_output)}')
+        print(f'HTML MODE: {html_mode}')
 
-        # Default: Return code and HTML
+        # Return based on output format
+        if output_format == 'json':
+            return code, self.to_json(map_obj)
+
+        # Default: Always return (code_string, html_string)
         return code, html_output
