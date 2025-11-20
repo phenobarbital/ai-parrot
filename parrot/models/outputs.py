@@ -59,6 +59,7 @@ class OutputMode(str, Enum):
     D3 = "d3"                   # Generate D3.js visualization
     ECHARTS = "echarts"         # Generate ECharts visualization
     TABLE = "table"             # Generate table visualization
+    HOLOVIEWS = "holoviews"   # Generate HoloViews visualization
 
 @dataclass
 class StructuredOutputConfig:

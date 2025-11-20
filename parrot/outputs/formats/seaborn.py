@@ -93,7 +93,6 @@ class SeabornRenderer(BaseChart):
             figures = self._find_chart_objects(context)
 
             if figures:
-                print('FIGURES > ', figures)
                 return figures, None
 
             return None, "Code must define a figure variable (fig, chart, plot) or create matplotlib figures"
@@ -181,7 +180,6 @@ class SeabornRenderer(BaseChart):
         dpi = kwargs.get('dpi', 110)
 
         for i, chart_obj in enumerate(figures):
-            print('CHART > ', chart_obj, type(chart_obj))
             img_id = f"seaborn-chart-{uuid.uuid4().hex[:8]}"
 
             # Render figure to base64

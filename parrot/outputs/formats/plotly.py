@@ -84,7 +84,6 @@ class PlotlyRenderer(BaseChart):
 
         # Find the figure objects
         if figures := self._find_chart_objects(context):
-            print('FIGURES > ', figures)
             return figures, None
 
         return None, "Code must define a figure variable (fig, chart, plot)"
@@ -150,7 +149,6 @@ class PlotlyRenderer(BaseChart):
         config_json = json.dumps(config)
 
         for i, chart_obj in enumerate(figures):
-            print('CHART > ', chart_obj, type(chart_obj))
             chart_id = f"plotly-chart-{uuid.uuid4().hex[:8]}"
 
             # Convert figure to JSON
@@ -325,8 +323,6 @@ class PlotlyRenderer(BaseChart):
             icon='📊',
             **kwargs
         )
-
-        print('HERE > ', html_output)
 
         # 5. Wrap for Environment
         if output_format in {'jupyter', 'notebook', 'ipython', 'colab'}:

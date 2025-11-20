@@ -1,8 +1,8 @@
 # ai_parrot/outputs/formats/charts/bokeh.py
-from typing import Any, Optional, Tuple, Dict
+from typing import Any, Optional, Tuple, Dict, List
 import uuid
 import json
-from .base import BaseChart
+from .chart import BaseChart
 from . import register_renderer
 from ...models.outputs import OutputMode
 
@@ -55,7 +55,7 @@ class BokehRenderer(BaseChart):
     def execute_code(
         self,
         code: str,
-        pandas_tool: "PythonPandasTool | None" = None,
+        pandas_tool: Any = None,
         execution_state: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> Tuple[Any, Optional[str]]:
@@ -70,6 +70,7 @@ class BokehRenderer(BaseChart):
                 'plotting': plotting,
             }
 
+        # Execute using BaseRenderer logic
         context, error = super().execute_code(
             code,
             pandas_tool=pandas_tool,
@@ -84,67 +85,139 @@ class BokehRenderer(BaseChart):
         if not context:
             return None, "Execution context was empty"
 
-        # Try to find the plot object - order matters!
-        plot = None
-        for var_name in ['p', 'plot', 'fig', 'chart']:
-            if var_name in context and self._is_bokeh_plot(context[var_name]):
-                plot = context[var_name]
-                break
+        # Find all chart objects
+        if charts := self._find_chart_objects(context):
+            return charts, None
 
-        if plot is None:
-            for key, value in context.items():
-                if not key.startswith('_') and self._is_bokeh_plot(value):
-                    plot = value
-                    break
-
-        if plot is None:
-            return None, "Code must define a plot variable (p, plot, fig, or chart)"
-
-        return plot, None
+        return None, "Code must define a plot variable (p, plot, fig, or chart)"
 
     @staticmethod
-    def _is_bokeh_plot(obj: Any) -> bool:
-        """Check if object is a Bokeh plot/figure."""
-        # Check for Bokeh plot attributes
-        bokeh_attrs = ['renderers', 'toolbar', 'xaxis', 'yaxis']
-        has_attrs = all(hasattr(obj, attr) for attr in bokeh_attrs)
-
-        if has_attrs:
-            return True
-
-        # Check by class name
-        class_name = obj.__class__.__name__
-        bokeh_classes = ['Figure', 'Plot', 'GridPlot']
-        if any(bc in class_name for bc in bokeh_classes):
-            return True
-
-        # Check module
-        module = getattr(obj.__class__, '__module__', '')
-        return 'bokeh' in module
-
-    def _render_chart_content(self, chart_obj: Any, **kwargs) -> str:
-        """Render Bokeh-specific chart content."""
+    def _find_chart_objects(context: Dict[str, Any]) -> List[Any]:
+        """Locate all Bokeh plot objects in the local namespace."""
         from bokeh.embed import json_item
 
-        chart_id = f"bokeh-chart-{uuid.uuid4().hex[:8]}"
+        charts: List[Any] = []
+        seen_ids = set()
 
-        try:
-            # Get Bokeh JSON item
-            item = json_item(chart_obj)
-            item_json = json.dumps(item)
-        except Exception as e:
-            return f'<div class="error-container"><h3>⚠️ Bokeh Serialization Error</h3><p>{str(e)}</p></div>'
+        def is_bokeh_plot(obj: Any) -> bool:
+            """Check if object is a Bokeh plot/figure."""
+            if obj is None:
+                return False
 
-        return f'''
-        <div id="{chart_id}" style="width: 100%;"></div>
-        <script type="text/javascript">
-            (function() {{
-                var item = {item_json};
-                Bokeh.embed.embed_item(item, "{chart_id}");
-                console.log('Bokeh chart rendered successfully');
-            }})();
-        </script>
-        '''
+            # Skip renderer / BaseChart instances
+            if isinstance(obj, BaseChart):
+                return False
+
+            # Check for Bokeh plot attributes
+            bokeh_attrs = ['renderers', 'toolbar', 'xaxis', 'yaxis']
+            has_attrs = all(hasattr(obj, attr) for attr in bokeh_attrs)
+
+            if has_attrs:
+                return True
+
+            # Check by class name
+            class_name = obj.__class__.__name__
+            bokeh_classes = ['Figure', 'Plot', 'GridPlot']
+            if any(bc in class_name for bc in bokeh_classes):
+                return True
+
+            # Check module
+            module = getattr(obj.__class__, '__module__', '')
+            return 'bokeh' in module
+
+        def is_serializable(obj: Any) -> bool:
+            """Check if the Bokeh object can actually be serialized."""
+            try:
+                json_item(obj)
+                return True
+            except Exception:
+                return False
+
+        def add_chart(obj: Any) -> None:
+            if is_bokeh_plot(obj) and id(obj) not in seen_ids:
+                # Only add if it can actually be serialized
+                if is_serializable(obj):
+                    charts.append(obj)
+                    seen_ids.add(id(obj))
+                else:
+                    # Debug: log filtered objects (optional)
+                    # print(f"Filtered non-serializable Bokeh object: {type(obj).__name__}")
+                    pass
+
+        # 1. Priority search for common variable names to preserve order
+        priority_vars = ['p', 'plot', 'fig', 'figure', 'chart']
+        for var_name in priority_vars:
+            if var_name in context:
+                add_chart(context[var_name])
+
+        # 2. Scan all locals for other chart objects
+        for var_name, obj in context.items():
+            if var_name.startswith('_') or var_name in priority_vars:
+                continue
+            add_chart(obj)
+
+        return charts
+
+    def _render_chart_content(self, chart_objs: Any, **kwargs) -> str:
+        """
+        Render Bokeh-specific chart content (HTML/JS).
+        Handles a single chart or a list of charts.
+        """
+        from bokeh.embed import json_item
+
+        # Ensure we have a list
+        charts = chart_objs if isinstance(chart_objs, list) else [chart_objs]
+
+        html_parts = []
+
+        for i, chart_obj in enumerate(charts):
+            print('CHART > ', chart_obj, type(chart_obj))
+            chart_id = f"bokeh-chart-{uuid.uuid4().hex[:8]}"
+
+            try:
+                # Get Bokeh JSON item
+                item = json_item(chart_obj)
+                item_json = json.dumps(item)
+            except Exception as e:
+                chart_html = f'''
+                <div class="bokeh-chart-wrapper" style="margin-bottom: 20px;">
+                    <div class="error-container">
+                        <h3>⚠️ Bokeh Serialization Error</h3>
+                        <p>{str(e)}</p>
+                    </div>
+                </div>
+                '''
+                html_parts.append(chart_html)
+                continue
+
+            chart_html = f'''
+            <div class="bokeh-chart-wrapper" style="margin-bottom: 20px;">
+                <div id="{chart_id}" style="width: 100%;"></div>
+                <script type="text/javascript">
+                    (function() {{
+                        var item = {item_json};
+
+                        if (typeof Bokeh === 'undefined') {{
+                            console.error("Bokeh library not loaded");
+                            document.getElementById('{chart_id}').innerHTML = "Error: Bokeh library not loaded.";
+                            return;
+                        }}
+
+                        try {{
+                            Bokeh.embed.embed_item(item, "{chart_id}");
+                            console.log('Bokeh chart {chart_id} rendered successfully');
+                        }} catch (error) {{
+                            console.error('Error rendering Bokeh chart:', error);
+                            document.getElementById('{chart_id}').innerHTML =
+                                '<div style="color:red; padding:10px;">⚠️ Chart Rendering Error: ' + error.message + '</div>';
+                        }}
+                    }})();
+                </script>
+            </div>
+            '''
+            html_parts.append(chart_html)
+
+        return "\n".join(html_parts)
 
     def to_html(
         self,
@@ -153,10 +226,10 @@ class BokehRenderer(BaseChart):
         **kwargs
     ) -> str:
         """
-        Convert Bokeh chart to HTML.
+        Convert Bokeh chart(s) to HTML.
 
         Args:
-            chart_obj: Bokeh plot object
+            chart_obj: Bokeh plot object or list of plot objects
             mode: 'partial' or 'complete'
             **kwargs: Additional parameters
 
@@ -176,66 +249,91 @@ class BokehRenderer(BaseChart):
     <script src="https://cdn.bokeh.org/bokeh/release/bokeh-tables-{bokeh_version}.min.js"></script>
         '''
 
-        kwargs['extra_head'] = extra_head
+        kwargs['extra_head'] = kwargs.get('extra_head', extra_head)
 
-        # Call parent to_html
+        # Call parent to_html (which calls _render_chart_content)
         return super().to_html(chart_obj, mode=mode, **kwargs)
 
-    def to_json(self, chart_obj: Any) -> Optional[Dict]:
-        """Export Bokeh JSON specification."""
-        try:
-            from bokeh.embed import json_item
-            item = json_item(chart_obj)
-            return json.loads(json.dumps(item))
-        except Exception as e:
-            return {'error': str(e)}
+    def to_json(self, chart_obj: Any) -> Optional[Any]:
+        """Export Bokeh JSON specification (returns list if multiple)."""
+        from bokeh.embed import json_item
+
+        charts = chart_obj if isinstance(chart_obj, list) else [chart_obj]
+        results = []
+
+        for chart in charts:
+            try:
+                item = json_item(chart)
+                results.append(json.loads(json.dumps(item)))
+            except Exception as e:
+                results.append({'error': str(e)})
+
+        return results if len(results) > 1 else results[0] if results else None
 
     async def render(
         self,
         response: Any,
         theme: str = 'monokai',
         environment: str = 'html',
-        export_format: str = 'html',
         return_code: bool = True,
         html_mode: str = 'partial',
         **kwargs
     ) -> Tuple[Any, Optional[Any]]:
-        """Render Bokeh chart."""
-        content = self._get_content(response)
-        code = self._extract_code(content)
+        """Render Bokeh chart(s)."""
+
+        # 1. Extract Code
+        code = getattr(response, 'code', None)
+        output_format = kwargs.get('output_format', environment)
+
+        # Fallback to extracting from text content
+        if not code:
+            content = self._get_content(response)
+            code = self._extract_code(content)
 
         if not code:
             error_msg = "No chart code found in response"
-            error_html = "<div class='error'>No chart code found in response</div>"
-            if environment == 'terminal':
-                return error_msg, error_msg
-            return error_msg, error_html
+            if output_format == 'terminal':
+                return error_msg, None
+            return self._wrap_for_environment(
+                f"<div class='error'>{error_msg}</div>",
+                output_format
+            ), None
 
-        # Execute code
-        chart_obj, error = self.execute_code(
+        # 2. Execute Code
+        chart_objs, error = self.execute_code(
             code,
-            pandas_tool=kwargs.pop('pandas_tool'),
-            execution_state=kwargs.get('execution_state'),
+            pandas_tool=kwargs.pop('pandas_tool', None),
+            execution_state=kwargs.pop('execution_state', None),
             **kwargs,
         )
 
         if error:
-            error_html = self._render_error(error, code, theme)
-            if environment == 'terminal':
-                return code, error
-            return code, error_html
+            if output_format == 'terminal':
+                return f"Error generating chart: {error}", None
+            return self._wrap_for_environment(
+                self._render_error(error, code, theme),
+                output_format
+            ), None
 
-        if environment == 'terminal':
-            return code, code
-
-        if environment == 'jupyter':
+        # 3. Handle Jupyter/Notebook Environment
+        if output_format in {'jupyter', 'notebook', 'ipython', 'colab'}:
             from bokeh.embed import components
-            script, div = components(chart_obj)
-            return code, f"{script}{div}"
 
-        # Generate HTML
+            charts = chart_objs if isinstance(chart_objs, list) else [chart_objs]
+
+            if len(charts) == 1:
+                # Single chart
+                script, div = components(charts[0])
+                return code, f"{script}{div}"
+            else:
+                # Multiple charts
+                script, divs = components(charts)
+                combined = script + "".join(divs)
+                return code, combined
+
+        # 4. Generate HTML for Web/Terminal
         html_output = self.to_html(
-            chart_obj,
+            chart_objs,
             mode=html_mode,
             include_code=return_code,
             code=code,
@@ -244,4 +342,15 @@ class BokehRenderer(BaseChart):
             icon='📊',
             **kwargs
         )
+
+        # 5. Return based on output format
+        if output_format == 'html':
+            return code, html_output
+        elif output_format == 'json':
+            return code, self.to_json(chart_objs)
+        elif output_format == 'terminal':
+            # For terminal, return the code and HTML
+            return code, html_output
+
+        # Default behavior: Return code as content, HTML as wrapped
         return code, html_output
