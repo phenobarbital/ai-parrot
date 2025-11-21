@@ -18,12 +18,14 @@ from querysource.queries.qs import QS
 from querysource.queries.multi import MultiQS
 from ..tools import AbstractTool
 from ..tools.metadata import MetadataTool
+from ..tools.prophet_tool import ProphetForecastTool
 from ..tools.pythonpandas import PythonPandasTool
 from .agent import BasicAgent
 from ..models.responses import AIMessage, AgentResponse
 from ..models.outputs import OutputMode, StructuredOutputConfig, OutputFormat
 from ..conf import REDIS_HISTORY_URL, STATIC_DIR
 from ..bots.prompts import OUTPUT_SYSTEM_PROMPT
+from ..memory import AgentMemory
 
 
 Scalar = Union[str, int, float, bool, None]
@@ -340,6 +342,7 @@ class PandasAgent(BasicAgent):
             **kwargs
         )
         self.description = "A specialized agent for data analysis using pandas DataFrames"
+        self.agent_memory = AgentMemory()
 
     def _get_default_tools(self, tools: list) -> List[AbstractTool]:
         """Return Agent-specific tools."""
@@ -359,7 +362,6 @@ class PandasAgent(BasicAgent):
             f"Available data: {df_summary}. "
             f"Use df1, df2, etc. to access DataFrames."
         )
-
         # PythonPandasTool
         pandas_tool = PythonPandasTool(
             dataframes=self.dataframes,
@@ -377,11 +379,20 @@ class PandasAgent(BasicAgent):
             alias_map=self._get_dataframe_alias_map(),
             dataframes=self.dataframes
         )
+        # prophet_tool = ProphetForecastTool(
+        #     dataframes=self.dataframes,
+        #     alias_map=self._get_dataframe_alias_map(),
+        # )
+        # prophet_tool.description = (
+        #     "Forecast future values for a time series using Facebook Prophet. "
+        #     "Specify the dataframe, date column, value column, forecast horizon, and frequency."
+        # )
 
-        tools.append(pandas_tool)
-        tools.append(metadata_tool)
-
-        return tools
+        return [
+            pandas_tool,
+            metadata_tool,
+            prophet_tool
+        ]
 
     def _define_dataframe(
         self,
@@ -671,6 +682,7 @@ class PandasAgent(BasicAgent):
             )
 
         self._sync_metadata_tool()
+        self._sync_prophet_tool()
 
         # Regenerate system prompt with updated DataFrame info
         self._define_prompt()
@@ -842,7 +854,7 @@ class PandasAgent(BasicAgent):
                 )
 
                 response.session_id = session_id
-                response.turn_id = turn_id
+                response.turn_id = getattr(response, 'turn_id', None) or turn_id
                 data_response: Optional[PandasAgentResponse] = response.output \
                     if isinstance(response.output, PandasAgentResponse) else None
 
@@ -875,6 +887,12 @@ class PandasAgent(BasicAgent):
 
                 # Return the final AIMessage response
                 response.data = response.data.to_dict(orient='records') if response.data is not None else None
+                answer_text = getattr(response, 'response', None) or response.content
+                await self.agent_memory.store_interaction(
+                    response.turn_id,
+                    question,
+                    answer_text,
+                )
                 return response
 
         except Exception as e:
@@ -883,6 +901,55 @@ class PandasAgent(BasicAgent):
             )
             # Return error response
             raise
+
+    async def followup(
+        self,
+        question: str,
+        turn_id: str,
+        data: Any,
+        session_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        use_conversation_history: bool = True,
+        memory: Optional[Any] = None,
+        ctx: Optional[Any] = None,
+        structured_output: Optional[Any] = None,
+        output_mode: Any = None,
+        format_kwargs: dict = None,
+        return_structured: bool = True,
+        **kwargs
+    ) -> AIMessage:
+        """Generate a follow-up question using a previous turn as context."""
+        if not turn_id:
+            raise ValueError("turn_id is required for follow-up questions")
+
+        session_id = session_id or str(uuid.uuid4())
+        user_id = user_id or "anonymous"
+
+        previous_interaction = await self.agent_memory.get(turn_id)
+        if not previous_interaction:
+            raise ValueError(f"No conversation turn found for turn_id {turn_id}")
+
+        context_str = data if isinstance(data, str) else str(data)
+        followup_prompt = (
+            "Based on the previous question "
+            f"{previous_interaction['question']} and answer {previous_interaction['answer']} "
+            f"and using this data as context {context_str}, you need to answer this question:\n"
+            f"{question}"
+        )
+
+        return await self.ask(
+            question=followup_prompt,
+            session_id=session_id,
+            user_id=user_id,
+            use_conversation_history=use_conversation_history,
+            memory=memory,
+            ctx=ctx,
+            structured_output=structured_output,
+            output_mode=output_mode,
+            format_kwargs=format_kwargs,
+            return_structured=return_structured,
+            **kwargs,
+        )
 
     def add_dataframe(
         self,
@@ -925,6 +992,7 @@ class PandasAgent(BasicAgent):
         # Update the tool's dataframes
         result = pandas_tool.add_dataframe(name, df, regenerate_guide)
         self._sync_metadata_tool()
+        self._sync_prophet_tool()
         # Regenerate system prompt with updated DataFrame info
         self._define_prompt()
 
@@ -984,6 +1052,7 @@ class PandasAgent(BasicAgent):
                 pandas_tool.df_guide = pandas_tool._generate_dataframe_guide()
 
         self._sync_metadata_tool()
+        self._sync_prophet_tool()
         self._define_prompt()
 
         return self.dataframes
@@ -1022,6 +1091,7 @@ class PandasAgent(BasicAgent):
         result = pandas_tool.remove_dataframe(name, regenerate_guide)
 
         self._sync_metadata_tool()
+        self._sync_prophet_tool()
 
         # Regenerate system prompt with updated DataFrame info
         self._define_prompt()
@@ -1046,6 +1116,17 @@ class PandasAgent(BasicAgent):
                 tool
                 for tool in self.tool_manager.get_tools()
                 if isinstance(tool, MetadataTool)
+            ),
+            None,
+        )
+
+    def _get_prophet_tool(self) -> Optional[ProphetForecastTool]:
+        """Get the ProphetForecastTool instance if registered."""
+        return next(
+            (
+                tool
+                for tool in self.tool_manager.get_tools()
+                if isinstance(tool, ProphetForecastTool)
             ),
             None,
         )
@@ -1075,6 +1156,22 @@ class PandasAgent(BasicAgent):
         else:
             self.logger.warning(
                 "MetadataTool not found - skipping sync"
+            )
+
+    def _sync_prophet_tool(self) -> None:
+        """Synchronize ProphetForecastTool with current dataframes and aliases."""
+
+        if prophet_tool := self._get_prophet_tool():
+            prophet_tool.update_context(
+                dataframes=self.dataframes,
+                alias_map=self._get_dataframe_alias_map(),
+            )
+            self.logger.debug(
+                f"Synced ProphetForecastTool with {len(self.dataframes)} DataFrames"
+            )
+        else:
+            self.logger.warning(
+                "ProphetForecastTool not found - skipping sync"
             )
 
     def list_dataframes(self) -> Dict[str, Dict[str, Any]]:

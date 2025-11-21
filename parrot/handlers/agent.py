@@ -16,6 +16,7 @@ from navconfig.logging import logging
 from navigator_auth.decorators import is_authenticated, user_session
 from navigator.views import BaseView
 from ..bots.abstract import AbstractBot
+from ..bots.data import PandasAgent
 from ..models.responses import AIMessage, AgentResponse
 from ..outputs import OutputMode, OutputFormatter
 from ..mcp.integration import MCPServerConfig
@@ -525,6 +526,8 @@ class AgentTalk(BaseView):
             return_sources = data.pop('return_sources', True)
             use_vector_context = data.pop('use_vector_context', True)
             use_conversation_history = data.pop('use_conversation_history', True)
+            followup_turn_id = data.pop('turn_id', None)
+            followup_data = data.pop('data', None)
 
             # Override with explicit parameter if provided
             if 'output_mode' in data:
@@ -551,18 +554,31 @@ class AgentTalk(BaseView):
                             {"error": "query is required"},
                             status=400
                         )
-                    response: AIMessage = await bot.ask(
-                        question=query,
-                        session_id=session_id,
-                        user_id=user_id,
-                        search_type=search_type,
-                        return_sources=return_sources,
-                        use_vector_context=use_vector_context,
-                        use_conversation_history=use_conversation_history,
-                        output_mode=output_mode,
-                        format_kwargs=format_kwargs,
-                        **data,
-                    )
+                    if isinstance(bot, PandasAgent) and followup_turn_id and followup_data is not None:
+                        response: AIMessage = await bot.followup(
+                            question=query,
+                            turn_id=followup_turn_id,
+                            data=followup_data,
+                            session_id=session_id,
+                            user_id=user_id,
+                            use_conversation_history=use_conversation_history,
+                            output_mode=output_mode,
+                            format_kwargs=format_kwargs,
+                            **data,
+                        )
+                    else:
+                        response: AIMessage = await bot.ask(
+                            question=query,
+                            session_id=session_id,
+                            user_id=user_id,
+                            search_type=search_type,
+                            return_sources=return_sources,
+                            use_vector_context=use_vector_context,
+                            use_conversation_history=use_conversation_history,
+                            output_mode=output_mode,
+                            format_kwargs=format_kwargs,
+                            **data,
+                        )
 
             # Return formatted response
             return self._format_response(
