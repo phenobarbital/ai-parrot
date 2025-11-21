@@ -341,14 +341,12 @@ class PandasAgent(BasicAgent):
         )
         self.description = "A specialized agent for data analysis using pandas DataFrames"
 
-    def agent_tools(self) -> List[AbstractTool]:
-        """
-        Override to add PythonPandasTool and enhanced MetadataTool.
-
-        Key change: MetadataTool now receives dataframes reference for dynamic EDA.
-        """
+    def _get_default_tools(self, tools: list) -> List[AbstractTool]:
+        """Return Agent-specific tools."""
         report_dir = STATIC_DIR.joinpath(self.agent_id, 'documents')
         report_dir.mkdir(parents=True, exist_ok=True)
+        if not tools:
+            tools = []
 
         # Build a description that includes DataFrame info
         df_summary = ", ".join([
@@ -380,10 +378,10 @@ class PandasAgent(BasicAgent):
             dataframes=self.dataframes
         )
 
-        return [
-            pandas_tool,
-            metadata_tool
-        ]
+        tools.append(pandas_tool)
+        tools.append(metadata_tool)
+
+        return tools
 
     def _define_dataframe(
         self,
