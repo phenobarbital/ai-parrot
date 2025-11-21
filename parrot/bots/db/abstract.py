@@ -244,7 +244,7 @@ Based on the user context above, please tailor your response to their specific:
         system_prompt = tmpl.safe_substitute(
             user_context=user_context,
             pre_context=pre_context,
-            context="\n\n".join(context_parts) if context_parts else "No additional context available.",
+            context="\n\n".join(context_parts) if context_parts else "",
             database_context="\n\n".join(db_context_parts) if db_context_parts else "",
             chat_history=chat_history_section,
             **kwargs

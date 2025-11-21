@@ -1,3 +1,4 @@
+from navconfig.logging import logging
 from navigator.handlers.types import AppHandler
 # Tasker:
 from navigator.background import BackgroundQueue
@@ -35,6 +36,17 @@ class Main(AppHandler):
     enable_static: bool = True
     enable_pgpool: bool = True
     staticdir: str = STATIC_DIR
+
+    def _configure_logging(self):
+        """Configuración explícita de logging para aiohttp server."""
+        # Obtener el logger raíz
+        root_logger = logging.getLogger()
+
+        # Limpiar handlers existentes si los hay
+        root_logger.handlers.clear()
+
+        # Configurar el nivel del logger raíz
+        root_logger.setLevel(logging.DEBUG)
 
     def configure(self):
         super(Main, self).configure()
@@ -89,18 +101,18 @@ class Main(AppHandler):
             ToolList,
             name='tools_list'
         )
-        # Office 365 delegated authentication endpoints
-        self.app['o365_auth_manager'] = RemoteAuthManager()
-        self.app.router.add_view(
-            '/api/v1/o365/auth/sessions',
-            O365InteractiveAuthSessions,
-            name='o365_auth_sessions'
-        )
-        self.app.router.add_view(
-            '/api/v1/o365/auth/sessions/{session_id}',
-            O365InteractiveAuthSessionDetail,
-            name='o365_auth_session_detail'
-        )
+        # # Office 365 delegated authentication endpoints
+        # self.app['o365_auth_manager'] = RemoteAuthManager()
+        # self.app.router.add_view(
+        #     '/api/v1/o365/auth/sessions',
+        #     O365InteractiveAuthSessions,
+        #     name='o365_auth_sessions'
+        # )
+        # self.app.router.add_view(
+        #     '/api/v1/o365/auth/sessions/{session_id}',
+        #     O365InteractiveAuthSessionDetail,
+        #     name='o365_auth_session_detail'
+        # )
         # Example Async View for Queue:
         self.app.router.add_view(
             '/api/v1/example_async',
@@ -112,8 +124,8 @@ class Main(AppHandler):
         nextstop.setup(self.app, '/api/v1/agents/nextstop')
 
         # MCP server lifecycle management
-        self.mcp_server = ParrotMCPServer()
-        self.mcp_server.setup(self.app)
+        # self.mcp_server = ParrotMCPServer()
+        # self.mcp_server.setup(self.app)
 
     async def on_prepare(self, request, response):
         """
