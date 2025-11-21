@@ -391,7 +391,7 @@ class PandasAgent(BasicAgent):
         return [
             pandas_tool,
             metadata_tool,
-            prophet_tool
+            # prophet_tool
         ]
 
     def _define_dataframe(
