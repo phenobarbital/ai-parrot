@@ -18,6 +18,7 @@ from querysource.queries.qs import QS
 from querysource.queries.multi import MultiQS
 from ..tools import AbstractTool
 from ..tools.metadata import MetadataTool
+from ..tools.prophet_tool import ProphetForecastTool
 from ..tools.pythonpandas import PythonPandasTool
 from .agent import BasicAgent
 from ..models.responses import AIMessage, AgentResponse
@@ -382,9 +383,19 @@ class PandasAgent(BasicAgent):
             dataframes=self.dataframes
         )
 
+        prophet_tool = ProphetForecastTool(
+            dataframes=self.dataframes,
+            alias_map=self._get_dataframe_alias_map(),
+        )
+        prophet_tool.description = (
+            "Forecast future values for a time series using Facebook Prophet. "
+            "Specify the dataframe, date column, value column, forecast horizon, and frequency."
+        )
+
         return [
             pandas_tool,
-            metadata_tool
+            metadata_tool,
+            prophet_tool
         ]
 
     def _define_dataframe(
@@ -675,6 +686,7 @@ class PandasAgent(BasicAgent):
             )
 
         self._sync_metadata_tool()
+        self._sync_prophet_tool()
 
         # Regenerate system prompt with updated DataFrame info
         self._define_prompt()
@@ -984,6 +996,7 @@ class PandasAgent(BasicAgent):
         # Update the tool's dataframes
         result = pandas_tool.add_dataframe(name, df, regenerate_guide)
         self._sync_metadata_tool()
+        self._sync_prophet_tool()
         # Regenerate system prompt with updated DataFrame info
         self._define_prompt()
 
@@ -1043,6 +1056,7 @@ class PandasAgent(BasicAgent):
                 pandas_tool.df_guide = pandas_tool._generate_dataframe_guide()
 
         self._sync_metadata_tool()
+        self._sync_prophet_tool()
         self._define_prompt()
 
         return self.dataframes
@@ -1081,6 +1095,7 @@ class PandasAgent(BasicAgent):
         result = pandas_tool.remove_dataframe(name, regenerate_guide)
 
         self._sync_metadata_tool()
+        self._sync_prophet_tool()
 
         # Regenerate system prompt with updated DataFrame info
         self._define_prompt()
@@ -1105,6 +1120,17 @@ class PandasAgent(BasicAgent):
                 tool
                 for tool in self.tool_manager.get_tools()
                 if isinstance(tool, MetadataTool)
+            ),
+            None,
+        )
+
+    def _get_prophet_tool(self) -> Optional[ProphetForecastTool]:
+        """Get the ProphetForecastTool instance if registered."""
+        return next(
+            (
+                tool
+                for tool in self.tool_manager.get_tools()
+                if isinstance(tool, ProphetForecastTool)
             ),
             None,
         )
@@ -1134,6 +1160,22 @@ class PandasAgent(BasicAgent):
         else:
             self.logger.warning(
                 "MetadataTool not found - skipping sync"
+            )
+
+    def _sync_prophet_tool(self) -> None:
+        """Synchronize ProphetForecastTool with current dataframes and aliases."""
+
+        if prophet_tool := self._get_prophet_tool():
+            prophet_tool.update_context(
+                dataframes=self.dataframes,
+                alias_map=self._get_dataframe_alias_map(),
+            )
+            self.logger.debug(
+                f"Synced ProphetForecastTool with {len(self.dataframes)} DataFrames"
+            )
+        else:
+            self.logger.warning(
+                "ProphetForecastTool not found - skipping sync"
             )
 
     def list_dataframes(self) -> Dict[str, Dict[str, Any]]:
