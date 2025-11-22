@@ -215,7 +215,7 @@
                 class="textarea textarea-ghost h-32 w-full resize-none border-none bg-transparent text-base focus:outline-none"
                 placeholder={`Message ${agent.name}`}
                 bind:value={input}
-                on:keydown={handleKeydown}
+                onkeydown={handleKeydown}
               ></textarea>
             </div>
             <div class="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

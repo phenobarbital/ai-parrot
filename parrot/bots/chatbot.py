@@ -197,7 +197,7 @@ class Chatbot(AbstractBot):
         self.description = getattr(self, 'description', f"AI Assistant: {self.name}")
         self.role = getattr(self, 'role', 'AI Assistant')
         self.goal = getattr(self, 'goal', 'Help users accomplish their tasks effectively')
-        self.rationale = getattr(self, 'rationale', self.default_rationale())
+        self.rationale = getattr(self, 'rationale', 'Provide accurate and helpful information to users.')
         self.backstory = getattr(self, 'backstory', 'I am an AI assistant created to help users with various tasks.')
         self.capabilities = getattr(self, 'capabilities', 'I can engage in conversation, answer questions, and use tools when needed.')
 

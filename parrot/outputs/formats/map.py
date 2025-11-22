@@ -1,8 +1,9 @@
-from typing import Any, Optional, Tuple, Dict, Union
+from typing import Any, Optional, Tuple, Dict, Union, List
 import re
 import uuid
 from io import BytesIO
 from pathlib import Path
+import html
 import folium
 import pandas as pd
 from .chart import BaseChart
@@ -20,6 +21,12 @@ except ImportError:
 FOLIUM_SYSTEM_PROMPT = """FOLIUM MAP OUTPUT MODE:
 Generate an interactive map using Folium.
 
+🚨 CRITICAL COORDINATE ORDERING RULE 🚨
+Folium expects coordinates in [LATITUDE, LONGITUDE] order, NOT [longitude, latitude]!
+- Latitude comes FIRST (range: -90 to 90)
+- Longitude comes SECOND (range: -180 to 180)
+- For US locations: latitude is positive (25-49), longitude is negative (-125 to -66)
+
 REQUIREMENTS:
 1. Return Python code in a markdown code block (```python)
 2. Use folium library (import folium)
@@ -30,24 +37,99 @@ REQUIREMENTS:
 7. DO NOT call map.save() or display - return code only
 8. IMPORTANT: If using custom tile layers, ALWAYS include attribution parameter
 
-EXAMPLE:
+⚠️ COORDINATE VALIDATION CHECKLIST ⚠️
+Before returning your code, verify:
+- ✓ All coordinates are in [latitude, longitude] order
+- ✓ Latitude values are in reasonable range for the location
+- ✓ Longitude values are in reasonable range for the location
+- ✓ Map center uses median/average of marker coordinates
+- ✓ Zoom level is appropriate for the data spread
+
+COORDINATE EXAMPLES:
+✅ CORRECT:
+```python
+# New York City
+folium.Map(location=[40.7128, -74.0060])  # [lat, lon]
+folium.Marker([40.7128, -74.0060])         # [lat, lon]
+
+# Miami, Florida
+folium.Map(location=[25.7617, -80.1918])  # [lat, lon]
+folium.Marker([25.7617, -80.1918])         # [lat, lon]
+```
+
+❌ WRONG (DO NOT DO THIS):
+```python
+# These are BACKWARDS - longitude first is WRONG
+folium.Map(location=[-74.0060, 40.7128])  # WRONG ORDER!
+folium.Marker([-80.1918, 25.7617])         # WRONG ORDER!
+```
+
+BASIC EXAMPLE:
 ```python
 import folium
 
-# Create base map
+# Create base map with correct coordinate order
 m = folium.Map(
-    location=[40.7128, -74.0060],  # NYC coordinates
+    location=[40.7128, -74.0060],  # [latitude, longitude]
     zoom_start=12,
     tiles='OpenStreetMap'
 )
 
-# Add marker with popup
+# Add marker with correct coordinate order
 folium.Marker(
-    location=[40.7128, -74.0060],
+    location=[40.7128, -74.0060],  # [latitude, longitude]
     popup='New York City',
     tooltip='Click for info',
     icon=folium.Icon(color='red', icon='info-sign')
 ).add_to(m)
+```
+
+MULTIPLE MARKERS EXAMPLE:
+```python
+import folium
+import pandas as pd
+
+# Sample data with lat/lon columns
+stores = pd.DataFrame({
+    'name': ['Store A', 'Store B', 'Store C'],
+    'latitude': [40.7128, 34.0522, 41.8781],   # lat column
+    'longitude': [-74.0060, -118.2437, -87.6298]  # lon column
+})
+
+# Calculate center from data
+center_lat = stores['latitude'].median()
+center_lon = stores['longitude'].median()
+
+# Create map centered on data
+m = folium.Map(
+    location=[center_lat, center_lon],  # ALWAYS [lat, lon]
+    zoom_start=5
+)
+
+# Add markers - iterate with correct order
+for idx, row in stores.iterrows():
+    folium.Marker(
+        location=[row['latitude'], row['longitude']],  # [lat, lon]
+        popup=f"Store: {row['name']}",
+        tooltip=row['name']
+    ).add_to(m)
+```
+
+COORDINATE VALIDATION FUNCTION (OPTIONAL):
+```python
+def validate_coords(lat, lon, name=""):
+    \"\"\"Validate lat/lon are in correct ranges.\"\"\"
+    if not (-90 <= lat <= 90):
+        print(f"⚠️ Invalid latitude for {name}: {lat}")
+        return False
+    if not (-180 <= lon <= 180):
+        print(f"⚠️ Invalid longitude for {name}: {lon}")
+        return False
+    return True
+
+# Use before adding markers:
+if validate_coords(lat, lon, store_name):
+    folium.Marker(location=[lat, lon], ...).add_to(m)
 ```
 
 DATA MODE (when DataFrame is provided):
@@ -57,10 +139,30 @@ Ensure the DataFrame has columns that can join with GeoJSON properties.
 
 ADVANCED FEATURES:
 - For heatmaps: use folium.plugins.HeatMap
-- For polylines: use folium.PolyLine
+- For polylines: use folium.PolyLine (coordinates in [lat, lon] order!)
+- For circles: folium.Circle(location=[lat, lon], radius=...)
 - For custom tiles: ALWAYS include attribution parameter
     Example: folium.TileLayer('Stamen Terrain', attr='Map tiles by Stamen Design').add_to(m)
+
+COMMON MISTAKES TO AVOID:
+❌ Using [lon, lat] order instead of [lat, lon]
+❌ Forgetting to calculate map center from data
+❌ Using fixed zoom level that doesn't fit the data
+❌ Not validating coordinate ranges
+❌ Swapping latitude and longitude column references
+
+FINAL CHECKLIST BEFORE RETURNING CODE:
+1. ✓ All folium.Map() calls use [latitude, longitude] order
+2. ✓ All folium.Marker() calls use [latitude, longitude] order  
+3. ✓ All coordinate arrays/lists use [latitude, longitude] order
+4. ✓ Map center is calculated from actual marker positions
+5. ✓ Zoom level is appropriate for geographic spread
+6. ✓ No longitude values in the latitude position
+7. ✓ No latitude values in the longitude position
+
+Remember: LATITUDE FIRST, LONGITUDE SECOND. Always [lat, lon], never [lon, lat]!
 """
+
 
 FOLIUM_DATA_PROMPT = """FOLIUM DATA MODE:
 You are generating data for a choropleth map.
@@ -95,6 +197,183 @@ class FoliumRenderer(BaseChart):
         We'll handle both in the render method.
         """
         return Union[str, pd.DataFrame] if GEOPANDAS_AVAILABLE else str
+
+    def _is_valid_latitude(self, value: Any) -> bool:
+        """Check if value is a valid latitude (-90 to 90)."""
+        return isinstance(value, (int, float)) and -90 <= value <= 90
+
+
+    def _is_valid_longitude(self, value: Any) -> bool:
+        """Check if value is a valid longitude (-180 to 180)."""
+        return isinstance(value, (int, float)) and -180 <= value <= 180
+
+
+    def _detect_coordinate_swap(self, lat: float, lon: float) -> bool:
+        """
+        Detect if coordinates are likely swapped using multiple heuristics.
+        
+        Returns True if coordinates appear to be swapped.
+        """
+        # Basic validation - both must be numeric
+        if not (isinstance(lat, (int, float)) and isinstance(lon, (int, float))):
+            return False
+        
+        # Check 1: Basic range check
+        lat_in_lat_range = -90 <= lat <= 90
+        lon_in_lon_range = -180 <= lon <= 180
+        lat_in_lon_range = -180 <= lat <= 180
+        lon_in_lat_range = -90 <= lon <= 90
+        
+        # If current order is invalid but swapped would be valid
+        if not (lat_in_lat_range and lon_in_lon_range):
+            if lat_in_lon_range and lon_in_lat_range:
+                return True  # Definitely swapped
+        
+        # Check 2: Magnitude heuristic for common locations
+        # Most inhabited locations: lat magnitude < 70, lon can be larger
+        if abs(lat) > 90:
+            return True  # Invalid latitude, must be swapped
+        
+        # Check 3: Sign heuristic for Western Hemisphere (Americas, especially US)
+        # For US/Americas: latitude should be positive (20-50), longitude negative (-60 to -180)
+        if lat < 0 and lon > 0:
+            # Negative latitude, positive longitude = likely Southern Hemisphere or swapped
+            # Check if swapping would make sense for US/Americas
+            if -130 <= lat <= -60 and 20 <= lon <= 50:
+                print(f"  📍 Detected likely swap (US coordinates): [{lat}, {lon}] → [{lon}, {lat}]")
+                return True
+        
+        # Check 4: Extreme latitude with moderate longitude
+        # If latitude is very high/low (near poles) but longitude is moderate, might be swapped
+        if abs(lat) > 75 and abs(lon) < 75:
+            # Check if swapping makes more sense
+            if abs(lon) > 10 and abs(lat) > abs(lon):
+                # Probably swapped (unless actually near poles)
+                if not (85 <= abs(lat) <= 90):  # Not actually at poles
+                    return True
+        
+        # Check 5: Florida-specific heuristic
+        # Florida: lat 24.5-31 (positive), lon -80 to -87 (negative)
+        if -90 <= lat <= -75 and 20 <= lon <= 35:
+            print(f"  🌴 Detected Florida coordinates swap: [{lat}, {lon}] → [{lon}, {lat}]")
+            return True
+        
+        return False
+
+
+    def _normalize_location(self, location: Any) -> Tuple[Any, bool]:
+        """
+        Ensure coordinates are in [lat, lon] order and within valid ranges.
+        
+        Returns:
+            (normalized_location, was_swapped)
+        """
+        if not isinstance(location, (list, tuple)) or len(location) < 2:
+            return location, False
+        
+        lat, lon = location[0], location[1]
+        
+        # Skip if not numeric
+        if not (isinstance(lat, (int, float)) and isinstance(lon, (int, float))):
+            return location, False
+        
+        # Check if coordinates appear to be swapped
+        if self._detect_coordinate_swap(lat, lon):
+            # Swap coordinates
+            fixed_location = [lon, lat, *location[2:]]
+            return fixed_location, True
+        
+        # Check if coordinates are valid as-is
+        if self._is_valid_latitude(lat) and self._is_valid_longitude(lon):
+            return list(location), False
+        
+        # Invalid coordinates but swapping doesn't help
+        print(f"  ⚠️ Invalid coordinates (can't auto-fix): [{lat}, {lon}]")
+        return list(location), False
+
+
+    def _prepare_map_coordinates(self, map_obj: Any) -> None:
+        """
+        Normalize marker coordinates and recenter the map.
+        
+        Improvements:
+        - Better coordinate validation
+        - More detailed logging
+        - Robust center calculation
+        """
+        coordinates: List[Tuple[float, float]] = []
+        swaps = 0
+        invalid = 0
+        total_markers = 0
+        
+        print("\n📍 Validating map coordinates...")
+        
+        for child in getattr(map_obj, '_children', {}).values():
+            location = getattr(child, 'location', None)
+            if location is None:
+                continue
+            
+            total_markers += 1
+            original_location = location.copy() if isinstance(location, list) else list(location)
+            
+            fixed_location, was_swapped = self._normalize_location(location)
+            
+            if was_swapped:
+                setattr(child, 'location', fixed_location)
+                swaps += 1
+                print(f"  ✓ Fixed: {original_location} → {fixed_location}")
+            
+            # Collect valid coordinates for centering
+            if isinstance(fixed_location, (list, tuple)) and len(fixed_location) >= 2:
+                first, second = fixed_location[0], fixed_location[1]
+                if self._is_valid_latitude(first) and self._is_valid_longitude(second):
+                    coordinates.append((first, second))
+                else:
+                    invalid += 1
+                    print(f"  ⚠️ Invalid coordinates (skipping): {fixed_location}")
+        
+        # Update map center based on valid coordinates
+        if coordinates:
+            lats = pd.Series([lat for lat, _ in coordinates])
+            lons = pd.Series([lon for _, lon in coordinates])
+            
+            new_center = [float(lats.median()), float(lons.median())]
+            old_center = map_obj.location
+            
+            map_obj.location = new_center
+            
+            print(f"\n📊 Coordinate validation summary:")
+            print(f"  Total markers: {total_markers}")
+            print(f"  Valid coordinates: {len(coordinates)}")
+            print(f"  Swapped and fixed: {swaps}")
+            print(f"  Invalid (skipped): {invalid}")
+            print(f"  Map center: {old_center} → {new_center}")
+            
+            # Suggest appropriate zoom level based on coordinate spread
+            lat_range = float(lats.max() - lats.min())
+            lon_range = float(lons.max() - lons.min())
+            max_range = max(lat_range, lon_range)
+            
+            if max_range < 0.1:
+                suggested_zoom = 13  # Very tight cluster
+            elif max_range < 1:
+                suggested_zoom = 10  # City level
+            elif max_range < 5:
+                suggested_zoom = 7   # Regional
+            elif max_range < 20:
+                suggested_zoom = 5   # Multi-state
+            else:
+                suggested_zoom = 3   # Continental
+            
+            # Update zoom if it seems wrong
+            current_zoom = map_obj.options.get('zoom', map_obj.options.get('zoom_start', 10))
+            if abs(current_zoom - suggested_zoom) > 3:
+                print(f"  💡 Suggested zoom: {suggested_zoom} (current: {current_zoom})")
+        
+        else:
+            print(f"  ⚠️ No valid coordinates found among {total_markers} markers")
+        
+        print()  # Empty line for readability
 
     def execute_code(
         self,
@@ -259,13 +538,14 @@ class FoliumRenderer(BaseChart):
 
         content = head_match[1]
 
-        # Filter out standard meta tags to avoid duplication, keep scripts/styles
-        resources = []
-        resources.extend(
-            line
-            for line in content.split('\n')
-            if '<script' in line or '<link' in line or '<style' in line
-        )
+        # Capture full script/style/link tags to avoid malformed HTML fragments
+        resources: List[str] = []
+        for pattern in [
+            r'<script[^>]*>.*?</script>',
+            r'<style[^>]*>.*?</style>',
+            r'<link[^>]*?>',
+        ]:
+            resources.extend(re.findall(pattern, content, re.DOTALL))
 
         return '\n'.join(resources)
 
@@ -281,7 +561,9 @@ class FoliumRenderer(BaseChart):
 
         # Extract the body content (divs and inline scripts)
         # We use the same logic as before, but now strictly for the body
-        return self._extract_map_content(full_html, map_id)
+        explanation = kwargs.get('explanation')
+        explanation_block = self._build_explanation_section(explanation)
+        return f"{explanation_block}{self._extract_map_content(full_html, map_id)}"
 
     def to_html(
         self,
@@ -314,36 +596,41 @@ class FoliumRenderer(BaseChart):
         Extract map content (Divs + Script) from full Folium HTML.
         Renames IDs to prevent collisions in notebooks/web interfaces.
         """
-        # 1. Extract Custom Styles (defined inside body/head usually)
-        styles = []
-        for style_match in re.finditer(r'<style[^>]*>(.*?)</style>', full_html, re.DOTALL):
-            styles.append(style_match.group(0))
-
-        # 2. Find the map div
+        original_id = None
         div_pattern = r'<div[^>]*id="(map_[^"]*)"[^>]*>.*?</div>'
         div_match = re.search(div_pattern, full_html, re.DOTALL)
-
         if div_match:
             original_id = div_match[1]
-            # Replace ID
             map_div = div_match[0].replace(f'id="{original_id}"', f'id="{map_id}"')
-
-            # 3. Extract Inline Scripts
-            inline_scripts = []
-            for script_match in re.finditer(r'<script[^>]*>(.*?)</script>', full_html, re.DOTALL):
-                opening_tag = script_match.group(0)
-                script_content = script_match.group(1)
-
-                # Only process inline scripts (exclude src=...)
-                if 'src=' not in opening_tag and script_content.strip():
-                    # Update ID references in the JS
-                    updated_script = script_content.replace(f'"{original_id}"', f'"{map_id}"')
-                    updated_script = updated_script.replace(f"'{original_id}'", f"'{map_id}'")
-                    inline_scripts.append(updated_script)
         else:
-            # Fallback
             map_div = f'<div id="{map_id}" style="width: 100%; height: 600px;">Map Rendering Error</div>'
-            inline_scripts = []
+
+        # 1. Extract Custom Styles (defined inside body/head usually)
+        styles = []
+        for style_match in re.finditer(r'<style[^>]*>.*?</style>', full_html, re.DOTALL):
+            style_block = style_match.group(0)
+            if original_id:
+                style_block = style_block.replace(f'#{original_id}', f'#{map_id}')
+            styles.append(style_block)
+
+        # Ensure the map has an explicit height even if Folium styles were malformed or missing
+        has_height_style = any(f'#{map_id}' in style and 'height' in style for style in styles)
+        if not has_height_style:
+            styles.append(f"<style>#{map_id} {{ position: relative; width: 100%; height: 500px; min-height: 400px; }}</style>")
+
+        # 3. Extract Inline Scripts
+        inline_scripts = []
+        for script_match in re.finditer(r'<script[^>]*>(.*?)</script>', full_html, re.DOTALL):
+            opening_tag = script_match.group(0)
+            script_content = script_match.group(1)
+
+            # Only process inline scripts (exclude src=...)
+            if 'src=' not in opening_tag and script_content.strip():
+                updated_script = script_content
+                if original_id:
+                    updated_script = updated_script.replace(f'"{original_id}"', f'"{map_id}"')
+                    updated_script = updated_script.replace(f"'{original_id}'", f"'{map_id}'")
+                inline_scripts.append(updated_script)
 
         # 4. Combine (Div first, then Scripts)
         parts = styles + [map_div]
@@ -353,6 +640,90 @@ class FoliumRenderer(BaseChart):
             parts.append('</script>')
 
         return '\n'.join(parts)
+
+    @staticmethod
+    def _build_explanation_section(explanation: Optional[str]) -> str:
+        """Build a collapsible explanation section to show above the map."""
+        if not explanation:
+            return ""
+
+        escaped_explanation = html.escape(str(explanation))
+
+        return """
+        <style>
+            .map-explanation {margin-bottom: 16px;}
+            .map-explanation details {border: 1px solid #e0e0e0; border-radius: 6px; overflow: hidden; background: #ffffff;}
+            .map-explanation summary {background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: #fff; padding: 12px 16px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-weight: 600; user-select: none;}
+            .map-explanation .toggle-icon {transition: transform 0.3s ease;}
+            .map-explanation details[open] .toggle-icon {transform: rotate(90deg);}
+            .map-explanation .explanation-content {padding: 12px 16px; background: #f8fafc; color: #1f2937;}
+            .map-explanation p {margin: 0; line-height: 1.6;}
+        </style>
+        <div class="map-explanation">
+            <details>
+                <summary>
+                    <span>📝 Explicación del mapa</span>
+                    <span class="toggle-icon">▶</span>
+                </summary>
+                <div class="explanation-content">
+                    <p>{escaped_explanation}</p>
+                </div>
+            </details>
+        </div>
+        """
+
+    @staticmethod
+    def _is_latitude(value: Any) -> bool:
+        return isinstance(value, (int, float)) and -90 <= value <= 90
+
+    @staticmethod
+    def _is_longitude(value: Any) -> bool:
+        return isinstance(value, (int, float)) and -180 <= value <= 180
+
+    def _normalize_location(self, location: Any) -> Tuple[Any, bool]:
+        """Ensure coordinates are in [lat, lon] order and within valid ranges."""
+        if not isinstance(location, (list, tuple)) or len(location) < 2:
+            return location, False
+
+        lat, lon = location[0], location[1]
+        if not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)):
+            return location, False
+
+        lat_first_valid = self._is_latitude(lat) and self._is_longitude(lon)
+        lon_first_valid = self._is_latitude(lon) and self._is_longitude(lat)
+
+        # Detect clear reversals or polar misplacements
+        if not lat_first_valid and lon_first_valid:
+            return [lon, lat, *location[2:]], True
+
+        # Heuristic: if latitude magnitude is extreme while longitude is moderate, swap
+        if lat_first_valid and abs(lat) > 75 and abs(lon) < 75 and lon_first_valid:
+            return [lon, lat, *location[2:]], True
+
+        return list(location), False
+
+    def _prepare_map_coordinates(self, map_obj: Any) -> None:
+        """Normalize marker coordinates and recenter the map."""
+        coordinates: List[Tuple[float, float]] = []
+        swaps = 0
+
+        for child in getattr(map_obj, '_children', {}).values():
+            location = getattr(child, 'location', None)
+            fixed_location, swapped = self._normalize_location(location)
+            if swapped:
+                setattr(child, 'location', fixed_location)
+                swaps += 1
+            if isinstance(fixed_location, (list, tuple)) and len(fixed_location) >= 2:
+                first, second = fixed_location[0], fixed_location[1]
+                if self._is_latitude(first) and self._is_longitude(second):
+                    coordinates.append((first, second))
+
+        if coordinates:
+            lats = pd.Series([lat for lat, _ in coordinates])
+            lons = pd.Series([lon for _, lon in coordinates])
+            map_obj.location = [float(lats.median()), float(lons.median())]
+            if swaps:
+                print(f"Corrected {swaps} marker coordinate pairs to [lat, lon] order.")
 
     def to_json(self, chart_obj: Any) -> Optional[Dict]:
         """Export map metadata as JSON."""
@@ -382,6 +753,8 @@ class FoliumRenderer(BaseChart):
         - First return (code): Python code string for response.output
         - Second return (html): HTML content for response.response
         """
+        explanation = getattr(response, 'explanation', None)
+
         # 1. Extract Code - Try response.code first, fallback to content extraction
         code = None
         try:
@@ -439,6 +812,7 @@ class FoliumRenderer(BaseChart):
                     mode=html_mode,
                     include_code=False,
                     title=kwargs.get('title', 'Choropleth Map'),
+                    explanation=explanation,
                     **kwargs
                 )
 
@@ -488,6 +862,9 @@ class FoliumRenderer(BaseChart):
         # Result is a Folium map object
         map_obj = result_obj
 
+        # Normalize coordinates and center based on available markers
+        self._prepare_map_coordinates(map_obj)
+
         # Handle Jupyter/Notebook Environment
         if output_format in {'jupyter', 'notebook', 'ipython', 'colab'}:
             # For Jupyter, return code and map object
@@ -501,6 +878,7 @@ class FoliumRenderer(BaseChart):
             code=code,
             theme=theme,
             title=kwargs.get('title', 'Folium Map'),
+            explanation=explanation,
             **kwargs
         )
 
