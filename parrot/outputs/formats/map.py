@@ -1,4 +1,4 @@
-from typing import Any, Optional, Tuple, Dict, Union
+from typing import Any, Optional, Tuple, Dict, Union, List
 import re
 import uuid
 from io import BytesIO
@@ -29,6 +29,8 @@ REQUIREMENTS:
 6. Add layers, controls, or plugins if requested
 7. DO NOT call map.save() or display - return code only
 8. IMPORTANT: If using custom tile layers, ALWAYS include attribution parameter
+9. Before returning, quickly self-review the map code: validate [lat, lon] ordering, set an explicit height on the map container, center the map near the median of your coordinates, and avoid malformed HTML/style tags.
+10. If unsure about the output, use the Python REPL tool to execute and verify the map code before returning it.
 
 EXAMPLE:
 ```python
@@ -259,13 +261,14 @@ class FoliumRenderer(BaseChart):
 
         content = head_match[1]
 
-        # Filter out standard meta tags to avoid duplication, keep scripts/styles
-        resources = []
-        resources.extend(
-            line
-            for line in content.split('\n')
-            if '<script' in line or '<link' in line or '<style' in line
-        )
+        # Capture full script/style/link tags to avoid malformed HTML fragments
+        resources: List[str] = []
+        for pattern in [
+            r'<script[^>]*>.*?</script>',
+            r'<style[^>]*>.*?</style>',
+            r'<link[^>]*?>',
+        ]:
+            resources.extend(re.findall(pattern, content, re.DOTALL))
 
         return '\n'.join(resources)
 
@@ -314,36 +317,41 @@ class FoliumRenderer(BaseChart):
         Extract map content (Divs + Script) from full Folium HTML.
         Renames IDs to prevent collisions in notebooks/web interfaces.
         """
-        # 1. Extract Custom Styles (defined inside body/head usually)
-        styles = []
-        for style_match in re.finditer(r'<style[^>]*>(.*?)</style>', full_html, re.DOTALL):
-            styles.append(style_match.group(0))
-
-        # 2. Find the map div
+        original_id = None
         div_pattern = r'<div[^>]*id="(map_[^"]*)"[^>]*>.*?</div>'
         div_match = re.search(div_pattern, full_html, re.DOTALL)
-
         if div_match:
             original_id = div_match[1]
-            # Replace ID
             map_div = div_match[0].replace(f'id="{original_id}"', f'id="{map_id}"')
-
-            # 3. Extract Inline Scripts
-            inline_scripts = []
-            for script_match in re.finditer(r'<script[^>]*>(.*?)</script>', full_html, re.DOTALL):
-                opening_tag = script_match.group(0)
-                script_content = script_match.group(1)
-
-                # Only process inline scripts (exclude src=...)
-                if 'src=' not in opening_tag and script_content.strip():
-                    # Update ID references in the JS
-                    updated_script = script_content.replace(f'"{original_id}"', f'"{map_id}"')
-                    updated_script = updated_script.replace(f"'{original_id}'", f"'{map_id}'")
-                    inline_scripts.append(updated_script)
         else:
-            # Fallback
             map_div = f'<div id="{map_id}" style="width: 100%; height: 600px;">Map Rendering Error</div>'
-            inline_scripts = []
+
+        # 1. Extract Custom Styles (defined inside body/head usually)
+        styles = []
+        for style_match in re.finditer(r'<style[^>]*>.*?</style>', full_html, re.DOTALL):
+            style_block = style_match.group(0)
+            if original_id:
+                style_block = style_block.replace(f'#{original_id}', f'#{map_id}')
+            styles.append(style_block)
+
+        # Ensure the map has an explicit height even if Folium styles were malformed or missing
+        has_height_style = any(f'#{map_id}' in style and 'height' in style for style in styles)
+        if not has_height_style:
+            styles.append(f"<style>#{map_id} {{ position: relative; width: 100%; height: 500px; min-height: 400px; }}</style>")
+
+        # 3. Extract Inline Scripts
+        inline_scripts = []
+        for script_match in re.finditer(r'<script[^>]*>(.*?)</script>', full_html, re.DOTALL):
+            opening_tag = script_match.group(0)
+            script_content = script_match.group(1)
+
+            # Only process inline scripts (exclude src=...)
+            if 'src=' not in opening_tag and script_content.strip():
+                updated_script = script_content
+                if original_id:
+                    updated_script = updated_script.replace(f'"{original_id}"', f'"{map_id}"')
+                    updated_script = updated_script.replace(f"'{original_id}'", f"'{map_id}'")
+                inline_scripts.append(updated_script)
 
         # 4. Combine (Div first, then Scripts)
         parts = styles + [map_div]
@@ -353,6 +361,59 @@ class FoliumRenderer(BaseChart):
             parts.append('</script>')
 
         return '\n'.join(parts)
+
+    @staticmethod
+    def _is_latitude(value: Any) -> bool:
+        return isinstance(value, (int, float)) and -90 <= value <= 90
+
+    @staticmethod
+    def _is_longitude(value: Any) -> bool:
+        return isinstance(value, (int, float)) and -180 <= value <= 180
+
+    def _normalize_location(self, location: Any) -> Tuple[Any, bool]:
+        """Ensure coordinates are in [lat, lon] order and within valid ranges."""
+        if not isinstance(location, (list, tuple)) or len(location) < 2:
+            return location, False
+
+        lat, lon = location[0], location[1]
+        if not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)):
+            return location, False
+
+        lat_first_valid = self._is_latitude(lat) and self._is_longitude(lon)
+        lon_first_valid = self._is_latitude(lon) and self._is_longitude(lat)
+
+        # Detect clear reversals or polar misplacements
+        if not lat_first_valid and lon_first_valid:
+            return [lon, lat, *location[2:]], True
+
+        # Heuristic: if latitude magnitude is extreme while longitude is moderate, swap
+        if lat_first_valid and abs(lat) > 75 and abs(lon) < 75 and lon_first_valid:
+            return [lon, lat, *location[2:]], True
+
+        return list(location), False
+
+    def _prepare_map_coordinates(self, map_obj: Any) -> None:
+        """Normalize marker coordinates and recenter the map."""
+        coordinates: List[Tuple[float, float]] = []
+        swaps = 0
+
+        for child in getattr(map_obj, '_children', {}).values():
+            location = getattr(child, 'location', None)
+            fixed_location, swapped = self._normalize_location(location)
+            if swapped:
+                setattr(child, 'location', fixed_location)
+                swaps += 1
+            if isinstance(fixed_location, (list, tuple)) and len(fixed_location) >= 2:
+                first, second = fixed_location[0], fixed_location[1]
+                if self._is_latitude(first) and self._is_longitude(second):
+                    coordinates.append((first, second))
+
+        if coordinates:
+            lats = pd.Series([lat for lat, _ in coordinates])
+            lons = pd.Series([lon for _, lon in coordinates])
+            map_obj.location = [float(lats.median()), float(lons.median())]
+            if swaps:
+                print(f"Corrected {swaps} marker coordinate pairs to [lat, lon] order.")
 
     def to_json(self, chart_obj: Any) -> Optional[Dict]:
         """Export map metadata as JSON."""
@@ -487,6 +548,9 @@ class FoliumRenderer(BaseChart):
 
         # Result is a Folium map object
         map_obj = result_obj
+
+        # Normalize coordinates and center based on available markers
+        self._prepare_map_coordinates(map_obj)
 
         # Handle Jupyter/Notebook Environment
         if output_format in {'jupyter', 'notebook', 'ipython', 'colab'}:
