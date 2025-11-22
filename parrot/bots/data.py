@@ -344,14 +344,12 @@ class PandasAgent(BasicAgent):
         self.description = "A specialized agent for data analysis using pandas DataFrames"
         self.agent_memory = AgentMemory()
 
-    def agent_tools(self) -> List[AbstractTool]:
-        """
-        Override to add PythonPandasTool and enhanced MetadataTool.
-
-        Key change: MetadataTool now receives dataframes reference for dynamic EDA.
-        """
+    def _get_default_tools(self, tools: list) -> List[AbstractTool]:
+        """Return Agent-specific tools."""
         report_dir = STATIC_DIR.joinpath(self.agent_id, 'documents')
         report_dir.mkdir(parents=True, exist_ok=True)
+        if not tools:
+            tools = []
 
         # Build a description that includes DataFrame info
         df_summary = ", ".join([
@@ -364,7 +362,6 @@ class PandasAgent(BasicAgent):
             f"Available data: {df_summary}. "
             f"Use df1, df2, etc. to access DataFrames."
         )
-
         # PythonPandasTool
         pandas_tool = PythonPandasTool(
             dataframes=self.dataframes,
@@ -382,20 +379,19 @@ class PandasAgent(BasicAgent):
             alias_map=self._get_dataframe_alias_map(),
             dataframes=self.dataframes
         )
-
-        prophet_tool = ProphetForecastTool(
-            dataframes=self.dataframes,
-            alias_map=self._get_dataframe_alias_map(),
-        )
-        prophet_tool.description = (
-            "Forecast future values for a time series using Facebook Prophet. "
-            "Specify the dataframe, date column, value column, forecast horizon, and frequency."
-        )
+        # prophet_tool = ProphetForecastTool(
+        #     dataframes=self.dataframes,
+        #     alias_map=self._get_dataframe_alias_map(),
+        # )
+        # prophet_tool.description = (
+        #     "Forecast future values for a time series using Facebook Prophet. "
+        #     "Specify the dataframe, date column, value column, forecast horizon, and frequency."
+        # )
 
         return [
             pandas_tool,
             metadata_tool,
-            prophet_tool
+            # prophet_tool
         ]
 
     def _define_dataframe(

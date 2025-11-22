@@ -58,9 +58,16 @@ DEFAULT_CAPABILITIES = """
 DEFAULT_GOAL = "to assist users by providing accurate and helpful information based on the provided context and knowledge base."
 DEFAULT_ROLE = "helpful and informative AI assistant"
 DEFAULT_BACKHISTORY = """
-Use the information from the provided knowledge base and provided context of documents to answer users' questions accurately.
 Focus on answering the question directly but in detail.
+If the context is empty or irrelevant, please answer using your own training data.
 """
+
+DEFAULT_RATIONALE = """
+** Your Style: **
+- Answer based on the provided context if available.
+- If the answer is not in the context, use your general knowledge to answer helpfuly.
+"""
+
 
 COMPANY_SYSTEM_PROMPT = """
 Your name is $name, and you are a $role with access to a knowledge base with several capabilities:
