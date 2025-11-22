@@ -3,6 +3,7 @@ import re
 import uuid
 from io import BytesIO
 from pathlib import Path
+import html
 import folium
 import pandas as pd
 from .chart import BaseChart
@@ -284,7 +285,9 @@ class FoliumRenderer(BaseChart):
 
         # Extract the body content (divs and inline scripts)
         # We use the same logic as before, but now strictly for the body
-        return self._extract_map_content(full_html, map_id)
+        explanation = kwargs.get('explanation')
+        explanation_block = self._build_explanation_section(explanation)
+        return f"{explanation_block}{self._extract_map_content(full_html, map_id)}"
 
     def to_html(
         self,
@@ -361,6 +364,37 @@ class FoliumRenderer(BaseChart):
             parts.append('</script>')
 
         return '\n'.join(parts)
+
+    @staticmethod
+    def _build_explanation_section(explanation: Optional[str]) -> str:
+        """Build a collapsible explanation section to show above the map."""
+        if not explanation:
+            return ""
+
+        escaped_explanation = html.escape(str(explanation))
+
+        return """
+        <style>
+            .map-explanation {margin-bottom: 16px;}
+            .map-explanation details {border: 1px solid #e0e0e0; border-radius: 6px; overflow: hidden; background: #ffffff;}
+            .map-explanation summary {background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: #fff; padding: 12px 16px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-weight: 600; user-select: none;}
+            .map-explanation .toggle-icon {transition: transform 0.3s ease;}
+            .map-explanation details[open] .toggle-icon {transform: rotate(90deg);}
+            .map-explanation .explanation-content {padding: 12px 16px; background: #f8fafc; color: #1f2937;}
+            .map-explanation p {margin: 0; line-height: 1.6;}
+        </style>
+        <div class="map-explanation">
+            <details>
+                <summary>
+                    <span>📝 Explicación del mapa</span>
+                    <span class="toggle-icon">▶</span>
+                </summary>
+                <div class="explanation-content">
+                    <p>{escaped_explanation}</p>
+                </div>
+            </details>
+        </div>
+        """
 
     @staticmethod
     def _is_latitude(value: Any) -> bool:
@@ -443,6 +477,8 @@ class FoliumRenderer(BaseChart):
         - First return (code): Python code string for response.output
         - Second return (html): HTML content for response.response
         """
+        explanation = getattr(response, 'explanation', None)
+
         # 1. Extract Code - Try response.code first, fallback to content extraction
         code = None
         try:
@@ -500,6 +536,7 @@ class FoliumRenderer(BaseChart):
                     mode=html_mode,
                     include_code=False,
                     title=kwargs.get('title', 'Choropleth Map'),
+                    explanation=explanation,
                     **kwargs
                 )
 
@@ -565,6 +602,7 @@ class FoliumRenderer(BaseChart):
             code=code,
             theme=theme,
             title=kwargs.get('title', 'Folium Map'),
+            explanation=explanation,
             **kwargs
         )
 
