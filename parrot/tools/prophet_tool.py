@@ -1,5 +1,4 @@
 """
-"""
 ProphetForecastTool for time series forecasting using Facebook Prophet.
 """
 

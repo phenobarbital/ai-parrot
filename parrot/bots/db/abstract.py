@@ -108,15 +108,6 @@ class AbstractDBAgent(AbstractBot):
             )
         asyncio.set_event_loop(self.loop)
 
-    def default_rationale(self) -> str:
-        # TODO: read rationale from a file
-        return (
-            "** Your Style: **\n"
-            "- When responding to user queries, ensure that you provide accurate and up-to-date information.\n"  # noqa: C0301
-            "- Providing precise and helpful database interactions.\n"
-            "- Remember: You operate with zero temperature for consistent, precise database operations."
-        )
-
     async def initialize_schema(self):
         """Initialize database connection and analyze schema."""
         try:
