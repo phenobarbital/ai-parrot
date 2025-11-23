@@ -287,6 +287,7 @@ class PandasAgent(BasicAgent):
     """
 
     METADATA_SAMPLE_ROWS = 3
+    queries : Union[List[str], dict] = None
 
     def __init__(
         self,
@@ -322,7 +323,7 @@ class PandasAgent(BasicAgent):
             cache_expiration: Cache expiration in hours
             **kwargs: Additional configuration
         """
-        self._queries = query
+        self._queries = query or self.queries
         self._capabilities = capabilities
         self._generate_eda = generate_eda
         self._cache_expiration = cache_expiration
@@ -330,6 +331,9 @@ class PandasAgent(BasicAgent):
         self.dataframes, self.df_metadata = (
             self._define_dataframe(df)
             if df is not None else ({}, {})
+        )
+        print(
+            '✅ PandasAgent initialized with DataFrames:', list(self.dataframes.keys())
         )
         # Initialize base agent (AbstractBot will set chatbot_id)
         super().__init__(

@@ -72,7 +72,6 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
         }
     }
     max_tokens: int = None # Use default max tokens from Chatbot
-    model_name: str = None  # Use default model from Chatbot
     report_template: str = "report_template.html"
     system_prompt_template: str = AGENT_PROMPT
 
@@ -90,11 +89,13 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
         dataframes: Optional[Dict[str, pd.DataFrame]] = None,
         **kwargs
     ):
+        # to work with dataframes:
+        self.dataframes = dataframes or {}
+        self._dataframe_info_cache = None
         self.agent_id = self.agent_id or agent_id
         self.agent_name = self.agent_name or name
         tools = self._get_default_tools(tools)
-        kwargs.setdefault('model', self.model_name)
-        kwargs.setdefault('max_tokens', self.max_tokens)
+        print('TOOLS > ', tools)
         super().__init__(
             name=name,
             llm=llm,
@@ -123,9 +124,6 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
         self.mcp_manager = MCPToolManager(
             self.tool_manager
         )
-        # to work with dataframes:
-        self.dataframes = dataframes or {}
-        self._dataframe_info_cache = None
 
     def _get_default_tools(self, tools: list) -> List[AbstractTool]:
         """Return Agent-specific tools."""
