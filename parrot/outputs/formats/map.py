@@ -553,9 +553,12 @@ class FoliumRenderer(BaseChart):
         """
         Render Folium map content (Body + Inline Scripts).
         This implements the abstract method from BaseChart.
-        """
-        map_id = f"folium-map-{uuid.uuid4().hex[:8]}"
 
+        Note: we keep the original Folium-generated map ID to ensure all
+        associated styles and scripts continue to reference the same element.
+        This prevents broken layouts where the map container ends up with no
+        height because the IDs in the head and body fall out of sync.
+        """
         # Render the map to a complete HTML string
         full_html = chart_obj.get_root().render()
 
@@ -563,7 +566,7 @@ class FoliumRenderer(BaseChart):
         # We use the same logic as before, but now strictly for the body
         explanation = kwargs.get('explanation')
         explanation_block = self._build_explanation_section(explanation)
-        return f"{explanation_block}{self._extract_map_content(full_html, map_id)}"
+        return f"{explanation_block}{self._extract_map_content(full_html)}"
 
     def to_html(
         self,
@@ -591,18 +594,24 @@ class FoliumRenderer(BaseChart):
         )
 
     @staticmethod
-    def _extract_map_content(full_html: str, map_id: str) -> str:
+    def _extract_map_content(full_html: str, map_id: Optional[str] = None) -> str:
         """
         Extract map content (Divs + Script) from full Folium HTML.
-        Renames IDs to prevent collisions in notebooks/web interfaces.
+
+        We intentionally keep the original Folium-generated map ID unless a
+        custom ID is provided. This avoids mismatches between IDs referenced in
+        <head> resources (styles/scripts) and the body content that would
+        otherwise leave the map container with no height.
         """
         original_id = None
         div_pattern = r'<div[^>]*id="(map_[^"]*)"[^>]*>.*?</div>'
         div_match = re.search(div_pattern, full_html, re.DOTALL)
         if div_match:
             original_id = div_match[1]
+            map_id = map_id or original_id
             map_div = div_match[0].replace(f'id="{original_id}"', f'id="{map_id}"')
         else:
+            map_id = map_id or f'folium-map-{uuid.uuid4().hex[:8]}'
             map_div = f'<div id="{map_id}" style="width: 100%; height: 600px;">Map Rendering Error</div>'
 
         # 1. Extract Custom Styles (defined inside body/head usually)
