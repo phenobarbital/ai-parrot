@@ -79,17 +79,23 @@ class AltairRenderer(BaseChart):
             return None, "Execution context was empty"
 
         # Find the chart object (Altair typically produces single charts)
-        chart = self._find_chart_object(context)
+        chart, chart_error = self._find_chart_object(context)
 
         if chart:
-            print('CHART > ', chart, type(chart))
             return chart, None
+
+        if chart_error:
+            return None, chart_error
 
         return None, "Code must define a chart variable (chart, fig, c, or plot)"
 
     @staticmethod
-    def _find_chart_object(context: Dict[str, Any]) -> Optional[Any]:
-        """Locate the Altair chart object in the local namespace."""
+    def _find_chart_object(context: Dict[str, Any]) -> Tuple[Optional[Any], Optional[str]]:
+        """Locate the Altair chart object in the local namespace.
+
+        Returns a tuple of (chart_obj, error_message). The error_message is
+        populated when a chart-like object is found but fails serialization
+        (e.g., ``to_dict`` raises)."""
 
         def is_altair_chart(obj: Any) -> bool:
             """Check if object is an Altair chart."""
@@ -117,30 +123,41 @@ class AltairRenderer(BaseChart):
 
             return False
 
-        def is_valid_chart(obj: Any) -> bool:
+        def is_valid_chart(obj: Any) -> Tuple[bool, Optional[str]]:
             """Verify the chart can be serialized."""
             try:
                 obj.to_dict()
-                return True
-            except Exception:
-                return False
+                return True, None
+            except Exception as exc:
+                return False, str(exc)
+
+        serialization_error = None
 
         # Priority search for common variable names
         priority_vars = ['chart', 'fig', 'c', 'plot', 'figure']
         for var_name in priority_vars:
             if var_name in context:
                 obj = context[var_name]
-                if is_altair_chart(obj) and is_valid_chart(obj):
-                    return obj
+                if is_altair_chart(obj):
+                    is_valid, err_msg = is_valid_chart(obj)
+                    if is_valid:
+                        return obj, None
+                    serialization_error = serialization_error or f"Chart variable '{var_name}' could not be serialized: {err_msg}"
 
         # Scan all locals for chart objects
         for var_name, obj in context.items():
             if var_name.startswith('_'):
                 continue
-            if is_altair_chart(obj) and is_valid_chart(obj):
-                return obj
+            if is_altair_chart(obj):
+                is_valid, err_msg = is_valid_chart(obj)
+                if is_valid:
+                    return obj, None
+                serialization_error = serialization_error or f"Found a chart-like object in '{var_name}' but serialization failed: {err_msg}"
 
-        return None
+        if serialization_error:
+            return None, serialization_error
+
+        return None, None
 
     def _render_chart_content(self, chart_obj: Any, **kwargs) -> str:
         """Render Altair-specific chart content with vega-embed."""
