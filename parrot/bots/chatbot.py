@@ -131,7 +131,7 @@ class Chatbot(AbstractBot):
                 await pool.release(connection)
 
     def __repr__(self):
-        return f"<ChatBot.{self.__class__.__name__}:{self.name}>"
+        return f"<{self.__class__.__name__}:{self.name}>"
 
     async def configure(self, app=None) -> None:
         """Load configuration for this Chatbot."""
@@ -203,7 +203,7 @@ class Chatbot(AbstractBot):
 
         # LLM Configuration with defaults
         self._llm = getattr(self, '_llm', 'google')
-        self._llm_model = getattr(self, '_llm_model', 'gemini-2.0-flash-001')
+        self._llm_model = getattr(self, '_llm_model', None)
         self._llm_temp = getattr(self, '_llm_temp', 0.1)
         self._max_tokens = getattr(self, '_max_tokens', 1024)
         self._top_k = getattr(self, '_top_k', 41)
@@ -340,7 +340,7 @@ class Chatbot(AbstractBot):
 
         # LLM Configuration
         self._llm = self._from_db(bot, 'llm', default='google')
-        self._llm_model = self._from_db(bot, 'model_name', default='gemini-2.5-flash')
+        self._llm_model = self._from_db(bot, 'model', default='gemini-2.5-flash')
         self._llm_temp = self._from_db(bot, 'temperature', default=0.1)
         self._max_tokens = self._from_db(bot, 'max_tokens', default=1024)
         self._top_k = self._from_db(bot, 'top_k', default=41)

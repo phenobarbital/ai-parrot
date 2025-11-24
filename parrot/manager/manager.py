@@ -336,6 +336,10 @@ class BotManager:
                 f"Bot '{name}' not in _bots. Available: {list(self._bots.keys())}"
             )
         if name in self._bots:
+            _bot = self._bots[name]
+            if not getattr(_bot, 'is_configured', False):
+                self.logger.warning(f"Bot '{name}' found in _bots and is not configured.")
+                await _bot.configure(self.app)
             return self._bots[name]
         if self.registry.has(name):
             try:

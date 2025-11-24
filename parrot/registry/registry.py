@@ -572,12 +572,12 @@ class AgentRegistry:
             key=lambda meta: meta.priority,
             reverse=True
         )
-        for metadata in startup_agents:  # También cambié "meta" a "metadata" para claridad
+        for metadata in startup_agents:
             try:
                 instance = await metadata.get_instance(**kwargs)
                 if callable(getattr(instance, 'configure', None)):
                     await instance.configure(app)
-                results[metadata.name] = {  # Usa metadata.name aquí
+                results[metadata.name] = {
                     "status": "success",
                     "instance": instance,
                     "instance_id": id(instance),

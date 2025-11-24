@@ -82,7 +82,7 @@ class AbstractBot(DBInterface, ABC):
     _default_llm: str = 'google'
     # LLM:
     llm_client: str = 'google'
-    default_model: str = 'gemini-2.5-flash'
+    default_model: str = None
     temperature: float = 0.1
     description: str = None
 

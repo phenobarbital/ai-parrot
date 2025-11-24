@@ -532,9 +532,9 @@ class AgentTalk(BaseView):
             # Override with explicit parameter if provided
             if 'output_mode' in data:
                 try:
-                    output_mode = OutputMode(data['output_mode'])
+                    output_mode = OutputMode(data.pop('output_mode'))
                 except ValueError:
-                    pass  # Keep the detected mode
+                    pass
 
             # Prepare ask() parameters
             format_kwargs = data.pop('format_kwargs', {})

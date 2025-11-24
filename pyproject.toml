@@ -105,7 +105,8 @@ agents = [
     "branca==0.8.2",
     "folium==0.20.0",
     "webdriver-manager==4.0.2",
-    "prophet==1.2.1"
+    "prophet==1.2.1",
+    "folium==0.20.0",
 
 ]
 
@@ -278,7 +279,8 @@ override-dependencies = [
     "watchdog>=6.0.0",
     "selenium==4.36.0",
     "ortools>=9.11.4210,<=9.14.6206",
-    "blinker==1.7.0"
+    "blinker==1.7.0",
+    "folium==0.20.0",
 ]
 
 # Version from parrot/version.py

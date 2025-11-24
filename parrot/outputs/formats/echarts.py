@@ -19,10 +19,12 @@ try:
 except ImportError:
     IPYWIDGETS_AVAILABLE = False
 
+from .mixins.emaps import ECHARTS_GEO_EXTENSION, EChartsMapsMixin
+
 
 ECHARTS_SYSTEM_PROMPT = """**ECHARTS JSON GENERATION MODE**
 
-**Objective:** Generate a single, valid JSON configuration object for an Apache ECharts chart.
+**Objective:** Generate a single, valid JSON configuration object for an Apache ECharts chart (including maps).
 
 **CONTEXT OVERRIDE:**
 This is a TEXT GENERATION task. Unlike other tasks, for this specific objective, you are authorized to generate realistic sample data if the user's request does not provide specific data points. This is an exception to the general rule of not inventing information.
@@ -80,11 +82,21 @@ This is a TEXT GENERATION task. Unlike other tasks, for this specific objective,
     ]
 }
 ```
+
+**GEO/MAP SUPPORT:**
+""" + ECHARTS_GEO_EXTENSION + """
+
+**IMPORTANT NOTES:**
+- For maps, ALWAYS use [longitude, latitude] order (opposite of Leaflet)
+- Validate coordinates before using them
+- Filter out invalid (0, 0) coordinates
+- Center maps on the average of valid data points
+- Use appropriate zoom levels (5-8 for regions, 8-12 for cities)
 """
 
 
 @register_renderer(OutputMode.ECHARTS, system_prompt=ECHARTS_SYSTEM_PROMPT)
-class EChartsRenderer(BaseChart):
+class EChartsRenderer(EChartsMapsMixin, BaseChart):
     """Renderer for Apache ECharts (JSON Configuration)"""
 
     def execute_code(
@@ -126,33 +138,33 @@ class EChartsRenderer(BaseChart):
         chart_id = f"echarts-{uuid.uuid4().hex[:8]}"
 
         # Convert to JSON
-        config_json = json.dumps(config, indent=2)
-
+        # config_json = json.dumps(config, indent=2)
         # Get dimensions
         width = kwargs.get('width', '100%')
         height = kwargs.get('height', '500px')
+        # return f'''
+        # <div id="{chart_id}" style="width: {width}; height: {height};"></div>
+        # <script type="text/javascript">
+        #     (function() {{
+        #         var chartDom = document.getElementById('{chart_id}');
+        #         if (!chartDom) return;
 
-        return f'''
-        <div id="{chart_id}" style="width: {width}; height: {height};"></div>
-        <script type="text/javascript">
-            (function() {{
-                var chartDom = document.getElementById('{chart_id}');
-                if (!chartDom) return;
+        #         var myChart = echarts.init(chartDom);
+        #         var option = {config_json};
 
-                var myChart = echarts.init(chartDom);
-                var option = {config_json};
+        #         option && myChart.setOption(option);
 
-                option && myChart.setOption(option);
+        #         // Resize handler
+        #         window.addEventListener('resize', function() {{
+        #             myChart.resize();
+        #         }});
 
-                // Resize handler
-                window.addEventListener('resize', function() {{
-                    myChart.resize();
-                }});
-
-                console.log('ECharts {chart_id} rendered successfully');
-            }})();
-        </script>
-        '''
+        #         console.log('ECharts {chart_id} rendered successfully');
+        #     }})();
+        # </script>
+        # '''
+        # Use mixin method for enhanced geo rendering
+        return self._render_chart_content_geo(config, chart_id, width, height)
 
     def to_html(
         self,
