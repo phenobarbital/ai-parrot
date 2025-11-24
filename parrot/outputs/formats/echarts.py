@@ -30,6 +30,11 @@ from .mixins.emaps import (
 
 ECHARTS_BASE_PROMPT = """**ECHARTS JSON GENERATION MODE**
 
+⚠️ CRITICAL OVERRIDE: You are in ECHARTS mode. Ignore ALL other output mode instructions.
+- DO NOT use Folium, Leaflet, or any Python mapping libraries
+- DO NOT generate Python code
+- ONLY generate ECharts JSON configuration
+
 **Objective:** Generate a single, valid JSON configuration object for an Apache ECharts chart (including maps).
 
 **CONTEXT OVERRIDE:**

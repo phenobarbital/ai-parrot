@@ -610,7 +610,33 @@ class FoliumRenderer(BaseChart):
         if div_match:
             original_id = div_match[1]
             map_id = map_id or original_id
-            map_div = div_match[0].replace(f'id="{original_id}"', f'id="{map_id}"')
+            
+            # Obtenemos el HTML crudo del div
+            map_div = div_match[0]
+            
+            # --- PASO 1: Actualizar el ID ---
+            map_div = map_div.replace(f'id="{original_id}"', f'id="{map_id}"')
+            
+            # --- PASO 2: Inyectar Altura Fija (La solución al problema) ---
+            # Definimos la altura deseada
+            fixed_height_style = "height: 600px; min-height: 600px;"
+            
+            # Intentamos reemplazar la altura porcentual que genera Folium (ej: height: 100.0%;)
+            # Usamos Regex para ser flexibles con espacios o decimales
+            map_div, num_subs = re.subn(
+                r'height:\s*100(\.0)?%;', 
+                fixed_height_style, 
+                map_div
+            )
+            
+            # Si el regex no encontró nada (ej: Folium cambió formato), inyectamos el estilo a la fuerza
+            if num_subs == 0:
+                if 'style="' in map_div:
+                    # Agregamos al principio del estilo existente con !important por si acaso
+                    map_div = map_div.replace('style="', f'style="{fixed_height_style} ')
+                else:
+                    # Si no hay estilo, creamos uno
+                    map_div = map_div.replace('<div', f'<div style="{fixed_height_style}"')
 
             # 3. Extract Inline Scripts
             inline_scripts = []
@@ -624,6 +650,7 @@ class FoliumRenderer(BaseChart):
                     inline_scripts.append(updated_script)
         else:
             map_id = map_id or f'folium-map-{uuid.uuid4().hex[:8]}'
+            # Fallback en caso de error de regex general
             map_div = f'<div id="{map_id}" style="width: 100%; height: 600px;">Map Rendering Error</div>'
             inline_scripts = []
 
@@ -648,7 +675,7 @@ class FoliumRenderer(BaseChart):
             parts.append('</script>')
 
         # Join with double newlines for readability
-        return '\n\n'.join(parts)  # ← Changed from '\n'.join()
+        return '\n\n'.join(parts)
 
     @staticmethod
     def _build_explanation_section(explanation: Optional[str]) -> str:
