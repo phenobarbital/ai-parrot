@@ -190,10 +190,10 @@ class SeabornRenderer(BaseChart):
             buffer.close()
 
             chart_html = f'''
-            <div class="seaborn-chart-wrapper" style="margin-bottom: 20px;">
+            <div class="seaborn-chart-wrapper" style="margin-bottom: 20px; width: 100%;">
                 <img id="{img_id}"
                      src="data:image/{img_format};base64,{img_base64}"
-                     style="max-width: 100%; height: auto; display: block; margin: 0 auto;"
+                     style="width: 100%; height: auto; display: block; margin: 0 auto;"
                      alt="Seaborn Chart {i+1}" />
             </div>
             '''
