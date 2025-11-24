@@ -202,6 +202,7 @@ agGrid.createGrid(gridDiv, gridOptions);
             html_mode: 'partial' (embeddable) or 'complete' (standalone).
         """
         head_content = ""
+        partial_head_content = ""
         body_content = ""
 
         # 1. Configuration based on mode
@@ -211,6 +212,7 @@ agGrid.createGrid(gridDiv, gridOptions);
                 <link href="https://unpkg.com/gridjs/dist/theme/mermaid.min.css" rel="stylesheet" />
                 <script src="https://unpkg.com/gridjs/dist/gridjs.umd.js"></script>
             """
+            partial_head_content = head_content
             body_content = f"""
                 <div id="{element_id}"></div>
                 <script>
@@ -223,6 +225,7 @@ agGrid.createGrid(gridDiv, gridOptions);
             head_content = """
                 <script src="https://cdn.jsdelivr.net/npm/ag-grid-community/dist/ag-grid-community.min.js"></script>
             """
+            partial_head_content = head_content
             # Note: Ag-Grid requires a height on the container
             body_content = f"""
                 <script>
@@ -240,13 +243,20 @@ agGrid.createGrid(gridDiv, gridOptions);
                     .dataframe td, .dataframe th { padding: 8px; text-align: left; border-bottom: 1px solid #ddd; }
                 </style>
             """
+            partial_head_content = """
+                <style>
+                    @import url('https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css');
+                    .dataframe { width: 100%; }
+                    .dataframe td, .dataframe th { padding: 8px; text-align: left; border-bottom: 1px solid #ddd; }
+                </style>
+            """
             body_content = f'<div class="table-responsive">{table_content}</div>'
 
         # 2. Return Partial (Embeddable)
         if html_mode == "partial":
             return f"""
             <div>
-                {head_content}
+                {partial_head_content}
                 {body_content}
             </div>
             """
