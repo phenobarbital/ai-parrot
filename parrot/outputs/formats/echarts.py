@@ -1,10 +1,13 @@
 from typing import Any, Optional, Tuple, Dict
+import logging
 import re
 import json
 import uuid
 from .chart import BaseChart
 from . import register_renderer
 from ...models.outputs import OutputMode
+
+logger = logging.getLogger(__name__)
 
 try:
     from rich.panel import Panel
@@ -223,21 +226,28 @@ class EChartsRenderer(EChartsMapsMixin, BaseChart):
             error_msg = "No ECharts configuration found in response"
             if output_format == 'terminal':
                 return error_msg, None
-            return self._wrap_for_environment(
+            error_html = self._wrap_for_environment(
                 f"<div class='error'>{error_msg}</div>",
                 output_format
-            ), None
+            )
+            if output_format == 'html':
+                return None, error_html
+            return error_html, None
 
         # 2. Parse/Execute (Validation)
         config, error = self.execute_code(code)
 
         if error:
+            logger.error("Failed to parse ECharts JSON: %s", error)
             if output_format == 'terminal':
                 return f"Error parsing JSON: {error}\n\n{code}", None
-            return self._wrap_for_environment(
+            error_html = self._wrap_for_environment(
                 self._render_error(error, code, theme),
                 output_format
-            ), None
+            )
+            if output_format == 'html':
+                return code, error_html
+            return code, error_html
 
         # 3. Handle Terminal Environment (Show JSON)
         if output_format == 'terminal':
@@ -268,8 +278,8 @@ class EChartsRenderer(EChartsMapsMixin, BaseChart):
 
         # 6. Return based on output format
         if output_format == 'html':
-            # Just return the HTML
-            return None, wrapped_html
+            # Return the generated code along with the wrapped HTML
+            return code, wrapped_html
 
         # Default: Return Code + Wrapped Output
         return code, wrapped_html
@@ -293,3 +303,4 @@ class EChartsRenderer(EChartsMapsMixin, BaseChart):
         # Maybe the content IS just the JSON string?
         content = content.strip()
         return content if content.startswith('{') and content.endswith('}') else None
+
