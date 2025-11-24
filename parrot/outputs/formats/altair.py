@@ -165,6 +165,20 @@ class AltairRenderer(BaseChart):
 
         try:
             spec = chart_obj.to_dict()
+
+            # Ensure charts expand to the available container space
+            if not spec.get('autosize'):
+                spec['autosize'] = {
+                    'type': 'fit',
+                    'contains': 'padding',
+                    'resize': True
+                }
+
+            config = spec.setdefault('config', {})
+            view_config = config.setdefault('view', {})
+            view_config.setdefault('continuousWidth', 'container')
+            view_config.setdefault('continuousHeight', 400)
+
             spec_json = json.dumps(spec, indent=2)
         except Exception as e:
             return f'''
