@@ -113,6 +113,18 @@ class EChartsRenderer(EChartsMapsMixin, BaseChart):
             # Parse JSON
             config = json.loads(cleaned_code)
 
+            # Unwrap common nested structure `{ "option": { ... } }`
+            if (
+                isinstance(config, dict)
+                and 'option' in config
+                and isinstance(config['option'], dict)
+            ):
+                # If the response wraps the actual chart config under an
+                # "option" key, use the inner configuration for validation and
+                # rendering. This aligns with typical ECharts code snippets and
+                # prevents false validation errors.
+                config = config['option']
+
             # Basic validation - check for required structure
             if not isinstance(config, dict):
                 return None, "ECharts config must be a JSON object"
