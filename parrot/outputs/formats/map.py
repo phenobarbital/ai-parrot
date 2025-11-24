@@ -649,7 +649,7 @@ class FoliumRenderer(BaseChart):
 
         escaped_explanation = html.escape(str(explanation))
 
-        return """
+        return '''
         <style>
             .map-explanation {margin-bottom: 16px;}
             .map-explanation details {border: 1px solid #e0e0e0; border-radius: 6px; overflow: hidden; background: #ffffff;}
@@ -670,7 +670,7 @@ class FoliumRenderer(BaseChart):
                 </div>
             </details>
         </div>
-        """
+        '''.format(escaped_explanation=escaped_explanation)
 
     @staticmethod
     def _is_latitude(value: Any) -> bool:
