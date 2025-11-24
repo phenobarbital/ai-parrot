@@ -191,7 +191,10 @@ agGrid.createGrid(gridDiv, gridOptions);
         table_mode: str,
         title: str = "Table",
         html_mode: str = "partial",
-        element_id: str = "wrapper"
+        element_id: str = "wrapper",
+        script_nonce: Optional[str] = None,
+        style_nonce: Optional[str] = None,
+        content_security_policy: Optional[str] = None,
     ) -> str:
         """
         Build the final HTML output (partial or complete).
@@ -204,53 +207,90 @@ agGrid.createGrid(gridDiv, gridOptions);
         head_content = ""
         partial_head_content = ""
         body_content = ""
+        script_nonce_attr = f' nonce="{script_nonce}"' if script_nonce else ""
+        style_nonce_attr = f' nonce="{style_nonce}"' if style_nonce else ""
 
         # 1. Configuration based on mode
         if table_mode == 'grid':
             # Grid.js CDNs
-            head_content = """
+            head_content = f"""
                 <link href="https://unpkg.com/gridjs/dist/theme/mermaid.min.css" rel="stylesheet" />
-                <script src="https://unpkg.com/gridjs/dist/gridjs.umd.js"></script>
+                <script src="https://unpkg.com/gridjs/dist/gridjs.umd.js" defer></script>
             """
             partial_head_content = head_content
             body_content = f"""
                 <div id="{element_id}"></div>
-                <script>
-                    {table_content}
+                <script{script_nonce_attr}>
+                    document.addEventListener('DOMContentLoaded', function () {{
+                        {table_content}
+                    }});
                 </script>
             """
 
         elif table_mode == 'ag-grid':
             # Ag-Grid CDNs
             head_content = """
-                <script src="https://cdn.jsdelivr.net/npm/ag-grid-community/dist/ag-grid-community.min.js"></script>
+                <script src="https://cdn.jsdelivr.net/npm/ag-grid-community/dist/ag-grid-community.min.js" defer></script>
             """
             partial_head_content = head_content
             # Note: Ag-Grid requires a height on the container
             body_content = f"""
-                <script>
-                    {table_content}
-                </script>
                 <div id="{element_id}" class="ag-theme-alpine" style="height: 500px; width: 100%;"></div>
+                <script{script_nonce_attr}>
+                    document.addEventListener('DOMContentLoaded', function () {{
+                        if (window.agGrid && document.getElementById('{element_id}')) {{
+                            {table_content}
+                        }}
+                    }});
+                </script>
             """
 
         else: # simple
             # Basic Bootstrap for simple tables
-            head_content = """
+            head_content = f"""
                 <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css">
-                <style>
-                    .dataframe { width: 100%; }
-                    .dataframe td, .dataframe th { padding: 8px; text-align: left; border-bottom: 1px solid #ddd; }
+                <style{style_nonce_attr}>
+                    .dataframe {{ width: 100%; }}
+                    .dataframe td, .dataframe th {{ padding: 8px; text-align: left; border-bottom: 1px solid #ddd; }}
                 </style>
             """
-            partial_head_content = """
-                <style>
+            partial_head_content = f"""
+                <style{style_nonce_attr}>
                     @import url('https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css');
-                    .dataframe { width: 100%; }
-                    .dataframe td, .dataframe th { padding: 8px; text-align: left; border-bottom: 1px solid #ddd; }
+                    .dataframe {{ width: 100%; }}
+                    .dataframe td, .dataframe th {{ padding: 8px; text-align: left; border-bottom: 1px solid #ddd; }}
                 </style>
             """
             body_content = f'<div class="table-responsive">{table_content}</div>'
+
+        # Optional CSP meta for complete documents. This is useful when a nonce is provided
+        # so that inline scripts/styles still satisfy strict policies.
+        csp_meta_tag = ""
+        if html_mode == "complete":
+            if content_security_policy:
+                csp_meta_tag = f"<meta http-equiv=\"Content-Security-Policy\" content=\"{content_security_policy}\">"
+            elif script_nonce or style_nonce:
+                csp_parts = [
+                    "default-src 'self' https://cdn.jsdelivr.net https://unpkg.com",
+                    "img-src 'self' data: https://cdn.jsdelivr.net https://unpkg.com",
+                    "font-src 'self' data: https://cdn.jsdelivr.net https://unpkg.com",
+                ]
+                script_src = ["'self'", "https://cdn.jsdelivr.net", "https://unpkg.com"]
+                style_src = ["'self'", "https://cdn.jsdelivr.net", "https://unpkg.com"]
+
+                if script_nonce:
+                    script_src.append(f"'nonce-{script_nonce}'")
+                else:
+                    script_src.append("'unsafe-inline'")
+
+                if style_nonce:
+                    style_src.append(f"'nonce-{style_nonce}'")
+                else:
+                    style_src.append("'unsafe-inline'")
+
+                csp_parts.append(f"script-src {' '.join(script_src)}")
+                csp_parts.append(f"style-src {' '.join(style_src)}")
+                csp_meta_tag = f"<meta http-equiv=\"Content-Security-Policy\" content=\"{' ; '.join(csp_parts)}\">"
 
         # 2. Return Partial (Embeddable)
         if html_mode == "partial":
@@ -267,6 +307,7 @@ agGrid.createGrid(gridDiv, gridOptions);
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    {csp_meta_tag}
     <title>{title}</title>
     {head_content}
 </head>
@@ -331,12 +372,18 @@ agGrid.createGrid(gridDiv, gridOptions);
 
         # 4. Build Wrapped HTML
         wrapper_id = f"wrapper_{table_mode}" if table_mode != 'simple' else "wrapper"
+        script_nonce = kwargs.get('script_nonce')
+        style_nonce = kwargs.get('style_nonce')
+        content_security_policy = kwargs.get('content_security_policy')
         wrapped_html = self._build_html_document(
             content,
             table_mode,
             title=title,
             html_mode=html_mode,
-            element_id=wrapper_id
+            element_id=wrapper_id,
+            script_nonce=script_nonce,
+            style_nonce=style_nonce,
+            content_security_policy=content_security_policy,
         )
 
         # 5. Environment: Jupyter -> Widget
