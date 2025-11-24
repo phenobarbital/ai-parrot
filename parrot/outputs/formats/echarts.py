@@ -22,10 +22,13 @@ try:
 except ImportError:
     IPYWIDGETS_AVAILABLE = False
 
-from .mixins.emaps import ECHARTS_GEO_EXTENSION, EChartsMapsMixin
+from .mixins.emaps import (
+    EChartsMapsMixin,
+    get_echarts_system_prompt_with_geo,
+)
 
 
-ECHARTS_SYSTEM_PROMPT = """**ECHARTS JSON GENERATION MODE**
+ECHARTS_BASE_PROMPT = """**ECHARTS JSON GENERATION MODE**
 
 **Objective:** Generate a single, valid JSON configuration object for an Apache ECharts chart (including maps).
 
@@ -37,6 +40,7 @@ This is a TEXT GENERATION task. Unlike other tasks, for this specific objective,
 2.  **Generate JSON:** Create a complete ECharts `option` as a single JSON object.
 3.  **Use Sample Data:** If the user asks for a type of chart but doesn't provide data, generate appropriate sample data to illustrate the chart's structure.
 4.  **Output:** Return ONLY the JSON configuration inside a ```json code block. Do not add explanations.
+5.  **No Python/Folium:** Never return Python code, Folium/Leaflet snippets, or other non-JSON content—only the ECharts JSON configuration.
 
 **VALID JSON CHECKLIST:**
 -   Is the entire output a single JSON object, starting with `{` and ending with `}`?
@@ -87,15 +91,10 @@ This is a TEXT GENERATION task. Unlike other tasks, for this specific objective,
 ```
 
 **GEO/MAP SUPPORT:**
-""" + ECHARTS_GEO_EXTENSION + """
-
-**IMPORTANT NOTES:**
-- For maps, ALWAYS use [longitude, latitude] order (opposite of Leaflet)
-- Validate coordinates before using them
-- Filter out invalid (0, 0) coordinates
-- Center maps on the average of valid data points
-- Use appropriate zoom levels (5-8 for regions, 8-12 for cities)
 """
+
+
+ECHARTS_SYSTEM_PROMPT = get_echarts_system_prompt_with_geo(ECHARTS_BASE_PROMPT)
 
 
 @register_renderer(OutputMode.ECHARTS, system_prompt=ECHARTS_SYSTEM_PROMPT)
