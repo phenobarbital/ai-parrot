@@ -355,25 +355,42 @@ class CloudWatchTool(AbstractTool):
         limit: int = 50
     ) -> List[Dict[str, Any]]:
         """List CloudWatch log groups"""
-        
+
         async with self.aws.client('logs') as logs:
-            params = {'limit': limit}
+            params: Dict[str, Any] = {}
             if pattern:
                 params['logGroupNamePrefix'] = pattern
-            
-            response = await logs.describe_log_groups(**params)
-            
-            return [
-                {
-                    'name': lg['logGroupName'],
-                    'creation_time': datetime.fromtimestamp(
-                        lg['creationTime'] / 1000
-                    ).isoformat(),
-                    'stored_bytes': lg.get('storedBytes', 0),
-                    'retention_days': lg.get('retentionInDays')
-                }
-                for lg in response.get('logGroups', [])
-            ]
+
+            # Collect log groups across all pages (respecting user-provided limit)
+            log_groups: List[Dict[str, Any]] = []
+            next_token: Optional[str] = None
+
+            while True:
+                request_limit = min(50, max(1, limit - len(log_groups))) if limit else 50
+                page_params = {**params, 'limit': request_limit}
+                if next_token:
+                    page_params['nextToken'] = next_token
+
+                response = await logs.describe_log_groups(**page_params)
+
+                for lg in response.get('logGroups', []):
+                    log_groups.append({
+                        'name': lg['logGroupName'],
+                        'creation_time': datetime.fromtimestamp(
+                            lg['creationTime'] / 1000
+                        ).isoformat(),
+                        'stored_bytes': lg.get('storedBytes', 0),
+                        'retention_days': lg.get('retentionInDays')
+                    })
+
+                    if limit and len(log_groups) >= limit:
+                        return log_groups
+
+                next_token = response.get('nextToken')
+                if not next_token:
+                    break
+
+            return log_groups
     
     async def _list_log_streams(
         self,
