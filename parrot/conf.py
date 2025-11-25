@@ -265,6 +265,11 @@ aws_bucket = config.get("AWS_BUCKET", fallback="static-files")
 aws_key = config.get("AWS_KEY")
 aws_secret = config.get("AWS_SECRET")
 
+AWS_ACCESS_KEY = config.get("AWS_ACCESS_KEY", fallback=aws_key)
+AWS_SECRET_KEY = config.get("AWS_SECRET_KEY", fallback=aws_secret)
+AWS_REGION_NAME = config.get("AWS_REGION_NAME", fallback=aws_region)
+AWS_DEFAULT_CLOUDWATCH_LOG_GROUP = config.get("AWS_DEFAULT_CLOUDWATCH_LOG_GROUP", fallback="/parrot/logs")
+
 AWS_CREDENTIALS = {
     "default": {
         "use_credentials": config.get("aws_credentials", fallback=False),
@@ -273,6 +278,12 @@ AWS_CREDENTIALS = {
         "region_name": aws_region,
         "bucket_name": aws_bucket,
     },
+    "monitor": {
+        "use_credentials": config.get("aws_monitor_credentials", fallback=True),
+        "aws_key": AWS_ACCESS_KEY,
+        "aws_secret": AWS_SECRET_KEY,
+        "region_name": AWS_REGION_NAME,
+    }
 }
 
 ## Tools:

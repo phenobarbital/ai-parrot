@@ -33,6 +33,7 @@ class AbstractToolArgsSchema(BaseModel):
 
 class ToolResult(BaseModel):
     """Standardized tool result format."""
+    success: bool = Field(default=True, description="Indicates if the tool executed successfully")
     status: str = Field(default="success", description="Status of the operation")
     result: Any = Field(description="The actual result of the tool operation")
     error: Optional[str] = Field(default=None, description="Error message if any")
