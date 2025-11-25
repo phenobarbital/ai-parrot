@@ -516,44 +516,62 @@ class GoogleGenAIClient(AbstractClient):
         return final_response
 
     def _process_tool_result_for_api(self, result) -> dict:
-        """Process tool result for Google Function Calling API compatibility."""
-
+        """
+        Process tool result for Google Function Calling API compatibility.
+        This method serializes various Python objects into a JSON-compatible
+        dictionary for the Google GenAI API.
+        """
+        # 1. Handle exceptions and special wrapper types first
         if isinstance(result, Exception):
-            return {"result": f"Error: {str(result)}", "error": True}
+            return {"result": f"Tool execution failed: {str(result)}", "error": True}
 
         if isinstance(result, ToolResult):
+            # Extract the actual content from the ToolResult wrapper and process it
             content = result.result
             if result.metadata and 'stdout' in result.metadata:
-                # Priorizar stdout si existe
                 content = result.metadata['stdout']
-            return {"result": str(content)}
+            result = content # The actual result to process is the content
 
-        # Convert complex types to basic Python types
+        # 2. Handle simple types and cases that don't need JSON serialization
+        if isinstance(result, str):
+             if not result.strip():
+                return {"result": "Tool executed successfully with no output."}
+             return {"result": result}
+
+        # 3. Convert known complex types to a JSON-serializable format
         if isinstance(result, pd.DataFrame):
-            clean_result = result.to_dict(orient='records')
+            processed_result = result.to_dict(orient='records')
         elif hasattr(result, 'model_dump'):  # Pydantic v2
-            clean_result = result.model_dump()
+            processed_result = result.model_dump()
         elif hasattr(result, 'dict'):  # Pydantic v1
-            clean_result = result.dict()
+            processed_result = result.dict()
         elif isinstance(result, list):
-            clean_result = [
+            # Recursively clean items in the list
+            processed_result = [
                 item.model_dump() if hasattr(item, 'model_dump')
                 else item.dict() if hasattr(item, 'dict')
                 else item
                 for item in result
             ]
-        if isinstance(result, str):
-            if not result.strip():
-                return {"result": "Code executed successfully (no output)"}
-            return {"result": result}
         else:
-            clean_result = result
+            # This will be the case for other objects like PriceOutput
+            processed_result = result
 
-        # Serialize with orjson to handle time/datetime objects
-        serialized = self._json.dumps(clean_result)
-        json_compatible_result = self._json.loads(serialized)
+        # 4. Attempt to serialize the processed result
+        try:
+            # Using orjson for robust serialization (handles datetimes, etc.)
+            # This step ensures the structure is valid JSON.
+            serialized = self._json.dumps(processed_result)
+            json_compatible_result = self._json.loads(serialized)
+        except (TypeError, ValueError) as e:
+            # This is the fallback for non-serializable objects (like PriceOutput)
+            self.logger.warning(
+                f"Could not serialize result of type {type(processed_result)} to JSON: {e}. "
+                "Falling back to string representation."
+            )
+            json_compatible_result = str(processed_result)
 
-        # Wrap for Google Function Calling format
+        # 5. Final wrapping for the API
         if isinstance(json_compatible_result, dict) and 'result' in json_compatible_result:
             return json_compatible_result
         else:
