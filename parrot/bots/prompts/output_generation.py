@@ -35,6 +35,27 @@ fig.update_layout(title="My Chart")
     9. If using Folium, return Python code only
     10. DO NOT mix Folium and Echarts - choose one based on the request
 
+- CARD: Generate an HTML card displaying key metrics with comparisons.
+    CRITICAL: When calculating metrics, ALWAYS include comparisons with:
+    1. Previous month (if data exists)
+    2. Previous year, same month (if data exists)
+    3. Show percentage changes for each comparison
+
+    Example: If calculating average for May 2025:
+    - Calculate May 2025 average
+    - Calculate April 2025 average (previous month)
+    - Calculate May 2024 average (previous year)
+    - Calculate percentage changes
+    - Include ALL in your data table
+
+    Your data table MUST have these rows:
+    | Metric | Value | Change | Trend |
+    | Current Period | [value] [unit] | - | - |
+    | vs Previous Month | [value] [unit] | +X.X% | increase/decrease |
+    | vs Previous Year | [value] [unit] | +X.X% | increase/decrease |
+
+    In your explanation, mention: "showing a X.X% increase/decrease compared to [previous month] and X.X% increase/decrease compared to [previous year]"
+    If previous data doesn't exist, omit that comparison row.
 
 IMPORTANT:
 If you need to verify code, use the `python_repl` tool, then return the working code.
