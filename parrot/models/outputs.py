@@ -60,6 +60,7 @@ class OutputMode(str, Enum):
     ECHARTS = "echarts"         # Generate ECharts visualization
     TABLE = "table"             # Generate table visualization
     HOLOVIEWS = "holoviews"   # Generate HoloViews visualization
+    CARD = "card"
 
 @dataclass
 class StructuredOutputConfig:
