@@ -361,19 +361,11 @@ class CloudWatchTool(AbstractTool):
             if pattern:
                 params['logGroupNamePrefix'] = pattern
 
-            # Collect log groups across all pages (respecting user-provided limit)
             log_groups: List[Dict[str, Any]] = []
-            next_token: Optional[str] = None
+            paginator = logs.get_paginator('describe_log_groups')
 
-            while True:
-                request_limit = min(50, max(1, limit - len(log_groups))) if limit else 50
-                page_params = {**params, 'limit': request_limit}
-                if next_token:
-                    page_params['nextToken'] = next_token
-
-                response = await logs.describe_log_groups(**page_params)
-
-                for lg in response.get('logGroups', []):
+            async for page in paginator.paginate(**params):
+                for lg in page.get('logGroups', []):
                     log_groups.append({
                         'name': lg['logGroupName'],
                         'creation_time': datetime.fromtimestamp(
@@ -383,14 +375,10 @@ class CloudWatchTool(AbstractTool):
                         'retention_days': lg.get('retentionInDays')
                     })
 
-                    if limit and len(log_groups) >= limit:
-                        return log_groups
-
-                next_token = response.get('nextToken')
-                if not next_token:
+                if len(log_groups) >= limit:
                     break
 
-            return log_groups
+            return log_groups[:limit]
     
     async def _list_log_streams(
         self,
