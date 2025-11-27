@@ -19,10 +19,15 @@ class ECSOperation(str, Enum):
     """Supported ECS/EKS operations."""
 
     LIST_ECS_CLUSTERS = "list_ecs_clusters"
+    LIST_ECS_SERVICES = "list_ecs_services"
     LIST_SERVICES = "list_services"
+    LIST_ECS_TASKS = "list_ecs_tasks"
     LIST_TASKS = "list_tasks"
+    DESCRIBE_ECS_TASKS = "describe_ecs_tasks"
     DESCRIBE_TASKS = "describe_tasks"
+    GET_FARGATE_TASK_LOGS = "get_fargate_task_logs"
     GET_FARGATE_LOGS = "get_fargate_logs"
+    DESCRIBE_EKS_CLUSTER = "describe_eks_cluster"
     GET_EKS_CLUSTER_INFO = "get_eks_cluster_info"
     LIST_EKS_CLUSTERS = "list_eks_clusters"
     LIST_EKS_NODEGROUPS = "list_eks_nodegroups"
@@ -195,7 +200,7 @@ class ECSTool(AbstractTool):
                 for event in response.get("events", [])
             ]
 
-    async def _get_eks_cluster_info(self, cluster_name: str) -> Dict[str, Any]:
+    async def _describe_eks_cluster(self, cluster_name: str) -> Dict[str, Any]:
         async with self.aws.client("eks") as eks:
             response = await eks.describe_cluster(name=cluster_name)
             cluster = response.get("cluster", {})
@@ -215,10 +220,19 @@ class ECSTool(AbstractTool):
                 "resources_vpc_config": cluster.get("resourcesVpcConfig"),
             }
 
+    async def _get_eks_cluster_info(self, cluster_name: str) -> Dict[str, Any]:
+        """Backward-compatible alias for describing an EKS cluster."""
+        return await self._describe_eks_cluster(cluster_name)
+
     async def _list_eks_clusters(self) -> List[str]:
         async with self.aws.client("eks") as eks:
             response = await eks.list_clusters()
             return response.get("clusters", [])
+
+    async def list_eks_clusters(self) -> List[str]:
+        """Public helper for listing available EKS clusters."""
+
+        return await self._list_eks_clusters()
 
     async def _list_eks_nodegroups(self, cluster_name: str) -> List[str]:
         async with self.aws.client("eks") as eks:
@@ -259,13 +273,16 @@ class ECSTool(AbstractTool):
                     timestamp=datetime.now(timezone.utc).isoformat(),
                 )
 
-            if operation == ECSOperation.LIST_SERVICES:
+            if operation in (
+                ECSOperation.LIST_ECS_SERVICES,
+                ECSOperation.LIST_SERVICES,
+            ):
                 if not kwargs.get("cluster_name"):
                     return ToolResult(
                         success=False,
                         status="error",
                         result=None,
-                        error="cluster_name is required for list_services",
+                        error="cluster_name is required for list_ecs_services",
                         metadata={},
                         timestamp=datetime.now(timezone.utc).isoformat(),
                     )
@@ -275,20 +292,20 @@ class ECSTool(AbstractTool):
                     status="completed",
                     result={"services": services, "count": len(services)},
                     metadata={
-                        "operation": "list_services",
+                        "operation": ECSOperation.LIST_ECS_SERVICES.value,
                         "cluster": kwargs["cluster_name"],
                     },
                     error=None,
                     timestamp=datetime.now(timezone.utc).isoformat(),
                 )
 
-            if operation == ECSOperation.LIST_TASKS:
+            if operation in (ECSOperation.LIST_ECS_TASKS, ECSOperation.LIST_TASKS):
                 if not kwargs.get("cluster_name"):
                     return ToolResult(
                         success=False,
                         status="error",
                         result=None,
-                        error="cluster_name is required for list_tasks",
+                        error="cluster_name is required for list_ecs_tasks",
                         metadata={},
                         timestamp=datetime.now(timezone.utc).isoformat(),
                     )
@@ -303,7 +320,7 @@ class ECSTool(AbstractTool):
                     status="completed",
                     result={"tasks": tasks, "count": len(tasks)},
                     metadata={
-                        "operation": "list_tasks",
+                        "operation": ECSOperation.LIST_ECS_TASKS.value,
                         "cluster": kwargs["cluster_name"],
                         "service": kwargs.get("service_name"),
                     },
@@ -311,13 +328,16 @@ class ECSTool(AbstractTool):
                     timestamp=datetime.now(timezone.utc).isoformat(),
                 )
 
-            if operation == ECSOperation.DESCRIBE_TASKS:
+            if operation in (
+                ECSOperation.DESCRIBE_ECS_TASKS,
+                ECSOperation.DESCRIBE_TASKS,
+            ):
                 if not kwargs.get("cluster_name") or not kwargs.get("task_arns"):
                     return ToolResult(
                         success=False,
                         status="error",
                         result=None,
-                        error="cluster_name and task_arns are required for describe_tasks",
+                        error="cluster_name and task_arns are required for describe_ecs_tasks",
                         metadata={},
                         timestamp=datetime.now(timezone.utc).isoformat(),
                     )
@@ -329,20 +349,23 @@ class ECSTool(AbstractTool):
                     status="completed",
                     result={"tasks": details, "count": len(details)},
                     metadata={
-                        "operation": "describe_tasks",
+                        "operation": ECSOperation.DESCRIBE_ECS_TASKS.value,
                         "cluster": kwargs["cluster_name"],
                     },
                     error=None,
                     timestamp=datetime.now(timezone.utc).isoformat(),
                 )
 
-            if operation == ECSOperation.GET_FARGATE_LOGS:
+            if operation in (
+                ECSOperation.GET_FARGATE_TASK_LOGS,
+                ECSOperation.GET_FARGATE_LOGS,
+            ):
                 if not kwargs.get("log_group_name"):
                     return ToolResult(
                         success=False,
                         status="error",
                         result=None,
-                        error="log_group_name is required for get_fargate_logs",
+                        error="log_group_name is required for get_fargate_task_logs",
                         metadata={},
                         timestamp=datetime.now(timezone.utc).isoformat(),
                     )
@@ -358,7 +381,7 @@ class ECSTool(AbstractTool):
                     status="completed",
                     result={"events": events, "count": len(events)},
                     metadata={
-                        "operation": "get_fargate_logs",
+                        "operation": ECSOperation.GET_FARGATE_TASK_LOGS.value,
                         "log_group": kwargs["log_group_name"],
                         "log_stream_prefix": kwargs.get("log_stream_prefix"),
                     },
@@ -366,22 +389,28 @@ class ECSTool(AbstractTool):
                     timestamp=datetime.now(timezone.utc).isoformat(),
                 )
 
-            if operation == ECSOperation.GET_EKS_CLUSTER_INFO:
+            if operation in (
+                ECSOperation.DESCRIBE_EKS_CLUSTER,
+                ECSOperation.GET_EKS_CLUSTER_INFO,
+            ):
                 if not kwargs.get("cluster_name"):
                     return ToolResult(
                         success=False,
                         status="error",
                         result=None,
-                        error="cluster_name is required for get_eks_cluster_info",
+                        error="cluster_name is required for describe_eks_cluster",
                         metadata={},
                         timestamp=datetime.now(timezone.utc).isoformat(),
                     )
-                info = await self._get_eks_cluster_info(kwargs["cluster_name"])
+                info = await self._describe_eks_cluster(kwargs["cluster_name"])
                 return ToolResult(
                     success=True,
                     status="completed",
                     result=info,
-                    metadata={"operation": "get_eks_cluster_info", "cluster": kwargs["cluster_name"]},
+                    metadata={
+                        "operation": ECSOperation.DESCRIBE_EKS_CLUSTER.value,
+                        "cluster": kwargs["cluster_name"],
+                    },
                     error=None,
                     timestamp=datetime.now(timezone.utc).isoformat(),
                 )
@@ -392,7 +421,7 @@ class ECSTool(AbstractTool):
                     success=True,
                     status="completed",
                     result={"clusters": clusters, "count": len(clusters)},
-                    metadata={"operation": "list_eks_clusters"},
+                    metadata={"operation": ECSOperation.LIST_EKS_CLUSTERS.value},
                     error=None,
                     timestamp=datetime.now(timezone.utc).isoformat(),
                 )
@@ -413,7 +442,7 @@ class ECSTool(AbstractTool):
                     status="completed",
                     result={"nodegroups": nodegroups, "count": len(nodegroups)},
                     metadata={
-                        "operation": "list_eks_nodegroups",
+                        "operation": ECSOperation.LIST_EKS_NODEGROUPS.value,
                         "cluster": kwargs["cluster_name"],
                     },
                     error=None,
@@ -438,7 +467,7 @@ class ECSTool(AbstractTool):
                     status="completed",
                     result=nodegroup,
                     metadata={
-                        "operation": "describe_eks_nodegroup",
+                        "operation": ECSOperation.DESCRIBE_EKS_NODEGROUP.value,
                         "cluster": kwargs["cluster_name"],
                         "nodegroup": kwargs["eks_nodegroup"],
                     },
@@ -462,7 +491,7 @@ class ECSTool(AbstractTool):
                     status="completed",
                     result={"fargate_profiles": profiles, "count": len(profiles)},
                     metadata={
-                        "operation": "list_eks_fargate_profiles",
+                        "operation": ECSOperation.LIST_EKS_FARGATE_PROFILES.value,
                         "cluster": kwargs["cluster_name"],
                     },
                     error=None,
@@ -491,7 +520,7 @@ class ECSTool(AbstractTool):
                     status="completed",
                     result=profile,
                     metadata={
-                        "operation": "describe_eks_fargate_profile",
+                        "operation": ECSOperation.DESCRIBE_EKS_FARGATE_PROFILE.value,
                         "cluster": kwargs["cluster_name"],
                         "fargate_profile": kwargs["eks_fargate_profile"],
                     },
