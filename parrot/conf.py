@@ -278,7 +278,7 @@ AWS_CREDENTIALS = {
         "region_name": aws_region,
         "bucket_name": aws_bucket,
     },
-    "monitor": {
+    "monitoring": {
         "use_credentials": config.get("aws_monitor_credentials", fallback=True),
         "aws_key": AWS_ACCESS_KEY,
         "aws_secret": AWS_SECRET_KEY,
