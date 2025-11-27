@@ -64,6 +64,7 @@ import contextlib
 from enum import Enum
 from typing import Any, Dict, List, Optional, Type, Union
 from datetime import datetime
+from pathlib import PurePath
 from pydantic import BaseModel, Field
 from zeep import helpers
 from ..toolkit import AbstractToolkit
@@ -75,7 +76,7 @@ from .models import (
     OrganizationModel,
     WorkdayResponseParser
 )
-
+from ...conf import WORKDAY_WSDL_PATHS
 
 # -----------------------------
 # Workday Service Types
@@ -103,11 +104,9 @@ METHOD_TO_SERVICE_MAP = {
     "search_workers_by_name": WorkdayService.HUMAN_RESOURCES,
     "get_workers_by_manager": WorkdayService.HUMAN_RESOURCES,
     "get_inactive_workers": WorkdayService.HUMAN_RESOURCES,
-
+    "get_worker_time_off_balance": WorkdayService.HUMAN_RESOURCES,
     # Absence Management service methods
     "get_time_off_balance": WorkdayService.ABSENCE_MANAGEMENT,
-    "get_worker_time_off_balance": WorkdayService.ABSENCE_MANAGEMENT,
-
     # Time Tracking service methods (placeholder for future implementation)
     # "get_time_entry": WorkdayService.TIME_TRACKING,
     # "submit_timesheet": WorkdayService.TIME_TRACKING,
@@ -433,6 +432,16 @@ class WorkdayToolkit(AbstractToolkit):
         if wsdl_paths:
             # Map service names to enum values
             for service_name, wsdl_url in wsdl_paths.items():
+                try:
+                    service_enum = WorkdayService(service_name)
+                    self.wsdl_paths[service_enum] = wsdl_url
+                except ValueError:
+                    # Skip unknown service names
+                    continue
+        else:
+            for service_name, wsdl_url in WORKDAY_WSDL_PATHS.items():
+                if isinstance(wsdl_url, PurePath) and not wsdl_url.is_file():
+                    print('Warning: WSDL path does not exist:', wsdl_url)
                 try:
                     service_enum = WorkdayService(service_name)
                     self.wsdl_paths[service_enum] = wsdl_url

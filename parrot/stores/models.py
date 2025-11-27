@@ -1,5 +1,6 @@
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Union
 from enum import Enum
+from dataclasses import dataclass, field
 from pydantic import BaseModel, Field
 
 
@@ -35,3 +36,24 @@ class DistanceStrategy(str, Enum):
     DOT_PRODUCT = "DOT_PRODUCT"
     JACCARD = "JACCARD"
     COSINE = "COSINE"
+
+
+@dataclass
+class StoreConfig:
+    """Vector Store configuration dataclass."""
+    vector_store: str = 'postgres'  # postgres, faiss, arango, etc.
+    table: Optional[str] = None
+    schema: str = 'public'
+    embedding_model: Union[str, dict] = field(
+        default_factory=lambda: {
+            "model": "sentence-transformers/all-mpnet-base-v2",
+            "model_type": "huggingface"
+        }
+    )
+    dimension: int = 768
+    dsn: Optional[str] = None
+    distance_strategy: str = 'COSINE'
+    metric_type: str = 'COSINE'
+    index_type: str = 'IVF_FLAT'
+    auto_create: bool = False  # Auto-create collection on configure
+    extra: Dict[str, Any] = field(default_factory=dict)
