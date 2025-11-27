@@ -10,7 +10,6 @@ from contextlib import asynccontextmanager
 import uuid
 from string import Template
 import asyncio
-import inspect
 import copy
 from aiohttp import web
 from navconfig.logging import logging
@@ -40,6 +39,7 @@ from ..models import (
 )
 from ..stores import AbstractStore, supported_stores
 from ..stores.kb import AbstractKnowledgeBase
+from ..stores.models import StoreConfig
 from ..tools import AbstractTool
 from ..tools.manager import ToolManager, ToolDefinition
 from ..memory import (
@@ -340,6 +340,29 @@ class AbstractBot(DBInterface, ABC):
 
     def get_vector_store(self):
         return self._vector_store
+
+    def define_store_config(self) -> Optional[StoreConfig]:
+        """
+        Override this method to declaratively configure the vector store.
+
+        Similar to agent_tools(), this is called during configure() lifecycle.
+
+        Returns:
+            StoreConfig or None if no store needed.
+
+        Example:
+            def define_store_config(self) -> StoreConfig:
+                return StoreConfig(
+                    vector_store='postgres',
+                    table='employee_docs',
+                    schema='hr',
+                    embedding_model={"model": "thenlper/gte-base", "model_type": "huggingface"},
+                    dimension=768,
+                    dsn="postgresql+asyncpg://user:pass@host/db",
+                    auto_create=True
+                )
+        """
+        return None
 
     def register_kb(self, kb: AbstractKnowledgeBase):
         """Register a new knowledge base."""
@@ -668,6 +691,37 @@ class AbstractBot(DBInterface, ABC):
                 f"Error initializing Knowledge Base Store: {e}"
             ) from e
 
+    def _apply_store_config(self, config: StoreConfig) -> None:
+        """Apply StoreConfig to agent."""
+        store_kwargs = {
+            'vector_store': config.vector_store,
+            'embedding_model': config.embedding_model,
+            'dimension': config.dimension,
+            **config.extra
+        }
+        if config.table:
+            store_kwargs['table'] = config.table
+        if config.schema:
+            store_kwargs['schema'] = config.schema
+        if config.dsn:
+            store_kwargs['dsn'] = config.dsn
+        # Define the store:
+        self.define_store(**store_kwargs)
+
+    async def _ensure_collection(self, config: StoreConfig) -> None:
+        """Create collection if auto_create is True."""
+        if not config.table:
+            return
+        async with self.store as store:
+            if not await store.collection_exists(table=config.table, schema=config.schema):
+                await store.create_collection(
+                    table=config.table,
+                    schema=config.schema,
+                    dimension=config.dimension,
+                    index_type=config.index_type,
+                    metric_type=config.metric_type
+                )
+
     async def configure(self, app=None) -> None:
         """Basic Configuration of Bot.
         """
@@ -715,6 +769,9 @@ class AbstractBot(DBInterface, ABC):
                 f"Error defining prompt: {e}"
             )
             raise
+        # Check declarative store configuration first:
+        if store_config := self.define_store_config():
+            self._apply_store_config(store_config)
         # Configure VectorStore if enabled:
         if self._use_vector:
             try:
@@ -724,6 +781,9 @@ class AbstractBot(DBInterface, ABC):
                     f"Error configuring VectorStore: {e}"
                 )
                 raise
+        if store_config and store_config.auto_create and self.store:
+            # Auto-create collection if configured
+            await self._ensure_collection(store_config)
         # Initialize the KB Selector if enabled:
         if self.use_kb and self.use_kb_selector:
             if not self.kb_store:
