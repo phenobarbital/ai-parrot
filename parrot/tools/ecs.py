@@ -4,11 +4,10 @@ AWS ECS and EKS Tool for AI-Parrot
 Provides helpers to inspect Fargate tasks, ECS services, and EKS clusters.
 """
 from __future__ import annotations
-
-from datetime import datetime, timedelta
-from enum import Enum
 from typing import Any, Dict, List, Optional
-
+from datetime import datetime, timedelta, timezone
+import re
+from enum import Enum
 from botocore.exceptions import ClientError
 from pydantic import Field, field_validator
 
@@ -95,7 +94,7 @@ class ECSTool(AbstractTool):
     - Inspecting EKS cluster, nodegroup, and Fargate profile metadata
     """
 
-    name: str = "ecs"
+    name: str = "aws_ecs_eks_tool"
     description: str = "Inspect AWS ECS/Fargate tasks and EKS Kubernetes clusters"
     args_schema: type[AbstractToolArgsSchema] = ECSToolArgs
 
@@ -105,7 +104,7 @@ class ECSTool(AbstractTool):
 
     def _parse_time(self, value: Optional[str]) -> Optional[datetime]:
         if value is None or value == "now":
-            return datetime.utcnow()
+            return datetime.utc(tz=timezone.utc)
 
         try:
             return datetime.fromisoformat(value.replace("Z", "+00:00"))
@@ -114,8 +113,6 @@ class ECSTool(AbstractTool):
 
         if value.startswith("-"):
             raw = value[1:]
-            import re
-
             match = re.match(r"(\d+)([smhd])", raw)
             if not match:
                 raise ValueError(f"Invalid time format: {value}")
@@ -133,7 +130,7 @@ class ECSTool(AbstractTool):
             else:
                 raise ValueError(f"Unsupported time unit: {unit}")
 
-            return datetime.utcnow() - delta
+            return datetime.now(timezone.utc) - delta
 
         raise ValueError(f"Invalid time format: {value}")
 
@@ -259,7 +256,7 @@ class ECSTool(AbstractTool):
                     result={"clusters": clusters, "count": len(clusters)},
                     metadata={"operation": "list_ecs_clusters"},
                     error=None,
-                    timestamp=datetime.utcnow().isoformat(),
+                    timestamp=datetime.now(timezone.utc).isoformat(),
                 )
 
             if operation == ECSOperation.LIST_SERVICES:
@@ -270,7 +267,7 @@ class ECSTool(AbstractTool):
                         result=None,
                         error="cluster_name is required for list_services",
                         metadata={},
-                        timestamp=datetime.utcnow().isoformat(),
+                        timestamp=datetime.now(timezone.utc).isoformat(),
                     )
                 services = await self._list_services(kwargs["cluster_name"])
                 return ToolResult(
@@ -282,7 +279,7 @@ class ECSTool(AbstractTool):
                         "cluster": kwargs["cluster_name"],
                     },
                     error=None,
-                    timestamp=datetime.utcnow().isoformat(),
+                    timestamp=datetime.now(timezone.utc).isoformat(),
                 )
 
             if operation == ECSOperation.LIST_TASKS:
@@ -293,7 +290,7 @@ class ECSTool(AbstractTool):
                         result=None,
                         error="cluster_name is required for list_tasks",
                         metadata={},
-                        timestamp=datetime.utcnow().isoformat(),
+                        timestamp=datetime.now(timezone.utc).isoformat(),
                     )
                 tasks = await self._list_tasks(
                     cluster=kwargs["cluster_name"],
@@ -311,7 +308,7 @@ class ECSTool(AbstractTool):
                         "service": kwargs.get("service_name"),
                     },
                     error=None,
-                    timestamp=datetime.utcnow().isoformat(),
+                    timestamp=datetime.now(timezone.utc).isoformat(),
                 )
 
             if operation == ECSOperation.DESCRIBE_TASKS:
@@ -322,7 +319,7 @@ class ECSTool(AbstractTool):
                         result=None,
                         error="cluster_name and task_arns are required for describe_tasks",
                         metadata={},
-                        timestamp=datetime.utcnow().isoformat(),
+                        timestamp=datetime.now(timezone.utc).isoformat(),
                     )
                 details = await self._describe_tasks(
                     cluster=kwargs["cluster_name"], task_arns=kwargs["task_arns"]
@@ -336,7 +333,7 @@ class ECSTool(AbstractTool):
                         "cluster": kwargs["cluster_name"],
                     },
                     error=None,
-                    timestamp=datetime.utcnow().isoformat(),
+                    timestamp=datetime.now(timezone.utc).isoformat(),
                 )
 
             if operation == ECSOperation.GET_FARGATE_LOGS:
@@ -347,7 +344,7 @@ class ECSTool(AbstractTool):
                         result=None,
                         error="log_group_name is required for get_fargate_logs",
                         metadata={},
-                        timestamp=datetime.utcnow().isoformat(),
+                        timestamp=datetime.now(timezone.utc).isoformat(),
                     )
                 start_time = self._parse_time(kwargs.get("start_time")) if kwargs.get("start_time") else None
                 events = await self._get_fargate_logs(
@@ -366,7 +363,7 @@ class ECSTool(AbstractTool):
                         "log_stream_prefix": kwargs.get("log_stream_prefix"),
                     },
                     error=None,
-                    timestamp=datetime.utcnow().isoformat(),
+                    timestamp=datetime.now(timezone.utc).isoformat(),
                 )
 
             if operation == ECSOperation.GET_EKS_CLUSTER_INFO:
@@ -377,7 +374,7 @@ class ECSTool(AbstractTool):
                         result=None,
                         error="cluster_name is required for get_eks_cluster_info",
                         metadata={},
-                        timestamp=datetime.utcnow().isoformat(),
+                        timestamp=datetime.now(timezone.utc).isoformat(),
                     )
                 info = await self._get_eks_cluster_info(kwargs["cluster_name"])
                 return ToolResult(
@@ -386,7 +383,7 @@ class ECSTool(AbstractTool):
                     result=info,
                     metadata={"operation": "get_eks_cluster_info", "cluster": kwargs["cluster_name"]},
                     error=None,
-                    timestamp=datetime.utcnow().isoformat(),
+                    timestamp=datetime.now(timezone.utc).isoformat(),
                 )
 
             if operation == ECSOperation.LIST_EKS_CLUSTERS:
@@ -397,7 +394,7 @@ class ECSTool(AbstractTool):
                     result={"clusters": clusters, "count": len(clusters)},
                     metadata={"operation": "list_eks_clusters"},
                     error=None,
-                    timestamp=datetime.utcnow().isoformat(),
+                    timestamp=datetime.now(timezone.utc).isoformat(),
                 )
 
             if operation == ECSOperation.LIST_EKS_NODEGROUPS:
@@ -408,7 +405,7 @@ class ECSTool(AbstractTool):
                         result=None,
                         error="cluster_name is required for list_eks_nodegroups",
                         metadata={},
-                        timestamp=datetime.utcnow().isoformat(),
+                        timestamp=datetime.now(timezone.utc).isoformat(),
                     )
                 nodegroups = await self._list_eks_nodegroups(kwargs["cluster_name"])
                 return ToolResult(
@@ -420,7 +417,7 @@ class ECSTool(AbstractTool):
                         "cluster": kwargs["cluster_name"],
                     },
                     error=None,
-                    timestamp=datetime.utcnow().isoformat(),
+                    timestamp=datetime.now(timezone.utc).isoformat(),
                 )
 
             if operation == ECSOperation.DESCRIBE_EKS_NODEGROUP:
@@ -431,7 +428,7 @@ class ECSTool(AbstractTool):
                         result=None,
                         error="cluster_name and eks_nodegroup are required for describe_eks_nodegroup",
                         metadata={},
-                        timestamp=datetime.utcnow().isoformat(),
+                        timestamp=datetime.now(timezone.utc).isoformat(),
                     )
                 nodegroup = await self._describe_eks_nodegroup(
                     cluster_name=kwargs["cluster_name"], nodegroup=kwargs["eks_nodegroup"]
@@ -446,7 +443,7 @@ class ECSTool(AbstractTool):
                         "nodegroup": kwargs["eks_nodegroup"],
                     },
                     error=None,
-                    timestamp=datetime.utcnow().isoformat(),
+                    timestamp=datetime.now(timezone.utc).isoformat(),
                 )
 
             if operation == ECSOperation.LIST_EKS_FARGATE_PROFILES:
@@ -457,7 +454,7 @@ class ECSTool(AbstractTool):
                         result=None,
                         error="cluster_name is required for list_eks_fargate_profiles",
                         metadata={},
-                        timestamp=datetime.utcnow().isoformat(),
+                        timestamp=datetime.now(timezone.utc).isoformat(),
                     )
                 profiles = await self._list_eks_fargate_profiles(kwargs["cluster_name"])
                 return ToolResult(
@@ -469,7 +466,7 @@ class ECSTool(AbstractTool):
                         "cluster": kwargs["cluster_name"],
                     },
                     error=None,
-                    timestamp=datetime.utcnow().isoformat(),
+                    timestamp=datetime.now(timezone.utc).isoformat(),
                 )
 
             if operation == ECSOperation.DESCRIBE_EKS_FARGATE_PROFILE:
@@ -483,7 +480,7 @@ class ECSTool(AbstractTool):
                             "describe_eks_fargate_profile"
                         ),
                         metadata={},
-                        timestamp=datetime.utcnow().isoformat(),
+                        timestamp=datetime.now(timezone.utc).isoformat(),
                     )
                 profile = await self._describe_eks_fargate_profile(
                     cluster_name=kwargs["cluster_name"],
@@ -499,7 +496,7 @@ class ECSTool(AbstractTool):
                         "fargate_profile": kwargs["eks_fargate_profile"],
                     },
                     error=None,
-                    timestamp=datetime.utcnow().isoformat(),
+                    timestamp=datetime.now(timezone.utc).isoformat(),
                 )
 
             return ToolResult(
@@ -508,7 +505,7 @@ class ECSTool(AbstractTool):
                 result=None,
                 error=f"Unknown operation: {operation}",
                 metadata={"operation": str(operation)},
-                timestamp=datetime.utcnow().isoformat(),
+                timestamp=datetime.now(timezone.utc).isoformat(),
             )
 
         except ClientError as exc:
@@ -520,7 +517,7 @@ class ECSTool(AbstractTool):
                 result=None,
                 error=f"AWS Error ({error_code}): {error_msg}",
                 metadata={"operation": kwargs.get("operation"), "error_code": error_code},
-                timestamp=datetime.utcnow().isoformat(),
+                timestamp=datetime.now(timezone.utc).isoformat(),
             )
         except Exception as exc:
             return ToolResult(
@@ -532,5 +529,5 @@ class ECSTool(AbstractTool):
                     "operation": kwargs.get("operation"),
                     "exception_type": type(exc).__name__,
                 },
-                timestamp=datetime.utcnow().isoformat(),
+                timestamp=datetime.now(timezone.utc).isoformat(),
             )
