@@ -8,7 +8,7 @@ from .base import (
     LLM_PRESETS,
     StreamingRetryConfig
 )
-from .claude import ClaudeClient, ClaudeModel
+from .claude import AnthropicClient, ClaudeClient, ClaudeModel
 from .vertex import VertexAIClient, VertexAIModel
 from .google import GoogleGenAIClient, GoogleModel
 from .gpt import OpenAIClient, OpenAIModel
@@ -16,7 +16,8 @@ from .groq import GroqClient, GroqModel
 
 
 SUPPORTED_CLIENTS = {
-    "claude": ClaudeClient,
+    "claude": AnthropicClient,
+    "anthropic": AnthropicClient,
     "vertexai": VertexAIClient,
     "google": GoogleGenAIClient,
     "openai": OpenAIClient,
@@ -28,7 +29,8 @@ __all__ = (
     "AbstractClient",
     "StreamingRetryConfig",
     "SUPPORTED_CLIENTS",
-    "ClaudeClient",
+    "AnthropicClient",
+    "ClaudeClient",  # Backward compatibility alias
     "ClaudeModel",
     "VertexAIClient",
     "VertexAIModel",

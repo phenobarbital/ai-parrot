@@ -1,11 +1,16 @@
 """
-Workday Toolkit - A unified toolkit for Workday SOAP operations.
+Workday Toolkit - A unified toolkit for Workday SOAP operations with multi-service support.
 
-This toolkit wraps common Workday Human Capital Management (HCM) operations
-as async tools, extending AbstractToolkit and using SOAPClient for SOAP/WSDL handling.
+This toolkit wraps common Workday operations across multiple services (Human Resources,
+Absence Management, Time Tracking, Staffing, Financial Management, and Recruiting) as
+async tools, extending AbstractToolkit and using SOAPClient for SOAP/WSDL handling.
 
-It supports OAuth2 authentication with refresh_token grant, Redis token caching,
-and automatic tool generation from public async methods.
+Features:
+    - Multi-service WSDL support with automatic client routing
+    - OAuth2 authentication with refresh_token grant
+    - Redis token caching for performance
+    - Automatic tool generation from public async methods
+    - Lazy client initialization for optimal resource usage
 
 Dependencies:
     - zeep
@@ -14,30 +19,49 @@ Dependencies:
     - pydantic
 
 Example usage:
+    # Single service (Human Resources only)
     toolkit = WorkdayToolkit(
         credentials={
             "client_id": "your-client-id",
             "client_secret": "your-client-secret",
             "token_url": "https://wd2-impl.workday.com/ccx/oauth2/token",
-            "wsdl_path": "https://wd2-impl.workday.com/ccx/service/tenant/Human_Resources/v40.0?wsdl",
+            "wsdl_path": "https://wd2-impl.workday.com/ccx/service/tenant/Human_Resources/v44.2?wsdl",
             "refresh_token": "your-refresh-token"
         },
         tenant_name="your_tenant"
     )
 
+    # Multiple services with explicit WSDL paths
+    toolkit = WorkdayToolkit(
+        credentials={
+            "client_id": "your-client-id",
+            "client_secret": "your-client-secret",
+            "token_url": "https://wd2-impl.workday.com/ccx/oauth2/token",
+            "refresh_token": "your-refresh-token"
+        },
+        tenant_name="your_tenant",
+        wsdl_paths={
+            "human_resources": "https://wd2-impl.workday.com/ccx/service/tenant/Human_Resources/v44.2?wsdl",
+            "absence_management": "https://wd2-impl.workday.com/ccx/service/tenant/Absence_Management/v45?wsdl",
+            "time_tracking": "https://wd2-impl.workday.com/ccx/service/tenant/Time_Tracking/v44.2?wsdl",
+            "staffing": "https://wd2-impl.workday.com/ccx/service/tenant/Staffing/v44.2?wsdl",
+            "financial_management": "https://wd2-impl.workday.com/ccx/service/tenant/Financial_Management/v45?wsdl",
+            "recruiting": "https://wd2-impl.workday.com/ccx/service/tenant/Recruiting/v44.2?wsdl"
+        }
+    )
+
     # Initialize the connection
     await toolkit.start()
 
-    # Get all tools
-    tools = toolkit.get_tools()
-
-    # Or use methods directly
+    # Use methods - appropriate client is selected automatically
     worker = await toolkit.get_worker(worker_id="12345")
+    time_off = await toolkit.get_time_off_balance(worker_id="12345")
 """
 from __future__ import annotations
 
 import asyncio
 import contextlib
+from enum import Enum
 from typing import Any, Dict, List, Optional, Type, Union
 from datetime import datetime
 from pydantic import BaseModel, Field
@@ -51,6 +75,55 @@ from .models import (
     OrganizationModel,
     WorkdayResponseParser
 )
+
+
+# -----------------------------
+# Workday Service Types
+# -----------------------------
+class WorkdayService(str, Enum):
+    """Enumeration of Workday SOAP service types."""
+    HUMAN_RESOURCES = "human_resources"
+    ABSENCE_MANAGEMENT = "absence_management"
+    TIME_TRACKING = "time_tracking"
+    STAFFING = "staffing"
+    FINANCIAL_MANAGEMENT = "financial_management"
+    RECRUITING = "recruiting"
+
+
+# Mapping of toolkit methods to required Workday services
+METHOD_TO_SERVICE_MAP = {
+    # Human Resources service methods
+    "get_worker": WorkdayService.HUMAN_RESOURCES,
+    "search_workers": WorkdayService.HUMAN_RESOURCES,
+    "get_worker_contact": WorkdayService.HUMAN_RESOURCES,
+    "get_worker_job_data": WorkdayService.HUMAN_RESOURCES,
+    "get_organization": WorkdayService.HUMAN_RESOURCES,
+    "get_workers_by_organization": WorkdayService.HUMAN_RESOURCES,
+    "get_workers_by_ids": WorkdayService.HUMAN_RESOURCES,
+    "search_workers_by_name": WorkdayService.HUMAN_RESOURCES,
+    "get_workers_by_manager": WorkdayService.HUMAN_RESOURCES,
+    "get_inactive_workers": WorkdayService.HUMAN_RESOURCES,
+
+    # Absence Management service methods
+    "get_time_off_balance": WorkdayService.ABSENCE_MANAGEMENT,
+    "get_worker_time_off_balance": WorkdayService.ABSENCE_MANAGEMENT,
+
+    # Time Tracking service methods (placeholder for future implementation)
+    # "get_time_entry": WorkdayService.TIME_TRACKING,
+    # "submit_timesheet": WorkdayService.TIME_TRACKING,
+
+    # Staffing service methods (placeholder for future implementation)
+    # "get_position": WorkdayService.STAFFING,
+    # "create_position": WorkdayService.STAFFING,
+
+    # Financial Management service methods (placeholder for future implementation)
+    # "get_spend_category": WorkdayService.FINANCIAL_MANAGEMENT,
+    # "get_worktags": WorkdayService.FINANCIAL_MANAGEMENT,
+
+    # Recruiting service methods (placeholder for future implementation)
+    # "get_job_requisition": WorkdayService.RECRUITING,
+    # "get_candidates": WorkdayService.RECRUITING,
+}
 
 
 # -----------------------------
@@ -296,11 +369,19 @@ class WorkdaySOAPClient(SOAPClient):
 # -----------------------------
 class WorkdayToolkit(AbstractToolkit):
     """
-    Toolkit for interacting with Workday via SOAP/WSDL.
+    Toolkit for interacting with Workday via SOAP/WSDL with multi-service support.
 
-    This toolkit provides async tools for common Workday HCM operations
-    including worker retrieval, search, contact information, job data,
-    and organization queries.
+    This toolkit provides async tools for Workday operations across multiple services:
+    - Human Resources: Worker management, organization queries, employment data
+    - Absence Management: Time off balances, leave requests
+    - Time Tracking: Timesheet operations (placeholder for future implementation)
+    - Staffing: Position management (placeholder for future implementation)
+    - Financial Management: Spend categories, worktags (placeholder for future implementation)
+    - Recruiting: Job requisitions, candidates (placeholder for future implementation)
+
+    The toolkit automatically routes method calls to the appropriate WSDL service
+    based on the METHOD_TO_SERVICE_MAP configuration. Clients are lazily initialized
+    on first use and cached for performance.
 
     All public async methods automatically become tools via AbstractToolkit.
     """
@@ -309,19 +390,28 @@ class WorkdayToolkit(AbstractToolkit):
         self,
         credentials: Dict[str, str],
         tenant_name: str,
-        absence_wsdl_path: Optional[str] = None,
+        wsdl_paths: Optional[Dict[str, str]] = None,
         redis_url: Optional[str] = None,
         redis_key: str = "workday:access_token",
         timeout: int = 30,
         **kwargs
     ):
         """
-        Initialize Workday toolkit.
+        Initialize Workday toolkit with support for multiple service WSDLs.
 
         Args:
-            credentials: Dict with OAuth2 credentials and WSDL path (Human Resources)
+            credentials: Dict with OAuth2 credentials (client_id, client_secret, token_url, refresh_token)
+                        and default wsdl_path (typically Human Resources)
             tenant_name: Workday tenant name
-            absence_wsdl_path: Optional WSDL path for Absence Management operations
+            wsdl_paths: Optional dict mapping service names to WSDL URLs, e.g.:
+                       {
+                           "human_resources": "https://.../Human_Resources/v44.2?wsdl",
+                           "absence_management": "https://.../Absence_Management/v45?wsdl",
+                           "time_tracking": "https://.../Time_Tracking/v44.2?wsdl",
+                           "staffing": "https://.../Staffing/v44.2?wsdl",
+                           "financial_management": "https://.../Financial_Management/v45?wsdl",
+                           "recruiting": "https://.../Recruiting/v44.2?wsdl"
+                       }
             redis_url: Redis connection URL for token caching
             redis_key: Redis key for storing access token
             timeout: HTTP timeout in seconds
@@ -336,77 +426,131 @@ class WorkdayToolkit(AbstractToolkit):
         self.timeout = timeout
         self.tenant_name = tenant_name
 
-        # Store WSDL paths
-        self.hr_wsdl_path = credentials.get("wsdl_path")
-        self.absence_wsdl_path = absence_wsdl_path
+        # Initialize WSDL paths mapping
+        self.wsdl_paths: Dict[WorkdayService, str] = {}
 
-        # Initialize the primary SOAP client (Human Resources)
-        self.soap_client = WorkdaySOAPClient(
-            tenant_name=tenant_name,
-            credentials=credentials,
-            redis_url=redis_url,
-            redis_key=redis_key,
-            timeout=timeout
-        )
+        # Process wsdl_paths parameter or use legacy approach
+        if wsdl_paths:
+            # Map service names to enum values
+            for service_name, wsdl_url in wsdl_paths.items():
+                try:
+                    service_enum = WorkdayService(service_name)
+                    self.wsdl_paths[service_enum] = wsdl_url
+                except ValueError:
+                    # Skip unknown service names
+                    continue
 
-        # Secondary client for Absence Management (lazy initialization)
-        self._absence_client: Optional[WorkdaySOAPClient] = None
+        # Fallback: Use default wsdl_path from credentials for Human Resources
+        if WorkdayService.HUMAN_RESOURCES not in self.wsdl_paths:
+            if default_wsdl := credentials.get("wsdl_path"):
+                self.wsdl_paths[WorkdayService.HUMAN_RESOURCES] = default_wsdl
+
+        # Dictionary to store initialized clients per service
+        self._clients: Dict[WorkdayService, WorkdaySOAPClient] = {}
+
+        # For backward compatibility, keep soap_client as primary client
+        self.soap_client: Optional[WorkdaySOAPClient] = None
 
         self._initialized = False
 
     async def start(self) -> str:
         """
-        Initialize the SOAP client connection.
+        Initialize the primary SOAP client connection.
         Must be called before using any tools.
 
         Returns:
             Success message
         """
         if not self._initialized:
-            await self.soap_client.start()
+            # Initialize primary client (Human Resources by default)
+            primary_service = WorkdayService.HUMAN_RESOURCES
+            self.soap_client = await self._get_client_for_service(primary_service)
             self._initialized = True
             return "Workday toolkit initialized successfully. Ready to process requests."
         return "Workday toolkit already initialized."
 
-    async def _get_absence_client(self) -> WorkdaySOAPClient:
+    async def _get_client_for_service(
+        self,
+        service: WorkdayService
+    ) -> WorkdaySOAPClient:
         """
-        Get or create the Absence Management SOAP client.
-        Lazy initialization for operations that need Absence Management WSDL.
+        Get or create a SOAP client for the specified service.
+
+        This method implements lazy initialization - clients are only created
+        when first needed and then cached for reuse.
+
+        Args:
+            service: The Workday service enum (e.g., HUMAN_RESOURCES, ABSENCE_MANAGEMENT)
+
+        Returns:
+            Initialized WorkdaySOAPClient for the requested service
+
+        Raises:
+            RuntimeError: If WSDL path for the service is not configured
         """
-        if self._absence_client is None:
-            if not self.absence_wsdl_path:
-                raise RuntimeError(
-                    "Absence Management WSDL path not configured. "
-                    "Pass 'absence_wsdl_path' when initializing WorkdayToolkit."
-                )
+        # Return cached client if already initialized
+        if service in self._clients:
+            return self._clients[service]
 
-            # Create credentials with Absence Management WSDL
-            absence_credentials = self.credentials.copy()
-            absence_credentials["wsdl_path"] = self.absence_wsdl_path
-
-            # Create and initialize the client
-            self._absence_client = WorkdaySOAPClient(
-                tenant_name=self.tenant_name,
-                credentials=absence_credentials,
-                redis_url=self.redis_url,
-                redis_key=self.redis_key,
-                timeout=self.timeout
+        # Check if WSDL path is configured for this service
+        if service not in self.wsdl_paths:
+            raise RuntimeError(
+                f"WSDL path for service '{service.value}' is not configured. "
+                f"Pass it in 'wsdl_paths' parameter when initializing WorkdayToolkit. "
+                f"Example: wsdl_paths={{'{service.value}': 'https://...?wsdl'}}"
             )
-            await self._absence_client.start()
 
-        return self._absence_client
+        # Create credentials with service-specific WSDL
+        service_credentials = self.credentials.copy()
+        service_credentials["wsdl_path"] = self.wsdl_paths[service]
+
+        # Create and initialize the client
+        client = WorkdaySOAPClient(
+            tenant_name=self.tenant_name,
+            credentials=service_credentials,
+            redis_url=self.redis_url,
+            redis_key=self.redis_key,
+            timeout=self.timeout
+        )
+        await client.start()
+
+        # Cache the client
+        self._clients[service] = client
+
+        return client
+
+    async def _get_client_for_method(self, method_name: str) -> WorkdaySOAPClient:
+        """
+        Get the appropriate SOAP client for a given toolkit method.
+
+        Args:
+            method_name: Name of the toolkit method
+
+        Returns:
+            Initialized WorkdaySOAPClient for the method's required service
+
+        Raises:
+            RuntimeError: If method is not mapped to a service or WSDL not configured
+        """
+        if method_name not in METHOD_TO_SERVICE_MAP:
+            # Default to Human Resources for unmapped methods
+            service = WorkdayService.HUMAN_RESOURCES
+        else:
+            service = METHOD_TO_SERVICE_MAP[method_name]
+
+        return await self._get_client_for_service(service)
 
     async def close(self) -> None:
         """
-        Close the SOAP client connections.
+        Close all SOAP client connections.
         """
-        if self._initialized:
-            await self.soap_client.close()
-            self._initialized = False
+        # Close all cached clients
+        for client in self._clients.values():
+            await client.close()
 
-        if self._absence_client:
-            await self._absence_client.close()
-            self._absence_client = None
+        self._clients.clear()
+        self.soap_client = None
+        self._initialized = False
 
     # -----------------------------
     # Tool methods (automatically become tools)
@@ -433,10 +577,13 @@ class WorkdayToolkit(AbstractToolkit):
         if not self._initialized:
             await self.start()
 
+        # Get the appropriate client for this method
+        client = await self._get_client_for_method("get_worker")
+
         # Build the Get_Workers request
         request = {
             "Request_References": {
-                "Worker_Reference": self.soap_client._build_worker_reference(worker_id)
+                "Worker_Reference": client._build_worker_reference(worker_id)
             },
             "Response_Filter": {
                 "As_Of_Effective_Date": datetime.now().strftime("%Y-%m-%d"),
@@ -453,13 +600,13 @@ class WorkdayToolkit(AbstractToolkit):
             }
         }
 
-        result = await self.soap_client.run("Get_Workers", **request)
+        result = await client.run("Get_Workers", **request)
         # Use parser for structured output
         return WorkdayResponseParser.parse_worker_response(
             result,
             output_format=output_format
         )
-        # return self.soap_client._parse_worker_response(result)
+        # return client._parse_worker_response(result)
 
     @tool_schema(SearchWorkersInput)
     async def search_workers(
@@ -493,9 +640,12 @@ class WorkdayToolkit(AbstractToolkit):
         if not self._initialized:
             await self.start()
 
+        # Get the appropriate client for this method
+        client = await self._get_client_for_method("search_workers")
+
         # Build request criteria
         request = {
-            "Request_Criteria": self.soap_client._build_request_criteria(
+            "Request_Criteria": client._build_request_criteria(
                 search_text=search_text,
                 manager_id=manager_id,
                 location_id=location_id,
@@ -520,13 +670,13 @@ class WorkdayToolkit(AbstractToolkit):
         if hire_date_to:
             request["Request_Criteria"]["Hire_Date_Range"]["To"] = hire_date_to
 
-        result = await self.soap_client.run("Get_Workers", **request)
+        result = await client.run("Get_Workers", **request)
 
         # Parse multiple workers from response
         workers = []
         if result and hasattr(result, "Worker"):
             workers.extend(
-                self.soap_client._parse_worker_response(worker)
+                client._parse_worker_response(worker)
                 for worker in result.Worker
             )
 
@@ -557,9 +707,12 @@ class WorkdayToolkit(AbstractToolkit):
         if not self._initialized:
             await self.start()
 
+        # Get the appropriate client for this method
+        client = await self._get_client_for_method("get_worker_contact")
+
         request = {
             "Request_References": {
-                "Worker_Reference": self.soap_client._build_worker_reference(worker_id)
+                "Worker_Reference": client._build_worker_reference(worker_id)
             },
             "Response_Group": {
                 "Include_Personal_Information": include_personal,
@@ -568,8 +721,8 @@ class WorkdayToolkit(AbstractToolkit):
             }
         }
 
-        result = await self.soap_client.run("Get_Workers", **request)
-        # parsed = self.soap_client._parse_worker_response(result)
+        result = await client.run("Get_Workers", **request)
+        # parsed = client._parse_worker_response(result)
         return WorkdayResponseParser.parse_contact_response(
             result,
             worker_id=worker_id,
@@ -598,12 +751,15 @@ class WorkdayToolkit(AbstractToolkit):
         if not self._initialized:
             await self.start()
 
+        # Get the appropriate client for this method
+        client = await self._get_client_for_method("get_worker_job_data")
+
         if not effective_date:
             effective_date = datetime.now().strftime("%Y-%m-%d")
 
         request = {
             "Request_References": {
-                "Worker_Reference": self.soap_client._build_worker_reference(worker_id)
+                "Worker_Reference": client._build_worker_reference(worker_id)
             },
             "Response_Filter": {
                 "As_Of_Effective_Date": effective_date
@@ -616,8 +772,8 @@ class WorkdayToolkit(AbstractToolkit):
             }
         }
 
-        result = await self.soap_client.run("Get_Workers", **request)
-        parsed = self.soap_client._parse_worker_response(result)
+        result = await client.run("Get_Workers", **request)
+        parsed = client._parse_worker_response(result)
 
         # Extract job-specific data
         if parsed and "Worker_Data" in parsed:
@@ -660,6 +816,9 @@ class WorkdayToolkit(AbstractToolkit):
         if not self._initialized:
             await self.start()
 
+        # Get the appropriate client for this method
+        client = await self._get_client_for_method("get_organization")
+
         request = {
             "Request_References": {
                 "Organization_Reference": {
@@ -673,7 +832,7 @@ class WorkdayToolkit(AbstractToolkit):
             }
         }
 
-        result = await self.soap_client.run("Get_Organizations", **request)
+        result = await client.run("Get_Organizations", **request)
         # Parse organization response
         return helpers.serialize_object(result) if result else {}
 
@@ -697,9 +856,12 @@ class WorkdayToolkit(AbstractToolkit):
         if not self._initialized:
             await self.start()
 
+        # Get the appropriate client for this method
+        client = await self._get_client_for_method("get_worker_time_off_balance")
+
         request = {
             "Request_References": {
-                "Worker_Reference": self.soap_client._build_worker_reference(worker_id)
+                "Worker_Reference": client._build_worker_reference(worker_id)
             },
             "Response_Group": {
                 # Some Workday tenants/WSDL versions do not expose
@@ -712,7 +874,7 @@ class WorkdayToolkit(AbstractToolkit):
             }
         }
 
-        result = await self.soap_client.run("Get_Workers", **request)
+        result = await client.run("Get_Workers", **request)
         print('RESULT > ', result)
         return WorkdayResponseParser.parse_time_off_balance_response(
             result,
@@ -746,8 +908,8 @@ class WorkdayToolkit(AbstractToolkit):
         if not self._initialized:
             await self.start()
 
-        # Get or create the Absence Management client
-        absence_client = await self._get_absence_client()
+        # Get the Absence Management client
+        absence_client = await self._get_client_for_method("get_time_off_balance")
 
         # Build the request payload
         payload = {
@@ -821,10 +983,13 @@ class WorkdayToolkit(AbstractToolkit):
         if not self._initialized:
             await self.start()
 
+        # Get the appropriate client for this method
+        client = await self._get_client_for_method("get_workers_by_organization")
+
         request = {
             "Request_Criteria": {
                 "Organization_Reference": [
-                    self.soap_client._build_organization_reference(org_id)
+                    client._build_organization_reference(org_id)
                 ],
                 "Include_Subordinate_Organizations": include_subordinate,
                 "Exclude_Inactive_Workers": exclude_inactive
@@ -842,7 +1007,7 @@ class WorkdayToolkit(AbstractToolkit):
             }
         }
 
-        result = await self.soap_client.run("Get_Workers", **request)
+        result = await client.run("Get_Workers", **request)
         # Use parser for structured output
         return WorkdayResponseParser.parse_workers_response(
             result,
@@ -869,10 +1034,13 @@ class WorkdayToolkit(AbstractToolkit):
         if not self._initialized:
             await self.start()
 
+        # Get the appropriate client for this method
+        client = await self._get_client_for_method("get_workers_by_ids")
+
         request = {
             "Request_References": {
                 "Worker_Reference": [
-                    self.soap_client._build_worker_reference(wid, id_type)
+                    client._build_worker_reference(wid, id_type)
                     for wid in worker_ids
                 ]
             },
@@ -886,7 +1054,7 @@ class WorkdayToolkit(AbstractToolkit):
             }
         }
 
-        result = await self.soap_client.run("Get_Workers", **request)
+        result = await client.run("Get_Workers", **request)
         return self._parse_workers_response(result)
 
     async def search_workers_by_name(
@@ -912,6 +1080,9 @@ class WorkdayToolkit(AbstractToolkit):
         if not self._initialized:
             await self.start()
 
+        # Get the appropriate client for this method
+        client = await self._get_client_for_method("search_workers_by_name")
+
         request = {
             "Request_Criteria": {
                 "Field_And_Parameter_Criteria_Data": {
@@ -932,7 +1103,7 @@ class WorkdayToolkit(AbstractToolkit):
             }
         }
 
-        result = await self.soap_client.run("Get_Workers", **request)
+        result = await client.run("Get_Workers", **request)
         return self._parse_workers_response(result)
 
     async def get_workers_by_manager(
@@ -1012,6 +1183,9 @@ class WorkdayToolkit(AbstractToolkit):
         if not self._initialized:
             await self.start()
 
+        # Get the appropriate client for this method
+        client = await self._get_client_for_method("get_inactive_workers")
+
         request = {
             "Request_Criteria": {
                 "Exclude_Inactive_Workers": False,  # We want inactive workers!
@@ -1032,13 +1206,13 @@ class WorkdayToolkit(AbstractToolkit):
         # Add org filter if provided
         if org_id:
             request["Request_Criteria"]["Organization_Reference"] = [
-                self.soap_client._build_organization_reference(org_id)
+                client._build_organization_reference(org_id)
             ]
 
         # Note: Termination date filtering might require Transaction_Log_Criteria_Data
         # depending on your Workday configuration
 
-        result = await self.soap_client.run("Get_Workers", **request)
+        result = await client.run("Get_Workers", **request)
 
         # Post-process to filter by termination date if needed
         workers = self._parse_workers_response(result)
