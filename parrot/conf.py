@@ -347,7 +347,7 @@ WORKDAY_WSDL_RECRUITING = config.get(
 )
 WORKDAY_WSDL_ABSENCE_MANAGEMENT = config.get(
     "WORKDAY_WSDL_ABSENCE_MANAGEMENT",
-    fallback=BASE_DIR.joinpath("env", "workday", "absense_management_45_custom.wsdl")
+    fallback=BASE_DIR.joinpath("env", "workday", "absence_management_45_custom.wsdl")
 )
 WORKDAY_REFRESH_TOKEN = config.get("WORKDAY_REFRESH_TOKEN", fallback=None)
 

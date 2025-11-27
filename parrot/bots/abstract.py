@@ -7,6 +7,7 @@ import importlib
 from typing import Any, Dict, List, Tuple, Type, Union, Optional, AsyncIterator
 from collections.abc import Callable
 from contextlib import asynccontextmanager
+import re
 import uuid
 from string import Template
 import asyncio
@@ -54,22 +55,27 @@ from .kb import KBSelector
 from ..utils.helpers import RequestContext, RequestBot
 from ..models.outputs import OutputMode
 from ..outputs import OutputFormatter
+try:
+    from pytector import PromptInjectionDetector
+    PYTECTOR_ENABLED = True
+except ImportError:
+    from ..security.prompt_injection import PromptInjectionDetector
+    PYTECTOR_ENABLED = False
 from ..security import (
     SecurityEventLogger,
     ThreatLevel,
     PromptInjectionException
 )
-try:
-    from pytector import PromptInjectionDetector
-    PYTECTOR_ENABLED = True
-except ImportError:
-    from parrot.security.prompt_injection import PromptInjectionDetector
-    PYTECTOR_ENABLED = False
+
 
 logging.getLogger(name='primp').setLevel(logging.INFO)
 logging.getLogger(name='rquest').setLevel(logging.INFO)
 logging.getLogger("grpc").setLevel(logging.CRITICAL)
 logging.getLogger('markdown_it').setLevel(logging.CRITICAL)
+
+
+# LLM parser regex:
+_LLM_PATTERN = re.compile(r'^([a-zA-Z0-9_-]+):(.+)$')
 
 
 class AbstractBot(DBInterface, ABC):
