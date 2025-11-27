@@ -13,6 +13,7 @@ from .decorators import tool_schema, tool
 from .ddgo import DuckDuckGoToolkit
 from .file_reader import FileReaderTool
 from .yfinance_tool import YFinanceTool
+from .ecs import ECSTool
 from .prophet_tool import ProphetForecastTool
 
 # setup_plugin_importer('parrot.tools', 'tools')
@@ -35,6 +36,7 @@ __all__ = (
     "YFinanceTool",
     "MetadataTool",
     "ProphetForecastTool",
+    "ECSTool",
 )
 
 # Enable dynamic imports
