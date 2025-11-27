@@ -75,7 +75,7 @@ from .models import (
     OrganizationModel,
     WorkdayResponseParser
 )
-
+from ...conf import WORKDAY_WSDL_PATHS
 
 # -----------------------------
 # Workday Service Types
@@ -439,6 +439,14 @@ class WorkdayToolkit(AbstractToolkit):
                 except ValueError:
                     # Skip unknown service names
                     continue
+        else:
+            for service_name, wsdl_url in WORKDAY_WSDL_PATHS.items():
+                if service_name in credentials:
+                    try:
+                        service_enum = WorkdayService(service_name)
+                        self.wsdl_paths[service_enum] = credentials[service_name]
+                    except ValueError:
+                        continue
 
         # Fallback: Use default wsdl_path from credentials for Human Resources
         if WorkdayService.HUMAN_RESOURCES not in self.wsdl_paths:
