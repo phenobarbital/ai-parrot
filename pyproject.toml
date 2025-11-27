@@ -206,7 +206,8 @@ whisperx = [
 ]
 
 anthropic = [
-    "anthropic==0.61.0",
+    "anthropic[aiohttp]==0.61.0",
+    "claude-agent-sdk>=0.1.0",
 ]
 
 openai = [

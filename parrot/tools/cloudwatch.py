@@ -357,7 +357,7 @@ class CloudWatchTool(AbstractTool):
         """List CloudWatch log groups"""
 
         async with self.aws.client('logs') as logs:
-            params = {'limit': limit}
+            params: Dict[str, Any] = {}
             if pattern:
                 params['logGroupNamePrefix'] = pattern
 
