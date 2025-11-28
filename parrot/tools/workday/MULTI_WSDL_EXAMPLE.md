@@ -10,8 +10,8 @@ The toolkit supports the following Workday services:
 
 | Service | Enum Value | Example Methods |
 |---------|-----------|-----------------|
-| Human Resources | `human_resources` | `get_worker`, `search_workers`, `get_worker_contact`, `get_organization` |
-| Absence Management | `absence_management` | `get_time_off_balance`, `get_worker_time_off_balance` |
+| Human Resources | `human_resources` | `wd_get_worker`, `wd_search_workers`, `wd_get_worker_contact`, `wd_get_organization` |
+| Absence Management | `absence_management` | `wd_get_time_off_balance`, `wd_get_worker_time_off_balance` |
 | Time Tracking | `time_tracking` | *(Placeholder for future implementation)* |
 | Staffing | `staffing` | *(Placeholder for future implementation)* |
 | Financial Management | `financial_management` | *(Placeholder for future implementation)* |
@@ -69,11 +69,11 @@ The toolkit automatically selects the appropriate SOAP client based on the metho
 ```python
 METHOD_TO_SERVICE_MAP = {
     # Human Resources methods
-    "get_worker": WorkdayService.HUMAN_RESOURCES,
-    "search_workers": WorkdayService.HUMAN_RESOURCES,
+    "wd_get_worker": WorkdayService.HUMAN_RESOURCES,
+    "wd_search_workers": WorkdayService.HUMAN_RESOURCES,
 
     # Absence Management methods
-    "get_time_off_balance": WorkdayService.ABSENCE_MANAGEMENT,
+    "wd_get_time_off_balance": WorkdayService.ABSENCE_MANAGEMENT,
 
     # ... etc
 }
@@ -83,8 +83,8 @@ METHOD_TO_SERVICE_MAP = {
 
 Clients are created only when needed:
 
-1. When you call `await toolkit.start()`, only the Human Resources client is initialized (primary service)
-2. When you call a method requiring a different service (e.g., `get_time_off_balance`), the Absence Management client is automatically created and cached
+1. When you call `await toolkit.wd_start()`, only the Human Resources client is initialized (primary service)
+2. When you call a method requiring a different service (e.g., `wd_get_time_off_balance`), the Absence Management client is automatically created and cached
 3. Subsequent calls to the same service reuse the cached client for performance
 
 ### Example Usage
@@ -110,22 +110,22 @@ async def main():
     )
 
     # Start the toolkit (initializes Human Resources client)
-    await toolkit.start()
+    await toolkit.wd_start()
 
     # Get worker information (uses Human Resources client)
-    worker = await toolkit.get_worker(worker_id="12345")
+    worker = await toolkit.wd_get_worker(worker_id="12345")
     print(f"Worker: {worker}")
 
     # Get time off balance (automatically creates and uses Absence Management client)
-    time_off = await toolkit.get_time_off_balance(worker_id="12345")
+    time_off = await toolkit.wd_get_time_off_balance(worker_id="12345")
     print(f"Time Off Balance: {time_off}")
 
     # Search for workers (uses Human Resources client - already initialized)
-    workers = await toolkit.search_workers(search_text="John")
+    workers = await toolkit.wd_search_workers(search_text="John")
     print(f"Found {len(workers)} workers")
 
     # Clean up
-    await toolkit.close()
+    await toolkit.wd_close()
 
 if __name__ == "__main__":
     asyncio.run(main())
@@ -162,20 +162,20 @@ wsdl_paths={
 Here's the current mapping of methods to services:
 
 ### Human Resources Service
-- `get_worker(worker_id)` - Get detailed worker information
-- `search_workers(...)` - Search for workers with filters
-- `get_worker_contact(worker_id)` - Get worker contact information
-- `get_worker_job_data(worker_id)` - Get job-related data
-- `get_organization(org_id)` - Get organization information
-- `get_workers_by_organization(org_id)` - Get all workers in an organization
-- `get_workers_by_ids(worker_ids)` - Get multiple workers by IDs
-- `search_workers_by_name(name)` - Search workers by name
-- `get_workers_by_manager(manager_id)` - Get workers reporting to a manager
-- `get_inactive_workers(...)` - Get terminated/inactive workers
+- `wd_get_worker(worker_id)` - Get detailed worker information
+- `wd_search_workers(...)` - Search for workers with filters
+- `wd_get_worker_contact(worker_id)` - Get worker contact information
+- `wd_get_worker_job_data(worker_id)` - Get job-related data
+- `wd_get_organization(org_id)` - Get organization information
+- `wd_get_workers_by_organization(org_id)` - Get all workers in an organization
+- `wd_get_workers_by_ids(worker_ids)` - Get multiple workers by IDs
+- `wd_search_workers_by_name(name)` - Search workers by name
+- `wd_get_workers_by_manager(manager_id)` - Get workers reporting to a manager
+- `wd_get_inactive_workers(...)` - Get terminated/inactive workers
 
 ### Absence Management Service
-- `get_time_off_balance(worker_id)` - Get time off plan balances (detailed)
-- `get_worker_time_off_balance(worker_id)` - Get time off balance (simple)
+- `wd_get_time_off_balance(worker_id)` - Get time off plan balances (detailed)
+- `wd_get_worker_time_off_balance(worker_id)` - Get time off balance (simple)
 
 ## Error Handling
 
@@ -202,7 +202,7 @@ To add support for new Workday services:
    ```python
    METHOD_TO_SERVICE_MAP = {
        # ... existing mappings
-       "get_new_data": WorkdayService.NEW_SERVICE,
+       "wd_get_new_data": WorkdayService.NEW_SERVICE,
    }
    ```
 
