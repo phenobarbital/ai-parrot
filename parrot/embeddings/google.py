@@ -1,6 +1,5 @@
 from typing import Any, List, Union
 import numpy as np
-from google import genai
 from navconfig import config
 # This file is part of Parrot, an open-source project.
 from .base import EmbeddingModel
@@ -24,6 +23,7 @@ class GoogleEmbeddingModel(EmbeddingModel):
         Returns:
             An instance of Google Embedding model.
         """
+        from google import genai
         self.model_name = model_name or self.model_name
         self.logger.info(
             f"Loading embedding model '{self.model_name}'"
