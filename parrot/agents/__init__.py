@@ -3,8 +3,9 @@ Parrot Agents - Core and Plugin Agents
 """
 from importlib import import_module
 from parrot.plugins import setup_plugin_importer, dynamic_import_helper
-
+# Setup the plugin importer for agents
 setup_plugin_importer('parrot.agents', 'agents')
+
 
 # Enable dynamic imports
 def __getattr__(name):
