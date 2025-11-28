@@ -51,11 +51,11 @@ Example usage:
     )
 
     # Initialize the connection
-    await toolkit.start()
+    await toolkit.wd_start()
 
     # Use methods - appropriate client is selected automatically
-    worker = await toolkit.get_worker(worker_id="12345")
-    time_off = await toolkit.get_time_off_balance(worker_id="12345")
+    worker = await toolkit.wd_get_worker(worker_id="12345")
+    time_off = await toolkit.wd_get_time_off_balance(worker_id="12345")
 """
 from __future__ import annotations
 
@@ -94,34 +94,34 @@ class WorkdayService(str, Enum):
 # Mapping of toolkit methods to required Workday services
 METHOD_TO_SERVICE_MAP = {
     # Human Resources service methods
-    "get_worker": WorkdayService.HUMAN_RESOURCES,
-    "search_workers": WorkdayService.HUMAN_RESOURCES,
-    "get_worker_contact": WorkdayService.HUMAN_RESOURCES,
-    "get_worker_job_data": WorkdayService.HUMAN_RESOURCES,
-    "get_organization": WorkdayService.HUMAN_RESOURCES,
-    "get_workers_by_organization": WorkdayService.HUMAN_RESOURCES,
-    "get_workers_by_ids": WorkdayService.HUMAN_RESOURCES,
-    "search_workers_by_name": WorkdayService.HUMAN_RESOURCES,
-    "get_workers_by_manager": WorkdayService.HUMAN_RESOURCES,
-    "get_inactive_workers": WorkdayService.HUMAN_RESOURCES,
-    "get_worker_time_off_balance": WorkdayService.HUMAN_RESOURCES,
+    "wd_get_worker": WorkdayService.HUMAN_RESOURCES,
+    "wd_search_workers": WorkdayService.HUMAN_RESOURCES,
+    "wd_get_worker_contact": WorkdayService.HUMAN_RESOURCES,
+    "wd_get_worker_job_data": WorkdayService.HUMAN_RESOURCES,
+    "wd_get_organization": WorkdayService.HUMAN_RESOURCES,
+    "wd_get_workers_by_organization": WorkdayService.HUMAN_RESOURCES,
+    "wd_get_workers_by_ids": WorkdayService.HUMAN_RESOURCES,
+    "wd_search_workers_by_name": WorkdayService.HUMAN_RESOURCES,
+    "wd_get_workers_by_manager": WorkdayService.HUMAN_RESOURCES,
+    "wd_get_inactive_workers": WorkdayService.HUMAN_RESOURCES,
+    "wd_get_worker_time_off_balance": WorkdayService.HUMAN_RESOURCES,
     # Absence Management service methods
-    "get_time_off_balance": WorkdayService.ABSENCE_MANAGEMENT,
+    "wd_get_time_off_balance": WorkdayService.ABSENCE_MANAGEMENT,
     # Time Tracking service methods (placeholder for future implementation)
-    # "get_time_entry": WorkdayService.TIME_TRACKING,
-    # "submit_timesheet": WorkdayService.TIME_TRACKING,
+    # "wd_get_time_entry": WorkdayService.TIME_TRACKING,
+    # "wd_submit_timesheet": WorkdayService.TIME_TRACKING,
 
     # Staffing service methods (placeholder for future implementation)
-    # "get_position": WorkdayService.STAFFING,
-    # "create_position": WorkdayService.STAFFING,
+    # "wd_get_position": WorkdayService.STAFFING,
+    # "wd_create_position": WorkdayService.STAFFING,
 
     # Financial Management service methods (placeholder for future implementation)
-    # "get_spend_category": WorkdayService.FINANCIAL_MANAGEMENT,
-    # "get_worktags": WorkdayService.FINANCIAL_MANAGEMENT,
+    # "wd_get_spend_category": WorkdayService.FINANCIAL_MANAGEMENT,
+    # "wd_get_worktags": WorkdayService.FINANCIAL_MANAGEMENT,
 
     # Recruiting service methods (placeholder for future implementation)
-    # "get_job_requisition": WorkdayService.RECRUITING,
-    # "get_candidates": WorkdayService.RECRUITING,
+    # "wd_get_job_requisition": WorkdayService.RECRUITING,
+    # "wd_get_candidates": WorkdayService.RECRUITING,
 }
 
 
@@ -462,7 +462,7 @@ class WorkdayToolkit(AbstractToolkit):
 
         self._initialized = False
 
-    async def start(self) -> str:
+    async def wd_start(self) -> str:
         """
         Initialize the primary SOAP client connection.
         Must be called before using any tools.
@@ -477,6 +477,10 @@ class WorkdayToolkit(AbstractToolkit):
             self._initialized = True
             return "Workday toolkit initialized successfully. Ready to process requests."
         return "Workday toolkit already initialized."
+
+    async def start(self) -> str:
+        """Compatibility wrapper for toolkit lifecycle start."""
+        return await self.wd_start()
 
     async def _get_client_for_service(
         self,
@@ -549,7 +553,7 @@ class WorkdayToolkit(AbstractToolkit):
 
         return await self._get_client_for_service(service)
 
-    async def close(self) -> None:
+    async def wd_close(self) -> None:
         """
         Close all SOAP client connections.
         """
@@ -566,7 +570,7 @@ class WorkdayToolkit(AbstractToolkit):
     # -----------------------------
 
     @tool_schema(GetWorkerInput)
-    async def get_worker(
+    async def wd_get_worker(
         self,
         worker_id: str,
         output_format: Optional[Type[BaseModel]] = None,
@@ -584,10 +588,10 @@ class WorkdayToolkit(AbstractToolkit):
             Worker data dictionary with all available fields
         """
         if not self._initialized:
-            await self.start()
+            await self.wd_start()
 
         # Get the appropriate client for this method
-        client = await self._get_client_for_method("get_worker")
+        client = await self._get_client_for_method("wd_get_worker")
 
         # Build the Get_Workers request
         request = {
@@ -618,7 +622,7 @@ class WorkdayToolkit(AbstractToolkit):
         # return client._parse_worker_response(result)
 
     @tool_schema(SearchWorkersInput)
-    async def search_workers(
+    async def wd_search_workers(
         self,
         search_text: Optional[str] = None,
         manager_id: Optional[str] = None,
@@ -647,10 +651,10 @@ class WorkdayToolkit(AbstractToolkit):
             List of worker dictionaries matching the search criteria
         """
         if not self._initialized:
-            await self.start()
+            await self.wd_start()
 
         # Get the appropriate client for this method
-        client = await self._get_client_for_method("search_workers")
+        client = await self._get_client_for_method("wd_search_workers")
 
         # Build request criteria
         request = {
@@ -692,7 +696,7 @@ class WorkdayToolkit(AbstractToolkit):
         return workers
 
     @tool_schema(GetWorkerContactInput)
-    async def get_worker_contact(
+    async def wd_get_worker_contact(
         self,
         worker_id: str,
         include_personal: bool = True,
@@ -714,10 +718,10 @@ class WorkdayToolkit(AbstractToolkit):
             Dictionary containing all contact information
         """
         if not self._initialized:
-            await self.start()
+            await self.wd_start()
 
         # Get the appropriate client for this method
-        client = await self._get_client_for_method("get_worker_contact")
+        client = await self._get_client_for_method("wd_get_worker_contact")
 
         request = {
             "Request_References": {
@@ -739,7 +743,7 @@ class WorkdayToolkit(AbstractToolkit):
         )
 
     @tool_schema(GetWorkerJobDataInput)
-    async def get_worker_job_data(
+    async def wd_get_worker_job_data(
         self,
         worker_id: str,
         effective_date: Optional[str] = None
@@ -758,10 +762,10 @@ class WorkdayToolkit(AbstractToolkit):
             Dictionary containing job data
         """
         if not self._initialized:
-            await self.start()
+            await self.wd_start()
 
         # Get the appropriate client for this method
-        client = await self._get_client_for_method("get_worker_job_data")
+        client = await self._get_client_for_method("wd_get_worker_job_data")
 
         if not effective_date:
             effective_date = datetime.now().strftime("%Y-%m-%d")
@@ -804,7 +808,7 @@ class WorkdayToolkit(AbstractToolkit):
         return {"worker_id": worker_id, "job_data": parsed}
 
     @tool_schema(GetOrganizationInput)
-    async def get_organization(
+    async def wd_get_organization(
         self,
         org_id: str,
         include_hierarchy: bool = False
@@ -823,10 +827,10 @@ class WorkdayToolkit(AbstractToolkit):
             Dictionary containing organization data
         """
         if not self._initialized:
-            await self.start()
+            await self.wd_start()
 
         # Get the appropriate client for this method
-        client = await self._get_client_for_method("get_organization")
+        client = await self._get_client_for_method("wd_get_organization")
 
         request = {
             "Request_References": {
@@ -845,7 +849,7 @@ class WorkdayToolkit(AbstractToolkit):
         # Parse organization response
         return helpers.serialize_object(result) if result else {}
 
-    async def get_worker_time_off_balance(
+    async def wd_get_worker_time_off_balance(
         self,
         worker_id: str,
         output_format: Optional[Type[BaseModel]] = None
@@ -863,10 +867,10 @@ class WorkdayToolkit(AbstractToolkit):
             Dictionary containing time off balances by type
         """
         if not self._initialized:
-            await self.start()
+            await self.wd_start()
 
         # Get the appropriate client for this method
-        client = await self._get_client_for_method("get_worker_time_off_balance")
+        client = await self._get_client_for_method("wd_get_worker_time_off_balance")
 
         request = {
             "Request_References": {
@@ -892,7 +896,7 @@ class WorkdayToolkit(AbstractToolkit):
         )
 
     @tool_schema(GetTimeOffBalanceInput)
-    async def get_time_off_balance(
+    async def wd_get_time_off_balance(
         self,
         worker_id: str,
         time_off_plan_id: Optional[str] = None,
@@ -915,10 +919,10 @@ class WorkdayToolkit(AbstractToolkit):
             or default TimeOffBalanceModel
         """
         if not self._initialized:
-            await self.start()
+            await self.wd_start()
 
         # Get the Absence Management client
-        absence_client = await self._get_client_for_method("get_time_off_balance")
+        absence_client = await self._get_client_for_method("wd_get_time_off_balance")
 
         # Build the request payload
         payload = {
@@ -966,7 +970,7 @@ class WorkdayToolkit(AbstractToolkit):
             output_format=output_format
         )
 
-    async def get_workers_by_organization(
+    async def wd_get_workers_by_organization(
         self,
         org_id: str,
         output_format: Optional[Type[BaseModel]] = None,
@@ -990,10 +994,10 @@ class WorkdayToolkit(AbstractToolkit):
             List of worker dictionaries
         """
         if not self._initialized:
-            await self.start()
+            await self.wd_start()
 
         # Get the appropriate client for this method
-        client = await self._get_client_for_method("get_workers_by_organization")
+        client = await self._get_client_for_method("wd_get_workers_by_organization")
 
         request = {
             "Request_Criteria": {
@@ -1023,7 +1027,7 @@ class WorkdayToolkit(AbstractToolkit):
             output_format=output_format
         )
 
-    async def get_workers_by_ids(
+    async def wd_get_workers_by_ids(
         self,
         worker_ids: List[str],
         id_type: str = "Employee_ID"
@@ -1041,10 +1045,10 @@ class WorkdayToolkit(AbstractToolkit):
             List of worker dictionaries
         """
         if not self._initialized:
-            await self.start()
+            await self.wd_start()
 
         # Get the appropriate client for this method
-        client = await self._get_client_for_method("get_workers_by_ids")
+        client = await self._get_client_for_method("wd_get_workers_by_ids")
 
         request = {
             "Request_References": {
@@ -1066,7 +1070,7 @@ class WorkdayToolkit(AbstractToolkit):
         result = await client.run("Get_Workers", **request)
         return self._parse_workers_response(result)
 
-    async def search_workers_by_name(
+    async def wd_search_workers_by_name(
         self,
         name: str,
         max_results: int = 100,
@@ -1087,10 +1091,10 @@ class WorkdayToolkit(AbstractToolkit):
             List of matching workers
         """
         if not self._initialized:
-            await self.start()
+            await self.wd_start()
 
         # Get the appropriate client for this method
-        client = await self._get_client_for_method("search_workers_by_name")
+        client = await self._get_client_for_method("wd_search_workers_by_name")
 
         request = {
             "Request_Criteria": {
@@ -1115,7 +1119,7 @@ class WorkdayToolkit(AbstractToolkit):
         result = await client.run("Get_Workers", **request)
         return self._parse_workers_response(result)
 
-    async def get_workers_by_manager(
+    async def wd_get_workers_by_manager(
         self,
         manager_id: str,
         include_indirect_reports: bool = False,
@@ -1142,10 +1146,10 @@ class WorkdayToolkit(AbstractToolkit):
             List of direct/indirect reports
         """
         if not self._initialized:
-            await self.start()
+            await self.wd_start()
 
         # First, get the manager's data to find their supervisory org
-        manager_data = await self.get_worker(manager_id)
+        manager_data = await self.wd_get_worker(manager_id)
 
         # Extract supervisory organization from manager's position
         # This structure varies by Workday configuration
@@ -1164,13 +1168,13 @@ class WorkdayToolkit(AbstractToolkit):
             return []
 
         # Now get all workers in that supervisory org
-        return await self.get_workers_by_organization(
+        return await self.wd_get_workers_by_organization(
             org_id=supervisory_org_id,
             include_subordinate=include_indirect_reports,
             max_results=max_results
         )
 
-    async def get_inactive_workers(
+    async def wd_get_inactive_workers(
         self,
         org_id: Optional[str] = None,
         termination_date_from: Optional[str] = None,
@@ -1190,10 +1194,10 @@ class WorkdayToolkit(AbstractToolkit):
             List of inactive workers
         """
         if not self._initialized:
-            await self.start()
+            await self.wd_start()
 
         # Get the appropriate client for this method
-        client = await self._get_client_for_method("get_inactive_workers")
+        client = await self._get_client_for_method("wd_get_inactive_workers")
 
         request = {
             "Request_Criteria": {
