@@ -139,7 +139,7 @@ class ParrotMCPServer:
                 self._server_tasks[transport_key] = asyncio.create_task(start_coro)
                 self.logger.info(f"Spawned stdio MCP server task: {server_name}")
 
-            elif config.transport == "http":
+            elif config.transport in {"http", "sse"}:
                 # Launch HTTP MCP server using existing aiohttp app
                 server = HttpMCPServer(mcp_config, parent_app=app)
                 server.register_tools(tools)
