@@ -140,6 +140,10 @@ class ParrotMCPServer:
                 [
                     mcp_config.base_path,
                     f"{mcp_config.base_path.rstrip('/')}/events",
+                    f"{mcp_config.base_path.rstrip('/')}/.well-known/oauth-authorization-server",
+                    f"{mcp_config.base_path.rstrip('/')}/oauth/register",
+                    f"{mcp_config.base_path.rstrip('/')}/oauth/authorize",
+                    f"{mcp_config.base_path.rstrip('/')}/oauth/token",
                 ]
             )
 
