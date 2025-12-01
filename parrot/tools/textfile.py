@@ -9,6 +9,9 @@ class FileOutputToolArgs(BaseModel):
     """Arguments for tools that output files."""
     content: str = Field(description="Content to write to file")
     filename: Optional[str] = Field(default=None, description="Output filename")
+    extension: Optional[str] = Field(default="txt", description="File extension (txt or md)")
+    output_dir: Optional[str] = Field(default=None, description="Output directory")
+
 
 class TextFileTool(AbstractTool):
     """Example tool that generates text files."""
@@ -25,6 +28,8 @@ class TextFileTool(AbstractTool):
         self,
         content: str,
         filename: Optional[str] = None,
+        extension: Optional[str] = "txt",
+        output_dir: Optional[str] = None,
         **kwargs
     ) -> Dict[str, Any]:
         """
@@ -33,14 +38,27 @@ class TextFileTool(AbstractTool):
         Args:
             content: Text content to write
             filename: Optional filename
+            extension: File extension (txt or md)
+            output_dir: Output directory
 
         Returns:
             Dictionary with file information
         """
         if not filename:
-            filename = self.generate_filename("text_output", ".txt")
+            ext = extension if extension.startswith('.') else f".{extension}"
+            filename = self.generate_filename("text_output", ext)
 
-        file_path = self.output_dir / filename
+        if output_dir:
+            target_dir = Path(output_dir)
+            if not target_dir.is_absolute():
+                target_dir = self.output_dir / target_dir
+        else:
+            target_dir = self.output_dir
+
+        if not target_dir.exists():
+            target_dir.mkdir(parents=True, exist_ok=True)
+
+        file_path = target_dir / filename
         file_path = self.validate_output_path(file_path)
 
         # Write content to file
