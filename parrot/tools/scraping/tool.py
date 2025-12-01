@@ -120,9 +120,10 @@ class WebScrapingTool(AbstractTool):
     """
 
     name = "WebScrapingTool"
-    description = """Execute automated web scraping with step-by-step navigation and content extraction.
-Supports navigate, click, fill, wait, scroll, set and get cookies, refresh page, back, press keys,
-authenticate or waiting for events or human intervention actions."""
+    description = """Execute automated web scraping with JSON-based, step-by-step navigation and content extraction.
+Steps should be a list of objects shaped like `{ "action": "navigate", "url": "https://...", "description": "Why this step is needed", ... }`.
+Pair every selector with a `selector_type` (`css`, `xpath`, or `text`), keep waits explicit via `condition_type` (`simple`, `selector`, `url_is`, `url_contains`, `title_contains`, or `custom`), and include authentication data (`method`, selectors, credentials) inside `authenticate` actions.
+Supported actions include navigation (`navigate`, `back`, `refresh`), interaction (`click`, `fill`, `press_key`, `scroll`), extraction (`get_text`, `get_html`, `get_cookies`), authentication (`authenticate`), file operations (`upload_file`, `wait_for_download`, `screenshot`), state management (`set_cookies`), waiting (`wait`, `await_human`, `await_keypress`, `await_browser_event`), evaluation (`evaluate`), and control flow (`loop`)."""
     args_schema = WebScrapingToolArgs
 
     def __init__(
