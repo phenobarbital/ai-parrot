@@ -69,8 +69,8 @@ MCP_SERVER_LOG_LEVEL = config.get('MCP_SERVER_LOG_LEVEL', fallback='INFO')
 
 # Default tools that should be started with the MCP server
 MCP_STARTED_TOOLS = {
-    'MSTeamsToolkit': 'parrot.tools.msteams',
-    'PDFPrintTool': 'parrot.tools.pdfprint',
+    # 'MSTeamsToolkit': 'parrot.tools.msteams',
+    # 'PDFPrintTool': 'parrot.tools.pdfprint',
     'JiraToolkit': 'parrot.tools.jiratoolkit',
 }
 
@@ -322,6 +322,7 @@ SHAREPOINT_DEFAULT_HOST = config.get('SHAREPOINT_DEFAULT_HOST')
 EMPLOYEES_TABLE = config.get('EMPLOYEES_TABLE', fallback='troc.troc_employees')
 
 # Workday SOAP settings
+WORKDAY_DEFAULT_TENANT = config.get('WORKDAY_DEFAULT_TENANT', fallback='nav')
 WORKDAY_CLIENT_ID = config.get("WORKDAY_CLIENT_ID")
 WORKDAY_CLIENT_SECRET = config.get("WORKDAY_CLIENT_SECRET")
 WORKDAY_TOKEN_URL = config.get("WORKDAY_TOKEN_URL")

@@ -76,7 +76,15 @@ from .models import (
     OrganizationModel,
     WorkdayResponseParser
 )
-from ...conf import WORKDAY_WSDL_PATHS
+from ...conf import (
+    WORKDAY_DEFAULT_TENANT,
+    WORKDAY_CLIENT_ID,
+    WORKDAY_CLIENT_SECRET,
+    WORKDAY_TOKEN_URL,
+    WORKDAY_WSDL_PATH,
+    WORKDAY_REFRESH_TOKEN,
+    WORKDAY_WSDL_PATHS
+)
 
 # -----------------------------
 # Workday Service Types
@@ -387,8 +395,8 @@ class WorkdayToolkit(AbstractToolkit):
 
     def __init__(
         self,
-        credentials: Dict[str, str],
-        tenant_name: str,
+        tenant_name: str = None,
+        credentials: Dict[str, str] = None,
         wsdl_paths: Optional[Dict[str, str]] = None,
         redis_url: Optional[str] = None,
         redis_key: str = "workday:access_token",
@@ -419,11 +427,11 @@ class WorkdayToolkit(AbstractToolkit):
         super().__init__(**kwargs)
 
         # Store credentials and settings for creating clients
-        self.credentials = credentials
+        self.credentials = credentials or self._default_credentials()
         self.redis_url = redis_url
         self.redis_key = redis_key
         self.timeout = timeout
-        self.tenant_name = tenant_name
+        self.tenant_name = tenant_name or WORKDAY_DEFAULT_TENANT
 
         # Initialize WSDL paths mapping
         self.wsdl_paths: Dict[WorkdayService, str] = {}
@@ -461,6 +469,16 @@ class WorkdayToolkit(AbstractToolkit):
         self.soap_client: Optional[WorkdaySOAPClient] = None
 
         self._initialized = False
+
+    def _default_credentials(self) -> Dict[str, str]:
+        """Generate default credentials from configuration."""
+        return {
+            "client_id": WORKDAY_CLIENT_ID,
+            "client_secret": WORKDAY_CLIENT_SECRET,
+            "token_url": WORKDAY_TOKEN_URL,
+            "wsdl_path": WORKDAY_WSDL_PATH,
+            "refresh_token": WORKDAY_REFRESH_TOKEN
+        }
 
     async def wd_start(self) -> str:
         """

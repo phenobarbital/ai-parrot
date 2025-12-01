@@ -45,6 +45,9 @@ class MCPServerConfig:
     # Logging
     log_level: str = "INFO"
 
+    # base path for HTTP transport
+    base_path: str = "/mcp"
+
 
 class MCPToolAdapter:
     """Adapts AI-Parrot AbstractTool to MCP tool format."""
@@ -299,7 +302,7 @@ class StdioMCPServer(MCPServerBase):
                 self.logger.info("Client initialization complete")
                 return None
             else:
-                raise Exception(f"Unknown method: {method}")
+                raise RuntimeError(f"Unknown method: {method}")
 
             # Return success response
             return {
@@ -323,32 +326,52 @@ class StdioMCPServer(MCPServerBase):
 class HttpMCPServer(MCPServerBase):
     """MCP server using HTTP transport."""
 
-    def __init__(self, config: MCPServerConfig):
+    def __init__(self, config: MCPServerConfig, parent_app: Optional[web.Application] = None):
         super().__init__(config)
-        self.app = web.Application()
+        self.app = parent_app or web.Application()
+        self.base_path = config.base_path or '/mcp'
         self.runner = None
         self.site = None
+        # define if parent_app is given, we assume setup will be called externally
+        self._external_setup = parent_app is not None
 
         # Setup routes
-        self.app.router.add_post("/mcp", self._handle_http_request)
+        self.app.router.add_post(self.base_path, self._handle_http_request)
         self.app.router.add_get("/", self._handle_info)
 
     async def start(self):
         """Start the HTTP MCP server."""
-        self.logger.info(f"Starting HTTP MCP server on {self.config.host}:{self.config.port}")
-
-        self.runner = web.AppRunner(self.app)
-        await self.runner.setup()
-
-        self.site = web.TCPSite(
-            self.runner,
-            self.config.host,
-            self.config.port
+        self.logger.info(
+            f"Starting HTTP MCP server on {self.config.host}:{self.config.port}"
         )
-        await self.site.start()
 
-        self.logger.info(f"HTTP MCP server started at http://{self.config.host}:{self.config.port}")
-        self.logger.info(f"MCP endpoint: http://{self.config.host}:{self.config.port}/mcp")
+        if not self._external_setup:
+
+            self.runner = web.AppRunner(self.app)
+            await self.runner.setup()
+
+            self.site = web.TCPSite(
+                self.runner,
+                self.config.host,
+                self.config.port
+            )
+            await self.site.start()
+        else:
+            # Register routes in the parent app
+            self.app.router.add_post(self.base_path, self._handle_http_request)
+            self.app.router.add_get(f"{self.base_path}/info", self._handle_info)
+
+            self.logger.info(
+                f"HTTP MCP routes registered at {self.base_path}"
+            )
+
+
+        self.logger.info(
+            f"HTTP MCP server started at http://{self.config.host}:{self.config.port}"
+        )
+        self.logger.info(
+            f"MCP endpoint: http://{self.config.host}:{self.config.port}/mcp"
+        )
 
     async def stop(self):
         """Stop the HTTP server."""
@@ -376,7 +399,7 @@ class HttpMCPServer(MCPServerBase):
                 elif method == "tools/call":
                     result = await self.handle_tools_call(params)
                 else:
-                    raise Exception(f"Unknown method: {method}")
+                    raise RuntimeError(f"Unknown method: {method}")
 
                 response = {
                     "jsonrpc": "2.0",
@@ -543,7 +566,7 @@ async def main():
     # Create server
     server = MCPServer(config)
 
-    # Register example tools (you'd register your actual tools here)
+    # Register example tools:
     # server.register_tool(YourOpenWeatherTool())
     # server.register_tool(YourDatabaseQueryTool())
 
