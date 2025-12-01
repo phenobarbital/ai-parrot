@@ -44,6 +44,91 @@ tool = WebScrapingTool(
 )
 ```
 
+## Designing JSON Action Flows for LLMs
+
+WebScrapingTool expects a list of declarative `steps` where each item is a JSON object. When crafting flows (manually or from an
+LLM), keep the following conventions in mind so complex browser sessions remain readable and deterministic:
+
+- **Always include a `description`**: Short sentences make it easy for another model or human to reason about intent without
+  re-parsing selectors.
+- **Be explicit about selectors**: Pair every `selector` with `selector_type` (`css`, `xpath`, or `text`) to avoid ambiguity
+  across engines.
+- **Spell out waits**: Use `condition_type` to signal what the wait is checking—`selector`, `url_is`, `url_contains`, `title_contains`, or
+  `simple` for a timed pause. Add `timeout` to cap how long the tool should wait.
+- **Structure authentication data**: For `authenticate` actions, choose the `method` (`form`, `basic`, `oauth`, `custom`) and
+  include explicit selectors (`username_selector`, `password_selector`, `submit_selector`) so credentials can be filled
+  predictably.
+- **Surface timing**: Add `delay_between_actions` at tool init and `timeout`/`duration` per step to keep long flows stable in
+  headless environments.
+
+### Wait condition types
+
+| `condition_type` | What it checks | Example payload |
+| --- | --- | --- |
+| `simple` | Fixed pause using `timeout` | `{ "action": "wait", "condition_type": "simple", "timeout": 2 }` |
+| `selector` | Element presence/visibility | `{ "action": "wait", "condition_type": "selector", "condition": "#loading-done" }` |
+| `url_is` | Exact URL match | `{ "action": "wait", "condition_type": "url_is", "condition": "https://app.example.com/home" }` |
+| `url_contains` | URL substring match | `{ "action": "wait", "condition_type": "url_contains", "condition": "dashboard" }` |
+| `title_contains` | Page title substring | `{ "action": "wait", "condition_type": "title_contains", "condition": "Welcome" }` |
+| `custom` | Custom JS returning truthy | `{ "action": "wait", "condition_type": "custom", "custom_script": "return window.ready === true" }` |
+
+### End-to-end JSON flow example
+
+The following recipe shows how to combine navigation, form authentication, deterministic waits, and element interactions in a
+single `execute` call:
+
+```python
+steps = [
+    {
+        "action": "navigate",
+        "url": "https://manage.dispatch.me/login",
+        "description": "Open Dispatch login page",
+    },
+    {
+        "action": "authenticate",
+        "method": "form",
+        "username_selector": "input[name='email']",
+        "username": config.get('DISPATCHME_USERNAME'),
+        "enter_on_username": True,
+        "password_selector": "input[name='password']",
+        "password": config.get('DISPATCHME_PASSWORD'),
+        "submit_selector": "button[type='submit']",
+        "description": "Fill login form and submit",
+    },
+    {
+        "action": "wait",
+        "timeout": 5,
+        "condition_type": "url_is",
+        "condition": "https://manage.dispatch.me/providers/list",
+        "description": "Wait for redirect to providers list",
+    },
+    {
+        "action": "navigate",
+        "url": "https://manage.dispatch.me/recruit/out-of-network/list",
+        "description": "Open recruiters page",
+    },
+    {
+        "action": "click",
+        "selector": "//button[contains(., 'Filtering On')]",
+        "selector_type": "xpath",
+        "description": "Open Filters button",
+    },
+    {
+        "action": "wait",
+        "timeout": 2,
+        "condition_type": "simple",
+        "description": "Let UI settle",
+    },
+    {
+        "action": "click",
+        "selector": "//button[contains(., 'Filters')]",
+        "selector_type": "xpath",
+        "description": "Toggle filters again",
+    },
+]
+result = await scraper.execute(steps=steps)
+```
+
 ---
 
 ## Available Actions
