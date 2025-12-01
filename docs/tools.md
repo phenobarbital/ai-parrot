@@ -270,6 +270,66 @@ mobile_scraper = WebScrapingTool(
 )
 ```
 
+**LLM-friendly JSON flow schema:** Each `step` should be a small, explicit JSON object. Include:
+- `action`: What to do (`navigate`, `authenticate`, `wait`, `click`, etc.).
+- `description`: A short explanation to keep flows readable when scanned by humans or LLMs.
+- `selector` plus `selector_type`: Declare whether you are using `css`, `xpath`, or `text` for element targeting.
+- `condition` plus `condition_type`: For waits, define whether you expect an exact URL (`url_is`), substring (`url_contains`), element check (`selector`), or a simple timed pause (`simple`).
+- `timeout`/`duration`: Declare timings so headless runs stay deterministic.
+
+**Complex flow example (login + filtering):**
+```python
+steps = [
+    {
+        "action": "navigate",
+        "url": "https://manage.dispatch.me/login",
+        "description": "Open Dispatch login page"
+    },
+    {
+        "action": "authenticate",
+        "method": "form",
+        "username_selector": "input[name='email']",
+        "username": config.get('DISPATCHME_USERNAME'),
+        "enter_on_username": True,
+        "password_selector": "input[name='password']",
+        "password": config.get('DISPATCHME_PASSWORD'),
+        "submit_selector": "button[type='submit']",
+        "description": "Fill and submit login form"
+    },
+    {
+        "action": "wait",
+        "timeout": 5,
+        "condition_type": "url_is",
+        "condition": "https://manage.dispatch.me/providers/list",
+        "description": "Confirm redirect to providers list"
+    },
+    {
+        "action": "navigate",
+        "url": "https://manage.dispatch.me/recruit/out-of-network/list",
+        "description": "Open recruiters page"
+    },
+    {
+        "action": "click",
+        "selector": "//button[contains(., 'Filtering On')]",
+        "selector_type": "xpath",
+        "description": "Open Filters panel"
+    },
+    {
+        "action": "wait",
+        "timeout": 2,
+        "condition_type": "simple",
+        "description": "Short pause for UI to settle"
+    },
+    {
+        "action": "click",
+        "selector": "//button[contains(., 'Filters')]",
+        "selector_type": "xpath",
+        "description": "Re-open filter options"
+    },
+]
+result = await scraper.execute(steps=steps)
+```
+
 **Supported Actions:**
 - **Navigation:** `navigate`, `back`, `refresh`
 - **Interaction:** `click`, `fill`, `press_key`, `scroll`
