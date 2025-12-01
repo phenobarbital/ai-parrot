@@ -4,7 +4,8 @@ MCP Server Implementation - Expose AI-Parrot Tools via MCP Protocol
 This creates an MCP server that exposes your existing AbstractTool instances
 as MCP tools that can be consumed by any MCP client.
 """
-from typing import Dict, List, Any, Optional
+import os
+from typing import Dict, List, Any, Optional, Callable
 from abc import ABC, abstractmethod
 import contextlib
 import asyncio
@@ -12,6 +13,7 @@ import json
 import logging
 import sys
 import argparse
+import signal
 from dataclasses import dataclass
 import io
 from pathlib import Path
@@ -36,9 +38,10 @@ class MCPServerConfig:
     description: str = "AI-Parrot Tools via MCP Protocol"
 
     # Server settings
-    transport: str = "stdio"  # "stdio" or "http"
+    transport: str = "stdio"  # "stdio" or "http" or "unix"
     host: str = "localhost"
     port: int = 8080
+    socket_path: Optional[str] = None  # For UNIX socket transport
 
     # Tool filtering
     allowed_tools: Optional[List[str]] = None
@@ -49,6 +52,7 @@ class MCPServerConfig:
 
     # base path for HTTP transport
     base_path: str = "/mcp"
+    events_path: str = "/mcp/events"
 
 
 class MCPToolAdapter:
@@ -390,7 +394,7 @@ class HttpMCPServer(MCPServerBase):
             data = await request.json()
             method = data.get("method")
             params = data.get("params", {})
-            request_id = data.get("id")
+            request_id = data.get("id", None)
 
             self.logger.debug(f"Received HTTP MCP request: {data}")
 
@@ -411,6 +415,10 @@ class HttpMCPServer(MCPServerBase):
                         result = self._convert_tools_to_anthropic(result)
                 elif method == "tools/call":
                     result = await self.handle_tools_call(params)
+                elif method == "notifications/initialized":
+                    # This is a notification, no response needed
+                    self.logger.info("Client initialization complete")
+                    return web.Response(status=204)  # No Content
                 else:
                     raise RuntimeError(
                         f"Unknown method: {method}"
@@ -424,14 +432,19 @@ class HttpMCPServer(MCPServerBase):
 
             except Exception as e:
                 self.logger.error(f"Error handling {method}: {e}")
-                response = {
-                    "jsonrpc": "2.0",
-                    "id": request_id,
-                    "error": {
-                        "code": -32603,
-                        "message": str(e)
+                # Only send error response if this was a request (has id)
+                if request_id is not None:
+                    response = {
+                        "jsonrpc": "2.0",
+                        "id": request_id,
+                        "error": {
+                            "code": -32603,
+                            "message": str(e)
+                        }
                     }
-                }
+                else:
+                    # It's a notification that failed, just log it
+                    return web.Response(status=500, text=str(e))
 
             return web.json_response(response)
 
@@ -485,6 +498,162 @@ class HttpMCPServer(MCPServerBase):
 
         return web.json_response(info)
 
+class UnixMCPServer(MCPServerBase):
+    """MCP server using Unix socket transport."""
+
+    def __init__(self, config: MCPServerConfig):
+        super().__init__(config)
+        self.socket_path = config.socket_path
+        if not self.socket_path:
+            # Fallback to PID-based naming
+            toolkit_name = config.name.replace(" ", "-").lower()
+            self.socket_path = f"/tmp/parrot-mcp-{toolkit_name}-{os.getpid()}.sock"
+
+        self.server = None
+        self._shutdown_handlers: list[Callable] = []
+        self._setup_signal_handlers()
+
+    def _setup_signal_handlers(self):
+        """Setup graceful shutdown on SIGTERM/SIGINT."""
+        def signal_handler(signum, frame):
+            self.logger.info(f"Received signal {signum}, initiating shutdown...")
+            asyncio.create_task(self.stop())
+
+        signal.signal(signal.SIGTERM, signal_handler)
+        signal.signal(signal.SIGINT, signal_handler)
+
+    def add_shutdown_handler(self, handler: Callable):
+        """Register user-defined shutdown handler."""
+        self._shutdown_handlers.append(handler)
+
+    async def start(self):
+        """Start Unix socket server."""
+        # Cleanup old socket if exists
+        if os.path.exists(self.socket_path):
+            self.logger.warning(f"Removing existing socket: {self.socket_path}")
+            os.unlink(self.socket_path)
+
+        # Ensure parent directory exists
+        socket_dir = Path(self.socket_path).parent
+        socket_dir.mkdir(parents=True, exist_ok=True)
+
+        self.logger.info(f"Starting Unix socket MCP server at {self.socket_path}")
+
+        # Use asyncio.start_unix_server (menos conflicto con aiohttp)
+        self.server = await asyncio.start_unix_server(
+            self._handle_connection,
+            path=self.socket_path
+        )
+
+        # Set socket permissions (readable/writable by owner and group)
+        os.chmod(self.socket_path, 0o660)
+
+        self.logger.info(f"Unix MCP server listening on {self.socket_path}")
+        self.logger.info(f"Registered {len(self.tools)} tools")
+
+        # Keep server running
+        async with self.server:
+            await self.server.serve_forever()
+
+    async def _handle_connection(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+        """Handle a client connection."""
+        addr = writer.get_extra_info('peername', 'unknown')
+        self.logger.info(f"New connection from {addr}")
+
+        try:
+            while True:
+                # Read JSON-RPC message (newline-delimited)
+                line = await reader.readline()
+                if not line:
+                    break
+
+                line = line.decode('utf-8').strip()
+                if not line:
+                    continue
+
+                try:
+                    request = json.loads(line)
+                    response = await self._handle_request(request)
+
+                    if response:
+                        response_line = json.dumps(response) + "\n"
+                        writer.write(response_line.encode('utf-8'))
+                        await writer.drain()
+
+                except json.JSONDecodeError as e:
+                    self.logger.warning(f"Invalid JSON: {e}")
+                    continue
+
+        except asyncio.CancelledError:
+            self.logger.info("Connection cancelled")
+        except Exception as e:
+            self.logger.error(f"Connection error: {e}")
+        finally:
+            writer.close()
+            await writer.wait_closed()
+            self.logger.info(f"Connection closed: {addr}")
+
+    async def _handle_request(self, request: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Handle JSON-RPC request (same as stdio)."""
+        method = request.get("method")
+        params = request.get("params", {})
+        request_id = request.get("id")
+
+        try:
+            if method == "initialize":
+                result = await self.handle_initialize(params)
+            elif method == "tools/list":
+                result = await self.handle_tools_list(params)
+            elif method == "tools/call":
+                result = await self.handle_tools_call(params)
+            elif method == "notifications/initialized":
+                self.logger.info("Client initialization complete")
+                return None
+            else:
+                raise RuntimeError(f"Unknown method: {method}")
+
+            return {
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "result": result
+            }
+
+        except Exception as e:
+            self.logger.error(f"Error handling {method}: {e}")
+            return {
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "error": {
+                    "code": -32603,
+                    "message": str(e)
+                }
+            }
+
+    async def stop(self):
+        """Stop the server and cleanup."""
+        self.logger.info("Shutting down Unix MCP server...")
+
+        # Call user shutdown handlers
+        for handler in self._shutdown_handlers:
+            try:
+                result = handler()
+                if asyncio.iscoroutine(result):
+                    await result
+            except Exception as e:
+                self.logger.error(f"Error in shutdown handler: {e}")
+
+        # Close server
+        if self.server:
+            self.server.close()
+            await self.server.wait_closed()
+
+        # Remove socket file
+        if os.path.exists(self.socket_path):
+            self.logger.info(f"Removing socket: {self.socket_path}")
+            os.unlink(self.socket_path)
+
+        self.logger.info("Shutdown complete")
+
 class SseMCPServer(MCPServerBase):
     """MCP server using SSE transport compatible with ChatGPT and OpenAI MCP clients."""
 
@@ -492,15 +661,16 @@ class SseMCPServer(MCPServerBase):
         super().__init__(config)
         self.app = parent_app or web.Application()
         self.base_path = config.base_path or "/mcp"
-        self.events_path = f"{self.base_path.rstrip('/')}/events"
+        self.events_path = config.events_path or f"{self.base_path.rstrip('/')}/events"
         self.runner = None
         self.site = None
         self.sessions: Dict[str, asyncio.Queue] = {}
         self._external_setup = parent_app is not None
-
         self.app.router.add_post(self.base_path, self._handle_http_request)
-        self.app.router.add_get(self.events_path, self._handle_sse)
-        self.app.router.add_get("/", self._handle_info)
+        # Alias GET on base path to the SSE stream for clients that connect at /mcp
+        self.app.router.add_get(self.base_path, self._handle_sse, allow_head=True)
+        self.app.router.add_get(self.events_path, self._handle_sse, allow_head=True)
+        self.app.router.add_get("/", self._handle_info, allow_head=True)
 
     async def start(self):
         """Start the SSE MCP server."""
@@ -679,6 +849,8 @@ class MCPServer:
             self.server = HttpMCPServer(config, parent_app=parent_app)
         elif config.transport == "sse":
             self.server = SseMCPServer(config, parent_app=parent_app)
+        elif config.transport == "unix":
+            self.server = UnixMCPServer(config)
         else:
             raise ValueError(
                 f"Unsupported transport: {config.transport}"
