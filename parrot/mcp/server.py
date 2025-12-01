@@ -511,6 +511,7 @@ class UnixMCPServer(MCPServerBase):
 
         self.server = None
         self._shutdown_handlers: list[Callable] = []
+        self._serve_task: Optional[asyncio.Task] = None
         self._setup_signal_handlers()
 
     def _setup_signal_handlers(self):
@@ -551,9 +552,12 @@ class UnixMCPServer(MCPServerBase):
         self.logger.info(f"Unix MCP server listening on {self.socket_path}")
         self.logger.info(f"Registered {len(self.tools)} tools")
 
-        # Keep server running
-        async with self.server:
-            await self.server.serve_forever()
+        # Keep server running until stop() cancels the task
+        self._serve_task = asyncio.create_task(self.server.serve_forever())
+        try:
+            await self._serve_task
+        except asyncio.CancelledError:
+            self.logger.debug("Unix MCP server serve loop cancelled")
 
     async def _handle_connection(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         """Handle a client connection."""
@@ -642,10 +646,17 @@ class UnixMCPServer(MCPServerBase):
             except Exception as e:
                 self.logger.error(f"Error in shutdown handler: {e}")
 
+        # Cancel serve loop first
+        if self._serve_task and not self._serve_task.done():
+            self._serve_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._serve_task
+
         # Close server
         if self.server:
             self.server.close()
             await self.server.wait_closed()
+            self.server = None
 
         # Remove socket file
         if os.path.exists(self.socket_path):
@@ -795,6 +806,10 @@ class SseMCPServer(MCPServerBase):
                     result = await self.handle_initialize(params)
                 elif method == "tools/list":
                     result = await self.handle_tools_list(params)
+                elif method == "notifications/initialized":
+                    # This is a notification, no response needed
+                    self.logger.info("Client initialization complete")
+                    return web.Response(status=204)  # No Content
                 elif method == "tools/call":
                     result = await self.handle_tools_call(params)
                 else:

@@ -35,12 +35,14 @@ class ParrotMCPServer:
         name: Optional[str] = None,
         description: Optional[str] = None,
         log_level: Optional[str] = None,
+        allow_anonymous: bool = True,
     ) -> None:
         self.name = name or MCP_SERVER_NAME
         self.description = description or MCP_SERVER_DESCRIPTION
         self.log_level = log_level or MCP_SERVER_LOG_LEVEL
         self.tools_config = tools if isinstance(tools, dict) else MCP_STARTED_TOOLS
         self.toolkit_instance = tools if isinstance(tools, AbstractToolkit) else None
+        self.allow_anonymous = allow_anonymous
         # Parse transport configuration
         self.transport_configs = self._parse_transports(
             transports, host, port
@@ -133,6 +135,14 @@ class ParrotMCPServer:
                 log_level=self.log_level,
             )
 
+            # Ensure MCP endpoints bypass the auth middleware (uses AuthHandler.exclude_list)
+            self._add_auth_exclusions(
+                [
+                    mcp_config.base_path,
+                    f"{mcp_config.base_path.rstrip('/')}/events",
+                ]
+            )
+
             if config.transport == "stdio":
                 server = MCPServer(mcp_config)
                 server.register_tools(tools)
@@ -188,6 +198,26 @@ class ParrotMCPServer:
         else:
             self.logger.info("All MCP servers shutdown complete")
 
+    def _add_auth_exclusions(self, paths: List[str]) -> None:
+        """Register paths that should bypass the Auth middleware (if present)."""
+        if not self.allow_anonymous:
+            return
+
+        if not self.app:
+            return
+
+        auth_handler = self.app.get("auth")
+        if not auth_handler:
+            self.logger.debug("Auth handler not found; skipping auth exclusions for MCP")
+            return
+
+        for path in paths:
+            auth_handler.add_exclude_list(path)
+            # Also add glob-style pattern to cover subpaths
+            if not path.endswith("*"):
+                auth_handler.add_exclude_list(f"{path}*")
+        self.logger.info("Registered MCP paths as auth exclusions: %s", paths)
+
     async def _load_configured_tools(self) -> List[AbstractTool]:
         """Instantiate every tool declared in configuration."""
         loaded: List[AbstractTool] = []
@@ -196,6 +226,14 @@ class ParrotMCPServer:
             return loaded
 
         for class_name, module_path in self.tools_config.items():
+            if isinstance(module_path, (AbstractTool)):
+                loaded.append(module_path)
+                continue
+            elif isinstance(module_path, AbstractToolkit):
+                toolkit = module_path
+                await self._maybe_start_toolkit(toolkit, class_name)
+                loaded.extend(toolkit.get_tools())
+                continue
             try:
                 module = import_module(module_path)
                 tool_cls = getattr(module, class_name)

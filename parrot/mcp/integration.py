@@ -7,6 +7,7 @@ while maintaining the stability of our working stdio transport.
 import os
 from typing import Callable, Dict, List, Any, Optional, Union
 import asyncio
+import contextlib
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -37,7 +38,11 @@ class MCPServerConfig:
     token_supplier: Optional[Callable[[], Optional[str]]] = None
 
     # Transport type
-    transport: str = "auto"  # "auto", "stdio", "http", "sse"
+    transport: str = "auto"  # "auto", "stdio", "http", "sse" or "unix"
+    base_path: Optional[str] = None  # Base path for HTTP/SSE endpoints
+    events_path: Optional[str] = None  # SSE events path
+    # URL for Unix socket (for unix transport)
+    socket_path: Optional[str] = None
 
     # Additional headers for HTTP transports
     headers: Dict[str, str] = field(default_factory=dict)
@@ -337,6 +342,222 @@ class StdioMCPSession:
                 self._stderr = None
 
 
+class UnixMCPSession:
+    """MCP session for Unix socket transport."""
+
+    def __init__(self, config: MCPServerConfig, logger):
+        self.config = config
+        self.logger = logger
+        self._request_id = 0
+        self._reader: Optional[asyncio.StreamReader] = None
+        self._writer: Optional[asyncio.StreamWriter] = None
+        self._initialized = False
+        self._response_futures: Dict[int, asyncio.Future] = {}
+        self._read_task: Optional[asyncio.Task] = None
+
+    async def connect(self):
+        """Connect to MCP server via Unix socket."""
+        try:
+            self.logger.info(f"Connecting to Unix socket: {self.config.socket_path}")
+
+            if not self.config.socket_path:
+                raise ValueError("socket_path is required for unix transport")
+
+            if not os.path.exists(self.config.socket_path):
+                raise MCPConnectionError(
+                    f"Unix socket does not exist: {self.config.socket_path}"
+                )
+
+            # Connect to Unix socket
+            self._reader, self._writer = await asyncio.open_unix_connection(
+                path=self.config.socket_path
+            )
+
+            # Start background task to read responses
+            self._read_task = asyncio.create_task(self._read_responses())
+
+            # Initialize MCP session
+            await self._initialize_session()
+            self._initialized = True
+
+            self.logger.info(f"Unix socket connection established to {self.config.name}")
+
+        except Exception as e:
+            await self.disconnect()
+            raise MCPConnectionError(f"Unix socket connection failed: {e}") from e
+
+    async def _read_responses(self):
+        """Background task to read responses from server."""
+        try:
+            while True:
+                if not self._reader:
+                    break
+
+                line = await self._reader.readline()
+                if not line:
+                    self.logger.warning("Server closed connection")
+                    break
+
+                try:
+                    response = json.loads(line.decode('utf-8').strip())
+                    request_id = response.get('id')
+
+                    if request_id and request_id in self._response_futures:
+                        future = self._response_futures.pop(request_id)
+                        if 'error' in response:
+                            future.set_exception(
+                                MCPConnectionError(f"MCP Error: {response['error']}")
+                            )
+                        else:
+                            future.set_result(response.get('result'))
+                    else:
+                        # Notification or unsolicited message
+                        self.logger.debug(f"Received message without pending request: {response}")
+
+                except json.JSONDecodeError as e:
+                    self.logger.warning(f"Invalid JSON from server: {e}")
+                except Exception as e:
+                    self.logger.error(f"Error processing response: {e}")
+
+        except asyncio.CancelledError:
+            self.logger.debug("Read task cancelled")
+        except Exception as e:
+            self.logger.error(f"Error in read loop: {e}")
+
+    async def _initialize_session(self):
+        """Initialize MCP session over Unix socket."""
+        try:
+            init_result = await self._send_request("initialize", {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {"tools": {}},
+                "clientInfo": {"name": "ai-parrot-mcp-client", "version": "1.0.0"}
+            })
+
+            # Send initialized notification
+            await self._send_notification("notifications/initialized")
+
+        except Exception as e:
+            raise MCPConnectionError(f"Unix socket session initialization failed: {e}") from e
+
+    async def _send_request(self, method: str, params: dict = None) -> dict:
+        """Send JSON-RPC request via Unix socket."""
+        if not self._writer:
+            raise MCPConnectionError("Not connected")
+
+        self._request_id += 1
+        request_id = self._request_id
+
+        request = {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "method": method,
+        }
+        if params is not None:
+            request["params"] = params
+
+        # Create future for response
+        future = asyncio.Future()
+        self._response_futures[request_id] = future
+
+        # Send request
+        request_line = json.dumps(request) + "\n"
+        self._writer.write(request_line.encode('utf-8'))
+        await self._writer.drain()
+
+        self.logger.debug(f"Sent request: {method} (id={request_id})")
+
+        # Wait for response with timeout
+        try:
+            return await asyncio.wait_for(
+                future,
+                timeout=self.config.timeout
+            )
+        except asyncio.TimeoutError:
+            self._response_futures.pop(request_id, None)
+            raise MCPConnectionError(f"Request timeout: {method}")
+
+    async def _send_notification(self, method: str, params: dict = None):
+        """Send JSON-RPC notification (no response expected)."""
+        if not self._writer:
+            raise MCPConnectionError("Not connected")
+
+        notification = {
+            "jsonrpc": "2.0",
+            "method": method,
+        }
+        if params is not None:
+            notification["params"] = params
+
+        notification_line = json.dumps(notification) + "\n"
+        self._writer.write(notification_line.encode('utf-8'))
+        await self._writer.drain()
+
+        self.logger.debug(f"Sent notification: {method}")
+
+    async def list_tools(self):
+        """List available tools."""
+        if not self._initialized:
+            raise MCPConnectionError("Session not initialized")
+
+        result = await self._send_request("tools/list")
+        tools = result.get("tools", [])
+
+        tool_objects = []
+        for tool_dict in tools:
+            tool_obj = type('MCPTool', (), tool_dict)()
+            tool_objects.append(tool_obj)
+
+        return tool_objects
+
+    async def call_tool(self, tool_name: str, arguments: dict):
+        """Call a tool."""
+        if not self._initialized:
+            raise MCPConnectionError("Session not initialized")
+
+        result = await self._send_request("tools/call", {
+            "name": tool_name,
+            "arguments": arguments
+        })
+
+        content_items = []
+        if "content" in result:
+            for item in result["content"]:
+                content_obj = type('ContentItem', (), item)()
+                content_items.append(content_obj)
+
+        return type('ToolCallResult', (), {"content": content_items})()
+
+    async def disconnect(self):
+        """Disconnect Unix socket session."""
+        self._initialized = False
+
+        # Cancel read task
+        if self._read_task and not self._read_task.done():
+            self._read_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._read_task
+            self._read_task = None
+
+        # Cancel pending requests
+        for future in self._response_futures.values():
+            if not future.done():
+                future.cancel()
+        self._response_futures.clear()
+
+        # Close connection
+        if self._writer:
+            try:
+                self._writer.close()
+                await self._writer.wait_closed()
+            except Exception as e:
+                self.logger.debug(f"Error closing writer: {e}")
+            finally:
+                self._writer = None
+                self._reader = None
+
+        self.logger.info("Unix socket disconnected")
+
+
 class HttpMCPSession:
     """MCP session for HTTP/SSE transport using aiohttp."""
 
@@ -586,6 +807,8 @@ class MCPClient:
         if self.config.transport != "auto":
             return self.config.transport
 
+        if self.config.socket_path:
+            return "unix"
         if self.config.url:
             # Check if URL looks like SSE endpoint
             if "events" in self.config.url or "sse" in self.config.url:
@@ -595,7 +818,10 @@ class MCPClient:
         elif self.config.command:
             return "stdio"
         else:
-            raise ValueError("Cannot auto-detect transport. Please specify url or command.")
+            raise ValueError(
+                "Cannot auto-detect transport. "
+                "Please specify socket_path, url, or command."
+            )
 
     async def connect(self):
         """Connect to MCP server using appropriate transport."""
@@ -607,9 +833,13 @@ class MCPClient:
         try:
             if transport == "stdio":
                 self._session = StdioMCPSession(self.config, self.logger)
-            elif transport in ["http", "sse"]:
-                # For now, treat SSE the same as HTTP - you could extend this
+            elif transport == "http":
                 self._session = HttpMCPSession(self.config, self.logger)
+            elif transport == "sse":
+                # TODO: Implement SSE transport
+                self._session = HttpMCPSession(self.config, self.logger)
+            elif transport == "unix":
+                self._session = UnixMCPSession(self.config, self.logger)
             else:
                 raise ValueError(f"Unsupported transport: {transport}")
 
@@ -863,6 +1093,36 @@ def create_oauth_mcp_server(
     # Attach a small helper so the client can ensure token before using the server.
     cfg._ensure_oauth_token = oauth.ensure_token  # attribute on purpose
     return cfg
+
+def create_unix_mcp_server(
+    name: str,
+    socket_path: str,
+    **kwargs
+) -> MCPServerConfig:
+    """Create a Unix socket MCP server configuration.
+
+    Args:
+        name: Server name
+        socket_path: Path to Unix socket
+        **kwargs: Additional MCPServerConfig parameters
+
+    Returns:
+        MCPServerConfig configured for Unix socket transport
+
+    Example:
+        >>> config = create_unix_mcp_server(
+        ...     "workday",
+        ...     "/tmp/parrot-mcp-workday.sock"
+        ... )
+        >>> async with MCPClient(config) as client:
+        ...     tools = await client.list_tools()
+    """
+    return MCPServerConfig(
+        name=name,
+        transport="unix",
+        socket_path=socket_path,
+        **kwargs
+    )
 
 
 def create_api_key_mcp_server(

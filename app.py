@@ -128,7 +128,7 @@ class Main(AppHandler):
 
         # MCP server lifecycle management
         mcp_server = ParrotMCPServer(
-            transports=["http"],
+            transports=["sse"],
             tools=WorkdayToolkit(redis_url="redis://localhost:6379/4")
         )
         mcp_server.setup(self.app)
