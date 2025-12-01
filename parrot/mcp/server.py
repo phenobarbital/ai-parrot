@@ -385,24 +385,36 @@ class HttpMCPServer(MCPServerBase):
         self.logger.info("HTTP MCP server stopped")
 
     async def _handle_http_request(self, request: web.Request) -> web.Response:
-        """Handle HTTP JSON-RPC request."""
+        """Handle HTTP JSON-RPC request with Anthropic compatibility."""
         try:
             data = await request.json()
             method = data.get("method")
             params = data.get("params", {})
             request_id = data.get("id")
 
-            self.logger.info(f"HTTP request: {method}")
+            self.logger.debug(f"Received HTTP MCP request: {data}")
+
+            # Detect Anthropic mode
+            anthropic_mode = request.headers.get("anthropic-beta") == "mcp-client-2025-04-04"
+
+            self.logger.info(
+                f"HTTP request: {method} (anthropic_mode={anthropic_mode})"
+            )
 
             try:
                 if method == "initialize":
                     result = await self.handle_initialize(params)
                 elif method == "tools/list":
                     result = await self.handle_tools_list(params)
+                    # Convert to Anthropic format if requested
+                    if anthropic_mode:
+                        result = self._convert_tools_to_anthropic(result)
                 elif method == "tools/call":
                     result = await self.handle_tools_call(params)
                 else:
-                    raise RuntimeError(f"Unknown method: {method}")
+                    raise RuntimeError(
+                        f"Unknown method: {method}"
+                    )
 
                 response = {
                     "jsonrpc": "2.0",
@@ -436,6 +448,28 @@ class HttpMCPServer(MCPServerBase):
                 },
                 status=400
             )
+
+    def _convert_tools_to_anthropic(self, mcp_result: Dict[str, Any]) -> Dict[str, Any]:
+        """Convert MCP tools/list result to Anthropic format.
+
+        MCP format:
+            {"tools": [{"name": "...", "description": "...", "inputSchema": {...}}]}
+
+        Anthropic format:
+            {"tools": [{"name": "...", "description": "...", "input_schema": {...}}]}
+        """
+        if "tools" not in mcp_result:
+            return mcp_result
+
+        converted_tools = []
+        for tool in mcp_result["tools"]:
+            converted_tools.append({
+                "name": tool["name"],
+                "description": tool["description"],
+                "input_schema": tool["inputSchema"]  # camelCase -> snake_case
+            })
+
+        return {"tools": converted_tools}
 
     async def _handle_info(self, request: web.Request) -> web.Response:
         """Handle info endpoint."""
@@ -474,7 +508,9 @@ class SseMCPServer(MCPServerBase):
             self.logger.info("SSE MCP server using existing aiohttp application")
             return
 
-        self.logger.info(f"Starting SSE MCP server on {self.config.host}:{self.config.port}")
+        self.logger.info(
+            f"Starting SSE MCP server on {self.config.host}:{self.config.port}"
+        )
 
         self.runner = web.AppRunner(self.app)
         await self.runner.setup()

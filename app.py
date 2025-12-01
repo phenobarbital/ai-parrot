@@ -22,11 +22,14 @@ from parrot.handlers.o365_auth import (
     O365InteractiveAuthSessions,
     O365InteractiveAuthSessionDetail,
 )
-from parrot.services import ParrotMCPServer
+from parrot.services.mcp import ParrotMCPServer
+from parrot.tools.workday import WorkdayToolkit
 from parrot.services.o365_remote_auth import RemoteAuthManager
 from parrot.handlers.jobs.worker import configure_redis_queue, configure_job_manager
 from resources.example import ExampleAsyncView
 from resources.nextstop import NextStopAgent
+
+
 
 class Main(AppHandler):
     """
@@ -124,8 +127,11 @@ class Main(AppHandler):
         nextstop.setup(self.app, '/api/v1/agents/nextstop')
 
         # MCP server lifecycle management
-        # self.mcp_server = ParrotMCPServer()
-        # self.mcp_server.setup(self.app)
+        mcp_server = ParrotMCPServer(
+            transports=["http"],
+            tools=WorkdayToolkit(redis_url="redis://localhost:6379/4")
+        )
+        mcp_server.setup(self.app)
 
     async def on_prepare(self, request, response):
         """
