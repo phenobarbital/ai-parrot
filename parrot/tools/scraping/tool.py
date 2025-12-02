@@ -250,9 +250,7 @@ If no selectors are provided and full_page is False, the tool will still return 
                         "metadata": r.metadata,
                         "success": r.success,
                         "error_message": r.error_message,
-                        "content": r.content,
-                        'bs': r.bs_soup
-
+                        "content": r.content
                     } for r in results
                 ],
                 "metadata": {
