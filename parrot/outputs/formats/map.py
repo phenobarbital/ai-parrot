@@ -610,25 +610,25 @@ class FoliumRenderer(BaseChart):
         if div_match:
             original_id = div_match[1]
             map_id = map_id or original_id
-            
+
             # Obtenemos el HTML crudo del div
             map_div = div_match[0]
-            
+
             # --- PASO 1: Actualizar el ID ---
             map_div = map_div.replace(f'id="{original_id}"', f'id="{map_id}"')
-            
+
             # --- PASO 2: Inyectar Altura Fija (La solución al problema) ---
             # Definimos la altura deseada
             fixed_height_style = "height: 600px; min-height: 600px;"
-            
+
             # Intentamos reemplazar la altura porcentual que genera Folium (ej: height: 100.0%;)
             # Usamos Regex para ser flexibles con espacios o decimales
             map_div, num_subs = re.subn(
-                r'height:\s*100(\.0)?%;', 
-                fixed_height_style, 
+                r'height:\s*100(\.0)?%;',
+                fixed_height_style,
                 map_div
             )
-            
+
             # Si el regex no encontró nada (ej: Folium cambió formato), inyectamos el estilo a la fuerza
             if num_subs == 0:
                 if 'style="' in map_div:
@@ -917,10 +917,6 @@ class FoliumRenderer(BaseChart):
             explanation=explanation,
             **kwargs
         )
-
-        print(f'CODE LENGTH: {len(code)}')
-        print(f'HTML LENGTH: {len(html_output)}')
-        print(f'HTML MODE: {html_mode}')
 
         # Return based on output format
         if output_format == 'json':

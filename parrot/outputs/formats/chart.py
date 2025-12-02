@@ -98,11 +98,9 @@ class BaseChart(BaseRenderer):
                 background: #f0f4ff;
                 border-left: 4px solid #667eea;
                 padding: 16px 20px;
-                margin-bottom: 20px;
                 border-radius: 6px;
             }
             .chart-guidance h3 {
-                margin-bottom: 10px;
                 font-size: 16px;
                 font-weight: 600;
                 color: #364152;
@@ -233,22 +231,18 @@ class BaseChart(BaseRenderer):
         body {{
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
                          'Helvetica Neue', Arial, sans-serif;
-            background: #f5f7fa;
-            padding: 20px;
+            padding: 5px;
             line-height: 1.6;
         }}
 
-        .container {{
+        .media-container {{
             max-width: 1200px;
             margin: 0 auto;
         }}
 
         .chart-container {{
-            background: white;
             border-radius: 12px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.07), 0 2px 4px rgba(0,0,0,0.05);
-            padding: 30px;
-            margin-bottom: 20px;
+            padding: 5px;
         }}
 
         .chart-wrapper {{
@@ -326,17 +320,17 @@ class BaseChart(BaseRenderer):
 
         @media (max-width: 768px) {{
             body {{
-                padding: 10px;
+                padding: 1px;
             }}
 
             .chart-container {{
-                padding: 15px;
+                padding: 2px;
             }}
         }}
     </style>
 </head>
 <body>
-    <div class="container" id="{container_id}">
+    <div class="media-container" id="{container_id}">
         <div class="chart-container">
             <div class="chart-wrapper">
                 {chart_content}

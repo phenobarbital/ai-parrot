@@ -245,7 +245,8 @@ agGrid.createGrid(gridDiv, gridOptions);
                 </script>
             """
 
-        else: # simple
+        else:
+            # simple
             # Basic Bootstrap for simple tables
             head_content = f"""
                 <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css">
