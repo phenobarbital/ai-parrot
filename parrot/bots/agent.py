@@ -95,7 +95,6 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
         self.agent_id = self.agent_id or agent_id
         self.agent_name = self.agent_name or name
         tools = self._get_default_tools(tools)
-        print('TOOLS > ', tools)
         super().__init__(
             name=name,
             llm=llm,

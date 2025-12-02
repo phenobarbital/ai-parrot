@@ -542,7 +542,7 @@ class GoogleGenAIClient(AbstractClient):
 
         # Convert complex types to basic Python types
         clean_result = result
-        
+
         if isinstance(result, pd.DataFrame):
             # Convert DataFrame to records and ensure all keys are strings
             # This handles DataFrames with integer or other non-string column names
