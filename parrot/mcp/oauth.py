@@ -1,4 +1,5 @@
 from typing import Optional, Dict, Any
+from dataclasses import dataclass, field
 import os
 import sys
 import asyncio
@@ -15,6 +16,243 @@ def _b64url(data: bytes) -> str:
 
 def _now() -> int:
     return int(time.time())
+
+
+@dataclass
+class OAuthClient:
+    client_id: str
+    client_secret: str
+    client_name: str
+    redirect_uris: list[str]
+    scopes: list[str] = field(default_factory=list)
+    created_at: float = field(default_factory=time.time)
+
+
+class ClientRegistry:
+    """
+    Minimal in-memory Dynamic Client Registration (RFC 7591) registry.
+    Suitable for local development / proxy-style OAuth flows.
+    """
+
+    def __init__(self):
+        self._clients: Dict[str, OAuthClient] = {}
+
+    def register(self, metadata: Dict[str, Any]) -> OAuthClient:
+        if "redirect_uris" not in metadata:
+            raise ValueError("redirect_uris is required for client registration")
+
+        client_id = metadata.get("client_id") or secrets.token_urlsafe(16)
+        client_secret = metadata.get("client_secret") or secrets.token_urlsafe(32)
+        client_name = metadata.get("client_name") or metadata.get("client_name", "mcp-client")
+        redirect_uris = metadata["redirect_uris"]
+        scopes = metadata.get("scope", "") or metadata.get("scopes", [])
+        if isinstance(scopes, str):
+            scopes = scopes.split()
+
+        client = OAuthClient(
+            client_id=client_id,
+            client_secret=client_secret,
+            client_name=client_name,
+            redirect_uris=redirect_uris,
+            scopes=scopes,
+        )
+        self._clients[client_id] = client
+        return client
+
+    def get(self, client_id: str) -> Optional[OAuthClient]:
+        return self._clients.get(client_id)
+
+
+class OAuthAuthorizationServer:
+    """In-memory OAuth 2.0 authorization server for MCP transports."""
+
+    def __init__(
+        self,
+        *,
+        default_scopes: Optional[list[str]] = None,
+        allow_dynamic_registration: bool = True,
+        token_ttl: int = 3600,
+        code_ttl: int = 600,
+    ):
+        self.registry = ClientRegistry()
+        self.default_scopes = default_scopes or ["mcp:access"]
+        self.allow_dynamic_registration = allow_dynamic_registration
+        self.token_ttl = token_ttl
+        self.code_ttl = code_ttl
+        self._codes: Dict[str, Dict[str, Any]] = {}
+        self._tokens: Dict[str, Dict[str, Any]] = {}
+
+    def register_routes(self, app: web.Application) -> None:
+        app.router.add_get("/.well-known/oauth-authorization-server", self._handle_discovery)
+        app.router.add_post("/oauth/register", self._handle_registration)
+        app.router.add_get("/oauth/authorize", self._handle_authorize)
+        app.router.add_post("/oauth/token", self._handle_token)
+
+    def bearer_token_from_header(self, header: Optional[str]) -> Optional[str]:
+        if not header:
+            return None
+        if not header.lower().startswith("bearer "):
+            return None
+        return header.split(" ", 1)[1].strip()
+
+    def is_token_valid(self, token: Optional[str]) -> bool:
+        if not token:
+            return False
+        stored = self._tokens.get(token)
+        if not stored:
+            return False
+        return stored.get("expires_at", 0) > _now()
+
+    def _build_base_url(self, request: web.Request) -> str:
+        return f"{request.scheme}://{request.host}"
+
+    async def _handle_discovery(self, request: web.Request) -> web.Response:
+        base_url = self._build_base_url(request)
+        metadata = {
+            "issuer": base_url,
+            "authorization_endpoint": f"{base_url}/oauth/authorize",
+            "token_endpoint": f"{base_url}/oauth/token",
+            "registration_endpoint": f"{base_url}/oauth/register",
+            "response_types_supported": ["code"],
+            "grant_types_supported": ["authorization_code"],
+            "code_challenge_methods_supported": ["S256"],
+            "token_endpoint_auth_methods_supported": ["client_secret_post", "none"],
+            "scopes_supported": self.default_scopes,
+        }
+        return web.json_response(metadata)
+
+    async def _handle_registration(self, request: web.Request) -> web.Response:
+        if not self.allow_dynamic_registration:
+            return web.json_response({"error": "registration_not_supported"}, status=400)
+
+        try:
+            data = await request.json()
+        except Exception:
+            return web.json_response({"error": "invalid_request"}, status=400)
+
+        try:
+            client = self.registry.register(data)
+        except Exception as exc:  # pragma: no cover - defensive
+            return web.json_response(
+                {
+                    "error": "invalid_client_metadata",
+                    "error_description": str(exc),
+                },
+                status=400,
+            )
+
+        return web.json_response(
+            {
+                "client_id": client.client_id,
+                "client_secret": client.client_secret,
+                "client_id_issued_at": int(client.created_at),
+                "client_secret_expires_at": 0,
+                "client_name": client.client_name,
+                "redirect_uris": client.redirect_uris,
+                "scope": " ".join(client.scopes or self.default_scopes),
+            },
+            status=201,
+        )
+
+    async def _handle_authorize(self, request: web.Request) -> web.StreamResponse:
+        params = request.query
+        client_id = params.get("client_id")
+        redirect_uri = params.get("redirect_uri")
+        state = params.get("state")
+        response_type = params.get("response_type")
+        code_challenge = params.get("code_challenge")
+        code_challenge_method = params.get("code_challenge_method", "plain")
+
+        if response_type != "code":
+            return web.Response(status=400, text="unsupported response_type")
+
+        client = self.registry.get(client_id) if client_id else None
+        if not client:
+            return web.Response(status=400, text="Invalid Client ID")
+
+        if redirect_uri not in client.redirect_uris:
+            return web.Response(status=400, text="Invalid Redirect URI")
+
+        scopes = params.get("scope", "").split()
+        if not scopes:
+            scopes = client.scopes or self.default_scopes
+
+        code = self._issue_code(
+            client_id=client_id,
+            redirect_uri=redirect_uri,
+            scope=scopes,
+            code_challenge=code_challenge,
+            code_challenge_method=code_challenge_method,
+        )
+
+        target = f"{redirect_uri}?code={code}"
+        if state:
+            target += f"&state={state}"
+        return web.HTTPFound(target)
+
+    async def _handle_token(self, request: web.Request) -> web.Response:
+        data = await request.post()
+        grant_type = data.get("grant_type")
+        code = data.get("code")
+        client_id = data.get("client_id")
+
+        if grant_type != "authorization_code":
+            return web.json_response({"error": "unsupported_grant_type"}, status=400)
+
+        record = self._codes.pop(code, None)
+        if not record:
+            return web.json_response({"error": "invalid_grant"}, status=400)
+
+        if record["expires_at"] <= _now():
+            return web.json_response({"error": "invalid_grant"}, status=400)
+
+        if client_id != record["client_id"]:
+            return web.json_response({"error": "invalid_client"}, status=400)
+
+        if record.get("code_challenge"):
+            verifier = data.get("code_verifier")
+            if not verifier:
+                return web.json_response({"error": "invalid_request"}, status=400)
+            computed = _b64url(hashlib.sha256(verifier.encode()).digest())
+            if computed != record["code_challenge"]:
+                return web.json_response({"error": "invalid_grant"}, status=400)
+
+        token_payload = self._issue_token(client_id=client_id, scope=record["scope"])
+        return web.json_response(token_payload)
+
+    def _issue_code(
+        self,
+        *,
+        client_id: str,
+        redirect_uri: str,
+        scope: list[str],
+        code_challenge: Optional[str],
+        code_challenge_method: Optional[str],
+    ) -> str:
+        code = f"auth_code_{secrets.token_urlsafe(10)}"
+        self._codes[code] = {
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
+            "scope": scope,
+            "code_challenge": code_challenge,
+            "code_challenge_method": code_challenge_method,
+            "expires_at": _now() + self.code_ttl,
+        }
+        return code
+
+    def _issue_token(self, *, client_id: str, scope: list[str]) -> Dict[str, Any]:
+        access_token = f"mcp_token_{secrets.token_urlsafe(32)}"
+        expires_at = _now() + self.token_ttl
+        payload = {
+            "access_token": access_token,
+            "token_type": "Bearer",
+            "expires_in": self.token_ttl,
+            "expires_at": expires_at,
+            "scope": " ".join(scope or self.default_scopes),
+            "client_id": client_id,
+        }
+        self._tokens[access_token] = payload
+        return payload
 
 
 class TokenStore:
