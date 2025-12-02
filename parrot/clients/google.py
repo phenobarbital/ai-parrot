@@ -1018,7 +1018,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
     async def ask(
         self,
         prompt: str,
-        model: Union[str, GoogleModel] = GoogleModel.GEMINI_2_5_FLASH,
+        model: Union[str, GoogleModel] = None,
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
         files: Optional[List[Union[str, Path]]] = None,
@@ -1036,7 +1036,8 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
 
         Args:
             prompt (str): The input prompt for the model.
-            model (Union[str, GoogleModel]): The model to use, defaults to GEMINI_2_5_FLASH.
+            model (Union[str, GoogleModel]): The model to use. If None, uses the client's configured model
+                or defaults to GEMINI_2_5_FLASH.
             max_tokens (int): Maximum number of tokens in the response.
             temperature (float): Sampling temperature for response generation.
             files (Optional[List[Union[str, Path]]]): Optional files to include in the request.
@@ -1458,7 +1459,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
     async def ask_stream(
         self,
         prompt: str,
-        model: Union[str, GoogleModel] = GoogleModel.GEMINI_2_5_FLASH,
+        model: Union[str, GoogleModel] = None,
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
         files: Optional[List[Union[str, Path]]] = None,
@@ -1480,6 +1481,8 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                 - "ignore": Silently continue (original behavior)
         """
         model = model.value if isinstance(model, GoogleModel) else model
+        if not model:
+            model = self.model or GoogleModel.GEMINI_2_5_FLASH.value
         turn_id = str(uuid.uuid4())
         # Default retry configuration
         if retry_config is None:
@@ -1649,7 +1652,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
         prompt: str,
         image: Union[Path, bytes],
         reference_images: Optional[Union[List[Path], List[bytes]]] = None,
-        model: Union[str, GoogleModel] = GoogleModel.GEMINI_2_5_FLASH,
+        model: Union[str, GoogleModel] = None,
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
         structured_output: Union[type, StructuredOutputConfig] = None,
@@ -1662,6 +1665,8 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
         Ask a question to Google's Generative AI using a stateful chat session.
         """
         model = model.value if isinstance(model, GoogleModel) else model
+        if not model:
+            model = self.model or GoogleModel.GEMINI_2_5_FLASH.value
         turn_id = str(uuid.uuid4())
         original_prompt = prompt
 

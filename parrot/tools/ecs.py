@@ -7,6 +7,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 from datetime import datetime, timedelta, timezone
 import re
+import base64
 from enum import Enum
 from botocore.exceptions import ClientError
 from pydantic import Field, field_validator
@@ -34,6 +35,8 @@ class ECSOperation(str, Enum):
     DESCRIBE_EKS_NODEGROUP = "describe_eks_nodegroup"
     LIST_EKS_FARGATE_PROFILES = "list_eks_fargate_profiles"
     DESCRIBE_EKS_FARGATE_PROFILE = "describe_eks_fargate_profile"
+    LIST_EKS_PODS = "list_eks_pods"
+    LIST_EC2_INSTANCES = "list_ec2_instances"
 
 
 class ECSToolArgs(AbstractToolArgsSchema):
@@ -79,6 +82,15 @@ class ECSToolArgs(AbstractToolArgsSchema):
     eks_fargate_profile: Optional[str] = Field(
         None, description="EKS Fargate profile name to describe"
     )
+    namespace: Optional[str] = Field(
+        None, description="Kubernetes namespace to filter pods (default: all namespaces)"
+    )
+    instance_state: Optional[str] = Field(
+        None, description="Filter EC2 instances by state (e.g., 'running', 'stopped', 'terminated')"
+    )
+    instance_ids: Optional[List[str]] = Field(
+        None, description="Specific EC2 instance IDs to describe"
+    )
 
     @field_validator("start_time", mode="before")
     @classmethod
@@ -90,17 +102,19 @@ class ECSToolArgs(AbstractToolArgsSchema):
 
 class ECSTool(AbstractTool):
     """
-    Tool for inspecting AWS ECS/Fargate tasks and EKS Kubernetes clusters.
+    Tool for inspecting AWS ECS/Fargate tasks, EKS Kubernetes clusters, and EC2 instances.
 
     Capabilities include:
     - Listing ECS clusters, services, and tasks
     - Describing ECS tasks (useful for Fargate workloads)
     - Fetching Fargate task logs from CloudWatch
     - Inspecting EKS cluster, nodegroup, and Fargate profile metadata
+    - Listing Kubernetes pods in EKS clusters
+    - Listing and describing EC2 instances
     """
 
     name: str = "aws_ecs_eks_tool"
-    description: str = "Inspect AWS ECS/Fargate tasks and EKS Kubernetes clusters"
+    description: str = "Inspect AWS ECS/Fargate tasks, EKS Kubernetes clusters, and EC2 instances"
     args_schema: type[AbstractToolArgsSchema] = ECSToolArgs
 
     def __init__(self, aws_id: str = "default", region_name: Optional[str] = None, **kwargs):
@@ -257,6 +271,204 @@ class ECSTool(AbstractTool):
                 clusterName=cluster_name, fargateProfileName=fargate_profile
             )
             return response.get("fargateProfile", {})
+
+    async def _get_eks_token(self, cluster_name: str) -> str:
+        """Generate an authentication token for EKS cluster using STS."""
+        try:
+            import botocore.session
+            from botocore.signers import RequestSigner
+
+            session = botocore.session.Session()
+            client = session.create_client('sts', region_name=self.aws.region_name)
+
+            service_id = client.meta.service_model.service_id
+            signer = RequestSigner(
+                service_id,
+                self.aws.region_name,
+                'sts',
+                'v4',
+                session.get_credentials(),
+                session.get_component('event_emitter')
+            )
+
+            params = {
+                'method': 'GET',
+                'url': f'https://sts.{self.aws.region_name}.amazonaws.com/?Action=GetCallerIdentity&Version=2011-06-15',
+                'body': {},
+                'headers': {
+                    'x-k8s-aws-id': cluster_name
+                },
+                'context': {}
+            }
+
+            signed_url = signer.generate_presigned_url(
+                params,
+                region_name=self.aws.region_name,
+                expires_in=60,
+                operation_name=''
+            )
+
+            token = f"k8s-aws-v1.{base64.urlsafe_b64encode(signed_url.encode()).decode().rstrip('=')}"
+            return token
+        except Exception as exc:
+            raise ValueError(f"Failed to generate EKS token: {exc}")
+
+    async def _list_eks_pods(
+        self, cluster_name: str, namespace: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        List all pods in an EKS cluster.
+
+        This method authenticates with the EKS cluster using AWS STS and queries
+        the Kubernetes API to retrieve pod information.
+        """
+        try:
+            # Import aiohttp for making HTTP requests to k8s API
+            import aiohttp
+            import ssl
+
+            # Get cluster endpoint and certificate
+            cluster_info = await self._describe_eks_cluster(cluster_name)
+            endpoint = cluster_info.get("endpoint")
+            ca_data = cluster_info.get("resources_vpc_config", {})
+
+            if not endpoint:
+                raise ValueError(f"Could not get endpoint for cluster {cluster_name}")
+
+            # Get authentication token
+            token = await self._get_eks_token(cluster_name)
+
+            # Prepare the API URL
+            if namespace:
+                url = f"{endpoint}/api/v1/namespaces/{namespace}/pods"
+            else:
+                url = f"{endpoint}/api/v1/pods"
+
+            # Create SSL context (skip verification for simplicity, or use cluster CA)
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/json"
+            }
+
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=headers, ssl=ssl_context) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        raise ValueError(
+                            f"Failed to list pods: HTTP {response.status} - {error_text}"
+                        )
+
+                    data = await response.json()
+                    items = data.get("items", [])
+
+                    # Extract relevant pod information
+                    pods = []
+                    for item in items:
+                        metadata = item.get("metadata", {})
+                        spec = item.get("spec", {})
+                        status = item.get("status", {})
+
+                        pod_info = {
+                            "name": metadata.get("name"),
+                            "namespace": metadata.get("namespace"),
+                            "uid": metadata.get("uid"),
+                            "creation_timestamp": metadata.get("creationTimestamp"),
+                            "labels": metadata.get("labels", {}),
+                            "annotations": metadata.get("annotations", {}),
+                            "node_name": spec.get("nodeName"),
+                            "phase": status.get("phase"),
+                            "pod_ip": status.get("podIP"),
+                            "host_ip": status.get("hostIP"),
+                            "start_time": status.get("startTime"),
+                            "conditions": status.get("conditions", []),
+                            "container_statuses": status.get("containerStatuses", []),
+                        }
+                        pods.append(pod_info)
+
+                    return pods
+
+        except ImportError:
+            raise ValueError(
+                "aiohttp is required to list EKS pods. Install it with: pip install aiohttp"
+            )
+        except Exception as exc:
+            raise ValueError(f"Failed to list EKS pods: {exc}")
+
+    async def _list_ec2_instances(
+        self,
+        instance_state: Optional[str] = None,
+        instance_ids: Optional[List[str]] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        List EC2 instances in the AWS account.
+
+        Args:
+            instance_state: Filter by instance state (e.g., 'running', 'stopped')
+            instance_ids: Specific instance IDs to describe
+
+        Returns:
+            List of EC2 instance information dictionaries
+        """
+        params: Dict[str, Any] = {}
+
+        # Build filters
+        filters = []
+        if instance_state:
+            filters.append({"Name": "instance-state-name", "Values": [instance_state]})
+
+        if filters:
+            params["Filters"] = filters
+
+        if instance_ids:
+            params["InstanceIds"] = instance_ids
+
+        async with self.aws.client("ec2") as ec2:
+            response = await ec2.describe_instances(**params)
+
+            instances = []
+            for reservation in response.get("Reservations", []):
+                for instance in reservation.get("Instances", []):
+                    # Extract relevant instance information
+                    instance_info = {
+                        "instance_id": instance.get("InstanceId"),
+                        "instance_type": instance.get("InstanceType"),
+                        "state": instance.get("State", {}).get("Name"),
+                        "state_code": instance.get("State", {}).get("Code"),
+                        "launch_time": instance.get("LaunchTime").isoformat()
+                        if instance.get("LaunchTime")
+                        else None,
+                        "availability_zone": instance.get("Placement", {}).get(
+                            "AvailabilityZone"
+                        ),
+                        "private_ip": instance.get("PrivateIpAddress"),
+                        "public_ip": instance.get("PublicIpAddress"),
+                        "private_dns": instance.get("PrivateDnsName"),
+                        "public_dns": instance.get("PublicDnsName"),
+                        "vpc_id": instance.get("VpcId"),
+                        "subnet_id": instance.get("SubnetId"),
+                        "architecture": instance.get("Architecture"),
+                        "image_id": instance.get("ImageId"),
+                        "key_name": instance.get("KeyName"),
+                        "platform": instance.get("Platform"),
+                        "tags": {
+                            tag.get("Key"): tag.get("Value")
+                            for tag in instance.get("Tags", [])
+                        },
+                        "security_groups": [
+                            {
+                                "id": sg.get("GroupId"),
+                                "name": sg.get("GroupName"),
+                            }
+                            for sg in instance.get("SecurityGroups", [])
+                        ],
+                    }
+                    instances.append(instance_info)
+
+            return instances
 
     async def _execute(self, **kwargs) -> ToolResult:
         try:
@@ -523,6 +735,50 @@ class ECSTool(AbstractTool):
                         "operation": ECSOperation.DESCRIBE_EKS_FARGATE_PROFILE.value,
                         "cluster": kwargs["cluster_name"],
                         "fargate_profile": kwargs["eks_fargate_profile"],
+                    },
+                    error=None,
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                )
+
+            if operation == ECSOperation.LIST_EKS_PODS:
+                if not kwargs.get("cluster_name"):
+                    return ToolResult(
+                        success=False,
+                        status="error",
+                        result=None,
+                        error="cluster_name is required for list_eks_pods",
+                        metadata={},
+                        timestamp=datetime.now(timezone.utc).isoformat(),
+                    )
+                pods = await self._list_eks_pods(
+                    cluster_name=kwargs["cluster_name"],
+                    namespace=kwargs.get("namespace"),
+                )
+                return ToolResult(
+                    success=True,
+                    status="completed",
+                    result={"pods": pods, "count": len(pods)},
+                    metadata={
+                        "operation": ECSOperation.LIST_EKS_PODS.value,
+                        "cluster": kwargs["cluster_name"],
+                        "namespace": kwargs.get("namespace", "all"),
+                    },
+                    error=None,
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                )
+
+            if operation == ECSOperation.LIST_EC2_INSTANCES:
+                instances = await self._list_ec2_instances(
+                    instance_state=kwargs.get("instance_state"),
+                    instance_ids=kwargs.get("instance_ids"),
+                )
+                return ToolResult(
+                    success=True,
+                    status="completed",
+                    result={"instances": instances, "count": len(instances)},
+                    metadata={
+                        "operation": ECSOperation.LIST_EC2_INSTANCES.value,
+                        "instance_state": kwargs.get("instance_state"),
                     },
                     error=None,
                     timestamp=datetime.now(timezone.utc).isoformat(),
