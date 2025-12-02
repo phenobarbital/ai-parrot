@@ -119,17 +119,17 @@ class HTMLRenderer(BaseRenderer):
         """Format output as a simple HTML string."""
         html_parts = [self._get_html_header()]
         if content := self._get_content(response):
-            html_parts.append(f"<div class='response-container'><h2>🤖 Response</h2><div class='content'>{self._markdown_to_html(content)}</div></div>")
+            html_parts.append(f"<div class='ap-response-container'><h2>🤖 Response</h2><div class='ap-content'>{self._markdown_to_html(content)}</div></div>")
         if kwargs.get('show_tools', False) and hasattr(response, 'tool_calls') and response.tool_calls:
-            html_parts.append(f"<div class='section'><h3>🔧 Tool Calls</h3>{self._create_tools_html(response.tool_calls)}</div>")
+            html_parts.append(f"<div class='ap-section'><h3>🔧 Tool Calls</h3>{self._create_tools_html(response.tool_calls)}</div>")
         html_parts.append('</body></html>')
         return '\n'.join(html_parts)
 
     def _get_html_header(self) -> str:
         return '''
         <!DOCTYPE html><html><head><title>AI Response</title>
-        <style>body { font-family: sans-serif; } .response-container { background: #f0f8ff; }</style>
-        </head><body>
+        <style>.ap-html-wrapper { font-family: sans-serif; } .ap-response-container { background: #f0f8ff; }</style>
+        </head><body class="ap-html-wrapper">
         '''
 
     def _markdown_to_html(self, content: str) -> str:

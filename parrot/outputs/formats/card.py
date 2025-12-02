@@ -49,8 +49,7 @@ class CardRenderer(BaseRenderer):
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{title}</title>
     <style>
-        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-        body {{
+        .ap-card-wrapper {{
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
@@ -58,8 +57,12 @@ class CardRenderer(BaseRenderer):
             align-items: center;
             justify-content: center;
             padding: 20px;
+            box-sizing: border-box;
         }}
-        .card-container {{
+        .ap-card-wrapper * {{
+            box-sizing: border-box;
+        }}
+        .ap-card-container {{
             display: flex;
             flex-wrap: wrap;
             gap: 24px;
@@ -67,7 +70,7 @@ class CardRenderer(BaseRenderer):
             width: 100%;
             justify-content: center;
         }}
-        .metric-card {{
+        .ap-metric-card {{
             background: white;
             border-radius: 16px;
             padding: 28px 32px;
@@ -76,24 +79,24 @@ class CardRenderer(BaseRenderer):
             max-width: 400px;
             transition: transform 0.3s ease, box-shadow 0.3s ease;
         }}
-        .metric-card:hover {{
+        .ap-metric-card:hover {{
             transform: translateY(-5px);
             box-shadow: 0 15px 50px rgba(0, 0, 0, 0.2);
         }}
-        .card-header {{
+        .ap-card-header {{
             display: flex;
             justify-content: space-between;
             align-items: center;
             margin-bottom: 16px;
         }}
-        .card-title {{
+        .ap-card-title {{
             font-size: 15px;
             font-weight: 600;
             color: #64748b;
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }}
-        .card-icon {{
+        .ap-card-icon {{
             width: 48px;
             height: 48px;
             display: flex;
@@ -104,72 +107,74 @@ class CardRenderer(BaseRenderer):
             border-radius: 12px;
             color: white;
         }}
-        .card-value {{
+        .ap-card-value {{
             font-size: 42px;
             font-weight: 700;
             color: #1e293b;
             margin-bottom: 20px;
             line-height: 1;
         }}
-        .comparisons {{
+        .ap-comparisons {{
             display: flex;
             flex-direction: column;
             gap: 12px;
         }}
-        .comparison-item {{
+        .ap-comparison-item {{
             display: flex;
             justify-content: space-between;
             align-items: center;
             padding: 10px 0;
             border-top: 1px solid #f1f5f9;
         }}
-        .comparison-item:first-child {{
+        .ap-comparison-item:first-child {{
             border-top: none;
             padding-top: 0;
         }}
-        .comparison-period {{
+        .ap-comparison-period {{
             font-size: 14px;
             color: #64748b;
             font-weight: 500;
         }}
-        .comparison-value {{
+        .ap-comparison-value {{
             display: flex;
             align-items: center;
             gap: 6px;
             font-size: 16px;
             font-weight: 700;
         }}
-        .comparison-value.increase {{ color: #10b981; }}
-        .comparison-value.decrease {{ color: #ef4444; }}
-        .trend-icon {{ font-size: 14px; }}
+        .ap-comparison-value.increase {{ color: #10b981; }}
+        .ap-comparison-value.decrease {{ color: #ef4444; }}
+        .ap-trend-icon {{ font-size: 14px; }}
     </style>
 </head>
 <body>
-    <div class="card-container">
-        {cards_html}
+    <div class="ap-card-wrapper">
+        <div class="ap-card-container">
+            {cards_html}
+        </div>
     </div>
 </body>
 </html>
 """
 
     SINGLE_CARD_TEMPLATE = """
-        <div class="metric-card">
-            <div class="card-header">
-                <div class="card-title">{title}</div>
+        <div class="ap-metric-card">
+            <div class="ap-card-header">
+                <div class="ap-card-title">{title}</div>
                 {icon_html}
             </div>
-            <div class="card-value">{value}</div>
-            <div class="comparisons">
+            <div class="ap-card-value">{value}</div>
+            <div class="ap-comparisons">
                 {comparisons_html}
             </div>
         </div>
 """
 
     COMPARISON_ITEM_TEMPLATE = """
-                <div class="comparison-item">
-                    <span class="comparison-period">{period}</span>
-                    <div class="comparison-value {trend}">
-                        <span class="trend-icon">{trend_icon}</span>
+                <div class="ap-comparison-item">
+                    <span class="ap-comparison-period">{period}</span>
+                    <div class="ap-comparison-value {trend}">
+                        <span class="ap-trend-icon">{trend_icon}</span>
                         <span>{value}%</span>
                     </div>
                 </div>
@@ -334,7 +339,7 @@ class CardRenderer(BaseRenderer):
         if not icon:
             return ''
         icon_char = self.ICON_MAP.get(icon.lower(), self.ICON_MAP['default'])
-        return f'<div class="card-icon">{icon_char}</div>'
+        return f'<div class="ap-card-icon">{icon_char}</div>'
 
     def _render_comparison_items(self, comparisons: List[Dict]) -> str:
         """Render comparison items HTML"""
