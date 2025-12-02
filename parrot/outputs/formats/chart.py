@@ -211,6 +211,9 @@ class BaseChart(BaseRenderer):
             '''
 
         elif mode == 'complete':
+            # Generate unique ID for the container
+            container_id = f"container-{uuid.uuid4().hex[:8]}"
+
             return f'''<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -333,7 +336,7 @@ class BaseChart(BaseRenderer):
     </style>
 </head>
 <body>
-    <div class="container">
+    <div class="container" id="{container_id}">
         <div class="chart-container">
             <div class="chart-wrapper">
                 {chart_content}
@@ -342,6 +345,41 @@ class BaseChart(BaseRenderer):
 
         {code_section}
     </div>
+
+    <script>
+        (function() {{
+            function sendSize() {{
+                const width = document.documentElement.scrollWidth || window.innerWidth;
+                const height = document.documentElement.scrollHeight || window.innerHeight;
+
+                parent.postMessage(
+                    {{
+                        type: "iframe_resize",
+                        width: width,
+                        height: height,
+                        containerId: "{container_id}"
+                    }},
+                    "*"
+                );
+            }}
+
+            // Send initial size
+            sendSize();
+
+            // Detect viewport resize
+            window.addEventListener("resize", sendSize);
+
+            // Detect content changes (e.g., height changes from DOM mutations)
+            const observer = new ResizeObserver(sendSize);
+            observer.observe(document.body);
+
+            // Also observe the container for more precise tracking
+            const container = document.getElementById("{container_id}");
+            if (container) {{
+                observer.observe(container);
+            }}
+        }})();
+    </script>
 </body>
 </html>'''
 
