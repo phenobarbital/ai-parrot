@@ -121,9 +121,44 @@ class WebScrapingTool(AbstractTool):
 
     name = "WebScrapingTool"
     description = """Execute automated web scraping with JSON-based, step-by-step navigation and content extraction.
-Steps should be a list of objects shaped like `{ "action": "navigate", "url": "https://...", "description": "Why this step is needed", ... }`.
-Pair every selector with a `selector_type` (`css`, `xpath`, or `text`), keep waits explicit via `condition_type` (`simple`, `selector`, `url_is`, `url_contains`, `title_contains`, or `custom`), and include authentication data (`method`, selectors, credentials) inside `authenticate` actions.
-Supported actions include navigation (`navigate`, `back`, `refresh`), interaction (`click`, `fill`, `press_key`, `scroll`), extraction (`get_text`, `get_html`, `get_cookies`), authentication (`authenticate`), file operations (`upload_file`, `wait_for_download`, `screenshot`), state management (`set_cookies`), waiting (`wait`, `await_human`, `await_keypress`, `await_browser_event`), evaluation (`evaluate`), and control flow (`loop`)."""
+
+IMPORTANT: This tool requires a 'steps' parameter (not 'actions'!) containing a list of navigation/interaction steps.
+
+Example usage:
+{
+    "steps": [
+        {"action": "navigate", "url": "https://example.com/login", "description": "Navigate to login page"},
+        {"action": "fill", "selector": "#email", "selector_type": "css", "value": "user@example.com", "description": "Fill email field"},
+        {"action": "fill", "selector": "#password", "selector_type": "css", "value": "password123", "description": "Fill password field"},
+        {"action": "click", "selector": "button[type='submit']", "selector_type": "css", "description": "Click login button"},
+        {"action": "navigate", "url": "https://example.com/dashboard", "description": "Navigate to dashboard"}
+    ],
+    "selectors": [  // Optional - if omitted, returns full page HTML
+        {"name": "title", "selector": "h1", "selector_type": "css"},
+        {"name": "content", "selector": ".main-content", "selector_type": "css"}
+    ],
+    "full_page": true  // Optional - set to true to capture full page content when no selectors provided
+}
+
+Each step must include:
+- "action": The action type (required)
+- "description": Why this step is needed (required for clarity)
+- Additional fields depending on action type (e.g., "url" for navigate, "selector" for click/fill)
+
+Pair every selector with a `selector_type` (`css`, `xpath`, or `text`). Keep waits explicit via `condition_type` (`simple`, `selector`, `url_is`, `url_contains`, `title_contains`, or `custom`).
+
+Supported actions:
+- Navigation: navigate, back, refresh
+- Interaction: click, fill, press_key, scroll, select
+- Data Extraction: get_text, get_html, get_cookies
+- Authentication: authenticate (include method, selectors, credentials)
+- File Operations: upload_file, wait_for_download, screenshot
+- State Management: set_cookies
+- Waiting: wait, await_human, await_keypress, await_browser_event
+- Evaluation: evaluate
+- Control Flow: loop
+
+If no selectors are provided and full_page is False, the tool will still return the complete HTML body of the final page for your reference."""
     args_schema = WebScrapingToolArgs
 
     def __init__(
@@ -205,8 +240,9 @@ Supported actions include navigation (`navigate`, `back`, `refresh`), interactio
                 scraping_selectors,
                 base_url
             )
+            successful_scrapes = len([r for r in results if r.success])
             return {
-                "status": len([r for r in results if r.success]) > 0,
+                "status": "success" if successful_scrapes > 0 else "failed",
                 "result": [
                     {
                         "url": r.url,
@@ -221,7 +257,7 @@ Supported actions include navigation (`navigate`, `back`, `refresh`), interactio
                 ],
                 "metadata": {
                     "total_pages_scraped": len(results),
-                    "successful_scrapes": len([r for r in results if r.success]),
+                    "successful_scrapes": successful_scrapes,
                     "browser_used": self.selenium_setup.browser,
                     "mobile_mode": self.selenium_setup.mobile,
                 }
@@ -230,7 +266,7 @@ Supported actions include navigation (`navigate`, `back`, `refresh`), interactio
         except Exception as e:
             self.logger.error(f"Scraping execution failed: {str(e)}")
             return {
-                "status": False,
+                "status": "error",
                 "error": str(e),
                 "result": [],
                 "metadata": {
@@ -328,8 +364,9 @@ Supported actions include navigation (`navigate`, `back`, `refresh`), interactio
                 result = await self._extract_content(current_url, selectors)
                 if result:
                     self.results.append(result)
-            elif self._full_page:
-                # Default: extract full page content
+            else:
+                # When no selectors provided, always extract full page content
+                # This ensures the tool returns the HTML body for reference
                 current_url = await self._get_current_url()
                 result = await self._extract_full_content(current_url)
                 if result:
