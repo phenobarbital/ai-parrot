@@ -1,15 +1,15 @@
 """
 MS Word Tool migrated to use AbstractDocumentTool framework.
 """
+from typing import Any, Dict, List, Optional, Union
 import re
 import tempfile
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+import io
 from urllib.parse import urlparse
 import aiohttp
 import aiofiles
-import io
 from docx import Document
 from docx.shared import Inches, Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH

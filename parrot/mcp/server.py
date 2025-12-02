@@ -19,8 +19,12 @@ import io
 from pathlib import Path
 import traceback
 import uuid
+import time
+import secrets
 import aiohttp
 from aiohttp import web
+# AI-Parrot imports
+from parrot.mcp.oauth import ClientRegistry
 # AI-Parrot imports
 from parrot.tools.abstract import AbstractTool, ToolResult
 from .oauth import OAuthAuthorizationServer
@@ -60,6 +64,8 @@ class MCPServerConfig:
 
     # base path for HTTP transport
     base_path: str = "/mcp"
+    # custom events path for SSE (optional)
+    events_path: Optional[str] = None
     events_path: str = "/mcp/events"
 
 
@@ -162,6 +168,142 @@ class MCPToolAdapter:
             "content": content_items,
             "isError": result.status != "success"
         }
+
+
+class OAuthRoutesMixin:
+    """Shared OAuth/DCR utilities for HTTP and SSE transports."""
+
+    def _init_oauth_support(self):
+        self.client_registry = ClientRegistry()
+        self._auth_codes: Dict[str, Dict[str, Any]] = {}
+
+    def _oauth_paths(self) -> Dict[str, str]:
+        base = self.base_path.rstrip("/")
+        base = base if base else ""
+        return {
+            "discovery": f"{base}/.well-known/oauth-authorization-server",
+            "register": f"{base}/oauth/register",
+            "authorize": f"{base}/oauth/authorize",
+            "token": f"{base}/oauth/token",
+        }
+
+    def _add_oauth_routes(self, router: web.UrlDispatcher):
+        paths = self._oauth_paths()
+        router.add_get(paths["discovery"], self._handle_discovery)
+        router.add_post(paths["register"], self._handle_registration)
+        router.add_get(paths["authorize"], self._handle_authorize)
+        router.add_post(paths["token"], self._handle_token)
+
+    async def _handle_discovery(self, request: web.Request) -> web.Response:
+        """RFC 8414: Authorization Server Metadata."""
+        base_url = f"{request.scheme}://{request.host}"
+        paths = self._oauth_paths()
+        metadata = {
+            "issuer": base_url,
+            "authorization_endpoint": f"{base_url}{paths['authorize']}",
+            "token_endpoint": f"{base_url}{paths['token']}",
+            "registration_endpoint": f"{base_url}{paths['register']}",
+            "response_types_supported": ["code"],
+            "grant_types_supported": ["authorization_code"],
+            "code_challenge_methods_supported": ["S256"],
+            "token_endpoint_auth_methods_supported": ["client_secret_post", "none"],
+        }
+        return web.json_response(metadata)
+
+    async def _handle_registration(self, request: web.Request) -> web.Response:
+        """RFC 7591: Dynamic Client Registration."""
+        try:
+            data = await request.json()
+            client = self.client_registry.register(data)
+            self.logger.info(
+                "Dynamically registered client: %s (%s)",
+                client.client_name,
+                client.client_id,
+            )
+            return web.json_response(
+                {
+                    "client_id": client.client_id,
+                    "client_secret": client.client_secret,
+                    "client_id_issued_at": int(client.created_at),
+                    "client_secret_expires_at": 0,
+                    "client_name": client.client_name,
+                    "redirect_uris": client.redirect_uris,
+                    "scope": " ".join(client.scopes),
+                },
+                status=201,
+            )
+        except Exception as e:  # pylint: disable=broad-except
+            self.logger.error(f"DCR Error: {e}")
+            return web.json_response(
+                {"error": "invalid_client_metadata", "error_description": str(e)},
+                status=400,
+            )
+
+    async def _handle_authorize(self, request: web.Request) -> web.Response:
+        """Simplified OAuth 2.0 Authorization Endpoint (auto-approves)."""
+        params = request.query
+        client_id = params.get("client_id")
+        redirect_uri = params.get("redirect_uri")
+        state = params.get("state")
+        code_challenge = params.get("code_challenge")
+        code_challenge_method = params.get("code_challenge_method", "S256")
+
+        client = self.client_registry.get(client_id) if client_id else None
+        if not client:
+            return web.Response(text="Invalid Client ID", status=400)
+
+        if redirect_uri not in client.redirect_uris:
+            return web.Response(text="Invalid Redirect URI", status=400)
+
+        auth_code = f"auth_code_{secrets.token_urlsafe(16)}"
+        self._auth_codes[auth_code] = {
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
+            "scopes": client.scopes,
+            "issued_at": time.time(),
+            "code_challenge": code_challenge,
+            "code_challenge_method": code_challenge_method,
+        }
+
+        target = f"{redirect_uri}?code={auth_code}"
+        if state:
+            target += f"&state={state}"
+
+        return web.HTTPFound(target)
+
+    async def _handle_token(self, request: web.Request) -> web.Response:
+        """OAuth 2.0 Token Endpoint (authorization_code)."""
+        data = await request.post()
+        grant_type = data.get("grant_type")
+        code = data.get("code")
+        client_id = data.get("client_id")
+        client_secret = data.get("client_secret")
+
+        if grant_type != "authorization_code":
+            return web.json_response({"error": "unsupported_grant_type"}, status=400)
+
+        record = self._auth_codes.pop(code, None)
+        if not record:
+            return web.json_response({"error": "invalid_grant"}, status=400)
+
+        if client_id != record["client_id"]:
+            return web.json_response({"error": "invalid_client"}, status=400)
+
+        # Validate client secret if provided in registry
+        client = self.client_registry.get(client_id)
+        if client and client.client_secret and client_secret and client_secret != client.client_secret:
+            return web.json_response({"error": "invalid_client"}, status=401)
+
+        access_token = f"mcp_token_{secrets.token_urlsafe(32)}"
+
+        return web.json_response(
+            {
+                "access_token": access_token,
+                "token_type": "Bearer",
+                "expires_in": 3600,
+                "scope": " ".join(record.get("scopes") or []),
+            }
+        )
 
 
 class MCPServerBase(ABC):
@@ -364,13 +506,14 @@ class StdioMCPServer(MCPServerBase):
             }
 
 
-class HttpMCPServer(MCPServerBase):
+class HttpMCPServer(OAuthRoutesMixin, MCPServerBase):
     """MCP server using HTTP transport."""
 
     def __init__(self, config: MCPServerConfig, parent_app: Optional[web.Application] = None):
         super().__init__(config)
         self.app = parent_app or web.Application()
         self.base_path = config.base_path or '/mcp'
+        self._init_oauth_support()
         self.runner = None
         self.site = None
         # define if parent_app is given, we assume setup will be called externally
@@ -403,6 +546,7 @@ class HttpMCPServer(MCPServerBase):
             # Register routes in the parent app
             self.app.router.add_post(self.base_path, self._handle_http_request)
             self.app.router.add_get(f"{self.base_path}/info", self._handle_info)
+            self._add_oauth_routes(self.app.router)
 
             self.logger.info(
                 f"HTTP MCP routes registered at {self.base_path}"
@@ -709,7 +853,7 @@ class UnixMCPServer(MCPServerBase):
 
         self.logger.info("Shutdown complete")
 
-class SseMCPServer(MCPServerBase):
+class SseMCPServer(OAuthRoutesMixin, MCPServerBase):
     """MCP server using SSE transport compatible with ChatGPT and OpenAI MCP clients."""
 
     def __init__(self, config: MCPServerConfig, parent_app: Optional[web.Application] = None):
@@ -717,6 +861,7 @@ class SseMCPServer(MCPServerBase):
         self.app = parent_app or web.Application()
         self.base_path = config.base_path or "/mcp"
         self.events_path = config.events_path or f"{self.base_path.rstrip('/')}/events"
+        self._init_oauth_support()
         self.runner = None
         self.site = None
         self.sessions: Dict[str, asyncio.Queue] = {}

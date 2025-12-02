@@ -1,7 +1,7 @@
-from typing import Optional, Dict, Any
-from dataclasses import dataclass, field
 import os
 import sys
+from typing import Optional, Dict, Any
+from dataclasses import dataclass, field
 import asyncio
 import time
 import base64
@@ -10,6 +10,7 @@ import secrets
 import json
 from urllib.parse import urlencode
 from aiohttp import web, ClientSession
+
 
 def _b64url(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
@@ -294,6 +295,53 @@ class RedisTokenStore(TokenStore):
 
     async def delete(self, user_id, server_name):
         await self.redis.delete(self._key(user_id, server_name))
+
+
+# ---- Simple Dynamic Client Registration ----
+
+@dataclass
+class RegisteredClient:
+    """Represents a registered OAuth client."""
+    client_id: str
+    client_secret: str
+    client_name: str
+    redirect_uris: list[str]
+    scopes: list[str] = field(default_factory=list)
+    created_at: float = field(default_factory=time.time)
+
+
+class ClientRegistry:
+    """
+    Minimal in-memory Dynamic Client Registration (RFC 7591) registry.
+    Suitable for local development / proxy-style OAuth flows.
+    """
+    def __init__(self):
+        self._clients: Dict[str, RegisteredClient] = {}
+
+    def register(self, metadata: Dict[str, Any]) -> RegisteredClient:
+        if "redirect_uris" not in metadata:
+            raise ValueError("redirect_uris is required for client registration")
+
+        client_id = metadata.get("client_id") or secrets.token_urlsafe(16)
+        client_secret = metadata.get("client_secret") or secrets.token_urlsafe(32)
+        client_name = metadata.get("client_name") or metadata.get("client_name", "mcp-client")
+        redirect_uris = metadata["redirect_uris"]
+        scopes = metadata.get("scope", "") or metadata.get("scopes", [])
+        if isinstance(scopes, str):
+            scopes = scopes.split()
+
+        client = RegisteredClient(
+            client_id=client_id,
+            client_secret=client_secret,
+            client_name=client_name,
+            redirect_uris=redirect_uris,
+            scopes=scopes,
+        )
+        self._clients[client_id] = client
+        return client
+
+    def get(self, client_id: str) -> Optional[RegisteredClient]:
+        return self._clients.get(client_id)
 
 
 class OAuthManager:
