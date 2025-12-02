@@ -195,7 +195,7 @@ class AbstractBot(DBInterface, ABC):
         # Definition of LLM Client
         self._llm_raw = llm
         self._llm_model = kwargs.get(
-            'model', getattr(self, 'model_name', self.default_model)
+            'model', getattr(self, 'model', self.default_model)
         )
         self._llm_preset: str = kwargs.get('preset', None)
         self._model_config = kwargs.pop('model_config', None)
