@@ -27,6 +27,7 @@ from aiohttp import web
 from parrot.mcp.oauth import ClientRegistry
 # AI-Parrot imports
 from parrot.tools.abstract import AbstractTool, ToolResult
+from .oauth import OAuthAuthorizationServer
 
 # Suppress noisy loggers
 logging.getLogger('matplotlib').setLevel(logging.ERROR)
@@ -53,6 +54,13 @@ class MCPServerConfig:
 
     # Logging
     log_level: str = "INFO"
+
+    # OAuth / Authorization
+    enable_oauth: bool = False
+    oauth_scopes: Optional[List[str]] = None
+    oauth_token_ttl: int = 3600
+    oauth_code_ttl: int = 600
+    oauth_allow_dynamic_registration: bool = True
 
     # base path for HTTP transport
     base_path: str = "/mcp"
@@ -307,6 +315,14 @@ class MCPServerBase(ABC):
         self.logger = logging.getLogger(f"MCPServer.{config.name}")
         log_level = getattr(logging, config.log_level.upper(), logging.WARNING)
         self.logger.setLevel(log_level)
+        self.oauth_server: Optional[OAuthAuthorizationServer] = None
+        if self.config.enable_oauth:
+            self.oauth_server = OAuthAuthorizationServer(
+                default_scopes=self.config.oauth_scopes,
+                allow_dynamic_registration=self.config.oauth_allow_dynamic_registration,
+                token_ttl=self.config.oauth_token_ttl,
+                code_ttl=self.config.oauth_code_ttl,
+            )
 
     def register_tool(self, tool: AbstractTool):
         """Register an AI-Parrot tool with the MCP server."""
@@ -329,6 +345,24 @@ class MCPServerBase(ABC):
         """Register multiple tools."""
         for tool in tools:
             self.register_tool(tool)
+
+    def _authenticate_request(self, request: web.Request) -> Optional[web.Response]:
+        """Validate OAuth access token when OAuth is enabled."""
+        if not self.oauth_server:
+            return None
+
+        token = self.oauth_server.bearer_token_from_header(
+            request.headers.get("Authorization")
+        )
+        if not self.oauth_server.is_token_valid(token):
+            return web.json_response(
+                {
+                    "error": "unauthorized",
+                    "error_description": "Valid Bearer token is required",
+                },
+                status=401,
+            )
+        return None
 
     async def handle_initialize(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Handle MCP initialize request."""
@@ -488,7 +522,8 @@ class HttpMCPServer(OAuthRoutesMixin, MCPServerBase):
         # Setup routes
         self.app.router.add_post(self.base_path, self._handle_http_request)
         self.app.router.add_get("/", self._handle_info)
-        self._add_oauth_routes(self.app.router)
+        if self.oauth_server:
+            self.oauth_server.register_routes(self.app)
 
     async def start(self):
         """Start the HTTP MCP server."""
@@ -536,6 +571,10 @@ class HttpMCPServer(OAuthRoutesMixin, MCPServerBase):
     async def _handle_http_request(self, request: web.Request) -> web.Response:
         """Handle HTTP JSON-RPC request with Anthropic compatibility."""
         try:
+            auth_response = self._authenticate_request(request)
+            if auth_response:
+                return auth_response
+
             data = await request.json()
             method = data.get("method")
             params = data.get("params", {})
@@ -631,6 +670,10 @@ class HttpMCPServer(OAuthRoutesMixin, MCPServerBase):
 
     async def _handle_info(self, request: web.Request) -> web.Response:
         """Handle info endpoint."""
+        auth_response = self._authenticate_request(request)
+        if auth_response:
+            return auth_response
+
         info = {
             "name": self.config.name,
             "version": self.config.version,
@@ -828,7 +871,8 @@ class SseMCPServer(OAuthRoutesMixin, MCPServerBase):
         self.app.router.add_get(self.base_path, self._handle_sse, allow_head=True)
         self.app.router.add_get(self.events_path, self._handle_sse, allow_head=True)
         self.app.router.add_get("/", self._handle_info, allow_head=True)
-        self._add_oauth_routes(self.app.router)
+        if self.oauth_server:
+            self.oauth_server.register_routes(self.app)
 
     async def start(self):
         """Start the SSE MCP server."""
@@ -874,6 +918,10 @@ class SseMCPServer(OAuthRoutesMixin, MCPServerBase):
         self.logger.info("SSE MCP server stopped")
 
     async def _handle_info(self, request: web.Request) -> web.Response:
+        auth_response = self._authenticate_request(request)
+        if auth_response:
+            return auth_response
+
         info = {
             "name": self.config.name,
             "version": self.config.version,
@@ -889,6 +937,10 @@ class SseMCPServer(OAuthRoutesMixin, MCPServerBase):
         return request.headers.get("X-Session-Id") or request.query.get("session") or str(uuid.uuid4())
 
     async def _handle_sse(self, request: web.Request) -> web.StreamResponse:
+        auth_response = self._authenticate_request(request)
+        if auth_response:
+            return auth_response
+
         session_id = self._get_session_id(request)
         queue: asyncio.Queue = asyncio.Queue()
         self.sessions[session_id] = queue
@@ -940,6 +992,10 @@ class SseMCPServer(OAuthRoutesMixin, MCPServerBase):
 
     async def _handle_http_request(self, request: web.Request) -> web.Response:
         try:
+            auth_response = self._authenticate_request(request)
+            if auth_response:
+                return auth_response
+
             data = await request.json()
             method = data.get("method")
             params = data.get("params", {})
