@@ -687,21 +687,21 @@ class FoliumRenderer(BaseChart):
 
         return '''
         <style>
-            .map-explanation {margin-bottom: 16px;}
-            .map-explanation details {border: 1px solid #e0e0e0; border-radius: 6px; overflow: hidden; background: #ffffff;}
-            .map-explanation summary {background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: #fff; padding: 12px 16px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-weight: 600; user-select: none;}
-            .map-explanation .toggle-icon {transition: transform 0.3s ease;}
-            .map-explanation details[open] .toggle-icon {transform: rotate(90deg);}
-            .map-explanation .explanation-content {padding: 12px 16px; background: #f8fafc; color: #1f2937;}
-            .map-explanation p {margin: 0; line-height: 1.6;}
+            .ap-map-explanation {margin-bottom: 16px;}
+            .ap-map-explanation details {border: 1px solid #e0e0e0; border-radius: 6px; overflow: hidden; background: #ffffff;}
+            .ap-map-explanation summary {background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: #fff; padding: 12px 16px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-weight: 600; user-select: none;}
+            .ap-map-explanation .ap-toggle-icon {transition: transform 0.3s ease;}
+            .ap-map-explanation details[open] .ap-toggle-icon {transform: rotate(90deg);}
+            .ap-map-explanation .ap-explanation-content {padding: 12px 16px; background: #f8fafc; color: #1f2937;}
+            .ap-map-explanation p {margin: 0; line-height: 1.6;}
         </style>
-        <div class="map-explanation">
+        <div class="ap-map-explanation">
             <details>
                 <summary>
                     <span>📝 Explicación del mapa</span>
-                    <span class="toggle-icon">▶</span>
+                    <span class="ap-toggle-icon">▶</span>
                 </summary>
-                <div class="explanation-content">
+                <div class="ap-explanation-content">
                     <p>{escaped_explanation}</p>
                 </div>
             </details>

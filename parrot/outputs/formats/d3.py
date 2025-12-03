@@ -93,7 +93,7 @@ class D3Renderer(BaseChart):
             items = ''.join(f"<li>{html.escape(step)}</li>" for step in teaching_steps)
             guidance_sections.append(
                 f"""
-        <div class=\"chart-guidance\">
+        <div class=\"ap-chart-guidance\">
             <h3>How this chart works</h3>
             <ol>{items}</ol>
         </div>
@@ -103,7 +103,7 @@ class D3Renderer(BaseChart):
         if notes:
             guidance_sections.append(
                 f"""
-        <div class=\"chart-note\"><strong>Notes:</strong> {html.escape(notes)}</div>
+        <div class=\"ap-chart-note\"><strong>Notes:</strong> {html.escape(notes)}</div>
                 """
             )
 

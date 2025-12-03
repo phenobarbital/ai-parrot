@@ -49,12 +49,12 @@ class BaseChart(BaseRenderer):
         """Build collapsible code section."""
         highlighted = BaseChart._highlight_code(code, theme)
         return f'''
-        <details class="code-accordion">
-            <summary class="code-header">
+        <details class="ap-code-accordion">
+            <summary class="ap-code-header">
                 <span>{icon} View Code</span>
-                <span class="toggle-icon">▶</span>
+                <span class="ap-toggle-icon">▶</span>
             </summary>
-            <div class="code-content">
+            <div class="ap-code-content">
                 {highlighted}
             </div>
         </details>
@@ -66,12 +66,12 @@ class BaseChart(BaseRenderer):
         highlighted = BaseChart._highlight_code(code, theme)
         return f'''
         {BaseChart._get_chart_styles()}
-        <div class="error-container">
+        <div class="ap-error-container">
             <h3>⚠️ Chart Generation Error</h3>
-            <p class="error-message">{error}</p>
-            <details class="code-accordion" open>
-                <summary class="code-header">Code with Error</summary>
-                <div class="code-content">{highlighted}</div>
+            <p class="ap-error-message">{error}</p>
+            <details class="ap-code-accordion" open>
+                <summary class="ap-code-header">Code with Error</summary>
+                <div class="ap-code-content">{highlighted}</div>
             </details>
         </div>
         '''
@@ -81,34 +81,35 @@ class BaseChart(BaseRenderer):
         """CSS styles specific to charts."""
         return '''
         <style>
-            .chart-container {
+            .ap-chart-container {
+                background: white;
                 border-radius: 8px;
             }
-            .chart-wrapper {
+            .ap-chart-wrapper {
                 min-height: 400px;
                 justify-content: center;
                 align-items: center;
             }
-            .chart-guidance {
+            .ap-chart-guidance {
                 background: #f0f4ff;
                 border-left: 4px solid #667eea;
                 padding: 16px 20px;
                 border-radius: 6px;
             }
-            .chart-guidance h3 {
+            .ap-chart-guidance h3 {
                 font-size: 16px;
                 font-weight: 600;
                 color: #364152;
             }
-            .chart-guidance ol {
+            .ap-chart-guidance ol {
                 margin: 0 0 0 20px;
                 padding: 0;
             }
-            .chart-guidance li {
+            .ap-chart-guidance li {
                 margin-bottom: 6px;
                 line-height: 1.4;
             }
-            .chart-note {
+            .ap-chart-note {
                 background: #fffaf0;
                 border-left: 4px solid #f6ad55;
                 padding: 2px 4px;
@@ -117,13 +118,13 @@ class BaseChart(BaseRenderer):
                 color: #744210;
                 font-size: 14px;
             }
-            .code-accordion {
+            .ap-code-accordion {
                 margin-top: 20px;
                 border: 1px solid #e0e0e0;
                 border-radius: 6px;
                 overflow: hidden;
             }
-            .code-header {
+            .ap-code-header {
                 background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
                 color: white;
                 padding: 12px 20px;
@@ -134,34 +135,34 @@ class BaseChart(BaseRenderer):
                 font-weight: 600;
                 user-select: none;
             }
-            .code-header:hover {
+            .ap-code-header:hover {
                 background: linear-gradient(135deg, #5568d3 0%, #653a8e 100%);
             }
-            .toggle-icon {
+            .ap-toggle-icon {
                 transition: transform 0.3s ease;
             }
-            details[open] .toggle-icon {
+            details[open] .ap-toggle-icon {
                 transform: rotate(90deg);
             }
-            .code-content {
+            .ap-code-content {
                 background: #272822;
                 padding: 15px;
                 overflow-x: auto;
             }
-            .code-content pre {
+            .ap-code-content pre {
                 margin: 0;
                 font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
                 font-size: 13px;
                 line-height: 1.5;
             }
-            .error-container {
+            .ap-error-container {
                 background: #fff3cd;
                 border: 1px solid #ffc107;
                 border-radius: 8px;
                 padding: 20px;
                 margin: 20px 0;
             }
-            .error-message {
+            .ap-error-message {
                 color: #856404;
                 font-weight: 500;
                 margin: 10px 0;
@@ -195,8 +196,8 @@ class BaseChart(BaseRenderer):
         if mode == 'partial':
             return f'''
             {BaseChart._get_chart_styles()}
-            <div class="chart-container">
-                <div class="chart-wrapper">
+            <div class="ap-chart-container">
+                <div class="ap-chart-wrapper">
                     {chart_content}
                 </div>
             </div>
@@ -217,37 +218,36 @@ class BaseChart(BaseRenderer):
     {extra_head}
 
     <style>
-        * {{
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }}
-
-        body {{
+        .ap-chart-wrapper {{
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
                          'Helvetica Neue', Arial, sans-serif;
             padding: 5px;
             line-height: 1.6;
+            box-sizing: border-box;
         }}
 
-        .media-container {{
+        .ap-chart-wrapper * {{
+            box-sizing: border-box;
+        }}
+
+        .ap-media-container {{
             max-width: 1200px;
             margin: 0 auto;
         }}
 
-        .chart-container {{
+        .ap-chart-container {{
             border-radius: 12px;
             padding: 5px;
         }}
 
-        .chart-wrapper {{
+        .ap-chart-wrapper {{
             min-height: 400px;
             display: flex;
             justify-content: center;
             align-items: center;
         }}
 
-        .code-accordion {{
+        .ap-code-accordion {{
             margin-top: 20px;
             border: 1px solid #e0e0e0;
             border-radius: 8px;
@@ -255,7 +255,7 @@ class BaseChart(BaseRenderer):
             background: white;
         }}
 
-        .code-header {{
+        .ap-code-header {{
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
             padding: 14px 20px;
@@ -268,33 +268,33 @@ class BaseChart(BaseRenderer):
             transition: all 0.3s ease;
         }}
 
-        .code-header:hover {{
+        .ap-code-header:hover {{
             background: linear-gradient(135deg, #5568d3 0%, #653a8e 100%);
         }}
 
-        .toggle-icon {{
+        .ap-toggle-icon {{
             transition: transform 0.3s ease;
             font-size: 12px;
         }}
 
-        details[open] .toggle-icon {{
+        details[open] .ap-toggle-icon {{
             transform: rotate(90deg);
         }}
 
-        .code-content {{
+        .ap-code-content {{
             background: #272822;
             padding: 20px;
             overflow-x: auto;
         }}
 
-        .code-content pre {{
+        .ap-code-content pre {{
             margin: 0;
             font-family: 'Monaco', 'Menlo', 'Consolas', 'Courier New', monospace;
             font-size: 14px;
             line-height: 1.6;
         }}
 
-        .error-container {{
+        .ap-error-container {{
             background: #fff3cd;
             border: 2px solid #ffc107;
             border-radius: 8px;
@@ -302,37 +302,39 @@ class BaseChart(BaseRenderer):
             margin: 20px 0;
         }}
 
-        .error-container h3 {{
+        .ap-error-container h3 {{
             color: #856404;
             margin-bottom: 10px;
         }}
 
-        .error-message {{
+        .ap-error-message {{
             color: #856404;
             font-weight: 500;
             margin: 10px 0;
         }}
 
         @media (max-width: 768px) {{
-            body {{
+            .ap-chart-wrapper {{
                 padding: 1px;
             }}
 
-            .chart-container {{
+            .ap-chart-container {{
                 padding: 2px;
             }}
         }}
     </style>
 </head>
 <body>
-    <div class="media-container" id="{container_id}">
-        <div class="chart-container">
-            <div class="chart-wrapper">
-                {chart_content}
+    <div class="ap-chart-wrapper">
+        <div class="ap-media-container" id="{container_id}">
+            <div class="ap-chart-container">
+                <div class="ap-chart-wrapper">
+                    {chart_content}
+                </div>
             </div>
-        </div>
 
-        {code_section}
+            {code_section}
+        </div>
     </div>
 
     <script>
