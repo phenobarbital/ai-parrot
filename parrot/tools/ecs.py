@@ -8,10 +8,13 @@ from typing import Any, Dict, List, Optional
 from datetime import datetime, timedelta, timezone
 import re
 import base64
+import ssl
 from enum import Enum
 from botocore.exceptions import ClientError
+from botocore import session as boto_session
+from botocore.signers import RequestSigner
 from pydantic import Field, field_validator
-
+import aiohttp
 from ..interfaces.aws import AWSInterface
 from .abstract import AbstractTool, AbstractToolArgsSchema, ToolResult
 
@@ -275,16 +278,13 @@ class ECSTool(AbstractTool):
     async def _get_eks_token(self, cluster_name: str) -> str:
         """Generate an authentication token for EKS cluster using STS."""
         try:
-            import botocore.session
-            from botocore.signers import RequestSigner
-
-            session = botocore.session.Session()
-            client = session.create_client('sts', region_name=self.aws.region_name)
+            session = boto_session.Session()
+            client = session.create_client('sts', region_name=self.aws._region)
 
             service_id = client.meta.service_model.service_id
             signer = RequestSigner(
                 service_id,
-                self.aws.region_name,
+                self.aws._region,
                 'sts',
                 'v4',
                 session.get_credentials(),
@@ -293,7 +293,7 @@ class ECSTool(AbstractTool):
 
             params = {
                 'method': 'GET',
-                'url': f'https://sts.{self.aws.region_name}.amazonaws.com/?Action=GetCallerIdentity&Version=2011-06-15',
+                'url': f'https://sts.{self.aws._region}.amazonaws.com/?Action=GetCallerIdentity&Version=2011-06-15',
                 'body': {},
                 'headers': {
                     'x-k8s-aws-id': cluster_name
@@ -303,7 +303,7 @@ class ECSTool(AbstractTool):
 
             signed_url = signer.generate_presigned_url(
                 params,
-                region_name=self.aws.region_name,
+                region_name=self.aws._region,
                 expires_in=60,
                 operation_name=''
             )
@@ -324,9 +324,6 @@ class ECSTool(AbstractTool):
         """
         try:
             # Import aiohttp for making HTTP requests to k8s API
-            import aiohttp
-            import ssl
-
             # Get cluster endpoint and certificate
             cluster_info = await self._describe_eks_cluster(cluster_name)
             endpoint = cluster_info.get("endpoint")
@@ -391,12 +388,14 @@ class ECSTool(AbstractTool):
 
                     return pods
 
-        except ImportError:
+        except ImportError as e:
             raise ValueError(
                 "aiohttp is required to list EKS pods. Install it with: pip install aiohttp"
-            )
+            ) from e
         except Exception as exc:
-            raise ValueError(f"Failed to list EKS pods: {exc}")
+            raise ValueError(
+                f"Failed to list EKS pods: {exc}"
+            ) from exc
 
     async def _list_ec2_instances(
         self,
@@ -418,7 +417,9 @@ class ECSTool(AbstractTool):
         # Build filters
         filters = []
         if instance_state:
-            filters.append({"Name": "instance-state-name", "Values": [instance_state]})
+            filters.append(
+                {"Name": "instance-state-name", "Values": [instance_state]}
+            )
 
         if filters:
             params["Filters"] = filters

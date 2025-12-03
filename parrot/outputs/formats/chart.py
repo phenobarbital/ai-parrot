@@ -82,15 +82,10 @@ class BaseChart(BaseRenderer):
         return '''
         <style>
             .chart-container {
-                background: white;
                 border-radius: 8px;
-                box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-                padding: 20px;
-                margin: 20px 0;
             }
             .chart-wrapper {
                 min-height: 400px;
-                display: flex;
                 justify-content: center;
                 align-items: center;
             }
@@ -116,9 +111,9 @@ class BaseChart(BaseRenderer):
             .chart-note {
                 background: #fffaf0;
                 border-left: 4px solid #f6ad55;
-                padding: 12px 16px;
+                padding: 2px 4px;
                 border-radius: 6px;
-                margin-bottom: 20px;
+                margin-bottom: 2px;
                 color: #744210;
                 font-size: 14px;
             }

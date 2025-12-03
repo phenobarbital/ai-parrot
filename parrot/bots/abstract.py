@@ -299,8 +299,6 @@ class AbstractBot(DBInterface, ABC):
             db_pool=getattr(self, 'db_pool', None),
             logger=self.logger
         )
-        # Model:
-        print('MODEL > ', self._llm_model)
 
     def _parse_llm_string(self, llm: str) -> Tuple[str, Optional[str]]:
         """Parse 'provider:model' or plain provider string."""

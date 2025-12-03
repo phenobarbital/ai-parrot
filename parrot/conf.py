@@ -283,6 +283,12 @@ AWS_CREDENTIALS = {
         "aws_key": AWS_ACCESS_KEY,
         "aws_secret": AWS_SECRET_KEY,
         "region_name": AWS_REGION_NAME,
+    },
+    "cloudwatch": {
+        "use_credentials": True,
+        "aws_key": config.get("AWS_CLOUDWATCH_KEY"),
+        "aws_secret": config.get("AWS_CLOUDWATCH_SECRET"),
+        "region_name": config.get("AWS_CLOUDWATCH_REGION", fallback="us-east-1"),
     }
 }
 
