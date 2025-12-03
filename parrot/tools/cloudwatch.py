@@ -24,6 +24,7 @@ class CloudWatchOperation(str, Enum):
     GET_LOG_EVENTS = "get_log_events"
     PUT_METRIC_DATA = "put_metric_data"
     DESCRIBE_ALARMS = "describe_alarms"
+    LOG_SUMMARY = "log_summary"
 
 
 class CloudWatchToolArgs(AbstractToolArgsSchema):
@@ -39,7 +40,8 @@ class CloudWatchToolArgs(AbstractToolArgsSchema):
             "- 'list_log_streams': List log streams in a log group\n"
             "- 'get_log_events': Get recent log events from a stream\n"
             "- 'put_metric_data': Publish custom metric data\n"
-            "- 'describe_alarms': List CloudWatch alarms"
+            "- 'describe_alarms': List CloudWatch alarms\n"
+            "- 'log_summary': Get summarized log events with parsed facility, time, and truncated messages"
         )
     )
 
@@ -128,6 +130,11 @@ class CloudWatchToolArgs(AbstractToolArgsSchema):
         description="Metric unit (e.g., 'Seconds', 'Count', 'Bytes')"
     )
 
+    max_message_length: Optional[int] = Field(
+        500,
+        description="Maximum length for log messages in log_summary operation (default: 500 characters)"
+    )
+
     @field_validator('start_time', mode='before')
     @classmethod
     def parse_time(cls, v):
@@ -154,6 +161,7 @@ class CloudWatchTool(AbstractTool):
     - Retrieve metric statistics and timeseries data
     - List and explore log groups and streams
     - Get recent log events
+    - Get summarized log events with parsed facility and truncated messages
     - Publish custom metrics
     - Check alarm status
 
@@ -174,6 +182,15 @@ class CloudWatchTool(AbstractTool):
             "dimensions": [{"Name": "FunctionName", "Value": "my-function"}],
             "statistic": "Average",
             "start_time": "-24h"
+        }
+
+        # Get summarized logs with truncated messages
+        {
+            "operation": "log_summary",
+            "log_group_name": "/aws/lambda/my-function",
+            "limit": 50,
+            "max_message_length": 200,
+            "start_time": "-1h"
         }
     """
 
@@ -254,6 +271,150 @@ class CloudWatchTool(AbstractTool):
             return datetime.now(timezone.utc) - delta
 
         raise ValueError(f"Invalid time format: {time_str}")
+
+    def _parse_log_message(self, message: str, timestamp: str) -> Dict[str, Any]:
+        """
+        Parse log message to extract facility, time, and message.
+
+        Supports multiple log formats:
+        - Rails/Ruby logger: I, [timestamp#pid] LEVEL -- : message
+        - Standard syslog: LEVEL: message
+        - Plain messages
+
+        Args:
+            message: Raw log message
+            timestamp: ISO timestamp of the log event
+
+        Returns:
+            Dict with 'facility', 'timestamp', and 'message' keys
+        """
+        # Default values
+        facility = "INFO"
+        parsed_message = message
+
+        # Try to parse Rails/Ruby logger format
+        # Example: I, [2025-12-03T00:17:10.802698#1-142140] INFO -- : Running job...
+        rails_pattern = r'^([A-Z]),\s*\[([^\]]+)\]\s*(\w+)\s*--\s*:\s*(.+)$'
+        match = re.match(rails_pattern, message)
+        if match:
+            level_code, log_timestamp, level_name, msg = match.groups()
+            facility = level_name
+            parsed_message = msg.strip()
+            return {
+                'facility': facility,
+                'timestamp': timestamp,
+                'message': parsed_message
+            }
+
+        # Try to parse standard log format with level prefix
+        # Example: ERROR: Something went wrong
+        # Example: [ERROR] Something went wrong
+        # Example: 2025-12-03 ERROR: Something went wrong
+        level_patterns = [
+            r'^\[?(DEBUG|INFO|WARN|WARNING|ERROR|FATAL|CRITICAL)\]?\s*:?\s*(.+)$',
+            r'^\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}:\d{2}[^\s]*\s+\[?(DEBUG|INFO|WARN|WARNING|ERROR|FATAL|CRITICAL)\]?\s*:?\s*(.+)$'
+        ]
+
+        for pattern in level_patterns:
+            match = re.match(pattern, message, re.IGNORECASE)
+            if match:
+                groups = match.groups()
+                if len(groups) == 2:
+                    facility = groups[0].upper()
+                    parsed_message = groups[1].strip()
+                else:  # Has timestamp in message
+                    facility = groups[1].upper()
+                    parsed_message = groups[2].strip()
+                break
+
+        # Clean up common log artifacts
+        parsed_message = parsed_message.replace('\\n', ' ').replace('\\t', ' ')
+        parsed_message = re.sub(r'\s+', ' ', parsed_message).strip()
+
+        return {
+            'facility': facility,
+            'timestamp': timestamp,
+            'message': parsed_message
+        }
+
+    def _truncate_message(self, message: str, max_length: int) -> str:
+        """
+        Truncate message to max_length, adding ellipsis if truncated.
+
+        Args:
+            message: Message to truncate
+            max_length: Maximum length
+
+        Returns:
+            Truncated message
+        """
+        if len(message) <= max_length:
+            return message
+        return message[:max_length - 3] + "..."
+
+    async def _log_summary(
+        self,
+        log_group_name: str,
+        log_stream_name: Optional[str] = None,
+        start_time: Optional[datetime] = None,
+        limit: int = 100,
+        max_message_length: int = 500
+    ) -> List[Dict[str, Any]]:
+        """
+        Get summarized log events with parsed facility, time, and truncated messages.
+
+        Args:
+            log_group_name: CloudWatch log group name
+            log_stream_name: Optional specific log stream
+            start_time: Optional start time for filtering
+            limit: Maximum number of log events
+            max_message_length: Maximum length for messages
+
+        Returns:
+            List of summarized log events
+        """
+        # Get log events
+        if log_stream_name:
+            events = await self._get_log_events(
+                log_group_name=log_group_name,
+                log_stream_name=log_stream_name,
+                start_time=start_time,
+                limit=limit
+            )
+        else:
+            # If no stream specified, get events from the most recent stream
+            streams = await self._list_log_streams(
+                log_group_name=log_group_name,
+                limit=1
+            )
+            if not streams:
+                return []
+
+            events = await self._get_log_events(
+                log_group_name=log_group_name,
+                log_stream_name=streams[0]['name'],
+                start_time=start_time,
+                limit=limit
+            )
+
+        # Parse and summarize each event
+        summarized_events = []
+        for event in events:
+            parsed = self._parse_log_message(
+                event['message'],
+                event['timestamp']
+            )
+
+            summarized_events.append({
+                'timestamp': parsed['timestamp'],
+                'facility': parsed['facility'],
+                'message': self._truncate_message(
+                    parsed['message'],
+                    max_message_length
+                )
+            })
+
+        return summarized_events
 
     async def _query_logs_insights(
         self,
@@ -684,6 +845,44 @@ class CloudWatchTool(AbstractTool):
                         'operation': 'get_log_events',
                         'log_group': kwargs['log_group_name'],
                         'log_stream': kwargs['log_stream_name']
+                    },
+                    timestamp=datetime.now(timezone.utc).isoformat()
+                )
+
+            elif operation == CloudWatchOperation.LOG_SUMMARY:
+                if not kwargs.get('log_group_name'):
+                    return ToolResult(
+                        success=False,
+                        status="error",
+                        result=None,
+                        error="log_group_name is required for log_summary",
+                        metadata={},
+                        timestamp=datetime.now(timezone.utc).isoformat()
+                    )
+
+                summary = await self._log_summary(
+                    log_group_name=kwargs['log_group_name'],
+                    log_stream_name=kwargs.get('log_stream_name'),
+                    start_time=start_time if kwargs.get('start_time') else None,
+                    limit=kwargs.get('limit', 100),
+                    max_message_length=kwargs.get('max_message_length', 500)
+                )
+
+                return ToolResult(
+                    success=True,
+                    status="completed",
+                    result={
+                        'log_group': kwargs['log_group_name'],
+                        'log_stream': kwargs.get('log_stream_name'),
+                        'summary': summary,
+                        'count': len(summary),
+                        'max_message_length': kwargs.get('max_message_length', 500)
+                    },
+                    error=None,
+                    metadata={
+                        'operation': 'log_summary',
+                        'log_group': kwargs['log_group_name'],
+                        'log_stream': kwargs.get('log_stream_name')
                     },
                     timestamp=datetime.now(timezone.utc).isoformat()
                 )
