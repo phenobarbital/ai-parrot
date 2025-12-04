@@ -287,7 +287,7 @@ class PandasAgent(BasicAgent):
     """
 
     METADATA_SAMPLE_ROWS = 3
-    queries : Union[List[str], dict] = None
+    queries: Union[List[str], dict] = None
 
     def __init__(
         self,

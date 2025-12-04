@@ -1079,7 +1079,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
         history = []
         # Construct history directly from the 'messages' array, which should be in the correct format
         if messages:
-            for msg in messages[:-1]: # Exclude the current user message (last in list)
+            for msg in messages[:-1]:  # Exclude the current user message (last in list)
                 role = msg['role'].lower()
                 # Assuming content is already in the format [{"type": "text", "text": "..."}]
                 # or other GenAI Part types if files were involved.
@@ -1101,7 +1101,6 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                             parts.append(Part(text=part_content.get('text', '')))
                     if parts:
                         history.append(ModelContent(parts=parts))
-
 
         default_tokens = max_tokens or self.max_tokens or 4096
         generation_config = {
@@ -1456,6 +1455,42 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
 
         return "Calculation completed."
 
+    def _build_function_declarations(self) -> List[types.FunctionDeclaration]:
+        """Build function declarations for Google GenAI tools."""
+        function_declarations = []
+
+        for tool in self.tool_manager.all_tools():
+            tool_name = tool.name
+
+            if isinstance(tool, AbstractTool):
+                full_schema = tool.get_tool_schema()
+                tool_description = full_schema.get("description", tool.description)
+                schema = full_schema.get("parameters", {}).copy()
+                schema = self.clean_google_schema(schema)
+            elif isinstance(tool, ToolDefinition):
+                tool_description = tool.description
+                schema = self.clean_google_schema(tool.input_schema.copy())
+            else:
+                tool_description = getattr(tool, 'description', f"Tool: {tool_name}")
+                schema = getattr(tool, 'input_schema', {})
+                schema = self.clean_google_schema(schema)
+
+            if not schema:
+                schema = {"type": "object", "properties": {}, "required": []}
+
+            try:
+                declaration = types.FunctionDeclaration(
+                    name=tool_name,
+                    description=tool_description,
+                    parameters=self._fix_tool_schema(schema)
+                )
+                function_declarations.append(declaration)
+            except Exception as e:
+                self.logger.error(f"Error creating {tool_name}: {e}")
+                continue
+
+        return function_declarations
+
     async def ask_stream(
         self,
         prompt: str,
@@ -1469,10 +1504,10 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
         retry_config: Optional[StreamingRetryConfig] = None,
         on_max_tokens: Optional[str] = "retry",  # "retry", "notify", "ignore"
         tools: Optional[List[Dict[str, Any]]] = None,
+        use_tools: Optional[bool] = None,
     ) -> AsyncIterator[str]:
         """
-        Stream Google Generative AI's response using AsyncIterator.
-        Note: Tool calling is not supported in streaming mode with this implementation.
+        Stream Google Generative AI's response using AsyncIterator with support for Tool Calling.
 
         Args:
             on_max_tokens: How to handle MAX_TOKENS finish reason:
@@ -1480,9 +1515,10 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                 - "notify": Yield a notification message and continue
                 - "ignore": Silently continue (original behavior)
         """
-        model = model.value if isinstance(model, GoogleModel) else model
-        if not model:
-            model = self.model or GoogleModel.GEMINI_2_5_FLASH.value
+        model = (
+            model.value if isinstance(model, GoogleModel) else model
+        ) or (self.model or GoogleModel.GEMINI_2_5_FLASH.value)
+
         turn_id = str(uuid.uuid4())
         # Default retry configuration
         if retry_config is None:
@@ -1496,7 +1532,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
         # Prepare conversation history for Google GenAI format
         history = []
         if messages:
-            for msg in messages[:-1]: # Exclude the current user message (last in list)
+            for msg in messages[:-1]:  # Exclude the current user message (last in list)
                 role = msg['role'].lower()
                 if role == 'user':
                     parts = []
@@ -1513,116 +1549,160 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                     if parts:
                         history.append(ModelContent(parts=parts))
 
+        # --- Tool Configuration (Mirrored from ask method) ---
+        _use_tools = use_tools if use_tools is not None else self.enable_tools
 
-        # Retry loop for MAX_TOKENS and other errors
-        current_max_tokens = max_tokens or self.max_tokens
-        retry_count = 0
-
+        # Register requested tools if any
         if tools and isinstance(tools, list):
             for tool in tools:
                 self.register_tool(tool)
-        # Convert to newer API format - create proper Tool objects
-        function_declarations = []
 
-        # Add custom function tools
-        for tool in self.tool_manager.all_tools():
-            function_declarations.append(
-                types.FunctionDeclaration(
-                    name=tool.name,
-                    description=tool.description,
-                    parameters=self._fix_tool_schema(tool.input_schema.copy())
-                )
+        # Determine tool strategy
+        if _use_tools:
+            # If explicit tools passed or just enabled, force low temp
+            temperature = 0 if temperature is None else temperature
+            tool_type = "custom_functions"
+        elif _use_tools is None:
+            # Analyze prompt
+            tool_type = self._analyze_prompt_for_tools(prompt)
+        else:
+            tool_type = 'builtin_tools' if _use_tools else None
+
+        # Build the actual tool objects for Gemini
+        gemini_tools = self._build_tools(tool_type) if tool_type else []
+
+        if _use_tools and tool_type == "custom_functions" and not gemini_tools:
+            # Fallback if no tools registered
+            gemini_tools = None
+
+        # --- Execution Loop ---
+
+        # Retry loop variables
+        current_max_tokens = max_tokens or self.max_tokens
+        retry_count = 0
+
+        # Variables for multi-turn tool loop
+        current_message_content = prompt # Start with the user prompt
+        keep_looping = True
+
+        # Start the chat session once
+        chat = self.client.aio.chats.create(
+            model=model,
+            history=history,
+            config=GenerateContentConfig(
+                system_instruction=system_prompt,
+                tools=gemini_tools,
+                temperature=temperature or self.temperature,
+                max_output_tokens=current_max_tokens
             )
+        )
 
-        # Create a single Tool object with all function declarations plus built-in tools
-        tools = [
-            types.Tool(function_declarations=function_declarations),
-        ]
+        all_assistant_text = [] # Keep track of full text for memory update
 
-        while retry_count <= retry_config.max_retries:
+        while keep_looping and retry_count <= retry_config.max_retries:
+            # By default, we stop after one turn unless a tool is called
+            keep_looping = False
+
             try:
-                generation_config = {
-                    "max_output_tokens": current_max_tokens,
-                    "temperature": temperature or self.temperature,
-                }
+                # If we are retrying due to max tokens, update config
+                chat._config.max_output_tokens = current_max_tokens
 
-                # Start the chat session
-                chat = self.client.aio.chats.create(
-                    model=model,
-                    history=history,
-                    config=GenerateContentConfig(
-                        system_instruction=system_prompt,
-                        tools=tools,
-                        **generation_config
-                    )
-                )
-
-                assistant_content = ""
+                assistant_content_chunk = ""
                 max_tokens_reached = False
 
-                async for chunk in await chat.send_message_stream(prompt):
-                    # Check for MAX_TOKENS finish reason
-                    if (hasattr(chunk, 'candidates') and
-                        chunk.candidates and
-                        len(chunk.candidates) > 0):
+                # We need to capture function calls from the chunks as they arrive
+                collected_function_calls = []
 
+                async for chunk in await chat.send_message_stream(current_message_content):
+                    # Check for MAX_TOKENS finish reason
+                    if (hasattr(chunk, 'candidates') and chunk.candidates and len(chunk.candidates) > 0):
                         candidate = chunk.candidates[0]
                         if (hasattr(candidate, 'finish_reason') and
                             str(candidate.finish_reason) == 'FinishReason.MAX_TOKENS'):
                             max_tokens_reached = True
 
-                            # Handle MAX_TOKENS based on configuration
                             if on_max_tokens == "notify":
-                                yield f"\n\n⚠️ **Response truncated due to token limit ({current_max_tokens} tokens). The response may be incomplete.**\n"
+                                yield f"\n\n⚠️ **Response truncated due to token limit ({current_max_tokens} tokens).**\n"
                             elif on_max_tokens == "retry" and retry_config.auto_retry_on_max_tokens:
-                                # We'll handle retry after the loop
+                                # Break inner loop to handle retry in outer loop
                                 break
 
-                    # Yield the text content
+                    # Capture function calls from the chunk
+                    if (hasattr(chunk, 'candidates') and chunk.candidates):
+                         for candidate in chunk.candidates:
+                            if hasattr(candidate, 'content') and candidate.content and candidate.content.parts:
+                                for part in candidate.content.parts:
+                                    if hasattr(part, 'function_call') and part.function_call:
+                                        collected_function_calls.append(part.function_call)
+
+                    # Yield text content if present
                     if chunk.text:
-                        assistant_content += chunk.text
+                        assistant_content_chunk += chunk.text
+                        all_assistant_text.append(chunk.text)
                         yield chunk.text
 
-                # If MAX_TOKENS reached and we should retry
+                # --- Handle Max Tokens Retry ---
                 if max_tokens_reached and on_max_tokens == "retry" and retry_config.auto_retry_on_max_tokens:
                     if retry_count < retry_config.max_retries:
-                        # Increase token limit for retry
                         new_max_tokens = int(current_max_tokens * retry_config.token_increase_factor)
-
-                        # Notify user about retry
-                        yield f"\n\n🔄 **Response reached token limit ({current_max_tokens}). Retrying with increased limit ({new_max_tokens})...**\n\n"
-
+                        yield f"\n\n🔄 **Retrying with increased limit ({new_max_tokens})...**\n\n"
                         current_max_tokens = new_max_tokens
                         retry_count += 1
-
-                        # Wait before retry
                         await self._wait_with_backoff(retry_count, retry_config)
+                        keep_looping = True # Force loop to continue
                         continue
                     else:
-                        # Max retries reached
-                        yield f"\n\n❌ **Maximum retries reached. Response may be incomplete due to token limits.**\n"
+                        yield f"\n\n❌ **Maximum retries reached.**\n"
 
-                # If we get here, streaming completed successfully (or we're not retrying)
-                break
+                # --- Handle Function Calls ---
+                if collected_function_calls:
+                    # We have tool calls to execute!
+                    self.logger.info(f"Streaming detected {len(collected_function_calls)} tool calls.")
+
+                    # Execute tools (parallel)
+                    tool_execution_tasks = [
+                        self._execute_tool(fc.name, dict(fc.args))
+                        for fc in collected_function_calls
+                    ]
+                    tool_results = await asyncio.gather(*tool_execution_tasks, return_exceptions=True)
+
+                    # Build the response parts containing tool outputs
+                    function_response_parts = []
+                    for fc, result in zip(collected_function_calls, tool_results):
+                        response_content = self._process_tool_result_for_api(result)
+                        function_response_parts.append(
+                            Part(
+                                function_response=types.FunctionResponse(
+                                    name=fc.name,
+                                    response=response_content
+                                )
+                            )
+                        )
+
+                    # Set the next message to be these tool outputs
+                    current_message_content = function_response_parts
+
+                    # Force the loop to run again to stream the answer based on these tools
+                    keep_looping = True
 
             except Exception as e:
                 if retry_count < retry_config.max_retries:
                     error_msg = f"\n\n⚠️ **Streaming error (attempt {retry_count + 1}): {str(e)}. Retrying...**\n\n"
                     yield error_msg
-
                     retry_count += 1
                     await self._wait_with_backoff(retry_count, retry_config)
+                    keep_looping = True
                     continue
                 else:
-                    # Max retries reached, yield error and break
-                    yield f"\n\n❌ **Streaming failed after {retry_config.max_retries} retries: {str(e)}**\n"
+                    yield f"\n\n❌ **Streaming failed: {str(e)}**\n"
                     break
 
         # Update conversation memory
-        if assistant_content:
+        final_text = "".join(all_assistant_text)
+        if final_text:
             final_assistant_message = {
                 "role": "assistant", "content": [
-                    {"type": "text", "text": assistant_content}
+                    {"type": "text", "text": final_text}
                 ]
             }
             # Extract assistant response text for conversation memory
@@ -1634,8 +1714,8 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                 system_prompt,
                 turn_id,
                 prompt,
-                assistant_content,
-                []
+                final_text,
+                [] # We don't easily track tool usage in stream return yet, or we could track in loop
             )
 
     async def batch_ask(self, requests) -> List[AIMessage]:

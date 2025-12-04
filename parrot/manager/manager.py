@@ -468,14 +468,7 @@ class BotManager:
         )
         # Streaming Handler:
         st = StreamHandler()
-        # websocket endpoint
-        router.add_get('/ws/stream/{bot_id}', st.stream_websocket)
-        # sse endpoint
-        router.add_post('/api/v1/stream/sse/{bot_id}', st.stream_sse)
-        # ndjson endpoint
-        router.add_post('/api/v1/stream/ndjson/{bot_id}', st.stream_ndjson)
-        # chunked endpoint
-        router.add_post('/api/v1/stream/chunked/{bot_id}', st.stream_chunked)
+        st.configure_routes(self.app)
         # Crew Configuration
         CrewHandler.configure(self.app, '/api/v1/crew')
         if ENABLE_SWAGGER:

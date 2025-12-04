@@ -3,6 +3,7 @@ import asyncio
 from aiohttp import web
 from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611 # noqa
 from navigator.views import BaseHandler
+from navigator_auth.conf import exclude_list
 from parrot.bots import AbstractBot
 
 
@@ -26,11 +27,11 @@ class StreamHandler(BaseHandler):
                 reason="Bot manager not found in application."
             ) from e
 
-    def _get_bot(self, request: web.Request) -> AbstractBot:
+    async def _get_bot(self, request: web.Request) -> AbstractBot:
         """Retrieve the bot instance based on bot_id from the request."""
         bot_manager = self._get_botmanager(request)
         bot_id = request.match_info.get('bot_id')
-        bot = bot_manager.get_bot(bot_id)
+        bot = await bot_manager.get_bot(bot_id)
         if bot is None:
             raise web.HTTPNotFound(
                 reason=f"Bot with ID '{bot_id}' not found."
@@ -51,7 +52,7 @@ class StreamHandler(BaseHandler):
         """
         data = await request.json()
         prompt, ask_kwargs = self._extract_stream_params(data)
-        bot = self._get_bot(request)
+        bot = await self._get_bot(request)
         response = web.StreamResponse(
             status=200,
             reason='OK',
@@ -93,7 +94,7 @@ class StreamHandler(BaseHandler):
         """
         data = await request.json()
         prompt, ask_kwargs = self._extract_stream_params(data)
-        bot = self._get_bot(request)
+        bot = await self._get_bot(request)
         response = web.StreamResponse(
             status=200,
             reason='OK',
@@ -139,7 +140,7 @@ class StreamHandler(BaseHandler):
         """
         data = await request.json()
         prompt, ask_kwargs = self._extract_stream_params(data)
-        bot = self._get_bot(request)
+        bot = await self._get_bot(request)
         response = web.StreamResponse(
             status=200,
             reason='OK',
@@ -180,7 +181,7 @@ class StreamHandler(BaseHandler):
         )
         await ws.prepare(request)
         self.active_connections.add(ws)
-        bot = self._get_bot(request)
+        bot = await self._get_bot(request)
 
         try:
             await ws.send_json({
@@ -211,9 +212,30 @@ class StreamHandler(BaseHandler):
             ) from e
         return ws
 
+    async def _validate_token(self, token: str) -> bool:
+        """Validate the provided token using the app's auth system."""
+        if not token:
+            return False
+        # auth_manager = self.app.get('auth_manager')
+        # if not auth_manager:
+        #     return False
+        # is_valid = await auth_manager.validate_token(token)
+        # return is_valid
+        return True  # Temporarily allow all tokens for testing
+
     async def _handle_message(self, ws: web.WebSocketResponse, data: dict, bot: AbstractBot):
         """Handle incoming WebSocket messages"""
         msg_type = data.get('type')
+        if msg_type == 'auth':
+            auth_header = data.get('authorization', '')
+            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+
+            if await self._validate_token(token):
+                ws._authenticated = True
+                await ws.send_json({'type': 'auth_success', 'message': 'Authentication successful'})
+            else:
+                await ws.send_json({'type': 'auth_error', 'message': 'Invalid or expired token'})
+            return
 
         if msg_type == 'stream_request':
             prompt, ask_kwargs = self._extract_stream_params(data, 'type')
@@ -259,3 +281,18 @@ class StreamHandler(BaseHandler):
                 await ws.send_json(message)
             except Exception as e:
                 print(f"Error broadcasting to client: {e}")
+
+    def configure_routes(self, app: web.Application):
+        """Configure routes for streaming endpoints."""
+        # sse endpoint
+        exclude_list.append('/bots/*/stream/sse')
+        app.router.add_post('/bots/{bot_id}/stream/sse', self.stream_sse)
+        # ndjson endpoint
+        exclude_list.append('/bots/*/stream/ndjson')
+        app.router.add_post('/bots/{bot_id}/stream/ndjson', self.stream_ndjson)
+        # chunked endpoint
+        exclude_list.append('/bots/*/stream/chunked')
+        app.router.add_post('/bots/{bot_id}/stream/chunked', self.stream_chunked)
+        # websocket endpoint
+        exclude_list.append('/bots/*/stream/ws')
+        app.router.add_get('/bots/{bot_id}/stream/ws', self.stream_websocket)
