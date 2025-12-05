@@ -1,5 +1,4 @@
-from typing import List, Tuple, Optional
-import faiss
+from typing import List, Tuple, Optional, Any
 from ....models.crew import AgentResult, VectorStoreProtocol
 
 
@@ -16,9 +15,10 @@ class VectorStoreMixin:
         **kwargs
     ):
         super().__init__(*args, **kwargs)
+        import faiss  # Ensure faiss is available
         self.embedding_model = embedding_model
         self.dimension = dimension
-        self._faiss_index: Optional[faiss.Index] = None
+        self._faiss_index: Optional[Any] = None
         self._vector_chunks: List[Tuple[str, str]] = []  # (chunk_text, agent_id)
 
         if embedding_model:

@@ -355,25 +355,30 @@ class CloudWatchTool(AbstractTool):
         limit: int = 50
     ) -> List[Dict[str, Any]]:
         """List CloudWatch log groups"""
-        
+
         async with self.aws.client('logs') as logs:
-            params = {'limit': limit}
+            params: Dict[str, Any] = {}
             if pattern:
                 params['logGroupNamePrefix'] = pattern
-            
-            response = await logs.describe_log_groups(**params)
-            
-            return [
-                {
-                    'name': lg['logGroupName'],
-                    'creation_time': datetime.fromtimestamp(
-                        lg['creationTime'] / 1000
-                    ).isoformat(),
-                    'stored_bytes': lg.get('storedBytes', 0),
-                    'retention_days': lg.get('retentionInDays')
-                }
-                for lg in response.get('logGroups', [])
-            ]
+
+            log_groups: List[Dict[str, Any]] = []
+            paginator = logs.get_paginator('describe_log_groups')
+
+            async for page in paginator.paginate(**params):
+                for lg in page.get('logGroups', []):
+                    log_groups.append({
+                        'name': lg['logGroupName'],
+                        'creation_time': datetime.fromtimestamp(
+                            lg['creationTime'] / 1000
+                        ).isoformat(),
+                        'stored_bytes': lg.get('storedBytes', 0),
+                        'retention_days': lg.get('retentionInDays')
+                    })
+
+                if len(log_groups) >= limit:
+                    break
+
+            return log_groups[:limit]
     
     async def _list_log_streams(
         self,

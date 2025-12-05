@@ -20,11 +20,7 @@ from pathlib import Path
 from dataclasses import dataclass, is_dataclass
 from abc import ABC, abstractmethod
 import io
-import wave
 import yaml
-from click import prompt
-from pydub import AudioSegment
-import ffmpeg  # pylint: disable=E1101 # noqa
 from pydantic import (
     BaseModel,
     ValidationError,
@@ -44,7 +40,7 @@ from ..memory import (
     FileConversationMemory,
     RedisConversation
 )
-from ..tools import PythonREPLTool
+from ..tools.pythonrepl import PythonREPLTool
 from ..models import (
     StructuredOutputConfig,
     OutputFormat
@@ -1123,6 +1119,8 @@ class AbstractClient(ABC):
         """
         Saves the audio data to a file in the specified format.
         """
+        from pydub import AudioSegment # pylint: disable=C0415 # noqa
+        import wave # pylint: disable=C0415 # noqa
         if mime_format == "audio/wav":
             # Save as WAV using the wave module
             output_path = output_path.with_suffix('.wav')
@@ -1169,6 +1167,7 @@ class AbstractClient(ABC):
         Returns the Path to the saved file.
 
         """
+        import ffmpeg  # pylint: disable=C0415 # noqa
         # 1) Prep output path
         output_dir.mkdir(parents=True, exist_ok=True)
         ext = mimetypes.guess_extension(mime_format) or '.mp4'

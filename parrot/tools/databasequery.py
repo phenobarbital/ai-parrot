@@ -21,8 +21,10 @@ class QueryLanguage(str, Enum):
     """Supported query languages."""
     SQL = "sql"
     FLUX = "flux"  # InfluxDB
-    MQL = "mql"    # MongoDB Query Language (future)
-    CYPHER = "cypher"  # Neo4j (future)
+    MQL = "mql"    # MongoDB Query Language
+    CYPHER = "cypher"  # Neo4j
+    JSON = "json"  # Elasticsearch/OpenSearch JSON DSL
+    AQL = "aql"  # ArangoDB Query Language
 
 
 class DriverInfo:
@@ -118,6 +120,22 @@ class DriverInfo:
             'aliases': [],
             'asyncdb_driver': 'mongo',  # Uses mongo driver with dbtype parameter
             'dbtype': 'documentdb'
+        },
+        # Elasticsearch:
+        'elastic': {
+            'name': 'Elasticsearch/OpenSearch',
+            'query_language': QueryLanguage.JSON,
+            'supports_limit': True
+        },
+        'elasticsearch': {
+            'name': 'Elasticsearch',
+            'query_language': QueryLanguage.JSON,
+            'supports_limit': True
+        },
+        'opensearch': {
+            'name': 'OpenSearch',
+            'query_language': QueryLanguage.JSON,
+            'supports_limit': True
         },
     }
 
@@ -377,11 +395,43 @@ class QueryValidator:
             return cls.validate_sql_query(query)
         elif query_language == QueryLanguage.FLUX:
             return cls.validate_flux_query(query)
+        elif query_language == QueryLanguage.JSON:
+            return cls.validate_elasticsearch_query(query)
         else:
             # For unknown query languages, do minimal validation
             return {
                 'is_safe': True,
                 'message': f'Basic validation passed for {query_language.value}'
+            }
+
+    @staticmethod
+    def validate_elasticsearch_query(query: str) -> Dict[str, Any]:
+        """Validate Elasticsearch query (JSON DSL format)."""
+        try:
+            # Parse the query to ensure it's valid JSON
+            query_dict = json.loads(query) if isinstance(query, str) else query
+
+            # Basic validation
+            if not isinstance(query_dict, dict):
+                return {
+                    'valid': False,
+                    'errors': ['Query must be a valid JSON object']
+                }
+            # Check for unsafe operations (if needed)
+            # For now, we allow all queries as Elasticsearch is primarily read-only
+            return {
+                'valid': True,
+                'errors': []
+            }
+        except json.JSONDecodeError as e:
+            return {
+                'valid': False,
+                'errors': [f'Invalid JSON: {str(e)}']
+            }
+        except Exception as e:
+            return {
+                'valid': False,
+                'errors': [f'Query validation failed: {str(e)}']
             }
 
 class DatabaseQueryTool(AbstractTool):
@@ -408,6 +458,7 @@ class DatabaseQueryTool(AbstractTool):
     - 'clickhouse' → ClickHouse
     - 'duckdb' → DuckDB
     - 'documentdb' → DocumentDB (MongoDB-compatible)
+    - 'elastic' → Elasticsearch (Elasticsearch/OpenSearch)
 
     QUERY LANGUAGE EXAMPLES:
 
@@ -558,7 +609,35 @@ class DatabaseQueryTool(AbstractTool):
                 'ssl': config.get('DOCUMENTDB_USE_SSL', fallback=True),
                 'collection_name': config.get('DOCUMENTDB_COLLECTION', fallback='mycollection'),
                 'dbtype': 'documentdb'
-            }
+            },
+            # Elasticsearch/OpenSearch
+            'elastic': {
+                'host': config.get('ELASTICSEARCH_HOST', fallback='localhost'),
+                'port': config.get('ELASTICSEARCH_PORT', fallback='9200'),
+                'db': config.get('ELASTICSEARCH_INDEX', fallback='logstash-*'),
+                'user': config.get('ELASTICSEARCH_USER'),
+                'password': config.get('ELASTICSEARCH_PASSWORD'),
+                'protocol': config.get('ELASTICSEARCH_PROTOCOL', fallback='http'),
+                'client_type': config.get('ELASTICSEARCH_CLIENT_TYPE', fallback='auto')
+            },
+            'elasticsearch': {
+                'host': config.get('ELASTICSEARCH_HOST', fallback='localhost'),
+                'port': config.get('ELASTICSEARCH_PORT', fallback='9200'),
+                'db': config.get('ELASTICSEARCH_INDEX', fallback='logstash-*'),
+                'user': config.get('ELASTICSEARCH_USER'),
+                'password': config.get('ELASTICSEARCH_PASSWORD'),
+                'protocol': config.get('ELASTICSEARCH_PROTOCOL', fallback='http'),
+                'client_type': config.get('ELASTICSEARCH_CLIENT_TYPE', fallback='elasticsearch')
+            },
+            'opensearch': {
+                'host': config.get('ELASTICSEARCH_HOST', fallback='localhost'),
+                'port': config.get('ELASTICSEARCH_PORT', fallback='9200'),
+                'db': config.get('ELASTICSEARCH_INDEX', fallback='logstash-*'),
+                'user': config.get('ELASTICSEARCH_USER'),
+                'password': config.get('ELASTICSEARCH_PASSWORD'),
+                'protocol': config.get('ELASTICSEARCH_PROTOCOL', fallback='http'),
+                'client_type': 'opensearch'
+            },
         }
 
         if normalized_driver not in default_credentials:
@@ -611,6 +690,18 @@ class DatabaseQueryTool(AbstractTool):
                 return f"{query.rstrip()} |> limit(n: {max_rows})"
             return query
 
+        elif query_language == QueryLanguage.JSON:
+            # For Elasticsearch/OpenSearch JSON DSL
+            try:
+                query_dict = json.loads(query) if isinstance(query, str) else query
+                # Add size parameter if not present
+                if 'size' not in query_dict or query_dict['size'] > max_rows:
+                    query_dict['size'] = max_rows
+
+                return json.dumps(query_dict)
+            except Exception:
+                # If parsing fails, return original query
+                return query
         else:
             # For unknown query languages, return as-is
             return query
@@ -634,18 +725,14 @@ class DatabaseQueryTool(AbstractTool):
         # TODO: combine AsyncDB with Ibis for better abstraction.
         try:
             # Create AsyncDB instance
-            if dsn:
-                db = AsyncDB(driver, dsn=dsn)
-            else:
-                db = AsyncDB(driver, params=credentials)
+            db = AsyncDB(driver, dsn=dsn) if dsn else AsyncDB(driver, params=credentials)
 
             async with await db.connection() as conn:  # pylint: disable=E1101 # noqa
                 # Set output format
                 conn.output_format(output_format)
                 # For mongo-based drivers, ensure we're using the correct database
                 if driver == 'mongo':
-                    database_name = credentials.get('database')
-                    if database_name:
+                    if database_name := credentials.get('database'):
                         await conn.use(database_name)
 
                 # Add row limit to query if specified and not already present
@@ -702,12 +789,12 @@ class DatabaseQueryTool(AbstractTool):
                     )
 
                 if errors:
-                    raise Exception(f"Database query errors: {errors}")
+                    raise RuntimeError(f"Database query errors: {errors}")
 
                 # Return the actual result based on format
                 if output_format == 'pandas':
                     if not isinstance(result, pd.DataFrame):
-                        raise Exception(
+                        raise RuntimeError(
                             f"Expected pandas DataFrame but got {type(result)}"
                         )
                     return result
@@ -719,10 +806,14 @@ class DatabaseQueryTool(AbstractTool):
                     else:
                         return json.dumps(result, default=str, indent=2)
 
-        except asyncio.TimeoutError:
-            raise Exception(f"Query execution exceeded {timeout} seconds")
+        except asyncio.TimeoutError as e:
+            raise RuntimeError(
+                f"Query execution exceeded {timeout} seconds"
+            ) from e
         except Exception as e:
-            raise Exception(f"Database query failed: {str(e)}")
+            raise RuntimeError(
+                f"Database query failed: {str(e)}"
+            ) from e
 
     async def _execute(
         self,

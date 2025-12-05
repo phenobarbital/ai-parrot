@@ -278,7 +278,7 @@ AWS_CREDENTIALS = {
         "region_name": aws_region,
         "bucket_name": aws_bucket,
     },
-    "monitor": {
+    "monitoring": {
         "use_credentials": config.get("aws_monitor_credentials", fallback=True),
         "aws_key": AWS_ACCESS_KEY,
         "aws_secret": AWS_SECRET_KEY,
@@ -347,6 +347,15 @@ WORKDAY_WSDL_RECRUITING = config.get(
 )
 WORKDAY_WSDL_ABSENCE_MANAGEMENT = config.get(
     "WORKDAY_WSDL_ABSENCE_MANAGEMENT",
-    fallback=BASE_DIR.joinpath("env", "workday", "absense_management_45_custom.wsdl")
+    fallback=BASE_DIR.joinpath("env", "workday", "absence_management_45_custom.wsdl")
 )
 WORKDAY_REFRESH_TOKEN = config.get("WORKDAY_REFRESH_TOKEN", fallback=None)
+
+WORKDAY_WSDL_PATHS = {
+    "human_resources": WORKDAY_WSDL_HUMAN_RESOURCES,
+    "absence_management": WORKDAY_WSDL_ABSENCE_MANAGEMENT,
+    "time_tracking": WORKDAY_WSDL_TIME,
+    "staffing": WORKDAY_WSDL_PATH,
+    "financial_management": WORKDAY_WSDL_FINANCIAL_MANAGEMENT,
+    "recruiting": WORKDAY_WSDL_RECRUITING
+}
