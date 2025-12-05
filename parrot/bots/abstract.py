@@ -781,7 +781,7 @@ class AbstractBot(DBInterface, LocalKBMixin, ABC):
             **kwargs
         )
         self.system_prompt_template = final_prompt
-        print('Final System Prompt:\n', self.system_prompt_template)
+        # print('Final System Prompt:\n', self.system_prompt_template)
 
     async def configure_kb(self):
         """Configure Knowledge Base."""
@@ -843,7 +843,7 @@ class AbstractBot(DBInterface, LocalKBMixin, ABC):
             self.logger.error(
                 f"Error configuring Knowledge Base: {e}"
             )
-        
+
         # Configure Local Knowledge Base if enabled
         if self._use_local_kb:
             try:

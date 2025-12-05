@@ -105,7 +105,7 @@ class FAISSStore(AbstractStore):
         self.ef_construction = ef_construction
         self.ef_search = ef_search
 
-        # Distance strategy
+        # Distance strategy - normalize to enum
         if isinstance(distance_strategy, str):
             # Convert string to DistanceStrategy enum
             try:
@@ -904,23 +904,20 @@ class FAISSStore(AbstractStore):
         if strategy == DistanceStrategy.COSINE:
             # Cosine similarity (returns similarity, not distance)
             similarity = cosine_similarity(emb1, emb2)[0, 0]
-            return float(similarity)
 
         elif strategy == DistanceStrategy.EUCLIDEAN_DISTANCE:
             # Convert Euclidean distance to similarity
             distance = euclidean_distances(emb1, emb2)[0, 0]
             similarity = 1.0 / (1.0 + distance)
-            return float(similarity)
 
         elif strategy in [DistanceStrategy.MAX_INNER_PRODUCT, DistanceStrategy.DOT_PRODUCT]:
             # Dot product (inner product)
             similarity = np.dot(embedding1.flatten(), embedding2.flatten())
-            return float(similarity)
 
         else:
             # Default to cosine similarity
             similarity = cosine_similarity(emb1, emb2)[0, 0]
-            return float(similarity)
+        return float(similarity)
 
     # Additional methods for compatibility
 
@@ -1057,7 +1054,6 @@ class FAISSStore(AbstractStore):
             "cpu_only=True)>"
         )
 
-
     async def delete_documents(
         self,
         document_ids: List[str],
@@ -1098,8 +1094,8 @@ class FAISSStore(AbstractStore):
 
         self.logger.info(
             f"✅ Successfully deleted {len(document_ids)} documents from collection '{collection}'"
-    )
-        
+        )
+
     async def delete_documents_by_filter(self, filter_func, collection: str = None, **kwargs) -> None:
         """
         Delete documents that match a filter function from the FAISS store.
