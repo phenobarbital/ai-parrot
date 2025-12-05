@@ -106,7 +106,23 @@ class FAISSStore(AbstractStore):
         self.ef_search = ef_search
 
         # Distance strategy
-        self.distance_strategy = distance_strategy
+        if isinstance(distance_strategy, str):
+            # Convert string to DistanceStrategy enum
+            try:
+                self.distance_strategy = DistanceStrategy[distance_strategy.upper()]
+            except KeyError:
+                self.logger.warning(
+                    f"Unknown distance strategy '{distance_strategy}', using COSINE"
+                )
+                self.distance_strategy = DistanceStrategy.COSINE
+        elif isinstance(distance_strategy, DistanceStrategy):
+            self.distance_strategy = distance_strategy
+        else:
+            # Default to COSINE if invalid type
+            self.logger.warning(
+                f"Invalid distance_strategy type: {type(distance_strategy)}, using COSINE"
+            )
+            self.distance_strategy = DistanceStrategy.COSINE
 
         # Initialize parent class
         super().__init__(
@@ -1040,3 +1056,74 @@ class FAISSStore(AbstractStore):
             f"distance_strategy='{self.distance_strategy.value}', "
             "cpu_only=True)>"
         )
+
+
+    async def delete_documents(
+        self,
+        document_ids: List[str],
+        collection: str = None,
+        **kwargs
+    ) -> None:
+        """
+        Delete documents by their IDs from the FAISS store.
+
+        Args:
+            document_ids: List of document IDs to delete
+            collection: Collection name (optional, uses default if not provided)
+            **kwargs: Additional arguments
+        """
+        if not self._connected:
+            await self.connection()
+
+        collection = collection or self.collection_name
+
+        # Ensure collection exists
+        if collection not in self._collections:
+            self.logger.warning(f"Collection '{collection}' not found")
+            return
+
+        collection_data = self._collections[collection]
+
+        for doc_id in document_ids:
+            idx = collection_data['id_to_idx'].get(doc_id)
+            if idx is not None:
+                # Remove from FAISS index
+                # Note: FAISS does not support direct deletion; we mark as deleted
+                # Here we simply ignore the vector in searches by removing mappings
+                del collection_data['documents'][doc_id]
+                del collection_data['metadata'][doc_id]
+                del collection_data['embeddings'][doc_id]
+                del collection_data['id_to_idx'][doc_id]
+                del collection_data['idx_to_id'][idx]
+
+        self.logger.info(
+            f"✅ Successfully deleted {len(document_ids)} documents from collection '{collection}'"
+    )
+        
+    async def delete_documents_by_filter(self, filter_func, collection: str = None, **kwargs) -> None:
+        """
+        Delete documents that match a filter function from the FAISS store.
+
+        Args:
+            filter_func: A function that takes metadata and returns True if the document should be deleted
+            collection: Collection name (optional, uses default if not provided)
+            **kwargs: Additional arguments
+        """
+        if not self._connected:
+            await self.connection()
+
+        collection = collection or self.collection_name
+
+        # Ensure collection exists
+        if collection not in self._collections:
+            self.logger.warning(f"Collection '{collection}' not found")
+            return
+
+        collection_data = self._collections[collection]
+
+        to_delete_ids = []
+        for doc_id, metadata in collection_data['metadata'].items():
+            if filter_func(metadata):
+                to_delete_ids.append(doc_id)
+
+        await self.delete_documents(to_delete_ids, collection=collection, **kwargs)
