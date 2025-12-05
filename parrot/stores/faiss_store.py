@@ -638,6 +638,38 @@ class FAISSStore(AbstractStore):
 
         return results
 
+    async def asearch(
+        self,
+        query: str,
+        collection: Optional[str] = None,
+        k: Optional[int] = None,
+        limit: Optional[int] = None,
+        metadata_filters: Optional[Dict[str, Any]] = None,
+        score_threshold: Optional[float] = None,
+        metric: Optional[str] = None,
+        embedding_column: Optional[str] = None,
+        content_column: Optional[str] = None,
+        metadata_column: Optional[str] = None,
+        id_column: Optional[str] = None,
+        **kwargs,
+    ) -> List[SearchResult]:
+        """Async alias for :meth:`similarity_search` to match store interface expectations."""
+
+        return await self.similarity_search(
+            query=query,
+            collection=collection,
+            k=k,
+            limit=limit,
+            metadata_filters=metadata_filters,
+            score_threshold=score_threshold,
+            metric=metric,
+            embedding_column=embedding_column,
+            content_column=content_column,
+            metadata_column=metadata_column,
+            id_column=id_column,
+            **kwargs,
+        )
+
     async def mmr_search(
         self,
         query: str,
