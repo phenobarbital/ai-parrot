@@ -93,6 +93,7 @@ class GoogleGenAIClient(AbstractClient):
             self._credentials_file = Path(self._credentials_file).expanduser()
         self.api_key = kwargs.pop('api_key', config.get('GOOGLE_API_KEY'))
         super().__init__(**kwargs)
+        self.max_tokens = kwargs.get('max_tokens', 8192)
         self.client = None
         #  Create a single instance of the Voice registry
         self.voice_db = VoiceRegistry(profiles=ALL_VOICE_PROFILES)
@@ -1265,7 +1266,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                         config=final_config
                     )
                     finish_reason = getattr(response.candidates[0], 'finish_reason', None)
-                    if finish_reason and finish_reason.name == "MAX_TOKENS" and generation_config["max_output_tokens"] == 1024:
+                    if finish_reason and finish_reason.name == "MAX_TOKENS" and generation_config["max_output_tokens"] <= 1024:
                         retry_count += 1
                         self.logger.warning(
                             f"Hit MAX_TOKENS limit on initial response. Retrying {retry_count}/{max_retries} with increased token limit."
@@ -1359,8 +1360,24 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                             final_output = self._json.loads(structured_text)
                     else:
                         final_output = self._json.loads(structured_text)
+                    # --- Fallback Logic ---
+                    is_json_format = (
+                        isinstance(structured_output_for_later, StructuredOutputConfig) and
+                        structured_output_for_later.format == OutputFormat.JSON
+                    )
+                    if is_json_format and isinstance(final_output, str):
+                        try:
+                            self._json.loads(final_output)
+                        except Exception:
+                            self.logger.warning(
+                                "Structured output re-formatting resulted in invalid/truncated JSON. "
+                                "Falling back to original tool output."
+                            )
+                            final_output = assistant_response_text
                 else:
-                    self.logger.warning("No structured text received, falling back to original response")
+                    self.logger.warning(
+                        "No structured text received, falling back to original response"
+                    )
                     final_output = assistant_response_text
             except Exception as e:
                 self.logger.error(f"Error parsing structured output: {e}")

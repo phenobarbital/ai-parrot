@@ -168,13 +168,18 @@ $df_info
 
 </system_instructions>
 
+**Knowledge Base Context:**
+$pre_context
+$context
+
 <user_data>
 $user_context
-</user_data>
 
 <chat_history>
 $chat_history
 </chat_history>
+
+</user_data>
 
 **Standard Guidelines: (MUST FOLLOW) **
 1. All information in <system_instructions> tags are mandatory to follow.
@@ -288,6 +293,7 @@ class PandasAgent(BasicAgent):
 
     METADATA_SAMPLE_ROWS = 3
     queries: Union[List[str], dict] = None
+    system_prompt_template: str = PANDAS_SYSTEM_PROMPT
 
     def __init__(
         self,
