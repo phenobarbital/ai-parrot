@@ -25,12 +25,11 @@ from ..models.responses import AIMessage, AgentResponse
 from ..models.outputs import OutputMode, StructuredOutputConfig, OutputFormat
 from ..conf import REDIS_HISTORY_URL, STATIC_DIR
 from ..bots.prompts import OUTPUT_SYSTEM_PROMPT
-from ..memory import AgentMemory
-
 
 Scalar = Union[str, int, float, bool, None]
 
 class PandasTable(BaseModel):
+    """Tabular data structure for PandasAgent responses."""
     columns: List[str] = Field(
         description="Column names, in order"
     )
@@ -40,6 +39,7 @@ class PandasTable(BaseModel):
 
 
 class SummaryStat(BaseModel):
+    """Single summary statistic for a DataFrame column."""
     metric: str = Field(
         description="Name of the metric, e.g. 'mean', 'max', 'min', 'std'"
     )
@@ -346,7 +346,6 @@ class PandasAgent(BasicAgent):
             **kwargs
         )
         self.description = "A specialized agent for data analysis using pandas DataFrames"
-        self.agent_memory = AgentMemory()
 
     def _get_default_tools(self, tools: list) -> List[AbstractTool]:
         """Return Agent-specific tools."""
@@ -905,55 +904,6 @@ class PandasAgent(BasicAgent):
             )
             # Return error response
             raise
-
-    async def followup(
-        self,
-        question: str,
-        turn_id: str,
-        data: Any,
-        session_id: Optional[str] = None,
-        user_id: Optional[str] = None,
-        use_conversation_history: bool = True,
-        memory: Optional[Any] = None,
-        ctx: Optional[Any] = None,
-        structured_output: Optional[Any] = None,
-        output_mode: Any = None,
-        format_kwargs: dict = None,
-        return_structured: bool = True,
-        **kwargs
-    ) -> AIMessage:
-        """Generate a follow-up question using a previous turn as context."""
-        if not turn_id:
-            raise ValueError("turn_id is required for follow-up questions")
-
-        session_id = session_id or str(uuid.uuid4())
-        user_id = user_id or "anonymous"
-
-        previous_interaction = await self.agent_memory.get(turn_id)
-        if not previous_interaction:
-            raise ValueError(f"No conversation turn found for turn_id {turn_id}")
-
-        context_str = data if isinstance(data, str) else str(data)
-        followup_prompt = (
-            "Based on the previous question "
-            f"{previous_interaction['question']} and answer {previous_interaction['answer']} "
-            f"and using this data as context {context_str}, you need to answer this question:\n"
-            f"{question}"
-        )
-
-        return await self.ask(
-            question=followup_prompt,
-            session_id=session_id,
-            user_id=user_id,
-            use_conversation_history=use_conversation_history,
-            memory=memory,
-            ctx=ctx,
-            structured_output=structured_output,
-            output_mode=output_mode,
-            format_kwargs=format_kwargs,
-            return_structured=return_structured,
-            **kwargs,
-        )
 
     def add_dataframe(
         self,

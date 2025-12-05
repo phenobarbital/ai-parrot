@@ -7,8 +7,9 @@ from typing import Any, Dict, Optional
 class AgentMemory:
     """Store and retrieve agent interactions by turn identifier."""
 
-    def __init__(self) -> None:
-        self._interactions: Dict[str, Dict[str, Any]] = {}
+    def __init__(self, agent_id: str) -> None:
+        self.agent_id = agent_id
+        self._interactions: Dict[str, Dict[str, Any]] = {self.agent_id: {}}
         self._lock = asyncio.Lock()
 
     async def store_interaction(self, turn_id: str, question: str, answer: Any) -> None:
@@ -17,7 +18,7 @@ class AgentMemory:
             raise ValueError("turn_id is required to store an interaction")
 
         async with self._lock:
-            self._interactions[turn_id] = {
+            self._interactions[self.agent_id][turn_id] = {
                 "question": question,
                 "answer": answer,
             }
@@ -28,4 +29,4 @@ class AgentMemory:
             return None
 
         async with self._lock:
-            return self._interactions.get(turn_id)
+            return self._interactions.get(self.agent_id, {}).get(turn_id)

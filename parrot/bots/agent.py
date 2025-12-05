@@ -1,6 +1,7 @@
 import textwrap
 from typing import Dict, List, Tuple, Any, Optional, Union, Callable
 from datetime import datetime
+import uuid
 from pathlib import Path
 import aiofiles
 import pandas as pd
@@ -29,8 +30,9 @@ from ..mcp import (
     create_local_mcp_server,
     create_api_key_mcp_server
 )
-from ..conf import STATIC_DIR, AGENTS_BOTS_PROMPT_DIR, AGENTS_DIR
+from ..conf import STATIC_DIR, AGENTS_DIR
 from ..notifications import NotificationMixin
+from ..memory import AgentMemory
 
 
 class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
@@ -71,7 +73,7 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
             "gender": "male"
         }
     }
-    max_tokens: int = None # Use default max tokens from Chatbot
+    max_tokens: int = None  # Use default max tokens from Chatbot
     report_template: str = "report_template.html"
     system_prompt_template: str = AGENT_PROMPT
 
@@ -108,7 +110,7 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
         if instructions:
             self.goal = instructions
         self.enable_tools = True  # Enable tools by default
-        self.operation_mode = 'agentic' # Default operation mode
+        self.operation_mode = 'agentic'  # Default operation mode
         self.auto_tool_detection = True  # Enable auto tool detection by default
         ##  Logging:
         self.logger = logging.getLogger(
@@ -122,6 +124,9 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
         # Initialize MCP support
         self.mcp_manager = MCPToolManager(
             self.tool_manager
+        )
+        self.agent_memory = AgentMemory(
+            agent_id=self.agent_id
         )
 
     def _get_default_tools(self, tools: list) -> List[AbstractTool]:
@@ -889,7 +894,6 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
             context_filter=context_filter,
         )
 
-
     def register_as_tool(
         self,
         target_agent: 'BasicAgent',
@@ -1052,6 +1056,55 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
             self._dataframe_info_cache = None
             self._configure_pandas_tool()
             self._update_system_prompt_with_dataframes()
+
+    async def followup(
+        self,
+        question: str,
+        turn_id: str,
+        data: Any,
+        session_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        use_conversation_history: bool = True,
+        memory: Optional[Any] = None,
+        ctx: Optional[Any] = None,
+        structured_output: Optional[Any] = None,
+        output_mode: Any = None,
+        format_kwargs: dict = None,
+        return_structured: bool = True,
+        **kwargs
+    ) -> AIMessage:
+        """Generate a follow-up question using a previous turn as context."""
+        if not turn_id:
+            raise ValueError("turn_id is required for follow-up questions")
+
+        session_id = session_id or str(uuid.uuid4())
+        user_id = user_id or "anonymous"
+
+        previous_interaction = await self.agent_memory.get(turn_id)
+        if not previous_interaction:
+            raise ValueError(f"No conversation turn found for turn_id {turn_id}")
+
+        context_str = data if isinstance(data, str) else str(data)
+        followup_prompt = (
+            "Based on the previous question "
+            f"{previous_interaction['question']} and answer {previous_interaction['answer']} "
+            f"and using this data as context {context_str}, you need to answer this question:\n"
+            f"{question}"
+        )
+
+        return await self.ask(
+            question=followup_prompt,
+            session_id=session_id,
+            user_id=user_id,
+            use_conversation_history=use_conversation_history,
+            memory=memory,
+            ctx=ctx,
+            structured_output=structured_output,
+            output_mode=output_mode,
+            format_kwargs=format_kwargs,
+            return_structured=return_structured,
+            **kwargs,
+        )
 
 class Agent(BasicAgent):
     """A general-purpose agent with no additional tools."""

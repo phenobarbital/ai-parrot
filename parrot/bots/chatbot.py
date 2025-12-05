@@ -168,11 +168,11 @@ class Chatbot(AbstractBot):
     def _from_bot(self, bot, key, config, default) -> Any:
         value = getattr(bot, key, None)
         file_value = config.get(key, default)
-        return value if value else file_value
+        return value or file_value
 
-    def _from_db(self, botobj, key, default = None) -> Any:
+    def _from_db(self, botobj, key, default: str = None) -> Any:
         value = getattr(botobj, key, default)
-        return value if value else default
+        return value or default
 
     def import_kb_class(self, kb_path: str):
         try:
