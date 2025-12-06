@@ -42,8 +42,8 @@ class LocalKB(AbstractKnowledgeBase):
         activation_patterns: List[str] = None,
         embedding_model: str = "sentence-transformers/all-mpnet-base-v2",
         dimension: int = 384,
-        chunk_size: int = 512,
-        chunk_overlap: int = 50,
+        chunk_size: int = 1500,
+        chunk_overlap: int = 100,
         always_active: bool = True,
         auto_load: bool = True,
         **kwargs
