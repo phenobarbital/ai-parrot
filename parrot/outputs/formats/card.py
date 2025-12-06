@@ -11,10 +11,7 @@ from ...models.outputs import OutputMode
 
 CARD_SYSTEM_PROMPT = """CARD METRIC OUTPUT MODE - CRITICAL INSTRUCTIONS:
 
-When analyzing data, you MUST structure your PandasAgentResponse with:
-1. explanation: Your analysis text
-2. data: A table with the metric and comparisons
-3. code: The Python code used
+Generate an HTML card displaying key metrics with comparisons.
 
 **CRITICAL RULES:**
 1. The "explanation" can contain your analysis text
@@ -25,11 +22,18 @@ When analyzing data, you MUST structure your PandasAgentResponse with:
 4. Use "increase" or "decrease" for trend direction
 5. Choose an appropriate icon: money, dollar, chart, percent, users, growth, target, star, trophy
 
-Table format:
+Example: If calculating average for May 2025:
+- Calculate May 2025 average
+- Calculate April 2025 average (previous month)
+- Calculate May 2024 average (previous year)
+- Calculate percentage changes
+- Include ALL in your data table
+
+Your data table MUST have these rows:
 | Metric | Value | Change | Trend |
-| Current Value | 20.94 min | - | - |
-| vs Previous Month | 19.8 min | +5.8% | increase |
-| vs Previous Year | 18.2 min | +15.1% | increase |
+| Current Period | [value] [unit] | - | - |
+| vs Previous Month | [value] [unit] | +X.X% | increase/decrease |
+| vs Previous Year | [value] [unit] | +X.X% | increase/decrease |
 
 If previous data is not available, only include the current value row.
 """
@@ -41,7 +45,7 @@ class CardRenderer(BaseRenderer):
     Renderer for metric cards with comparison data.
     Extends BaseRenderer to display metrics in styled HTML cards.
     """
-    
+
     CARD_TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -196,20 +200,20 @@ class CardRenderer(BaseRenderer):
             output = response.structured_output
         else:
             output = response
-        
+
         # Extract explanation and data
         explanation = ""
         data_table = None
-        
+
         if hasattr(output, 'explanation'):
             explanation = output.explanation
-        
+
         if hasattr(output, 'data'):
             data_table = output.data
-        
+
         # Parse the explanation to extract metric info
         card_data = self._parse_explanation_and_data(explanation, data_table)
-        
+
         return card_data
 
     def _parse_explanation_and_data(self, explanation: str, data_table: Any) -> Dict:
@@ -219,7 +223,7 @@ class CardRenderer(BaseRenderer):
         value = "N/A"
         icon = "chart"
         comparisons = []
-        
+
         # Try to extract value patterns
         value_patterns = [
             (r'(\d+\.?\d*)\s*minutes?', 'time', 'Average Time'),
@@ -228,7 +232,7 @@ class CardRenderer(BaseRenderer):
             (r'(\d+[\d,]*\.?\d*)%', 'percent', 'Percentage'),
             (r'(\d+[\d,]*\.?\d*)', 'chart', 'Value'),
         ]
-        
+
         for pattern, icon_type, title_type in value_patterns:
             match = re.search(pattern, explanation, re.IGNORECASE)
             if match:
@@ -236,17 +240,17 @@ class CardRenderer(BaseRenderer):
                 icon = icon_type
                 title = title_type
                 break
-        
+
         # Extract comparisons from explanation
         # Look for patterns like "5.8% increase" or "15.1% decrease"
         comparison_patterns = [
             (r'(\d+\.?\d*)%\s+(increase|growth|higher)', 'increase'),
             (r'(\d+\.?\d*)%\s+(decrease|decline|lower)', 'decrease'),
         ]
-        
+
         periods = ["vs Previous Month", "vs Previous Year"]
         period_idx = 0
-        
+
         for pattern, trend in comparison_patterns:
             matches = re.finditer(pattern, explanation, re.IGNORECASE)
             for match in matches:
@@ -257,7 +261,7 @@ class CardRenderer(BaseRenderer):
                         "trend": trend
                     })
                     period_idx += 1
-        
+
         # Also try to extract from data table if available
         if data_table and hasattr(data_table, 'rows'):
             rows = data_table.rows
@@ -274,7 +278,7 @@ class CardRenderer(BaseRenderer):
                             value = f"{table_value} {unit}" if unit not in ['Unit', ''] else table_value
                         else:
                             value = table_value
-                
+
                 # Look for comparison rows (skip first row)
                 for row in rows[1:]:
                     # Handle both 3-column and 5-column tables
@@ -283,23 +287,27 @@ class CardRenderer(BaseRenderer):
                         period_name = str(row[0])
                         change_pct = str(row[3])
                         trend_val = str(row[4]).lower()
-                        
+
                         # Skip if no change data
                         if change_pct in ['N/A', '', 'None']:
                             continue
-                        
+
                         # Clean up period name to create comparison label
                         # "April 2025 Average" -> "vs April 2025"
                         if 'vs' not in period_name.lower():
                             # Extract the month/year part
-                            period_match = re.search(r'(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})', period_name, re.IGNORECASE)
+                            period_match = re.search(
+                                r'(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})',  # noqa
+                                period_name,
+                                re.IGNORECASE
+                            )
                             if period_match:
-                                period = f"vs {period_match.group(1)} {period_match.group(2)}"
+                                period = f"vs {period_match[1]} {period_match[2]}"
                             else:
                                 period = f"vs {period_name.replace(' Average', '')}"
                         else:
                             period = period_name
-                        
+
                         # Parse percentage
                         try:
                             percent = abs(float(change_pct))
@@ -311,7 +319,7 @@ class CardRenderer(BaseRenderer):
                             })
                         except ValueError:
                             continue
-                            
+
                     elif len(row) >= 3:
                         # 3-column: Metric, Value, Change
                         period = str(row[0])
@@ -326,7 +334,7 @@ class CardRenderer(BaseRenderer):
                                 "value": percent,
                                 "trend": trend
                             })
-        
+
         return {
             "title": title,
             "value": value,
@@ -345,14 +353,14 @@ class CardRenderer(BaseRenderer):
         """Render comparison items HTML"""
         if not comparisons:
             return ''
-        
+
         items_html = []
         for comp in comparisons:
             period = comp.get('period', 'vs Previous')
             value = comp.get('value', 0)
             trend = comp.get('trend', 'increase').lower()
             trend_icon = '▲' if trend == 'increase' else '▼'
-            
+
             item_html = self.COMPARISON_ITEM_TEMPLATE.format(
                 period=period,
                 value=abs(value),
@@ -360,7 +368,7 @@ class CardRenderer(BaseRenderer):
                 trend_icon=trend_icon
             )
             items_html.append(item_html)
-        
+
         return '\n'.join(items_html)
 
     def _render_single_card(self, data: Dict) -> str:
@@ -369,10 +377,10 @@ class CardRenderer(BaseRenderer):
         value = data.get('value', 'N/A')
         icon = data.get('icon')
         comparisons = data.get('comparisons', [])
-        
+
         icon_html = self._render_icon(icon)
         comparisons_html = self._render_comparison_items(comparisons)
-        
+
         return self.SINGLE_CARD_TEMPLATE.format(
             title=title,
             value=value,
@@ -388,35 +396,29 @@ class CardRenderer(BaseRenderer):
     ) -> Tuple[str, str]:
         """
         Render card(s) as HTML.
-        
+
         Args:
             response: AIMessage with PandasAgentResponse output
             environment: Output environment (default: 'html')
             **kwargs: Additional options
-            
+
         Returns:
             Tuple[str, str]: (code, html_content)
         """
         # Extract data from AIMessage
         code = response.code if hasattr(response, 'code') else ''
         card_data = self._extract_data(response)
-        
+
         # Generate card HTML
         cards_html = self._render_single_card(card_data)
-        
+
         # Determine title
         page_title = card_data.get('title', 'Metric Card')
-        
+
         # Generate final HTML
         html_content = self.CARD_TEMPLATE.format(
             title=page_title,
             cards_html=cards_html
         )
-        
+
         return code, html_content
-
-
-
-
-
-

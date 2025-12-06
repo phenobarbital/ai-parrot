@@ -205,7 +205,7 @@ class Chatbot(AbstractBot):
         self._llm = getattr(self, '_llm', 'google')
         self._llm_model = getattr(self, '_llm_model', None)
         self._llm_temp = getattr(self, '_llm_temp', 0.1)
-        self._max_tokens = getattr(self, '_max_tokens', 1024)
+        self._max_tokens = getattr(self, '_max_tokens', 8192)
         self._top_k = getattr(self, '_top_k', 41)
         self._top_p = getattr(self, '_top_p', 0.9)
         self._llm_config = getattr(self, '_llm_config', {})

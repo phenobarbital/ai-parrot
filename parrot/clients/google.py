@@ -733,7 +733,6 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                 tool_id = fc.id or f"call_{uuid.uuid4().hex[:8]}"
                 self.logger.notice(f"🔍 Tool: {fc.name}")
                 self.logger.notice(f"📤 Raw Result Type: {type(result)}")
-                # self.logger.notice(f"📤 Raw Result: {result}")
 
                 try:
                     response_content = self._process_tool_result_for_api(result)
@@ -917,29 +916,41 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
         handling special cases like thought_signature parts from reasoning models.
         """
 
-        # Method 1: Try response.text first (fastest path)
+        # Pre-check for function calls to avoid library warnings when accessing .text
+        has_function_call = False
         try:
-            if hasattr(response, 'text') and response.text:
-                if (text := response.text.strip()):
-                    self.logger.debug(
-                        f"Extracted text via response.text: '{text[:100]}...'"
-                    )
-                    return text
-        except Exception as e:
-            # This is expected with reasoning models that have mixed content
-            self.logger.debug(
-                f"response.text failed (normal for reasoning models): {e}"
-            )
+            if (hasattr(response, 'candidates') and response.candidates and
+                len(response.candidates) > 0 and hasattr(response.candidates[0], 'content') and
+                response.candidates[0].content and hasattr(response.candidates[0].content, 'parts') and
+                response.candidates[0].content.parts):
+                for part in response.candidates[0].content.parts:
+                    if hasattr(part, 'function_call') and part.function_call:
+                        has_function_call = True
+                        break
+        except Exception:
+            pass
+
+        # Method 1: Try response.text first (fastest path)
+        # Skip if we found a function call, as accessing .text triggers a warning in the library
+        if not has_function_call:
+            try:
+                if hasattr(response, 'text') and response.text:
+                    if (text := response.text.strip()):
+                        self.logger.debug(
+                            f"Extracted text via response.text: '{text[:100]}...'"
+                        )
+                        return text
+            except Exception as e:
+                # This is expected with reasoning models that have mixed content
+                self.logger.debug(
+                    f"response.text failed (normal for reasoning models): {e}"
+                )
 
         # Method 2: Manual extraction from parts (more robust)
         try:
-            if (hasattr(response, 'candidates') and
-                response.candidates and
-                len(response.candidates) > 0 and
-                hasattr(response.candidates[0], 'content') and
-                response.candidates[0].content and
-                hasattr(response.candidates[0].content, 'parts') and
-                response.candidates[0].content.parts):
+            if (hasattr(response, 'candidates') and response.candidates and len(response.candidates) > 0 and
+                hasattr(response.candidates[0], 'content') and response.candidates[0].content and
+                hasattr(response.candidates[0].content, 'parts') and response.candidates[0].content.parts):
 
                 text_parts = []
                 thought_parts_found = 0
@@ -1360,20 +1371,20 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                             final_output = self._json.loads(structured_text)
                     else:
                         final_output = self._json.loads(structured_text)
-                    # --- Fallback Logic ---
-                    is_json_format = (
-                        isinstance(structured_output_for_later, StructuredOutputConfig) and
-                        structured_output_for_later.format == OutputFormat.JSON
-                    )
-                    if is_json_format and isinstance(final_output, str):
-                        try:
-                            self._json.loads(final_output)
-                        except Exception:
-                            self.logger.warning(
-                                "Structured output re-formatting resulted in invalid/truncated JSON. "
-                                "Falling back to original tool output."
-                            )
-                            final_output = assistant_response_text
+                    # # --- Fallback Logic ---
+                    # is_json_format = (
+                    #     isinstance(structured_output_for_later, StructuredOutputConfig) and
+                    #     structured_output_for_later.format == OutputFormat.JSON
+                    # )
+                    # if is_json_format and isinstance(final_output, str):
+                    #     try:
+                    #         self._json.loads(final_output)
+                    #     except Exception:
+                    #         self.logger.warning(
+                    #             "Structured output re-formatting resulted in invalid/truncated JSON. "
+                    #             "Falling back to original tool output."
+                    #         )
+                    #         final_output = assistant_response_text
                 else:
                     self.logger.warning(
                         "No structured text received, falling back to original response"

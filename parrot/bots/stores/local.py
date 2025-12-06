@@ -75,6 +75,8 @@ class LocalKBMixin:
         """
         kb_dir = self._get_agent_kb_directory()
 
+        print('::: Configuring local KB from directory:', kb_dir)
+
         if not kb_dir or not kb_dir.exists():
             self.logger.debug(
                 f":: No local KB directory found at {kb_dir}"
@@ -89,7 +91,7 @@ class LocalKBMixin:
             )
             return
 
-        self.logger.info(
+        self.logger.notice(
             f"Loading local KB from {kb_dir} "
             f"({len(local_files)} document files)"
         )

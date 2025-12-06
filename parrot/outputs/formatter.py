@@ -81,6 +81,7 @@ class OutputFormatter:
         Returns:
             System prompt string or None if mode has no specific prompt
         """
+        print(f"Getting system prompt for mode: {mode}")
         return get_output_prompt(mode)
 
     def has_system_prompt(self, mode: OutputMode) -> bool:

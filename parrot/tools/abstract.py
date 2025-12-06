@@ -228,7 +228,10 @@ class AbstractTool(ABC):
                     "Tool execution returned None, expected a result."
                 )
 
-            self.logger.info(f"Tool {self.name} executed successfully")
+            self.logger.info(
+                f"Tool {self.name} executed successfully"
+            )
+            # print('TYPE > ', type(result), ' RESULT > ', result)
 
             return ToolResult(
                 status="success",
