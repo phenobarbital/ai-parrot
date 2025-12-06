@@ -820,6 +820,7 @@ class PandasAgent(BasicAgent):
                 limit=5,
                 **kwargs
             )
+            print('KB Context:', kb_context)
 
             # Build system prompt with DataFrame context (no vector context)
             # Create system prompt
@@ -846,7 +847,9 @@ class PandasAgent(BasicAgent):
             if (new_llm := kwargs.pop('llm', None)):
                 self.configure_llm(llm=new_llm, **kwargs.pop('llm_config', {}))
 
-            print(' :::: System Prompt:\n', system_prompt)
+            print(' :::: System Prompt:\n')
+            print(system_prompt)
+            print('\n:::: End System Prompt\n')
             # Make the LLM call with tools ALWAYS enabled
             async with self._llm as client:
                 llm_kwargs = {
