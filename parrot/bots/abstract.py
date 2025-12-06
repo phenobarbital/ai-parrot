@@ -1641,7 +1641,7 @@ class AbstractBot(DBInterface, LocalKBMixin, ABC):
             # Format conversation context
         chat_history_section = ""
         if conversation_context:
-            chat_history_section = f"**Previous Conversation:**\n{conversation_context}"
+            chat_history_section = f"**\n{conversation_context}"
 
         # Add user context if provided
         u_context = ""

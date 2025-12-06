@@ -386,20 +386,21 @@ class PandasAgent(BasicAgent):
             alias_map=self._get_dataframe_alias_map(),
             dataframes=self.dataframes
         )
-        # prophet_tool = ProphetForecastTool(
-        #     dataframes=self.dataframes,
-        #     alias_map=self._get_dataframe_alias_map(),
-        # )
-        # prophet_tool.description = (
-        #     "Forecast future values for a time series using Facebook Prophet. "
-        #     "Specify the dataframe, date column, value column, forecast horizon, and frequency."
-        # )
+        prophet_tool = ProphetForecastTool(
+            dataframes=self.dataframes,
+            alias_map=self._get_dataframe_alias_map(),
+        )
+        prophet_tool.description = (
+            "Forecast future values for a time series using Facebook Prophet. "
+            "Specify the dataframe, date column, value column, forecast horizon, and frequency."
+        )
 
-        return [
+        tools.extend([
             pandas_tool,
             metadata_tool,
-            # prophet_tool
-        ]
+            prophet_tool
+        ])
+        return tools
 
     def _define_dataframe(
         self,
@@ -821,8 +822,6 @@ class PandasAgent(BasicAgent):
                 limit=5,
                 **kwargs
             )
-            print('KB Context:', kb_context)
-
             # Build system prompt with DataFrame context (no vector context)
             # Create system prompt
             system_prompt = await self.create_system_prompt(
@@ -833,9 +832,6 @@ class PandasAgent(BasicAgent):
                 user_context=user_context,
                 **kwargs
             )
-            if conversation_context:
-                system_prompt = f"{system_prompt}\n\n## Conversation Context:\n{conversation_context}"
-
             # Handle output mode in system prompt
             if output_mode != OutputMode.DEFAULT:
                 _mode = output_mode if isinstance(output_mode, str) else getattr(output_mode, 'value', 'default')
@@ -848,9 +844,9 @@ class PandasAgent(BasicAgent):
             if (new_llm := kwargs.pop('llm', None)):
                 self.configure_llm(llm=new_llm, **kwargs.pop('llm_config', {}))
 
-            print(' :::: System Prompt:\n')
-            print(system_prompt)
-            print('\n:::: End System Prompt\n')
+            # print(' :::: System Prompt:\n')
+            # print(system_prompt)
+            # print('\n:::: End System Prompt\n')
             # Make the LLM call with tools ALWAYS enabled
             async with self._llm as client:
                 llm_kwargs = {
