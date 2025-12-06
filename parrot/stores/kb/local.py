@@ -2,11 +2,11 @@
 LocalKB: Knowledge Base from local text and markdown files with FAISS vector store.
 """
 from __future__ import annotations
+from typing import List, Dict, Any, Tuple, Optional
 import re
 from pathlib import Path
-from typing import List, Dict, Any, Tuple, Optional
+import asyncio
 from navconfig.logging import logging
-
 from .abstract import AbstractKnowledgeBase
 from ..faiss_store import FAISSStore
 from ..models import Document
@@ -42,8 +42,8 @@ class LocalKB(AbstractKnowledgeBase):
         activation_patterns: List[str] = None,
         embedding_model: str = "sentence-transformers/all-mpnet-base-v2",
         dimension: int = 384,
-        chunk_size: int = 512,
-        chunk_overlap: int = 50,
+        chunk_size: int = 4096,
+        chunk_overlap: int = 100,
         always_active: bool = True,
         auto_load: bool = True,
         **kwargs
@@ -96,7 +96,6 @@ class LocalKB(AbstractKnowledgeBase):
 
         if auto_load:
             # Load synchronously during init
-            import asyncio
             try:
                 loop = asyncio.get_event_loop()
                 if loop.is_running():
@@ -305,7 +304,7 @@ class LocalKB(AbstractKnowledgeBase):
         self,
         query: str,
         k: int = 5,
-        score_threshold: float = 0.4,
+        score_threshold: float = 0.5,
         user_id: str = None,
         session_id: str = None,
         ctx: RequestContext = None,
@@ -407,8 +406,7 @@ class LocalKB(AbstractKnowledgeBase):
         if not results:
             return ""
 
-        lines = [f"## {self.name} Knowledge Base:"]
-        lines.append("")
+        lines = [f"\n## {self.name} Useful Facts:", ""]
 
         # Group by source file
         by_source: Dict[str, List[Dict]] = {}
@@ -420,14 +418,10 @@ class LocalKB(AbstractKnowledgeBase):
 
         # Format each source
         for source, source_results in by_source.items():
-            lines.append(f"### From {source}:")
+            lines.append(f"## From {source}:")
             for result in source_results:
                 content = result['content'].strip()
-                # Limit length for context
-                if len(content) > 500:
-                    content = content[:500] + "..."
-                lines.append(f"{content}")
-                lines.append("")
+                lines.extend((content, ""))
 
         return "\n".join(lines)
 

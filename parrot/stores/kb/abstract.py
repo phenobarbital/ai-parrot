@@ -45,7 +45,7 @@ class AbstractKnowledgeBase(ABC):
         self,
         query: str,
         k: int = 5,
-        score_threshold: float = 0.7,
+        score_threshold: float = 0.6,
         user_id: str = None,
         session_id: str = None,
         ctx: RequestContext = None,
