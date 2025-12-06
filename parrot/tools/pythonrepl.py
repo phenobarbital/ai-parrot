@@ -522,6 +522,9 @@ print("Use 'execution_results' dict to store intermediate results.")
             if self.sanitize_input_enabled:
                 query = sanitize_input(query)
 
+            # capture previous state of locals
+            pre_exec_keys = set(self.locals.keys())
+
             if debug:
                 print(f"DEBUG: Executing code:\n{repr(query)}\n" + "="*50)
 
@@ -607,7 +610,29 @@ print("Use 'execution_results' dict to store intermediate results.")
                         return f"ExecutionError: {type(e).__name__}: {str(e)}"
 
             # Return everything that was captured
-            return io_buffer.getvalue() or ""
+            output = io_buffer.getvalue() or ""
+            post_exec_keys = set(self.locals.keys())
+
+            if new_vars := post_exec_keys - pre_exec_keys:
+                context_report = []
+                # generate new report context:
+                for var_name in new_vars:
+                    val = self.locals[var_name]
+                    if "pandas" in str(type(val)) and hasattr(val, "shape"):
+                        context_report.append(
+                            f"🆕 DataFrame Created: '{var_name}' | Shape: {val.shape} | Columns: {list(val.columns)}"
+                        )
+                    elif not var_name.startswith("_"):
+                        context_report.append(
+                            f"🆕 Variable Created: '{var_name}' | Type: {type(val).__name__}"
+                        )
+                    else:
+                        context_report.append(
+                            f"🆕 Variable Created: '{var_name}' | Type: {type(val).__name__} (private)"
+                        )
+
+                return output + "\n".join(context_report)
+            return output
 
         except Exception as e:
             return f"{type(e).__name__}: {str(e)}"
