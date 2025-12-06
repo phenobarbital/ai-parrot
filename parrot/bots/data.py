@@ -394,11 +394,12 @@ class PandasAgent(BasicAgent):
         #     "Specify the dataframe, date column, value column, forecast horizon, and frequency."
         # )
 
-        return [
+        tools.extend([
             pandas_tool,
             metadata_tool,
             # prophet_tool
-        ]
+        ])
+        return tools
 
     def _define_dataframe(
         self,
