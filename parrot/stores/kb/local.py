@@ -348,6 +348,7 @@ class LocalKB(AbstractKnowledgeBase):
                     'source': result.metadata.get('source', 'unknown')
                 } for result in results
             )
+            return formatted_results
 
         except Exception as e:
             self.logger.error(f"Search error in KB '{self.name}': {e}")
