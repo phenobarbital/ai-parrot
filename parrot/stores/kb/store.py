@@ -19,7 +19,7 @@ class KnowledgeBaseStore:
             ) from e
         self.embeddings = SentenceTransformer(embedding_model)
         self.dimension = dimension
-        self.score_threshold = 0.45
+        self.score_threshold = 0.5
         # FAISS index
         if index_type == "FlatIP":
             self.index = faiss.IndexFlatIP(dimension)
@@ -68,7 +68,7 @@ class KnowledgeBaseStore:
         self,
         query: str,
         k: int = 5,
-        score_threshold: float = 0.4
+        score_threshold: float = 0.5
     ) -> List[Dict[str, Any]]:
         """Ultra-fast fact retrieval."""
         query_embedding = self.embeddings.encode(

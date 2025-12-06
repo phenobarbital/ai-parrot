@@ -305,7 +305,7 @@ class LocalKB(AbstractKnowledgeBase):
         self,
         query: str,
         k: int = 5,
-        score_threshold: float = 0.4,
+        score_threshold: float = 0.5,
         user_id: str = None,
         session_id: str = None,
         ctx: RequestContext = None,
