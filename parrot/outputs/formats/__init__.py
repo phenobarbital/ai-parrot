@@ -22,6 +22,7 @@ def register_renderer(mode: OutputMode, system_prompt: Optional[str] = None):
         mode: OutputMode enum value
         system_prompt: Optional system prompt to inject when using this mode
     """
+    print(':::: Registering renderer for mode:', mode)
     def decorator(cls):
         RENDERERS[mode] = cls
         if system_prompt:
@@ -81,13 +82,19 @@ def get_renderer(mode: OutputMode) -> Type[Renderer]:
             f"No renderer registered for mode: {mode}"
         ) from exc
 
-
 def get_output_prompt(mode: OutputMode) -> Optional[str]:
     """Get system prompt for mode."""
+    # Trigger lazy loading to ensure decorator has run
+    if mode not in _PROMPTS:
+        with contextlib.suppress(ValueError):
+            get_renderer(mode)
     return _PROMPTS.get(mode)
 
 def has_system_prompt(mode: OutputMode) -> bool:
     """Check if mode has a registered system prompt."""
+    if mode not in _PROMPTS:
+        with contextlib.suppress(ValueError):
+            get_renderer(mode)
     return mode in _PROMPTS
 
 

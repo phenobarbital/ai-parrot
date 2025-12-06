@@ -19,7 +19,14 @@ except ImportError:
 
 
 FOLIUM_SYSTEM_PROMPT = """FOLIUM MAP OUTPUT MODE:
-When user request a map, generate an interactive map using Folium by extracting and using geographic information from the available data.
+When user request a MAP, generate an interactive map using Folium by extracting and using geographic information from the available data.
+
+MAP GENERATION STRATEGY:
+1. First, create a filtered dataframe with the data you need (e.g., `map_data = df[...]`).
+2. The tool will confirm the variable creation.
+3. THEN, in the same or next turn, generate the Folium code referencing `map_data`.
+4. DO NOT print the content of `map_data`.
+5. ALWAYS return the map as Python code in a markdown block (```python).
 
 🚨 CRITICAL REQUIREMENTS: 🚨
 
@@ -401,7 +408,7 @@ class FoliumRenderer(BaseChart):
             return None, "Execution context was empty"
 
         # Debug: print all variables in context
-        print(f"CONTEXT KEYS: {list(context.keys())}")
+        # print(f"CONTEXT KEYS: {list(context.keys())}")
 
         # Try to find map object
         map_obj = None
