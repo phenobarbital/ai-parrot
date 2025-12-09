@@ -12,15 +12,9 @@ from .claude import AnthropicClient, ClaudeClient, ClaudeModel
 from .google import GoogleGenAIClient, GoogleModel
 from .gpt import OpenAIClient, OpenAIModel
 from .groq import GroqClient, GroqModel
+from .factory import LLMFactory, SUPPORTED_CLIENTS
 
 
-SUPPORTED_CLIENTS = {
-    "claude": AnthropicClient,
-    "anthropic": AnthropicClient,
-    "google": GoogleGenAIClient,
-    "openai": OpenAIClient,
-    "groq": GroqClient
-}
 
 
 __all__ = (
