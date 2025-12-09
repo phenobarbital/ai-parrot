@@ -15,6 +15,7 @@ class OpenAIEmbeddingModel(EmbeddingModel):
         if model_name:
             self.model_name = model_name
         self.dimensions = dimensions
+        self._dimension = dimensions
         super().__init__(model_name=self.model_name, **kwargs)
 
     def _create_embedding(self, model_name: str = None, **kwargs) -> Any:
@@ -37,18 +38,29 @@ class OpenAIEmbeddingModel(EmbeddingModel):
         return AsyncOpenAI(api_key=self.api_key)
 
     async def encode(self, texts: List[str], **kwargs) -> List[List[float]]:
+        """Generate embeddings for a list of texts using AsyncOpenAI.
+
+        This mirrors the official OpenAI embeddings guide, allowing callers to
+        override the model or dimensions per request while keeping asynchronous
+        semantics.
+        """
+        model = kwargs.pop("model", self.model_name)
+        dimensions = kwargs.pop("dimensions", self.dimensions)
         call_kwargs = {
-            "model": self.model_name,
+            "model": model,
             "input": texts,
-            "encoding_format": "float"
+            "encoding_format": "float",
+            **kwargs,
         }
-        if self.dimensions:
-            call_kwargs["dimensions"] = self.dimensions
-            
+        if dimensions:
+            call_kwargs["dimensions"] = dimensions
+
         result = await self.model.embeddings.create(**call_kwargs)
-        # OpenAI returns a list of embedding objects, we need to extract the vector
-        # The order is preserved.
-        return [data.embedding for data in result.data]
+        embeddings = [data.embedding for data in result.data]
+        if embeddings and not self._dimension:
+            # Keep a record of the dimension reported by the service when not set
+            self._dimension = len(embeddings[0])
+        return embeddings
 
     async def embed_query(
         self,
