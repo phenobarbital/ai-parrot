@@ -1,4 +1,4 @@
-from typing import Generator, Union, List, Any, Optional, TypeVar
+from typing import Generator, Union, List, Any, Optional, TypeVar, TYPE_CHECKING
 from collections.abc import Callable
 from abc import ABC, abstractmethod
 from datetime import datetime
@@ -6,11 +6,15 @@ import uuid
 from pathlib import Path, PosixPath, PurePath
 import asyncio
 import pandas as pd
-from transformers import (
-    AutoModelForSeq2SeqLM,
-    AutoTokenizer,
-    pipeline
-)
+
+if TYPE_CHECKING:
+    from transformers import (
+        AutoModelForSeq2SeqLM,
+        AutoTokenizer,
+        pipeline
+    )
+    import torch
+
 from navconfig.logging import logging
 from navigator.libs.json import JSONContent  # pylint: disable=E0611
 from ..stores.models import Document
@@ -162,6 +166,7 @@ class AbstractLoader(ABC):
         chunk_overlap: int = 200
     ) -> TokenTextSplitter:
         """Create a TokenTextSplitter using a HuggingFace Tokenizer"""
+        from transformers import AutoTokenizer
         tokenizer = AutoTokenizer.from_pretrained(model_name)
         return TokenTextSplitter(
             chunk_size=chunk_size,
@@ -776,6 +781,11 @@ Your job is to produce a final summary from the following text and identify the 
     ):
         if not self._summary_model:
             if self._use_summary_pipeline:
+                from transformers import (
+                    AutoModelForSeq2SeqLM,
+                    AutoTokenizer,
+                    pipeline
+                )
                 _, pipe_dev, torch_dtype = self._get_device()
                 summarize_model = AutoModelForSeq2SeqLM.from_pretrained(
                     model_name,

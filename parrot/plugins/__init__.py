@@ -2,11 +2,23 @@ import sys
 import contextlib
 from importlib import import_module
 from navconfig.logging import Logger
-from parrot.conf import PLUGINS_DIR
+from parrot.conf import PLUGINS_DIR, AGENTS_DIR
 from .importer import PluginImporter
 
 # Add plugins directory to sys.path
-sys.path.insert(0, str(PLUGINS_DIR))
+# If AGENTS_DIR is already at position 0 (from parrot.conf), insert PLUGINS_DIR at position 1
+# to preserve AGENTS_DIR priority. Otherwise, insert PLUGINS_DIR at position 0.
+plugins_dir_str = str(PLUGINS_DIR)
+agents_dir_str = str(AGENTS_DIR)
+
+if plugins_dir_str not in sys.path:
+    # Check if AGENTS_DIR is at position 0
+    if sys.path and sys.path[0] == agents_dir_str:
+        # AGENTS_DIR has priority, insert PLUGINS_DIR at position 1
+        sys.path.insert(1, plugins_dir_str)
+    else:
+        # Insert PLUGINS_DIR at position 0
+        sys.path.insert(0, plugins_dir_str)
 
 # Agents Loader - maps parrot.agents to project_folder/plugins/agents/
 agents_dir = PLUGINS_DIR / "agents"

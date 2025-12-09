@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 from navconfig import config, BASE_DIR
 from navconfig.logging import logging
@@ -44,6 +45,15 @@ if isinstance(AGENTS_DIR, str):
     AGENTS_DIR = Path(AGENTS_DIR).resolve()
 if not AGENTS_DIR.exists():
     AGENTS_DIR.mkdir(parents=True, exist_ok=True)
+
+# Add AGENTS_DIR to sys.path for direct imports (e.g., from agents.troc import ...)
+# Remove if already present to avoid duplicates, then insert at position 0
+# This ensures AGENTS_DIR takes precedence over PLUGINS_DIR even if plugins/__init__.py
+# has already inserted PLUGINS_DIR at position 0
+agents_dir_str = str(AGENTS_DIR)
+if agents_dir_str in sys.path:
+    sys.path.remove(agents_dir_str)
+sys.path.insert(0, agents_dir_str)
 
 
 # MCP Server Directory:
@@ -117,7 +127,7 @@ default_sqlalchemy_pg = f"postgresql+asyncpg://{DBUSER}:{DBPWD}@{DBHOST}:{DBPORT
 # ScyllaDB Database:
 SCYLLADB_DRIVER = config.get('SCYLLADB_DRIVER', fallback='scylladb')
 SCYLLADB_HOST = config.get('SCYLLADB_HOST', fallback='localhost')
-SCYLLADB_PORT = int(config.get('SCYLLADB_PORT', fallback=9042))
+SCYLLADB_PORT = config.getint('SCYLLADB_PORT', fallback=9042)
 SCYLLADB_USERNAME = config.get('SCYLLADB_USERNAME', fallback='navigator')
 SCYLLADB_PASSWORD = config.get('SCYLLADB_PASSWORD', fallback='navigator')
 SCYLLADB_KEYSPACE = config.get('SCYLLADB_KEYSPACE', fallback='navigator')
@@ -366,3 +376,10 @@ WORKDAY_WSDL_PATHS = {
     "financial_management": WORKDAY_WSDL_FINANCIAL_MANAGEMENT,
     "recruiting": WORKDAY_WSDL_RECRUITING
 }
+
+# Final sys.path adjustment: Ensure AGENTS_DIR takes precedence over PLUGINS_DIR
+# This is necessary because parrot.plugins.__init__.py may have inserted PLUGINS_DIR
+# at position 0 during module loading (after our initial AGENTS_DIR insertion above)
+if agents_dir_str in sys.path:
+    sys.path.remove(agents_dir_str)
+sys.path.insert(0, agents_dir_str)

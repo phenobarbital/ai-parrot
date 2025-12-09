@@ -480,26 +480,23 @@ class AbstractClient(ABC):
         - function.parameters is an object schema with additionalProperties = False
         """
         if schema.get("type") != "function":
-            return schema  # Only wrap function tools
+            return schema
 
         fn = schema.setdefault("function", {})
         params = fn.setdefault("parameters", {})
 
-        # Ensure JSON Schema object shape
-        # If your ToolSchemaAdapter already sets this, we won't override it.
+        # Ensure base object shape
         if params.get("type") is None:
             params["type"] = "object"
         if "properties" not in params:
-            # If no properties defined, keep empty; model won't be able to send args anyway.
             params["properties"] = {}
 
-        # Critical for strict tools: must be present and false
-        if "additionalProperties" not in params:
-            params["additionalProperties"] = False
+        # ✅ NEW: normalize recursively for OpenAI strict rules
+        params = self._oai_normalize_schema(params)
+        fn["parameters"] = params
 
-        # Mark the function as strict
+        # Mark strict
         fn["strict"] = True
-
         return schema
 
     def _prepare_tools(self) -> List[Dict[str, Any]]:

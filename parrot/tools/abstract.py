@@ -135,6 +135,43 @@ class AbstractTool(ABC):
         Returns:
             JSON schema dictionary compatible with LLM tool registration
         """
+
+        def _enforce_no_extra_fields(definition: Any) -> None:
+            """Recursively set ``additionalProperties`` to ``False`` for objects.
+
+            OpenAI tools require every object schema (including nested ones) to
+            explicitly disallow extra properties. Pydantic's generated schema only
+            sets this flag at the top level, so we walk the entire schema tree and
+            ensure every object definition is strict.
+            """
+
+            if not isinstance(definition, dict):
+                return
+
+            if definition.get("type") == "object":
+                definition.setdefault("properties", {})
+                definition.setdefault("additionalProperties", False)
+
+            # Recurse into common schema containers
+            for key in ("properties", "patternProperties"):
+                if isinstance(definition.get(key), dict):
+                    for sub in definition[key].values():
+                        _enforce_no_extra_fields(sub)
+
+            for key in ("items", "additionalItems"):
+                _enforce_no_extra_fields(definition.get(key))
+
+            for key in ("anyOf", "oneOf", "allOf"):
+                if isinstance(definition.get(key), list):
+                    for sub in definition[key]:
+                        _enforce_no_extra_fields(sub)
+
+            # Handle $defs/definitions used by Pydantic
+            for key in ("$defs", "definitions"):
+                if isinstance(definition.get(key), dict):
+                    for sub in definition[key].values():
+                        _enforce_no_extra_fields(sub)
+
         schema = {
             "name": self.name,
             "description": self.description,
@@ -153,9 +190,11 @@ class AbstractTool(ABC):
                 "type": "object",
                 "properties": pydantic_schema.get("properties", {}),
                 "required": pydantic_schema.get("required", []),
-                "additionalProperties": False
+                "additionalProperties": False,
+                "$defs": pydantic_schema.get("$defs", {}),
             }
 
+        _enforce_no_extra_fields(schema["parameters"])
         return schema
 
     def validate_args(self, **kwargs) -> BaseModel:

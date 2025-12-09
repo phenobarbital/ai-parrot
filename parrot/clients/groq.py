@@ -116,29 +116,35 @@ class GroqClient(AbstractClient):
                         node["anyOf"] = variants
 
                     # 2) Collapse Optional[T] pattern: anyOf: [T, {"type": "null"}]
-                    non_null = [
-                        v for v in variants
-                        if not (isinstance(v, dict) and v.get("type") == "null")
-                    ]
-                    nulls = [
-                        v for v in variants
-                        if isinstance(v, dict) and v.get("type") == "null"
-                    ]
+                    # 2) Collapse Optional[T] pattern: anyOf: [T, {"type": "null"}]
+                    # COMMENTED OUT: This removes nullability which causes validation errors when model returns null
+                    # non_null = [
+                    #     v for v in variants
+                    #     if not (isinstance(v, dict) and v.get("type") == "null")
+                    # ]
+                    # nulls = [
+                    #     v for v in variants
+                    #     if isinstance(v, dict) and v.get("type") == "null"
+                    # ]
 
-                    if len(non_null) == 1 and len(nulls) >= 1:
-                        base = visit(non_null[0])  # recurse into T
-
-                        # Preserve metadata from wrapper (title, default, description...)
-                        for k, v in list(node.items()):
-                            if k == "anyOf":
-                                continue
-                            base.setdefault(k, v)
-
-                        node.clear()
-                        node.update(base)
-                    else:
-                        # Just recurse into each variant
-                        node["anyOf"] = [visit(v) for v in variants]
+                    # if len(non_null) == 1 and len(nulls) >= 1:
+                    #     base = visit(non_null[0])  # recurse into T
+                    #
+                    #     # Preserve metadata from wrapper (title, default, description...)
+                    #     for k, v in list(node.items()):
+                    #         if k == "anyOf":
+                    #             continue
+                    #         base.setdefault(k, v)
+                    #
+                    #     node.clear()
+                    #     node.update(base)
+                    # else:
+                    #     # Just recurse into each variant
+                    #     node["anyOf"] = [visit(v) for v in variants]
+                    
+                    # Original logic above was stripping NULL from AnyOf.
+                    # We simply recurse now.
+                    node["anyOf"] = [visit(v) for v in variants]
 
                 # Recurse into object properties / patternProperties
                 for key in ("properties", "patternProperties"):
@@ -169,28 +175,32 @@ class GroqClient(AbstractClient):
         return visit(dict(schema))
 
     def _prepare_groq_tools(self) -> List[dict]:
-        """Convert registered tools to Groq format."""
         groq_tools = []
         for tool in self.tool_manager.all_tools():
-            tool_name = tool.name if hasattr(tool, 'name') else tool.__class__.__name__
+            tool_name = tool.name if hasattr(tool, "name") else tool.__class__.__name__
             print(f":::: Preparing tool: {tool_name}")
-            # Fix the tool schema for Groq
-            if hasattr(tool, 'input_schema'):
-                # Convert dict schema to Groq-compliant schema
-                fixed_schema = self._fix_schema_for_groq(tool.input_schema)
-            elif hasattr(tool, 'get_tool_schema'):
-                # Handle Pydantic model schemas
-                fixed_schema = self._fix_schema_for_groq(
-                    tool.get_tool_schema()
-                )
+
+            # 1) get a *parameter* schema, not a full tool descriptor
+            if hasattr(tool, "input_schema") and tool.input_schema:
+                param_schema = tool.input_schema
+            elif hasattr(tool, "get_tool_schema"):
+                full = tool.get_tool_schema()
+                param_schema = full.get("parameters", full)
             else:
-                fixed_schema = {}
+                param_schema = {
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": False,
+                }
+
+            # 2) normalize for Groq
+            fixed_schema = self._fix_schema_for_groq(param_schema)
 
             groq_tools.append({
                 "type": "function",
                 "function": {
                     "name": tool_name,
-                    "description": tool.description,
+                    "description": getattr(tool, "description", "") or "",
                     "parameters": fixed_schema
                 }
             })
@@ -348,6 +358,7 @@ class GroqClient(AbstractClient):
                     request_args["response_format"] = {"type": "json_object"}
 
         # Make initial request
+        print('Request args: ', request_args)
         response = await self.client.chat.completions.create(**request_args)
         result = response.choices[0].message
 

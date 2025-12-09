@@ -18,14 +18,28 @@ class EmbeddingModel(ABC):
     def __init__(self, model_name: str, **kwargs):
         self.model_name = model_name
         self.logger = logging.getLogger(f"parrot.{self.__class__.__name__}")
-        self.device, _, self._dtype = self._get_device()
         self.executor = ThreadPoolExecutor(max_workers=4)
         self._model_lock = asyncio.Lock()
         self._dimension = None
-        self.model = self._create_embedding(
-            model_name=self.model_name,
-            **kwargs
-        )
+        # Lazy initialization
+        self._model = None
+        self._device = None
+        self._kwargs = kwargs
+
+    @property
+    def device(self):
+        if self._device is None:
+            _, self._device, self._dtype = self._get_device()
+        return self._device
+
+    @property
+    def model(self):
+        if self._model is None:
+            self._model = self._create_embedding(
+                model_name=self.model_name,
+                **self._kwargs
+            )
+        return self._model
 
     def _get_device(
         self,

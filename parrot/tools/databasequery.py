@@ -13,7 +13,7 @@ import pandas as pd
 from pydantic import BaseModel, Field, field_validator
 from asyncdb import AsyncDB
 from navconfig import config, BASE_DIR
-from querysource.conf import default_dsn, INFLUX_TOKEN
+# from querysource.conf import default_dsn, INFLUX_TOKEN
 from .abstract import AbstractTool
 
 
@@ -523,6 +523,7 @@ class DatabaseQueryTool(AbstractTool):
         Get default credentials for the specified database driver.
         Handles mongo-based drivers (mongodb, atlas, documentdb) correctly.
         """
+        from querysource.conf import default_dsn, INFLUX_TOKEN
         dsn = None
         normalized_driver = DriverInfo.normalize_driver(driver)
         if driver == 'postgresql':

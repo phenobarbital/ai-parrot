@@ -2,7 +2,7 @@
 PandasAgent.
 A specialized agent for data analysis using pandas DataFrames.
 """
-from typing import Any, List, Dict, Union, Optional, Tuple
+from typing import Any, List, Dict, Union, Optional, Tuple, TYPE_CHECKING
 import uuid
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
@@ -14,8 +14,9 @@ import numpy as np
 from aiohttp import web
 from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611 # noqa
 from navconfig.logging import logging
-from querysource.queries.qs import QS
-from querysource.queries.multi import MultiQS
+if TYPE_CHECKING:
+    from querysource.queries.qs import QS
+    from querysource.queries.multi import MultiQS
 from ..tools import AbstractTool
 from ..tools.metadata import MetadataTool
 from ..tools.prophet_tool import ProphetForecastTool
@@ -308,7 +309,6 @@ class PandasAgent(BasicAgent):
     def __init__(
         self,
         name: str = 'Pandas Agent',
-        llm: Optional[str] = None,
         tool_llm: str | None = None,
         use_tool_llm: bool = False,
         tools: List[AbstractTool] = None,
@@ -331,7 +331,6 @@ class PandasAgent(BasicAgent):
 
         Args:
             name: Agent name
-            llm: LLM client name ('google', 'openai', 'claude')
             tools: Additional tools beyond default
             system_prompt: Custom system prompt
             df: DataFrame(s) to analyze
@@ -356,7 +355,6 @@ class PandasAgent(BasicAgent):
         # Initialize base agent (AbstractBot will set chatbot_id)
         super().__init__(
             name=name,
-            llm=llm,
             system_prompt=system_prompt,
             tools=tools,
             temperature=temperature,
@@ -453,6 +451,11 @@ class PandasAgent(BasicAgent):
                 
                 # Strip output formatting request from base prompt if present
                 # and add tool instructions
+                # Strip output formatting request from base prompt if present
+                if "## STRUCTURED OUTPUT MODE:" in base_system_prompt:
+                    base_system_prompt = base_system_prompt.split("## STRUCTURED OUTPUT MODE:")[0]
+
+                # and add tool instructions
                 tool_system_prompt = f"{base_system_prompt}\n{TOOL_INSTRUCTION_PROMPT}"
                 
                 # Call Tool LLM
@@ -464,6 +467,7 @@ class PandasAgent(BasicAgent):
                         use_tools=True,
                         temperature=0.0 # Strict for code
                      )
+                     print('::: Tool response:', tool_response)
                 
                 # Get execution results from the tool
                 pandas_tool = self._get_python_pandas_tool()
@@ -491,12 +495,8 @@ class PandasAgent(BasicAgent):
 
         # 2. Standard Mode (Single LLM)
         # Use the conversation method from BasicAgent
-        response = await super().invoke(
+        response = await self.ask(
             question=question,
-            use_conversation_history=kwargs.get(
-                'use_conversation_history', True
-            ),
-            response_model=response_model,
             **kwargs
         )
         if isinstance(response, AgentResponse):
@@ -1353,6 +1353,7 @@ class PandasAgent(BasicAgent):
         Returns:
             Dictionary of DataFrames
         """
+        from querysource.queries.qs import QS
         dfs = {}
         for query in queries:
             print('EXECUTING QUERY SOURCE: ', query)
@@ -1391,6 +1392,7 @@ class PandasAgent(BasicAgent):
         Returns:
             Dictionary of DataFrames
         """
+        from querysource.queries.multi import MultiQS
         _queries = query.pop('queries', {})
         _files = query.pop('files', {})
 
