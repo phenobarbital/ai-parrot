@@ -805,9 +805,16 @@ class DatabaseQueryTool(AbstractTool):
                     self.logger.info(
                         f"Querying collection '{collection_name}' with filter: {query_dict}"
                     )
+
+                    # Enforce hard limit of 20 rows for DocumentDB/Mongo queries
+                    limit = 20
+                    if max_rows and max_rows > 0:
+                        limit = min(max_rows, 20)
+
                     result, errors = await conn.query(
                         collection_name=collection_name,
-                        query=query_dict
+                        query=query_dict,
+                        limit=limit
                     )
                 else:
                     result, errors = await asyncio.wait_for(
