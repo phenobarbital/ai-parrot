@@ -224,12 +224,10 @@ class DatabaseQueryArgs(BaseModel):
             "  Use Flux query language, e.g.: from(bucket:\"my-bucket\") |> range(start: -1h)\n\n"
             "MongoDB/DocumentDB (mongo, atlas, documentdb):\n"
             "  Provide the MongoDB query filter as JSON.\n"
-            "  The collection_name must be specified in the 'credentials' parameter.\n"
+            "  The collection_name must be specified in the 'credentials' parameter, OR in the query.\n"
             "  Examples:\n"
-            "    - Empty query (get all): {}\n"
-            "    - Filter by field: {\"status\": \"active\"}\n"
-            "    - Complex filter: {\"age\": {\"$gte\": 18}, \"city\": \"New York\"}\n"
-            "    - Nested filter: {\"data.payload.form_id\": 17123}\n\n"
+            "    - Filter only: {\"status\": \"active\"}\n"
+            "    - Command style: { \"find\": \"users\", \"filter\": {\"status\": \"active\"}, \"limit\": 10, \"sort\": {\"created_at\": -1} }\n\n"
             "Only data retrieval queries are allowed - no DDL or DML operations."
         )
     )
@@ -764,57 +762,92 @@ class DatabaseQueryTool(AbstractTool):
                     # For mongo-based drivers:
                     # 1. collection_name MUST be in credentials
                     # 2. query parameter contains ONLY the MongoDB filter (JSON)
+                    # For mongo-based drivers:
+                    # Support both standard JSON filter and {find:..., filter:...} command style
+                    
                     collection_name = credentials.get('collection_name')
+                    query_dict = {}
+                    possible_limit = None
+                    mongo_kwargs = {}
+
+                    # 1. Parsing logic
+                    if modified_query:
+                        # Handle legacy 'collection::json_query' format first
+                        if isinstance(modified_query, str) and '::' in modified_query:
+                             self.logger.warning(
+                                "Detected '::' format in query. For MongoDB/DocumentDB, "
+                                "please provide collection_name in credentials or use the "
+                                "{'find': 'collection', 'filter': {...}} syntax."
+                             )
+                             c_name, json_query = modified_query.split('::', 1)
+                             collection_name = c_name.strip()
+                             try:
+                                query_dict = json.loads(json_query.strip()) if json_query.strip() else {}
+                             except Exception:
+                                query_dict = {}
+                        
+                        else:
+                            # Parse JSON if string
+                            if isinstance(modified_query, str):
+                                try:
+                                    query_dict = json.loads(modified_query.strip())
+                                except Exception:
+                                    # Fallback if not valid JSON, though it should be
+                                    query_dict = {}
+                            elif isinstance(modified_query, dict):
+                                query_dict = modified_query
+                            else:
+                                query_dict = {}
+
+                    # 2. Extract structured command components
+                    # Check if it's a command object with 'filter' or 'find'
+                    if isinstance(query_dict, dict) and ('filter' in query_dict or 'find' in query_dict):
+                        if 'find' in query_dict and isinstance(query_dict['find'], str):
+                            collection_name = query_dict['find']
+                        
+                        # Extract limit/sort/projection
+                        if 'limit' in query_dict:
+                            possible_limit = query_dict['limit']
+                        if 'sort' in query_dict:
+                            mongo_kwargs['sort'] = query_dict['sort']
+                        if 'projection' in query_dict:
+                            mongo_kwargs['projection'] = query_dict['projection']
+
+                        # The actual query is the filter
+                        query_dict = query_dict.get('filter', {})
+
+                    # 3. Validation
                     if not collection_name:
                         raise ValueError(
                             "For MongoDB/DocumentDB queries, 'collection_name' must be "
-                            "provided in the 'credentials' parameter. "
-                            "Example: credentials={'collection_name': 'users', ...}"
+                            "provided in the 'credentials', or in the query as "
+                            "{'find': 'collection_name', ...}."
                         )
-                    if modified_query:
-                        if isinstance(modified_query, dict):
-                            query_dict = modified_query
-                        # Check if it was packed with collection name (legacy/compat)
-                        elif isinstance(modified_query, str) and '::' in modified_query:
-                             # ... (This part was inside the block below in original code, but I need to be careful)
-                             pass 
-                        else:
-                             # Assume string JSON
-                             try:
-                                query_dict = json.loads(modified_query.strip()) if isinstance(modified_query, str) else modified_query
-                             except Exception:
-                                query_dict = {}
-                    else:
-                        query_dict = {}
-                    
-                    if isinstance(modified_query, str) and '::' in modified_query:
-                         # query = 'batches::{"data.payload.form_id": 17123}'
-                         self.logger.warning(
-                            "Detected '::' format in query. For MongoDB/DocumentDB, "
-                            "please provide collection_name in credentials and only "
-                            "the filter in the query parameter."
-                         )
-                         collection_name, json_query = modified_query.split('::', 1)
-                         collection_name = collection_name.strip()
-                         query_dict = json.loads(json_query) if json_query.strip() else {}
                     
                     if not isinstance(query_dict, dict):
-                         # If somehow we still don't have a dict (e.g. primitive value)
                          query_dict = {}
 
                     self.logger.info(
                         f"Querying collection '{collection_name}' with filter: {query_dict}"
                     )
 
-                    # Enforce hard limit of 20 rows for DocumentDB/Mongo queries
-                    limit = 20
+                    # 4. Enforce Limits
+                    # Baseline hard limit
+                    final_max_rows = 20
+                    
+                    # Consider user-provided max_rows
                     if max_rows and max_rows > 0:
-                        limit = min(max_rows, 20)
+                        final_max_rows = min(final_max_rows, max_rows)
+                    
+                    # Consider query-embedded limit
+                    if possible_limit is not None and isinstance(possible_limit, int):
+                         final_max_rows = min(final_max_rows, possible_limit)
 
                     result, errors = await conn.query(
                         collection_name=collection_name,
                         query=query_dict,
-                        limit=limit
+                        limit=final_max_rows,
+                        **mongo_kwargs
                     )
                 else:
                     result, errors = await asyncio.wait_for(
@@ -823,7 +856,9 @@ class DatabaseQueryTool(AbstractTool):
                     )
 
                 if errors:
-                    raise RuntimeError(f"Database query errors: {errors}")
+                    raise RuntimeError(
+                        f"Database query errors: {errors}"
+                    )
 
                 # Return the actual result based on format
                 if output_format == 'pandas':
