@@ -143,6 +143,22 @@ class PythonPandasTool(PythonREPLTool):
         if self.generate_guide:
             self.df_guide = self._generate_dataframe_guide()
 
+        # Update description with loaded DataFrames
+        self._update_description()
+
+    def _update_description(self) -> None:
+        """Update tool description to include available DataFrames."""
+        df_summary = ", ".join([
+            f"{df_key}: {df.shape[0]} rows × {df.shape[1]} cols"
+            for df_key, df in self.dataframes.items()
+        ]) if self.dataframes else "No DataFrames"
+
+        self.description = (
+            f"Execute Python code with pandas DataFrames. "
+            f"Available data: {df_summary}. "
+            f"Use df1, df2, etc. to access DataFrames."
+        )
+
     def _generate_plotting_guide(self) -> str:
         """Generate comprehensive plotting libraries guide for the LLM."""
         guide_parts = [
@@ -403,6 +419,9 @@ class PythonPandasTool(PythonREPLTool):
             None,
         )
 
+        # Update description
+        self._update_description()
+
         return f"DataFrame '{name}' added successfully (alias: '{df_alias}')"
 
     def remove_dataframe(self, name: str, regenerate_guide: bool = True) -> str:
@@ -442,6 +461,9 @@ class PythonPandasTool(PythonREPLTool):
         # Regenerate guide if requested
         if regenerate_guide and self.generate_guide:
             self.df_guide = self._generate_dataframe_guide()
+
+        # Update description
+        self._update_description()
 
         return f"DataFrame '{resolved_name}' removed successfully"
 
