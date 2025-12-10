@@ -81,9 +81,10 @@ DEFAULT_STRUCTURED_OUTPUT_MODEL = OpenAIModel.GPT_4O_MINI.value
 class OpenAIClient(AbstractClient):
     """Client for interacting with OpenAI's API."""
 
-    client_type: str = "openai"
+    client_type: str = 'openai'
     model: str = OpenAIModel.GPT4_TURBO.value
-    client_name: str = "openai"
+    client_name: str = 'openai'
+    _default_model: str = 'gpt-4o-mini'
 
     def __init__(
         self,

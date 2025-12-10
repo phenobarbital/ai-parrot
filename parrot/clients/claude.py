@@ -45,6 +45,7 @@ class AnthropicClient(AbstractClient):
     client_type: str = "anthropic"
     client_name: str = "claude"
     use_session: bool = True
+    _default_model: str = 'claude-sonnet-4-5'
 
     def __init__(
         self,

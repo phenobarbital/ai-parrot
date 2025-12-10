@@ -53,6 +53,7 @@ class GroqClient(AbstractClient):
     client_type: str = "groq"
     client_name: str = "groq"
     model: str = GroqModel.LLAMA_3_3_70B_VERSATILE
+    _default_model: str = 'openai/gpt-oss-120b'
 
     def __init__(
         self,
