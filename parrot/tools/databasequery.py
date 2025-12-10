@@ -214,7 +214,7 @@ class DatabaseQueryArgs(BaseModel):
             "Note: Query syntax must match the driver's query language."
         )
     )
-    query: str = Field(
+    query: Union[str, Dict[str, Any]] = Field(
         ...,
         description=(
             "Query to execute for data retrieval. Query syntax depends on the driver:\n\n"
@@ -223,7 +223,7 @@ class DatabaseQueryArgs(BaseModel):
             "InfluxDB (influx):\n"
             "  Use Flux query language, e.g.: from(bucket:\"my-bucket\") |> range(start: -1h)\n\n"
             "MongoDB/DocumentDB (mongo, atlas, documentdb):\n"
-            "  Provide ONLY the MongoDB query filter as JSON.\n"
+            "  Provide the MongoDB query filter as JSON.\n"
             "  The collection_name must be specified in the 'credentials' parameter.\n"
             "  Examples:\n"
             "    - Empty query (get all): {}\n"
@@ -679,6 +679,9 @@ class DatabaseQueryTool(AbstractTool):
         query_language = DriverInfo.get_query_language(driver)
 
         if query_language == QueryLanguage.SQL:
+            if not isinstance(query, str):
+                 # Should not happen if validated correctly, but safe fallback
+                 return query
             query_upper = query.upper().strip()
             # Check if LIMIT is already present
             if 'LIMIT' in query_upper:
@@ -686,6 +689,8 @@ class DatabaseQueryTool(AbstractTool):
             return f"{query.rstrip(';')} LIMIT {max_rows}"
 
         elif query_language == QueryLanguage.FLUX:
+            if not isinstance(query, str):
+                return query
             # For Flux, add limit() to the pipeline if not present
             if '|> limit(' not in query.lower():
                 return f"{query.rstrip()} |> limit(n: {max_rows})"
@@ -739,9 +744,14 @@ class DatabaseQueryTool(AbstractTool):
                 # Add row limit to query if specified and not already present
                 modified_query = self._add_row_limit(query, max_rows, driver)
 
-                self.logger.info(
-                    f"Executing query on {driver}: {modified_query[:100]}..."
-                )
+                if isinstance(modified_query, str):
+                    self.logger.info(
+                        f"Executing query on {driver}: {modified_query[:100]}..."
+                    )
+                else:
+                    self.logger.info(
+                        f"Executing query on {driver}: {modified_query}..."
+                    )
 
                 # Execute query with timeout
                 if driver == 'influx':
@@ -761,20 +771,36 @@ class DatabaseQueryTool(AbstractTool):
                             "provided in the 'credentials' parameter. "
                             "Example: credentials={'collection_name': 'users', ...}"
                         )
-                    if '::' in modified_query:
-                        # query = 'batches::{"data.payload.form_id": 17123}'
-                        self.logger.warning(
+                    if modified_query:
+                        if isinstance(modified_query, dict):
+                            query_dict = modified_query
+                        # Check if it was packed with collection name (legacy/compat)
+                        elif isinstance(modified_query, str) and '::' in modified_query:
+                             # ... (This part was inside the block below in original code, but I need to be careful)
+                             pass 
+                        else:
+                             # Assume string JSON
+                             try:
+                                query_dict = json.loads(modified_query.strip()) if isinstance(modified_query, str) else modified_query
+                             except Exception:
+                                query_dict = {}
+                    else:
+                        query_dict = {}
+                    
+                    if isinstance(modified_query, str) and '::' in modified_query:
+                         # query = 'batches::{"data.payload.form_id": 17123}'
+                         self.logger.warning(
                             "Detected '::' format in query. For MongoDB/DocumentDB, "
                             "please provide collection_name in credentials and only "
                             "the filter in the query parameter."
-                        )
-                        collection_name, json_query = modified_query.split('::', 1)
-                        collection_name = collection_name.strip()
-                        query_dict = json.loads(json_query) if json_query.strip() else {}
-                    if modified_query:
-                        query_dict = json.loads(modified_query.strip())
-                    else:
-                        query_dict = {}
+                         )
+                         collection_name, json_query = modified_query.split('::', 1)
+                         collection_name = collection_name.strip()
+                         query_dict = json.loads(json_query) if json_query.strip() else {}
+                    
+                    if not isinstance(query_dict, dict):
+                         # If somehow we still don't have a dict (e.g. primitive value)
+                         query_dict = {}
 
                     self.logger.info(
                         f"Querying collection '{collection_name}' with filter: {query_dict}"
