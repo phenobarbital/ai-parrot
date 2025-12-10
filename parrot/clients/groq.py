@@ -81,7 +81,7 @@ class GroqClient(AbstractClient):
         - Drop some scalar constraints Groq doesn't care about.
         """
         # First apply your generic OpenAI-style normalization
-        schema = self._oai_normalize_schema(schema)
+        schema = self._oai_normalize_schema(schema, force_required_all=False)
 
         unsupported_constraints = [
             "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum",
@@ -296,6 +296,12 @@ class GroqClient(AbstractClient):
         use_tools = _use_tools
         use_structured_output = bool(output_config)
 
+        structured_output_for_later: Optional[StructuredOutputConfig] = None
+        request_output_config: Optional[StructuredOutputConfig] = output_config
+
+        # NEW: per-request flag
+        request_use_structured_output = bool(request_output_config)
+
         if use_structured_output and model not in STRUCTURED_OUTPUT_COMPATIBLE_MODELS:
             self.logger.error(
                 f"The model '{model}' does not support structured output. "
@@ -303,13 +309,11 @@ class GroqClient(AbstractClient):
             )
             model = GroqModel.LLAMA_4_SCOUT_17B.value
 
-        structured_output_for_later: Optional[StructuredOutputConfig] = None
-        request_output_config: Optional[StructuredOutputConfig] = output_config
-
-        if use_tools and use_structured_output:
+        if use_tools and request_use_structured_output:
             # Handle tools first, structured output later
             structured_output_for_later = output_config
             request_output_config = None
+            request_use_structured_output = False  # IMPORTANT
 
         # Track tool calls for the response
         all_tool_calls = []
@@ -324,10 +328,9 @@ class GroqClient(AbstractClient):
             "stream": False
         }
 
-        if use_tools and not use_structured_output:
+        if use_tools and not request_use_structured_output:
             request_args["tool_choice"] = "auto"
             request_args["tools"] = tools or []
-            # Enable parallel tool calls for supported models
             if model != getattr(GroqModel, "GEMMA2_9B_IT", None) and \
                model != getattr(GroqModel, "GEMMA2_9B_IT", "google/gemma-2-9b-it"):
                 request_args["parallel_tool_calls"] = True
@@ -358,7 +361,11 @@ class GroqClient(AbstractClient):
                     request_args["response_format"] = {"type": "json_object"}
 
         # Make initial request
-        print('Request args: ', request_args)
+        self.logger.debug(
+            f"Groq request: use_tools={use_tools}, "
+            f"request_output_config={'yes' if request_output_config else 'no'}, "
+            f"tools_in_request={'tools' in request_args}"
+        )
         response = await self.client.chat.completions.create(**request_args)
         result = response.choices[0].message
 

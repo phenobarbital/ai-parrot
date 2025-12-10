@@ -1269,59 +1269,42 @@ class AbstractClient(ABC):
         s = m[1] if m else s
         return json_decoder(s)
 
-    def _oai_normalize_schema(self, schema: dict) -> dict:
+    def _oai_normalize_schema(self, schema: dict, *, force_required_all: bool = True) -> dict:
         """
-        Normalize JSON schema for OpenAI `response_format`.
-
-        Rules inferred from OpenAI errors:
-        - ANY object (type == "object") must have `additionalProperties: false`.
-        - Objects that declare `properties` must also have a `required` array
-        that includes ALL property names.
+        Normalize JSON schema.
+        - Always sets additionalProperties=false on objects.
+        - Optionally forces required to include all properties.
         """
-
         def visit(node):
             if isinstance(node, dict):
                 t = node.get("type")
 
-                # --- Object handling ---
                 if t == "object":
-                    # 1) ALL object schemas must have additionalProperties = false
                     node["additionalProperties"] = False
 
-                    # 2) If the object has explicit properties, required must cover them all
-                    props = node.get("properties")
-                    if isinstance(props, dict) and props:
-                        prop_keys = list(props.keys())
-                        existing_required = node.get("required") or []
-                        missing = [k for k in prop_keys if k not in existing_required]
-                        node["required"] = existing_required + missing
+                    if force_required_all:
+                        props = node.get("properties")
+                        if isinstance(props, dict) and props:
+                            prop_keys = list(props.keys())
+                            existing_required = node.get("required") or []
+                            missing = [k for k in prop_keys if k not in existing_required]
+                            node["required"] = existing_required + missing
 
-                    # Recurse into nested object children
                     for key in ("properties", "patternProperties"):
-                        if key in node and isinstance(node[key], dict):
+                        if isinstance(node.get(key), dict):
                             for sub in node[key].values():
                                 visit(sub)
 
-                # --- Array handling ---
-                if t == "array":
-                    # Recurse into items
-                    if "items" in node and isinstance(node["items"], (dict, list)):
-                        visit(node["items"])
+                if t == "array" and isinstance(node.get("items"), (dict, list)):
+                    visit(node["items"])
 
-                    # Recurse into prefixItems (tuples)
-                    if "prefixItems" in node and isinstance(node["prefixItems"], list):
-                        for sub in node["prefixItems"]:
-                            visit(sub)
-
-                # --- Combinators: ALWAYS recurse, regardless of type ---
                 for key in ("anyOf", "allOf", "oneOf"):
-                    if key in node and isinstance(node[key], list):
+                    if isinstance(node.get(key), list):
                         for sub in node[key]:
                             visit(sub)
 
-                # --- Definitions: ALWAYS recurse ---
                 for key in ("$defs", "definitions"):
-                    if key in node and isinstance(node[key], dict):
+                    if isinstance(node.get(key), dict):
                         for sub in node[key].values():
                             visit(sub)
 
@@ -1331,7 +1314,6 @@ class AbstractClient(ABC):
 
             return node
 
-        # shallow copy is fine; you don't want to mutate the caller's dict root
         return visit(dict(schema))
 
     def _build_response_format_from(self, output_config):
