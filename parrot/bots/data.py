@@ -526,17 +526,6 @@ class PandasAgent(BasicAgent):
         if not tools:
             tools = []
 
-        # Build a description that includes DataFrame info
-        df_summary = ", ".join([
-            f"{df_key}: {df.shape[0]} rows × {df.shape[1]} cols"
-            for df_key, df in self.dataframes.items()
-        ]) if self.dataframes else "No DataFrames"
-
-        tool_description = (
-            f"Execute Python code with pandas DataFrames. "
-            f"Available data: {df_summary}. "
-            f"Use df1, df2, etc. to access DataFrames."
-        )
         # PythonPandasTool
         pandas_tool = PythonPandasTool(
             dataframes=self.dataframes,
@@ -546,7 +535,6 @@ class PandasAgent(BasicAgent):
             sample_rows=2,
             report_dir=report_dir
         )
-        pandas_tool.description = tool_description
 
         # Enhanced MetadataTool with dynamic EDA capabilities
         metadata_tool = MetadataTool(
