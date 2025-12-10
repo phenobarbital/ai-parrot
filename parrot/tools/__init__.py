@@ -6,7 +6,7 @@ from .abstract import AbstractTool, ToolResult
 from .toolkit import AbstractToolkit, ToolkitTool
 from .decorators import tool_schema, tool
 
-# setup_plugin_importer('parrot.tools', 'tools')
+setup_plugin_importer('parrot.tools', 'tools')
 
 __all__ = (
     "AbstractTool",

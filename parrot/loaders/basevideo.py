@@ -1,4 +1,5 @@
-from typing import Any, Union, List, Optional
+from __future__ import annotations
+from typing import Any, Union, List, Optional, TYPE_CHECKING
 from collections.abc import Callable
 from abc import abstractmethod
 import gc
@@ -6,26 +7,25 @@ import os
 import logging
 import math
 from pathlib import Path
-from moviepy import VideoFileClip
-from pydub import AudioSegment
-import soundfile as sf
 import numpy as np
-import whisperx
-import torch
-from transformers import (
-    pipeline,
-    AutoModelForSeq2SeqLM,
-    AutoTokenizer,
-    WhisperProcessor,
-    WhisperForConditionalGeneration
-)
 from ..conf import HUGGINGFACEHUB_API_TOKEN
 from ..stores.models import Document
 from .abstract import AbstractLoader
 
+if TYPE_CHECKING:
+    from moviepy import VideoFileClip
+    from pydub import AudioSegment
+    import soundfile as sf
+    import whisperx
+    import torch
+    from transformers import (
+        pipeline,
+        AutoModelForSeq2SeqLM,
+        AutoTokenizer,
+        WhisperProcessor,
+        WhisperForConditionalGeneration
+    )
 
-torch.backends.cuda.matmul.allow_tf32 = True
-torch.backends.cudnn.allow_tf32 = True
 
 
 logging.getLogger(name='numba').setLevel(logging.WARNING)
@@ -101,6 +101,12 @@ class BaseVideoLoader(AbstractLoader):
             self._video_path = Path(video_path).resolve()
         self._video_path = video_path
 
+    def _ensure_torch(self):
+        """Ensure Torch is configured (lazy loading)."""
+        import torch
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
+
     @property
     def summarizer(self):
         """
@@ -109,6 +115,12 @@ class BaseVideoLoader(AbstractLoader):
         """
         if self._summarizer is None:
             print("[ParrotBot] Loading summarizer model (BART-large-cnn)...")
+            from transformers import (
+                pipeline,
+                AutoModelForSeq2SeqLM,
+                AutoTokenizer
+            )
+            self._ensure_torch()
             self._summarizer = pipeline(
                 "summarization",
                 tokenizer=AutoTokenizer.from_pretrained(
@@ -132,6 +144,7 @@ class BaseVideoLoader(AbstractLoader):
     def summarizer(self):
         """Delete summarizer and free VRAM."""
         if self._summarizer is not None:
+            import torch
             del self._summarizer
             self._summarizer = None
             gc.collect()
@@ -339,6 +352,9 @@ class BaseVideoLoader(AbstractLoader):
             raise ValueError(
                 "audio_to_srt requires the WhisperX transcript (chunks with words)."
             )
+        
+        import whisperx
+        import torch
 
         # Use the existing _get_device method
         pipeline_idx, _, _ = self._get_device()
@@ -445,7 +461,10 @@ class BaseVideoLoader(AbstractLoader):
         # Cleanup
         gc.collect()
         if device.startswith("cuda"):
-            torch.cuda.empty_cache()
+            try:
+                torch.cuda.empty_cache()
+            except Exception:
+                pass
 
         return srt_text
 
@@ -793,6 +812,7 @@ class BaseVideoLoader(AbstractLoader):
 
         # Extract as WAV 16k mono PCM
         print(f"Extracting audio (16k mono WAV) to: {audio_path}")
+        from moviepy import VideoFileClip
         clip = VideoFileClip(str(video_path))
         if not clip.audio:
             print("No audio found in video.")

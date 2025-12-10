@@ -29,6 +29,22 @@ class MetadataToolArgs(AbstractToolArgsSchema):
         default=False,
         description="Include detailed statistics for numeric and categorical columns"
     )
+    include_eda: bool = Field(
+        default=False,
+        description="Add Exploratory data analysis summary (statistics, missing values, memory usage)"
+    )
+    include_samples: bool = Field(
+        default=False,
+        description="Include sample rows from the DataFrame"
+    )
+    include_column_stats: bool = Field(
+        default=False,
+        description="Include detailed statistics for numeric and categorical columns"
+    )
+    column: str | None = Field(
+        default=None,
+        description="Specific column within the DataFrame to describe"
+    )
 
 
 
@@ -232,6 +248,8 @@ class MetadataTool(AbstractTool):
 
         # Generate dynamic EDA if requested
         if include_eda:
+            include_samples = True
+            include_column_stats = True
             if eda_summary := self._generate_eda_summary(df_name):
                 # Override with dynamic EDA if available
                 response['eda_summary'] = eda_summary

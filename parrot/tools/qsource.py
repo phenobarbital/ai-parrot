@@ -4,13 +4,16 @@ QuerySource Tool for AI-Parrot
 A tool that integrates QuerySource QS library to execute queries and return
 structured data as pandas DataFrames or custom structured outputs.
 """
+from __future__ import annotations
 from typing import Dict, List, Any, Optional, Union, Type
 from datetime import datetime, date, timedelta
 import json
 from pydantic import BaseModel, Field
 import pandas as pd
-from querysource.queries.qs import QS
-from querysource.exceptions import DataNotFound  # pylint: disable=E0611
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from querysource.queries.qs import QS
+    from querysource.exceptions import DataNotFound  # pylint: disable=E0611
 from .abstract import AbstractTool, ToolResult
 from ..exceptions import ToolError  # pylint: disable=E0611
 
@@ -168,6 +171,7 @@ class QSourceTool(AbstractTool):
         """
         Execute a QuerySource query and return structured results.
         """
+        from querysource.queries.qs import QS
         # Validate input
         if not query_slug and not query:
             return ToolResult(

@@ -31,11 +31,10 @@ class SentenceTransformerModel(EmbeddingModel):
         self.logger.info(
             f"Initialized SentenceTransformerModel with model: {self.model_name}"
         )
-        self._dimension = self.model.get_sentence_embedding_dimension()
 
     def _create_embedding(self, model_name: str = None, **kwargs) -> Any:
         """
-        Creates and returns a SentenceTransformer model instance.
+        Creates and returns the SentenceTransformer model instance.
 
         Args:
             model_name: The name of the Hugging Face model to load.
@@ -45,19 +44,27 @@ class SentenceTransformerModel(EmbeddingModel):
         """
         from sentence_transformers import SentenceTransformer
         import torch
-        device, _, _ = self._get_device()
+        
+        # Access self.device via property (calls _get_device lazily)
+        device = self.device
         model_name = model_name or self.model_name
+        
         self.logger.info(
             f"Loading embedding model '{model_name}' on device '{device}'"
         )
+        
         model = SentenceTransformer(
             model_name,
             device=device,
             cache_folder=HUGGINGFACE_EMBEDDING_CACHE_DIR
         )
+        
+        # Set dimension after loading model
+        self._dimension = model.get_sentence_embedding_dimension()
+        
         # Production optimizations
         model.eval()
-        if self.device == "cuda":
+        if str(device) == "cuda":
             model.half()  # Use FP16 for GPU inference
             torch.backends.cudnn.benchmark = True
 

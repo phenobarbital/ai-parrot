@@ -81,7 +81,7 @@ class GroqClient(AbstractClient):
         - Drop some scalar constraints Groq doesn't care about.
         """
         # First apply your generic OpenAI-style normalization
-        schema = self._oai_normalize_schema(schema)
+        schema = self._oai_normalize_schema(schema, force_required_all=False)
 
         unsupported_constraints = [
             "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum",
@@ -116,29 +116,35 @@ class GroqClient(AbstractClient):
                         node["anyOf"] = variants
 
                     # 2) Collapse Optional[T] pattern: anyOf: [T, {"type": "null"}]
-                    non_null = [
-                        v for v in variants
-                        if not (isinstance(v, dict) and v.get("type") == "null")
-                    ]
-                    nulls = [
-                        v for v in variants
-                        if isinstance(v, dict) and v.get("type") == "null"
-                    ]
+                    # 2) Collapse Optional[T] pattern: anyOf: [T, {"type": "null"}]
+                    # COMMENTED OUT: This removes nullability which causes validation errors when model returns null
+                    # non_null = [
+                    #     v for v in variants
+                    #     if not (isinstance(v, dict) and v.get("type") == "null")
+                    # ]
+                    # nulls = [
+                    #     v for v in variants
+                    #     if isinstance(v, dict) and v.get("type") == "null"
+                    # ]
 
-                    if len(non_null) == 1 and len(nulls) >= 1:
-                        base = visit(non_null[0])  # recurse into T
-
-                        # Preserve metadata from wrapper (title, default, description...)
-                        for k, v in list(node.items()):
-                            if k == "anyOf":
-                                continue
-                            base.setdefault(k, v)
-
-                        node.clear()
-                        node.update(base)
-                    else:
-                        # Just recurse into each variant
-                        node["anyOf"] = [visit(v) for v in variants]
+                    # if len(non_null) == 1 and len(nulls) >= 1:
+                    #     base = visit(non_null[0])  # recurse into T
+                    #
+                    #     # Preserve metadata from wrapper (title, default, description...)
+                    #     for k, v in list(node.items()):
+                    #         if k == "anyOf":
+                    #             continue
+                    #         base.setdefault(k, v)
+                    #
+                    #     node.clear()
+                    #     node.update(base)
+                    # else:
+                    #     # Just recurse into each variant
+                    #     node["anyOf"] = [visit(v) for v in variants]
+                    
+                    # Original logic above was stripping NULL from AnyOf.
+                    # We simply recurse now.
+                    node["anyOf"] = [visit(v) for v in variants]
 
                 # Recurse into object properties / patternProperties
                 for key in ("properties", "patternProperties"):
@@ -169,28 +175,32 @@ class GroqClient(AbstractClient):
         return visit(dict(schema))
 
     def _prepare_groq_tools(self) -> List[dict]:
-        """Convert registered tools to Groq format."""
         groq_tools = []
         for tool in self.tool_manager.all_tools():
-            tool_name = tool.name if hasattr(tool, 'name') else tool.__class__.__name__
+            tool_name = tool.name if hasattr(tool, "name") else tool.__class__.__name__
             print(f":::: Preparing tool: {tool_name}")
-            # Fix the tool schema for Groq
-            if hasattr(tool, 'input_schema'):
-                # Convert dict schema to Groq-compliant schema
-                fixed_schema = self._fix_schema_for_groq(tool.input_schema)
-            elif hasattr(tool, 'get_tool_schema'):
-                # Handle Pydantic model schemas
-                fixed_schema = self._fix_schema_for_groq(
-                    tool.get_tool_schema()
-                )
+
+            # 1) get a *parameter* schema, not a full tool descriptor
+            if hasattr(tool, "input_schema") and tool.input_schema:
+                param_schema = tool.input_schema
+            elif hasattr(tool, "get_tool_schema"):
+                full = tool.get_tool_schema()
+                param_schema = full.get("parameters", full)
             else:
-                fixed_schema = {}
+                param_schema = {
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": False,
+                }
+
+            # 2) normalize for Groq
+            fixed_schema = self._fix_schema_for_groq(param_schema)
 
             groq_tools.append({
                 "type": "function",
                 "function": {
                     "name": tool_name,
-                    "description": tool.description,
+                    "description": getattr(tool, "description", "") or "",
                     "parameters": fixed_schema
                 }
             })
@@ -286,6 +296,12 @@ class GroqClient(AbstractClient):
         use_tools = _use_tools
         use_structured_output = bool(output_config)
 
+        structured_output_for_later: Optional[StructuredOutputConfig] = None
+        request_output_config: Optional[StructuredOutputConfig] = output_config
+
+        # NEW: per-request flag
+        request_use_structured_output = bool(request_output_config)
+
         if use_structured_output and model not in STRUCTURED_OUTPUT_COMPATIBLE_MODELS:
             self.logger.error(
                 f"The model '{model}' does not support structured output. "
@@ -293,13 +309,11 @@ class GroqClient(AbstractClient):
             )
             model = GroqModel.LLAMA_4_SCOUT_17B.value
 
-        structured_output_for_later: Optional[StructuredOutputConfig] = None
-        request_output_config: Optional[StructuredOutputConfig] = output_config
-
-        if use_tools and use_structured_output:
+        if use_tools and request_use_structured_output:
             # Handle tools first, structured output later
             structured_output_for_later = output_config
             request_output_config = None
+            request_use_structured_output = False  # IMPORTANT
 
         # Track tool calls for the response
         all_tool_calls = []
@@ -314,10 +328,9 @@ class GroqClient(AbstractClient):
             "stream": False
         }
 
-        if use_tools and not use_structured_output:
+        if use_tools and not request_use_structured_output:
             request_args["tool_choice"] = "auto"
             request_args["tools"] = tools or []
-            # Enable parallel tool calls for supported models
             if model != getattr(GroqModel, "GEMMA2_9B_IT", None) and \
                model != getattr(GroqModel, "GEMMA2_9B_IT", "google/gemma-2-9b-it"):
                 request_args["parallel_tool_calls"] = True
@@ -348,6 +361,11 @@ class GroqClient(AbstractClient):
                     request_args["response_format"] = {"type": "json_object"}
 
         # Make initial request
+        self.logger.debug(
+            f"Groq request: use_tools={use_tools}, "
+            f"request_output_config={'yes' if request_output_config else 'no'}, "
+            f"tools_in_request={'tools' in request_args}"
+        )
         response = await self.client.chat.completions.create(**request_args)
         result = response.choices[0].message
 

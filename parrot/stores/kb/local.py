@@ -6,6 +6,7 @@ from typing import List, Dict, Any, Tuple, Optional
 import re
 from pathlib import Path
 import asyncio
+import time
 from navconfig.logging import logging
 from .abstract import AbstractKnowledgeBase
 from ..faiss_store import FAISSStore
@@ -138,23 +139,6 @@ class LocalKB(AbstractKnowledgeBase):
         Returns:
             Number of documents loaded
         """
-        if self._is_loaded and not force_reload:
-            self.logger.debug(
-                f"KB: '{self.name}' already loaded"
-            )
-            return 0
-
-        # Check if cache exists and is valid
-        if self.cache_file.exists() and not force_reload:
-            try:
-                await self._load_from_cache()
-                self._is_loaded = True
-                return 0
-            except Exception as e:
-                self.logger.warning(
-                    f"Failed to load cache: {e}, rebuilding..."
-                )
-
         # Create kb directory if doesn't exist
         self.kb_directory.mkdir(parents=True, exist_ok=True)
 
@@ -166,6 +150,48 @@ class LocalKB(AbstractKnowledgeBase):
                 f"No markdown or text files found in {self.kb_directory}"
             )
             return 0
+
+        # Create a map of file modifications
+        current_loaded_files = {
+            f.name: f.stat().st_mtime for f in local_files
+        }
+
+        if self._is_loaded and not force_reload:
+            # Check if we need to reload based on file changes
+            if self._loaded_files == current_loaded_files:
+                self.logger.debug(
+                    f"KB: '{self.name}' already loaded and up to date"
+                )
+                return 0
+
+        # Check if cache exists and is valid
+        if self.cache_file.exists() and not force_reload:
+            try:
+                # Check cache validity
+                cache_mtime = self.cache_file.stat().st_mtime
+                # Cache must be newer than all source files
+                is_cache_valid = all(
+                    cache_mtime > mtime for mtime in current_loaded_files.values()
+                )
+
+                if is_cache_valid:
+                    await self._load_from_cache()
+                    self._is_loaded = True
+                    # IMPORTANT: Populate _loaded_files so change detection works
+                    self._loaded_files = current_loaded_files
+                    self.logger.info(
+                        f"Loaded KB '{self.name}' from cache (valid as of {time.ctime(cache_mtime)})"
+                    )
+                    return 0
+                else:
+                    self.logger.debug(
+                        f"KB cache for '{self.name}' is stale, reloading..."
+                    )
+
+            except Exception as e:
+                self.logger.warning(
+                    f"Failed to load cache: {e}, rebuilding..."
+                )
 
         self.logger.info(
             f"Loading {len(local_files)} markdown and text files into KB '{self.name}'"

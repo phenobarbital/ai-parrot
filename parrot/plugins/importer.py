@@ -42,7 +42,12 @@ class PluginImporter(importlib.abc.MetaPathFinder, importlib.abc.Loader):
                 loaded = types.ModuleType(loader.name)
                 loader.exec_module(loaded)
                 module.__dict__.update(loaded.__dict__)
-                module.__path__ = [self.plugins_path]
+                # Append plugins_path to __path__ instead of replacing it
+                # This allows both main directory and plugins directory to coexist
+                if not hasattr(module, '__path__'):
+                    module.__path__ = []
+                if self.plugins_path not in module.__path__:
+                    module.__path__.append(self.plugins_path)
 
         # Handle individual component files
         else:
