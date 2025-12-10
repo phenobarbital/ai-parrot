@@ -83,6 +83,7 @@ class GoogleGenAIClient(AbstractClient):
     """
     client_type: str = 'google'
     client_name: str = 'google'
+    _default_model: str = 'gemini-2.5-flash'
 
     def __init__(self, vertexai: bool = False, **kwargs):
         self.vertexai: bool = vertexai
@@ -1068,6 +1069,11 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
         _use_tools = use_tools if use_tools is not None else self.enable_tools
         if not model:
             model = self.model or GoogleModel.GEMINI_2_5_FLASH.value
+
+        # Handle case where model is passed as a tuple or list
+        if isinstance(model, (list, tuple)):
+            model = model[0]
+
         # Generate unique turn ID for tracking
         turn_id = str(uuid.uuid4())
         original_prompt = prompt
@@ -1546,6 +1552,10 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
         model = (
             model.value if isinstance(model, GoogleModel) else model
         ) or (self.model or GoogleModel.GEMINI_2_5_FLASH.value)
+
+        # Handle case where model is passed as a tuple or list
+        if isinstance(model, (list, tuple)):
+            model = model[0]
 
         turn_id = str(uuid.uuid4())
         # Default retry configuration

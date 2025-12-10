@@ -262,6 +262,11 @@ class AbstractClient(ABC):
             self.tool_manager.default_tools(tools)
             self.enable_tools = True
 
+    @property
+    def default_model(self) -> str:
+        """Return the default model for the client."""
+        return getattr(self, '_default_model', None)
+
     async def __aenter__(self):
         if self.use_session:
             self.session = aiohttp.ClientSession(
