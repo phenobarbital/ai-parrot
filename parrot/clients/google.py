@@ -1292,6 +1292,23 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                         continue
                     break
                 except Exception as e:
+                    # Handle specific network client error (socket/aiohttp issue)
+                    if "'NoneType' object has no attribute 'getaddrinfo'" in str(e):
+                        self.logger.warning(
+                            f"Encountered network client error: {e}. Resetting client and retrying."
+                        )
+                        # Reset the client
+                        self.client = None
+                        if not self.client:
+                            self.client = self.get_client()
+                        # Recreate the chat session
+                        chat = self.client.aio.chats.create(
+                            model=model,
+                            history=history
+                        )
+                        retry_count += 1
+                        continue
+
                     self.logger.error(
                         f"Error during initial chat.send_message: {e}"
                     )
@@ -1724,6 +1741,35 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                     keep_looping = True
 
             except Exception as e:
+                # Handle specific network client error
+                if "'NoneType' object has no attribute 'getaddrinfo'" in str(e):
+                    if retry_count < retry_config.max_retries:
+                        self.logger.warning(
+                            f"Encountered network client error during stream: {e}. Resetting client..."
+                        )
+                        self.client = None
+                        if not self.client:
+                            self.client = self.get_client()
+                        
+                        # Recreate chat session
+                        # Note: We rely on history variable being the initial history. 
+                        # Intermediate turn state might be lost if this happens mid-conversation, 
+                        # but this error usually happens at connection start.
+                        chat = self.client.aio.chats.create(
+                            model=model,
+                            history=history,
+                            config=GenerateContentConfig(
+                                system_instruction=system_prompt,
+                                tools=gemini_tools,
+                                temperature=temperature or self.temperature,
+                                max_output_tokens=current_max_tokens
+                            )
+                        )
+                        retry_count += 1
+                        await self._wait_with_backoff(retry_count, retry_config)
+                        keep_looping = True
+                        continue
+
                 if retry_count < retry_config.max_retries:
                     error_msg = f"\n\n⚠️ **Streaming error (attempt {retry_count + 1}): {str(e)}. Retrying...**\n\n"
                     yield error_msg
