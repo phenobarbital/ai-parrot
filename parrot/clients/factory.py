@@ -4,6 +4,7 @@ from .claude import AnthropicClient
 from .google import GoogleGenAIClient
 from .gpt import OpenAIClient
 from .groq import GroqClient
+from .grok import GrokClient
 
 
 SUPPORTED_CLIENTS = {
@@ -11,7 +12,9 @@ SUPPORTED_CLIENTS = {
     "anthropic": AnthropicClient,
     "google": GoogleGenAIClient,
     "openai": OpenAIClient,
-    "groq": GroqClient
+    "groq": GroqClient,
+    "grok": GrokClient,
+    "xai": GrokClient
 }
 
 

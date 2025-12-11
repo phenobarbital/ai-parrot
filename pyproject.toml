@@ -71,7 +71,6 @@ dependencies = [
     "asyncdb[bigquery,mongodb,arangodb,influxdb,boto3]>=2.12.0",
     "brotli==1.2.0",
     "urllib3==2.6.1",
-    "cloud-tpu-client==0.10",
 ]
 
 [project.scripts]
@@ -253,9 +252,13 @@ security = [
     "pytector[gguf]==0.2.0",
 ]
 
+xai = [
+    "xai-sdk>=0.1.0",
+]
+
 # Convenience groups
 all = [
-    "ai-parrot[agents,loaders,images,vectors,anthropic,openai,google,groq,milvus,chroma]"
+    "ai-parrot[agents,loaders,images,vectors,anthropic,openai,google,groq,milvus,chroma,xai]"
 ]
 
 dev = [
