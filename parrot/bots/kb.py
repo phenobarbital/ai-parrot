@@ -1,8 +1,11 @@
+from __future__ import annotations
 from typing import Any, Dict, List, Tuple
 import json
 from pydantic import BaseModel, Field
-from ..stores.kb.abstract import AbstractKnowledgeBase
-from ..stores.kb.prompt import SELECTION_PROMPT
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from ..stores.kb.abstract import AbstractKnowledgeBase
+# from ..stores.kb.prompt import SELECTION_PROMPT
 from ..clients.base import AbstractClient
 
 
@@ -35,7 +38,11 @@ class KBSelector:
         self.min_confidence = min_confidence
         self.knowledge_bases: List[AbstractKnowledgeBase] = kbs or []
         self._cache = {}
-        self.selection_prompt = kwargs.get('selection_prompt', SELECTION_PROMPT)
+        if 'selection_prompt' in kwargs:
+             self.selection_prompt = kwargs['selection_prompt']
+        else:
+             from ..stores.kb.prompt import SELECTION_PROMPT
+             self.selection_prompt = SELECTION_PROMPT
         # Format KB descriptions
         self.kb_descriptions = self._get_kb_descriptions()
         super().__init__(**kwargs)
@@ -44,6 +51,7 @@ class KBSelector:
         """Get list of KB descriptions."""
         descriptions = []
         for i, kb in enumerate(self.knowledge_bases, 1):
+            from ..stores.kb.abstract import AbstractKnowledgeBase
             if isinstance(kb, AbstractKnowledgeBase):
                 descriptions.append(f"{i}. {kb.name}: {kb.description}")
         return "\n".join(descriptions)
@@ -115,6 +123,7 @@ class KBSelector:
         """Format KB list for prompt."""
         lines = []
         for i, kb in enumerate(kbs, 1):
+            from ..stores.kb.abstract import AbstractKnowledgeBase
             if isinstance(kb, AbstractKnowledgeBase):
                 kb = {
                     "name": kb.name,

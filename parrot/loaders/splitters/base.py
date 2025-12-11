@@ -1,10 +1,8 @@
 import re
 import uuid
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Optional, Tuple, Union, Callable
+from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
-import tiktoken
-from transformers import AutoTokenizer
 
 
 @dataclass

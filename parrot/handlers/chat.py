@@ -17,7 +17,8 @@ from navigator_auth.decorators import (
 )
 from navigator.views import BaseView
 from ..bots.abstract import AbstractBot
-from ..loaders import AbstractLoader, AVAILABLE_LOADERS
+from ..loaders.abstract import AbstractLoader
+from ..loaders.factory import AVAILABLE_LOADERS
 from ..loaders.markdown import MarkdownLoader
 from .models import BotModel
 from ..models.responses import AIMessage

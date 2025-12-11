@@ -1,4 +1,5 @@
-from typing import Generator, Union, List, Any, Optional, TypeVar, TYPE_CHECKING
+from __future__ import annotations
+from typing import Generator, Union, List, Any, Optional, TypeVar
 from collections.abc import Callable
 from abc import ABC, abstractmethod
 from datetime import datetime
@@ -6,24 +7,13 @@ import uuid
 from pathlib import Path, PosixPath, PurePath
 import asyncio
 import pandas as pd
-
-if TYPE_CHECKING:
-    from transformers import (
-        AutoModelForSeq2SeqLM,
-        AutoTokenizer,
-        pipeline
-    )
-    import torch
-
 from navconfig.logging import logging
 from navigator.libs.json import JSONContent  # pylint: disable=E0611
 from ..stores.models import Document
-## AI Clients:
-from ..clients.google import GoogleGenAIClient
+## AI Models:
 from ..models.google import GoogleModel
-from ..clients.groq import GroqClient
 from ..models.groq import GroqModel
-from ..clients.gpt import OpenAIClient
+from ..clients.factory import LLMFactory
 from .splitters import (
     TokenTextSplitter,
     MarkdownTextSplitter
@@ -241,18 +231,18 @@ class AbstractLoader(ABC):
                 "top_p": 0.5,
             }
         if use_groq:
-            return GroqClient(
-                model=model or DEFAULT_GROQ_MODEL,
-                **model_kwargs
+            return LLMFactory.create(
+                llm=f"groq:{model or DEFAULT_GROQ_MODEL}" if model else "groq",
+                model_kwargs=model_kwargs
             )
         elif use_openai:
-            return OpenAIClient(
-                model=model or 'gpt-4-turbo',
-                **model_kwargs
+            return LLMFactory.create(
+                llm=f"openai:{model}" if model else "openai",
+                model_kwargs=model_kwargs
             )
-        return GoogleGenAIClient(
-            model=model or DEFAULT_LLM_MODEL,
-            **model_kwargs
+        return LLMFactory.create(
+            llm=model or DEFAULT_LLM_MODEL,
+            model_kwargs=model_kwargs
         )
 
     def _setup_device(self, kwargs):
@@ -803,7 +793,13 @@ Your job is to produce a final summary from the following text and identify the 
                 )
             else:
                 # Use Groq for Summarization:
-                self._summary_model = GroqClient()
+                self._summary_model = LLMFactory.create(
+                    llm=f"groq:{GroqModel.LLAMA_3_3_70B_VERSATILE}",
+                    model_kwargs={
+                        "temperature": 0.1,
+                        "top_p": 0.5,
+                    }
+                )
         return self._summary_model
 
     def translate_text(
@@ -876,6 +872,11 @@ Your job is to produce a final summary from the following text and identify the 
 
         if cache_key not in self._translation_models:
             if self._use_translation_pipeline:
+                from transformers import (
+                    AutoModelForSeq2SeqLM,
+                    AutoTokenizer,
+                    pipeline
+                )
                 # Select appropriate model based on language pair if not specified
                 if model_name is None:
                     if source_lang == "en" and target_lang in ["es", "fr", "de", "it", "pt", "ru"]:
@@ -1003,7 +1004,7 @@ Your job is to produce a final summary from the following text and identify the 
             List of chunked documents
         """
         chunked_docs = []
-        detect_content = auto_detect_content_type if auto_detect_content_type is not None else self._auto_detect_content_type
+        detect_content = auto_detect_content_type if auto_detect_content_type is not None else self._auto_detect_content_type  # noqa
 
         for doc in documents:
             try:

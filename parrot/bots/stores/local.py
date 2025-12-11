@@ -6,7 +6,7 @@ the agent's local directory structure (AGENTS_DIR/<agent_name>/kb/).
 """
 from typing import Optional, List
 from pathlib import Path
-from ...stores.kb.local import LocalKB
+# from ...stores.kb.local import LocalKB
 from ...conf import AGENTS_DIR
 
 
@@ -98,6 +98,7 @@ class LocalKBMixin:
 
         try:
             # Create LocalKB store
+            from ...stores.kb.local import LocalKB
             local_kb = LocalKB(
                 name=f"{self.name}_local",
                 kb_directory=kb_dir,

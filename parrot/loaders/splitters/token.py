@@ -1,5 +1,4 @@
 from typing import List, Callable, Optional, Any, Union
-import tiktoken
 from .base import BaseTextSplitter
 
 
@@ -58,6 +57,7 @@ class TokenTextSplitter(BaseTextSplitter):
             self._decode = self._hf_decode
         else:
             # Use tiktoken
+            import tiktoken
             try:
                 if encoding_name:
                     self._enc = tiktoken.get_encoding(encoding_name)

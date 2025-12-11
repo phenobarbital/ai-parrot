@@ -121,8 +121,25 @@ def _install_parrot_stubs() -> None:
         def tool_count(self) -> int:
             return len(self._tools)
 
+        def get_tool_schemas(self, provider_format=None) -> List[Dict[str, Any]]:
+            return []
+
+        def all_tools(self) -> List[Any]:
+            return list(self._tools.values())
+
     tool_manager_module = types.ModuleType("parrot.tools.manager")
     tool_manager_module.ToolManager = _ToolManager
+    
+    class _ToolFormat:
+        OPENAI = "openai"
+        GOOGLE = "google"
+        GROQ = "groq"
+        VERTEX = "vertex"
+        ANTHROPIC = "anthropic"
+        
+    tool_manager_module.ToolFormat = _ToolFormat
+    tool_manager_module.ToolDefinition = type("ToolDefinition", (), {})
+    
     sys.modules.setdefault("parrot.tools.manager", tool_manager_module)
     tools_pkg.ToolManager = _ToolManager
 
@@ -177,9 +194,9 @@ def _install_parrot_stubs() -> None:
     bots_agent_module.Agent = _BasicAgent
     sys.modules.setdefault("parrot.bots.agent", bots_agent_module)
 
-    clients_base_module = types.ModuleType("parrot.clients.base")
-    clients_base_module.AbstractClient = type("AbstractClient", (), {})
-    sys.modules.setdefault("parrot.clients.base", clients_base_module)
+    # clients_base_module = types.ModuleType("parrot.clients.base")
+    # clients_base_module.AbstractClient = type("AbstractClient", (), {})
+    # sys.modules.setdefault("parrot.clients.base", clients_base_module)
 
     # Lightweight AgentContext used by AgentCrew
     @dataclass

@@ -27,7 +27,8 @@ from navconfig.logging import logging
 from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611 # noqa
 from ..agent import BasicAgent
 from ..abstract import AbstractBot
-from ...clients import SUPPORTED_CLIENTS, AbstractClient
+from ...clients import AbstractClient
+from ...clients.factory import SUPPORTED_CLIENTS
 from ...clients.google import GoogleGenAIClient
 from ...tools.manager import ToolManager
 from ...tools.agent import AgentTool

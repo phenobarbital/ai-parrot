@@ -68,7 +68,10 @@ class GroqClient(AbstractClient):
             "Authorization": f"Bearer {self.api_key}"
         }
         super().__init__(**kwargs)
-        self.client = AsyncGroq(api_key=self.api_key)
+
+    async def get_client(self) -> AsyncGroq:
+        """Initialize the Groq client."""
+        return AsyncGroq(api_key=self.api_key)
 
     def _fix_schema_for_groq(self, schema: dict) -> dict:
         """

@@ -11,7 +11,7 @@ from PIL import (
 )
 from navconfig.logging import logging
 from datamodel.parsers.json import JSONContent  # pylint: disable=E0611
-from ..clients import SUPPORTED_CLIENTS
+from ..clients.factory import SUPPORTED_CLIENTS
 from ..clients.google import GoogleGenAIClient, GoogleModel
 
 
@@ -38,7 +38,7 @@ class AbstractPipeline(ABC):
         self.llm = llm
         self.llm_provider = None
         self.logger = logging.getLogger(f'parrot.pipelines.{self.__class__.__name__}')
-        self._json  = JSONContent()
+        self._json = JSONContent()
         if not llm:
             self.llm_provider = llm_provider.lower()
             self.llm = self._get_llm(
@@ -188,7 +188,7 @@ class AbstractPipeline(ABC):
         s = max(w, h)
         if s > max_side:
             scale = max_side / float(s)
-            img = img.resize((int(w*scale), int(h*scale)), Image.Resampling.LANCZOS)
+            img = img.resize((int(w * scale), int(h * scale)), Image.Resampling.LANCZOS)
         # (Optional) strip metadata by re-encoding
         bio = io.BytesIO()
         img.save(bio, format="JPEG", quality=quality, optimize=True)

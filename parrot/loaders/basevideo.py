@@ -15,7 +15,6 @@ from .abstract import AbstractLoader
 if TYPE_CHECKING:
     from moviepy import VideoFileClip
     from pydub import AudioSegment
-    import soundfile as sf
     import whisperx
     import torch
     from transformers import (
@@ -813,6 +812,7 @@ class BaseVideoLoader(AbstractLoader):
         # Extract as WAV 16k mono PCM
         print(f"Extracting audio (16k mono WAV) to: {audio_path}")
         from moviepy import VideoFileClip
+        from pydub import AudioSegment
         clip = VideoFileClip(str(video_path))
         if not clip.audio:
             print("No audio found in video.")
@@ -851,6 +851,7 @@ class BaseVideoLoader(AbstractLoader):
         - If src is not a .wav, write <stem>.wav
         - If src is already .wav, write <stem>.16k.wav to avoid in-place overwrite
         """
+        from pydub import AudioSegment
         src_path = Path(src_path)
         if src_path.suffix.lower() == ".wav":
             out_path = src_path.with_name(f"{src_path.stem}.16k.wav")
@@ -1027,6 +1028,7 @@ class BaseVideoLoader(AbstractLoader):
         The key insight: We process smaller audio segments independently on GPU,
         then merge results with corrected timestamps based on each chunk's offset.
         """
+        import soundfile
         # Model selection
         lang = (self._language or "en").lower()
         if self._model_name in (None, "", "whisper", "openai/whisper"):
@@ -1044,7 +1046,7 @@ class BaseVideoLoader(AbstractLoader):
         if not (audio_path.exists() and audio_path.stat().st_size > 0):
             return None
 
-        wav, sr = sf.read(str(audio_path), always_2d=False)
+        wav, sr = soundfile.read(str(audio_path), always_2d=False)
         if wav.ndim == 2:
             wav = wav.mean(axis=1)
         wav = wav.astype(np.float32, copy=False)

@@ -225,6 +225,7 @@ class AbstractClient(ABC):
     ):
         self.__name__ = self.__class__.__name__
         self.model: str = kwargs.get('model', None)
+        self.client: Any = None
         self.session: Optional[aiohttp.ClientSession] = None
         self.use_session: bool = kwargs.get('use_session', self.use_session)
         if preset:
@@ -267,16 +268,30 @@ class AbstractClient(ABC):
         """Return the default model for the client."""
         return getattr(self, '_default_model', None)
 
+    @abstractmethod
+    async def get_client(self) -> Any:
+        """Return the client instance."""
+        raise NotImplementedError
+
     async def __aenter__(self):
+        """Initialize the client context."""
         if self.use_session:
             self.session = aiohttp.ClientSession(
                 headers=self.base_headers
             )
+        if not self.client:
+            self.client = await self.get_client()
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
+        return False
+
+    async def close(self):
         if self.session:
             await self.session.close()
+        if self.client:
+            if hasattr(self.client, 'close'):
+                await self.client.close()
 
     def __repr__(self):
         return f'<{self.__name__} model={self.model} client_type={self.client_type}>'

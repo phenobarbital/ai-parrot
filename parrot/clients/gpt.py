@@ -99,16 +99,14 @@ class OpenAIClient(AbstractClient):
             "Authorization": f"Bearer {self.api_key}"
         }
         super().__init__(**kwargs)
-        self.client = AsyncOpenAI(
+
+    async def get_client(self) -> AsyncOpenAI:
+        """Initialize the OpenAI client."""
+        return AsyncOpenAI(
             api_key=self.api_key,
-            base_url=base_url,
+            base_url=self.base_url,
             timeout=config.get('OPENAI_TIMEOUT', 60),
         )
-
-    async def __aenter__(self):
-        """Initialize the client context."""
-        # OpenAI client doesn't need explicit session management like aiohttp
-        return self
 
     async def _download_openai_file(self, file_id: str) -> Optional[bytes]:
         """Download a file from OpenAI's Files API handling various SDK shapes."""
