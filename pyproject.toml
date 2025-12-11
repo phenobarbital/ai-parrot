@@ -71,6 +71,8 @@ dependencies = [
     "asyncdb[bigquery,mongodb,arangodb,influxdb,boto3]>=2.12.0",
     "brotli==1.2.0",
     "urllib3==2.6.1",
+    "aioquic==1.3.0",
+    "pylsqpack==0.3.23"
 ]
 
 [project.scripts]
@@ -114,7 +116,6 @@ agents = [
     "webdriver-manager==4.0.2",
     "prophet==1.2.1",
     "folium==0.20.0",
-
 ]
 
 # Update the loaders optional dependency section with pinned versions
