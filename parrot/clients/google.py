@@ -84,9 +84,11 @@ class GoogleGenAIClient(AbstractClient):
     client_type: str = 'google'
     client_name: str = 'google'
     _default_model: str = 'gemini-2.5-flash'
+    _model_garden: bool = False
 
-    def __init__(self, vertexai: bool = False, **kwargs):
-        self.vertexai: bool = vertexai
+    def __init__(self, vertexai: bool = False, model_garden: bool = False, **kwargs):
+        self.model_garden = model_garden
+        self.vertexai: bool = True if model_garden else vertexai
         self.vertex_location = kwargs.get('location', config.get('VERTEX_REGION'))
         self.vertex_project = kwargs.get('project', config.get('VERTEX_PROJECT_ID'))
         self._credentials_file = kwargs.get('credentials_file', config.get('VERTEX_CREDENTIALS_FILE'))
