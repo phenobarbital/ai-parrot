@@ -2,6 +2,7 @@
 PandasAgent.
 A specialized agent for data analysis using pandas DataFrames.
 """
+from __future__ import annotations
 from typing import Any, List, Dict, Union, Optional, Tuple, TYPE_CHECKING
 import uuid
 from pathlib import Path
@@ -26,7 +27,8 @@ from ..models.responses import AIMessage, AgentResponse
 from ..models.outputs import OutputMode, StructuredOutputConfig, OutputFormat
 from ..conf import REDIS_HISTORY_URL, STATIC_DIR
 from ..bots.prompts import OUTPUT_SYSTEM_PROMPT
-from ..clients import LLMFactory, AbstractClient
+from ..clients import AbstractClient
+from ..clients.factory import LLMFactory
 
 
 Scalar = Union[str, int, float, bool, None]
