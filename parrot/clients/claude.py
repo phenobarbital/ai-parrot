@@ -63,22 +63,14 @@ class AnthropicClient(AbstractClient):
         }
         super().__init__(**kwargs)
 
-    async def __aenter__(self):
+    async def get_client(self) -> AsyncAnthropic:
         """Initialize the Anthropic client."""
-        self.client = AsyncAnthropic(
+        return AsyncAnthropic(
             api_key=self.api_key,
             base_url=self.base_url
         )
-        # Also initialize session for backward compatibility
-        await super().__aenter__()
-        return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """Close the Anthropic client."""
-        if self.client:
-            await self.client.close()
-        # Close session for backward compatibility
-        await super().__aexit__(exc_type, exc_val, exc_tb)
+
 
     async def ask(
         self,

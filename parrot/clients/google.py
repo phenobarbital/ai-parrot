@@ -99,7 +99,7 @@ class GoogleGenAIClient(AbstractClient):
         #  Create a single instance of the Voice registry
         self.voice_db = VoiceRegistry(profiles=ALL_VOICE_PROFILES)
 
-    def get_client(self) -> genai.Client:
+    async def get_client(self) -> genai.Client:
         """Get the underlying Google GenAI client."""
         if self.vertexai:
             self.logger.info(
@@ -126,6 +126,12 @@ class GoogleGenAIClient(AbstractClient):
             api_key=self.api_key
         )
 
+    async def close(self):
+        if self.client:
+            with contextlib.suppress(Exception):
+                await self.client._api_client._aiohttp_session.close()   # pylint: disable=E1101 # noqa
+        self.client = None
+
     def _fix_tool_schema(self, schema: dict):
         """Recursively converts schema type values to uppercase for GenAI compatibility."""
         if isinstance(schema, dict):
@@ -138,19 +144,6 @@ class GoogleGenAIClient(AbstractClient):
             for item in schema:
                 self._fix_tool_schema(item)
         return schema
-
-    async def __aenter__(self):
-        """Initialize the client context."""
-        # Google GenAI doesn't need explicit session management
-        self.client = self.get_client()
-        return self
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """Clean up the client context."""
-        if self.client:
-            with contextlib.suppress(Exception):
-                await self.client._api_client._aiohttp_session.close()   # pylint: disable=E1101 # noqa
-        self.client = None
 
     def _analyze_prompt_for_tools(self, prompt: str) -> List[str]:
         """

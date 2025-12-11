@@ -111,21 +111,15 @@ class TransformersClient(AbstractClient):
             f"parrot.TransformersClient.{self.model_name}"
         )
 
-    async def __aenter__(self):
+    async def get_client(self) -> Any:
         """Initialize the client context and load the model."""
         await self._load_model()
-        return self
+        return self.model
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def close(self):
         """Clean up resources."""
-        # Clear model from memory if needed
-        if self.model:
-            del self.model
-        if self.tokenizer:
-            del self.tokenizer
-        # Clear CUDA cache if using GPU
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+        await self.clear_model()
+        await super().close()
 
     async def _load_model(self):
         """Load the model and tokenizer asynchronously."""
