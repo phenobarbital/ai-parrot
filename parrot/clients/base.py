@@ -264,7 +264,7 @@ class AbstractClient(ABC):
             self.enable_tools = True
 
     @property
-    async def default_model(self) -> str:
+    def default_model(self) -> str:
         """Return the default model for the client."""
         return getattr(self, '_default_model', None)
 
