@@ -285,6 +285,7 @@ class AnthropicClient(AbstractClient):
 
         current_max_tokens = max_tokens or self.max_tokens
         retry_count = 0
+        assistant_content = ""
         while retry_count <= retry_config.max_retries:
             try:
                 payload = {

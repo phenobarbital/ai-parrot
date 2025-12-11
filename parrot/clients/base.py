@@ -284,7 +284,6 @@ class AbstractClient(ABC):
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        await self.close()
         return False
 
     async def close(self):

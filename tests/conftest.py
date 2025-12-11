@@ -121,6 +121,12 @@ def _install_parrot_stubs() -> None:
         def tool_count(self) -> int:
             return len(self._tools)
 
+        def get_tool_schemas(self, provider_format=None) -> List[Dict[str, Any]]:
+            return []
+
+        def all_tools(self) -> List[Any]:
+            return list(self._tools.values())
+
     tool_manager_module = types.ModuleType("parrot.tools.manager")
     tool_manager_module.ToolManager = _ToolManager
     
