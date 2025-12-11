@@ -1,28 +1,35 @@
 """
 Abstract Bot interface.
 """
-from abc import ABC
-import contextlib
-import importlib
-from typing import Any, Dict, List, Tuple, Type, Union, Optional, AsyncIterator
+from __future__ import annotations
+print('FIRST IMPORTS')
+from typing import Any, Dict, List, Tuple, Type, Union, Optional, AsyncIterator, TYPE_CHECKING
 from collections.abc import Callable
-from contextlib import asynccontextmanager
+from abc import ABC
 import re
 import uuid
+import contextlib
+from contextlib import asynccontextmanager
+import importlib
 from string import Template
 import asyncio
 import copy
+print('SECOND IMPORTS')
 from aiohttp import web
 from navconfig.logging import logging
 from navigator_auth.conf import AUTH_SESSION_OBJECT
+print('THIRD IMPORTS')
 from pydantic import BaseModel
 from parrot.tools.math import MathTool  # pylint: disable=E0611
+print('FOURTH IMPORTS')
 from ..interfaces import DBInterface
 from ..exceptions import ConfigError  # pylint: disable=E0611
+print('FIFTH IMPORTS')
 from ..conf import (
     EMBEDDING_DEFAULT_MODEL,
     KB_DEFAULT_MODEL
-)
+)   
+print('SIXTH IMPORTS')
 from .prompts import (
     BASIC_SYSTEM_PROMPT,
     DEFAULT_GOAL,
@@ -32,20 +39,24 @@ from .prompts import (
     DEFAULT_RATIONALE,
     OUTPUT_SYSTEM_PROMPT
 )
-from ..clients import (
+print('SEVENTH IMPORTS')
+from ..clients.base import (
     LLM_PRESETS,
-    SUPPORTED_CLIENTS,
     AbstractClient
 )
+print('EIGHTH IMPORTS')
+from ..clients.factory import SUPPORTED_CLIENTS
 from ..clients.models import LLMConfig
 from ..models import (
     AIMessage,
     SourceDocument,
     StructuredOutputConfig
 )
-from ..stores import AbstractStore, supported_stores
-from ..stores.kb import AbstractKnowledgeBase
-from ..stores.models import StoreConfig
+print('NINTH IMPORTS')
+if TYPE_CHECKING:
+    from ..stores import AbstractStore, supported_stores
+    from ..stores.kb import AbstractKnowledgeBase
+    from ..stores.models import StoreConfig
 from ..tools import AbstractTool
 from ..tools.manager import ToolManager, ToolDefinition
 from ..memory import (
@@ -56,9 +67,11 @@ from ..memory import (
     FileConversationMemory,
     RedisConversation,
 )
+print('TENTH IMPORTS')
 from .kb import KBSelector
 from ..utils.helpers import RequestContext, RequestBot
 from ..models.outputs import OutputMode
+print('ELEVENTH IMPORTS')
 from ..outputs import OutputFormatter
 try:
     from pytector import PromptInjectionDetector
@@ -71,7 +84,10 @@ from ..security import (
     ThreatLevel,
     PromptInjectionException
 )
+print('TWELFTH IMPORTS')
 from .stores import LocalKBMixin
+print('THIRTEENTH IMPORTS')
+
 
 logging.getLogger(name='primp').setLevel(logging.INFO)
 logging.getLogger(name='rquest').setLevel(logging.INFO)
@@ -558,6 +574,7 @@ class AbstractBot(DBInterface, LocalKBMixin, ABC):
 
     def register_kb(self, kb: AbstractKnowledgeBase):
         """Register a new knowledge base."""
+        from ..stores.kb import AbstractKnowledgeBase
         if not isinstance(kb, AbstractKnowledgeBase):
             raise ValueError("kb must be an instance of AbstractKnowledgeBase")
         self.knowledge_bases.append(kb)
@@ -710,6 +727,7 @@ class AbstractBot(DBInterface, LocalKBMixin, ABC):
             name = next(
                 (k for k, v in supported_stores.items() if v == vector_driver), None
             )
+        from ..stores import supported_stores
         store_cls = supported_stores.get(name)
         cls_path = f"parrot.stores.{name}"
         try:

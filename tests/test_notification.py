@@ -316,7 +316,7 @@ class TestNotificationTool:
 def mock_agent():
     """Create a mock agent for testing tool integration."""
     from parrot.bots.agent import Agent
-    from parrot.clients import OpenAIClient
+    from parrot.clients.gpt import OpenAIClient
 
     agent = Agent(
         name="TestAgent",
