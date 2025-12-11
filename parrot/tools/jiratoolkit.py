@@ -276,12 +276,21 @@ class JiraToolkit(AbstractToolkit):
     # -----------------------------
     def _init_jira_client(self) -> JIRA:
         """Instantiate the pycontribs JIRA client according to auth_type."""
-        options: Dict[str, Any] = {"server": self.server_url}
+        options: Dict[str, Any] = {
+            "server": self.server_url,
+            "verify": False,
+            'headers': {
+                'Accept-Encoding': 'gzip, deflate'
+            }
+        }
 
         if self.auth_type == "basic_auth":
             if not (self.username and self.password):
                 raise ValueError("basic_auth requires username and password")
-            return JIRA(options=options, basic_auth=(self.username, self.password))
+            return JIRA(
+                options=options,
+                basic_auth=(self.username, self.password)
+            )
 
         if self.auth_type == "token_auth":
             if not self.token:
@@ -350,7 +359,6 @@ class JiraToolkit(AbstractToolkit):
                 return None
         return cur
 
-
     def _project_include(self, data: Dict[str, Any], include: List[str], strict: bool = False) -> Dict[str, Any]:
         """Return a dict including only the specified dot-paths, preserving nested structure."""
         out: Dict[str, Any] = {}
@@ -365,7 +373,6 @@ class JiraToolkit(AbstractToolkit):
                 else:
                     cursor = cursor.setdefault(p, {})
         return out
-
 
     def _project_mapping(self, data: Dict[str, Any], mapping: Dict[str, str], strict: bool = False) -> Dict[str, Any]:
         """Return a dict with keys renamed/flattened according to mapping {dest_key: dot_path}."""
