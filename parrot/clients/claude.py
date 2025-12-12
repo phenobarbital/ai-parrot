@@ -6,6 +6,7 @@ import io
 import time
 from enum import Enum
 import uuid
+import logging
 from pathlib import Path
 import mimetypes
 from PIL import Image
@@ -29,6 +30,8 @@ from ..models.outputs import (
     ProductReview
 )
 
+logging.getLogger("anthropic").setLevel(logging.WARNING)
+
 class ClaudeModel(Enum):
     """Enum for Claude models."""
     SONNET_4 = "claude-sonnet-4-20250514"
@@ -44,7 +47,7 @@ class AnthropicClient(AbstractClient):
     version: str = "2023-06-01"
     client_type: str = "anthropic"
     client_name: str = "claude"
-    use_session: bool = True
+    use_session: bool = False
     _default_model: str = 'claude-sonnet-4-5'
 
     def __init__(
@@ -67,10 +70,8 @@ class AnthropicClient(AbstractClient):
         """Initialize the Anthropic client."""
         return AsyncAnthropic(
             api_key=self.api_key,
-            base_url=self.base_url
+            max_retries=2
         )
-
-
 
     async def ask(
         self,
@@ -97,6 +98,9 @@ class AnthropicClient(AbstractClient):
         # If use_tools is None, use the instance default
         _use_tools = use_tools if use_tools is not None else self.enable_tools
 
+        model = model.value if isinstance(model, ClaudeModel) else model
+        if not model:
+            model = self.model or self.default_model
         # Generate unique turn ID for tracking
         turn_id = str(uuid.uuid4())
         original_prompt = prompt
@@ -118,7 +122,7 @@ class AnthropicClient(AbstractClient):
             )
 
         payload = {
-            "model": model.value if isinstance(model, Enum) else model,
+            "model": model,
             "max_tokens": max_tokens or self.max_tokens,
             "temperature": temperature or self.temperature,
             "messages": messages

@@ -2,7 +2,7 @@
 What-If Scenario Analysis Tool for AI-Parrot
 Supports derived metrics, constraints, and optimization
 """
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Type
 from dataclasses import dataclass
 from enum import Enum
 from pydantic import BaseModel, Field
@@ -164,6 +164,7 @@ class WhatIfAction(BaseModel):
 class WhatIfInput(BaseModel):
     """Input schema for WhatIfTool"""
     scenario_description: str
+    df_name: Optional[str] = None
     objectives: List[WhatIfObjective] = Field(default_factory=list)
     constraints: List[WhatIfConstraint] = Field(default_factory=list)
     possible_actions: List[WhatIfAction]
@@ -562,17 +563,21 @@ class WhatIfDSL:
             df = df[df[action.column] != action.value]
 
         elif action.operation == "scale":
+            df[action.column] = df[action.column].astype(float)
             df[action.column] = df[action.column] * action.value
 
         elif action.operation == "scale_region":
             region = action.value['region']
             scale = action.value['scale']
             mask = df['region'] == region
+            # Convert column to float first to avoid dtype warnings
+            df[action.column] = df[action.column].astype(float)
             df.loc[mask, action.column] = df.loc[mask, action.column] * scale
 
         elif action.operation == "scale_proportional":
             # Scale base column
             scale = action.value['scale']
+            df[action.column] = df[action.column].astype(float)
             df[action.column] = df[action.column] * scale
 
             # Calculate derived metrics before the change
@@ -587,7 +592,7 @@ class WhatIfDSL:
                     # Calculate value per base unit
                     per_unit = df_with_derived[derived_metric].values
                     # Apply to new base column values
-                    df[affected_col] = df[action.column] * per_unit
+                    df[affected_col] = df[action.column].values * per_unit
 
         elif action.operation == "scale_proportional_region":
             region = action.value['region']
@@ -595,6 +600,8 @@ class WhatIfDSL:
             mask = df['region'] == region
 
             # Scale base column in region
+            # Convert column to float first to avoid dtype warnings
+            df[action.column] = df[action.column].astype(float)
             df.loc[mask, action.column] = df.loc[mask, action.column] * scale
 
             # Calculate derived metrics
@@ -606,7 +613,7 @@ class WhatIfDSL:
 
                 if derived_metric in self.calculator.formulas:
                     per_unit = df_with_derived.loc[mask, derived_metric].values
-                    df.loc[mask, affected_col] = df.loc[mask, action.column] * per_unit
+                    df.loc[mask, affected_col] = df.loc[mask, action.column].values * per_unit
 
         elif action.operation == "set_value":
             df[action.column] = action.value
@@ -637,6 +644,28 @@ class WhatIfDSL:
 
     def _solve_greedy(self, max_actions: int) -> ScenarioResult:
         """Greedy algorithm: evaluate actions one by one"""
+        # SPECIAL CASE: If no objectives, just apply actions directly
+        if len(self.objectives) == 0 and len(self.constraints) == 0:
+            selected_actions = []
+            current_df = self.df.copy()
+
+            for action in self.possible_actions[:max_actions]:
+                test_df = self._apply_action(action, current_df)
+                if not test_df.empty:
+                    selected_actions.append(action)
+                    current_df = test_df
+                    if len(selected_actions) >= max_actions:
+                        break
+
+            self.applied_actions = selected_actions
+            return ScenarioResult(
+                scenario_name=self.name,
+                base_df=self.base_df,
+                result_df=current_df,
+                actions=selected_actions,
+                optimizer=self.optimizer,
+                calculator=self.calculator
+            )
         best_df = self.df.copy()
         best_score = self.optimizer.objective_function(best_df, self.objectives)
         selected_actions = []
@@ -742,6 +771,7 @@ class WhatIfTool(AbstractTool):
     Allows LLM to execute hypothetical scenarios on DataFrames,
     optimize metrics under constraints, and compare results.
     """
+    args_schema: Type[BaseModel] = WhatIfInput
 
     def __init__(self):
         super().__init__(
@@ -819,30 +849,78 @@ IMPORTANT:
         return WhatIfInput
 
     async def _execute(self, **kwargs) -> ToolResult:
-        """Execute what-if analysis"""
+        """Execute what-if analysis - FIXED VERSION"""
+
+        self.logger.debug(
+            f"WhatIfTool kwargs keys: {list(kwargs.keys())}"
+        )
 
         # Validate input
         try:
             input_data = WhatIfInput(**kwargs)
+            self.logger.info(f"  Input validated: {input_data.scenario_description}")
         except Exception as e:
+            self.logger.error(f"  Input validation failed: {str(e)}")
             return ToolResult(
                 success=False,
-                error=f"Invalid input parameters: {str(e)}"
+                result={},
+                error=f"Invalid input: {str(e)}"
             )
 
-        # Get DataFrame from PandasAgent
+        # Check parent agent
         if not self._parent_agent:
+            self.logger.error("  Parent agent not set!")
             return ToolResult(
                 success=False,
-                error="Tool not properly initialized with parent agent"
+                result={},
+                error="Tool not initialized with parent agent"
             )
 
-        df = self._parent_agent.get_current_dataframe()
-        if df is None or df.empty:
+        # CRITICAL FIX: Access dataframes correctly
+        if not hasattr(self._parent_agent, 'dataframes'):
             return ToolResult(
                 success=False,
-                error="No DataFrame loaded. Use load_data() or query() first."
+                result={},
+                error="Parent agent missing 'dataframes' attribute"
             )
+
+        self.logger.info(
+            f"::  Available DataFrames: {list(self._parent_agent.dataframes.keys())}"
+        )
+
+        df = None
+        if input_data.df_name:
+            df = self._parent_agent.dataframes.get(input_data.df_name)
+            if df is None:
+                self.logger.error(f"  DataFrame '{input_data.df_name}' not found")
+                return ToolResult(
+                    success=False,
+                    result={},
+                    error=f"DataFrame '{input_data.df_name}' not found. Available: {list(self._parent_agent.dataframes.keys())}"
+                )
+        else:
+            # Get first DataFrame
+            if self._parent_agent.dataframes:
+                df_name = list(self._parent_agent.dataframes.keys())[0]
+                df = self._parent_agent.dataframes[df_name]
+                self.logger.info(f"  Using first DataFrame: {df_name}")
+            else:
+                self.logger.error("  No DataFrames loaded!")
+                return ToolResult(
+                    success=False,
+                    result={},
+                    error="No DataFrames loaded"
+                )
+
+        if df is None or df.empty:
+            self.logger.error("  DataFrame is None or empty")
+            return ToolResult(
+                success=False,
+                result={},
+                error="DataFrame is empty"
+            )
+
+        self.logger.info(f"  DataFrame shape: {df.shape}, columns: {list(df.columns)[:5]}...")
 
         try:
             # Build DSL
@@ -850,14 +928,12 @@ IMPORTANT:
 
             # Register derived metrics
             for derived in input_data.derived_metrics:
-                dsl.register_derived_metric(
-                    derived.name,
-                    derived.formula,
-                    derived.description or ""
-                )
+                dsl.register_derived_metric(derived.name, derived.formula, derived.description or "")
+            self.logger.info(f"  Registered {len(input_data.derived_metrics)} derived metrics")
 
             # Initialize optimizer
             dsl.initialize_optimizer()
+            self.logger.info("  Optimizer initialized")
 
             # Configure objectives
             for obj in input_data.objectives:
@@ -868,6 +944,7 @@ IMPORTANT:
                     dsl.maximize(obj.metric, weight=obj.weight)
                 elif obj_type == "target":
                     dsl.target(obj.metric, obj.target_value, weight=obj.weight)
+            self.logger.info(f"  Configured {len(input_data.objectives)} objectives")
 
             # Configure constraints
             for constraint in input_data.constraints:
@@ -879,11 +956,8 @@ IMPORTANT:
                 elif const_type == "max_value":
                     dsl.constrain_max(constraint.metric, constraint.value)
                 elif const_type == "ratio":
-                    dsl.constrain_ratio(
-                        constraint.metric,
-                        constraint.reference_metric,
-                        constraint.value
-                    )
+                    dsl.constrain_ratio(constraint.metric, constraint.reference_metric, constraint.value)
+            self.logger.info(f"  Configured {len(input_data.constraints)} constraints")
 
             # Configure possible actions
             for action in input_data.possible_actions:
@@ -909,47 +983,61 @@ IMPORTANT:
                         max_pct=action.parameters.get("max_pct", 100),
                         by_region=action.parameters.get("by_region", False)
                     )
+            self.logger.info(f"  Configured {len(input_data.possible_actions)} possible actions")
 
             # Solve scenario
+            self.logger.info(f"  Solving with {input_data.algorithm} algorithm...")
             result = dsl.solve(
                 max_actions=input_data.max_actions,
                 algorithm=input_data.algorithm
             )
+            self.logger.info(f"  Solved! {len(result.actions)} actions applied")
 
             # Cache result
             scenario_id = f"scenario_{len(self.scenarios_cache) + 1}"
             self.scenarios_cache[scenario_id] = result
 
-            # Prepare comparison
+            # Prepare result
             comparison = result.compare()
-            comparison_table = self._create_comparison_table(result)
 
-            # Return result
+            # create the comparison table:
+            comparison_table = self._create_comparison_table(result)
+            # Build response - CRITICAL: Always return ToolResult with result field
+            response_data = {
+                "scenario_id": scenario_id,
+                "scenario_name": input_data.scenario_description,
+                "visualization": result.visualize(),
+                "actions_count": len(result.actions),
+                "metrics_changed": list(comparison['metrics'].keys()),
+                "comparison": comparison,
+                "comparison_table": comparison_table,
+                "actions_applied": [
+                    {
+                        "action": a.name,
+                        "description": self._describe_action(a),
+                        "cost": a.cost
+                    }
+                    for a in result.actions
+                ],
+                "summary": f"{len(result.actions)} actions applied",
+                "baseline_summary": self._summarize_df(result.base_df),
+                "scenario_summary": self._summarize_df(result.result_df),
+                "verdict": self._generate_veredict(result)
+            }
+
             return ToolResult(
                 success=True,
-                result={
-                    "scenario_id": scenario_id,
-                    "scenario_name": input_data.scenario_description,
-                    "visualization": result.visualize(),
-                    "comparison": comparison,
-                    "comparison_table": comparison_table,
-                    "actions_applied": [
-                        {
-                            "action": a.name,
-                            "description": self._describe_action(a),
-                            "cost": a.cost
-                        }
-                        for a in result.actions
-                    ],
-                    "derived_metrics_used": list(dsl.calculator.formulas.keys()),
-                    "verdict": self._generate_verdict(result)
-                }
+                result=response_data
             )
 
         except Exception as e:
+            self.logger.error(
+                f"Error executing scenario: {e} :\n{traceback.format_exc()}"
+            )
             return ToolResult(
                 success=False,
-                error=f"Error executing scenario: {str(e)}",
+                result={},
+                error=f"Execution error: {str(e)}",
                 metadata={"traceback": traceback.format_exc()}
             )
 
@@ -997,7 +1085,7 @@ IMPORTANT:
                 return f"Scale {action.column} by {pct:+.1f}% (affects: {affected})"
         return action.name
 
-    def _generate_verdict(self, result: ScenarioResult) -> str:
+    def _generate_veredict(self, result: ScenarioResult) -> str:
         """Generate verdict about the scenario"""
         comparison = result.compare()
 
@@ -1016,6 +1104,24 @@ IMPORTANT:
             verdicts.append("✅ Minor changes, scenario is viable")
 
         return " | ".join(verdicts)
+
+    def _summarize_df(self, df: pd.DataFrame) -> Dict:
+        """Resume un DataFrame"""
+        summary = {
+            "row_count": len(df),
+            "metrics": {}
+        }
+
+        for col in df.columns:
+            if pd.api.types.is_numeric_dtype(df[col]):
+                summary["metrics"][col] = {
+                    "sum": float(df[col].sum()),
+                    "mean": float(df[col].mean()),
+                    "min": float(df[col].min()),
+                    "max": float(df[col].max())
+                }
+
+        return summary
 
 
 # ===== System Prompt for LLM =====
@@ -1117,3 +1223,27 @@ User: "How can I reduce expenses to 500k without revenue dropping more than 5%?"
 4. Note if constraints were satisfied
 5. Offer to explore alternative scenarios
 """
+
+# ===== Integration Helper for PandasAgent =====
+
+def integrate_whatif_tool(agent) -> WhatIfTool:
+    """
+    Integrate WhatIfTool into an existing PandasAgent.
+
+    Args:
+        agent: Instance of PandasAgent
+
+    Returns:
+        The WhatIfTool instance (for reference)
+    """
+    # Create and register the tool
+    whatif_tool = WhatIfTool()
+    whatif_tool.set_parent_agent(agent)
+    agent.tool_manager.register_tool(whatif_tool)
+
+    # Add system prompt enhancement
+    current_prompt = agent.system_prompt_template or ""
+    if "What-If Scenario Analysis" not in current_prompt:
+        agent.system_prompt_template = current_prompt + "\n\n" + WHATIF_SYSTEM_PROMPT
+
+    return whatif_tool

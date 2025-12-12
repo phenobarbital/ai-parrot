@@ -284,14 +284,13 @@ class AbstractClient(ABC):
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self.session:
+            await self.session.close()
         return False
 
     async def close(self):
-        if self.session:
-            await self.session.close()
-        if self.client:
-            if hasattr(self.client, 'close'):
-                await self.client.close()
+        if self.client and hasattr(self.client, 'close'):
+            await self.client.close()
 
     def __repr__(self):
         return f'<{self.__name__} model={self.model} client_type={self.client_type}>'

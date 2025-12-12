@@ -29,6 +29,7 @@ from ..conf import REDIS_HISTORY_URL, STATIC_DIR
 from ..bots.prompts import OUTPUT_SYSTEM_PROMPT
 from ..clients import AbstractClient
 from ..clients.factory import LLMFactory
+from ..tools.whatif import WhatIfTool, WHATIF_SYSTEM_PROMPT
 
 
 Scalar = Union[str, int, float, bool, None]
@@ -186,11 +187,17 @@ $user_context
 3. Use `database_query` tool to query external databases if needed (if available)
 
 ## Python Helper Functions (use INSIDE python_repl_pandas code):
-Used inside of Python code:
+**IMPORTANT**: These are Python functions, NOT tools. Use them INSIDE the `python_repl_pandas` tool code parameter.
+
 ```python
-  # CORRECT WAY:
+  # ✅ CORRECT WAY - Use inside python_repl_pandas:
   python_repl_pandas(code="dfs = list_available_dataframes(); print(dfs)")
+  
+  # ❌ WRONG WAY - Do NOT call as a tool:
+  # list_available_dataframes()  # This will fail!
 ```
+
+**Available Python functions** (use in your code string):
 - `list_available_dataframes()` - Returns dict of all DataFrames with info
 - `execution_results` - Dictionary to store important results
 - `quick_eda(df_name)` - Performs quick exploratory analysis
@@ -209,10 +216,10 @@ california_stores = stores_msl[
 # Example 2: Using aliases (also works)
 california_stores = df3[df3['state'] == 'CA']
 
-# Example 3: Checking available DataFrames
+# Example 3: Checking available DataFrames (inside python_repl_pandas)
 list_available_dataframes()  # Shows both original names and aliases
 
-# Example 4: Getting DataFrame info
+# Example 4: Getting DataFrame info (inside python_repl_pandas)
 get_df_guide()  # Shows complete guide with names and aliases
 ```
 ## DATA PROCESSING PROTOCOL:
@@ -313,6 +320,7 @@ class PandasAgent(BasicAgent):
         name: str = 'Pandas Agent',
         tool_llm: str | None = None,
         use_tool_llm: bool = False,
+        enable_scenarios: bool = False,
         tools: List[AbstractTool] = None,
         system_prompt: str = None,
         df: Union[
@@ -351,6 +359,7 @@ class PandasAgent(BasicAgent):
             self._define_dataframe(df)
             if df is not None else ({}, {})
         )
+        self._enable_scenarios = enable_scenarios
         print(
             '✅ PandasAgent initialized with DataFrames:', list(self.dataframes.keys())
         )
@@ -391,12 +400,12 @@ class PandasAgent(BasicAgent):
             f"Tool Output: {tool_response.content}",
             ""
         ]
-        
+
         if execution_results:
             context.append("## Execution Results (from python_repl_pandas):")
             for key, val in execution_results.items():
                 context.append(f"- {key}: {val}")
-        
+
         context.extend([
             "",
             "Instructions:",
@@ -405,121 +414,8 @@ class PandasAgent(BasicAgent):
             "3. Provide a clear, natural language explanation of the findings.",
             "4. Do NOT re-execute code unless the previous execution failed."
         ])
-        
+
         return "\n".join(context)
-
-    async def invoke(
-        self,
-        question: str,
-        response_model: type[BaseModel] | None = None,
-        **kwargs
-    ) -> AgentResponse:
-        """
-        Ask the agent a question about the data, supporting dual-LLM execution.
-
-        Args:
-            question: Question to ask
-            **kwargs: Additional parameters
-
-        Returns:
-            AgentResponse with answer and metadata
-        """
-        
-        if self._use_tool_llm and self._tool_llm_client:
-            # 1. Dual-LLM Mode
-            try:
-                # Prepare system prompt for Tool LLM (execution focused)
-                # We reuse create_system_prompt but append specialized instruction
-                # and likely want to avoid adding the output mode prompts yet
-                
-                # Get base context (history only if needed, but tool llm mostly needs data context)
-                # For simplicity, we can pass empty user/conv context to tool LLM or lightweight one
-                # but usually it needs to know about dataframes.
-                
-                kb_context, user_context, vector_context, vector_metadata = await self._build_context(
-                    question,
-                    use_vectors=False, # PandasAgent doesn't use vectors usually
-                    **kwargs
-                )
-                
-                base_system_prompt = await self.create_system_prompt(
-                    kb_context=kb_context,
-                    vector_context=vector_context,
-                    conversation_context="", # Tool LLM doesn't need full convo history usually
-                    metadata=vector_metadata,
-                    user_context=user_context,
-                    **kwargs
-                )
-                
-                # Strip output formatting request from base prompt if present
-                # and add tool instructions
-                # Strip output formatting request from base prompt if present
-                if "## STRUCTURED OUTPUT MODE:" in base_system_prompt:
-                    base_system_prompt = base_system_prompt.split("## STRUCTURED OUTPUT MODE:")[0]
-
-                # and add tool instructions
-                tool_system_prompt = f"{base_system_prompt}\n{TOOL_INSTRUCTION_PROMPT}"
-                
-                # Call Tool LLM
-                self.logger.info(f"🤖 Tool LLM executing: {question}")
-                async with self._tool_llm_client as tool_client:
-                     tool_response: AIMessage = await tool_client.ask(
-                        prompt=question,
-                        system_prompt=tool_system_prompt,
-                        use_tools=True,
-                        temperature=0.0 # Strict for code
-                     )
-                     print('::: Tool response:', tool_response)
-                
-                # Get execution results from the tool
-                pandas_tool = self._get_python_pandas_tool()
-                execution_results = getattr(pandas_tool, 'execution_results', {})
-                
-                # Build context for Main LLM
-                new_question = await self._build_analysis_context(
-                    question, tool_response, execution_results
-                )
-                
-                # Delegate to main LLM (BasicAgent behavior)
-                # This will use self._llm and the full system prompt (including output mode)
-                # passing the CONTEXTUALIZED question
-                return await super().invoke(
-                    question=new_question,
-                    response_model=response_model,
-                    **kwargs
-                )
-
-            except Exception as e:
-                self.logger.error(f"Dual-LLM execution failed: {e}")
-                # Fallback or re-raise? 
-                # For now let's re-raise to see errors clearly
-                raise
-
-        # 2. Standard Mode (Single LLM)
-        # Use the conversation method from BasicAgent
-        response = await self.ask(
-            question=question,
-            **kwargs
-        )
-        if isinstance(response, AgentResponse):
-            return response
-
-        # Convert to AgentResponse if needed
-        if isinstance(response, AIMessage):
-            return self._agent_response(
-                agent_id=self.agent_id,
-                agent_name=self.agent_name,
-                status='success',
-                response=response,  # original AIMessage
-                question=question,
-                data=response.content,
-                output=response.output,
-                metadata=response.metadata,
-                turn_id=response.turn_id
-            )
-
-        return response
-
 
     def _get_default_tools(self, tools: list) -> List[AbstractTool]:
         """Return Agent-specific tools."""
@@ -552,6 +448,12 @@ class PandasAgent(BasicAgent):
             "Forecast future values for a time series using Facebook Prophet. "
             "Specify the dataframe, date column, value column, forecast horizon, and frequency."
         )
+        if self._enable_scenarios:
+            whatif_tool = WhatIfTool()
+            whatif_tool.set_parent_agent(self)
+            tools.append(whatif_tool)
+            # append WHATIF_PROMPT to system prompt
+            self.system_prompt_template += WHATIF_SYSTEM_PROMPT
 
         tools.extend([
             pandas_tool,
@@ -874,6 +776,118 @@ class PandasAgent(BasicAgent):
         self.logger.info(
             f"PandasAgent '{self.name}' configured with {len(self.dataframes)} DataFrame(s)"
         )
+
+    async def invoke(
+        self,
+        question: str,
+        response_model: type[BaseModel] | None = None,
+        **kwargs
+    ) -> AgentResponse:
+        """
+        Ask the agent a question about the data, supporting dual-LLM execution.
+
+        Args:
+            question: Question to ask
+            **kwargs: Additional parameters
+
+        Returns:
+            AgentResponse with answer and metadata
+        """
+
+        if self._use_tool_llm and self._tool_llm_client:
+            # 1. Dual-LLM Mode
+            try:
+                # Prepare system prompt for Tool LLM (execution focused)
+                # We reuse create_system_prompt but append specialized instruction
+                # and likely want to avoid adding the output mode prompts yet
+
+                # Get base context (history only if needed, but tool llm mostly needs data context)
+                # For simplicity, we can pass empty user/conv context to tool LLM or lightweight one
+                # but usually it needs to know about dataframes.
+
+                kb_context, user_context, vector_context, vector_metadata = await self._build_context(
+                    question,
+                    use_vectors=False,  # PandasAgent doesn't use vectors usually
+                    **kwargs
+                )
+
+                base_system_prompt = await self.create_system_prompt(
+                    kb_context=kb_context,
+                    vector_context=vector_context,
+                    conversation_context="",  # Tool LLM doesn't need full convo history usually
+                    metadata=vector_metadata,
+                    user_context=user_context,
+                    **kwargs
+                )
+
+                # Strip output formatting request from base prompt if present
+                # and add tool instructions
+                # Strip output formatting request from base prompt if present
+                if "## STRUCTURED OUTPUT MODE:" in base_system_prompt:
+                    base_system_prompt = base_system_prompt.split("## STRUCTURED OUTPUT MODE:")[0]
+
+                # and add tool instructions
+                tool_system_prompt = f"{base_system_prompt}\n{TOOL_INSTRUCTION_PROMPT}"
+
+                # Call Tool LLM
+                self.logger.info(f"🤖 Tool LLM executing: {question}")
+                async with self._tool_llm_client as tool_client:
+                    tool_response: AIMessage = await tool_client.ask(
+                        prompt=question,
+                        system_prompt=tool_system_prompt,
+                        use_tools=True,
+                        temperature=0.0  # Strict for code
+                    )
+                    print('::: Tool response:', tool_response)
+
+                # Get execution results from the tool
+                pandas_tool = self._get_python_pandas_tool()
+                execution_results = getattr(pandas_tool, 'execution_results', {})
+
+                # Build context for Main LLM
+                new_question = await self._build_analysis_context(
+                    question, tool_response, execution_results
+                )
+
+                # Delegate to main LLM (BasicAgent behavior)
+                # This will use self._llm and the full system prompt (including output mode)
+                # passing the CONTEXTUALIZED question
+                return await super().invoke(
+                    question=new_question,
+                    response_model=response_model,
+                    **kwargs
+                )
+
+            except Exception as e:
+                self.logger.error(f"Dual-LLM execution failed: {e}")
+                # Fallback or re-raise?
+                # For now let's re-raise to see errors clearly
+                raise
+
+        # 2. Standard Mode (Single LLM)
+        # Use the conversation method from BasicAgent
+        response = await self.ask(
+            question=question,
+            **kwargs
+        )
+        if isinstance(response, AgentResponse):
+            return response
+
+        # Convert to AgentResponse if needed
+        if isinstance(response, AIMessage):
+            return self._agent_response(
+                agent_id=self.agent_id,
+                agent_name=self.agent_name,
+                status='success',
+                response=response,  # original AIMessage
+                question=question,
+                data=response.content,
+                output=response.output,
+                metadata=response.metadata,
+                turn_id=response.turn_id
+            )
+
+        return response
 
     async def ask(
         self,
