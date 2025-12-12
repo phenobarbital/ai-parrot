@@ -23,8 +23,9 @@ from ..handlers.stream import StreamHandler
 from ..registry import agent_registry, AgentRegistry
 # Crew:
 from ..bots.orchestration.crew import AgentCrew
-from ..handlers.crew.models import CrewDefinition
+from ..handlers.crew.models import CrewDefinition, ExecutionMode
 from ..handlers.crew.handler import CrewHandler
+from ..handlers.crew.redis_persistence import CrewRedis
 from ..openapi.config import setup_swagger
 from ..conf import ENABLE_SWAGGER
 
@@ -46,6 +47,8 @@ class BotManager:
         )
         self.registry: AgentRegistry = agent_registry
         self._crews: Dict[str, Tuple[AgentCrew, CrewDefinition]] = {}
+        # Initialize Redis persistence for crews
+        self.crew_redis = CrewRedis()
 
     def get_bot_class(self, bot_name: str) -> Optional[Type]:
         """
@@ -489,19 +492,21 @@ Available documentation UIs:
         """On startup."""
         # configure all pre-configured chatbots:
         await self.load_bots(app)
+        # Load crews from Redis
+        await self.load_crews()
 
     async def on_shutdown(self, app: web.Application) -> None:
         """On shutdown."""
         pass
 
-    def add_crew(
+    async def add_crew(
         self,
         name: str,
         crew: AgentCrew,
         crew_def: CrewDefinition
     ) -> None:
         """
-        Register a crew in the manager.
+        Register a crew in the manager and persist to Redis.
 
         Args:
             name: Unique name for the crew
@@ -514,18 +519,29 @@ Available documentation UIs:
         if name in self._crews:
             raise ValueError(f"Crew '{name}' already exists")
 
+        # Add to memory
         self._crews[name] = (crew, crew_def)
-        self.logger.info(
-            f"Registered crew '{name}' with {len(crew.agents)} agents "
-            f"in {crew_def.execution_mode.value} mode"
-        )
 
-    def get_crew(
+        # Persist to Redis
+        try:
+            await self.crew_redis.save_crew(crew_def)
+            self.logger.info(
+                f"Registered crew '{name}' with {len(crew.agents)} agents "
+                f"in {crew_def.execution_mode.value} mode and saved to Redis"
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to save crew '{name}' to Redis: {e}")
+            # Don't fail the operation if Redis fails, crew is still in memory
+            self.logger.info(
+                f"Crew '{name}' registered in memory only (Redis persistence failed)"
+            )
+
+    async def get_crew(
         self,
         identifier: str
     ) -> Optional[Tuple[AgentCrew, CrewDefinition]]:
         """
-        Get a crew by name or ID.
+        Get a crew by name or ID. Loads from Redis if not in memory.
 
         Args:
             identifier: Crew name or crew_id
@@ -533,18 +549,42 @@ Available documentation UIs:
         Returns:
             Tuple of (AgentCrew, CrewDefinition) if found, None otherwise
         """
-        # Try by name first
+        # Try by name first in memory
         if identifier in self._crews:
             return self._crews[identifier]
 
-        return next(
-            (
-                (crew, crew_def)
-                for name, (crew, crew_def) in self._crews.items()
-                if crew_def.crew_id == identifier
-            ),
-            None,
-        )
+        # Try by crew_id in memory
+        for name, (crew, crew_def) in self._crews.items():
+            if crew_def.crew_id == identifier:
+                return (crew, crew_def)
+
+        # Not in memory - try to load from Redis
+        try:
+            # Try to load by name first
+            crew_def = await self.crew_redis.load_crew(identifier)
+
+            # If not found by name, try by ID
+            if not crew_def:
+                crew_def = await self.crew_redis.load_crew_by_id(identifier)
+
+            if crew_def:
+                # Reconstruct the crew from definition
+                crew = await self._create_crew_from_definition(crew_def)
+
+                # Cache in memory
+                self._crews[crew_def.name] = (crew, crew_def)
+
+                self.logger.info(
+                    f"Loaded crew '{crew_def.name}' from Redis "
+                    f"(ID: {crew_def.crew_id})"
+                )
+                return (crew, crew_def)
+        except Exception as e:
+            self.logger.error(
+                f"Error loading crew '{identifier}' from Redis: {e}"
+            )
+
+        return None
 
     def list_crews(self) -> Dict[str, Tuple[AgentCrew, CrewDefinition]]:
         """
@@ -555,9 +595,9 @@ Available documentation UIs:
         """
         return self._crews.copy()
 
-    def remove_crew(self, identifier: str) -> bool:
+    async def remove_crew(self, identifier: str) -> bool:
         """
-        Remove a crew from the manager.
+        Remove a crew from the manager and Redis.
 
         Args:
             identifier: Crew name or crew_id
@@ -565,18 +605,39 @@ Available documentation UIs:
         Returns:
             True if removed, False if not found
         """
+        crew_name = None
+        crew_def = None
+
         # Try by name first
         if identifier in self._crews:
+            crew_name = identifier
+            _, crew_def = self._crews[identifier]
             del self._crews[identifier]
-            self.logger.info(f"Removed crew '{identifier}'")
-            return True
+        else:
+            # Try by crew_id
+            for name, (crew, def_) in list(self._crews.items()):
+                if def_.crew_id == identifier:
+                    crew_name = name
+                    crew_def = def_
+                    del self._crews[name]
+                    break
 
-        # Try by crew_id
-        for name, (crew, crew_def) in list(self._crews.items()):
-            if crew_def.crew_id == identifier:
-                del self._crews[name]
-                self.logger.info(f"Removed crew '{name}' (ID: {identifier})")
-                return True
+        if crew_name and crew_def:
+            # Remove from Redis
+            try:
+                await self.crew_redis.delete_crew(crew_def.name)
+                self.logger.info(
+                    f"Removed crew '{crew_name}' (ID: {crew_def.crew_id}) "
+                    f"from memory and Redis"
+                )
+            except Exception as e:
+                self.logger.error(
+                    f"Failed to delete crew '{crew_name}' from Redis: {e}"
+                )
+                self.logger.info(
+                    f"Crew '{crew_name}' removed from memory only"
+                )
+            return True
 
         return False
 
@@ -613,6 +674,177 @@ Available documentation UIs:
             return True
 
         return False
+
+    async def load_crews(self) -> None:
+        """
+        Load all crews from Redis on startup.
+
+        This method is called during application startup to restore
+        all previously saved crews from Redis into memory.
+        """
+        try:
+            # Check Redis connection
+            if not await self.crew_redis.ping():
+                self.logger.warning("Redis connection failed, skipping crew loading")
+                return
+
+            # Get all crew definitions from Redis
+            crew_defs = await self.crew_redis.get_all_crews()
+
+            if not crew_defs:
+                self.logger.info("No crews found in Redis")
+                return
+
+            self.logger.info(f"Loading {len(crew_defs)} crews from Redis...")
+
+            loaded_count = 0
+            for crew_def in crew_defs:
+                try:
+                    # Reconstruct the crew from definition
+                    crew = await self._create_crew_from_definition(crew_def)
+
+                    # Add to memory (without saving back to Redis)
+                    self._crews[crew_def.name] = (crew, crew_def)
+
+                    loaded_count += 1
+                    self.logger.info(
+                        f"Loaded crew '{crew_def.name}' with {len(crew_def.agents)} agents "
+                        f"in {crew_def.execution_mode.value} mode"
+                    )
+                except Exception as e:
+                    self.logger.error(
+                        f"Failed to load crew '{crew_def.name}': {e}",
+                        exc_info=True
+                    )
+
+            self.logger.info(
+                f":: Crews loaded successfully. Total active crews: {loaded_count}"
+            )
+        except Exception as e:
+            self.logger.error(
+                f"Failed to load crews from Redis: {e}",
+                exc_info=True
+            )
+
+    async def _create_crew_from_definition(
+        self,
+        crew_def: CrewDefinition
+    ) -> AgentCrew:
+        """
+        Create an AgentCrew instance from a CrewDefinition.
+
+        This method reconstructs a crew from its JSON definition,
+        creating all agents and setting up flow relations.
+
+        Args:
+            crew_def: Crew definition
+
+        Returns:
+            AgentCrew instance
+        """
+        from typing import List, Any
+
+        # Create agents
+        agents = []
+        for agent_def in crew_def.agents:
+            # Get agent class
+            agent_class = self.get_bot_class(agent_def.agent_class)
+            if not agent_class:
+                self.logger.warning(
+                    f"Agent class '{agent_def.agent_class}' not found, "
+                    f"using BasicAgent as fallback"
+                )
+                agent_class = BasicAgent
+
+            # Collect tools
+            tools = []
+            if agent_def.tools:
+                tools.extend(iter(agent_def.tools))
+
+            # Create agent instance
+            agent = agent_class(
+                name=agent_def.name or agent_def.agent_id,
+                tools=tools,
+                **agent_def.config
+            )
+
+            # Set system prompt if provided
+            if agent_def.system_prompt:
+                agent.system_prompt = agent_def.system_prompt
+
+            agents.append(agent)
+
+        # Create crew
+        crew = AgentCrew(
+            name=crew_def.name,
+            agents=agents,
+            max_parallel_tasks=crew_def.max_parallel_tasks
+        )
+
+        # Add shared tools
+        for tool_name in crew_def.shared_tools:
+            # Try to get tool from registry or bot manager
+            # This is a placeholder - implement tool retrieval as needed
+            try:
+                # You may need to implement get_tool method
+                # For now, we'll skip tools that aren't available
+                self.logger.debug(
+                    f"Shared tool '{tool_name}' for crew '{crew_def.name}' "
+                    f"(implement tool retrieval as needed)"
+                )
+            except Exception as e:
+                self.logger.warning(
+                    f"Could not add shared tool '{tool_name}': {e}"
+                )
+
+        # Setup flow relations if in flow mode
+        if crew_def.execution_mode == ExecutionMode.FLOW and crew_def.flow_relations:
+            for relation in crew_def.flow_relations:
+                try:
+                    # Convert agent IDs to agent objects
+                    source_agents = self._get_agents_by_ids(
+                        crew,
+                        relation.source if isinstance(relation.source, list) else [relation.source]
+                    )
+                    target_agents = self._get_agents_by_ids(
+                        crew,
+                        relation.target if isinstance(relation.target, list) else [relation.target]
+                    )
+
+                    # Setup flow
+                    crew.task_flow(
+                        source_agents if len(source_agents) > 1 else source_agents[0],
+                        target_agents if len(target_agents) > 1 else target_agents[0]
+                    )
+                except Exception as e:
+                    self.logger.error(
+                        f"Failed to setup flow relation for crew '{crew_def.name}': {e}"
+                    )
+
+        return crew
+
+    def _get_agents_by_ids(
+        self,
+        crew: AgentCrew,
+        agent_ids: List[str]
+    ) -> List[Any]:
+        """
+        Get agent objects from crew by their IDs.
+
+        Args:
+            crew: AgentCrew instance
+            agent_ids: List of agent IDs
+
+        Returns:
+            List of agent objects
+        """
+        agents = []
+        for agent_id in agent_ids:
+            if agent := crew.agents.get(agent_id):
+                agents.append(agent)
+            else:
+                self.logger.warning(f"Agent '{agent_id}' not found in crew")
+        return agents
 
     def get_crew_stats(self) -> Dict[str, Any]:
         """
