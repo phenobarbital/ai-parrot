@@ -151,7 +151,7 @@ class CrewHandler(BaseView):
                 crew = await self._create_crew_from_definition(crew_def)
 
                 # Register crew in bot manager
-                self.bot_manager.add_crew(crew_def.name, crew, crew_def)
+                await self.bot_manager.add_crew(crew_def.name, crew, crew_def)
 
                 self.logger.info(
                     f"Uploaded and created crew '{crew_def.name}' with {len(crew_def.agents)} agents"
@@ -241,7 +241,7 @@ class CrewHandler(BaseView):
                 )
             # if crew_id is provided, then is an update
             if url_crew_id:
-                existing_crew = self.bot_manager.get_crew(url_crew_id)
+                existing_crew = await self.bot_manager.get_crew(url_crew_id)
                 if not existing_crew:
                     return self.error(
                         response={
@@ -256,7 +256,7 @@ class CrewHandler(BaseView):
                 crew_def.updated_at = None  # Will be set on save
 
                 # Remove old crew
-                self.bot_manager.remove_crew(url_crew_id)
+                await self.bot_manager.remove_crew(url_crew_id)
 
                 self.logger.info(f"Updating crew '{url_crew_id}'")
 
@@ -267,7 +267,7 @@ class CrewHandler(BaseView):
                 crew_key = url_crew_id or crew_def.name
 
                 # Register crew in bot manager
-                self.bot_manager.add_crew(crew_key, crew, crew_def)
+                await self.bot_manager.add_crew(crew_key, crew, crew_def)
 
                 action = "updated" if url_crew_id else "created"
                 status_code = 202 if url_crew_id else 201
@@ -335,7 +335,7 @@ class CrewHandler(BaseView):
             # Get specific crew
             if crew_name or crew_id:
                 identifier = crew_name or crew_id
-                crew_data = self.bot_manager.get_crew(identifier)
+                crew_data = await self.bot_manager.get_crew(identifier)
 
                 if not crew_data:
                     return self.error(
@@ -438,7 +438,7 @@ class CrewHandler(BaseView):
                     status=500
                 )
 
-            crew_data = self.bot_manager.get_crew(crew_id)
+            crew_data = await self.bot_manager.get_crew(crew_id)
             if not crew_data:
                 return self.error(
                     response={"message": f"Crew '{crew_id}' not found"},
@@ -688,7 +688,7 @@ class CrewHandler(BaseView):
                 )
 
             identifier = crew_name or crew_id
-            success = self.bot_manager.remove_crew(identifier)
+            success = await self.bot_manager.remove_crew(identifier)
 
             if success:
                 return self.json_response({
