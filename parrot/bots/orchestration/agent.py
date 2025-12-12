@@ -25,13 +25,13 @@ class OrchestratorAgent(BasicAgent):
         self.specialist_agents: Dict[str, Union[BasicAgent, AbstractBot]] = {}
         # Set orchestration-specific system prompt
         if orchestration_prompt:
-            self.system_prompt = orchestration_prompt
+            self.system_prompt_template = orchestration_prompt
         else:
             self._set_default_orchestration_prompt()
 
     def _set_default_orchestration_prompt(self):
         """Set default system prompt for orchestration behavior."""
-        self.system_prompt = """
+        self.system_prompt_template = """
 You are an orchestrator agent that coordinates multiple specialized agents to provide comprehensive answers.
 
 Your responsibilities:
@@ -44,10 +44,11 @@ Your responsibilities:
 Available specialized agents will be provided as tools you can call.
 
 Guidelines for using agents:
+- YOU MUST USE AT LEAST ONE SPECIALIZED AGENT FOR EVERY REQUEST.
+- DO NOT ANSWER DIRECTLY USING YOUR OWN KNOWLEDGE.
 - Always explain which agents you're consulting and why
 - When multiple agents are needed, coordinate their responses thoughtfully
 - Provide a unified answer that addresses all aspects of the user's question
-- If no specialized agent is appropriate, answer directly using your own knowledge
 - Always maintain context and avoid redundant information
 """
 
@@ -85,6 +86,10 @@ Guidelines for using agents:
         # Add to the existing ToolManager
         self.tool_manager.add_tool(agent_tool)
 
+        # Sync tools to LLM
+        if self._llm:
+            self._sync_tools_to_llm()
+
         self.logger.info(f"Added specialist agent '{agent.name}' as tool '{agent_tool.name}'")
 
     def remove_agent(self, agent_name: str) -> None:
@@ -109,6 +114,10 @@ Guidelines for using agents:
             self.logger.info(
                 f"Removed specialist agent: {agent_name}"
             )
+        
+        # Sync tools to LLM
+        if self._llm:
+            self._sync_tools_to_llm()
 
     def list_agents(self) -> List[str]:
         """List all registered specialist agents."""
