@@ -26,7 +26,6 @@ Notes:
 - Each method returns JSON-serializable dicts/lists (using Issue.raw where possible).
 """
 from __future__ import annotations
-from email.policy import strict
 from typing import Any, Dict, List, Optional, Union
 import os
 import asyncio
@@ -359,6 +358,36 @@ class JiraToolkit(AbstractToolkit):
                 return None
         return cur
 
+
+def _quote_jql_value(value: Union[str, int, float]) -> str:
+    """Quote a JQL value, escaping special characters.
+
+    Jira's JQL treats characters like '@' as reserved when unquoted. This helper wraps
+    values in double quotes and escapes backslashes, double quotes, and newlines so that
+    user-provided identifiers (e.g., emails) are always valid JQL literals.
+    """
+
+    text = str(value)
+    escaped = (
+        text.replace("\\", "\\\\")
+        .replace("\"", "\\\"")
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+    )
+    return f'"{escaped}"'
+
+
+def _build_assignee_jql(
+    assignee: str, project: Optional[str] = None, default_project: Optional[str] = None
+) -> str:
+    """Construct a JQL query for an assignee, quoting values as needed."""
+
+    jql = f"assignee={_quote_jql_value(assignee)}"
+    if project or default_project:
+        proj = project or default_project
+        jql = f"project={proj} AND ({jql})"
+    return jql
+
     def _project_include(self, data: Dict[str, Any], include: List[str], strict: bool = False) -> Dict[str, Any]:
         """Return a dict including only the specified dot-paths, preserving nested structure."""
         out: Dict[str, Any] = {}
@@ -590,10 +619,7 @@ class JiraToolkit(AbstractToolkit):
 
         Example: jira.search_issues("assignee=admin")
         """
-        jql = f"assignee={assignee}"
-        if project or self.default_project:
-            proj = project or self.default_project
-            jql = f"project={proj} AND ({jql})"
+        jql = _build_assignee_jql(assignee, project, self.default_project)
         return await self.jira_search_issues(jql=jql, max_results=max_results)
 
 
