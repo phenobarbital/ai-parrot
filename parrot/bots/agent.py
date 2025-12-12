@@ -118,6 +118,9 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
         )
         ## Google GenAI Client (for multi-modal responses and TTS generation):
         self.client = GoogleGenAIClient()
+        # Initialize the underlying AbstractBot LLM with the same client
+        if not self._llm:
+            self._llm = self.client
         # install agent-specific tools:
         self.tools = self.agent_tools()
         self.tool_manager.register_tools(self.tools)

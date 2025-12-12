@@ -41,6 +41,6 @@ if __name__ == '__main__':
     # prompt = "Plot the visit count by visitor, return as a png image"
     # prompt = "What's the data structure?"
     response = asyncio.run(
-        agent.invoke(prompt)
+        agent.ask(prompt)
     )
     print(response.output)

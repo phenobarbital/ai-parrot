@@ -284,14 +284,13 @@ class AbstractClient(ABC):
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self.session:
+            await self.session.close()
         return False
 
     async def close(self):
-        if self.session:
-            await self.session.close()
-        if self.client:
-            if hasattr(self.client, 'close'):
-                await self.client.close()
+        if self.client and hasattr(self.client, 'close'):
+            await self.client.close()
 
     def __repr__(self):
         return f'<{self.__name__} model={self.model} client_type={self.client_type}>'
@@ -875,12 +874,13 @@ class AbstractClient(ABC):
                         )
                     )
 
+                recent = "\n".join(recent_context)
                 system_prompt = (
-                        "You are a helpful AI assistant. You have access to the following conversation history:\n\n"
-                        + "\n".join(recent_context) +
-                        "\n\nUse this context to provide relevant and consistent responses. "
-                        "When users refer to previously mentioned information, acknowledge and use that context."
-                    )
+                    "You are a helpful AI assistant. You have access to the following conversation history:\n\n"
+                    f"{recent}"
+                    "\n\nUse this context to provide relevant and consistent responses. "
+                    "When users refer to previously mentioned information, acknowledge and use that context."
+                )
                 self.logger.debug("Created contextual system prompt from conversation history")
 
         # Handle file attachments if provided
@@ -1007,7 +1007,7 @@ class AbstractClient(ABC):
 
         return parsed_json
 
-    async def _parse_structured_output(
+    async def _parse_structured_output(  # noqa: C901
         self,
         response_text: str,
         structured_output: StructuredOutputConfig
@@ -1108,8 +1108,8 @@ class AbstractClient(ABC):
                 data = {
                     'addition_result': float(addition_match.group(3)) if addition_match else 0.0,
                     'multiplication_result': float(
-                            multiplication_match.group(3)
-                        ) if multiplication_match else 0.0,
+                        multiplication_match.group(3)
+                    ) if multiplication_match else 0.0,
                     'explanation': text
                 }
 
@@ -1369,12 +1369,12 @@ class AbstractClient(ABC):
             raw = ta.json_schema()
             schema = self._oai_normalize_schema(raw)
             return {
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": getattr(output_config, "name", None) or ot.__name__,
-                        "schema": schema,
-                        "strict": True,
-                    },
+                "type": "json_schema",
+                "json_schema": {
+                    "name": getattr(output_config, "name", None) or ot.__name__,
+                    "schema": schema,
+                    "strict": True,
+                },
             }
         # Fallback: at least constrain to JSON object
         return {"type": "json_object"}
