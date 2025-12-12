@@ -525,7 +525,7 @@ def create_perplexity_mcp_server(
         command="npx",
         args=["-y", "@perplexity-ai/mcp-server"],
         env={
-            "PERPLEXITY_API_KEY": api_key,
+            "PERPLEXITY_API_KEY": api_key or os.environ.get("PERPLEXITY_API_KEY"),
             "PERPLEXITY_TIMEOUT_MS": str(timeout_ms),
         },
         startup_delay=3.0,  # npx needs time to fetch/start
