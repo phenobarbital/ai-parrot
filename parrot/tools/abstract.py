@@ -1,5 +1,5 @@
 """
-Abstract Tool base class and MathTool implementation.
+Abstract Tool base class for all function-calling tools.in ai-parrot framework.
 """
 import importlib
 import inspect
@@ -9,7 +9,6 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from datetime import datetime
 import traceback
-import asyncio
 import logging
 from dataclasses import dataclass
 from urllib.parse import urlparse, urlunparse

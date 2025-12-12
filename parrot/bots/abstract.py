@@ -14,16 +14,16 @@ from string import Template
 import asyncio
 import copy
 from aiohttp import web
+from pydantic import BaseModel
 from navconfig.logging import logging
 from navigator_auth.conf import AUTH_SESSION_OBJECT
-from pydantic import BaseModel
 from parrot.tools.math import MathTool  # pylint: disable=E0611
 from ..interfaces import DBInterface
 from ..exceptions import ConfigError  # pylint: disable=E0611
 from ..conf import (
     EMBEDDING_DEFAULT_MODEL,
     KB_DEFAULT_MODEL
-)   
+)
 from .prompts import (
     BASIC_SYSTEM_PROMPT,
     DEFAULT_GOAL,

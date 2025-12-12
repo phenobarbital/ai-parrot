@@ -28,10 +28,10 @@ from pydantic import (
 )
 from datamodel.exceptions import ParserError  # pylint: disable=E0611 # noqa
 from datamodel.parsers.json import json_decoder, JSONContent  # pylint: disable=E0611 # noqa
-from navconfig import config
-from navconfig.logging import logging
 import pandas as pd
 import aiohttp
+from navconfig import config
+from navconfig.logging import logging
 from ..memory import (
     ConversationTurn,
     ConversationHistory,
