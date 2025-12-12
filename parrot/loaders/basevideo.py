@@ -926,6 +926,10 @@ class BaseVideoLoader(AbstractLoader):
                 pass
             return None
 
+        # Lazy load whisperx (only when needed)
+        import whisperx
+        import torch
+
         # Use the existing _get_device method
         pipeline_idx, _, _ = self._get_device()
         # Determine device string for WhisperX
@@ -1104,6 +1108,13 @@ class BaseVideoLoader(AbstractLoader):
         word_timestamps: bool
     ):
         """Use HF pipeline's built-in chunking & timestamping."""
+        # Lazy load transformers components (only when needed)
+        from transformers import (
+            pipeline,
+            WhisperForConditionalGeneration,
+            WhisperProcessor
+        )
+
         is_english_only = (
             model_id.endswith('.en') or
             '-en' in model_id.split('/')[-1] or
@@ -1184,6 +1195,13 @@ class BaseVideoLoader(AbstractLoader):
         3. Memory management for smaller GPUs
         4. Chunk processing stability
         """
+        # Lazy load transformers components (only when needed)
+        from transformers import (
+            pipeline,
+            WhisperForConditionalGeneration,
+            WhisperProcessor
+        )
+
         # For whisper-small on a 5.6GB GPU, we can use slightly larger chunks than medium
         # whisper-small uses ~1.5GB, leaving ~4GB for processing
         actual_chunk_duration = min(45, max_chunk_duration)  # Can handle 45s chunks with small
