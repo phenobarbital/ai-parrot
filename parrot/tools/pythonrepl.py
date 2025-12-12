@@ -19,29 +19,16 @@ from concurrent.futures import ProcessPoolExecutor
 import pandas as pd
 import numpy as np
 import matplotlib
-import folium
 # Force matplotlib to use non-interactive backend
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 # Import these for proper cleanup handling
 from matplotlib import _pylab_helpers
-# altair:
-import altair
-# plotly
-import plotly.express as px
-import plotly.graph_objects as go
-import plotly.io as pio
-import numexpr as ne
-import seaborn as sns
-import bokeh
-import holoviews as hv
-from holoviews import opts
+
 from pydantic import BaseModel, Field
 from datamodel.parsers.json import json_decoder, json_encoder  # noqa  pylint: disable=E0611
 from navconfig import BASE_DIR
 from .abstract import AbstractTool
-
-
 
 
 def brace_escape(text: str) -> str:
@@ -186,7 +173,7 @@ class PythonREPLTool(AbstractTool):
     def _setup_charts(self):
         """Configure matplotlib, Altair, and Bokeh for non-interactive use."""
         # Bokeh configuration:
-        hv.extension('bokeh')
+
         # Store the original backend
         original_backend = matplotlib.get_backend()
         with contextlib.suppress(Exception):
@@ -261,6 +248,28 @@ class PythonREPLTool(AbstractTool):
         if not self.output_dir.exists():
             self.output_dir.mkdir(parents=True, exist_ok=True)
 
+        # Lazy load heavy dependencies
+        try:
+            import altair
+            import plotly.express as px
+            import plotly.graph_objects as go
+            import plotly.io as pio
+            import numexpr as ne
+            import seaborn as sns
+            import bokeh
+            import holoviews as hv
+            import folium
+            from holoviews import opts
+            
+            # Configure holoviews
+            hv.extension('bokeh')
+        except ImportError as e:
+            self.logger.warning(f"Could not import some data science libraries: {e}")
+            # Define dummies or handle gracefully if desired
+            # For now, we'll just let them be missing from locals if import failed
+            pass
+
+
         # Helper functions for plot handling
         def save_current_plot(
             filename: Optional[str] = None,
@@ -326,16 +335,16 @@ class PythonREPLTool(AbstractTool):
             'pd': pd,
             'np': np,
             'plt': plt,
-            'sns': sns,
-            'numexpr': ne,
-            'pio': pio,
+            'matplotlib': matplotlib,
+            'altair': altair,
             'px': px,
             'go': go,
-            'altair': altair,
+            'pio': pio,
+            'numexpr': ne,
+            'sns': sns,
             'bokeh': bokeh,
             'hv': hv,
             'opts': opts,
-            'matplotlib': matplotlib,
             'folium': folium,
 
             # JSON utilities
@@ -355,6 +364,7 @@ class PythonREPLTool(AbstractTool):
             'get_plot_as_base64': get_plot_as_base64,
             'clear_plots': clear_plots,
             'execute_safely': lambda code: self.execute_code_safely(code),
+
         })
 
         # Mirror locals into globals so user code can see everything
@@ -415,7 +425,9 @@ print("Use 'execution_results' dict to store intermediate results.")
 
         try:
             plt.style.use(self.plt_style)
-            sns.set_palette(self.palette)
+            if 'sns' in self.locals:
+                self.locals['sns'].set_palette(self.palette)
+
         except Exception as e:
             self.logger.error("Error setting plot style", exc_info=e)
 

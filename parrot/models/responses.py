@@ -494,6 +494,64 @@ class AIMessageFactory:
         )
 
     @staticmethod
+    def from_grok(
+        response: Any,
+        input_text: str,
+        model: str,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        turn_id: Optional[str] = None,
+        structured_output: Any = None
+    ) -> AIMessage:
+        """Create AIMessage from Grok response."""
+        # xAI SDK response structure needs verification, assuming OpenAI-like for now based on 'usage'
+        # If response is a Pydantic model from structured output, content might be parsed.
+        
+        content = ""
+        tool_calls = []
+        finish_reason = None
+
+        # Check if it's a simple text response or object
+        if hasattr(response, 'content'):
+            content = response.content
+        elif isinstance(response, dict) and 'content' in response:
+            content = response['content']
+            
+        # Try to extract standard fields if present
+        if hasattr(response, 'tool_calls') and response.tool_calls:
+             # Map tool calls
+             tool_calls.extend(
+                ToolCall(
+                    id=tc.id,
+                    name=tc.function.name,
+                    arguments=(
+                        tc.function.arguments
+                        if isinstance(tc.function.arguments, dict)
+                        else eval(tc.function.arguments)
+                    ),
+                )
+                for tc in response.tool_calls
+            )
+            
+        return AIMessage(
+            input=input_text,
+            output=structured_output or content,
+            is_structured=structured_output is not None,
+            structured_output=structured_output,
+            model=model,
+            provider="grok",
+            usage=CompletionUsage.from_grok(response.usage) if hasattr(response, 'usage') else CompletionUsage(),
+            stop_reason=finish_reason,
+            finish_reason=finish_reason,
+            tool_calls=tool_calls,
+            user_id=user_id,
+            session_id=session_id,
+            turn_id=turn_id,
+            raw_response=response.__dict__ if hasattr(response, '__dict__') else response,
+            response=content
+        )
+
+    @staticmethod
     def from_claude(
         response: Dict[str, Any],
         input_text: str,

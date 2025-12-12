@@ -92,3 +92,27 @@ class CompletionUsage(BaseModel):
             total_tokens=total_tokens,
             extra_usage=usage
         )
+
+    @classmethod
+    def from_grok(cls, usage: Any) -> "CompletionUsage":
+        """Create from Grok usage object."""
+        # usage can be a dict or an object
+        prompt_tokens = 0
+        completion_tokens = 0
+        total_tokens = 0
+        
+        if isinstance(usage, dict):
+            prompt_tokens = usage.get('prompt_tokens', 0)
+            completion_tokens = usage.get('completion_tokens', 0)
+            total_tokens = usage.get('total_tokens', 0)
+        else:
+            prompt_tokens = getattr(usage, 'prompt_tokens', 0)
+            completion_tokens = getattr(usage, 'completion_tokens', 0)
+            total_tokens = getattr(usage, 'total_tokens', 0)
+
+        return cls(
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
+            extra_usage=usage if isinstance(usage, dict) else usage.__dict__ if hasattr(usage, '__dict__') else {}
+        )

@@ -1,4 +1,5 @@
 import sys
+import os
 from pathlib import Path
 from navconfig import config, BASE_DIR
 from navconfig.logging import logging
@@ -13,7 +14,8 @@ from navigator.conf import default_dsn, CACHE_HOST, CACHE_PORT
 # logging.getLogger(name='selenium').setLevel(logging.INFO)
 # logging.getLogger(name='matplotlib').setLevel(logging.WARNING)
 # logging.getLogger(name='PIL').setLevel(logging.INFO)
-# logging.getLogger("grpc").setLevel(logging.CRITICAL)
+logging.getLogger("grpc").setLevel(logging.ERROR)
+os.environ['GRPC_VERBOSITY'] = 'ERROR'
 # logging.getLogger("weasyprint").setLevel(logging.ERROR)  # Suppress WeasyPrint warnings
 # # Suppress tiktoken warnings
 # logging.getLogger("tiktoken").setLevel(logging.ERROR)
