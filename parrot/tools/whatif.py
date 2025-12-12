@@ -2,17 +2,14 @@
 What-If Scenario Analysis Tool for AI-Parrot
 Supports derived metrics, constraints, and optimization
 """
-
-from typing import Dict, List, Optional, Callable, Union, Tuple
-from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Tuple
+from dataclasses import dataclass
 from enum import Enum
 from pydantic import BaseModel, Field
 import pandas as pd
 import numpy as np
-from copy import deepcopy
 import traceback
-
-from aiparrot.tools import AbstractTool, ToolResult
+from .abstract import AbstractTool, ToolResult
 
 
 # ===== Enums =====
