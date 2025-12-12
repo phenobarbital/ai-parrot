@@ -77,8 +77,8 @@ class AudioLoader(BaseVideoLoader):
                         "source_type": 'AUDIO',
                     }
                 )
-        # Summarize the transcript
-        if transcript:
+        # Summarize the transcript (only if enabled)
+        if self._summarization and transcript:
             try:
                 summary = await self.summary_from_text(transcript)
                 # Create Two Documents, one is for transcript, second is VTT:
@@ -181,9 +181,9 @@ class AudioLoader(BaseVideoLoader):
                     print(f"Saved SRT transcript to: {srt_path}")
                 except Exception as exc:
                     print(f"Error saving SRT transcript: {exc}")
-        # Summarize the transcript
+        # Summarize the transcript (only if enabled)
         self.saving_file(transcript_path, transcript.encode('utf-8'))
-        if transcript:
+        if self._summarization and transcript:
             try:
                 summary = await self.summary_from_text(transcript)
                 # Create Two Documents, one is for transcript, second is VTT:
