@@ -4,7 +4,6 @@ from ...stores.abstract import AbstractStore
 from .abstract import AbstractDBAgent
 
 
-
 class SQLAgent(AbstractDBAgent):
     """SQL Database Agent using LLMs to interact with SQL databases."""
     def __init__(

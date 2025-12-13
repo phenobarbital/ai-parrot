@@ -2,7 +2,6 @@ from typing import List, Tuple, Optional, Any
 from ....models.crew import AgentResult, VectorStoreProtocol
 
 
-
 class VectorStoreMixin:
     """Mixin to add FAISS vector store capabilities to ExecutionMemory"""
 

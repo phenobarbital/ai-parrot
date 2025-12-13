@@ -104,11 +104,14 @@ class MCPAuthHandler:
         """Get API key headers."""
         api_key = self.auth_config.get("api_key")
         header_name = self.auth_config.get("header_name", "X-API-Key")
+        use_bearer_prefix = self.auth_config.get("use_bearer_prefix", False)
 
         if not api_key:
             raise ValueError("API key authentication requires 'api_key' in auth_config")
 
-        return {header_name: api_key}
+        # Add Bearer prefix if requested (e.g., for Fireflies API)
+        value = f"Bearer {api_key}" if use_bearer_prefix else api_key
+        return {header_name: value}
 
 
 class MCPConnectionError(Exception):

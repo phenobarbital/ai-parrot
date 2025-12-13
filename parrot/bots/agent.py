@@ -778,6 +778,7 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
         url: str,
         api_key: str,
         header_name: str = "X-API-Key",
+        use_bearer_prefix: bool = False,
         **kwargs
     ) -> List[str]:
         """
@@ -788,6 +789,7 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
             url: Base URL of the MCP server
             api_key: API key for authentication
             header_name: Header name for the API key (default: "X-API-Key")
+            use_bearer_prefix: If True, prepend "Bearer " to the API key value (default: False)
             **kwargs: Additional MCPServerConfig parameters
 
         Returns:
@@ -800,12 +802,22 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
             ...     api_key="your-api-key",
             ...     header_name="Authorization"
             ... )
+            
+            >>> # For Bearer token format (e.g., Fireflies API)
+            >>> tools = await agent.add_api_key_mcp_server(
+            ...     "fireflies",
+            ...     "https://api.fireflies.ai/mcp",
+            ...     api_key="your-api-key",
+            ...     header_name="Authorization",
+            ...     use_bearer_prefix=True
+            ... )
         """
         config = create_api_key_mcp_server(
             name=name,
             url=url,
             api_key=api_key,
             header_name=header_name,
+            use_bearer_prefix=use_bearer_prefix,
             **kwargs
         )
         return await self.add_mcp_server(config)

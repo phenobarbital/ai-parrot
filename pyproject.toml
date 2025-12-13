@@ -235,6 +235,15 @@ groq = [
     "typing_extensions>=4.13.2,<=4.14.1",
 ]
 
+llms = [
+    "google-genai==1.52.0",
+    "openai==2.8.1",
+    "groq==0.33.0",
+    "anthropic[aiohttp]==0.61.0",
+    "claude-agent-sdk>=0.1.0",
+    "xai-sdk>=0.1.0",
+]
+
 milvus = [
     "pymilvus==2.4.8",
     "milvus==2.3.5"

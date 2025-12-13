@@ -50,7 +50,26 @@ Guidelines for using agents:
 - When multiple agents are needed, coordinate their responses thoughtfully
 - Provide a unified answer that addresses all aspects of the user's question
 - Always maintain context and avoid redundant information
+
 """
+
+    async def configure(self, app=None) -> None:
+        """
+        Configure the OrchestratorAgent and register specialist agents.
+        """
+        await super().configure(app)
+        # Hook for child classes to register their agents
+        await self.register_specialist_agents()
+
+    async def register_specialist_agents(self):
+        """
+        Hook method for registering specialist agents.
+        
+        This method should be overridden by subclasses to create and add
+        specialist agents to the orchestrator.
+        """
+        pass
+
 
     def add_agent(
         self,

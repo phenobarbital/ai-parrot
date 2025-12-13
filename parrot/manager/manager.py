@@ -3,7 +3,7 @@ Chatbot Manager.
 
 Tool for instanciate, managing and interacting with Chatbot through APIs.
 """
-from typing import Any, Dict, Type, Optional, Tuple
+from typing import Any, Dict, Type, Optional, Tuple, List
 from importlib import import_module
 import contextlib
 from aiohttp import web
@@ -245,9 +245,9 @@ class BotManager:
                         f"with {len(bot_model.tools) if bot_model.tools else 0} tools"
                     )
                 except ValidationError as e:
-                        self.logger.error(
-                            f"Invalid configuration for bot '{bot_model.name}': {e}"
-                        )
+                    self.logger.error(
+                        f"Invalid configuration for bot '{bot_model.name}': {e}"
+                    )
                 except Exception as e:
                     self.logger.error(
                         f"Failed to load database bot {bot_instance.name}: {str(e)}"
