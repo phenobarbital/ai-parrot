@@ -225,6 +225,15 @@ class DatabaseTool(AbstractTool):
             # Add more database-specific validators...
         }
 
+    def _clean_sql(self, sql_query: str) -> str:
+        """Clean SQL query from markdown formatting."""
+        if not sql_query:
+            return ""
+        # Remove markdown code blocks
+        clean_query = re.sub(r'```\w*\n?', '', sql_query)
+        clean_query = clean_query.replace('```', '')
+        return clean_query.strip()
+
     async def _execute(
         self,
         natural_language_query: Optional[str] = None,
@@ -249,6 +258,13 @@ class DatabaseTool(AbstractTool):
         or executes the full pipeline for complete query processing.
         """
         try:
+            # Fallback to default connection parameters if not provided
+            if connection_params is None:
+                connection_params = self.default_connection_params.get(database_flavor)
+
+            if sql_query:
+                sql_query = self._clean_sql(sql_query)
+
             # Route to specific operations
             if operation == "schema_extract":
                 return await self._extract_schema_operation(
@@ -484,13 +500,20 @@ class DatabaseTool(AbstractTool):
     ) -> AsyncDB:
         """Get or create a database connection using AsyncDB."""
         """Get or create a database connection using AsyncDB."""
+        # Normalize connection parameters
+        params = connection_params.copy() if connection_params else {}
+
+        # Common mapping: username -> user (used by asyncpg and others)
+        if 'username' in params and 'user' not in params:
+            params['user'] = params.pop('username')
+
         driver_map = {
             DatabaseFlavor.POSTGRESQL: 'pg',
             DatabaseFlavor.MYSQL: 'mysql',
             DatabaseFlavor.SQLITE: 'sqlite',
         }
         driver = driver_map.get(database_flavor, database_flavor.value)
-        return AsyncDB(driver, params=connection_params)
+        return AsyncDB(driver, params=params)
 
     async def _extract_database_schema(
         self,
@@ -502,7 +525,7 @@ class DatabaseTool(AbstractTool):
         """Extract comprehensive schema metadata from the database."""
         if database_flavor == DatabaseFlavor.POSTGRESQL:
             return await self._extract_postgresql_schema(db_connection, schema_names)
-        
+
         raise NotImplementedError(f"Schema extraction not implemented for {database_flavor}")
 
     async def _extract_postgresql_schema(
@@ -514,13 +537,13 @@ class DatabaseTool(AbstractTool):
         tables_data = []
         async with await db.connection() as conn:
             schemas_list = ", ".join([f"'{s}'" for s in schema_names])
-            if not schemas_list: 
+            if not schemas_list:
                 schemas_list = "'public'" # Default
-            
+
             query = f"""
                 SELECT t.table_schema, t.table_name, c.column_name, c.data_type
                 FROM information_schema.tables t
-                JOIN information_schema.columns c 
+                JOIN information_schema.columns c
                   ON t.table_schema = c.table_schema AND t.table_name = c.table_name
                 WHERE t.table_schema IN ({schemas_list})
                 ORDER BY t.table_schema, t.table_name, c.ordinal_position
@@ -563,12 +586,12 @@ class DatabaseTool(AbstractTool):
                 k = (s_name, t_name)
                 if k not in grouped:
                     grouped[k] = {
-                        "schema": s_name, 
-                        "name": t_name, 
+                        "schema": s_name,
+                        "name": t_name,
                         "columns": []
                     }
                 grouped[k]["columns"].append({"name": c_name, "type": d_type})
-            
+
             tables_data = list(grouped.values())
 
         return SchemaMetadata(
@@ -603,7 +626,7 @@ class DatabaseTool(AbstractTool):
                 )
                 if schema_result.status != "success" or not schema_result.result:
                     raise ValueError(f"Schema extraction failed: {schema_result.error or 'No result returned'}")
-                
+
                 cached_schema = SchemaMetadata(**schema_result.result)
 
             # Use database-specific query generator
@@ -616,6 +639,7 @@ class DatabaseTool(AbstractTool):
 
             # Generate the SQL query
             generated_sql = await generator(natural_language_query, schema_context)
+            generated_sql = self._clean_sql(generated_sql)
 
             return ToolResult(
                 status="success",
@@ -740,7 +764,7 @@ class DatabaseTool(AbstractTool):
                 error="No SQL query provided for explanation",
                 metadata={"operation": "explain_query"}
             )
-        
+
         try:
             db_connection = await self._get_database_connection(database_flavor, connection_params)
 
@@ -798,7 +822,7 @@ class DatabaseTool(AbstractTool):
                     "3. Concrete suggestions for indexes or query rewrites to improve performance.\n"
                     "4. Rating of current query efficiency (1-10)."
                 )
-                
+
                 response = await self.llm.ask(prompt)
                 if isinstance(response, AIMessage):
                     llm_explanation = str(response.output).strip()
@@ -872,10 +896,11 @@ class DatabaseTool(AbstractTool):
                 sql_query = f"{sql_query.rstrip(';')} LIMIT {max_rows};"
 
             # Execute with timeout using asyncio
-            return await asyncio.wait_for(
-                db_connection.fetch(sql_query),
-                timeout=timeout_seconds
-            )
+            async with await db_connection.connection() as conn:
+                return await asyncio.wait_for(
+                    conn.fetchall(sql_query),
+                    timeout=timeout_seconds
+                )
 
         except asyncio.TimeoutError as e:
             raise TimeoutError(
