@@ -1,13 +1,7 @@
 import os
-from typing import Callable, Dict, List, Any, Optional, Union
-import asyncio
-import contextlib
+from typing import Dict, List, Any, Optional, Union
 import logging
-from dataclasses import dataclass, field
 from pathlib import Path
-import json
-import base64
-import aiohttp
 # AI-Parrot imports
 from ..tools.abstract import AbstractTool, ToolResult
 from ..tools.manager import ToolManager
@@ -16,20 +10,20 @@ from .oauth import (
     InMemoryTokenStore,
     RedisTokenStore
 )
-
-# Imported from new locations
-from parrot.mcp.client import (
+from .client import (
     MCPClientConfig as MCPServerConfig,
-    MCPAuthHandler,
     MCPConnectionError
 )
-try:
-    from parrot.mcp.transports.stdio import StdioMCPSession
-except ImportError:
-    # Handle optional import if needed, or fail hard if required
-    pass
-from parrot.mcp.transports.unix import UnixMCPSession
-from parrot.mcp.transports.http import HttpMCPSession
+from .transports.stdio import StdioMCPSession
+from .transports.unix import UnixMCPSession
+from .transports.http import HttpMCPSession
+from .transports.websocket import WebSocketMCPSession
+from .transports.sse import SseMCPSession
+from .transports.quic import (
+    QuicMCPSession,
+    QuicMCPConfig,
+    SerializationFormat
+)
 
 
 class MCPToolProxy(AbstractTool):
@@ -146,21 +140,23 @@ class MCPClient:
             elif transport == "http":
                 self._session = HttpMCPSession(self.config, self.logger)
             elif transport == "sse":
-                # TODO: Implement SSE transport
-                self._session = HttpMCPSession(self.config, self.logger)
+                self._session = SseMCPSession(self.config, self.logger)
             elif transport == "unix":
                 self._session = UnixMCPSession(self.config, self.logger)
             elif transport == "websocket":
-                from parrot.mcp.transports.websocket import WebSocketMCPSession
+
                 self._session = WebSocketMCPSession(self.config, self.logger)
             elif transport == "quic":
                 try:
-                    from parrot.mcp.transports.quic import QuicMCPSession
                     self._session = QuicMCPSession(self.config, self.logger)
-                except ImportError:
-                    raise ImportError("QUIC transport requires 'aioquic' package. Install with: pip install aioquic msgpack")
+                except ImportError as e:
+                    raise ImportError(
+                        "QUIC transport requires 'aioquic' package. Install with: pip install aioquic msgpack"
+                    ) from e
             else:
-                raise ValueError(f"Unsupported transport: {transport}")
+                raise ValueError(
+                    f"Unsupported transport: {transport}"
+                )
 
             await self._session.connect()
             self._available_tools = await self._session.list_tools()
@@ -308,30 +304,30 @@ class MCPToolManager:
 
     async def reconfigure_mcp_server(self, config: MCPServerConfig) -> List[str]:
         """Reconfigure an existing MCP server with new configuration.
-        
+
         This method removes the existing server connection and re-adds it with the
         new configuration. Useful for updating credentials or connection parameters.
-        
+
         Args:
             config: New MCPServerConfig with updated parameters
-            
+
         Returns:
             List of registered tool names
-            
+
         Example:
             >>> # Update Fireflies API key for a different user
             >>> new_config = create_fireflies_mcp_server(api_key="new-user-api-key")
             >>> tools = await manager.reconfigure_mcp_server(new_config)
         """
         server_name = config.name
-        
+
         # Remove existing server if it exists
         if server_name in self.mcp_clients:
             self.logger.info(f"Reconfiguring MCP server: {server_name}")
             await self.remove_mcp_server(server_name)
         else:
             self.logger.info(f"Adding new MCP server: {server_name}")
-        
+
         # Add with new configuration
         return await self.add_mcp_server(config)
 
@@ -524,7 +520,7 @@ def create_api_key_mcp_server(
     **kwargs
 ) -> MCPServerConfig:
     """Create configuration for API key authenticated MCP server.
-    
+
     Args:
         name: Unique name for the MCP server
         url: Base URL of the MCP server
@@ -532,7 +528,7 @@ def create_api_key_mcp_server(
         header_name: Header name for the API key (default: "X-API-Key")
         use_bearer_prefix: If True, prepend "Bearer " to the API key value (default: False)
         **kwargs: Additional MCPServerConfig parameters
-    
+
     Returns:
         MCPServerConfig instance
     """
@@ -556,14 +552,14 @@ def create_fireflies_mcp_server(
     **kwargs
 ) -> MCPServerConfig:
     """Create configuration for Fireflies MCP server using stdio transport.
-    
+
     Fireflies MCP requires using npx mcp-remote as a command-line proxy.
-    
+
     Args:
         api_key: Fireflies API key
         api_base: Base URL of the Fireflies MCP endpoint
         **kwargs: Additional MCPServerConfig parameters
-    
+
     Returns:
         MCPServerConfig instance configured for stdio transport
     """
@@ -589,22 +585,22 @@ def create_perplexity_mcp_server(
     **kwargs
 ) -> MCPServerConfig:
     """Create configuration for Perplexity MCP server.
-    
+
     The Perplexity MCP server provides 4 tools:
     - perplexity_search: Direct web search via Search API
     - perplexity_ask: Conversational AI with sonar-pro model
     - perplexity_research: Deep research with sonar-deep-research
     - perplexity_reason: Advanced reasoning with sonar-reasoning-pro
-    
+
     Args:
         api_key: Perplexity API key (get from perplexity.ai/account/api)
         name: Server name for tool prefixing
         timeout_ms: Request timeout (default 600000ms for deep research)
         **kwargs: Additional MCPServerConfig parameters
-        
+
     Returns:
         MCPServerConfig configured for Perplexity
-        
+
     Example:
         >>> config = create_perplexity_mcp_server(
         ...     api_key=os.environ["PERPLEXITY_API_KEY"]
@@ -645,11 +641,6 @@ def create_quic_mcp_server(
     Returns:
         MCPServerConfig configured for QUIC transport
     """
-    try:
-        from parrot.mcp.transports.quic import QuicMCPConfig, SerializationFormat
-    except ImportError:
-        raise ImportError("QUIC transport requires 'aioquic' package.")
-
     quic_fmt = SerializationFormat.MSGPACK
     if serialization.lower() == "json":
         quic_fmt = SerializationFormat.JSON
@@ -661,7 +652,7 @@ def create_quic_mcp_server(
         serialization=quic_fmt,
         # Default efficient settings
         enable_0rtt=True,
-        use_webtransport=True
+        enable_webtransport=True
     )
 
     return MCPServerConfig(
@@ -723,14 +714,14 @@ class MCPEnabledMixin:
         **kwargs
     ) -> List[str]:
         """Add Fireflies.ai MCP server capability.
-        
+
         Args:
             api_key: Fireflies API key from Settings > Developer Settings
             **kwargs: Additional MCPServerConfig parameters
-            
+
         Returns:
             List of registered tool names
-            
+
         Example:
             >>> tools = await agent.add_fireflies_mcp_server(
             ...     api_key="your-fireflies-api-key"
@@ -761,7 +752,7 @@ class MCPEnabledMixin:
         **kwargs
     ) -> List[str]:
         """Add a WebSocket MCP server connection.
-        
+
         Args:
             name: Server name
             url: WebSocket URL (ws:// or wss://)
@@ -769,10 +760,10 @@ class MCPEnabledMixin:
             auth_config: Authentication configuration
             headers: Additional headers for WebSocket upgrade
             **kwargs: Additional MCPServerConfig parameters
-            
+
         Returns:
             List of registered tool names
-            
+
         Example:
             >>> await agent.add_websocket_mcp_server(
             ...     "my-ws-server",
@@ -791,10 +782,10 @@ class MCPEnabledMixin:
 
     async def reconfigure_mcp_server(self, config: MCPServerConfig) -> List[str]:
         """Reconfigure an existing MCP server with new configuration.
-        
+
         Args:
             config: New MCPServerConfig with updated parameters
-            
+
         Returns:
             List of registered tool names
         """
@@ -802,26 +793,42 @@ class MCPEnabledMixin:
 
     async def reconfigure_fireflies_mcp_server(self, api_key: str, **kwargs) -> List[str]:
         """Reconfigure Fireflies MCP server with a new API key.
-        
+
         This is useful in multi-user scenarios where each user provides their own
         Fireflies API key. The method will disconnect the existing connection and
         reconnect with the new credentials.
-        
+
         Args:
             api_key: New Fireflies API key
             **kwargs: Additional MCPServerConfig parameters
-            
+
         Returns:
             List of registered tool names
-            
+
         Example:
             >>> # Initial setup with user 1's API key
             >>> await agent.add_fireflies_mcp_server(api_key="user1-api-key")
-            
+
             >>> # Later, reconfigure with user 2's API key
             >>> await agent.reconfigure_fireflies_mcp_server(api_key="user2-api-key")
         """
         config = create_fireflies_mcp_server(api_key=api_key, **kwargs)
+        return await self.reconfigure_mcp_server(config)
+
+    async def reconfigure_perplexity_mcp_server(self, api_key: str, name: str = "perplexity", **kwargs) -> List[str]:
+        """Reconfigure Perplexity MCP server with a new API key.
+
+        Useful for updating the API key without restarting the agent.
+
+        Args:
+            api_key: New Perplexity API key
+            name: Server name (default: "perplexity")
+            **kwargs: Additional MCPServerConfig parameters
+
+        Returns:
+            List of registered tool names
+        """
+        config = create_perplexity_mcp_server(api_key, name=name, **kwargs)
         return await self.reconfigure_mcp_server(config)
 
     def list_mcp_servers(self) -> List[str]:

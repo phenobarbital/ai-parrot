@@ -5,10 +5,14 @@ import uuid
 import contextlib
 from typing import Dict, Any, Optional
 from aiohttp import web
+import aiohttp
 
 from parrot.mcp.config import MCPServerConfig
 from parrot.mcp.transports.base import MCPServerBase
 from parrot.mcp.oauth import OAuthRoutesMixin
+from parrot.mcp.client import MCPClientConfig, MCPConnectionError
+from parrot.mcp.transports.http import HttpMCPSession
+from aiohttp_sse_client import client as sse_client
 
 class SseMCPServer(OAuthRoutesMixin, MCPServerBase):
     """MCP server using SSE transport compatible with ChatGPT and OpenAI MCP clients."""
@@ -208,5 +212,119 @@ class SseMCPServer(OAuthRoutesMixin, MCPServerBase):
                         "message": "Parse error",
                     }
                 },
-                status=400
             )
+
+
+class SseMCPSession(HttpMCPSession):
+    """MCP session using SSE (Server-Sent Events) for transport."""
+
+    def __init__(self, config: MCPClientConfig, logger):
+        super().__init__(config, logger)
+        self._sse_task = None
+        self._session_id = str(uuid.uuid4())
+        self._sse_ready = asyncio.Event()
+
+    async def connect(self):
+        """Connect to MCP server via SSE + HTTP."""
+        try:
+            # 1. Setup headers (auth etc) - reusing logic from HttpMCPSession
+            # We need to manually trigger auth setup if we want headers for SSE connection
+            if self.config.auth_type:
+                from parrot.mcp.client import MCPAuthHandler
+                self._auth_handler = MCPAuthHandler(
+                    self.config.auth_type,
+                    self.config.auth_config
+                )
+                auth_headers = await self._auth_handler.get_auth_headers()
+                self._base_headers.update(auth_headers)
+
+            self._base_headers.update(self.config.headers)
+            
+            # Add Session ID to headers for correlation
+            self._base_headers["X-Session-Id"] = self._session_id
+
+            # 2. Start SSE Listener
+            self._sse_task = asyncio.create_task(self._listen_sse())
+            
+            # Wait for connection to be ready
+            try:
+                await asyncio.wait_for(self._sse_ready.wait(), timeout=self.config.timeout)
+            except asyncio.TimeoutError:
+                self.logger.warning("Timeout waiting for SSE connection ready, proceeding anyway")
+
+            # 3. Create HTTP session for POST requests
+            timeout = aiohttp.ClientTimeout(total=self.config.timeout)
+            self._session = aiohttp.ClientSession(
+                timeout=timeout,
+                headers=self._base_headers
+            )
+
+            # 4. Initialize MCP
+            await self._initialize_session()
+            self._initialized = True
+            self.logger.info(f"SSE connection established to {self.config.name} (session {self._session_id})")
+
+        except Exception as e:
+            await self.disconnect()
+            raise MCPConnectionError(f"SSE connection failed: {e}") from e
+
+    async def _listen_sse(self):
+        """Listen for SSE events."""
+        events_url = self.config.events_path
+        if not events_url:
+            events_url = self.config.url
+        
+        self.logger.debug(f"Connecting to SSE endpoint: {events_url}")
+
+        try:
+            async with sse_client.EventSource(
+                events_url,
+                headers=self._base_headers
+            ) as event_source:
+                self._sse_ready.set()
+                
+                async for event in event_source:
+                    try:
+                        if event.type == 'error':
+                            self.logger.error(f"SSE Error: {event.data}")
+                            continue
+                            
+                        if event.type == 'connection':
+                            self.logger.debug(f"SSE Connection event: {event.data}")
+                            continue
+
+                        if event.type == 'message':
+                            await self._handle_sse_message(event.data)
+                            
+                    except Exception as e:
+                        self.logger.error(f"Error processing SSE event: {e}")
+
+        except asyncio.CancelledError:
+            self.logger.debug("SSE listener cancelled")
+        except Exception as e:
+            self.logger.error(f"SSE connection error: {e}")
+
+    async def _handle_sse_message(self, data: str):
+        """Handle incoming JSON-RPC message from SSE."""
+        try:
+            message = json.loads(data)
+            
+            if "method" in message and "id" not in message:
+                self.logger.info(f"Received notification: {message['method']}")
+            elif "method" in message and "id" in message:
+                 self.logger.info(f"Received server request: {message['method']}")
+            
+        except json.JSONDecodeError:
+            self.logger.error("Failed to decode SSE message")
+
+    async def disconnect(self):
+        """Disconnect SSE session."""
+        if self._sse_task:
+            self._sse_task.cancel()
+            try:
+                await self._sse_task
+            except asyncio.CancelledError:
+                pass
+            self._sse_task = None
+            
+        await super().disconnect()

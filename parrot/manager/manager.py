@@ -6,6 +6,9 @@ Tool for instanciate, managing and interacting with Chatbot through APIs.
 from typing import Any, Dict, Type, Optional, Tuple, List
 from importlib import import_module
 import contextlib
+import time
+import asyncio
+import copy
 from aiohttp import web
 from datamodel.exceptions import ValidationError  # pylint: disable=E0611 # noqa
 # Navigator:
@@ -42,6 +45,9 @@ class BotManager:
     def __init__(self) -> None:
         self.app = None
         self._bots: Dict[str, AbstractBot] = {}
+        self._botdef: Dict[str, Type] = {}  # Store class definitions for each bot
+        self._bot_expiration: Dict[str, float] = {}  # Track expiration timestamps for temporary bots
+        self._cleanup_task: Optional[asyncio.Task] = None  # Background cleanup task
         self.logger = logging.getLogger(
             name='Parrot.Manager'
         )
@@ -331,9 +337,100 @@ class BotManager:
     def add_bot(self, bot: AbstractBot) -> None:
         """Add a Bot to the manager."""
         self._bots[bot.name] = bot
+        # Store the class definition for future instance creation
+        self._botdef[bot.name] = bot.__class__
 
-    async def get_bot(self, name: str) -> AbstractBot:
-        """Get a Bot by name."""
+    async def get_bot(
+        self,
+        name: str,
+        new: bool = False,
+        session_id: str = "",
+        **kwargs
+    ) -> AbstractBot:
+        """Get a Bot by name.
+        
+        Args:
+            name: Name of the bot to get
+            new: If True, create a new instance instead of returning existing one
+            session_id: Session identifier for creating unique temporary instances
+            **kwargs: Additional arguments to pass to bot constructor when new=True
+            
+        Returns:
+            Bot instance (existing or newly created)
+        """
+        # Handle new instance creation
+        if new:
+            # Get the class definition for this bot
+            cls = self._botdef.get(name, BasicAgent)
+            
+            # Create unique name to avoid duplicates
+            new_name = f"{name}_{session_id}" if session_id else f"{name}_{int(time.time())}"
+            
+            # Prepare configuration to inherit from base bot
+            base_bot = self._bots.get(name)
+            bot_kwargs = kwargs.copy()
+            
+            if base_bot:
+                # 1. Inherit LLM Configuration if not explicitly provided
+                if 'use_llm' not in bot_kwargs and hasattr(base_bot, '_llm_raw'):
+                    bot_kwargs['use_llm'] = base_bot._llm_raw
+                
+                if 'model' not in bot_kwargs and hasattr(base_bot, '_llm_model'):
+                    bot_kwargs['model'] = base_bot._llm_model
+                
+                # 2. Clone Tools
+                if 'tools' not in bot_kwargs and hasattr(base_bot, 'tool_manager'):
+                    try:
+                        # Deep copy tools to ensure isolation
+                        base_tools = base_bot.tool_manager.get_all_tools()
+                        new_tools = []
+                        for tool in base_tools:
+                            try:
+                                # Attempt deep copy
+                                new_tool = copy.deepcopy(tool)
+                                new_tools.append(new_tool)
+                            except Exception as e:
+                                self.logger.warning(
+                                    f"Failed to copy tool {tool.name}, sharing instance. Error: {e}"
+                                )
+                                # Fallback to shared instance
+                                new_tools.append(tool)
+                        bot_kwargs['tools'] = new_tools
+                    except Exception as e:
+                        self.logger.error(f"Error cloning tools from {name}: {e}")
+                
+                # 3. Clone Vector Store Configuration
+                if 'vector_store_config' not in bot_kwargs and hasattr(base_bot, '_vector_store'):
+                    try:
+                        if base_bot._vector_store:
+                             bot_kwargs['vector_store_config'] = copy.deepcopy(base_bot._vector_store)
+                    except Exception as e:
+                        self.logger.warning(f"Failed to copy vector store config: {e}")
+                        bot_kwargs['vector_store_config'] = base_bot._vector_store
+                
+                if 'use_vectorstore' not in bot_kwargs and hasattr(base_bot, '_use_vector'):
+                    bot_kwargs['use_vectorstore'] = getattr(base_bot, '_use_vector', False)
+                    
+            # Create new instance with merged configuration
+            bot = cls(name=new_name, **bot_kwargs)
+            
+            # Configure the bot
+            await bot.configure(self.app)
+            
+            # Add to bots dictionary
+            self._bots[new_name] = bot
+            
+            # Set expiration time (1 hour from now)
+            self._bot_expiration[new_name] = time.time() + 3600
+            
+            self.logger.info(
+                f"Created new temporary bot instance '{new_name}' from '{name}' "
+                f"(expires in 1 hour)"
+            )
+            
+            return bot
+        
+        # Existing behavior for getting/creating bots
         if name not in self._bots:
             self.logger.warning(
                 f"Bot '{name}' not in _bots. Available: {list(self._bots.keys())}"
@@ -364,6 +461,8 @@ class BotManager:
     def remove_bot(self, name: str) -> None:
         """Remove a Bot by name."""
         del self._bots[name]
+        # Clean up expiration tracking if it exists (but keep class definition)
+        self._bot_expiration.pop(name, None)
 
     def get_bots(self) -> Dict[str, AbstractBot]:
         """Get all Bots declared on Manager."""
@@ -377,10 +476,6 @@ class BotManager:
     def add_agent(self, agent: AbstractBot) -> None:
         """Add a Agent to the manager."""
         self._bots[str(agent.chatbot_id)] = agent
-
-    def get_agent(self, name: str) -> AbstractBot:
-        """Get a Agent by ID."""
-        return self._bots.get(name)
 
     def remove_agent(self, agent: AbstractBot) -> None:
         """Remove a Bot by name."""
@@ -488,16 +583,72 @@ Available documentation UIs:
         """)
         return self.app
 
+    async def _cleanup_expired_bots(self) -> None:
+        """Background task to cleanup expired temporary bot instances.
+        
+        Runs every 5 minutes to check for and remove bot instances that have
+        exceeded their expiration time (typically 1 hour after creation).
+        """
+        while True:
+            try:
+                await asyncio.sleep(300)  # Check every 5 minutes
+                current_time = time.time()
+                
+                # Find all expired bots
+                expired = [
+                    name for name, expiry in self._bot_expiration.items()
+                    if current_time > expiry
+                ]
+                
+                # Remove expired bots
+                for name in expired:
+                    try:
+                        self.logger.info(f"Removing expired bot instance: {name}")
+                        self.remove_bot(name)
+                        del self._bot_expiration[name]
+                    except Exception as e:
+                        self.logger.error(
+                            f"Error removing expired bot '{name}': {e}"
+                        )
+                        # Remove from expiration tracking even if removal failed
+                        self._bot_expiration.pop(name, None)
+                
+                if expired:
+                    self.logger.info(
+                        f"Cleaned up {len(expired)} expired bot instance(s). "
+                        f"Active bots: {len(self._bots)}, "
+                        f"Tracked expirations: {len(self._bot_expiration)}"
+                    )
+            except asyncio.CancelledError:
+                self.logger.info("Cleanup task cancelled")
+                raise
+            except Exception as e:
+                self.logger.error(
+                    f"Error in cleanup task: {e}",
+                    exc_info=True
+                )
+                # Continue running even if there's an error
+
     async def on_startup(self, app: web.Application) -> None:
         """On startup."""
         # configure all pre-configured chatbots:
         await self.load_bots(app)
         # Load crews from Redis
         await self.load_crews()
+        # Start background cleanup task for expired bots
+        self._cleanup_task = asyncio.create_task(self._cleanup_expired_bots())
+        self.logger.info("Started background cleanup task for temporary bot instances")
 
     async def on_shutdown(self, app: web.Application) -> None:
         """On shutdown."""
-        pass
+        # Cancel background cleanup task
+        if self._cleanup_task:
+            self._cleanup_task.cancel()
+            try:
+                await self._cleanup_task
+            except asyncio.CancelledError:
+                pass
+            self.logger.info("Stopped background cleanup task")
 
     async def add_crew(
         self,
