@@ -179,7 +179,46 @@ class StreamHandler(BaseHandler):
             heartbeat=30.0,  # Send ping every 30s
             max_msg_size=10 * 1024 * 1024  # 10MB max message size
         )
-        await ws.prepare(request)
+        # Extract and validate JWT from Sec-WebSocket-Protocol
+        # Client sends: new WebSocket(url, ["jwt", token])
+        # Header received: Sec-WebSocket-Protocol: jwt, <token>
+        protocol_header = request.headers.get('Sec-WebSocket-Protocol')
+        selected_protocol = None
+
+        if protocol_header:
+            parts = [p.strip() for p in protocol_header.split(',')]
+            if 'jwt' in parts:
+                # Find the token (assuming it's the other part)
+                # This is a bit naive if there are other protocols, but fits the requirement
+                try:
+                    token_idx = parts.index('jwt') + 1
+                    # If 'jwt' is the last item, try look elsewhere or it might be (token, jwt) order?
+                    # Browsers usually send in order requested.
+                    # Actually, if we send ["jwt", "token"], header is "jwt, token"
+                    # But we need to identify WHICH one is the token.
+                    # Heuristic: The token is the long string that isn't 'jwt'.
+                    # Or simpler: remove 'jwt' and take the first remaining non-empty string.
+                    parts.remove('jwt')
+                    if parts:
+                        token = parts[0]
+                        if await self._validate_token(token):
+                            # Auth success
+                            # We MUST return the selected protocol in the response
+                            # to the client, otherwise the WS connection fails.
+                            # Usually we echo 'jwt' or the protocol used.
+                            selected_protocol = 'jwt'
+                        else:
+                            raise web.HTTPUnauthorized(reason="Invalid Token")
+                    else:
+                        raise web.HTTPUnauthorized(reason="Missing Token")
+                except (ValueError, IndexError):
+                     raise web.HTTPUnauthorized(reason="Invalid Protocol Format")
+
+        if selected_protocol:
+             await ws.prepare(request, protocols=[selected_protocol])
+        else:
+             await ws.prepare(request)
+
         self.active_connections.add(ws)
         bot = await self._get_bot(request)
 
