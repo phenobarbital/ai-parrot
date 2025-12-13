@@ -19,6 +19,275 @@ def _now() -> int:
     return int(time.time())
 
 
+# ---- API Key Authentication ----
+
+@dataclass
+class APIKeyRecord:
+    """Record for an issued API key."""
+    key: str
+    user_id: str
+    created_at: float
+    expires_at: Optional[float] = None
+    scopes: list[str] = field(default_factory=list)
+    description: str = ""
+
+
+class APIKeyStore:
+    """
+    In-memory API key store with session logging.
+
+    Provides API key issuance, validation, and session tracking for
+    MCP server authentication.
+    """
+
+    def __init__(self):
+        self._keys: Dict[str, APIKeyRecord] = {}
+        self._sessions: list[Dict[str, Any]] = []
+
+    def issue_key(
+        self,
+        user_id: str,
+        scopes: Optional[list[str]] = None,
+        ttl: Optional[int] = None,
+        description: str = ""
+    ) -> APIKeyRecord:
+        """
+        Issue a new API key for a user.
+
+        Args:
+            user_id: User identifier
+            scopes: Optional list of scopes for the key
+            ttl: Time-to-live in seconds (None for no expiration)
+            description: Human-readable description
+
+        Returns:
+            APIKeyRecord with the issued key
+        """
+        key = f"mcp_key_{secrets.token_urlsafe(32)}"
+        now = _now()
+        expires_at = (now + ttl) if ttl else None
+
+        record = APIKeyRecord(
+            key=key,
+            user_id=user_id,
+            created_at=now,
+            expires_at=expires_at,
+            scopes=scopes or [],
+            description=description,
+        )
+        self._keys[key] = record
+        return record
+
+    def validate_key(self, key: str) -> Optional[APIKeyRecord]:
+        """
+        Validate an API key.
+
+        Args:
+            key: The API key to validate
+
+        Returns:
+            APIKeyRecord if valid, None if invalid or expired
+        """
+        if not key:
+            return None
+
+        record = self._keys.get(key)
+        if not record:
+            return None
+
+        # Check expiration
+        if record.expires_at and record.expires_at <= _now():
+            return None
+
+        return record
+
+    def revoke_key(self, key: str) -> bool:
+        """
+        Revoke an API key.
+
+        Args:
+            key: The API key to revoke
+
+        Returns:
+            True if revoked, False if key not found
+        """
+        if key in self._keys:
+            del self._keys[key]
+            return True
+        return False
+
+    def log_session_start(self, key: str, user_id: str, timestamp: float) -> None:
+        """
+        Log the start of a session using an API key.
+
+        Args:
+            key: The API key used
+            user_id: User identifier
+            timestamp: Session start timestamp
+        """
+        self._sessions.append({
+            "key": key[:16] + "...",  # Truncate for security
+            "user_id": user_id,
+            "started_at": timestamp,
+            "started_at_iso": time.strftime(
+                "%Y-%m-%dT%H:%M:%SZ", time.gmtime(timestamp)
+            ),
+        })
+
+    def get_sessions(
+        self, user_id: Optional[str] = None, limit: int = 100
+    ) -> list[Dict[str, Any]]:
+        """
+        Get session logs.
+
+        Args:
+            user_id: Optional filter by user ID
+            limit: Maximum number of sessions to return
+
+        Returns:
+            List of session records
+        """
+        sessions = self._sessions
+        if user_id:
+            sessions = [s for s in sessions if s["user_id"] == user_id]
+        return sessions[-limit:]
+
+    def list_keys(self, user_id: Optional[str] = None) -> list[APIKeyRecord]:
+        """
+        List all API keys.
+
+        Args:
+            user_id: Optional filter by user ID
+
+        Returns:
+            List of API key records
+        """
+        keys = list(self._keys.values())
+        if user_id:
+            keys = [k for k in keys if k.user_id == user_id]
+        return keys
+
+
+# ---- External OAuth2 Integration ----
+
+class ExternalOAuthValidator:
+    """
+    Validates tokens against external OAuth2 servers using RFC 7662 introspection.
+
+    Use this for integrating with external identity providers like Azure AD,
+    Keycloak, Okta, etc.
+    """
+
+    def __init__(
+        self,
+        introspection_endpoint: str,
+        client_id: str,
+        client_secret: str,
+        resource_server_url: Optional[str] = None,
+        http_timeout: float = 15.0,
+    ):
+        """
+        Initialize external OAuth validator.
+
+        Args:
+            introspection_endpoint: Token introspection endpoint URL
+            client_id: Client ID for introspection requests
+            client_secret: Client secret for introspection requests
+            resource_server_url: Expected audience/resource URL
+            http_timeout: HTTP request timeout in seconds
+        """
+        self.introspection_endpoint = introspection_endpoint
+        self.client_id = client_id
+        self.client_secret = client_secret
+        self.resource_server_url = resource_server_url
+        self.http_timeout = http_timeout
+        self._token_cache: Dict[str, Dict[str, Any]] = {}
+
+    async def validate_token(self, token: str) -> Optional[Dict[str, Any]]:
+        """
+        Validate a token via introspection.
+
+        Args:
+            token: Bearer token to validate
+
+        Returns:
+            Token info dict if valid, None if invalid
+        """
+        if not token:
+            return None
+
+        try:
+            info = await self.get_token_info(token)
+            if not info.get("active", False):
+                return None
+
+            # Validate audience if configured
+            if self.resource_server_url:
+                aud = info.get("aud", [])
+                if isinstance(aud, str):
+                    aud = [aud]
+                if self.resource_server_url not in aud:
+                    return None
+
+            return info
+        except Exception:
+            return None
+
+    async def get_token_info(self, token: str) -> Dict[str, Any]:
+        """
+        Get token info from introspection endpoint (RFC 7662).
+
+        Args:
+            token: Bearer token to introspect
+
+        Returns:
+            Token introspection response
+
+        Raises:
+            Exception on HTTP or validation errors
+        """
+        # Check cache first
+        cached = self._token_cache.get(token)
+        if cached and cached.get("_cached_until", 0) > _now():
+            return cached
+
+        # Prepare introspection request
+        params = {
+            "token": token,
+            "client_id": self.client_id,
+            "client_secret": self.client_secret,
+        }
+
+        async with ClientSession() as session:
+            async with session.post(
+                self.introspection_endpoint,
+                data=params,
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                timeout=self.http_timeout,
+            ) as response:
+                if response.status != 200:
+                    text = await response.text()
+                    raise RuntimeError(
+                        f"Introspection failed: {response.status} - {text}"
+                    )
+
+                info = await response.json()
+
+        # Cache with TTL
+        if info.get("active"):
+            exp = info.get("exp", _now() + 60)
+            info["_cached_until"] = min(exp, _now() + 300)  # Max 5 min cache
+            self._token_cache[token] = info
+
+        return info
+
+    def clear_cache(self) -> None:
+        """Clear the token cache."""
+        self._token_cache.clear()
+
+
+# ---- OAuth Client Models ----
+
 @dataclass
 class OAuthClient:
     client_id: str
