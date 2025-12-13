@@ -42,7 +42,8 @@ from .models import (
 )
 from .prompts import DB_AGENT_PROMPT
 from .retries import QueryRetryConfig, SQLRetryHandler
-from .tools import SchemaSearchTool
+from parrot.tools.database.pg import PgSchemaSearchTool
+from parrot.tools.database.bq import BQSchemaSearchTool
 from ...memory import ConversationTurn
 
 
@@ -154,7 +155,12 @@ class AbstractDBAgent(AbstractBot, ABC):
 
     def _register_database_tools(self):
         """Register database-specific tools."""
-        self.schema_tool = SchemaSearchTool(
+        if self.database_type == "bigquery":
+            tool_cls = BQSchemaSearchTool
+        else:
+            tool_cls = PgSchemaSearchTool
+
+        self.schema_tool = tool_cls(
             engine=self.engine,
             metadata_cache=self.metadata_cache,
             allowed_schemas=self.allowed_schemas.copy(),

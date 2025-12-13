@@ -1200,7 +1200,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
 
         chat = None
         if not self.client:
-            self.client = self.get_client()
+            self.client = await self.get_client()
         final_config = GenerateContentConfig(
             system_instruction=system_prompt,
             safety_settings=[
@@ -1295,7 +1295,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                         # Reset the client
                         self.client = None
                         if not self.client:
-                            self.client = self.get_client()
+                            self.client = await self.get_client()
                         # Recreate the chat session
                         chat = self.client.aio.chats.create(
                             model=model,
@@ -1744,7 +1744,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                         )
                         self.client = None
                         if not self.client:
-                            self.client = self.get_client()
+                            self.client = await self.get_client()
                         
                         # Recreate chat session
                         # Note: We rely on history variable being the initial history. 
@@ -2270,7 +2270,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
 
         # Make a stateless call to the model
         if not self.client:
-            self.client = self.get_client()
+            self.client = await self.get_client()
         # response = await self.client.aio.models.generate_content(
         #     model=model,
         #     contents=contents,
@@ -2409,7 +2409,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         )
         # Retry logic for network errors
         if not self.client:
-            self.client = self.get_client()
+            self.client = await self.get_client()
         # chat = self.client.aio.chats.create(model=model, history=None, config=config)
         for attempt in range(max_retries + 1):
 

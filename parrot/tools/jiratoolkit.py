@@ -32,7 +32,7 @@ import asyncio
 import importlib
 from pydantic import BaseModel, Field
 
-from parrot.bots.prompts import data
+
 try:
     # Optional config source; fall back to env vars if missing
     from navconfig import config as nav_config  # type: ignore
@@ -189,6 +189,37 @@ class FindIssuesByAssigneeInput(BaseModel):
     assignee: str = Field(description="Assignee identifier (e.g., 'admin' or accountId)")
     project: Optional[str] = Field(default=None, description="Restrict to project key")
     max_results: int = Field(default=50, description="Max results")
+
+
+class GetTransitionsInput(BaseModel):
+    """Input for getting available transitions for an issue."""
+    issue: str = Field(description="Issue key or id")
+    expand: Optional[str] = Field(default=None, description="Expand options, e.g. 'transitions.fields'")
+
+
+class AddCommentInput(BaseModel):
+    """Input for adding a comment to an issue."""
+    issue: str = Field(description="Issue key or id")
+    body: str = Field(description="Comment body text")
+    is_internal: bool = Field(default=False, description="If true, mark as internal (Service Desk)")
+
+
+class AddWorklogInput(BaseModel):
+    """Input for adding a worklog to an issue."""
+    issue: str = Field(description="Issue key or id")
+    time_spent: str = Field(description="Time spent, e.g. '2h', '30m'")
+    comment: Optional[str] = Field(default=None, description="Worklog comment")
+    started: Optional[str] = Field(default=None, description="Date started (ISO-8601 or similar)")
+
+
+class GetIssueTypesInput(BaseModel):
+    """Input for listing issue types."""
+    project: Optional[str] = Field(default=None, description="Project key to filter by. If omitted, returns all available types.")
+
+
+class GetProjectsInput(BaseModel):
+    """Input for listing projects."""
+    pass
 
 
 # -----------------------------
@@ -359,34 +390,34 @@ class JiraToolkit(AbstractToolkit):
         return cur
 
 
-def _quote_jql_value(value: Union[str, int, float]) -> str:
-    """Quote a JQL value, escaping special characters.
+    def _quote_jql_value(self, value: Union[str, int, float]) -> str:
+        """Quote a JQL value, escaping special characters.
 
-    Jira's JQL treats characters like '@' as reserved when unquoted. This helper wraps
-    values in double quotes and escapes backslashes, double quotes, and newlines so that
-    user-provided identifiers (e.g., emails) are always valid JQL literals.
-    """
+        Jira's JQL treats characters like '@' as reserved when unquoted. This helper wraps
+        values in double quotes and escapes backslashes, double quotes, and newlines so that
+        user-provided identifiers (e.g., emails) are always valid JQL literals.
+        """
 
-    text = str(value)
-    escaped = (
-        text.replace("\\", "\\\\")
-        .replace("\"", "\\\"")
-        .replace("\n", "\\n")
-        .replace("\r", "\\r")
-    )
-    return f'"{escaped}"'
+        text = str(value)
+        escaped = (
+            text.replace("\\", "\\\\")
+            .replace("\"", "\\\"")
+            .replace("\n", "\\n")
+            .replace("\r", "\\r")
+        )
+        return f'"{escaped}"'
 
 
-def _build_assignee_jql(
-    assignee: str, project: Optional[str] = None, default_project: Optional[str] = None
-) -> str:
-    """Construct a JQL query for an assignee, quoting values as needed."""
+    def _build_assignee_jql(
+        self, assignee: str, project: Optional[str] = None, default_project: Optional[str] = None
+    ) -> str:
+        """Construct a JQL query for an assignee, quoting values as needed."""
 
-    jql = f"assignee={_quote_jql_value(assignee)}"
-    if project or default_project:
-        proj = project or default_project
-        jql = f"project={proj} AND ({jql})"
-    return jql
+        jql = f"assignee={self._quote_jql_value(assignee)}"
+        if project or default_project:
+            proj = project or default_project
+            jql = f"project={proj} AND ({jql})"
+        return jql
 
     def _project_include(self, data: Dict[str, Any], include: List[str], strict: bool = False) -> Dict[str, Any]:
         """Return a dict including only the specified dot-paths, preserving nested structure."""
@@ -619,8 +650,109 @@ def _build_assignee_jql(
 
         Example: jira.search_issues("assignee=admin")
         """
-        jql = _build_assignee_jql(assignee, project, self.default_project)
+
+        jql = self._build_assignee_jql(assignee, project, self.default_project)
         return await self.jira_search_issues(jql=jql, max_results=max_results)
+
+    @tool_schema(GetTransitionsInput)
+    async def jira_get_transitions(
+        self,
+        issue: str,
+        expand: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """Get available transitions for an issue.
+
+        Example: jira.jira_get_transitions('JRA-1330')
+        """
+        def _run():
+            return self.jira.transitions(issue, expand=expand)
+
+        transitions = await asyncio.to_thread(_run)
+        # transitions returns a list of dicts typically
+        return transitions
+
+    @tool_schema(AddCommentInput)
+    async def jira_add_comment(
+        self,
+        issue: str,
+        body: str,
+        is_internal: bool = False
+    ) -> Dict[str, Any]:
+        """Add a comment to an issue.
+
+        Example: jira.jira_add_comment('JRA-1330', 'This is a comment')
+        """
+        def _run():
+            return self.jira.add_comment(issue, body)
+
+        comment = await asyncio.to_thread(_run)
+        # Use helper to extract raw dict if available
+        return self._issue_to_dict(comment)
+
+    @tool_schema(AddWorklogInput)
+    async def jira_add_worklog(
+        self,
+        issue: str,
+        time_spent: str,
+        comment: Optional[str] = None,
+        started: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Add worklog to an issue.
+
+        Example: jira.jira_add_worklog('JRA-1330', '1h 30m', 'Working on feature')
+        """
+        def _run():
+            return self.jira.add_worklog(
+                issue=issue,
+                timeSpent=time_spent,
+                comment=comment,
+                started=started
+            )
+
+        worklog = await asyncio.to_thread(_run)
+        # Worklog object typically has id, etc.
+        val = self._issue_to_dict(worklog)
+        # Ensure we return something useful even if raw is missing
+        if not val or not val.get('id'):
+            return {
+                "id": getattr(worklog, "id", None),
+                "issue": issue,
+                "timeSpent": time_spent,
+                "created": getattr(worklog, "created", None)
+            }
+        return val
+
+    @tool_schema(GetIssueTypesInput)
+    async def jira_get_issue_types(self, project: Optional[str] = None) -> List[Dict[str, Any]]:
+        """List issue types, optionally for a specific project.
+
+        Example: jira.jira_get_issue_types(project='PROJ')
+        """
+        def _run():
+            if project:
+                proj = self.jira.project(project)
+                return proj.issueTypes
+            else:
+                return self.jira.issue_types()
+
+        types = await asyncio.to_thread(_run)
+        # types is list of IssueType objects
+        return [
+            {"id": t.id, "name": t.name, "description": getattr(t, "description", "")}
+            for t in types
+        ]
+
+    @tool_schema(GetProjectsInput)
+    async def jira_get_projects(self) -> List[Dict[str, Any]]:
+        """List all accessible projects.
+
+        Example: jira.jira_get_projects()
+        """
+        def _run():
+            return self.jira.projects()
+
+        projs = await asyncio.to_thread(_run)
+        return [{"id": p.id, "key": p.key, "name": p.name} for p in projs]
 
 
 __all__ = [
@@ -634,4 +766,9 @@ __all__ = [
     "CreateIssueInput",
     "UpdateIssueInput",
     "FindIssuesByAssigneeInput",
+    "GetTransitionsInput",
+    "AddCommentInput",
+    "AddWorklogInput",
+    "GetIssueTypesInput",
+    "GetProjectsInput",
 ]

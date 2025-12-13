@@ -18,6 +18,7 @@ def tool_schema(schema: Type[BaseModel], description: Optional[str] = None):
             return result
     """
     def decorator(func):
+        # print(f"Decorating {func.__name__} with {schema}")
         func._args_schema = schema
         func._tool_description = description or func.__doc__ or f"Tool: {func.__name__}"
         return func

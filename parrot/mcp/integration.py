@@ -150,6 +150,9 @@ class MCPClient:
                 self._session = HttpMCPSession(self.config, self.logger)
             elif transport == "unix":
                 self._session = UnixMCPSession(self.config, self.logger)
+            elif transport == "websocket":
+                from parrot.mcp.transports.websocket import WebSocketMCPSession
+                self._session = WebSocketMCPSession(self.config, self.logger)
             elif transport == "quic":
                 try:
                     from parrot.mcp.transports.quic import QuicMCPSession
@@ -303,6 +306,35 @@ class MCPToolManager:
         await client.disconnect()
         del self.mcp_clients[server_name]
 
+    async def reconfigure_mcp_server(self, config: MCPServerConfig) -> List[str]:
+        """Reconfigure an existing MCP server with new configuration.
+        
+        This method removes the existing server connection and re-adds it with the
+        new configuration. Useful for updating credentials or connection parameters.
+        
+        Args:
+            config: New MCPServerConfig with updated parameters
+            
+        Returns:
+            List of registered tool names
+            
+        Example:
+            >>> # Update Fireflies API key for a different user
+            >>> new_config = create_fireflies_mcp_server(api_key="new-user-api-key")
+            >>> tools = await manager.reconfigure_mcp_server(new_config)
+        """
+        server_name = config.name
+        
+        # Remove existing server if it exists
+        if server_name in self.mcp_clients:
+            self.logger.info(f"Reconfiguring MCP server: {server_name}")
+            await self.remove_mcp_server(server_name)
+        else:
+            self.logger.info(f"Adding new MCP server: {server_name}")
+        
+        # Add with new configuration
+        return await self.add_mcp_server(config)
+
     async def disconnect_all(self):
         """Disconnect all MCP clients."""
         for client in list(self.mcp_clients.values()):
@@ -441,21 +473,77 @@ def create_unix_mcp_server(
     )
 
 
+def create_websocket_mcp_server(
+    name: str,
+    url: str,
+    auth_type: Optional[str] = None,
+    auth_config: Optional[Dict[str, Any]] = None,
+    headers: Optional[Dict[str, str]] = None,
+    **kwargs
+) -> MCPServerConfig:
+    """Create a WebSocket MCP server configuration.
+
+    Args:
+        name: Server name
+        url: WebSocket URL (ws:// or wss://)
+        auth_type: Authentication type ("bearer", "api_key", "oauth", or None)
+        auth_config: Authentication configuration dict
+        headers: Additional HTTP headers for WebSocket upgrade
+        **kwargs: Additional MCPServerConfig parameters
+
+    Returns:
+        MCPServerConfig configured for WebSocket transport
+
+    Example:
+        >>> config = create_websocket_mcp_server(
+        ...     "my-ws-server",
+        ...     "ws://localhost:8766/mcp/ws",
+        ...     auth_type="bearer",
+        ...     auth_config={"token": "my-secret-token"}
+        ... )
+        >>> async with MCPClient(config) as client:
+        ...     tools = await client.list_tools()
+    """
+    return MCPServerConfig(
+        name=name,
+        url=url,
+        transport="websocket",
+        auth_type=auth_type,
+        auth_config=auth_config or {},
+        headers=headers or {},
+        **kwargs
+    )
+
+
 def create_api_key_mcp_server(
     name: str,
     url: str,
     api_key: str,
     header_name: str = "X-API-Key",
+    use_bearer_prefix: bool = False,
     **kwargs
 ) -> MCPServerConfig:
-    """Create configuration for API key authenticated MCP server."""
+    """Create configuration for API key authenticated MCP server.
+    
+    Args:
+        name: Unique name for the MCP server
+        url: Base URL of the MCP server
+        api_key: API key for authentication
+        header_name: Header name for the API key (default: "X-API-Key")
+        use_bearer_prefix: If True, prepend "Bearer " to the API key value (default: False)
+        **kwargs: Additional MCPServerConfig parameters
+    
+    Returns:
+        MCPServerConfig instance
+    """
     return create_http_mcp_server(
         name=name,
         url=url,
         auth_type="api_key",
         auth_config={
             "api_key": api_key,
-            "header_name": header_name
+            "header_name": header_name,
+            "use_bearer_prefix": use_bearer_prefix
         },
         **kwargs
     )
@@ -463,29 +551,33 @@ def create_api_key_mcp_server(
 
 def create_fireflies_mcp_server(
     *,
-    user_id: str,
-    client_id: str,
-    auth_url: str = "https://api.fireflies.ai/oauth/authorize",
-    token_url: str = "https://api.fireflies.ai/oauth/token",
-    scopes: list[str] = ("meetings:read", "transcripts:read"),
+    api_key: str,
     api_base: str = "https://api.fireflies.ai/mcp",
-    client_secret: str | None = None,      # if Fireflies requires secret with auth code exchange
-    redis=None,                             # aioredis client or None
+    **kwargs
 ) -> MCPServerConfig:
-    return create_oauth_mcp_server(
+    """Create configuration for Fireflies MCP server using stdio transport.
+    
+    Fireflies MCP requires using npx mcp-remote as a command-line proxy.
+    
+    Args:
+        api_key: Fireflies API key
+        api_base: Base URL of the Fireflies MCP endpoint
+        **kwargs: Additional MCPServerConfig parameters
+    
+    Returns:
+        MCPServerConfig instance configured for stdio transport
+    """
+    return MCPServerConfig(
         name="fireflies",
-        url=api_base,
-        user_id=user_id,
-        client_id=client_id,
-        client_secret=client_secret,
-        auth_url=auth_url,
-        token_url=token_url,
-        scopes=list(scopes),
-        redis=redis,
-        headers={
-            "Content-Type": "application/json",
-            "User-Agent": "AI-Parrot-MCP-Client/1.0",
-        },
+        command="npx",
+        args=[
+            "mcp-remote",
+            api_base,
+            "--header",
+            f"Authorization: Bearer {api_key}"
+        ],
+        transport="stdio",
+        **kwargs
     )
 
 
@@ -627,12 +719,24 @@ class MCPEnabledMixin:
 
     async def add_fireflies_mcp_server(
         self,
-        user_id: str,
-        client_id: str,
+        api_key: str,
         **kwargs
     ) -> List[str]:
-        """Add Fireflies.ai MCP server capability."""
-        config = create_fireflies_mcp_server(user_id=user_id, client_id=client_id, **kwargs)
+        """Add Fireflies.ai MCP server capability.
+        
+        Args:
+            api_key: Fireflies API key from Settings > Developer Settings
+            **kwargs: Additional MCPServerConfig parameters
+            
+        Returns:
+            List of registered tool names
+            
+        Example:
+            >>> tools = await agent.add_fireflies_mcp_server(
+            ...     api_key="your-fireflies-api-key"
+            ... )
+        """
+        config = create_fireflies_mcp_server(api_key=api_key, **kwargs)
         return await self.add_mcp_server(config)
 
     async def add_quic_mcp_server(
@@ -647,8 +751,78 @@ class MCPEnabledMixin:
         config = create_quic_mcp_server(name, host, port, cert_path, **kwargs)
         return await self.add_mcp_server(config)
 
+    async def add_websocket_mcp_server(
+        self,
+        name: str,
+        url: str,
+        auth_type: Optional[str] = None,
+        auth_config: Optional[Dict[str, Any]] = None,
+        headers: Optional[Dict[str, str]] = None,
+        **kwargs
+    ) -> List[str]:
+        """Add a WebSocket MCP server connection.
+        
+        Args:
+            name: Server name
+            url: WebSocket URL (ws:// or wss://)
+            auth_type: Authentication type ("bearer", "api_key", "oauth")
+            auth_config: Authentication configuration
+            headers: Additional headers for WebSocket upgrade
+            **kwargs: Additional MCPServerConfig parameters
+            
+        Returns:
+            List of registered tool names
+            
+        Example:
+            >>> await agent.add_websocket_mcp_server(
+            ...     "my-ws-server",
+            ...     "ws://localhost:8766/mcp/ws",
+            ...     auth_type="bearer",
+            ...     auth_config={"token": "my-token"}
+            ... )
+        """
+        config = create_websocket_mcp_server(
+            name, url, auth_type, auth_config, headers, **kwargs
+        )
+        return await self.add_mcp_server(config)
+
     async def remove_mcp_server(self, server_name: str):
         await self.mcp_manager.remove_mcp_server(server_name)
+
+    async def reconfigure_mcp_server(self, config: MCPServerConfig) -> List[str]:
+        """Reconfigure an existing MCP server with new configuration.
+        
+        Args:
+            config: New MCPServerConfig with updated parameters
+            
+        Returns:
+            List of registered tool names
+        """
+        return await self.mcp_manager.reconfigure_mcp_server(config)
+
+    async def reconfigure_fireflies_mcp_server(self, api_key: str, **kwargs) -> List[str]:
+        """Reconfigure Fireflies MCP server with a new API key.
+        
+        This is useful in multi-user scenarios where each user provides their own
+        Fireflies API key. The method will disconnect the existing connection and
+        reconnect with the new credentials.
+        
+        Args:
+            api_key: New Fireflies API key
+            **kwargs: Additional MCPServerConfig parameters
+            
+        Returns:
+            List of registered tool names
+            
+        Example:
+            >>> # Initial setup with user 1's API key
+            >>> await agent.add_fireflies_mcp_server(api_key="user1-api-key")
+            
+            >>> # Later, reconfigure with user 2's API key
+            >>> await agent.reconfigure_fireflies_mcp_server(api_key="user2-api-key")
+        """
+        config = create_fireflies_mcp_server(api_key=api_key, **kwargs)
+        return await self.reconfigure_mcp_server(config)
 
     def list_mcp_servers(self) -> List[str]:
         return self.mcp_manager.list_mcp_servers()

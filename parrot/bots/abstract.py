@@ -708,13 +708,13 @@ class AbstractBot(DBInterface, LocalKBMixin, ABC):
 
     def _get_database_store(self, store: dict) -> AbstractStore:
         """Get the VectorStore Class from the store configuration."""
+        from ..stores import supported_stores
         name = store.get('name')
         if not name:
             vector_driver = store.get('vector_database', 'PgVectorStore')
             name = next(
                 (k for k, v in supported_stores.items() if v == vector_driver), None
             )
-        from ..stores import supported_stores
         store_cls = supported_stores.get(name)
         cls_path = f"parrot.stores.{name}"
         try:

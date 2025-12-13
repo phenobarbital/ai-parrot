@@ -31,7 +31,9 @@ class HttpMCPServer(OAuthRoutesMixin, MCPServerBase):
         if self.config.enable_oauth:
             self._add_oauth_routes(self.app.router)
 
-        self.logger.info(f"Starting HTTP MCP server on {self.config.host}:{self.config.port}")
+        self.logger.info(
+            f"Starting HTTP MCP server on {self.config.host}:{self.config.port}"
+        )
 
         if self.parent_app:
             # If running as sub-app, just register the sub-app
@@ -165,6 +167,8 @@ class HttpMCPSession:
             # Add custom headers
             self._base_headers.update(self.config.headers)
 
+            print('THIS > ', self._base_headers)
+
             # Create HTTP session
             timeout = aiohttp.ClientTimeout(total=self.config.timeout)
             self._session = aiohttp.ClientSession(
@@ -212,7 +216,10 @@ class HttpMCPSession:
             async with self._session.post(
                 self.config.url,
                 json=request,
-                headers={"Content-Type": "application/json"}
+                headers={
+                    "Content-Type": "application/json",
+                    "Accept": "application/json"
+                }
             ) as response:
 
                 if response.status != 200:
@@ -244,7 +251,10 @@ class HttpMCPSession:
             async with self._session.post(
                 self.config.url,
                 json=notification,
-                headers={"Content-Type": "application/json"}
+                headers={
+                    "Content-Type": "application/json",
+                    "Accept": "application/json"
+                }
             ) as response:
                 # Notifications don't expect responses
                 pass

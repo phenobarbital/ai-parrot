@@ -156,7 +156,7 @@ class WhatIfConstraint(BaseModel):
 
 class WhatIfAction(BaseModel):
     """Possible action to take"""
-    type: str = Field(description="Type: close_region, adjust_metric, set_value, scale_proportional")
+    type: str = Field(description="Type: close_region, exclude_values, adjust_metric, set_value, scale_proportional")
     target: str
     parameters: Dict = Field(default_factory=dict)
 
@@ -455,6 +455,30 @@ class WhatIfDSL:
                     operation="exclude",
                     value=region,
                     cost=1.0  # Cost of closing a region
+                )
+            )
+        return self
+
+    def can_exclude_values(
+        self,
+        column: str,
+        values: Optional[List[str]] = None
+    ) -> 'WhatIfDSL':
+        """Define that specific values can be excluded from a column (generic version of can_close_regions)"""
+        if values is None:
+            if column in self.df.columns:
+                values = self.df[column].unique().tolist()
+            else:
+                return self
+
+        for value in values:
+            self.possible_actions.append(
+                Action(
+                    name=f"exclude_{column}_{value}",
+                    column=column,
+                    operation="exclude",
+                    value=value,
+                    cost=1.0  # Cost of excluding a value
                 )
             )
         return self
@@ -810,7 +834,8 @@ Example: "What if we increase visits by 20%?"
 - expenses = visits * expenses_per_visit (automatically adjusted)
 
 TRIGGER PATTERNS:
-- "What if we close region X?"
+- "What if we close region X?" or "What if we close project Y?"
+- "What if we exclude department Z?"
 - "What if we reduce expenses to Y?"
 - "What if we increase visits by Z%?"
 - "How can I reduce costs without affecting revenue?"
@@ -819,8 +844,8 @@ TRIGGER PATTERNS:
 COMMON SCENARIOS:
 
 1. Simple Impact Analysis:
-   "What if we close the North region?"
-   → Removes region, shows impact on all metrics
+   "What if we close the North region?" or "What if we close the Belkin project?"
+   → Removes entity from the specified column, shows impact on all metrics
 
 2. Constraint Optimization:
    "Reduce expenses to 500k without revenue dropping more than 5%"
@@ -966,6 +991,11 @@ IMPORTANT:
                 if action_type == "close_region":
                     regions = action.parameters.get("regions")
                     dsl.can_close_regions(regions)
+
+                elif action_type == "exclude_values":
+                    column = action.parameters.get("column", action.target)
+                    values = action.parameters.get("values")
+                    dsl.can_exclude_values(column, values)
 
                 elif action_type == "adjust_metric":
                     dsl.can_adjust_metric(
