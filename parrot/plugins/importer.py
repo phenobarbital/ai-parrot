@@ -12,14 +12,8 @@ class PluginImporter(importlib.abc.MetaPathFinder, importlib.abc.Loader):
 
     def find_spec(self, fullname, path, target=None):
         if fullname.startswith(self.package_name):
-            # Handle exact package match
-            if fullname == self.package_name:
-                init_path = os.path.join(self.plugins_path, "__init__.py")
-                if os.path.exists(init_path):
-                    return importlib.util.spec_from_loader(fullname, self)
-
             # Handle submodules
-            elif fullname.startswith(self.package_name + "."):
+            if fullname.startswith(self.package_name + "."):
                 component_name = fullname.split(".")[-1]
                 component_path = os.path.join(self.plugins_path, f"{component_name}.py")
 

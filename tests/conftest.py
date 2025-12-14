@@ -35,6 +35,7 @@ def _install_navconfig_stub() -> None:
 
     logging_module = types.ModuleType("navconfig.logging")
     logging_module.logging = logging
+    logging_module.Logger = logging.Logger
     navconfig_module.logging = logging_module
 
     exceptions_module = types.ModuleType("navconfig.exceptions")
@@ -95,10 +96,6 @@ def _install_navigator_stubs() -> None:
 def _install_parrot_stubs() -> None:
     """Install lightweight stand-ins for heavy parrot dependencies."""
 
-    # Provide a lightweight ``parrot.tools`` package to avoid heavy imports
-    tools_pkg = types.ModuleType("parrot.tools")
-    sys.modules.setdefault("parrot.tools", tools_pkg)
-
     # Stub ToolManager used by AgentCrew during initialisation
     class _ToolManager:
         def __init__(self, *_, **__):
@@ -127,46 +124,8 @@ def _install_parrot_stubs() -> None:
         def all_tools(self) -> List[Any]:
             return list(self._tools.values())
 
-    tool_manager_module = types.ModuleType("parrot.tools.manager")
-    tool_manager_module.ToolManager = _ToolManager
-    
-    class _ToolFormat:
-        OPENAI = "openai"
-        GOOGLE = "google"
-        GROQ = "groq"
-        VERTEX = "vertex"
-        ANTHROPIC = "anthropic"
-        
-    tool_manager_module.ToolFormat = _ToolFormat
-    tool_manager_module.ToolDefinition = type("ToolDefinition", (), {})
-    
-    sys.modules.setdefault("parrot.tools.manager", tool_manager_module)
-    tools_pkg.ToolManager = _ToolManager
 
-    # Minimal AbstractTool placeholder
-    class _AbstractTool:
-        name: Optional[str] = None
 
-        def __init__(self, name: Optional[str] = None, **_):
-            self.name = name or self.__class__.__name__
-
-    abstract_module = types.ModuleType("parrot.tools.abstract")
-    abstract_module.AbstractTool = _AbstractTool
-    abstract_module.AbstractToolArgsSchema = object
-    abstract_module.ToolResult = object
-    abstract_module.ToolRegistry = type("ToolRegistry", (), {})
-    sys.modules.setdefault("parrot.tools.abstract", abstract_module)
-    tools_pkg.AbstractTool = _AbstractTool
-
-    # Register placeholder modules commonly imported from ``parrot.tools``
-    pythonrepl_module = types.ModuleType("parrot.tools.pythonrepl")
-    pythonrepl_module.PythonREPLTool = type("PythonREPLTool", (), {})
-    sys.modules.setdefault("parrot.tools.pythonrepl", pythonrepl_module)
-
-    # Minimal MathTool referenced by abstract bot
-    math_module = types.ModuleType("parrot.tools.math")
-    math_module.MathTool = type("MathTool", (), {})
-    sys.modules.setdefault("parrot.tools.math", math_module)
 
     # Basic AbstractBot / BasicAgent definitions
     class _AbstractBot:

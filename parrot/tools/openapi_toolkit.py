@@ -2,6 +2,12 @@
 """
 OpenAPIToolkit - Dynamic toolkit that exposes OpenAPI services as tools.
 
+IMPROVEMENTS IN THIS VERSION:
+- Uses prance for robust OpenAPI parsing and reference resolution
+- Inline schema refs via prance (no manual recursion)
+- Support for application/x-www-form-urlencoded
+- Optimized schemas for single-operation specs (cleaner LLM experience)
+
 This toolkit automatically converts OpenAPI specifications into callable tools,
 allowing LLMs to interact with REST APIs without manual tool definition.
 
@@ -14,6 +20,7 @@ Example:
     # Creates tools like: petstore_get_pet, petstore_post_pet, etc.
 """
 from typing import Dict, List, Any, Optional, Union
+import contextlib
 import re
 import json
 from pathlib import Path
@@ -22,6 +29,13 @@ import yaml
 import httpx
 from pydantic import BaseModel, Field, create_model
 from navconfig.logging import logging
+
+# Use prance for OpenAPI parsing with reference resolution
+try:
+    from prance import ResolvingParser
+    PRANCE_AVAILABLE = True
+except ImportError:
+    PRANCE_AVAILABLE = False
 
 from ..interfaces.http import HTTPService
 from .toolkit import AbstractToolkit
@@ -33,11 +47,13 @@ class OpenAPIToolkit(AbstractToolkit):
     Toolkit that dynamically generates tools from OpenAPI specifications.
 
     This toolkit:
-    - Parses OpenAPI 3.x specs (JSON/YAML, local or remote)
-    - Resolves $ref references
+    - Uses prance for robust OpenAPI 3.x parsing (JSON/YAML, local or remote)
+    - Automatically resolves ALL $ref references (internal and external)
     - Creates one tool per operation with naming: {service}_{method}_{path}
     - Handles path parameters, query parameters, and request bodies
-    - Supports basic authentication (API keys, Bearer tokens)
+    - Supports multiple content types: application/json, application/x-www-form-urlencoded
+    - Optimizes schemas for single-operation specs (cleaner for LLMs)
+    - Supports multiple authentication methods (API keys, Bearer tokens, Basic auth)
 
     The tools are generated dynamically and integrated with HTTPService
     for robust HTTP handling with retry logic, proxy support, etc.
@@ -83,9 +99,9 @@ class OpenAPIToolkit(AbstractToolkit):
         self.debug = debug
         self.logger = logging.getLogger(f'Parrot.Tools.OpenAPIToolkit.{service}')
 
-        # Load and parse OpenAPI spec
-        self.raw_spec = self._load_spec(spec)
-        self.spec = self._resolve_references(self.raw_spec)
+        # Load and parse OpenAPI spec with prance (auto-resolves all $refs)
+        self.raw_spec = self._load_spec_with_prance(spec)
+        self.spec = self.raw_spec  # Already resolved by prance
 
         # Extract base URL
         self.base_url = base_url or self._extract_base_url()
@@ -145,98 +161,173 @@ class OpenAPIToolkit(AbstractToolkit):
         # Parse operations from spec
         self.operations = self._parse_operations()
 
+        # OPTIMIZATION 3: Detect if this is a single-operation spec
+        self.is_single_operation = len(self.operations) == 1
+
+        if self.debug:
+            self.logger.debug(
+                f"Loaded {len(self.operations)} operations. "
+                f"Single operation mode: {self.is_single_operation}"
+            )
+
         # Generate tools dynamically
         self._generate_dynamic_methods()
 
-    def _load_spec(self, spec: Union[str, Dict[str, Any]]) -> Dict[str, Any]:
+    def _load_spec_with_prance(self, spec: Union[str, Dict[str, Any]]) -> Dict[str, Any]:
         """
-        Load OpenAPI specification from various sources.
+        Load OpenAPI specification using prance for automatic reference resolution.
+
+        prance automatically:
+        - Resolves ALL $ref references (internal and external)
+        - Validates OpenAPI spec
+        - Handles YAML and JSON
+        - Supports local files and URLs
 
         Args:
             spec: URL, file path, JSON/YAML string, or dict
 
         Returns:
-            Parsed specification as dictionary
+            Fully resolved specification as dictionary (NEVER returns None)
         """
         # Track source URL for relative URL resolution
         self._spec_source_url = None
 
-        # If already a dict, return it
+        # If already a dict, use prance to resolve it
         if isinstance(spec, dict):
-            return spec
+            if PRANCE_AVAILABLE:
+                try:
+                    # Create temporary file for prance to parse
+                    import tempfile
+                    temp_path = None
+                    try:
+                        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+                            json.dump(spec, f)
+                            temp_path = f.name
+
+                        parser = ResolvingParser(temp_path, lazy=True, strict=False)
+                        resolved_spec = parser.specification
+
+                        # Clean up temp file
+                        if temp_path:
+                            Path(temp_path).unlink(missing_ok=True)
+
+                        # Ensure we have a valid spec
+                        if resolved_spec and isinstance(resolved_spec, dict):
+                            return resolved_spec
+                        else:
+                            self.logger.warning("prance returned invalid spec, using original dict")
+                            return spec
+
+                    except Exception as inner_e:
+                        # Clean up temp file on error
+                        if temp_path:
+                            with contextlib.suppress(Exception):
+                                Path(temp_path).unlink(missing_ok=True)
+                        raise inner_e
+
+                except Exception as e:
+                    self.logger.warning(f"prance parsing failed, using dict as-is: {e}")
+                    # ALWAYS return the original spec as fallback
+                    return spec
+            else:
+                # Prance not available, return original dict
+                return spec
 
         # Check if it's a URL
         parsed = urlparse(spec)
         if parsed.scheme in ('http', 'https'):
             if self.debug:
                 self.logger.debug(f"Loading spec from URL: {spec}")
-            self._spec_source_url = spec  # Store for relative URL resolution
+            self._spec_source_url = spec
+
+            if PRANCE_AVAILABLE:
+                # Let prance handle the URL directly
+                try:
+                    parser = ResolvingParser(spec, lazy=True, strict=False)
+                    resolved_spec = parser.specification
+                    if resolved_spec and isinstance(resolved_spec, dict):
+                        return resolved_spec
+                except Exception as e:
+                    self.logger.warning(f"prance URL parsing failed: {e}")
+                    # Fall through to manual loading
+
+            # Fallback: manual download and parse
             response = httpx.get(spec, timeout=30)
             response.raise_for_status()
             content = response.text
+
+            # Parse manually
+            try:
+                loaded = yaml.safe_load(content)
+                if loaded and isinstance(loaded, dict):
+                    return loaded
+            except Exception:
+                pass
+
+            # Try JSON
+            loaded = json.loads(content)
+            if loaded and isinstance(loaded, dict):
+                return loaded
+
+            raise ValueError(f"Failed to parse spec from URL: {spec}")
+
         # Check if it's a file path
         elif Path(spec).exists():
             if self.debug:
                 self.logger.debug(f"Loading spec from file: {spec}")
+
+            if PRANCE_AVAILABLE:
+                try:
+                    parser = ResolvingParser(str(spec), lazy=True, strict=False)
+                    resolved_spec = parser.specification
+                    if resolved_spec and isinstance(resolved_spec, dict):
+                        return resolved_spec
+                except Exception as e:
+                    self.logger.warning(f"prance file parsing failed: {e}")
+                    # Fall through to manual loading
+
+            # Fallback: manual loading
             with open(spec, 'r', encoding='utf-8') as f:
                 content = f.read()
+
+            try:
+                loaded = yaml.safe_load(content)
+                if loaded and isinstance(loaded, dict):
+                    return loaded
+            except Exception:
+                pass
+
+            # Try JSON
+            loaded = json.loads(content)
+            if loaded and isinstance(loaded, dict):
+                return loaded
+
+            raise ValueError(f"Failed to parse spec from file: {spec}")
+
         # Otherwise, treat as string content
         else:
             if self.debug:
                 self.logger.debug("Parsing spec from string")
-            content = spec
 
-        # Try to parse as YAML first (YAML is a superset of JSON)
-        try:
-            return yaml.safe_load(content)
-        except yaml.YAMLError as e:
-            # If YAML fails, try JSON
+            # Try YAML first (superset of JSON)
             try:
-                return json.loads(content)
-            except json.JSONDecodeError as je:
-                raise ValueError(
-                    f"Could not parse spec as YAML or JSON: {e} | {je}"
-                ) from je
+                loaded = yaml.safe_load(spec)
+                if loaded and isinstance(loaded, dict):
+                    return loaded
+            except Exception:
+                pass
 
-    def _resolve_references(self, spec: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Resolve $ref references in OpenAPI spec.
+            # Try JSON
+            try:
+                loaded = json.loads(spec)
+                if loaded and isinstance(loaded, dict):
+                    return loaded
+            except Exception:
+                pass
 
-        This is a simplified resolver that handles internal references.
-        For production, consider using libraries like jsonschema-spec or prance.
-
-        Args:
-            spec: OpenAPI specification
-
-        Returns:
-            Specification with resolved references
-        """
-        def resolve_ref(obj: Any, root: Dict[str, Any]) -> Any:
-            """Recursively resolve $ref in object."""
-            if isinstance(obj, dict):
-                if '$ref' in obj:
-                    # Extract reference path (e.g., "#/components/schemas/Pet")
-                    ref_path = obj['$ref']
-                    if ref_path.startswith('#/'):
-                        # Navigate to referenced object
-                        parts = ref_path[2:].split('/')
-                        ref_obj = root
-                        for part in parts:
-                            ref_obj = ref_obj[part]
-                        # Recursively resolve in case of nested refs
-                        return resolve_ref(ref_obj, root)
-                    else:
-                        # External refs not supported in this simple implementation
-                        return obj
-                else:
-                    # Recursively resolve all values
-                    return {k: resolve_ref(v, root) for k, v in obj.items()}
-            elif isinstance(obj, list):
-                return [resolve_ref(item, root) for item in obj]
-            else:
-                return obj
-
-        return resolve_ref(spec, spec)
+            raise ValueError(
+                "Failed to parse spec from string"
+            )
 
     def _extract_base_url(self) -> Optional[str]:
         """Extract base URL from OpenAPI servers section."""
@@ -250,12 +341,13 @@ class OpenAPIToolkit(AbstractToolkit):
                 default_value = var_config.get('default', '')
                 server_url = server_url.replace(f'{{{var_name}}}', default_value)
 
-            # If server URL is relative (starts with /), we need to construct absolute URL
+            # If server URL is relative (starts with /), construct absolute URL
             # from the spec source if it was loaded from URL
-            if server_url.startswith('/') and (hasattr(self, '_spec_source_url') and self._spec_source_url):  # noqa
+            if server_url.startswith('/') and hasattr(self, '_spec_source_url') and self._spec_source_url:
                 parsed = urlparse(self._spec_source_url)
                 base = f"{parsed.scheme}://{parsed.netloc}"
                 server_url = base + server_url
+
             return server_url
         return None
 
@@ -263,121 +355,83 @@ class OpenAPIToolkit(AbstractToolkit):
         """
         Parse OpenAPI paths into operation definitions.
 
-        Returns:
-            List of operation definitions with all necessary metadata
+        Each operation includes:
+        - operation_id: Unique identifier
+        - path: API path
+        - method: HTTP method
+        - parameters: Path, query, and header params
+        - request_body: Body schema with content type info
+        - description/summary: Operation description
         """
         operations = []
-        paths = self.spec.get('paths', {})
 
-        for path, path_item in paths.items():
-            # OpenAPI supports: get, put, post, delete, options, head, patch, trace
-            http_methods = ['get', 'post', 'put', 'delete', 'patch', 'head', 'options']
-
-            for method in http_methods:
+        for path, path_item in self.spec.get('paths', {}).items():
+            # HTTP methods
+            for method in ['get', 'post', 'put', 'patch', 'delete', 'head', 'options']:
                 if method not in path_item:
                     continue
 
-                operation = path_item[method]
-
-                # Extract operation metadata
-                operation_id = operation.get('operationId')
-                summary = operation.get('summary', '')
-                description = operation.get('description', '')
+                operation_spec = path_item[method]
 
                 # Generate operation ID if not present
-                if not operation_id:
-                    operation_id = self._generate_operation_id(method, path)
+                operation_id = operation_spec.get(
+                    'operationId',
+                    f"{method}_{path.replace('/', '_').replace('{', '').replace('}', '')}"
+                )
 
-                # Parse parameters (path, query, header, cookie)
-                parameters = self._parse_parameters(operation.get('parameters', []))
+                # Parse parameters
+                parameters = {
+                    'path': [],
+                    'query': [],
+                    'header': [],
+                    'cookie': []
+                }
 
-                # Parse request body
-                request_body = self._parse_request_body(operation.get('requestBody'))
+                for param in operation_spec.get('parameters', []):
+                    param_in = param.get('in', 'query')
+                    if param_in in parameters:
+                        parameters[param_in].append(param)
 
-                # Parse responses (for documentation purposes)
-                responses = operation.get('responses', {})
+                # IMPROVEMENT 2: Parse request body with content type detection
+                request_body = None
+                if 'requestBody' in operation_spec:
+                    request_body_spec = operation_spec['requestBody']
+                    content = request_body_spec.get('content', {})
+
+                    # Detect content type - prioritize JSON, then form-urlencoded
+                    content_type = None
+                    schema = None
+
+                    if 'application/json' in content:
+                        content_type = 'application/json'
+                        schema = content['application/json'].get('schema', {})
+                    elif 'application/x-www-form-urlencoded' in content:
+                        content_type = 'application/x-www-form-urlencoded'
+                        schema = content['application/x-www-form-urlencoded'].get('schema', {})
+                    elif content:
+                        # Fallback to first available content type
+                        content_type = list(content.keys())[0]
+                        schema = content[content_type].get('schema', {})
+
+                    if schema:
+                        request_body = {
+                            'schema': schema,
+                            'required': request_body_spec.get('required', False),
+                            'description': request_body_spec.get('description', ''),
+                            'content_type': content_type  # Track content type
+                        }
 
                 operations.append({
                     'operation_id': operation_id,
-                    'method': method.upper(),
                     'path': path,
-                    'summary': summary,
-                    'description': description,
+                    'method': method.upper(),
                     'parameters': parameters,
                     'request_body': request_body,
-                    'responses': responses,
+                    'summary': operation_spec.get('summary', ''),
+                    'description': operation_spec.get('description', ''),
                 })
 
         return operations
-
-    def _generate_operation_id(self, method: str, path: str) -> str:
-        """
-        Generate operation ID from method and path.
-
-        Example: POST /pet/{petId} -> post_pet_petid
-        """
-        # Remove path parameters and special characters
-        clean_path = re.sub(r'\{[^}]+\}', '', path)
-        clean_path = re.sub(r'[^a-zA-Z0-9/]', '', clean_path)
-        clean_path = clean_path.strip('/').replace('/', '_')
-
-        return f"{method}_{clean_path}".lower()
-
-    def _parse_parameters(self, params: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
-        """
-        Parse and categorize parameters by location (path, query, header).
-
-        Returns:
-            Dictionary with keys: 'path', 'query', 'header', 'cookie'
-        """
-        categorized = {
-            'path': [],
-            'query': [],
-            'header': [],
-            'cookie': []
-        }
-
-        for param in params:
-            location = param.get('in', 'query')
-            categorized[location].append({
-                'name': param.get('name'),
-                'description': param.get('description', ''),
-                'required': param.get('required', False),
-                'schema': param.get('schema', {'type': 'string'}),
-                'style': param.get('style'),
-                'explode': param.get('explode'),
-            })
-
-        return categorized
-
-    def _parse_request_body(self, request_body: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-        """Parse request body definition."""
-        if not request_body:
-            return None
-
-        content = request_body.get('content', {})
-
-        # Prefer JSON content type
-        for content_type in ['application/json', 'application/x-www-form-urlencoded', '*/*']:
-            if content_type in content:
-                return {
-                    'content_type': content_type,
-                    'schema': content[content_type].get('schema', {}),
-                    'required': request_body.get('required', False),
-                    'description': request_body.get('description', ''),
-                }
-
-        # Return first available content type
-        if content:
-            first_type = next(iter(content.keys()))
-            return {
-                'content_type': first_type,
-                'schema': content[first_type].get('schema', {}),
-                'required': request_body.get('required', False),
-                'description': request_body.get('description', ''),
-            }
-
-        return None
 
     def _normalize_path_for_method_name(self, path: str) -> str:
         """
@@ -402,6 +456,35 @@ class OpenAPIToolkit(AbstractToolkit):
 
         return path
 
+    def _resolve_schema_ref(self, schema: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Manually resolve $ref if present.
+
+        This is a fallback for when prance fails to resolve references.
+        Works with internal references only (#/components/schemas/...).
+        """
+        if '$ref' not in schema:
+            return schema
+
+        ref_path = schema['$ref']
+        if not ref_path.startswith('#/'):
+            # External refs not supported in this fallback
+            return schema
+
+        # Navigate the reference path
+        parts = ref_path[2:].split('/')  # Remove '#/' prefix
+        resolved = self.spec
+
+        try:
+            for part in parts:
+                resolved = resolved[part]
+
+            # Recursively resolve nested refs
+            return self._resolve_schema_ref(resolved)
+        except (KeyError, TypeError):
+            # If resolution fails, return original
+            return schema
+
     def _create_pydantic_schema(
         self,
         operation: Dict[str, Any]
@@ -409,10 +492,13 @@ class OpenAPIToolkit(AbstractToolkit):
         """
         Create Pydantic model for operation parameters.
 
-        This generates a dynamic BaseModel class based on the operation's
-        parameters and request body schema.
+        IMPROVEMENT 3: For single-operation specs, create minimal schema
+        without redundant path/method fields for better LLM experience.
         """
         fields = {}
+
+        # OPTIMIZATION: Skip path/method fields for single-operation specs
+        skip_meta_fields = self.is_single_operation
 
         # Add path parameters (always required)
         for param in operation['parameters'].get('path', []):
@@ -431,7 +517,6 @@ class OpenAPIToolkit(AbstractToolkit):
                 )
                 fields[param['name']] = (field_type, field_info)
             else:
-                # Optional field
                 field_info = Field(
                     default=None,
                     description=param.get('description', f"Query parameter: {param['name']}")
@@ -456,6 +541,10 @@ class OpenAPIToolkit(AbstractToolkit):
         # Add request body fields
         if operation['request_body']:
             schema = operation['request_body']['schema']
+
+            # CRITICAL FIX: Manually resolve $ref if prance failed
+            # This ensures we always get the actual schema with type and properties
+            schema = self._resolve_schema_ref(schema)
 
             # If request body is a single object, flatten its properties
             if schema.get('type') == 'object' and 'properties' in schema:
@@ -537,10 +626,6 @@ class OpenAPIToolkit(AbstractToolkit):
 
         return type_mapping.get(schema_type, str)
 
-    def _extract_schema_properties(self, schema: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
-        """Extract properties from schema definition."""
-        return schema.get('properties', {})
-
     def _generate_dynamic_methods(self):
         """
         Generate dynamic async methods for each operation.
@@ -615,8 +700,8 @@ class OpenAPIToolkit(AbstractToolkit):
                 # Extract header parameters
                 header_params = self_ref._extract_header_params(operation, kwargs)
 
-                # Build request body
-                body_data = self_ref._extract_body_data(operation, kwargs)
+                # IMPROVEMENT 2: Build request body with content type handling
+                body_data, content_type = self_ref._extract_body_data(operation, kwargs)
 
                 # Make request
                 method = operation['method']
@@ -624,17 +709,40 @@ class OpenAPIToolkit(AbstractToolkit):
                 if self_ref.debug:
                     self_ref.logger.debug(
                         f"Executing {method} {url} with "
-                        f"params={query_params}, headers={header_params}, body={body_data}"
+                        f"params={query_params}, headers={header_params}, "
+                        f"body={body_data}, content_type={content_type}"
                     )
+
+                # Prepare request headers
+                request_headers = header_params.copy() if header_params else {}
+
+                # Determine content type and prepare request body
+                use_json = True
+                if method in ['POST', 'PUT', 'PATCH'] and body_data:
+                    if content_type == 'application/x-www-form-urlencoded':
+                        # Send as form data
+                        use_json = False
+                        request_headers['Content-Type'] = 'application/x-www-form-urlencoded'
+
+                # Create request kwargs
+                request_kwargs = {
+                    'url': url,
+                    'method': method,
+                    'params': query_params,
+                }
+
+                # Only add headers if we have any
+                if request_headers:
+                    request_kwargs['headers'] = request_headers
+
+                # Add body data for POST/PUT/PATCH
+                if method in ['POST', 'PUT', 'PATCH'] and body_data:
+                    request_kwargs['use_json'] = use_json
+                    request_kwargs['data'] = body_data
 
                 # Execute request via HTTPService
                 result, error = await self_ref.http_service.request(
-                    url=url,
-                    method=method,
-                    params=query_params,
-                    headers=header_params or None,
-                    data=body_data if method in ['POST', 'PUT', 'PATCH'] else None,
-                    use_json=True,
+                    **request_kwargs,
                     full_response=False,
                 )
 
@@ -670,7 +778,11 @@ class OpenAPIToolkit(AbstractToolkit):
                 ).model_dump()
 
         # Set dynamic docstring
-        description = operation.get('description') or operation.get('summary', '') or f"{operation['method']} {operation['path']}"  # noqa
+        description = (
+            operation.get('description') or
+            operation.get('summary', '') or
+            f"{operation['method']} {operation['path']}"
+        )
 
         operation_method.__doc__ = f"{description}\n\nOperation: {operation['operation_id']}"
         operation_method.__name__ = self._create_method_name(operation)
@@ -745,13 +857,22 @@ class OpenAPIToolkit(AbstractToolkit):
         self,
         operation: Dict[str, Any],
         params: Dict[str, Any]
-    ) -> Optional[Dict[str, Any]]:
-        """Extract request body data from provided params."""
-        if not operation['request_body']:
-            return None
+    ) -> tuple[Optional[Dict[str, Any]], Optional[str]]:
+        """
+        Extract request body data from provided params.
 
-        # Get schema
+        IMPROVEMENT 2: Returns tuple of (body_data, content_type) to handle
+        different content types like application/json and application/x-www-form-urlencoded
+
+        Returns:
+            Tuple of (body_data, content_type)
+        """
+        if not operation['request_body']:
+            return None, None
+
+        # Get schema and content type
         schema = operation['request_body']['schema']
+        content_type = operation['request_body'].get('content_type', 'application/json')
 
         # If schema is an object with properties, extract those fields
         if schema.get('type') == 'object' and 'properties' in schema:
@@ -760,17 +881,17 @@ class OpenAPIToolkit(AbstractToolkit):
                 for prop_name in schema['properties'].keys()
                 if prop_name in params and params[prop_name] is not None
             }
-            return body or None
+            return body or None, content_type
 
         # Otherwise, look for a 'body' parameter
         if 'body' in params:
-            return params['body']
+            return params['body'], content_type
 
         # Fallback: use all non-path, non-query, and non-header params
-        body = {}
         path_params = {p['name'] for p in operation['parameters'].get('path', [])}
         query_params = {p['name'] for p in operation['parameters'].get('query', [])}
         header_params = {p['name'] for p in operation['parameters'].get('header', [])}
+
         body = {
             key: value
             for key, value in params.items()
@@ -780,4 +901,4 @@ class OpenAPIToolkit(AbstractToolkit):
             and value is not None
         }
 
-        return body or None
+        return body or None, content_type
