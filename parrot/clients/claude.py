@@ -76,7 +76,7 @@ class AnthropicClient(AbstractClient):
     async def ask(
         self,
         prompt: str,
-        model: Union[Enum, str] = ClaudeModel.SONNET_4,
+        model: Union[Enum, str] = None,
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
         files: Optional[List[Union[str, Path]]] = None,
@@ -109,9 +109,7 @@ class AnthropicClient(AbstractClient):
             _use_tools = True
             self.logger.info("Deep research mode enabled: activating enhanced research prompt and tools")
 
-        model = model.value if isinstance(model, ClaudeModel) else model
-        if not model:
-            model = self.model or self.default_model
+        model = (model.value if isinstance(model, ClaudeModel) else model) or (self.model or self.default_model)
         # Generate unique turn ID for tracking
         turn_id = str(uuid.uuid4())
         original_prompt = prompt
@@ -293,7 +291,7 @@ class AnthropicClient(AbstractClient):
         )
 
         # Create AIMessage using factory
-        ai_message = AIMessageFactory.from_claude(
+        return AIMessageFactory.from_claude(
             response=result,
             input_text=original_prompt,
             model=model,
@@ -304,12 +302,10 @@ class AnthropicClient(AbstractClient):
             tool_calls=all_tool_calls
         )
 
-        return ai_message
-
     async def ask_stream(
         self,
         prompt: str,
-        model: Union[ClaudeModel, str] = ClaudeModel.SONNET_4,
+        model: Union[ClaudeModel, str] = None,
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
         files: Optional[List[Union[str, Path]]] = None,
@@ -324,7 +320,7 @@ class AnthropicClient(AbstractClient):
         lazy_loading: bool = False,
     ) -> AsyncIterator[str]:
         """Stream Claude's response using AsyncIterator with optional conversation memory.
-        
+
         Args:
             deep_research: If True, use enhanced system prompt for thorough research
             agent_config: Optional configuration (not used, for interface compatibility)
@@ -343,7 +339,7 @@ class AnthropicClient(AbstractClient):
         messages, conversation_history, system_prompt = await self._prepare_conversation_context(
             prompt, files, user_id, session_id, system_prompt
         )
-        
+
         # Enhance system prompt for deep research mode
         if deep_research:
             research_prompt = self._get_deep_research_system_prompt()
@@ -353,7 +349,7 @@ class AnthropicClient(AbstractClient):
                 else research_prompt
             )
             self.logger.info("Deep research mode enabled for streaming")
-        
+
         if tools and isinstance(tools, list):
             for tool in tools:
                 self.register_tool(tool)
@@ -361,14 +357,16 @@ class AnthropicClient(AbstractClient):
         current_max_tokens = max_tokens or self.max_tokens
         retry_count = 0
         assistant_content = ""
+        model = (
+            model.value if isinstance(model, ClaudeModel) else model
+        ) or (self.model or self.default_model)
         while retry_count <= retry_config.max_retries:
             try:
                 payload = {
-                    "model": model.value if isinstance(model, Enum) else model,
+                    "model": model,
                     "max_tokens": current_max_tokens,
                     "temperature": temperature or self.temperature,
-                    "messages": messages,
-                    "stream": True
+                    "messages": messages
                 }
 
                 if system_prompt:
@@ -1090,7 +1088,7 @@ Format your response clearly with these sections.
 
     def _get_deep_research_system_prompt(self) -> str:
         """Generate a specialized system prompt for deep research mode.
-        
+
         This prompt encourages thorough, methodical research with iterative refinement.
         """
         return """You are in DEEP RESEARCH mode. Your task is to conduct thorough, comprehensive research on the given topic.

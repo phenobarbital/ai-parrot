@@ -85,6 +85,9 @@ class SQLAgent(AbstractDBAgent):
             raise ValueError(
                 f"Unsupported database flavor: {database_flavor}"
             )
+        
+        # Force low temperature to minimize hallucinations
+        kwargs['temperature'] = kwargs.get('temperature', 0.0)
 
         super().__init__(
             name=name,
@@ -1007,6 +1010,14 @@ SQL Query:"""
             List of matching schema objects
         """
         results = []
+        
+        # Check cache first
+        if self.cache:
+            cached_results = await self.cache.get(search_term, search_type, limit)
+            if cached_results is not None:
+                self.logger.info(f"Schema search cache hit for term: {search_term}")
+                return cached_results
+
         term_pattern = f"%{search_term}%"
         
         try:
@@ -1098,6 +1109,11 @@ SQL Query:"""
                                  "metadata": f"Type: {row[3]}"
                              })
 
+            # Cache the results ONLY if we found something
+            # This prevents caching False Negatives (empty results) which might be due to transient issues or bad queries
+            if self.cache and results:
+                await self.cache.set(search_term, search_type, limit, results)
+                
             return results
 
         except Exception as e:
