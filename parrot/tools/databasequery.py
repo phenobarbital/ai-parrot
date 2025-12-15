@@ -680,13 +680,21 @@ class DatabaseQueryTool(AbstractTool):
 
         if query_language == QueryLanguage.SQL:
             if not isinstance(query, str):
-                 # Should not happen if validated correctly, but safe fallback
                  return query
-            query_upper = query.upper().strip()
+            
             # Check if LIMIT is already present
-            if 'LIMIT' in query_upper:
+            if re.search(r'\bLIMIT\b', query, re.IGNORECASE):
                 return query
-            return f"{query.rstrip(';')} LIMIT {max_rows}"
+
+            # Regex to identify the "tail" consisting of semicolons, whitespace, and comments
+            # We strip this tail from the end of the string.
+            tail_pattern = r'(?:\s+|;|--[^\n]*|/\*[\s\S]*?\*/)*$'
+            clean_query = re.sub(tail_pattern, '', query)
+            
+            if not clean_query:
+                return query
+
+            return f"{clean_query} LIMIT {max_rows}"
 
         elif query_language == QueryLanguage.FLUX:
             if not isinstance(query, str):
