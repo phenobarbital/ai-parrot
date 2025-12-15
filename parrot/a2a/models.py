@@ -285,8 +285,17 @@ class AgentCapabilities:
         return {
             "streaming": self.streaming,
             "pushNotifications": self.push_notifications,
+            "pushNotifications": self.push_notifications,
             "stateTransitionHistory": self.state_transition_history,
         }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "AgentCapabilities":
+        return cls(
+            streaming=data.get("streaming", True),
+            push_notifications=data.get("pushNotifications", False),
+            state_transition_history=data.get("stateTransitionHistory", False),
+        )
 
 
 @dataclass
@@ -316,5 +325,52 @@ class AgentCard:
             "defaultOutputModes": self.default_output_modes,
             "skills": [s.to_dict() for s in self.skills],
             "iconUrl": self.icon_url,
+            "iconUrl": self.icon_url,
             "tags": self.tags,
         }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "AgentCard":
+        skills = []
+        for s in data.get("skills", []):
+            if isinstance(s, dict):
+                # Handle Skill dict
+                skills.append(AgentSkill(
+                    id=s["id"],
+                    name=s["name"],
+                    description=s["description"],
+                    tags=s.get("tags", []),
+                    input_schema=s.get("inputSchema"),
+                    examples=s.get("examples", [])
+                ))
+            else:
+                skills.append(s)
+        
+        caps = data.get("capabilities", {})
+        if isinstance(caps, dict):
+            capabilities = AgentCapabilities.from_dict(caps)
+        else:
+            capabilities = caps or AgentCapabilities()
+
+        return cls(
+            name=data["name"],
+            description=data["description"],
+            version=data["version"],
+            skills=skills,
+            url=data.get("url"),
+            capabilities=capabilities,
+            default_input_modes=data.get("defaultInputModes", ["text/plain", "application/json"]),
+            default_output_modes=data.get("defaultOutputModes", ["text/plain", "application/json"]),
+            protocol_version=data.get("protocolVersion", "0.3"),
+            icon_url=data.get("iconUrl"),
+            tags=data.get("tags", []),
+        )
+
+
+@dataclass
+class RegisteredAgent:
+    """Data about a A2A registered agent."""
+    url: str
+    card: AgentCard
+    last_seen: datetime = field(default_factory=datetime.utcnow)
+    healthy: bool = True
