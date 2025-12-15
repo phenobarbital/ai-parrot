@@ -568,7 +568,12 @@ class OpenAIClient(AbstractClient):
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
-        use_tools: Optional[bool] = None
+        use_tools: Optional[bool] = None,
+        deep_research: bool = False,
+        background: bool = False,
+        vector_store_ids: Optional[List[str]] = None,
+        enable_web_search: bool = True,
+        enable_code_interpreter: bool = False,
     ) -> AIMessage:
         """Ask OpenAI a question with optional conversation memory.
 
@@ -586,6 +591,11 @@ class OpenAIClient(AbstractClient):
             session_id (Optional[str], optional): Session ID for conversation memory. Defaults to None.
             tools (Optional[List[Dict[str, Any]]], optional): Tools to register for this call. Defaults to None.
             use_tools (Optional[bool], optional): Whether to use tools. Defaults to None.
+            deep_research (bool): If True, use OpenAI's deep research models (o3/o4-deep-research).
+            background (bool): If True, execute research in background mode (not yet supported).
+            vector_store_ids (Optional[List[str]]): Vector store IDs for file_search tool.
+            enable_web_search (bool): Enable web search preview tool (default: True for deep research).
+            enable_code_interpreter (bool): Enable code interpreter tool.
 
         Returns:
             AIMessage: The response from the model.
@@ -597,6 +607,17 @@ class OpenAIClient(AbstractClient):
         _use_tools = use_tools if use_tools is not None else self.enable_tools
 
         model_str = model.value if isinstance(model, Enum) else str(model)
+
+        # Deep research routing: switch to deep research model if requested
+        if deep_research:
+            # Use o3-deep-research as default deep research model
+            if model_str in {"gpt-4o-mini", "gpt-4o", "gpt-4-turbo", OpenAIModel.GPT4_1.value}:
+                model_str = "o3-deep-research"
+                self.logger.info(f"Deep research enabled: switching to {model_str}")
+            elif model_str not in RESPONSES_ONLY_MODELS:
+                # If not already a deep research model, switch to it
+                model_str = "o3-deep-research"
+                self.logger.info(f"Deep research enabled: switching to {model_str}")
 
         messages, conversation_session, system_prompt = await self._prepare_conversation_context(
             prompt, files, user_id, session_id, system_prompt
@@ -620,11 +641,32 @@ class OpenAIClient(AbstractClient):
             structured_output
         )
 
+        # Build tools for deep research or regular use
+        research_tools = []
+        if deep_research:
+            # For deep research, build specialized tools array
+            if enable_web_search:
+                research_tools.append({"type": "web_search_preview"})
+            
+            if vector_store_ids:
+                research_tools.append({
+                    "type": "file_search",
+                    "vector_store_ids": vector_store_ids
+                })
+            
+            if enable_code_interpreter:
+                research_tools.append({
+                    "type": "code_interpreter",
+                    "container": {"type": "auto"}
+                })
+            
+            self.logger.info(f"Deep research tools configured: {len(research_tools)} tools")
+
         # tools prep
         if tools and isinstance(tools, list):
             for tool in tools:
                 self.register_tool(tool)
-        tools = self._prepare_tools() if (_use_tools) else None
+        prepared_tools = self._prepare_tools() if (_use_tools) else None
 
         args = {}
         if model_str in {
@@ -636,8 +678,12 @@ class OpenAIClient(AbstractClient):
                 "web_search_model": "gpt-4o-mini"
             }
 
-        if tools:
-            args['tools'] = tools
+        # Merge research tools with regular tools
+        if deep_research and research_tools:
+            # For deep research, add research-specific tools
+            args['tools'] = research_tools
+        elif prepared_tools:
+            args['tools'] = prepared_tools
             args['tool_choice'] = "auto"
             args['parallel_tool_calls'] = True
 
@@ -829,13 +875,35 @@ class OpenAIClient(AbstractClient):
         session_id: Optional[str] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
         structured_output: Union[type, StructuredOutputConfig, None] = None,
+        deep_research: bool = False,
+        agent_config: Optional[Dict[str, Any]] = None,
+        vector_store_ids: Optional[List[str]] = None,
+        enable_web_search: bool = True,
+        enable_code_interpreter: bool = False,
     ) -> AsyncIterator[str]:
-        """Stream OpenAI's response with optional conversation memory."""
+        """Stream OpenAI's response with optional conversation memory.
+        
+        Args:
+            deep_research: If True, use deep research models with streaming
+            agent_config: Optional configuration (not used for OpenAI, for interface compatibility)
+            vector_store_ids: Vector store IDs for file_search tool
+            enable_web_search: Enable web search preview tool
+            enable_code_interpreter: Enable code interpreter tool
+        """
 
         # Generate unique turn ID for tracking
         turn_id = str(uuid.uuid4())
         # Extract model value if it's an enum
         model_str = model.value if isinstance(model, Enum) else model
+
+        # Deep research routing (same as in ask method)
+        if deep_research:
+            if model_str in {"gpt-4o-mini", "gpt-4o", "gpt-4-turbo", OpenAIModel.GPT4_1.value}:
+                model_str = "o3-deep-research"
+                self.logger.info(f"Deep research streaming enabled: switching to {model_str}")
+            elif model_str not in RESPONSES_ONLY_MODELS:
+                model_str = "o3-deep-research"
+                self.logger.info(f"Deep research streaming enabled: switching to {model_str}")
 
         messages, conversation_session, system_prompt = await self._prepare_conversation_context(
             prompt, files, user_id, session_id, system_prompt
@@ -852,6 +920,23 @@ class OpenAIClient(AbstractClient):
         if system_prompt:
             messages.insert(0, {"role": "system", "content": system_prompt})
 
+        # Build research tools if needed
+        research_tools = []
+        if deep_research:
+            if enable_web_search:
+                research_tools.append({"type": "web_search_preview"})
+            if vector_store_ids:
+                research_tools.append({
+                    "type": "file_search",
+                    "vector_store_ids": vector_store_ids
+                })
+            if enable_code_interpreter:
+                research_tools.append({
+                    "type": "code_interpreter",
+                    "container": {"type": "auto"}
+                })
+            self.logger.info(f"Deep research streaming tools: {len(research_tools)} tools")
+
         # Prepare tools (Note: streaming with tools is more complex)
         if tools and isinstance(tools, list):
             for tool in tools:
@@ -860,7 +945,10 @@ class OpenAIClient(AbstractClient):
 
         args: Dict[str, Any] = {}
 
-        if tools_payload:
+        # Merge research tools with regular tools (same logic as ask)
+        if deep_research and research_tools:
+            args['tools'] = research_tools
+        elif tools_payload:
             args['tools'] = tools_payload
             args['tool_choice'] = "auto"
             args["parallel_tool_calls"] = True
