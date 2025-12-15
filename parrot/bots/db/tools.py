@@ -86,7 +86,6 @@ class SchemaSearchTool(AbstractTool):
         """Search the database schema."""
         try:
             results = await self.agent.search_schema(search_term, search_type, limit)
-
             return ToolResult(
                 status="success",
                 result=results,
@@ -165,5 +164,49 @@ class QueryGenerationTool(AbstractTool):
                 error=str(e),
                 metadata={
                     "natural_language_query": natural_language_query
+                }
+            )
+
+
+class ExplainQueryArgs(AbstractToolArgsSchema):
+    """Arguments for explain query tool."""
+    query: str = Field(
+        description="SQL query to explain"
+    )
+
+
+class ExplainQueryTool(AbstractTool):
+    """Tool for explaining database queries using EXPLAIN ANALYZE."""
+
+    name = "explain_query"
+    description = "Explain a SQL query using the database's execution plan (e.g. EXPLAIN ANALYZE)"
+    args_schema = ExplainQueryArgs
+
+    def __init__(self, agent: AbstractBot, **kwargs):
+        super().__init__(**kwargs)
+        self.agent = agent
+
+    async def _execute(
+        self,
+        query: str
+    ) -> ToolResult:
+        """Explain a database query."""
+        try:
+            result = await self.agent.explain_query(query)
+
+            return ToolResult(
+                status="success",
+                result=result,
+                metadata={
+                    "query": query
+                }
+            )
+        except Exception as e:
+            return ToolResult(
+                status="error",
+                result=None,
+                error=str(e),
+                metadata={
+                    "query": query
                 }
             )

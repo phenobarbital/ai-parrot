@@ -58,8 +58,8 @@ class HttpMCPServer(OAuthRoutesMixin, MCPServerBase):
     async def _handle_http_request(self, request: web.Request) -> web.Response:
         """Handle incoming JSON-RPC over HTTP."""
         try:
-            # Check authentication
-            auth_response = self._authenticate_request(request)
+            # Check authentication (async to support all auth methods)
+            auth_response = await self._authenticate_request(request)
             if auth_response:
                 return auth_response
 

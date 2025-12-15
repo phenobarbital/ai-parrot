@@ -85,6 +85,9 @@ class SQLAgent(AbstractDBAgent):
             raise ValueError(
                 f"Unsupported database flavor: {database_flavor}"
             )
+        
+        # Force low temperature to minimize hallucinations
+        kwargs['temperature'] = kwargs.get('temperature', 0.0)
 
         super().__init__(
             name=name,
@@ -287,7 +290,7 @@ class SQLAgent(AbstractDBAgent):
         """Test DatabaseQueryTool connection."""
         try:
             # Get database query tool from registered tools
-            db_tool = self.tool_manager.get_tool('DatabaseQueryTool')
+            db_tool = self.tool_manager.get_tool('database_query')
             if db_tool:
                 # Test with a simple query
                 test_result = await db_tool.execute(
@@ -583,7 +586,7 @@ class SQLAgent(AbstractDBAgent):
         """Get sample data using DatabaseQueryTool."""
         try:
             # Get database query tool
-            db_tool = self.tool_manager.get_tool('DatabaseQueryTool')
+            db_tool = self.tool_manager.get_tool('database_query')
             if not db_tool:
                 self.logger.warning("DatabaseQueryTool not found")
                 return []
@@ -635,7 +638,9 @@ class SQLAgent(AbstractDBAgent):
             response = await self._llm.ask(
                 prompt=prompt,
                 model=self._llm_model,
-                temperature=0.0  # Zero temperature for deterministic results
+                temperature=0.0,  # Zero temperature for deterministic results
+                use_tools=False, # Explicitly disable tools to prevent recursion
+                tools=[]
             )
 
             # Extract SQL query from response
@@ -706,11 +711,57 @@ class SQLAgent(AbstractDBAgent):
                 "method": "tool_validation"
             }
 
+    async def explain_query(self, query: str) -> str:
+        """
+        Explain a database query (e.g. EXPLAIN ANALYZE).
+        
+        Args:
+            query: The SQL query to explain
+            
+        Returns:
+            The execution plan as a string
+        """
+        try:
+            # Construct EXPLAIN query based on flavor
+            if self.database_flavor in ['postgresql', 'postgres', 'pg']:
+                # Use JSON format for better parsing if needed, and ANALYZE for actual execution stats
+                explain_query = f"EXPLAIN (FORMAT JSON, ANALYZE) {query}"
+            elif self.database_flavor == 'mysql':
+                explain_query = f"EXPLAIN ANALYZE {query}"
+            else:
+                explain_query = f"EXPLAIN {query}"
+
+            # Execute the explain query
+            # We use execute_query but need to handle the result format
+            result = await self.execute_query(explain_query, limit=0) # limit=0 is ignored for EXPLAIN usually
+
+            if result["success"]:
+                 # Format the result
+                 data = result["data"]
+                 if self.database_flavor in ['postgresql', 'postgres', 'pg']:
+                     # Postgres JSON output usually comes as a single cell with lists
+                     try:
+                         # It might be a list of dicts in the first column
+                         plan = data.iloc[0, 0]
+                         if isinstance(plan, list) or isinstance(plan, dict):
+                             return json.dumps(plan, indent=2)
+                         return str(plan)
+                     except Exception:
+                         return data.to_string()
+                 else:
+                     return data.to_string()
+            else:
+                return f"Failed to explain query: {result['error']}"
+
+        except Exception as e:
+            self.logger.error(f"Error explaining query: {e}")
+            return f"Error explaining query: {str(e)}"
+
     async def execute_query(self, query: str, limit: int = 200) -> Dict[str, Any]:
         """Execute SQL query and return results using DatabaseQueryTool."""
         try:
             # Get database query tool
-            db_tool = self.tool_manager.get_tool('DatabaseQueryTool')
+            db_tool = self.tool_manager.get_tool('database_query')
             if not db_tool:
                 db_tool = None
 
@@ -853,7 +904,7 @@ SQL Query:"""
 
     async def ask(
         self,
-        prompt: str,
+        question: str = None,
         user_context: str = "",
         context: str = "",
         return_results: bool = True,  # New parameter to control query execution
@@ -866,7 +917,7 @@ SQL Query:"""
         Enhanced ask method that can automatically execute generated SQL queries.
 
         Args:
-            prompt: The user's question about the database
+            question: The user's question about the database
             user_context: User-specific context for database interaction
             context: Additional context about data location, schema guidance
             return_results: If True, automatically execute generated SQL queries and return data
@@ -878,9 +929,13 @@ SQL Query:"""
         Returns:
             AIMessage: The response from the LLM, potentially enhanced with query results
         """
+        # Backwards compatibility
+        if question is None:
+            question = kwargs.get('prompt')
+            
         # First, get the standard response from the parent method
         response = await super().ask(
-            prompt=prompt,
+            question=question,
             user_context=user_context,
             context=context,
             session_id=session_id,
@@ -937,6 +992,134 @@ SQL Query:"""
 
         return response
 
+    async def search_schema(
+        self,
+        search_term: str,
+        search_type: str = "all",
+        limit: int = 10
+    ) -> List[Dict[str, Any]]:
+        """
+        Search the database schema using SQL queries against information_schema.
+        
+        Args:
+            search_term: Term to search for (supports LIKE patterns implicitly)
+            search_type: Type of search ('tables', 'columns', 'all')
+            limit: Maximum number of results
+            
+        Returns:
+            List of matching schema objects
+        """
+        results = []
+        
+        # Check cache first
+        if self.cache:
+            cached_results = await self.cache.get(search_term, search_type, limit)
+            if cached_results is not None:
+                self.logger.info(f"Schema search cache hit for term: {search_term}")
+                return cached_results
+
+        term_pattern = f"%{search_term}%"
+        
+        try:
+            # Determine logic based on search_type
+            search_tables = search_type in ["all", "tables"]
+            search_columns = search_type in ["all", "columns"]
+            
+            # --- Search Tables ---
+            if search_tables:
+                if self.database_flavor in ['postgresql', 'postgres', 'pg']:
+                    # Support schema.table search
+                    query = """
+                        SELECT table_schema, table_name, 'TABLE' as type
+                        FROM information_schema.tables
+                        WHERE (table_name ILIKE :term 
+                           OR table_schema || '.' || table_name ILIKE :term)
+                          AND table_schema NOT IN ('information_schema', 'pg_catalog')
+                          AND table_type = 'BASE TABLE'
+                        LIMIT :limit
+                    """
+                elif self.database_flavor == 'mysql':
+                    query = """
+                        SELECT table_schema, table_name, 'TABLE' as type
+                        FROM information_schema.tables
+                        WHERE (table_name LIKE :term 
+                           OR CONCAT(table_schema, '.', table_name) LIKE :term)
+                          AND table_schema = DATABASE()
+                          AND table_type = 'BASE TABLE'
+                        LIMIT :limit
+                    """
+                else: # Generic/SQL Server
+                    query = """
+                        SELECT table_schema, table_name, 'TABLE' as type
+                        FROM information_schema.tables
+                        WHERE table_name LIKE :term
+                        LIMIT :limit
+                    """
+                
+                if self.engine:
+                    async with self.engine.connect() as conn:
+                        result_proxy = await conn.execute(text(query), {"term": term_pattern, "limit": limit})
+                        rows = result_proxy.fetchall()
+                        for row in rows:
+                            results.append({
+                                "type": "table",
+                                "name": row[1],
+                                "schema": row[0],
+                                "description": f"Table: {row[0]}.{row[1]}"
+                            })
+            
+            # --- Search Columns ---
+            if search_columns and len(results) < limit:
+                current_limit = limit - len(results)
+                if self.database_flavor in ['postgresql', 'postgres', 'pg']:
+                    query = """
+                        SELECT table_schema, table_name, column_name, data_type
+                        FROM information_schema.columns
+                        WHERE column_name ILIKE :term
+                          AND table_schema NOT IN ('information_schema', 'pg_catalog')
+                        LIMIT :limit
+                    """
+                elif self.database_flavor == 'mysql':
+                    query = """
+                        SELECT table_schema, table_name, column_name, data_type
+                        FROM information_schema.columns
+                        WHERE column_name LIKE :term
+                          AND table_schema = DATABASE()
+                        LIMIT :limit
+                    """
+                else: # Generic/SQL Server
+                   query = """
+                        SELECT table_schema, table_name, column_name, data_type
+                        FROM information_schema.columns
+                        WHERE column_name LIKE :term
+                        LIMIT :limit
+                    """
+
+                if self.engine:
+                    async with self.engine.connect() as conn:
+                         result_proxy = await conn.execute(text(query), {"term": term_pattern, "limit": current_limit})
+                         rows = result_proxy.fetchall()
+                         for row in rows:
+                             results.append({
+                                 "type": "column",
+                                 "table": row[1],
+                                 "schema": row[0],
+                                 "name": row[2], 
+                                 "description": f"Column: {row[2]} (Type: {row[3]}) in {row[0]}.{row[1]}",
+                                 "metadata": f"Type: {row[3]}"
+                             })
+
+            # Cache the results ONLY if we found something
+            # This prevents caching False Negatives (empty results) which might be due to transient issues or bad queries
+            if self.cache and results:
+                await self.cache.set(search_term, search_type, limit, results)
+                
+            return results
+
+        except Exception as e:
+            self.logger.error(f"Error in SQL-based search_schema: {e}")
+            return []
+
     def _extract_queries(self, response_text: str) -> List[str]:
         """
         Extract SQL queries from LLM response text.
@@ -959,29 +1142,13 @@ SQL Query:"""
                 queries.append(cleaned_query)
 
         # Method 2: If no markdown blocks, look for SQL-like patterns
+        # CAUTION: This fallback generates false positives for explanations.
+        # We will disable aggressive line scanning and only support markdown blocks or single-line exact queries.
         if not queries:
-            # Look for common SQL patterns
-            sql_keywords = r'\b(SELECT|WITH|SHOW|DESCRIBE|EXPLAIN)\b'
-            lines = response_text.split('\n')
-            current_query = []
-            in_query = False
-
-            for line in lines:
-                line = line.strip()
-                if re.search(sql_keywords, line, re.IGNORECASE):
-                    in_query = True
-                    current_query = [line]
-                elif in_query:
-                    if line.endswith(';') or not line:
-                        if line.endswith(';'):
-                            current_query.append(line)
-                        query = '\n'.join(current_query).strip()
-                        if query:
-                            queries.append(query)
-                        in_query = False
-                        current_query = []
-                    else:
-                        current_query.append(line)
+            cleaned_text = response_text.strip()
+            # If the whole text looks like a query (starts with keyword, ends with ;)
+            if re.match(r'^(SELECT|WITH|SHOW|DESCRIBE|EXPLAIN)\b.*?;$', cleaned_text, re.IGNORECASE | re.DOTALL):
+                queries.append(cleaned_text)
 
         # Clean up queries
         cleaned_queries = []
@@ -1085,3 +1252,4 @@ execution_result = await pg_agent.execute_query(query_result['query'])
 print(f"Query: {execution_result['query']}")
 print(f"Data: {execution_result['data']}")
 """
+

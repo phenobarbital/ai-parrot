@@ -8,6 +8,8 @@ from enum import Enum
 import pandas as pd
 from .math import MathTool
 from .abstract import AbstractTool, ToolResult
+import aiohttp
+from ..a2a.models import RegisteredAgent, AgentCard
 
 
 @dataclass
@@ -200,6 +202,7 @@ class ToolManager:
             logger: Logger instance
         """
         self._shared: Dict[str, Any] = {"dataframes": {}}  # name -> (df, meta)
+        self._registered_agents: Dict[str, RegisteredAgent] = {}
         self._result_hooks: List[Callable[[str, Any, Dict[str, Any]], None]] = []
         self.logger = logger or logging.getLogger(self.__class__.__name__)
         self._debug: bool = debug
@@ -209,6 +212,70 @@ class ToolManager:
         self.auto_share_dataframes: bool = True
         self.auto_push_to_pandas: bool = True
         self.pandas_tool_name: str = "python_pandas"
+        
+        # Self-register the search tool
+        self.register_tool(
+            name="search_tools",
+            description="Search for available tools by name or description. Use this to find tools that can help with your task.",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The search query to match against tool names and descriptions"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of results to return",
+                        "default": 15
+                    }
+                },
+                "required": ["query"]
+            },
+            function=self.search_tools
+        )
+
+    def search_tools(self, query: str, limit: int = 15) -> str:
+        """
+        Search for tools by name or description.
+        
+        Args:
+            query: Search query
+            limit: Max results
+            
+        Returns:
+            JSON string list of matching tools with descriptions
+        """
+        query = query.lower().strip()
+        matches = []
+        
+        for name, tool in self._tools.items():
+            if name == "search_tools":
+                continue
+                
+            # Get description
+            desc = ""
+            if hasattr(tool, 'description'):
+                desc = tool.description
+            elif isinstance(tool, dict):
+                desc = tool.get('description', '')
+                
+            # Check match
+            if query in name.lower() or query in desc.lower():
+                matches.append({
+                    "name": name,
+                    "description": desc
+                })
+                
+        # Sort by name and limit
+        matches.sort(key=lambda x: x['name'])
+        matches = matches[:limit]
+        
+        if not matches:
+            return f"No tools found matching '{query}'. Try a different search term."
+            
+        import json
+        return json.dumps(matches, indent=2)
 
     def default_tools(self, tools: list = None) -> List[AbstractTool]:
         if not tools:
@@ -798,10 +865,12 @@ class ToolManager:
                     result = await tool.function(**parameters)
                 else:
                     result = tool.function(**parameters)
+
                 self.logger.debug(
                     f"Executed tool '{tool_name}' with parameters: {parameters}"
                 )
                 return result
+
             elif isinstance(tool, AbstractTool):
                 # Handle AbstractTool (new)
                 result = await tool.execute(**parameters)
@@ -826,6 +895,110 @@ class ToolManager:
                 f"Error executing tool {tool_name}: {e}"
             )
             raise
+
+    async def register_a2a_agent(self, url: str) -> RegisteredAgent:
+        """
+        Register an A2A agent by its URL.
+        
+        Args:
+            url (str): The base URL of the A2A agent.
+            
+        Returns:
+            RegisteredAgent: The registered agent object.
+            
+        Raises:
+            Exception: If registration fails or agent is unreachable.
+        """
+        url = url.rstrip('/')
+        agent_url = f"{url}/.well-known/agent.json"
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(agent_url) as response:
+                    if response.status != 200:
+                        raise ValueError(f"Failed to fetch agent card: {response.status}")
+                    
+                    data = await response.json()
+                    card = AgentCard.from_dict(data)
+                    card.url = url # Ensure URL is set to the base URL
+                    
+                    agent = RegisteredAgent(
+                        url=url,
+                        card=card
+                    )
+                    
+                    self._registered_agents[card.name] = agent
+                    self.logger.info(f"Registered A2A agent: {card.name} ({url})")
+                    return agent
+                    
+        except Exception as e:
+            self.logger.error(f"Error registering A2A agent from {url}: {e}")
+            raise
+
+    def get_a2a_agents(self) -> List[RegisteredAgent]:
+        """Get all registered A2A agents."""
+        return list(self._registered_agents.values())
+
+    def get_by_skill(self, skill: str) -> List[RegisteredAgent]:
+        """
+        Get agents that have a specific skill (by ID or name substring).
+        """
+        results = []
+        skill_lower = skill.lower()
+        for agent in self._registered_agents.values():
+            for s in agent.card.skills:
+                if skill_lower in s.id.lower() or skill_lower in s.name.lower():
+                    results.append(agent)
+                    break
+        return results
+
+    def get_by_tag(self, tag: str) -> List[RegisteredAgent]:
+        """Get agents that have a specific tag."""
+        results = []
+        tag_lower = tag.lower()
+        for agent in self._registered_agents.values():
+            # Check agent tags
+            if any(tag_lower == t.lower() for t in agent.card.tags):
+                results.append(agent)
+                continue
+            # Check skill tags
+            for s in agent.card.skills:
+                if any(tag_lower == t.lower() for t in s.tags):
+                    results.append(agent)
+                    break 
+        return results
+
+    def search_a2a_agents(self, query: str) -> List[RegisteredAgent]:
+        """
+        Search agents by name, description, tags, or skills.
+        """
+        results = []
+        q = query.lower()
+        for agent in self._registered_agents.values():
+            # Search in agent metadata and tags
+            if (q in agent.card.name.lower() or 
+                q in agent.card.description.lower() or
+                any(q in t.lower() for t in agent.card.tags)):
+                results.append(agent)
+                continue
+                
+            # Search in skills
+            found_in_skills = False
+            for s in agent.card.skills:
+                if (q in s.name.lower() or 
+                    q in s.description.lower() or
+                    any(q in t.lower() for t in s.tags)):
+                    found_in_skills = True
+                    break
+            
+            if found_in_skills:
+                results.append(agent)
+                
+        return results
+
+    def list_a2a_agents(self) -> List[str]:
+        """List names of registered A2A agents."""
+        return list(self._registered_agents.keys())
 
     async def execute_tool_call(
         self,

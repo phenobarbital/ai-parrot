@@ -9,8 +9,8 @@ from ..abstract import (
     ToolResult,
     AbstractToolArgsSchema
 )
-from parrot.bots.database.models import TableMetadata
-from parrot.bots.database.cache import SchemaMetadataCache
+from .models import TableMetadata
+from .cache import SchemaMetadataCache
 
 
 class SchemaSearchArgs(AbstractToolArgsSchema):
@@ -65,7 +65,9 @@ class AbstractSchemaManagerTool(AbstractTool, ABC):
             )
 
         self.logger = logging.getLogger(f"{self.__class__.__name__}")
-        self.logger.debug(f"Initialized with {len(allowed_schemas)} schemas: {allowed_schemas}")
+        self.logger.debug(
+            f"Initialized with {len(allowed_schemas)} schemas: {allowed_schemas}"
+        )
 
     async def _execute(
         self,
@@ -156,7 +158,8 @@ class AbstractSchemaManagerTool(AbstractTool, ABC):
         limit: int = 10
     ) -> List[TableMetadata]:
         """Search database schema - returns raw TableMetadata for agent use."""
-        self.logger.debug(f"🔍 SCHEMA SEARCH: '{search_term}' (type: {search_type}, limit: {limit})")
+        self.logger.debug(
+            f"🔍 SCHEMA SEARCH: '{search_term}' (type: {search_type}, limit: {limit})")
 
         tables = await self.metadata_cache.search_similar_tables(
             schema_names=self.allowed_schemas,
@@ -174,9 +177,9 @@ class AbstractSchemaManagerTool(AbstractTool, ABC):
         search_type: str
     ) -> Optional[Dict[str, Any]]:
         """Format a table metadata object into a search result."""
-        search_term_lower = search_term.lower()
 
-        result = {
+        # Always return since cache already did filtering
+        return {
             "type": "table",
             "schema": table.schema,
             "tablename": table.tablename,
@@ -193,11 +196,10 @@ class AbstractSchemaManagerTool(AbstractTool, ABC):
                 for col in table.columns
             ],
             "row_count": table.row_count,
-            "sample_data": table.sample_data[:3] if table.sample_data else []
+            "sample_data": table.sample_data[:3] if table.sample_data else [],
+            "search_term": search_term,
+            "search_type": search_type
         }
-
-        # Always return since cache already did filtering
-        return result
 
     async def get_table_details(
         self,
@@ -206,7 +208,9 @@ class AbstractSchemaManagerTool(AbstractTool, ABC):
     ) -> Optional[TableMetadata]:
         """Get detailed metadata for a specific table."""
         if schema not in self.allowed_schemas:
-            self.logger.warning(f"Schema '{schema}' not in allowed schemas: {self.allowed_schemas}")
+            self.logger.warning(
+                f"Schema '{schema}' not in allowed schemas: {self.allowed_schemas}"
+            )
             return None
 
         try:
@@ -220,20 +224,18 @@ class AbstractSchemaManagerTool(AbstractTool, ABC):
         if schema_name not in self.allowed_schemas:
             return None
 
-        schema_meta = self.metadata_cache.get_schema_overview(schema_name)
-        if not schema_meta:
-            return None
-
-        return {
-            "schema": schema_meta.schema,
-            "database_name": schema_meta.database_name,
-            "table_count": schema_meta.table_count,
-            "view_count": schema_meta.view_count,
-            "total_rows": schema_meta.total_rows,
-            "last_analyzed": schema_meta.last_analyzed.isoformat() if schema_meta.last_analyzed else None,
-            "tables": list(schema_meta.tables.keys()),
-            "views": list(schema_meta.views.keys())
-        }
+        if schema_meta := self.metadata_cache.get_schema_overview(schema_name):
+            return {
+                "schema": schema_meta.schema,
+                "database_name": schema_meta.database_name,
+                "table_count": schema_meta.table_count,
+                "view_count": schema_meta.view_count,
+                "total_rows": schema_meta.total_rows,
+                "last_analyzed": schema_meta.last_analyzed.isoformat() if schema_meta.last_analyzed else None,
+                "tables": list(schema_meta.tables.keys()),
+                "views": list(schema_meta.views.keys())
+            }
+        return None
 
     def get_allowed_schemas(self) -> List[str]:
         """Get the list of schemas this tool can search."""

@@ -1,5 +1,16 @@
-from dataclasses import dataclass
-from typing import List, Optional
+from dataclasses import dataclass, field
+from typing import List, Optional, Any
+from enum import Enum
+
+
+class AuthMethod(str, Enum):
+    """Authentication method for MCP server."""
+    NONE = "none"
+    API_KEY = "api_key"  # Header-based API key validation
+    OAUTH2_INTERNAL = "oauth2_internal"  # In-memory OAuthAuthorizationServer
+    OAUTH2_EXTERNAL = "oauth2_external"  # External OAuth2 (Azure, Keycloak)
+    BEARER = "bearer"  # navigator-auth session-based
+
 
 @dataclass
 class MCPServerConfig:
@@ -21,8 +32,22 @@ class MCPServerConfig:
     # Logging
     log_level: str = "INFO"
 
-    # OAuth / Authorization
-    enable_oauth: bool = False
+    # Authentication method (replaces enable_oauth for new code)
+    auth_method: AuthMethod = AuthMethod.NONE
+
+    # API Key settings
+    api_key_header: str = "X-API-Key"
+    api_key_store: Optional[Any] = None  # APIKeyStore instance
+
+    # External OAuth2 settings (for OAUTH2_EXTERNAL)
+    oauth2_issuer_url: Optional[str] = None
+    oauth2_introspection_endpoint: Optional[str] = None
+    oauth2_client_id: Optional[str] = None
+    oauth2_client_secret: Optional[str] = None
+    oauth2_resource_server_url: Optional[str] = None
+
+    # OAuth / Authorization (for OAUTH2_INTERNAL, backward compatible)
+    enable_oauth: bool = False  # Deprecated: use auth_method instead
     oauth_scopes: Optional[List[str]] = None
     oauth_token_ttl: int = 3600
     oauth_code_ttl: int = 600
