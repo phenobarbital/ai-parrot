@@ -79,6 +79,16 @@ class AbstractTool(ABC):
             static_dir: Static directory path
             **kwargs: Additional configuration
         """
+        # Store initialization parameters for cloning
+        self._init_kwargs = {
+            'name': name,
+            'description': description,
+            'output_dir': output_dir,
+            'base_url': base_url,
+            'static_dir': static_dir,
+            **kwargs
+        }
+
         # Set name and description
         self.name = name or self.name or self.__class__.__name__
         self.description = description or self.__class__.__doc__ or f"Tool: {self.name}"
@@ -112,6 +122,39 @@ class AbstractTool(ABC):
         """Get the default output directory for this tool type."""
         # Default implementation - tools that don't need output can return None
         return None
+
+    def _get_clone_kwargs(self) -> Dict[str, Any]:
+        """
+        Get the keyword arguments to use when cloning this tool.
+        
+        Subclasses can override this method to customize which parameters
+        are cloned and which are not. By default, all initialization
+        parameters stored in _init_kwargs are returned.
+        
+        Returns:
+            Dictionary of keyword arguments for tool initialization
+        """
+        return self._init_kwargs.copy()
+
+    def clone(self):
+        """
+        Create a new instance of this tool with the same configuration.
+        
+        This method creates a new instance of the tool class with all the
+        initialization parameters that were passed to the current instance.
+        Subclasses can override _get_clone_kwargs() to customize which
+        parameters are cloned and which are not.
+        
+        Returns:
+            New instance of the same tool class with cloned configuration
+            
+        Example:
+            >>> dbtool = DatabaseTool(connection_string="postgresql://...")
+            >>> new_tool = dbtool.clone()
+            >>> # new_tool is a fresh instance with the same configuration
+        """
+        clone_kwargs = self._get_clone_kwargs()
+        return self.__class__(**clone_kwargs)
 
     @abstractmethod
     async def _execute(self, **kwargs) -> Any:
