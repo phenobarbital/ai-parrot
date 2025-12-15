@@ -700,8 +700,26 @@ class AbstractClient(ABC):
         session_id: Optional[str] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
         use_tools: Optional[bool] = None,
+        deep_research: bool = False,
+        background: bool = False,
     ) -> MessageResponse:
-        """Send a prompt to the model and return the response."""
+        """Send a prompt to the model and return the response.
+        
+        Args:
+            prompt: The input prompt for the model
+            model: The model to use
+            max_tokens: Maximum number of tokens in the response
+            temperature: Sampling temperature for response generation
+            files: Optional files to include in the request
+            system_prompt: Optional system prompt to guide the model
+            structured_output: Optional structured output configuration
+            user_id: Optional user identifier for tracking
+            session_id: Optional session identifier for tracking
+            tools: Optional tools to register for this call
+            use_tools: Whether to use tools
+            deep_research: If True, use deep research mode (provider-specific)
+            background: If True, execute research in background (async mode)
+        """
         raise NotImplementedError("Subclasses must implement this method.")
 
     @abstractmethod
@@ -715,9 +733,25 @@ class AbstractClient(ABC):
         system_prompt: Optional[str] = None,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
-        tools: Optional[List[Dict[str, Any]]] = None
+        tools: Optional[List[Dict[str, Any]]] = None,
+        deep_research: bool = False,
+        agent_config: Optional[Dict[str, Any]] = None,
     ) -> AsyncIterator[str]:
-        """Stream the model's response."""
+        """Stream the model's response.
+        
+        Args:
+            prompt: The input prompt for the model
+            model: The model to use
+            max_tokens: Maximum number of tokens in the response
+            temperature: Sampling temperature for response generation
+            files: Optional files to include in the request
+            system_prompt: Optional system prompt to guide the model
+            user_id: Optional user identifier for tracking
+            session_id: Optional session identifier for tracking
+            tools: Optional tools to register for this call
+            deep_research: If True, use deep research mode (provider-specific)
+            agent_config: Optional configuration for deep research agent (e.g., thinking_summaries)
+        """
         raise NotImplementedError("Subclasses must implement this method.")
 
     @abstractmethod
