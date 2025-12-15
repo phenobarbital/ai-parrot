@@ -6,7 +6,13 @@ enabling inter-agent communication across network boundaries.
 """
 
 from .server import A2AServer, A2AEnabledMixin
-from .client import A2AClient
+from .client import (
+    A2AClient,
+    A2AAgentConnection,
+    A2ARemoteAgentTool,
+    A2ARemoteSkillTool,
+)
+from .mixin import A2AClientMixin
 from .models import (
     AgentCard,
     AgentSkill,
@@ -25,6 +31,10 @@ __all__ = [
     "A2AEnabledMixin",
     # Client
     "A2AClient",
+    "A2AClientMixin",
+    "A2AAgentConnection",
+    "A2ARemoteAgentTool",
+    "A2ARemoteSkillTool",
     # Models
     "AgentCard",
     "AgentSkill",
