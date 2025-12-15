@@ -23,6 +23,7 @@ from .tools import (
     QueryGenerationTool,
     DatabaseSchema,
     TableMetadata,
+    ExplainQueryTool,
 )
 from ...models import AIMessage
 from ...tools.databasequery import DatabaseQueryTool
@@ -105,6 +106,11 @@ class AbstractDBAgent(AbstractBot):
             )
         asyncio.set_event_loop(self.loop)
 
+    @property
+    def tools(self):
+        """Get list of registered tools from manager."""
+        return self.tool_manager.get_all_tools() if self.tool_manager else []
+
     async def initialize_schema(self):
         """Initialize database connection and analyze schema."""
         try:
@@ -133,6 +139,10 @@ class AbstractDBAgent(AbstractBot):
         # Add database query tool
         db_query_tool = DatabaseQueryTool(agent=self)
         self.tool_manager.register_tool(db_query_tool)
+
+        # Add explain query tool
+        explain_query_tool = ExplainQueryTool(agent=self)
+        self.tool_manager.register_tool(explain_query_tool)
 
     async def configure(self, app=None) -> None:
         """Configure the database agent."""
@@ -278,6 +288,66 @@ Based on the user context above, please tailor your response to their specific:
         """
         pass
 
+    @abstractmethod
+    async def explain_query(self, query: str) -> str:
+        """
+        Explain a database query (e.g. EXPLAIN ANALYZE).
+        Must be implemented by subclasses based on database type.
+        """
+        pass
+
+    async def search_schema(
+        self,
+        search_term: str,
+        search_type: str = "all",
+        limit: int = 10
+    ) -> List[Dict[str, Any]]:
+        """
+        Search the database schema for tables or columns matching the term.
+        """
+        if not self.schema_metadata:
+            # Try to load from cache or re-extract
+             return []
+
+        results = []
+        term = search_term.lower()
+
+        # Helper to check string match
+        def matches(text: Optional[str]) -> bool:
+            return bool(text and term in text.lower())
+
+        for table in self.schema_metadata.tables:
+            table_match = False
+            # Check table name and description
+            if search_type in ["all", "tables"]:
+                full_name = f"{table.schema}.{table.name}" if table.schema else table.name
+                if matches(table.name) or matches(table.description) or matches(full_name):
+                    results.append({
+                        "type": "table",
+                        "name": table.name,
+                        "schema": table.schema,
+                        "description": table.description
+                    })
+                    table_match = True
+
+            # Check columns
+            if search_type in ["all", "columns"]:
+                for col in table.columns:
+                    if matches(col.get("name")) or matches(col.get("description")):
+                        # Add table context if not already added/searching specifically for columns
+                        if not table_match:
+                             results.append({
+                                "type": "column",
+                                "table": table.name,
+                                "schema": table.schema,
+                                "name": col.get("name"),
+                                "description": col.get("description"),
+                                "metadata": f"Type: {col.get('type')}"
+                            })
+
+        # Sort by relevance (exact matches first? undefined for now) and limit
+        return results[:limit]
+
     async def store_schema_in_knowledge_base(self) -> None:
         """Store schema metadata in the knowledge base for retrieval."""
         if not self.knowledge_store or not self.schema_metadata:
@@ -355,7 +425,7 @@ Columns:
 
     async def ask(
         self,
-        prompt: str,
+        question: str = None,
         user_context: Optional[str] = None,
         context: Optional[str] = None,
         session_id: Optional[str] = None,
@@ -367,7 +437,7 @@ Columns:
         Database-specific ask method with user context support and agentic mode.
 
         Args:
-            prompt: The user's question about the database
+            question: The user's question about the database
             user_context: User-specific context for database interaction
             session_id: Session identifier for conversation history
             user_id: User identifier
@@ -377,6 +447,11 @@ Columns:
         Returns:
             AIMessage: The response from the LLM
         """
+        # Backwards compatibility for prompt
+        if question is None:
+            question = kwargs.get('prompt')
+        
+        prompt = question # internal usage expects prompt variable name in logic below
         # Force agentic mode for database operations
         effective_mode = "agentic"
 

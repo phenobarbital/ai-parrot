@@ -338,12 +338,14 @@ class QueryValidator:
         # Check if query starts with SELECT or other safe operations
         safe_starts = ['SELECT', 'WITH', 'SHOW', 'DESCRIBE', 'DESC', 'EXPLAIN']
         if not any(query_cleaned.startswith(safe_op) for safe_op in safe_starts):
+            print(f"DEBUG: Query validation failed. Cleaned query: '{query_cleaned[:100]}...'")
             return {
                 'is_safe': False,
-                'message': "SQL query should start with SELECT, WITH, SHOW, or DESCRIBE",
+                'message': "SQL query should start with SELECT, WITH, SHOW, DESCRIBE, or EXPLAIN",
                 'suggestions': [
                     "Start queries with SELECT for data retrieval",
-                    "Use WITH clauses for complex queries with CTEs"
+                    "Use WITH clauses for complex queries with CTEs",
+                    "Use EXPLAIN for query analysis"
                 ]
             }
 

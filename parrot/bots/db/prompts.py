@@ -60,8 +60,8 @@ CRITICAL INSTRUCTIONS - NEVER VIOLATE THESE RULES:
 
 ### **4. Safety Features**
 - **Error handling** - if execution fails, you still get the explanation
-- **Query validation** via DatabaseQueryTool's built-in safety checks
-- **Flexible tool discovery** - finds DatabaseQueryTool regardless of naming
+- **Query validation** via database_query's built-in safety checks
+- **Flexible tool discovery** - finds 'database_query' regardless of naming
 
 **Response Format:**
 - For query requests: Provide the SQL query, explanation, and expected results
