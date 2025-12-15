@@ -86,17 +86,26 @@ class AnthropicClient(AbstractClient):
         session_id: Optional[str] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
         use_tools: Optional[bool] = None,
+        deep_research: bool = False,
+        background: bool = False,
     ) -> AIMessage:
         """Ask Claude a question with optional conversation memory.
 
         Args:
             use_tools: If None, uses instance default. If True/False, overrides for this call.
+            deep_research: If True, use enhanced system prompt for thorough research
+            background: If True, execute research in background mode (not yet supported)
         """
         if not self.client:
             raise RuntimeError("Client not initialized. Use async context manager.")
 
         # If use_tools is None, use the instance default
         _use_tools = use_tools if use_tools is not None else self.enable_tools
+
+        # For deep research, automatically enable tools
+        if deep_research:
+            _use_tools = True
+            self.logger.info("Deep research mode enabled: activating enhanced research prompt and tools")
 
         model = model.value if isinstance(model, ClaudeModel) else model
         if not model:
@@ -108,6 +117,15 @@ class AnthropicClient(AbstractClient):
         messages, conversation_history, system_prompt = await self._prepare_conversation_context(
             prompt, files, user_id, session_id, system_prompt
         )
+
+        # Enhance system prompt for deep research mode
+        if deep_research:
+            research_prompt = self._get_deep_research_system_prompt()
+            system_prompt = (
+                f"{system_prompt}\n\n{research_prompt}"
+                if system_prompt
+                else research_prompt
+            )
 
         output_config = self._get_structured_config(
             structured_output
@@ -266,9 +284,16 @@ class AnthropicClient(AbstractClient):
         session_id: Optional[str] = None,
         retry_config: Optional[StreamingRetryConfig] = None,
         on_max_tokens: Optional[str] = "retry",  # "retry", "notify", "ignore"
-        tools: Optional[List[Dict[str, Any]]] = None
+        tools: Optional[List[Dict[str, Any]]] = None,
+        deep_research: bool = False,
+        agent_config: Optional[Dict[str, Any]] = None,
     ) -> AsyncIterator[str]:
-        """Stream Claude's response using AsyncIterator with optional conversation memory."""
+        """Stream Claude's response using AsyncIterator with optional conversation memory.
+        
+        Args:
+            deep_research: If True, use enhanced system prompt for thorough research
+            agent_config: Optional configuration (not used, for interface compatibility)
+        """
         if not self.client:
             raise RuntimeError("Client not initialized. Use async context manager.")
 
@@ -283,6 +308,17 @@ class AnthropicClient(AbstractClient):
         messages, conversation_history, system_prompt = await self._prepare_conversation_context(
             prompt, files, user_id, session_id, system_prompt
         )
+        
+        # Enhance system prompt for deep research mode
+        if deep_research:
+            research_prompt = self._get_deep_research_system_prompt()
+            system_prompt = (
+                f"{system_prompt}\n\n{research_prompt}"
+                if system_prompt
+                else research_prompt
+            )
+            self.logger.info("Deep research mode enabled for streaming")
+        
         if tools and isinstance(tools, list):
             for tool in tools:
                 self.register_tool(tool)
@@ -1005,19 +1041,50 @@ Format your response clearly with these sections.
         }
 
         response = await self.client.messages.create(**payload)
-        result = response.model_dump()
-
         structured_output = SentimentAnalysis if use_structured else None
         return AIMessageFactory.from_claude(
             response=result,
-            input_text=text,
+            input_text=f"Review: {text[:100]}...", # Changed from 'text' to f"Review: {text[:100]}..."
             model=model,
-            user_id=user_id,
-            session_id=session_id,
-            turn_id=turn_id,
-            structured_output=structured_output,
+            user_id=user_id, # Kept user_id
+            session_id=session_id, # Kept session_id
+            turn_id=turn_id, # Kept turn_id
+            structured_output=structured_output, # Kept structured_output
             tool_calls=[]
         )
+
+    def _get_deep_research_system_prompt(self) -> str:
+        """Generate a specialized system prompt for deep research mode.
+        
+        This prompt encourages thorough, methodical research with iterative refinement.
+        """
+        return """You are in DEEP RESEARCH mode. Your task is to conduct thorough, comprehensive research on the given topic.
+
+Follow this methodology:
+1. **Initial Analysis**: Break down the research question into key components
+2. **Systematic Investigation**: Use available tools to gather information from multiple sources
+3. **Critical Evaluation**: Assess the credibility and relevance of each source
+4. **Synthesis**: Combine findings into a coherent, well-structured response
+5. **Verification**: Cross-reference facts and verify claims when possible
+
+Research Guidelines:
+- Be comprehensive: explore multiple angles and perspectives
+- Be critical: evaluate source quality and potential biases
+- Be thorough: don't stop at surface-level information
+- Be structured: organize findings logically
+- Be accurate: cite sources and acknowledge uncertainty when appropriate
+
+If tools are available, use them strategically to:
+- Search for current information
+- Verify facts across multiple sources
+- Gather diverse perspectives
+- Access specialized knowledge bases
+
+Provide your final answer with:
+- Clear, well-organized structure
+- Supporting evidence for key claims
+- Acknowledgment of limitations or gaps in available information
+- Relevant citations or references when applicable"""
 
     async def analyze_product_review(
         self,

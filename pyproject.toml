@@ -72,7 +72,8 @@ dependencies = [
     "brotli==1.2.0",
     "urllib3==2.6.1",
     "aioquic==1.3.0",
-    "pylsqpack==0.3.23"
+    "pylsqpack==0.3.23",
+    "aiohttp-sse-client==0.2.1",
 ]
 
 [project.scripts]
