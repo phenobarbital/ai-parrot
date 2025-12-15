@@ -574,6 +574,7 @@ class OpenAIClient(AbstractClient):
         vector_store_ids: Optional[List[str]] = None,
         enable_web_search: bool = True,
         enable_code_interpreter: bool = False,
+        lazy_loading: bool = False,
     ) -> AIMessage:
         """Ask OpenAI a question with optional conversation memory.
 
@@ -592,10 +593,11 @@ class OpenAIClient(AbstractClient):
             tools (Optional[List[Dict[str, Any]]], optional): Tools to register for this call. Defaults to None.
             use_tools (Optional[bool], optional): Whether to use tools. Defaults to None.
             deep_research (bool): If True, use OpenAI's deep research models (o3/o4-deep-research).
-            background (bool): If True, execute research in background mode (not yet supported).
+            background (bool): If True, execute research in background (not yet supported).
             vector_store_ids (Optional[List[str]]): Vector store IDs for file_search tool.
             enable_web_search (bool): Enable web search preview tool (default: True for deep research).
             enable_code_interpreter (bool): Enable code interpreter tool.
+            lazy_loading (bool): If True, enable dynamic tool searching.
 
         Returns:
             AIMessage: The response from the model.
@@ -629,6 +631,12 @@ class OpenAIClient(AbstractClient):
                     file = Path(file)
                 if isinstance(file, Path):
                     await self._upload_file(file)
+
+        # Add search instruction if lazy loading is enabled
+        if lazy_loading and system_prompt:
+             system_prompt += "\n\nYou have access to a library of tools. Use the 'search_tools' function to find relevant tools."
+        elif lazy_loading and not system_prompt:
+             system_prompt = "You have access to a library of tools. Use the 'search_tools' function to find relevant tools."
 
         if system_prompt:
             messages.insert(0, {"role": "system", "content": system_prompt})
@@ -666,7 +674,20 @@ class OpenAIClient(AbstractClient):
         if tools and isinstance(tools, list):
             for tool in tools:
                 self.register_tool(tool)
-        prepared_tools = self._prepare_tools() if (_use_tools) else None
+        
+        # LAZY LOADING LOGIC
+        active_tool_names = set()
+        prepared_tools = None
+        
+        if _use_tools:
+            if lazy_loading:
+                # Prepare only search_tools + explicitly passed tools?
+                # Using _prepare_lazy_tools which handles search_tools
+                prepared_tools = self._prepare_lazy_tools()
+                if prepared_tools:
+                    active_tool_names.add("search_tools")
+            else:
+                 prepared_tools = self._prepare_tools()
 
         args = {}
         if model_str in {
@@ -740,6 +761,8 @@ class OpenAIClient(AbstractClient):
                     for tc in result.tool_calls
                 ]
             })
+            
+            found_new_tools = False
 
             for tool_call in result.tool_calls:
                 tool_name = tool_call.function.name
@@ -759,6 +782,15 @@ class OpenAIClient(AbstractClient):
                         start_time = time.time()
                         tool_result = await self._execute_tool(tool_name, tool_args)
                         execution_time = time.time() - start_time
+                        
+                        # Lazy Loading Check
+                        if lazy_loading and tool_name == "search_tools":
+                             new_tools = self._check_new_tools(tool_name, str(tool_result))
+                             if new_tools:
+                                 for nt in new_tools:
+                                     if nt not in active_tool_names:
+                                         active_tool_names.add(nt)
+                                         found_new_tools = True
 
                         tc.result = tool_result
                         tc.execution_time = execution_time
@@ -793,6 +825,11 @@ class OpenAIClient(AbstractClient):
                         "content": f"Error decoding arguments: {e}"
                     })
 
+            # Re-prepare tools if new ones found
+            if lazy_loading and found_new_tools:
+                args['tools'] = self._prepare_tools(filter_names=list(active_tool_names))
+                # Note: We keep tool_choice='auto'
+
             # continue via the same routed API
             if use_responses:
                 if output_config:
@@ -811,6 +848,7 @@ class OpenAIClient(AbstractClient):
                     use_tools=_use_tools,
                     **args
                 )
+
             result = response.choices[0].message
 
         # ---------- Finalization (unchanged) ----------
@@ -880,6 +918,7 @@ class OpenAIClient(AbstractClient):
         vector_store_ids: Optional[List[str]] = None,
         enable_web_search: bool = True,
         enable_code_interpreter: bool = False,
+        lazy_loading: bool = False,
     ) -> AsyncIterator[str]:
         """Stream OpenAI's response with optional conversation memory.
         
@@ -889,6 +928,7 @@ class OpenAIClient(AbstractClient):
             vector_store_ids: Vector store IDs for file_search tool
             enable_web_search: Enable web search preview tool
             enable_code_interpreter: Enable code interpreter tool
+            lazy_loading: If True, enable dynamic tool searching
         """
 
         # Generate unique turn ID for tracking
@@ -917,6 +957,11 @@ class OpenAIClient(AbstractClient):
                 if isinstance(file, Path):
                     await self._upload_file(file)
 
+        if lazy_loading and system_prompt:
+             system_prompt += "\n\nYou have access to a library of tools. Use the 'search_tools' function to find relevant tools."
+        elif lazy_loading and not system_prompt:
+             system_prompt = "You have access to a library of tools. Use the 'search_tools' function to find relevant tools."
+
         if system_prompt:
             messages.insert(0, {"role": "system", "content": system_prompt})
 
@@ -941,7 +986,18 @@ class OpenAIClient(AbstractClient):
         if tools and isinstance(tools, list):
             for tool in tools:
                 self.register_tool(tool)
-        tools_payload = self._prepare_tools() if self.tools else None
+        
+        # LAZY LOADING LOGIC
+        active_tool_names = set()
+        tools_payload = None
+        
+        if self.tools:
+            if lazy_loading:
+                tools_payload = self._prepare_lazy_tools()
+                if tools_payload:
+                    active_tool_names.add("search_tools")
+            else:
+                 tools_payload = self._prepare_tools()
 
         args: Dict[str, Any] = {}
 
