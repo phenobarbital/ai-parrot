@@ -30,6 +30,7 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3 :: Only",
     "Framework :: AsyncIO",
     "Typing :: Typed",
@@ -349,6 +350,9 @@ addopts = [
     "--strict-config",
     "--strict-markers",
 ]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_functions = "test_*"
 log_cli = true
 log_cli_level = "DEBUG"
 log_cli_format = "%(asctime)s [%(levelname)8s] %(message)s (%(filename)s:%(lineno)s)"
@@ -356,6 +360,9 @@ log_cli_date_format = "%Y-%m-%d %H:%M:%S"
 filterwarnings = [
     "error",
     'ignore:The loop argument is deprecated since Python 3\.8, and scheduled for removal in Python 3\.10:DeprecationWarning:asyncio',
+]
+markers = [
+    "asyncio: mark a test as a coroutine that should be run by pytest-asyncio",
 ]
 
 [tool.black]
