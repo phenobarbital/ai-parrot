@@ -126,6 +126,14 @@ DBPORT = config.get("DBPORT", fallback=5432)
 # sqlalchemy+asyncpg connector:
 default_sqlalchemy_pg = f"postgresql+asyncpg://{DBUSER}:{DBPWD}@{DBHOST}:{DBPORT}/{DBNAME}"
 
+PG_USER = config.get('PG_USER', fallback=DBUSER)
+PG_PWD = config.get('PG_PWD', fallback=DBPWD)
+PG_HOST = config.get('PG_HOST', fallback=DBHOST)
+PG_PORT = config.get('PG_PORT', fallback=DBPORT)
+PG_DATABASE = config.get('PG_DATABASE', fallback=DBNAME)
+# asyncpg url for sqlalchemy:
+asyncpg_sqlalchemy_url = f"postgresql+asyncpg://{PG_USER}:{PG_PWD}@{PG_HOST}:{PG_PORT}/{PG_DATABASE}"
+
 # ScyllaDB Database:
 SCYLLADB_DRIVER = config.get('SCYLLADB_DRIVER', fallback='scylladb')
 SCYLLADB_HOST = config.get('SCYLLADB_HOST', fallback='localhost')
