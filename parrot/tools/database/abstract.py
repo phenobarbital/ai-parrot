@@ -9,6 +9,8 @@ from ..abstract import (
     ToolResult,
     AbstractToolArgsSchema
 )
+from ...stores.abstract import AbstractStore
+from ...conf import asyncpg_sqlalchemy_url
 from .models import TableMetadata
 from .cache import SchemaMetadataCache
 
@@ -17,6 +19,14 @@ class SchemaSearchArgs(AbstractToolArgsSchema):
     """Arguments for schema search tool."""
     search_term: str = Field(
         description="Term to search for in table names, column names, or descriptions"
+    )
+    schema_name: Optional[str] = Field(
+        default=None,
+        description="Schema name to search in"
+    )
+    table_name: Optional[str] = Field(
+        default=None,
+        description="Table name to search in"
     )
     search_type: str = Field(
         default="all",
@@ -44,16 +54,32 @@ class AbstractSchemaManagerTool(AbstractTool, ABC):
 
     def __init__(
         self,
-        engine: AsyncEngine,
-        metadata_cache: SchemaMetadataCache,
         allowed_schemas: List[str],
+        engine: AsyncEngine = None,
+        metadata_cache: SchemaMetadataCache = None,
+        vector_store: Optional[AbstractStore] = None,
+        dsn: Optional[str] = None,
+        database_type: str = "postgresql",
         session_maker: Optional[sessionmaker] = None,
         **kwargs
     ):
         super().__init__(**kwargs)
-        self.engine = engine
-        self.metadata_cache = metadata_cache
+        self.dsn = dsn or asyncpg_sqlalchemy_url
+        self.database_type = database_type
         self.allowed_schemas = allowed_schemas
+        # Database components
+        self.engine: Optional[AsyncEngine] = engine or self._get_engine(
+            dsn=self.dsn,
+            search_path=",".join(allowed_schemas)
+        )
+        # Schema-aware components
+        self.metadata_cache = metadata_cache or SchemaMetadataCache(
+            vector_store=vector_store,  # Optional - can be None
+            lru_maxsize=500,  # Large cache for many tables
+            lru_ttl=1800     # 30 minutes
+        )
+        # Vector Store:
+        self.knowledge_store = vector_store
 
         if session_maker:
             self.session_maker = session_maker
@@ -67,6 +93,22 @@ class AbstractSchemaManagerTool(AbstractTool, ABC):
         self.logger = logging.getLogger(f"{self.__class__.__name__}")
         self.logger.debug(
             f"Initialized with {len(allowed_schemas)} schemas: {allowed_schemas}"
+        )
+
+    def _get_engine(self, dsn: str, search_path: str) -> AsyncEngine:
+        """Create and return an AsyncEngine for the given DSN."""
+        from sqlalchemy.ext.asyncio import create_async_engine
+        return create_async_engine(
+            dsn,
+            echo=False,
+            pool_pre_ping=True,
+            pool_recycle=3600,
+            # Multi-schema search path
+            connect_args={
+                "server_settings": {
+                    "search_path": search_path
+                }
+            }
         )
 
     async def _execute(
@@ -125,7 +167,9 @@ class AbstractSchemaManagerTool(AbstractTool, ABC):
                 results[schema_name] = 0
                 continue
 
-        self.logger.info(f"Analysis completed. Total: {total_tables} tables across {len(self.allowed_schemas)} schemas")
+        self.logger.info(
+            f"Analysis completed. Total: {total_tables} tables across {len(self.allowed_schemas)} schemas"
+        )
         return results
 
     @abstractmethod
