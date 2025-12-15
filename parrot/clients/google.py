@@ -335,13 +335,17 @@ class GoogleGenAIClient(AbstractClient):
         generation_config["response_schema"] = fixed_schema
         return fixed_schema
 
-    def _build_tools(self, tool_type: str) -> Optional[List[types.Tool]]:
+    def _build_tools(self, tool_type: str, filter_names: Optional[List[str]] = None) -> Optional[List[types.Tool]]:
         """Build tools based on the specified type."""
         if tool_type == "custom_functions":
             # migrate to use abstractool + tool definition:
             # Group function declarations by their category
             declarations_by_category = defaultdict(list)
             for tool in self.tool_manager.all_tools():
+                tool_name = tool.name
+                if filter_names is not None and tool_name not in filter_names:
+                    continue
+
                 tool_name = tool.name
                 category = getattr(tool, 'category', 'tools')
                 if isinstance(tool, AbstractTool):
@@ -642,6 +646,8 @@ class GoogleGenAIClient(AbstractClient):
         max_iterations: int = 10,
         config: GenerateContentConfig = None,
         max_retries: int = 1,
+        lazy_loading: bool = False,
+        active_tool_names: Optional[set] = None,
     ) -> Any:
         """
         Simple multi-turn function calling - just keep going until no more function calls.
@@ -649,6 +655,9 @@ class GoogleGenAIClient(AbstractClient):
         current_response = initial_response
         current_config = config
         iteration = 0
+
+        if active_tool_names is None:
+            active_tool_names = set()
 
         model = model or self.model
         self.logger.info("Starting simple multi-turn function calling loop")
@@ -712,6 +721,23 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
             ]
             tool_results = await asyncio.gather(*tool_execution_tasks, return_exceptions=True)
             execution_time = time.time() - start_time
+
+            # Lazy Loading Check
+            if lazy_loading:
+                found_new = False
+                for fc, result in zip(function_calls, tool_results):
+                    if fc.name == "search_tools" and isinstance(result, str):
+                        new_tools = self._check_new_tools(fc.name, result)
+                        for nt in new_tools:
+                            if nt not in active_tool_names:
+                                active_tool_names.add(nt)
+                                found_new = True
+                
+                if found_new:
+                    # Rebuild tools with expanded set
+                    new_tools_list = self._build_tools("custom_functions", filter_names=list(active_tool_names))
+                    current_config.tools = new_tools_list
+                    self.logger.info(f"Updated tools for next turn. Count: {len(active_tool_names)}")
 
             # Update tool call objects
             for tc, result in zip(tool_call_objects, tool_results):
@@ -1040,6 +1066,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
         deep_research: bool = False,
         background: bool = False,
         file_search_store_names: Optional[List[str]] = None,
+        lazy_loading: bool = False,
         **kwargs
     ) -> AIMessage:
         """
@@ -1170,6 +1197,19 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
             generation_config["temperature"] = base_temperature
 
         use_tools = _use_tools
+
+        # LAZY LOADING LOGIC
+        active_tool_names = set()
+        if use_tools and lazy_loading:
+            # Override initial tool selection to just search_tools
+            active_tool_names.add("search_tools")
+            tools = self._build_tools("custom_functions", filter_names=["search_tools"])
+            # Add system prompt instruction
+            search_prompt = "You have access to a library of tools. Use the 'search_tools' function to find relevant tools."
+            system_prompt = f"{system_prompt}\n\n{search_prompt}" if system_prompt else search_prompt
+            # Update final_config later with this new system prompt if needed, 
+            # but system_prompt is passed to GenerateContentConfig below.
+
 
         self.logger.debug(
             f"Using model: {model}, max_tokens: {default_tokens}, temperature: {temperature}, "
@@ -1348,7 +1388,9 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                 model=model,
                 max_iterations=10,
                 config=final_config,
-                max_retries=max_retries
+                max_retries=max_retries,
+                lazy_loading=lazy_loading,
+                active_tool_names=active_tool_names
             )
 
         # Extract assistant response text for conversation memory
@@ -1570,6 +1612,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
         use_tools: Optional[bool] = None,
         deep_research: bool = False,
         agent_config: Optional[Dict[str, Any]] = None,
+        lazy_loading: bool = False,
     ) -> AsyncIterator[str]:
         """
         Stream Google Generative AI's response using AsyncIterator with support for Tool Calling.

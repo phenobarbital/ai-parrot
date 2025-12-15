@@ -88,6 +88,7 @@ class AnthropicClient(AbstractClient):
         use_tools: Optional[bool] = None,
         deep_research: bool = False,
         background: bool = False,
+        lazy_loading: bool = False,
     ) -> AIMessage:
         """Ask Claude a question with optional conversation memory.
 
@@ -95,6 +96,7 @@ class AnthropicClient(AbstractClient):
             use_tools: If None, uses instance default. If True/False, overrides for this call.
             deep_research: If True, use enhanced system prompt for thorough research
             background: If True, execute research in background mode (not yet supported)
+            lazy_loading: If True, enable dynamic tool searching
         """
         if not self.client:
             raise RuntimeError("Client not initialized. Use async context manager.")
@@ -127,6 +129,15 @@ class AnthropicClient(AbstractClient):
                 else research_prompt
             )
 
+        # Lazy loading system prompt
+        if lazy_loading:
+             search_prompt = "You have access to a library of tools. Use the 'search_tools' function to find relevant tools."
+             system_prompt = (
+                 f"{system_prompt}\n\n{search_prompt}"
+                 if system_prompt
+                 else search_prompt
+             )
+
         output_config = self._get_structured_config(
             structured_output
         )
@@ -153,8 +164,17 @@ class AnthropicClient(AbstractClient):
             for tool in tools:
                 self.register_tool(tool)
 
+        # LAZY LOADING LOGIC
+        active_tool_names = set()
+        
         if _use_tools:
-            payload["tools"] = self._prepare_tools()
+            if lazy_loading:
+                 prepared = self._prepare_lazy_tools()
+                 if prepared:
+                     payload["tools"] = prepared
+                     active_tool_names.add("search_tools")
+            else:
+                 payload["tools"] = self._prepare_tools()
 
         # Track tool calls for the response
         all_tool_calls = []
@@ -169,6 +189,7 @@ class AnthropicClient(AbstractClient):
             # Check if Claude wants to use a tool
             if result.get("stop_reason") == "tool_use":
                 tool_results = []
+                found_new_tools = False
 
                 for content_block in result["content"]:
                     if content_block["type"] == "tool_use":
@@ -187,6 +208,15 @@ class AnthropicClient(AbstractClient):
                             start_time = time.time()
                             tool_result = await self._execute_tool(tool_name, tool_input)
                             execution_time = time.time() - start_time
+
+                            # Lazy Loading Check
+                            if lazy_loading and tool_name == "search_tools":
+                                 new_tools = self._check_new_tools(tool_name, str(tool_result))
+                                 if new_tools:
+                                     for nt in new_tools:
+                                         if nt not in active_tool_names:
+                                             active_tool_names.add(nt)
+                                             found_new_tools = True
 
                             tc.result = tool_result
                             tc.execution_time = execution_time
@@ -207,12 +237,16 @@ class AnthropicClient(AbstractClient):
 
                         all_tool_calls.append(tc)
 
+                # Update available tools if new ones found
+                if lazy_loading and found_new_tools:
+                     payload["tools"] = self._prepare_tools(filter_names=list(active_tool_names))
+
                 # Add tool results and continue conversation
                 messages.append({"role": "assistant", "content": result["content"]})
                 messages.append({"role": "user", "content": tool_results})
                 payload["messages"] = messages
             else:
-                # No more tool calls, add assistant response and break
+                # No more tool calls, assistant response final
                 messages.append({"role": "assistant", "content": result["content"]})
                 break
 
@@ -287,6 +321,7 @@ class AnthropicClient(AbstractClient):
         tools: Optional[List[Dict[str, Any]]] = None,
         deep_research: bool = False,
         agent_config: Optional[Dict[str, Any]] = None,
+        lazy_loading: bool = False,
     ) -> AsyncIterator[str]:
         """Stream Claude's response using AsyncIterator with optional conversation memory.
         

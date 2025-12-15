@@ -209,6 +209,70 @@ class ToolManager:
         self.auto_share_dataframes: bool = True
         self.auto_push_to_pandas: bool = True
         self.pandas_tool_name: str = "python_pandas"
+        
+        # Self-register the search tool
+        self.register_tool(
+            name="search_tools",
+            description="Search for available tools by name or description. Use this to find tools that can help with your task.",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The search query to match against tool names and descriptions"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of results to return",
+                        "default": 15
+                    }
+                },
+                "required": ["query"]
+            },
+            function=self.search_tools
+        )
+
+    def search_tools(self, query: str, limit: int = 15) -> str:
+        """
+        Search for tools by name or description.
+        
+        Args:
+            query: Search query
+            limit: Max results
+            
+        Returns:
+            JSON string list of matching tools with descriptions
+        """
+        query = query.lower().strip()
+        matches = []
+        
+        for name, tool in self._tools.items():
+            if name == "search_tools":
+                continue
+                
+            # Get description
+            desc = ""
+            if hasattr(tool, 'description'):
+                desc = tool.description
+            elif isinstance(tool, dict):
+                desc = tool.get('description', '')
+                
+            # Check match
+            if query in name.lower() or query in desc.lower():
+                matches.append({
+                    "name": name,
+                    "description": desc
+                })
+                
+        # Sort by name and limit
+        matches.sort(key=lambda x: x['name'])
+        matches = matches[:limit]
+        
+        if not matches:
+            return f"No tools found matching '{query}'. Try a different search term."
+            
+        import json
+        return json.dumps(matches, indent=2)
 
     def default_tools(self, tools: list = None) -> List[AbstractTool]:
         if not tools:
