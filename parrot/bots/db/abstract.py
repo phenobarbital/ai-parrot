@@ -39,10 +39,6 @@ class AbstractDBAgent(AbstractBot):
     system_prompt_template: str = DB_AGENT_PROMPT
     human_prompt_template = BASIC_HUMAN_PROMPT
     _default_temperature: float = 0.0
-    # _default_llm: str = 'openai'
-    # LLM:
-    # llm_client: str = 'openai'
-    # default_model: str = 'gpt-4o'
     max_tokens: int = 8192
 
     def __init__(
@@ -68,7 +64,8 @@ class AbstractDBAgent(AbstractBot):
         kwargs.setdefault('temperature', self._default_temperature)
         super().__init__(name=name, **kwargs)
         self.role = kwargs.get(
-            'role', 'Database Analysis Assistant')
+            'role', 'Database Analysis Assistant'
+        )
         self.goal = kwargs.get(
             'goal', 'Help users interact with databases using natural language'
         )

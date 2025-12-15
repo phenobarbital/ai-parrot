@@ -1,5 +1,7 @@
 import types
 import importlib
+import importlib.util
+import importlib.abc
 from importlib.machinery import SourceFileLoader
 import os
 

@@ -80,9 +80,7 @@ class SchemaQueryRouter:
             'analyze_data': [
                 r'\banalyze\b', r'\banalysis\b', r'\btrends?\b',
                 r'\binsights?\b', r'\bpatterns?\b', r'\bstatistics\b',
-                r'\bcorrelation\b', r'\bdistribution\b', r'\bcompare\b'
-            ],
-            'optimize_query': [
+                r'\bcorrelation\b', r'\bdistribution\b', r'\bcompare\b',
                 r'\boptimiz\w+\b', r'\bperformance\b', r'\bslow\b',
                 r'\bindex\b', r'\btuning?\b', r'\bexplain\s+analyze\b'
             ],
