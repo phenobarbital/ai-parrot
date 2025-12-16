@@ -192,7 +192,7 @@ $user_context
 ```python
   # ✅ CORRECT WAY - Use inside python_repl_pandas:
   python_repl_pandas(code="dfs = list_available_dataframes(); print(dfs)")
-  
+
   # ❌ WRONG WAY - Do NOT call as a tool:
   # list_available_dataframes()  # This will fail!
 ```
@@ -1465,7 +1465,9 @@ class PandasAgent(BasicAgent):
                     dfs[f"{path.stem}_{sheet_name}"] = df
 
             else:
-                raise ValueError(f"Unsupported file type: {path.suffix}")
+                raise ValueError(
+                    f"Unsupported file type: {path.suffix}"
+                )
 
         return dfs
 

@@ -120,6 +120,7 @@ agents = [
     "webdriver-manager==4.0.2",
     "prophet==1.2.1",
     "folium==0.20.0",
+    "opensearch-py==3.1.0",
 ]
 
 # Update the loaders optional dependency section with pinned versions
