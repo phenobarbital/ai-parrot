@@ -414,24 +414,27 @@ class QueryValidator:
             # Basic validation
             if not isinstance(query_dict, dict):
                 return {
-                    'valid': False,
-                    'errors': ['Query must be a valid JSON object']
+                    'is_safe': False,
+                    'message': 'Query must be a valid JSON object',
+                    'suggestions': ['Ensure query is a valid JSON object']
                 }
             # Check for unsafe operations (if needed)
             # For now, we allow all queries as Elasticsearch is primarily read-only
             return {
-                'valid': True,
-                'errors': []
+                'is_safe': True,
+                'message': 'Elasticsearch query validation passed'
             }
         except json.JSONDecodeError as e:
             return {
-                'valid': False,
-                'errors': [f'Invalid JSON: {str(e)}']
+                'is_safe': False,
+                'message': f'Invalid JSON: {str(e)}',
+                'suggestions': ['Fix JSON syntax errors']
             }
         except Exception as e:
             return {
-                'valid': False,
-                'errors': [f'Query validation failed: {str(e)}']
+                'is_safe': False,
+                'message': f'Query validation failed: {str(e)}',
+                'suggestions': []
             }
 
 class DatabaseQueryTool(AbstractTool):
@@ -859,19 +862,67 @@ class DatabaseQueryTool(AbstractTool):
                         limit=final_max_rows,
                         **mongo_kwargs
                     )
+                elif driver in ('elastic', 'elasticsearch', 'opensearch'):
+                    # Handle index parameter for Elastic/OpenSearch
+                    query_obj = None
+                    is_json_str = False
+                    
+                    if isinstance(modified_query, str):
+                        try:
+                            query_obj = json.loads(modified_query)
+                            is_json_str = True
+                        except Exception:
+                            pass
+                    elif isinstance(modified_query, dict):
+                        query_obj = modified_query
+
+                    if isinstance(query_obj, dict):
+                        # Extract index if present
+                        if 'index' in query_obj:
+                            target_index = query_obj.pop('index')
+                            if target_index:
+                                await conn.use(target_index)
+                                self.logger.info(f"Switched to index: {target_index}")
+                        
+                        # Update modified_query
+                        if is_json_str:
+                             modified_query = json.dumps(query_obj)
+                        else:
+                             modified_query = query_obj
+
+                    result, errors = await asyncio.wait_for(
+                        conn.query(modified_query),
+                        timeout=timeout
+                    )
                 else:
                     result, errors = await asyncio.wait_for(
                         conn.query(modified_query),
                         timeout=timeout
                     )
 
+                # Handle "Empty Data" error from asyncdb's pandas serializer
+                # This is NOT a real error for Elasticsearch/OpenSearch - it just means
+                # the query returned 0 hits, which is a valid result
                 if errors:
-                    raise RuntimeError(
-                        f"Database query errors: {errors}"
-                    )
+                    error_str = str(errors)
+                    if "Empty Data" in error_str and driver in ('elastic', 'elasticsearch', 'opensearch'):
+                        self.logger.info(
+                            f"OpenSearch/Elasticsearch query returned 0 hits (empty result)"
+                        )
+                        # Return an empty DataFrame or empty JSON instead of raising an error
+                        if output_format == 'pandas':
+                            return pd.DataFrame()
+                        else:
+                            return "[]"
+                    else:
+                        raise RuntimeError(
+                            f"Database query errors: {errors}"
+                        )
 
                 # Return the actual result based on format
                 if output_format == 'pandas':
+                    if result is None:
+                        return pd.DataFrame()
                     if not isinstance(result, pd.DataFrame):
                         raise RuntimeError(
                             f"Expected pandas DataFrame but got {type(result)}"
