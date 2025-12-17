@@ -71,6 +71,10 @@ from .models import (
 
 class WebScrapingToolArgs(BaseModel):
     """Arguments schema for WebScrapingTool."""
+    operation: Literal["define_plan", "scrape"] = Field(
+        default="scrape",
+        description="Operation mode: 'define_plan' returns the proposed steps/selectors for review without executing, 'scrape' executes the actual scraping"
+    )
     steps: List[Dict[str, Any]] = Field(
         description="List of navigation and interaction steps. Each step should have 'action' and 'description'"
     )
@@ -147,16 +151,135 @@ Each step must include:
 
 Pair every selector with a `selector_type` (`css`, `xpath`, or `text`). Keep waits explicit via `condition_type` (`simple`, `selector`, `url_is`, `url_contains`, `title_contains`, or `custom`).
 
-Supported actions:
-- Navigation: navigate, back, refresh
-- Interaction: click, fill, press_key, scroll, select
-- Data Extraction: get_text, get_html, get_cookies
-- Authentication: authenticate (include method, selectors, credentials)
-- File Operations: upload_file, wait_for_download, screenshot
-- State Management: set_cookies
-- Waiting: wait, await_human, await_keypress, await_browser_event
-- Evaluation: evaluate
-- Control Flow: loop
+## SUPPORTED ACTIONS:
+
+### Navigation
+- **navigate**: Navigate to a URL
+  * url (str, required): Target URL to navigate to
+- **back**: Go back in browser history
+  * steps (int, default=1): Number of steps to go back
+- **refresh**: Reload current page
+  * hard (bool, default=False): Perform hard refresh (clear cache)
+
+### Interaction
+- **click**: Click on an element
+  * selector (str, required): CSS/XPath/text selector to identify element
+  * selector_type (str, default="css"): Type of selector: "css", "xpath", or "text"
+  * click_type (str, default="single"): Type of click: "single", "double", or "right"
+  * wait_after_click (str, optional): CSS selector to wait for after clicking
+  * no_wait (bool, default=False): Skip waiting after click
+- **fill**: Enter text into an input field
+  * selector (str, required): CSS selector for the input field
+  * value (str, required): Text to enter
+  * clear_first (bool, default=True): Clear existing content before filling
+  * press_enter (bool, default=False): Press Enter after filling
+- **select**: Select option from dropdown
+  * selector (str, required): CSS selector for select element
+  * value (str, optional): Value attribute of option to select
+  * text (str, optional): Visible text of option to select
+  * index (int, optional): Index of option (0-based)
+  * by (str, default="value"): Selection method: "value", "text", or "index"
+- **press_key**: Press keyboard keys
+  * keys (list[str], required): List of keys to press (e.g., ["Tab", "Enter", "Escape"])
+  * sequential (bool, default=True): Press keys sequentially vs as combination
+  * target (str, optional): CSS selector to focus before pressing
+- **scroll**: Scroll page or element
+  * direction (str, required): Scroll direction: "up", "down", "top", or "bottom"
+  * amount (int, optional): Pixels to scroll (if not to top/bottom)
+  * selector (str, optional): CSS selector of element to scroll (default: page)
+  * smooth (bool, default=True): Use smooth scrolling animation
+
+### Data Extraction
+- **get_text**: Extract text content from elements
+  * selector (str, required): CSS selector to extract text from
+  * multiple (bool, default=False): Extract from all matching elements
+  * extract_name (str, default="extracted_text"): Name for extracted data in results
+- **get_html**: Extract HTML content from elements
+  * selector (str, required): CSS/XPath selector to extract HTML from
+  * selector_type (str, default="css"): Type of selector: "css" or "xpath"
+  * multiple (bool, default=False): Extract from all matching elements
+  * extract_name (str, default="extracted_html"): Name for extracted data in results
+- **get_cookies**: Retrieve browser cookies
+  * names (list[str], optional): Specific cookie names to retrieve (None = all)
+  * domain (str, optional): Filter cookies by domain
+
+### Authentication
+- **authenticate**: Handle authentication flows
+  * method (str, default="form"): Auth method: "form", "basic", "oauth", or "custom"
+  * username (str, optional): Username/email
+  * password (str, optional): Password
+  * username_selector (str, default="#username"): CSS selector for username field
+  * password_selector (str, default="#password"): CSS selector for password field
+  * submit_selector (str, default='input[type="submit"], button[type="submit"]'): CSS selector for submit button
+  * enter_on_username (bool, default=False): Press Enter after username (multi-step logins)
+  * token (str, optional): Bearer token value (for "bearer" method)
+  * custom_steps (list, optional): Custom action sequence for complex auth
+
+### File Operations
+- **upload_file**: Upload file to input element
+  * selector (str, required): CSS selector for file input
+  * file_path (str, required): Path to file to upload
+  * multiple_files (bool, default=False): Whether uploading multiple files
+  * file_paths (list[str], optional): List of paths for multiple file upload
+- **wait_for_download**: Wait for file download
+  * filename_pattern (str, optional): Pattern to match (e.g., "*.pdf")
+  * download_path (str, optional): Directory to monitor (None = browser default)
+  * timeout (int, default=60): Max wait time in seconds
+  * move_to (str, optional): Path to move file after download
+- **screenshot**: Capture screenshot
+  * selector (str, optional): CSS selector of element (None = full page)
+  * full_page (bool, default=True): Capture full scrollable page
+  * output_path (str, optional): Directory to save screenshot
+  * output_name (str, optional): Filename (auto-generated if None)
+  * return_base64 (bool, default=False): Return as base64 string
+
+### State Management
+- **set_cookies**: Set browser cookies
+  * cookies (list[dict], required): List of cookie objects with "name", "value", and optional "domain", "path", "secure"
+
+### Waiting
+- **wait**: Wait for a condition
+  * condition (str, optional): Value for condition (selector, URL substring, etc.)
+  * condition_type (str, default="selector"): Type: "simple", "selector", "url_contains", "url_is", "title_contains", or "custom"
+  * custom_script (str, optional): JavaScript returning true when condition met (for "custom" type)
+  * timeout (int, optional): Maximum wait time in seconds
+- **await_human**: Pause for human intervention
+  * target (str, optional): CSS selector to detect completion
+  * condition_type (str, default="selector"): Condition type: "selector", "url_contains", "title_contains", or "manual"
+  * message (str, default="Waiting for human intervention..."): Message to display
+  * timeout (int, default=300): Max wait time (5 minutes)
+- **await_keypress**: Wait for key press in console
+  * expected_key (str, optional): Specific key to wait for (None = any)
+  * message (str, default="Press any key to continue..."): Message to display
+  * timeout (int, default=300): Max wait time (5 minutes)
+- **await_browser_event**: Wait for browser event
+  * target (str | dict, optional): Target or condition to detect completion
+  * wait_condition (dict, optional): Condition to detect completion (e.g., key combo, button, local storage key)
+  * timeout (int, default=300): Max wait time (5 minutes)
+
+### JavaScript Execution
+- **evaluate**: Execute JavaScript in browser context
+  * script (str, optional): JavaScript code to execute
+  * script_file (str, optional): Path to JavaScript file to load and execute
+  * args (list, default=[]): Arguments to pass to script
+  * return_value (bool, default=True): Whether to return script's result
+
+### Control Flow
+- **loop**: Repeat actions multiple times
+  * actions (list, required): List of actions to execute each iteration
+  * iterations (int, optional): Number of times to repeat (None = until condition)
+  * condition (str, optional): JavaScript condition; loop continues while true
+  * values (list, optional): List of values to iterate over
+  * value_name (str, default="value"): Variable name for current value
+  * break_on_error (bool, default=True): Stop loop if any action fails
+  * max_iterations (int, default=100): Safety limit for condition-based loops
+- **conditional**: Execute actions conditionally
+  * target (str, optional): XPath/CSS selector to evaluate
+  * target_type (str, default="css"): Type of target: "css" or "xpath"
+  * condition_type (str, default="text_contains"): How to evaluate: "text_contains", "exists", "not_exists", "text_equals", "attribute_equals"
+  * expected_value (str, required): Value that evaluates to true/false
+  * actions_if_true (list, optional): Actions if condition is true
+  * actions_if_false (list, optional): Actions if condition is false
 
 If no selectors are provided and full_page is False, the tool will still return the complete HTML body of the final page for your reference."""
     args_schema = WebScrapingToolArgs
@@ -210,6 +333,7 @@ If no selectors are provided and full_page is False, the tool will still return 
         selectors: Optional[List[Dict[str, Any]]] = None,
         base_url: str = "",
         browser_config: Optional[Dict[str, Any]] = None,
+        operation: Literal["define_plan", "scrape"] = "scrape",
         **kwargs
     ) -> Dict[str, Any]:
         """
@@ -219,10 +343,27 @@ If no selectors are provided and full_page is False, the tool will still return 
             steps: List of navigation/interaction steps
             selectors: List of content selectors to do extraction
             base_url: Base URL for relative links
+            operation: 'define_plan' to return the plan without executing, 'scrape' to execute
 
         Returns:
-            Dictionary with scraping results
+            Dictionary with scraping results or plan definition
         """
+        # Handle define_plan operation - return the plan without executing
+        if operation == "define_plan":
+            return {
+                "status": "plan_defined",
+                "operation": "define_plan",
+                "plan": {
+                    "steps": steps,
+                    "selectors": selectors,
+                    "base_url": base_url,
+                    "browser_config": browser_config,
+                    "total_steps": len(steps),
+                    "has_selectors": selectors is not None and len(selectors) > 0,
+                },
+                "message": "Plan defined successfully. Review the steps and selectors, then call again with operation='scrape' to execute."
+            }
+
         self.results = []
 
         try:
