@@ -10,20 +10,34 @@ from typing import Any, Dict, List, Optional
 import aiohttp
 from bs4 import BeautifulSoup
 from markitdown import MarkItDown
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
-from .google.tools import GoogleSiteSearchTool
-from .scraping.driver import SeleniumSetup
+from ..google.tools import GoogleSiteSearchTool
+from ..scraping.driver import SeleniumSetup
+from .presets import SITE_PRESETS
 
 
 class SiteSearchArgs(BaseModel):
     """Arguments schema for :class:`SiteSearch`."""
 
-    url: str = Field(
-        description="Base URL of the site to explore (e.g., https://www.statista.com/)",
+    url: Optional[str] = Field(
+        default=None,
+        description=(
+            "Base URL of the site to explore (e.g., https://www.statista.com/). "
+            "Required if preset is not provided."
+        ),
     )
-    query: str = Field(
+    query: Optional[str] = Field(
+        default=None,
         description="Terms to search for within the provided site",
+    )
+    preset: Optional[str] = Field(
+        default=None,
+        description=(
+            "Preset name for predefined search configurations. "
+            "Use 'site_presets_list' tool to discover available presets. "
+            "If provided, url and selectors will be taken from preset configuration."
+        ),
     )
     selectors: Optional[List[str]] = Field(
         default=None,
@@ -36,6 +50,13 @@ class SiteSearchArgs(BaseModel):
         description="Maximum number of search results to process",
     )
 
+    @model_validator(mode="after")
+    def validate_url_or_preset(self) -> "SiteSearchArgs":
+        """Validate that either url or preset is provided."""
+        if not self.url and not self.preset:
+            raise ValueError("Either 'url' or 'preset' must be provided")
+        return self
+
 
 class SiteSearch(GoogleSiteSearchTool):
     """Perform Google-powered site searches and return rendered content as markdown."""
@@ -43,7 +64,9 @@ class SiteSearch(GoogleSiteSearchTool):
     name = "site_search"
     description = (
         "Search within a given site and return fully-rendered page content as markdown, "
-        "including PDF conversion when encountered."
+        "including PDF conversion when encountered. "
+        "Supports presets for common searches (e.g., 'best_buy_deals' for trending Best Buy deals). "
+        "Use 'site_presets_list' tool to discover available presets before using this tool."
     )
     args_schema = SiteSearchArgs
 
@@ -55,31 +78,53 @@ class SiteSearch(GoogleSiteSearchTool):
 
     async def _execute(
         self,
-        url: str,
-        query: str,
+        url: Optional[str] = None,
+        query: Optional[str] = None,
+        preset: Optional[str] = None,
         selectors: Optional[List[str]] = None,
         max_results: int = 3,
         **_: Any,
     ) -> Dict[str, Any]:
+        # Apply preset if provided
+        if preset:
+            preset_config = SITE_PRESETS.get(preset)
+            if preset_config:
+                url = preset_config.get("url", url)
+                selectors = preset_config.get("selectors", selectors)
+                # Preset overrides url and selectors
+                self.logger.info(f"Using preset '{preset}': url={url}")
+            else:
+                raise ValueError(
+                    f"Unknown preset: '{preset}'. Use 'site_presets_list' to see available presets."
+                )
+
+        if not url:
+            raise ValueError("URL is required when preset is not provided or preset has no URL")
+
         site = self._extract_site(url)
         if not site:
             raise ValueError(f"Could not extract site from URL: {url}")
 
-        search_results = await super()._execute(
-            query=query,
-            site=site,
-            max_results=max_results,
-            preview=False,
-            preview_method="aiohttp",
-        )
+        # If query is provided, use Google search within site
+        if query:
+            search_results = await super()._execute(
+                query=query,
+                site=site,
+                max_results=max_results,
+                preview=False,
+                preview_method="aiohttp",
+            )
+            urls_to_process = [
+                item.get("link") for item in search_results.get("results", [])[:max_results]
+                if item.get("link")
+            ]
+        else:
+            # No query - just render the provided URL directly
+            urls_to_process = [url]
 
         processed_results = []
         try:
-            for item in search_results.get("results", [])[:max_results]:
-                link = item.get("link")
-                if not link:
-                    continue
-
+            for link in urls_to_process:
                 if await self._is_pdf(link):
                     markdown, content_type = await self._convert_pdf(link)
                 else:
@@ -89,9 +134,7 @@ class SiteSearch(GoogleSiteSearchTool):
 
                 processed_results.append(
                     {
-                        "title": item.get("title"),
                         "url": link,
-                        "snippet": item.get("snippet"),
                         "content_type": content_type,
                         "markdown": markdown,
                     }
@@ -102,6 +145,7 @@ class SiteSearch(GoogleSiteSearchTool):
         return {
             "site": site,
             "search_terms": query,
+            "preset_used": preset,
             "total_results": len(processed_results),
             "results": processed_results,
         }
