@@ -22,11 +22,22 @@ Each output type is rendered appropriately based on the output mode (Terminal, H
 HTML mode generates embeddable widgets for integration with Streamlit, Gradio, web apps, etc.
 """
 from ..models.outputs import OutputMode, OutputType
-from .formatter import OutputFormatter
+from .formatter import (
+    OutputFormatter,
+    OutputRetryConfig,
+    OutputRetryResult,
+    DEFAULT_RETRY_PROMPTS,
+)
+from .formats import RenderResult, RenderError
 
 
 __all__ = (
     'OutputMode',
     'OutputType',
     'OutputFormatter',
+    'OutputRetryConfig',
+    'OutputRetryResult',
+    'DEFAULT_RETRY_PROMPTS',
+    'RenderResult',
+    'RenderError',
 )
