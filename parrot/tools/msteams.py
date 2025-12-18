@@ -42,6 +42,7 @@ from typing import Dict, List, Optional, Union, Any
 from datetime import datetime, timezone, timedelta
 import json
 import uuid
+import urllib.parse
 import msal
 from pydantic import BaseModel, Field
 import aiohttp
@@ -252,6 +253,51 @@ class ChatMessagesFromUserInput(BaseModel):
     )
 
 
+class GetOnlineMeetingIdInput(BaseModel):
+    """Input schema for getting online meeting ID from a calendar event by subject."""
+    user_id: str = Field(
+        description="The user ID (GUID) or user principal name (email) to search calendar events for"
+    )
+    subject: str = Field(
+        description="The subject of the meeting to search for (uses startsWith filter)"
+    )
+    start_time: Optional[str] = Field(
+        default=None,
+        description="Start time to filter events (ISO format, e.g., '2025-01-01T00:00:00Z')"
+    )
+    end_time: Optional[str] = Field(
+        default=None,
+        description="End time to filter events (ISO format, e.g., '2025-01-31T23:59:59Z')"
+    )
+
+
+class ListMeetingTranscriptsInput(BaseModel):
+    """Input schema for listing meeting transcripts."""
+    user_id: str = Field(
+        description="The user ID (GUID) or user principal name (email) who owns the meeting"
+    )
+    online_meeting_id: str = Field(
+        description="The online meeting ID to list transcripts for"
+    )
+
+
+class GetMeetingTranscriptInput(BaseModel):
+    """Input schema for downloading a meeting transcript."""
+    user_id: str = Field(
+        description="The user ID (GUID) or user principal name (email) who owns the meeting"
+    )
+    online_meeting_id: str = Field(
+        description="The online meeting ID"
+    )
+    transcript_id: str = Field(
+        description="The transcript ID to download"
+    )
+    format: Optional[str] = Field(
+        default="text/vtt",
+        description="The format for the transcript content: 'text/vtt' (WebVTT with timestamps) or 'text/plain' (plain text)"
+    )
+
+
 class MSTeamsToolkit(AbstractToolkit):
     """
     Toolkit for interacting with Microsoft Teams via Microsoft Graph API.
@@ -264,6 +310,8 @@ class MSTeamsToolkit(AbstractToolkit):
     - Managing chats and users
     - Finding teams and channels by name
     - Extracting messages from channels and chats
+    - Getting online meeting IDs from calendar events
+    - Listing and downloading meeting transcripts
     All public async methods are exposed as tools via AbstractToolkit.
     """
 
@@ -1278,6 +1326,299 @@ class MSTeamsToolkit(AbstractToolkit):
 
         except Exception as e:
             raise RuntimeError(f"Failed to get messages from user {user_email}: {e}") from e
+
+    @tool_schema(GetOnlineMeetingIdInput)
+    async def get_online_meeting_id(
+        self,
+        user_id: str,
+        subject: str,
+        start_time: Optional[str] = None,
+        end_time: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Get the online meeting ID from a calendar event by subject.
+
+        This method follows a 3-step process:
+        1. Find calendar events by subject (with optional time window)
+        2. Extract the joinUrl from the event's onlineMeeting property
+        3. Look up the onlineMeeting by joinWebUrl to get the onlineMeetingId
+
+        Args:
+            user_id: The user ID (GUID) or user principal name (email) to search calendar events for
+            subject: The subject of the meeting to search for (uses startsWith filter)
+            start_time: Start time to filter events (ISO format, e.g., '2025-01-01T00:00:00Z')
+            end_time: End time to filter events (ISO format, e.g., '2025-01-31T23:59:59Z')
+
+        Returns:
+            Dict containing the online meeting information including:
+            - onlineMeetingId: The ID of the online meeting
+            - eventId: The calendar event ID
+            - subject: The meeting subject
+            - joinUrl: The meeting join URL
+            - startDateTime: Meeting start time
+            - endDateTime: Meeting end time
+        """
+        await self._ensure_connected()
+
+        try:
+            # Step 1: Find calendar events by subject
+            # Build filter query
+            filter_parts = [f"startsWith(subject,'{subject}')"]
+
+            # Add time window filter if provided
+            if start_time:
+                filter_parts.append(f"start/dateTime ge '{start_time}'")
+            if end_time:
+                filter_parts.append(f"end/dateTime le '{end_time}'")
+
+            filter_query = " and ".join(filter_parts)
+
+            # Build query parameters
+            query_params = {
+                "$filter": filter_query,
+                "$select": "id,subject,start,end,isOnlineMeeting,onlineMeeting",
+                "$orderby": "start/dateTime desc",
+                "$top": 10  # Limit results to avoid too many
+            }
+
+            # Make request to calendar events endpoint via direct Graph API call
+            headers = {
+                "Authorization": f"Bearer {self._token}",
+                "Content-Type": "application/json"
+            }
+
+            # URL encode the filter
+            params_str = "&".join(
+                f"{k}={urllib.parse.quote(str(v), safe='')}"
+                for k, v in query_params.items()
+            )
+
+            events_url = f"https://graph.microsoft.com/v1.0/users/{user_id}/calendar/events?{params_str}"
+
+            async with aiohttp.ClientSession() as session:
+                async with session.get(events_url, headers=headers) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        raise RuntimeError(
+                            f"Failed to get calendar events: {response.status} - {error_text}"
+                        )
+                    events_data = await response.json()
+
+            events = events_data.get("value", [])
+
+            if not events:
+                raise ValueError(f"No calendar events found with subject starting with '{subject}'")
+
+            # Step 2: Find an event with online meeting info
+            event_with_meeting = None
+            for event in events:
+                if event.get("isOnlineMeeting") and event.get("onlineMeeting"):
+                    event_with_meeting = event
+                    break
+
+            if not event_with_meeting:
+                raise ValueError(
+                    f"No online meeting found in events with subject starting with '{subject}'. "
+                    "Make sure the meeting has 'Teams Meeting' enabled."
+                )
+
+            # Get the join URL
+            online_meeting = event_with_meeting.get("onlineMeeting", {})
+            join_url = online_meeting.get("joinUrl")
+
+            if not join_url:
+                raise ValueError(
+                    "Event found but no join URL available. "
+                    "The meeting may not have Teams meeting enabled."
+                )
+
+            # Step 3: Look up the online meeting by joinWebUrl to get the ID
+            # The joinWebUrl must be URL encoded
+            encoded_join_url = urllib.parse.quote(join_url, safe='')
+            meetings_filter = f"JoinWebUrl eq '{encoded_join_url}'"
+
+            # Use direct Graph API call for online meetings
+            meetings_url = (
+                f"https://graph.microsoft.com/v1.0/users/{user_id}/onlineMeetings"
+                f"?$filter={urllib.parse.quote(meetings_filter, safe='')}"
+            )
+
+            async with aiohttp.ClientSession() as session:
+                async with session.get(meetings_url, headers=headers) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        raise RuntimeError(
+                            f"Failed to get online meeting: {response.status} - {error_text}"
+                        )
+                    meetings_data = await response.json()
+
+            meetings = meetings_data.get("value", [])
+
+            if not meetings:
+                raise ValueError(
+                    f"No online meeting found with join URL: {join_url}"
+                )
+
+            # Get the first (and typically only) meeting
+            online_meeting_info = meetings[0]
+
+            return {
+                "onlineMeetingId": online_meeting_info.get("id"),
+                "eventId": event_with_meeting.get("id"),
+                "subject": event_with_meeting.get("subject"),
+                "joinUrl": join_url,
+                "joinWebUrl": online_meeting_info.get("joinWebUrl"),
+                "startDateTime": event_with_meeting.get("start", {}).get("dateTime"),
+                "endDateTime": event_with_meeting.get("end", {}).get("dateTime"),
+                "videoTeleconferenceId": online_meeting_info.get("videoTeleconferenceId"),
+                "externalId": online_meeting_info.get("externalId"),
+                "participants": online_meeting_info.get("participants"),
+            }
+
+        except ValueError:
+            # Re-raise ValueError as-is
+            raise
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to get online meeting ID for subject '{subject}': {e}"
+            ) from e
+
+    @tool_schema(ListMeetingTranscriptsInput)
+    async def list_meeting_transcripts(
+        self,
+        user_id: str,
+        online_meeting_id: str
+    ) -> List[Dict[str, Any]]:
+        """
+        List all transcripts for an online meeting.
+
+        Args:
+            user_id: The user ID (GUID) or user principal name (email) who owns the meeting
+            online_meeting_id: The online meeting ID to list transcripts for
+
+        Returns:
+            List of dicts containing transcript information including:
+            - id: The transcript ID
+            - createdDateTime: When the transcript was created
+            - meetingId: The meeting ID
+            - meetingOrganizerId: The organizer's user ID
+        """
+        await self._ensure_connected()
+
+        try:
+            headers = {
+                "Authorization": f"Bearer {self._token}",
+                "Content-Type": "application/json"
+            }
+
+            transcripts_url = (
+                f"https://graph.microsoft.com/v1.0/users/{user_id}"
+                f"/onlineMeetings/{online_meeting_id}/transcripts"
+            )
+
+            async with aiohttp.ClientSession() as session:
+                async with session.get(transcripts_url, headers=headers) as response:
+                    if response.status == 404:
+                        return []  # No transcripts found
+                    if response.status != 200:
+                        error_text = await response.text()
+                        raise RuntimeError(
+                            f"Failed to list transcripts: {response.status} - {error_text}"
+                        )
+                    transcripts_data = await response.json()
+
+            transcripts = transcripts_data.get("value", [])
+
+            return [
+                {
+                    "id": t.get("id"),
+                    "createdDateTime": t.get("createdDateTime"),
+                    "meetingId": t.get("meetingId"),
+                    "meetingOrganizerId": t.get("meetingOrganizerId"),
+                    "transcriptContentUrl": t.get("transcriptContentUrl"),
+                }
+                for t in transcripts
+            ]
+
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to list transcripts for meeting {online_meeting_id}: {e}"
+            ) from e
+
+    @tool_schema(GetMeetingTranscriptInput)
+    async def get_meeting_transcript(
+        self,
+        user_id: str,
+        online_meeting_id: str,
+        transcript_id: str,
+        format: str = "text/vtt"
+    ) -> Dict[str, Any]:
+        """
+        Download a meeting transcript content.
+
+        Args:
+            user_id: The user ID (GUID) or user principal name (email) who owns the meeting
+            online_meeting_id: The online meeting ID
+            transcript_id: The transcript ID to download
+            format: The format for the transcript content:
+                - 'text/vtt' (WebVTT with timestamps, default)
+                - 'text/plain' (plain text without timestamps)
+
+        Returns:
+            Dict containing:
+            - transcriptId: The transcript ID
+            - format: The requested format
+            - content: The transcript content as text
+        """
+        await self._ensure_connected()
+
+        try:
+            # Validate format
+            valid_formats = ["text/vtt", "text/plain"]
+            if format not in valid_formats:
+                raise ValueError(
+                    f"Invalid format '{format}'. Must be one of: {valid_formats}"
+                )
+
+            headers = {
+                "Authorization": f"Bearer {self._token}",
+                "Accept": format  # Request specific format via Accept header
+            }
+
+            # URL encode the format for query parameter
+            encoded_format = urllib.parse.quote(format, safe='')
+            transcript_url = (
+                f"https://graph.microsoft.com/v1.0/users/{user_id}"
+                f"/onlineMeetings/{online_meeting_id}/transcripts/{transcript_id}"
+                f"/content?$format={encoded_format}"
+            )
+
+            async with aiohttp.ClientSession() as session:
+                async with session.get(transcript_url, headers=headers) as response:
+                    if response.status == 404:
+                        raise ValueError(
+                            f"Transcript not found: {transcript_id}"
+                        )
+                    if response.status != 200:
+                        error_text = await response.text()
+                        raise RuntimeError(
+                            f"Failed to get transcript content: {response.status} - {error_text}"
+                        )
+                    content = await response.text()
+
+            return {
+                "transcriptId": transcript_id,
+                "onlineMeetingId": online_meeting_id,
+                "format": format,
+                "content": content
+            }
+
+        except ValueError:
+            raise
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to get transcript {transcript_id}: {e}"
+            ) from e
 
     async def _prepare_message(
         self,
