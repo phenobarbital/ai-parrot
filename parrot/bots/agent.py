@@ -123,7 +123,12 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
             self._llm = self.client
         # install agent-specific tools:
         self.tools = self.agent_tools()
-        self.tool_manager.register_tools(self.tools)
+        try:
+            self.tool_manager.register_tools(self.tools)
+        except Exception as exc:  # pragma: no cover - defensive
+            self.logger.error(
+                "Failed to register agent tools: %s", exc, exc_info=True
+            )
         # Initialize MCP support
         self.mcp_manager = MCPToolManager(
             self.tool_manager
@@ -642,7 +647,14 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
             ... )
             >>> tools = await agent.add_mcp_server(config)
         """
-        return await self.mcp_manager.add_mcp_server(config)
+        try:
+            return await self.mcp_manager.add_mcp_server(config)
+        except Exception as exc:  # pragma: no cover - defensive
+            self.logger.error(
+                "Failed to add MCP server %s: %s", getattr(config, "name", "unknown"), exc,
+                exc_info=True
+            )
+            return []
 
     async def add_mcp_server_url(
         self,
