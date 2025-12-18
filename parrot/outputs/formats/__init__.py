@@ -98,6 +98,8 @@ def has_system_prompt(mode: OutputMode) -> bool:
     return mode in _PROMPTS
 
 
+from .base import RenderResult, RenderError
+
 __all__ = (
     'RENDERERS',
     'register_renderer',
@@ -105,4 +107,6 @@ __all__ = (
     'Renderer',
     'get_output_prompt',
     'has_system_prompt',
+    'RenderResult',
+    'RenderError',
 )

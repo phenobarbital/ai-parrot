@@ -2,7 +2,7 @@ from typing import Any, List, Dict, Optional, Tuple, Type, TYPE_CHECKING
 from abc import ABC, abstractmethod
 import contextlib
 from datetime import datetime
-from dataclasses import is_dataclass, asdict
+from dataclasses import is_dataclass, asdict, dataclass, field
 import pandas as pd
 import numpy as np
 from pydantic import BaseModel
@@ -13,6 +13,41 @@ from pygments.lexers.data import JsonLexer
 from pygments.formatters.html import HtmlFormatter
 if TYPE_CHECKING:
     from ...tools.pythonpandas import PythonPandasTool
+
+
+@dataclass
+class RenderError:
+    """Structured error information from rendering.
+
+    Attributes:
+        message: Human-readable error message
+        error_type: Type of error (e.g., 'json_parse', 'validation', 'execution')
+        raw_output: The original output that failed to render
+        details: Additional error details (stack trace, position, etc.)
+    """
+    message: str
+    error_type: str
+    raw_output: Optional[str] = None
+    details: Optional[Dict[str, Any]] = field(default_factory=dict)
+
+
+@dataclass
+class RenderResult:
+    """Structured result from rendering operation.
+
+    This provides more detailed information about the rendering outcome,
+    including whether it succeeded and any error information.
+
+    Attributes:
+        success: Whether rendering succeeded
+        content: The rendered content (may be partial on error)
+        wrapped_content: Optional wrapped version (e.g., HTML)
+        error: Error information if rendering failed
+    """
+    success: bool
+    content: Any
+    wrapped_content: Optional[Any] = None
+    error: Optional[RenderError] = None
 
 
 class BaseRenderer(ABC):
@@ -330,6 +365,65 @@ class BaseRenderer(ABC):
         except ImportError:
             return f'<pre><code class="language-json">{content}</code></pre>'
 
+    def _create_error_result(
+        self,
+        message: str,
+        error_type: str,
+        raw_output: Optional[str] = None,
+        content: Optional[Any] = None,
+        wrapped_content: Optional[Any] = None,
+        details: Optional[Dict[str, Any]] = None,
+    ) -> RenderResult:
+        """
+        Create a structured error result for render failures.
+
+        This method standardizes error reporting across renderers and makes
+        it easier to detect and handle errors in retry logic.
+
+        Args:
+            message: Human-readable error message
+            error_type: Category of error (e.g., 'json_parse', 'validation', 'execution')
+            raw_output: The original output that failed to render
+            content: Fallback content to return (often the raw output or error message)
+            wrapped_content: Fallback wrapped content if any
+            details: Additional error details
+
+        Returns:
+            RenderResult with success=False and error information
+        """
+        error = RenderError(
+            message=message,
+            error_type=error_type,
+            raw_output=raw_output,
+            details=details or {}
+        )
+        return RenderResult(
+            success=False,
+            content=content or raw_output or message,
+            wrapped_content=wrapped_content,
+            error=error
+        )
+
+    def _create_success_result(
+        self,
+        content: Any,
+        wrapped_content: Optional[Any] = None
+    ) -> RenderResult:
+        """
+        Create a successful render result.
+
+        Args:
+            content: The primary rendered content
+            wrapped_content: Optional wrapped version (e.g., HTML)
+
+        Returns:
+            RenderResult with success=True
+        """
+        return RenderResult(
+            success=True,
+            content=content,
+            wrapped_content=wrapped_content
+        )
 
     @abstractmethod
     async def render(
