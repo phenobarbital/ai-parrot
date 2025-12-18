@@ -44,6 +44,20 @@ class PandasTable(BaseModel):
         description="Rows as lists of scalar values, aligned with `columns`"
     )
 
+    @field_validator('rows')
+    @classmethod
+    def validate_rows_alignment(cls, v, info):
+        """Ensure rows align with columns."""
+        if 'columns' in info.data:
+            num_cols = len(info.data['columns'])
+            for i, row in enumerate(v):
+                if len(row) != num_cols:
+                    raise ValueError(
+                        f"Row {i} has {len(row)} items, expected {num_cols} "
+                        f"to match columns: {info.data['columns']}"
+                    )
+        return v
+
 
 class SummaryStat(BaseModel):
     """Single summary statistic for a DataFrame column."""
@@ -116,7 +130,7 @@ class PandasAgentResponse(BaseModel):
     data: Optional[PandasTable] = Field(
         default=None,
         description=(
-            "The resulting DataFrame serialized as a list of records. "
+            "The resulting DataFrame in split format. "
             "Use this format: {'columns': [...], 'rows': [[...], [...], ...]}."
             "Set to null if the response doesn't produce tabular data."
         )
@@ -267,9 +281,9 @@ ONLY when structured output is requested, you MUST respond with:
     - Include your analysis, insights, and a summary of the findings.
     - Use markdown formatting (bolding, lists) within this string for readability.
 
-2.  **`data`** (list of dictionaries, optional):
+2.  **`data`** (object, optional):
     - If the user asked for data (e.g., "show me the top 5...", "list the employees..."), provide the resulting dataframe here.
-    - Format: A list of records, e.g., `[{"col1": "val1"}, {"col1": "val2"}]`.
+    - Format: `{"columns": ["col1", "col2"], "rows": [[val1, val2], [val3, val4]]}`.
     - If no tabular data is relevant, set this to `null` or an empty list.
 
 3.  **`code`** (string or JSON, optional):

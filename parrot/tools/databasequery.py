@@ -538,8 +538,8 @@ class DatabaseQueryTool(AbstractTool):
         dbtype = DriverInfo.get_dbtype(normalized_driver)
         default_credentials = {
             'bigquery': {
-                'credentials_file': config.get('GOOGLE_APPLICATION_CREDENTIALS'),
-                'project_id': config.get('GOOGLE_CLOUD_PROJECT'),
+                'credentials': Path(config.get('BIGQUERY_CREDENTIALS_PATH')).resolve(),
+                'project_id': config.get('BIGQUERY_PROJECT_ID'),
             },
             'pg': {
                 'host': config.get('POSTGRES_HOST', fallback='localhost'),
@@ -683,8 +683,8 @@ class DatabaseQueryTool(AbstractTool):
 
         if query_language == QueryLanguage.SQL:
             if not isinstance(query, str):
-                 return query
-            
+                return query
+
             # Check if LIMIT is already present
             if re.search(r'\bLIMIT\b', query, re.IGNORECASE):
                 return query
@@ -693,7 +693,7 @@ class DatabaseQueryTool(AbstractTool):
             # We strip this tail from the end of the string.
             tail_pattern = r'(?:\s+|;|--[^\n]*|/\*[\s\S]*?\*/)*$'
             clean_query = re.sub(tail_pattern, '', query)
-            
+
             if not clean_query:
                 return query
 
@@ -777,7 +777,7 @@ class DatabaseQueryTool(AbstractTool):
                     # 2. query parameter contains ONLY the MongoDB filter (JSON)
                     # For mongo-based drivers:
                     # Support both standard JSON filter and {find:..., filter:...} command style
-                    
+
                     collection_name = credentials.get('collection_name')
                     query_dict = {}
                     possible_limit = None
@@ -798,7 +798,7 @@ class DatabaseQueryTool(AbstractTool):
                                 query_dict = json.loads(json_query.strip()) if json_query.strip() else {}
                              except Exception:
                                 query_dict = {}
-                        
+
                         else:
                             # Parse JSON if string
                             if isinstance(modified_query, str):
@@ -817,7 +817,7 @@ class DatabaseQueryTool(AbstractTool):
                     if isinstance(query_dict, dict) and ('filter' in query_dict or 'find' in query_dict):
                         if 'find' in query_dict and isinstance(query_dict['find'], str):
                             collection_name = query_dict['find']
-                        
+
                         # Extract limit/sort/projection
                         if 'limit' in query_dict:
                             possible_limit = query_dict['limit']
@@ -836,7 +836,7 @@ class DatabaseQueryTool(AbstractTool):
                             "provided in the 'credentials', or in the query as "
                             "{'find': 'collection_name', ...}."
                         )
-                    
+
                     if not isinstance(query_dict, dict):
                          query_dict = {}
 
@@ -847,11 +847,11 @@ class DatabaseQueryTool(AbstractTool):
                     # 4. Enforce Limits
                     # Baseline hard limit
                     final_max_rows = 20
-                    
+
                     # Consider user-provided max_rows
                     if max_rows and max_rows > 0:
                         final_max_rows = min(final_max_rows, max_rows)
-                    
+
                     # Consider query-embedded limit
                     if possible_limit is not None and isinstance(possible_limit, int):
                          final_max_rows = min(final_max_rows, possible_limit)
@@ -866,7 +866,7 @@ class DatabaseQueryTool(AbstractTool):
                     # Handle index parameter for Elastic/OpenSearch
                     query_obj = None
                     is_json_str = False
-                    
+
                     if isinstance(modified_query, str):
                         try:
                             query_obj = json.loads(modified_query)
@@ -883,7 +883,7 @@ class DatabaseQueryTool(AbstractTool):
                             if target_index:
                                 await conn.use(target_index)
                                 self.logger.info(f"Switched to index: {target_index}")
-                        
+
                         # Update modified_query
                         if is_json_str:
                              modified_query = json.dumps(query_obj)

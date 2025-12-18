@@ -839,6 +839,60 @@ class AgentSchedulerManager:
 
         return schedule
 
+    def register_bot_schedules(self, bot: Any) -> int:
+        """
+        Scan and register @schedule decorated methods for a bot.
+
+        Args:
+            bot: Bot instance to scan
+
+        Returns:
+            Number of schedules registered
+        """
+        registered_count = 0
+        bot_name = getattr(bot, 'name', 'Unknown')
+        
+        # Scan all methods of the bot
+        for name, method in inspect.getmembers(bot, predicate=inspect.ismethod):
+            # Check for schedule config
+            if not hasattr(method, '_schedule_config'):
+                continue
+
+            config = method._schedule_config
+            schedule_type = config.get('schedule_type')
+            schedule_config = config.get('schedule_config', {})
+            method_name = config.get('method_name', name)
+
+            try:
+                # Create trigger
+                trigger = self._create_trigger(schedule_type, schedule_config)
+                
+                # Construct unique job ID
+                job_id = f"auto_{bot_name}_{method_name}"
+                job_name = f"{bot_name}.{method_name}"
+
+                # Add job to scheduler
+                self.scheduler.add_job(
+                    method,
+                    trigger=trigger,
+                    id=job_id,
+                    name=job_name,
+                    replace_existing=True,
+                    misfire_grace_time=300
+                )
+                
+                self.logger.info(
+                    f"Registered auto-schedule for {job_name} ({schedule_type})"
+                )
+                registered_count += 1
+
+            except Exception as e:
+                self.logger.error(
+                    f"Failed to register auto-schedule for {bot_name}.{method_name}: {e}"
+                )
+
+        return registered_count
+
     async def remove_schedule(self, schedule_id: str):
         """Remove a schedule from both database and APScheduler."""
         try:
@@ -995,6 +1049,17 @@ class AgentSchedulerManager:
         self.logger.notice(
             "Agent Scheduler started successfully"
         )
+        
+        # Register code-based schedules from active bots
+        if self.bot_manager:
+            total_auto = 0
+            for bot_name, bot in self.bot_manager.get_bots().items():
+                total_auto += self.register_bot_schedules(bot)
+            
+            if total_auto > 0:
+                self.logger.notice(
+                    f"Registered {total_auto} auto-schedules from active bots"
+                )
 
     async def on_shutdown(self, app: web.Application, conn: Callable):
         """Cleanup on app shutdown."""
