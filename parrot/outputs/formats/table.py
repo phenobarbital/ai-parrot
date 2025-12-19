@@ -369,7 +369,7 @@ agGrid.createGrid(gridDiv, gridOptions);
             if hasattr(response, 'code') and isinstance(response.code, str) and "new agGrid.Grid" in response.code:
                 content = response.code
             else:
-                content = self._generate_aggrid_code(df, "wrapper_ag")
+                content = self._generate_aggrid_code(df, "wrapper_ag-grid")
 
         # 4. Build Wrapped HTML
         wrapper_id = f"wrapper_{table_mode}" if table_mode != 'simple' else "wrapper"

@@ -68,7 +68,20 @@ class PlotlyRenderer(BaseChart):
     ) -> Tuple[Any, Optional[str]]:
         """Execute Plotly code within the shared Python environment."""
 
-        # Execute using BaseRenderer logic
+        # 1. Attempt to handle as JSON/Dict first (LLM sometimes outputs JSON)
+        clean_code = code.strip()
+        if clean_code.startswith('{') and clean_code.endswith('}'):
+            try:
+                # Try JSON parse
+                chart_dict = json.loads(clean_code)
+                # Check if it looks like a plotly spec
+                if isinstance(chart_dict, dict) and ('data' in chart_dict or 'layout' in chart_dict):
+                    return [chart_dict], None
+            except json.JSONDecodeError:
+                # Not valid JSON, might be Python dict or just code starting with {
+                pass
+
+        # 2. Execute using BaseRenderer logic
         context, error = super().execute_code(
             code,
             pandas_tool=pandas_tool,
@@ -86,7 +99,7 @@ class PlotlyRenderer(BaseChart):
         if figures := self._find_chart_objects(context):
             return figures, None
 
-        return None, "Code must define a figure variable (fig, chart, plot)"
+        return None, "Code must define a figure variable (fig, chart, plot) or be valid Plotly JSON"
 
     @staticmethod
     def _find_chart_objects(context: Dict[str, Any]) -> List[Any]:

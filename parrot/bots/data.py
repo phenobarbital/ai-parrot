@@ -1063,9 +1063,26 @@ class PandasAgent(BasicAgent):
                         self.logger.warning(
                             "PythonPandasTool not available for non-default output mode rendering"
                         )
-                content, wrapped = await self.formatter.format(
-                    output_mode, response, **format_kwargs
-                )
+
+                # Safe format handling
+                content = None
+                wrapped = None
+                
+                # Check for empty response/content before formatting
+                if response and (response.content or response.output):
+                     try:
+                        content, wrapped = await self.formatter.format(
+                            output_mode, response, **format_kwargs
+                        )
+                     except Exception as e:
+                        self.logger.error(f"Error extracting content on formatter: {e}")
+                        content = f"Error extracting content: {e}"
+                        wrapped = content
+                else:
+                    self.logger.warning("Agent response was empty or None - skipping formatting")
+                    content = "No response generated"
+                    wrapped = content
+
                 if output_mode != OutputMode.DEFAULT:
                     response.output = content
                     response.response = wrapped
