@@ -308,6 +308,11 @@ class HTTPService:
         if method not in VALID_METHODS:
             raise ValueError(f"Invalid HTTP method: {method}")
 
+        # Basic Auth support for httpx
+        auth = None
+        if self.auth_type == "basic" and self._user:
+            auth = httpx.BasicAuth(self._user, self._pwd)
+
         async with httpx.AsyncClient(
             transport=transport,
             headers=request_headers,
@@ -316,6 +321,7 @@ class HTTPService:
             timeout=timeout_config,
             http2=self.use_http2,  # Enable HTTP/2
             follow_redirects=follow_redirects,
+            auth=auth,
             **kwargs
         ) as client:
             try:
