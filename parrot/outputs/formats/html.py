@@ -27,6 +27,10 @@ class HTMLRenderer(BaseRenderer):
         """
         Render response as HTML, returning a primary content object and a wrapped HTML string.
         """
+        content = self._get_content(response)
+        if isinstance(content, str) and self._looks_like_html(content):
+            return content, content
+
         use_panel = kwargs.get('use_panel', True) and PANEL_AVAILABLE
 
         if use_panel:
@@ -40,6 +44,13 @@ class HTMLRenderer(BaseRenderer):
             wrapped = html_string
 
         return content, wrapped
+
+    @staticmethod
+    def _looks_like_html(content: str) -> bool:
+        lowered = content.lstrip().lower()
+        if lowered.startswith('<!doctype html') or lowered.startswith('<html'):
+            return True
+        return '<script' in lowered or 'echarts.init' in lowered
 
     def _render_with_panel(self, response: Any, **kwargs) -> Any:
         """
