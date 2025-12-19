@@ -987,6 +987,31 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                                 f"Found text part: '{clean_text[:50]}...'"
                             )
 
+                    # Check for code execution result (contains output from executed code)
+                    elif hasattr(part, 'code_execution_result') and part.code_execution_result:
+                        result = part.code_execution_result
+                        outcome = getattr(result, 'outcome', None)
+                        output = getattr(result, 'output', None)
+                        self.logger.debug(
+                            f"Found code_execution_result: outcome={outcome}"
+                        )
+                        if output and isinstance(output, str) and output.strip():
+                            text_parts.append(output.strip())
+                            self.logger.debug(
+                                f"Extracted code execution output: '{output[:50]}...'"
+                            )
+
+                    # Check for executable code (the code that was executed)
+                    elif hasattr(part, 'executable_code') and part.executable_code:
+                        exec_code = part.executable_code
+                        code_text = getattr(exec_code, 'code', None)
+                        language = getattr(exec_code, 'language', 'PYTHON')
+                        self.logger.debug(
+                            f"Found executable_code part: language={language}, code_len={len(code_text) if code_text else 0}"
+                        )
+                        # We don't add executable_code to text output by default,
+                        # but log it for debugging purposes
+
                     # Log non-text parts but don't extract them
                     elif hasattr(part, 'thought_signature'):
                         thought_parts_found += 1
@@ -1048,6 +1073,145 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
             "Could not extract any text from response using any method"
         )
         return ""
+
+    def _extract_code_execution_content(
+        self,
+        response,
+        output_directory: Optional[Union[str, Path]] = None
+    ) -> Dict[str, Any]:
+        """
+        Extract code execution content from response including code, results, and images.
+
+        This method handles responses from Google's code execution feature which can
+        include executed Python code, execution results, and generated images (e.g., matplotlib charts).
+
+        Args:
+            response: The Google GenAI response object
+            output_directory: Optional directory to save extracted images
+
+        Returns:
+            Dict containing:
+                - 'code': List of executed code strings
+                - 'output': Combined text output from code execution
+                - 'images': List of PIL Image objects or saved file paths
+                - 'has_content': Boolean indicating if any content was extracted
+        """
+        result = {
+            'code': [],
+            'output': [],
+            'images': [],
+            'has_content': False
+        }
+
+        try:
+            if not (hasattr(response, 'candidates') and response.candidates and
+                    len(response.candidates) > 0 and
+                    hasattr(response.candidates[0], 'content') and
+                    response.candidates[0].content and
+                    hasattr(response.candidates[0].content, 'parts') and
+                    response.candidates[0].content.parts):
+                return result
+
+            for part in response.candidates[0].content.parts:
+                # Extract executable code
+                if hasattr(part, 'executable_code') and part.executable_code:
+                    exec_code = part.executable_code
+                    code_text = getattr(exec_code, 'code', None)
+                    if code_text:
+                        result['code'].append(code_text)
+                        result['has_content'] = True
+                        self.logger.debug(
+                            f"Extracted executable code: {len(code_text)} chars"
+                        )
+
+                # Extract code execution result
+                elif hasattr(part, 'code_execution_result') and part.code_execution_result:
+                    exec_result = part.code_execution_result
+                    outcome = getattr(exec_result, 'outcome', None)
+                    output_text = getattr(exec_result, 'output', None)
+
+                    self.logger.debug(
+                        f"Code execution result: outcome={outcome}"
+                    )
+
+                    if output_text and isinstance(output_text, str) and output_text.strip():
+                        result['output'].append(output_text.strip())
+                        result['has_content'] = True
+
+                # Extract images from inline_data (matplotlib charts, generated images)
+                elif hasattr(part, 'inline_data') and part.inline_data:
+                    try:
+                        inline_data = part.inline_data
+                        mime_type = getattr(inline_data, 'mime_type', '')
+
+                        # Check if it's an image
+                        if mime_type and mime_type.startswith('image/'):
+                            image_data = getattr(inline_data, 'data', None)
+                            if image_data:
+                                # Convert to PIL Image
+                                image = Image.open(io.BytesIO(image_data))
+                                self.logger.debug(
+                                    f"Extracted image from inline_data: {mime_type}, size={image.size}"
+                                )
+
+                                # Save to file if output_directory is provided
+                                if output_directory:
+                                    output_dir = Path(output_directory)
+                                    output_dir.mkdir(parents=True, exist_ok=True)
+                                    # Generate unique filename
+                                    ext = mime_type.split('/')[-1] if '/' in mime_type else 'png'
+                                    filename = f"chart_{uuid.uuid4().hex[:8]}.{ext}"
+                                    file_path = output_dir / filename
+                                    image.save(file_path)
+                                    result['images'].append(file_path)
+                                    self.logger.debug(f"Saved image to: {file_path}")
+                                else:
+                                    result['images'].append(image)
+
+                                result['has_content'] = True
+                    except Exception as e:
+                        self.logger.warning(f"Failed to extract image from inline_data: {e}")
+
+                # Try as_image() method for parts that support it
+                elif hasattr(part, 'as_image') and callable(getattr(part, 'as_image')):
+                    try:
+                        # Check if this part can be converted to an image
+                        # The as_image() method is available on parts with image content
+                        image = part.as_image()
+                        if image:
+                            self.logger.debug(
+                                f"Extracted image via as_image(): size={image.size if hasattr(image, 'size') else 'unknown'}"
+                            )
+
+                            if output_directory:
+                                output_dir = Path(output_directory)
+                                output_dir.mkdir(parents=True, exist_ok=True)
+                                filename = f"chart_{uuid.uuid4().hex[:8]}.png"
+                                file_path = output_dir / filename
+                                image.save(file_path)
+                                result['images'].append(file_path)
+                                self.logger.debug(f"Saved image to: {file_path}")
+                            else:
+                                result['images'].append(image)
+
+                            result['has_content'] = True
+                    except Exception as e:
+                        # as_image() may fail if the part doesn't actually contain image data
+                        self.logger.debug(f"as_image() not applicable for this part: {e}")
+
+            # Log summary
+            if result['has_content']:
+                self.logger.info(
+                    f"Extracted code execution content: "
+                    f"{len(result['code'])} code blocks, "
+                    f"{len(result['output'])} outputs, "
+                    f"{len(result['images'])} images"
+                )
+
+        except Exception as e:
+            self.logger.error(f"Error extracting code execution content: {e}")
+
+        return result
 
     async def ask(
         self,
@@ -1396,6 +1560,16 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
         # Extract assistant response text for conversation memory
         assistant_response_text = self._safe_extract_text(final_response)
 
+        # Extract code execution content (code, results, images) from the response
+        code_execution_content = self._extract_code_execution_content(final_response)
+
+        # If code execution produced output but we don't have text, use the code execution output
+        if not assistant_response_text and code_execution_content['output']:
+            assistant_response_text = "\n".join(code_execution_content['output'])
+            self.logger.info(
+                f"Using code execution output as response text: {len(assistant_response_text)} chars"
+            )
+
         # If we still don't have text but have tool calls, generate a summary
         if not assistant_response_text and all_tool_calls:
             assistant_response_text = self._create_simple_summary(
@@ -1507,6 +1681,14 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                 assistant_response_text,
                 tools_used
             )
+        # Prepare code execution content for AIMessage
+        extracted_images = code_execution_content.get('images', []) if code_execution_content else []
+        extracted_code = (
+            "\n\n".join(code_execution_content['code'])
+            if code_execution_content and code_execution_content.get('code')
+            else None
+        )
+
         # Create AIMessage using factory
         ai_message = AIMessageFactory.from_gemini(
             response=response,
@@ -1518,7 +1700,10 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
             structured_output=final_output,
             tool_calls=all_tool_calls,
             conversation_history=conversation_history,
-            text_response=assistant_response_text
+            text_response=assistant_response_text,
+            files=extracted_images,
+            images=extracted_images,
+            code=extracted_code
         )
 
         # Override provider to distinguish from Vertex AI
