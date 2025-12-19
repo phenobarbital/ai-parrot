@@ -143,12 +143,56 @@ class EChartsRenderer(EChartsMapsMixin, BaseChart):
             ):
                 return None, "ECharts config must include 'series', 'dataset', or timeline 'options'"
 
+            # Apply smart defaults to improve layout/rendering
+            self._apply_smart_defaults(config)
+
             return config, None
 
         except json.JSONDecodeError as e:
             return None, f"Invalid JSON: {str(e)}"
         except Exception as e:
             return None, f"Validation error: {str(e)}"
+
+    def _apply_smart_defaults(self, config: Dict[str, Any]) -> None:
+        """
+        Inject default configuration to prevent common layout issues.
+        - Ensure legend is scrollable and doesn't overlap
+        - Ensure grid prevents label cutoff
+        - Ensure tooltips are confined to container
+        """
+        if not isinstance(config, dict):
+            return
+
+        # 1. Grid: Prevent label cutoff
+        if 'grid' not in config and 'geo' not in config:
+            # Only add default grid if not a map (maps handle own spacing)
+            # and if 'grid' isn't explicitly defined.
+            # Check if it looks like a cartesian chart (has xAxis/yAxis or parallel)
+            if 'xAxis' in config or 'yAxis' in config:
+                config['grid'] = {
+                    'containLabel': True,
+                    'bottom': '10%',
+                    'top': '20%' # Make room for title/legend
+                }
+
+        # 2. Legend: Prevent overlap and overflow
+        if 'legend' in config:
+            if isinstance(config['legend'], dict):
+                # Force scroll type if not specified, to handle many items
+                if 'type' not in config['legend']:
+                    config['legend']['type'] = 'scroll'
+                # Default to top placement if not specified
+                if 'top' not in config['legend'] and 'bottom' not in config['legend'] and 'left' not in config['legend'] and 'right' not in config['legend']:
+                    config['legend']['top'] = 'top'
+        elif 'series' in config:
+             pass
+
+        # 3. Tooltip: Confine to container
+        if 'tooltip' not in config:
+             config['tooltip'] = {'trigger': 'item', 'confine': True}
+        elif isinstance(config['tooltip'], dict):
+             if 'confine' not in config['tooltip']:
+                 config['tooltip']['confine'] = True
 
     def _render_chart_content(self, chart_obj: Any, **kwargs) -> str:
         """Render ECharts visualization content (HTML/JS)."""

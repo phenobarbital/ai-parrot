@@ -788,7 +788,7 @@ class EChartsMapsMixin:
 
         return f'''
         {map_script}
-        <div id="{chart_id}" style="width: {width}; height: {height};"></div>
+        <div id="{chart_id}" style="width: {width}; min-height: {height}; height: 100%;"></div>
         <script type="text/javascript">
             (function() {{
                 var chartDom = document.getElementById('{chart_id}');
