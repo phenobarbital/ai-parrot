@@ -618,7 +618,9 @@ class AIMessageFactory:
         # Add these new parameters:
         conversation_history: Optional[Any] = None,
         text_response: Optional[str] = None,
-        files: Optional[List[Path]] = None
+        files: Optional[List[Path]] = None,
+        images: Optional[List[Any]] = None,
+        code: Optional[str] = None
     ) -> AIMessage:
         """Create AIMessage from Gemini/Vertex AI response."""
         # Handle both direct text responses and response objects
@@ -666,6 +668,8 @@ class AIMessageFactory:
             raw_response=sanitized_raw,
             response=content,
             files=files or [],
+            images=images or [],
+            code=code,
         )
 
         if conversation_history:
