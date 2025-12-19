@@ -326,6 +326,7 @@ class AltairRenderer(BaseChart):
             ), None
 
         # 3. Handle different output formats
+        html_output = None
 
         # Terminal: just return code
         if output_format == 'terminal':
@@ -355,5 +356,9 @@ class AltairRenderer(BaseChart):
             icon='📊',
             **kwargs
         )
+
+        # For explicit HTML output or if 'altair' mode implicitly wants HTML/JSON combo
+        if output_format == 'html' or output_format == 'altair':
+            return self.to_json(chart_obj), html_output
 
         return code, html_output

@@ -316,7 +316,7 @@ class OutputFormatter:
                 logger.warning(f"Failed to save debug HTML output: {e}")
         
         # Debug: Save complete HTML to file for inspection in Table, Chart, and Plot modes
-        if mode in (OutputMode.TABLE, OutputMode.ECHARTS, OutputMode.PLOTLY, OutputMode.MATPLOTLIB, OutputMode.SEABORN, OutputMode.HOLOVIEWS, OutputMode.D3) and kwargs.get("output_format") == "html" and kwargs.get("html_mode") == "complete":
+        if mode in (OutputMode.TABLE, OutputMode.ECHARTS, OutputMode.PLOTLY, OutputMode.MATPLOTLIB, OutputMode.SEABORN, OutputMode.HOLOVIEWS, OutputMode.D3, OutputMode.BOKEH, OutputMode.ALTAIR) and kwargs.get("output_format") == "html" and kwargs.get("html_mode") == "complete":
              try:
                  # Create debug directory if it doesn't exist
                  debug_dir = "static/html/tests"
