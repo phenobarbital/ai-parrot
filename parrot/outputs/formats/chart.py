@@ -339,32 +339,48 @@ class BaseChart(BaseRenderer):
 
     <script>
         (function() {{
+            let lastWidth = 0;
+            let lastHeight = 0;
+            let resizeTimeout = null;
+
             function sendSize() {{
                 const width = document.documentElement.scrollWidth || window.innerWidth;
                 const height = document.documentElement.scrollHeight || window.innerHeight;
 
-                parent.postMessage(
-                    {{
-                        type: "iframe_resize",
-                        width: width,
-                        height: height,
-                        containerId: "{container_id}"
-                    }},
-                    "*"
-                );
+                // Only send if size actually changed (avoid tooltip-triggered resizes)
+                if (Math.abs(width - lastWidth) > 5 || Math.abs(height - lastHeight) > 5) {{
+                    lastWidth = width;
+                    lastHeight = height;
+
+                    parent.postMessage(
+                        {{
+                            type: "iframe_resize",
+                            width: width,
+                            height: height,
+                            containerId: "{container_id}"
+                        }},
+                        "*"
+                    );
+                }}
+            }}
+
+            function debouncedSendSize() {{
+                if (resizeTimeout) {{
+                    clearTimeout(resizeTimeout);
+                }}
+                resizeTimeout = setTimeout(sendSize, 150);
             }}
 
             // Send initial size
             sendSize();
 
-            // Detect viewport resize
-            window.addEventListener("resize", sendSize);
+            // Detect viewport resize with debounce
+            window.addEventListener("resize", debouncedSendSize);
 
-            // Detect content changes (e.g., height changes from DOM mutations)
-            const observer = new ResizeObserver(sendSize);
-            observer.observe(document.body);
+            // Detect content changes with debounce and threshold
+            const observer = new ResizeObserver(debouncedSendSize);
 
-            // Also observe the container for more precise tracking
+            // Only observe the main container, not document.body (to avoid tooltip triggers)
             const container = document.getElementById("{container_id}");
             if (container) {{
                 observer.observe(container);
