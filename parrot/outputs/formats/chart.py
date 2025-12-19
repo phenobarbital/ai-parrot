@@ -87,6 +87,7 @@ class BaseChart(BaseRenderer):
             }
             .ap-chart-wrapper {
                 min-height: 400px;
+                display: flex;
                 justify-content: center;
                 align-items: center;
             }
