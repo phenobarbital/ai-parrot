@@ -1063,7 +1063,7 @@ class PandasAgent(BasicAgent):
                         self.logger.warning(
                             "PythonPandasTool not available for non-default output mode rendering"
                         )
-                content, wrapped = await self.formatter.format(
+                content, wrapped, chart_data = await self.formatter.format(
                     output_mode, response, **format_kwargs
                 )
                 if output_mode != OutputMode.DEFAULT:
@@ -1072,7 +1072,15 @@ class PandasAgent(BasicAgent):
                     response.output_mode = output_mode
 
                 # Return the final AIMessage response
-                response.data = response.data.to_dict(orient='records') if response.data is not None else None
+                # Priority: 1) Chart data extracted from visualization, 2) DataFrame data from structured response
+                if chart_data is not None:
+                    # Use chart data if available (from Bokeh, Altair, etc.)
+                    response.data = chart_data.get('rows', []) if isinstance(chart_data, dict) else chart_data
+                elif response.data is not None:
+                    # Convert DataFrame to dict records
+                    response.data = response.data.to_dict(orient='records') if hasattr(response.data, 'to_dict') else response.data
+                else:
+                    response.data = None
                 answer_text = getattr(response, 'response', None) or response.content
                 await self.agent_memory.store_interaction(
                     response.turn_id,

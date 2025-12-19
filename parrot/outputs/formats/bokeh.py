@@ -1,5 +1,5 @@
 # ai_parrot/outputs/formats/charts/bokeh.py
-from typing import Any, Optional, Tuple, Dict, List
+from typing import Any, Optional, Tuple, Dict, List, Union
 import uuid
 import json
 from .chart import BaseChart
@@ -158,6 +158,97 @@ class BokehRenderer(BaseChart):
 
         return charts
 
+    @staticmethod
+    def _extract_chart_data(chart_objs: Any) -> Optional[Dict[str, Any]]:
+        """
+        Extract the underlying data from Bokeh chart object(s).
+
+        Returns a dictionary with 'columns' and 'rows' keys for consistent
+        data representation across chart types.
+
+        Args:
+            chart_objs: Bokeh plot object or list of plot objects
+
+        Returns:
+            Dictionary with 'columns' (list of column names) and 'rows' (list of row data),
+            or None if data cannot be extracted.
+        """
+        try:
+            # Ensure we have a list
+            charts = chart_objs if isinstance(chart_objs, list) else [chart_objs]
+
+            all_data: List[Dict[str, Any]] = []
+            seen_sources = set()
+
+            for chart_obj in charts:
+                if chart_obj is None:
+                    continue
+
+                # Get renderers from the plot
+                renderers = getattr(chart_obj, 'renderers', [])
+
+                for renderer in renderers:
+                    # Check if renderer has a data_source
+                    data_source = getattr(renderer, 'data_source', None)
+                    if data_source is None:
+                        continue
+
+                    # Avoid duplicating data from same source
+                    source_id = id(data_source)
+                    if source_id in seen_sources:
+                        continue
+                    seen_sources.add(source_id)
+
+                    # Get data from ColumnDataSource
+                    data = getattr(data_source, 'data', None)
+                    if data is None:
+                        continue
+
+                    # data is typically a dict of column_name -> list of values
+                    if isinstance(data, dict) and data:
+                        columns = list(data.keys())
+                        # Filter out internal Bokeh columns
+                        columns = [c for c in columns if not c.startswith('_')]
+
+                        if not columns:
+                            continue
+
+                        # Get the number of rows (all columns should have same length)
+                        num_rows = len(data.get(columns[0], []))
+
+                        # Convert columnar data to row-based records
+                        rows = []
+                        for i in range(num_rows):
+                            row = {}
+                            for col in columns:
+                                col_data = data.get(col, [])
+                                if i < len(col_data):
+                                    value = col_data[i]
+                                    # Handle special types that may not serialize to JSON
+                                    if hasattr(value, 'tolist'):
+                                        value = value.tolist()
+                                    elif hasattr(value, 'item'):
+                                        value = value.item()
+                                    row[col] = value
+                            rows.append(row)
+
+                        if rows:
+                            all_data.extend(rows)
+
+            if all_data:
+                # Get columns from first row
+                columns = list(all_data[0].keys()) if all_data else []
+                return {
+                    'columns': columns,
+                    'rows': all_data
+                }
+
+        except Exception:
+            # If we can't extract data, return None
+            pass
+
+        return None
+
     def _render_chart_content(self, chart_objs: Any, **kwargs) -> str:
         """
         Render Bokeh-specific chart content (HTML/JS).
@@ -278,8 +369,16 @@ class BokehRenderer(BaseChart):
         include_code: bool = False,
         html_mode: str = 'partial',
         **kwargs
-    ) -> Tuple[Any, Optional[Any]]:
-        """Render Bokeh chart(s)."""
+    ) -> Tuple[Any, Optional[Any], Optional[Dict[str, Any]]]:
+        """
+        Render Bokeh chart(s).
+
+        Returns:
+            Tuple[Any, Optional[Any], Optional[Dict[str, Any]]]: (code, output, data)
+            - code goes to response.output
+            - output goes to response.response
+            - data contains the underlying chart data with 'columns' and 'rows'
+        """
 
         # 1. Extract Code
         code = getattr(response, 'code', None)
@@ -293,11 +392,11 @@ class BokehRenderer(BaseChart):
         if not code:
             error_msg = "No chart code found in response"
             if output_format == 'terminal':
-                return error_msg, None
+                return error_msg, None, None
             return self._wrap_for_environment(
                 f"<div class='error'>{error_msg}</div>",
                 output_format
-            ), None
+            ), None, None
 
         # 2. Execute Code
         chart_objs, error = self.execute_code(
@@ -309,13 +408,16 @@ class BokehRenderer(BaseChart):
 
         if error:
             if output_format == 'terminal':
-                return f"Error generating chart: {error}", None
+                return f"Error generating chart: {error}", None, None
             return self._wrap_for_environment(
                 self._render_error(error, code, theme),
                 output_format
-            ), None
+            ), None, None
 
-        # 3. Handle Jupyter/Notebook Environment
+        # 3. Extract the underlying data from the chart(s)
+        chart_data = self._extract_chart_data(chart_objs)
+
+        # 4. Handle Jupyter/Notebook Environment
         if output_format in {'jupyter', 'notebook', 'ipython', 'colab'}:
             from bokeh.embed import components
 
@@ -324,14 +426,14 @@ class BokehRenderer(BaseChart):
             if len(charts) == 1:
                 # Single chart
                 script, div = components(charts[0])
-                return code, f"{script}{div}"
+                return code, f"{script}{div}", chart_data
             else:
                 # Multiple charts
                 script, divs = components(charts)
                 combined = script + "".join(divs)
-                return code, combined
+                return code, combined, chart_data
 
-        # 4. Generate HTML for Web/Terminal
+        # 5. Generate HTML for Web/Terminal
         html_output = self.to_html(
             chart_objs,
             mode=html_mode,
@@ -343,14 +445,14 @@ class BokehRenderer(BaseChart):
             **kwargs
         )
 
-        # 5. Return based on output format
+        # 6. Return based on output format
         if output_format == 'html':
-            return code, html_output
+            return code, html_output, chart_data
         elif output_format == 'json':
-            return code, self.to_json(chart_objs)
+            return code, self.to_json(chart_objs), chart_data
         elif output_format == 'terminal':
             # For terminal, return the code and HTML
-            return code, html_output
+            return code, html_output, chart_data
 
         # Default behavior: Return code as content, HTML as wrapped
-        return code, html_output
+        return code, html_output, chart_data

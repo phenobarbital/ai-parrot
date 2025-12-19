@@ -267,29 +267,44 @@ class OutputFormatter:
         mode: OutputMode,
         data: Any,
         **kwargs
-    ) -> Tuple[str, Optional[str]]:
+    ) -> Tuple[str, Optional[str], Optional[Any]]:
         """
         Format output based on mode
 
         Returns:
-            Tuple[str, Optional[str]]: (content, wrapped_content)
+            Tuple[str, Optional[str], Optional[Any]]: (content, wrapped_content, chart_data)
             - content: main formatted output
             - wrapped_content: optional wrapped version (e.g., HTML)
+            - chart_data: optional underlying data extracted from charts (dict with 'columns' and 'rows')
         """
         if mode == OutputMode.DEFAULT:
-            return data, None
+            return data, None, None
 
         renderer = self._get_renderer(mode)
         render_method = getattr(renderer, "render_async", renderer.render)
 
         # Call renderer and get tuple response
-        return await render_method(
+        result = await render_method(
             data,
             environment=self._environment,
             is_ipython=self._is_ipython,
             is_notebook=self._is_notebook,
             **kwargs,
         )
+
+        # Handle both 2-tuple (legacy) and 3-tuple (with data) returns
+        if isinstance(result, tuple):
+            if len(result) == 3:
+                content, wrapped, chart_data = result
+                return content, wrapped, chart_data
+            elif len(result) == 2:
+                content, wrapped = result
+                return content, wrapped, None
+            elif len(result) == 1:
+                return result[0], None, None
+
+        # Single value return
+        return result, None, None
 
     def add_template(self, name: str, content: str) -> None:
         """
@@ -595,7 +610,7 @@ class OutputFormatter:
         while True:
             # Attempt to format
             try:
-                content, wrapped = await self.format(mode, current_data, **kwargs)
+                content, wrapped, _chart_data = await self.format(mode, current_data, **kwargs)
 
                 # Check if result indicates a parse error
                 is_error, error_msg = self._is_parse_error_result(

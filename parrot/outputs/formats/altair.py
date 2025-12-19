@@ -1,5 +1,5 @@
 # parrot/outputs/formats/charts/altair.py
-from typing import Any, Optional, Tuple, Dict
+from typing import Any, Optional, Tuple, Dict, List, Union
 import json
 import uuid
 from .chart import BaseChart
@@ -159,6 +159,101 @@ class AltairRenderer(BaseChart):
 
         return None, None
 
+    @staticmethod
+    def _extract_chart_data(chart_obj: Any) -> Optional[Dict[str, Any]]:
+        """
+        Extract the underlying data from an Altair chart object.
+
+        Returns a dictionary with 'columns' and 'rows' keys for consistent
+        data representation across chart types.
+
+        Args:
+            chart_obj: Altair chart object
+
+        Returns:
+            Dictionary with 'columns' (list of column names) and 'rows' (list of row data),
+            or None if data cannot be extracted.
+        """
+        try:
+            # Method 1: Try to get data directly from chart.data (DataFrame)
+            if hasattr(chart_obj, 'data') and chart_obj.data is not None:
+                data = chart_obj.data
+                # Check if it's a pandas DataFrame
+                if hasattr(data, 'to_dict'):
+                    # Convert DataFrame to records format
+                    records = data.to_dict(orient='records')
+                    columns = list(data.columns) if hasattr(data, 'columns') else []
+                    return {
+                        'columns': columns,
+                        'rows': records
+                    }
+                elif isinstance(data, dict):
+                    # Data is already a dict (inline data)
+                    if 'values' in data:
+                        values = data['values']
+                        if values and isinstance(values, list):
+                            columns = list(values[0].keys()) if values else []
+                            return {
+                                'columns': columns,
+                                'rows': values
+                            }
+                    return {'columns': [], 'rows': [data]}
+                elif isinstance(data, list):
+                    # Data is a list of records
+                    columns = list(data[0].keys()) if data else []
+                    return {
+                        'columns': columns,
+                        'rows': data
+                    }
+
+            # Method 2: Extract from the Vega-Lite spec
+            spec = chart_obj.to_dict()
+
+            # Check for inline data in the spec
+            if 'data' in spec and spec['data']:
+                data_spec = spec['data']
+                if 'values' in data_spec:
+                    values = data_spec['values']
+                    if values and isinstance(values, list):
+                        columns = list(values[0].keys()) if values else []
+                        return {
+                            'columns': columns,
+                            'rows': values
+                        }
+
+            # Check for named datasets
+            if 'datasets' in spec and spec['datasets']:
+                datasets = spec['datasets']
+                # Return the first dataset (or all if multiple)
+                for dataset_name, dataset_values in datasets.items():
+                    if isinstance(dataset_values, list) and dataset_values:
+                        columns = list(dataset_values[0].keys()) if dataset_values else []
+                        return {
+                            'columns': columns,
+                            'rows': dataset_values
+                        }
+
+            # For layered/concatenated charts, try to get data from sub-charts
+            for key in ['layer', 'hconcat', 'vconcat', 'concat']:
+                if key in spec and spec[key]:
+                    for sub_spec in spec[key]:
+                        if 'data' in sub_spec and sub_spec['data']:
+                            data_spec = sub_spec['data']
+                            if 'values' in data_spec:
+                                values = data_spec['values']
+                                if values and isinstance(values, list):
+                                    columns = list(values[0].keys()) if values else []
+                                    return {
+                                        'columns': columns,
+                                        'rows': values
+                                    }
+
+        except Exception:
+            # If we can't extract data, return None
+            pass
+
+        return None
+
     def _render_chart_content(self, chart_obj: Any, **kwargs) -> str:
         """Render Altair-specific chart content with vega-embed."""
         embed_options = kwargs.get('embed_options', {})
@@ -274,7 +369,7 @@ class AltairRenderer(BaseChart):
         include_code: bool = False,
         html_mode: str = 'partial',
         **kwargs
-    ) -> Tuple[Any, Optional[Any]]:
+    ) -> Tuple[Any, Optional[Any], Optional[Dict[str, Any]]]:
         """
         Render Altair chart.
 
@@ -286,9 +381,10 @@ class AltairRenderer(BaseChart):
         - 'terminal': Returns code only
 
         Returns:
-            Tuple[Any, Optional[Any]]: (code, output)
+            Tuple[Any, Optional[Any], Optional[Dict[str, Any]]]: (code, output, data)
             - code goes to response.output
             - output goes to response.response
+            - data contains the underlying chart data with 'columns' and 'rows'
         """
 
         # 1. Extract Code
@@ -303,11 +399,11 @@ class AltairRenderer(BaseChart):
         if not code:
             error_msg = "No chart code found in response"
             if output_format == 'terminal':
-                return error_msg, None
+                return error_msg, None, None
             return self._wrap_for_environment(
                 f"<div class='error'>{error_msg}</div>",
                 output_format
-            ), None
+            ), None, None
 
         # 2. Execute Code
         chart_obj, error = self.execute_code(
@@ -319,30 +415,33 @@ class AltairRenderer(BaseChart):
 
         if error:
             if output_format == 'terminal':
-                return f"Error generating chart: {error}", None
+                return f"Error generating chart: {error}", None, None
             return self._wrap_for_environment(
                 self._render_error(error, code, theme),
                 output_format
-            ), None
+            ), None, None
 
-        # 3. Handle different output formats
+        # 3. Extract the underlying data from the chart
+        chart_data = self._extract_chart_data(chart_obj)
+
+        # 4. Handle different output formats
 
         # Terminal: just return code
         if output_format == 'terminal':
-            return code, None
+            return code, None, chart_data
 
         # Jupyter/Notebook: return chart object for native rendering
         if output_format in {'jupyter', 'notebook', 'ipython', 'colab'}:
-            return code, chart_obj
+            return code, chart_obj, chart_data
 
         # Default: return JSON specification (Vega-Lite spec)
         if output_format == 'default':
             json_spec = self.to_json(chart_obj)
-            return code, json_spec
+            return code, json_spec, chart_data
 
         # JSON: explicit JSON request
         if output_format == 'json':
-            return code, self.to_json(chart_obj)
+            return code, self.to_json(chart_obj), chart_data
 
         # HTML (default): Generate embedded HTML
         html_output = self.to_html(
@@ -356,4 +455,4 @@ class AltairRenderer(BaseChart):
             **kwargs
         )
 
-        return code, html_output
+        return code, html_output, chart_data

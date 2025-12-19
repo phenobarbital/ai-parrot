@@ -130,6 +130,98 @@ class PlotlyRenderer(BaseChart):
 
         return figures
 
+    @staticmethod
+    def _extract_chart_data(chart_objs: Any) -> Optional[Dict[str, Any]]:
+        """
+        Extract the underlying data from Plotly chart object(s).
+
+        Returns a dictionary with 'columns' and 'rows' keys for consistent
+        data representation across chart types.
+
+        Args:
+            chart_objs: Plotly figure object or list of figure objects
+
+        Returns:
+            Dictionary with 'columns' (list of column names) and 'rows' (list of row data),
+            or None if data cannot be extracted.
+        """
+        try:
+            # Ensure we have a list
+            figures = chart_objs if isinstance(chart_objs, list) else [chart_objs]
+
+            all_data: List[Dict[str, Any]] = []
+
+            for fig in figures:
+                if fig is None:
+                    continue
+
+                # Get traces from the figure
+                traces = []
+                if hasattr(fig, 'data'):
+                    traces = fig.data
+                elif isinstance(fig, dict) and 'data' in fig:
+                    traces = fig['data']
+
+                for trace in traces:
+                    trace_data = {}
+
+                    # Common Plotly data fields
+                    data_fields = ['x', 'y', 'z', 'values', 'labels', 'text', 'marker', 'customdata']
+
+                    for field in data_fields:
+                        if hasattr(trace, field):
+                            value = getattr(trace, field)
+                            if value is not None:
+                                trace_data[field] = value
+                        elif isinstance(trace, dict) and field in trace:
+                            value = trace[field]
+                            if value is not None:
+                                trace_data[field] = value
+
+                    # Convert trace data to rows
+                    if trace_data:
+                        # Determine the primary data arrays
+                        primary_arrays = {}
+                        for key, value in trace_data.items():
+                            if hasattr(value, '__len__') and not isinstance(value, (str, dict)):
+                                # Convert to list if needed
+                                if hasattr(value, 'tolist'):
+                                    primary_arrays[key] = value.tolist()
+                                else:
+                                    primary_arrays[key] = list(value)
+
+                        if primary_arrays:
+                            # Get the length of the first array
+                            first_key = list(primary_arrays.keys())[0]
+                            num_rows = len(primary_arrays[first_key])
+
+                            # Create rows from the arrays
+                            for i in range(num_rows):
+                                row = {}
+                                for key, arr in primary_arrays.items():
+                                    if i < len(arr):
+                                        value = arr[i]
+                                        # Handle special types
+                                        if hasattr(value, 'item'):
+                                            value = value.item()
+                                        row[key] = value
+                                if row:
+                                    all_data.append(row)
+
+            if all_data:
+                # Get columns from first row
+                columns = list(all_data[0].keys()) if all_data else []
+                return {
+                    'columns': columns,
+                    'rows': all_data
+                }
+
+        except Exception:
+            # If we can't extract data, return None
+            pass
+
+        return None
+
     def _render_chart_content(self, chart_objs: Any, **kwargs) -> str:
         """
         Render Plotly-specific chart content (HTML/JS).
@@ -264,8 +356,16 @@ class PlotlyRenderer(BaseChart):
         include_code: bool = False,
         html_mode: str = 'partial',
         **kwargs
-    ) -> Tuple[Any, Optional[Any]]:
-        """Render Plotly chart."""
+    ) -> Tuple[Any, Optional[Any], Optional[Dict[str, Any]]]:
+        """
+        Render Plotly chart.
+
+        Returns:
+            Tuple[Any, Optional[Any], Optional[Dict[str, Any]]]: (code, output, data)
+            - code goes to response.output
+            - output goes to response.response
+            - data contains the underlying chart data with 'columns' and 'rows'
+        """
 
         # 1. Extract Code
         code = getattr(response, 'code', None)
@@ -279,11 +379,11 @@ class PlotlyRenderer(BaseChart):
         if not code:
             error_msg = "No chart code found in response"
             if output_format == 'terminal':
-                return error_msg, None
+                return error_msg, None, None
             return self._wrap_for_environment(
                 f"<div class='error'>{error_msg}</div>",
                 output_format
-            ), None
+            ), None, None
 
         # 2. Execute Code
         chart_objs, error = self.execute_code(
@@ -295,24 +395,27 @@ class PlotlyRenderer(BaseChart):
 
         if error:
             if output_format == 'terminal':
-                return f"Error generating chart: {error}", None
+                return f"Error generating chart: {error}", None, None
             return self._wrap_for_environment(
                 self._render_error(error, code, theme),
                 output_format
-            ), None
+            ), None, None
 
-        # 3. Handle Terminal Environment (Save to Disk)
+        # 3. Extract the underlying data from the chart(s)
+        chart_data = self._extract_chart_data(chart_objs)
+
+        # 4. Handle Terminal Environment (Save to Disk)
         if output_format == 'terminal':
             try:
                 saved_path = self._save_to_disk(chart_objs)
                 msg = f"Interactive chart saved to: {saved_path}"
                 if RICH_AVAILABLE:
-                    return Panel(msg, title="📊 Plotly Chart", border_style="blue"), None
-                return msg, None
+                    return Panel(msg, title="📊 Plotly Chart", border_style="blue"), None, chart_data
+                return msg, None, chart_data
             except Exception as e:
-                return f"Chart generated but failed to save: {e}", None
+                return f"Chart generated but failed to save: {e}", None, chart_data
 
-        # 4. Generate HTML for Web/Jupyter
+        # 5. Generate HTML for Web/Jupyter
         html_output = self.to_html(
             chart_objs,
             mode=html_mode,
@@ -324,18 +427,18 @@ class PlotlyRenderer(BaseChart):
             **kwargs
         )
 
-        # 5. Wrap for Environment
+        # 6. Wrap for Environment
         if output_format in {'jupyter', 'notebook', 'ipython', 'colab'}:
             # For Jupyter, we generally want the widget if possible, but pure HTML also works
             if IPYWIDGETS_AVAILABLE:
-                return code, IPyHTML(value=html_output)
-            return code, html_output
+                return code, IPyHTML(value=html_output), chart_data
+            return code, html_output, chart_data
 
-        # 6. Return based on output format
+        # 7. Return based on output format
         if output_format == 'html':
-            return code, html_output
+            return code, html_output, chart_data
         elif output_format == 'json':
-            return code, self.to_json(chart_objs)
+            return code, self.to_json(chart_objs), chart_data
 
         # Default behavior: Return code as content, HTML as wrapped
-        return code, html_output
+        return code, html_output, chart_data
