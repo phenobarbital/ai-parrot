@@ -65,11 +65,14 @@ from enum import Enum
 from typing import Any, Dict, List, Optional, Type, Union
 from datetime import datetime
 from pathlib import PurePath
+from urllib.parse import urlencode
+import xmltodict
 from pydantic import BaseModel, Field
 from zeep import helpers
 from ..toolkit import AbstractToolkit
 from ..decorators import tool_schema
 from ...interfaces.soap import SOAPClient
+from ...interfaces.http import HTTPService
 from .models import (
     WorkdayReference,
     WorkerModel,
@@ -83,7 +86,11 @@ from ...conf import (
     WORKDAY_TOKEN_URL,
     WORKDAY_WSDL_PATH,
     WORKDAY_REFRESH_TOKEN,
-    WORKDAY_WSDL_PATHS
+    WORKDAY_WSDL_PATHS,
+    WORKDAY_REPORT_USERNAME,
+    WORKDAY_REPORT_PASSWORD,
+    WORKDAY_REPORT_OWNER,
+    WORKDAY_URL
 )
 
 # -----------------------------
@@ -246,6 +253,33 @@ class GetTimeOffBalanceInput(BaseModel):
     output_format: Optional[Type[BaseModel]] = Field(
         default=None,
         description="Optional Pydantic model to format the output"
+    )
+
+class CustomReportInput(BaseModel):
+    """Input for executing a Workday RaaS custom report."""
+
+    report_name: str = Field(
+        description="Workday custom report name (as defined in Workday)"
+    )
+    report_owner: Optional[str] = Field(
+        default=None,
+        description="Owner of the report (email/ID). Defaults to configured owner."
+    )
+    params: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Query parameters for the custom report (keys/values sent to RaaS)"
+    )
+    query_string_template: Optional[str] = Field(
+        default=None,
+        description="Optional query string template, e.g., 'Organization!WID={org_wid}&To_Date={end_date}'"
+    )
+    flatten_list_dicts: bool = Field(
+        default=False,
+        description="Flatten nested dict/list fields in the response entries"
+    )
+    drop_flattened_columns: bool = Field(
+        default=False,
+        description="Drop columns that remain as lists/dicts after flattening"
     )
 
 
@@ -432,6 +466,20 @@ class WorkdayToolkit(AbstractToolkit):
         self.redis_key = redis_key
         self.timeout = timeout
         self.tenant_name = tenant_name or WORKDAY_DEFAULT_TENANT
+        self.report_username = self.credentials.get("report_username") or WORKDAY_REPORT_USERNAME
+        self.report_password = self.credentials.get("report_password") or WORKDAY_REPORT_PASSWORD
+        self.report_owner = (
+            kwargs.get("report_owner")
+            or self.credentials.get("report_owner")
+            or WORKDAY_REPORT_OWNER
+            or self.report_username
+        )
+        self.workday_url = (
+            kwargs.get("workday_url")
+            or self.credentials.get("workday_url")
+            or WORKDAY_URL
+        )
+        self._http_client: Optional[HTTPService] = None
 
         # Initialize WSDL paths mapping
         self.wsdl_paths: Dict[WorkdayService, str] = {}
@@ -459,7 +507,7 @@ class WorkdayToolkit(AbstractToolkit):
 
         # Fallback: Use default wsdl_path from credentials for Human Resources
         if WorkdayService.HUMAN_RESOURCES not in self.wsdl_paths:
-            if default_wsdl := credentials.get("wsdl_path"):
+            if default_wsdl := self.credentials.get("wsdl_path"):
                 self.wsdl_paths[WorkdayService.HUMAN_RESOURCES] = default_wsdl
 
         # Dictionary to store initialized clients per service
@@ -988,6 +1036,92 @@ class WorkdayToolkit(AbstractToolkit):
             output_format=output_format
         )
 
+    @tool_schema(CustomReportInput)
+    async def wd_run_custom_report(
+        self,
+        report_name: str,
+        report_owner: Optional[str] = None,
+        params: Optional[Dict[str, Any]] = None,
+        query_string_template: Optional[str] = None,
+        flatten_list_dicts: bool = False,
+        drop_flattened_columns: bool = False
+    ) -> List[Dict[str, Any]]:
+        """
+        Execute a Workday RaaS (Reports as a Service) custom report via REST.
+
+        Args:
+            report_name: Name of the custom report in Workday
+            report_owner: Owner of the report (email/ID). Defaults to configured owner/username.
+            params: Query parameters specific to the report
+            query_string_template: Optional template string to build query (e.g., 'Organization!WID={org_wid}&To_Date={end_date}')
+            flatten_list_dicts: Flatten nested dict/list fields in the response
+            drop_flattened_columns: Drop columns that remain list/dict after flattening
+
+        Returns:
+            List of dictionaries representing report entries
+        """
+        if not self.report_username or not self.report_password:
+            raise ValueError(
+                "Custom report credentials not configured. "
+                "Set WORKDAY_REPORT_USERNAME and WORKDAY_REPORT_PASSWORD."
+            )
+        # Debug logging (masked) to verify which creds/owner are being used
+        try:
+            user_preview = (self.report_username[:3] + "..." if self.report_username else "none")
+            pwd_preview = (self.report_password[:2] + "..." + self.report_password[-2:] if self.report_password else "none")
+            owner_preview = report_owner or self.report_owner or self.report_username
+            print(f"[wd_run_custom_report] user={user_preview} pwd={pwd_preview} owner={owner_preview}")
+        except Exception:
+            pass
+
+        # Initialize HTTP client lazily
+        if self._http_client is None:
+            self._http_client = HTTPService(
+                credentials={
+                    "username": self.report_username,
+                    "password": self.report_password
+                },
+                auth_type="basic",
+                accept="application/xml",
+                timeout=max(self.timeout, 30),
+                rotate_ua=False,
+                use_http2=False
+            )
+
+        # Build URL and sanitize parameters
+        filtered_params = self._filter_internal_params(params or {})
+        url = self._build_custom_report_url(
+            report_name=report_name,
+            report_owner=report_owner,
+            query_params=filtered_params,
+            query_string_template=query_string_template
+        )
+
+        # Execute HTTP GET; use full_response to keep raw bytes
+        response, error = await self._http_client.httpx_request(
+            url=url,
+            method="GET",
+            full_response=True,
+            follow_redirects=True
+        )
+
+        if error:
+            raise Exception(f"Failed to fetch custom report: {error}")
+
+        xml_bytes = response.content if hasattr(response, "content") else b""
+        if not xml_bytes:
+            return []
+
+        entries = self._parse_custom_report_xml(xml_bytes)
+
+        if not flatten_list_dicts:
+            return entries
+
+        return self._flatten_entries(
+            entries,
+            drop_flattened_columns=drop_flattened_columns
+        )
+
     async def wd_get_workers_by_organization(
         self,
         org_id: str,
@@ -1291,3 +1425,134 @@ class WorkdayToolkit(AbstractToolkit):
             if status_data.get("Terminated"):
                 return status_data.get("Termination_Date")
         return None
+
+    def _build_custom_report_url(
+        self,
+        report_name: str,
+        report_owner: Optional[str],
+        query_params: Dict[str, Any],
+        query_string_template: Optional[str] = None
+    ) -> str:
+        """Construct the RaaS URL for a custom report."""
+        owner = report_owner or self.report_owner or self.report_username
+        if not owner:
+            raise ValueError("Report owner is required for custom reports.")
+        if not self.workday_url:
+            raise ValueError("Workday URL is not configured.")
+
+        url = f"{self.workday_url}/ccx/service/customreport2/{self.tenant_name}/{owner}/{report_name}"
+
+        if query_string_template:
+            try:
+                qs = query_string_template.format(**query_params)
+                if qs:
+                    url = f"{url}?{qs}"
+            except Exception as exc:
+                raise ValueError(f"Failed to format query_string_template: {exc}") from exc
+        else:
+            filtered_params = {k: v for k, v in query_params.items() if v is not None}
+            if filtered_params:
+                url = f"{url}?{urlencode(filtered_params, safe='@')}"
+        return url
+
+    def _strip_namespace_prefix(self, obj: Any) -> Any:
+        """
+        Recursively strip namespace prefixes from XML dict keys.
+        """
+        if isinstance(obj, dict):
+            return {k.split(":")[-1]: self._strip_namespace_prefix(v) for k, v in obj.items()}
+        if isinstance(obj, list):
+            return [self._strip_namespace_prefix(item) for item in obj]
+        return obj
+
+    def _filter_internal_params(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Remove internal-only params before sending to Workday."""
+        internal_keys = {
+            "use_basic_auth",
+            "report_owner",
+            "report_username",
+            "report_password",
+            "auth_type",
+            "wsdl_path",
+            "client_id",
+            "client_secret",
+            "token_url",
+            "refresh_token",
+            "tenant",
+            "workday_url",
+            "query_string_template",
+            "flatten_list_dicts",
+            "drop_flattened_columns",
+        }
+        return {k: v for k, v in params.items() if k not in internal_keys}
+
+    def _flatten_entries(
+        self,
+        entries: List[Dict[str, Any]],
+        drop_flattened_columns: bool = False
+    ) -> List[Dict[str, Any]]:
+        """Flatten nested dict/list fields using pandas.json_normalize."""
+        if not entries:
+            return []
+        try:
+            import pandas as pd
+            import json
+        except Exception:
+            # Fallback: return raw entries if pandas is unavailable
+            return entries
+
+        df = pd.json_normalize(entries, sep="_", max_level=None)
+
+        # Decide which columns still contain complex structures
+        complex_cols = []
+        for col in df.columns:
+            non_null = df[col].dropna()
+            if non_null.empty:
+                continue
+            sample = non_null.iloc[0]
+            if isinstance(sample, (list, dict)):
+                complex_cols.append(col)
+
+        if drop_flattened_columns and complex_cols:
+            df = df.drop(columns=complex_cols)
+        else:
+            for col in complex_cols:
+                df[col] = df[col].apply(
+                    lambda v: json.dumps(v, ensure_ascii=False) if isinstance(v, (list, dict)) else v
+                )
+
+        return df.to_dict(orient="records")
+
+    def _parse_custom_report_xml(self, xml_bytes: bytes) -> List[Dict[str, Any]]:
+        """
+        Parse XML response from Workday RaaS and extract report entries.
+        """
+        parsed_xml = xmltodict.parse(
+            xml_bytes,
+            process_namespaces=False,
+            attr_prefix="",
+            cdata_key="_value",
+        )
+
+        parsed_xml = self._strip_namespace_prefix(parsed_xml)
+
+        report_data = (
+            parsed_xml.get("Envelope", {}).get("Body", {}).get("Report_Data")
+            or parsed_xml.get("Envelope", {}).get("Body", {}).get("wd:Report_Data")
+            or parsed_xml.get("Report_Data")
+            or parsed_xml.get("wd:Report_Data")
+            or parsed_xml.get("Report")
+            or parsed_xml.get("wd:Report")
+            or parsed_xml
+        )
+
+        entries = []
+        if isinstance(report_data, dict):
+            entries = report_data.get("Report_Entry", [])
+        elif isinstance(report_data, list):
+            entries = report_data
+
+        if entries and not isinstance(entries, list):
+            entries = [entries]
+
+        return entries or []

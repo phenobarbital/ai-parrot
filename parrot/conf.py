@@ -1,5 +1,6 @@
 import sys
 import os
+import base64
 from pathlib import Path
 from navconfig import config, BASE_DIR
 from navconfig.logging import logging
@@ -377,6 +378,13 @@ WORKDAY_WSDL_ABSENCE_MANAGEMENT = config.get(
     fallback=BASE_DIR.joinpath("env", "workday", "absence_management_45_custom.wsdl")
 )
 WORKDAY_REFRESH_TOKEN = config.get("WORKDAY_REFRESH_TOKEN", fallback=None)
+WORKDAY_REPORT_USERNAME = config.get("WORKDAY_REPORT_USERNAME", fallback=None)
+WORKDAY_REPORT_PASSWORD = config.get("WORKDAY_REPORT_PASSWORD", fallback=None)
+WORKDAY_REPORT_PASSWORD_BASE64 = config.get("WORKDAY_REPORT_PASSWORD_BASE64", fallback=None)
+if WORKDAY_REPORT_PASSWORD_BASE64 and not WORKDAY_REPORT_PASSWORD:
+    WORKDAY_REPORT_PASSWORD = base64.b64decode(WORKDAY_REPORT_PASSWORD_BASE64).decode("utf-8")
+WORKDAY_REPORT_OWNER = config.get("WORKDAY_REPORT_OWNER", fallback=None)
+WORKDAY_URL = config.get("WORKDAY_URL", fallback="https://services1.wd501.myworkday.com")
 
 WORKDAY_WSDL_PATHS = {
     "human_resources": WORKDAY_WSDL_HUMAN_RESOURCES,

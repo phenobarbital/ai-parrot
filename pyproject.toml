@@ -64,6 +64,7 @@ dependencies = [
     "async-notify[all]>=1.4.2",
     "markitdown>=0.1.2",
     "ddgs>=9.5.2",
+    "xmltodict>=0.14.2",
     "pytesseract>=0.3.13",
     "python-statemachine==2.5.0",
     "aiohttp-swagger3==0.10.0",
