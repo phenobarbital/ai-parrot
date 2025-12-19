@@ -6,6 +6,8 @@ from typing import Any, Optional, Tuple, Callable, TYPE_CHECKING, List
 from .formats import get_renderer, get_output_prompt, has_system_prompt
 from ..models.outputs import OutputMode
 from ..template.engine import TemplateEngine
+import os
+import uuid
 
 if TYPE_CHECKING:
     from ..clients.base import AbstractClient
@@ -283,13 +285,78 @@ class OutputFormatter:
         render_method = getattr(renderer, "render_async", renderer.render)
 
         # Call renderer and get tuple response
-        return await render_method(
+        content, wrapped = await render_method(
             data,
             environment=self._environment,
             is_ipython=self._is_ipython,
             is_notebook=self._is_notebook,
             **kwargs,
         )
+
+        # Debug: Save complete HTML to file for inspection
+        if mode == OutputMode.HTML and kwargs.get("type") == "complete":
+            try:
+                # Create debug directory if it doesn't exist
+                debug_dir = "static/html/tests"
+                if not os.path.exists(debug_dir):
+                    os.makedirs(debug_dir, exist_ok=True)
+                
+                # Generate unique filename
+                file_id = str(uuid.uuid4())
+                filename = f"debug_{file_id}.html"
+                file_path = os.path.join(debug_dir, filename)
+                
+                # Write content to file
+                content_to_save = wrapped if wrapped else content
+                with open(file_path, "w", encoding="utf-8") as f:
+                    f.write(str(content_to_save))
+                
+                logger.info(f"Saved debug HTML output to: {file_path}")
+            except Exception as e:
+                logger.warning(f"Failed to save debug HTML output: {e}")
+        
+        # Debug: Save complete HTML to file for inspection in Table, Chart, and Plot modes
+        if mode in (OutputMode.TABLE, OutputMode.ECHARTS, OutputMode.PLOTLY, OutputMode.MATPLOTLIB, OutputMode.SEABORN, OutputMode.HOLOVIEWS, OutputMode.D3, OutputMode.BOKEH, OutputMode.ALTAIR) and kwargs.get("output_format") == "html" and kwargs.get("html_mode") == "complete":
+             try:
+                 # Create debug directory if it doesn't exist
+                 debug_dir = "static/html/tests"
+                 if not os.path.exists(debug_dir):
+                     os.makedirs(debug_dir, exist_ok=True)
+                 
+                 filename = "debug.html"
+                 file_path = os.path.join(debug_dir, filename)
+                 
+                 # Write content to file
+                 content_to_save = wrapped if wrapped else content
+                 with open(file_path, "w", encoding="utf-8") as f:
+                     f.write(str(content_to_save))
+                 
+                 logger.info(f"Saved debug HTML output to: {file_path}")
+             except Exception as e:
+                 logger.warning(f"Failed to save debug HTML output for Table: {e}")
+
+        return content, wrapped
+
+    def extract_data(self, data: Any) -> Optional[List[Dict[str, Any]]]:
+        """
+        Extract data from response using Table extraction logic.
+        
+        Args:
+            data: The response data to extract from
+            
+        Returns:
+            List of dictionaries representing the data, or None if extraction failed/empty
+        """
+        try:
+            renderer = self._get_renderer(OutputMode.TABLE)
+            if hasattr(renderer, '_extract_data'):
+                df = renderer._extract_data(data)
+                # Check if it's a pandas DataFrame (has empty property)
+                if hasattr(df, 'empty') and not df.empty:
+                    return df.to_dict(orient='records')
+        except Exception as e:
+            logger.warning(f"Failed to extract data: {e}")
+        return None
 
     def add_template(self, name: str, content: str) -> None:
         """

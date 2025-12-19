@@ -13,6 +13,8 @@ from typing import (
 from enum import Enum
 from dataclasses import dataclass, fields, is_dataclass, MISSING
 import json
+import os
+import uuid
 from pydantic import BaseModel, Field
 from .basic import OutputFormat
 

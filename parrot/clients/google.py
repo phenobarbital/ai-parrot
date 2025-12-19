@@ -1254,7 +1254,11 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
             background (bool): If True, execute deep research in background mode.
             file_search_store_names (Optional[List[str]]): Names of file search stores for deep research.
         """
-        max_retries = kwargs.pop('max_retries', 1)
+        max_retries = kwargs.pop('max_retries', 2)
+        retry_on_fail = kwargs.pop('retry_on_fail', True)
+
+        if not retry_on_fail:
+            max_retries = 1
 
         # Route to deep research if requested
         if deep_research:
@@ -1459,13 +1463,21 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                         config=final_config
                     )
                     finish_reason = getattr(response.candidates[0], 'finish_reason', None)
-                    if finish_reason and finish_reason.name == "MAX_TOKENS" and generation_config["max_output_tokens"] == 1024:
-                        retry_count += 1
-                        self.logger.warning(
-                            f"Hit MAX_TOKENS limit on stateless response. Retrying {retry_count}/{max_retries} with increased token limit."
-                        )
-                        final_config.max_output_tokens = 8192
-                        continue
+                    if finish_reason:
+                        if finish_reason.name == "MAX_TOKENS" and generation_config["max_output_tokens"] == 1024:
+                            retry_count += 1
+                            self.logger.warning(
+                                f"Hit MAX_TOKENS limit on stateless response. Retrying {retry_count}/{max_retries} with increased token limit."
+                            )
+                            final_config.max_output_tokens = 8192
+                            continue
+                        elif finish_reason.name == "MALFORMED_FUNCTION_CALL":
+                            self.logger.warning(
+                                f"Malformed function call detected (stateless). Retrying {retry_count + 1}/{max_retries}..."
+                            )
+                            retry_count += 1
+                            await asyncio.sleep(2 ** retry_count)
+                            continue
                     break
             except Exception as e:
                 self.logger.error(
@@ -1499,13 +1511,21 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                         config=final_config
                     )
                     finish_reason = getattr(response.candidates[0], 'finish_reason', None)
-                    if finish_reason and finish_reason.name == "MAX_TOKENS" and generation_config["max_output_tokens"] <= 1024:
-                        retry_count += 1
-                        self.logger.warning(
-                            f"Hit MAX_TOKENS limit on initial response. Retrying {retry_count}/{max_retries} with increased token limit."
-                        )
-                        final_config.max_output_tokens = 8192
-                        continue
+                    if finish_reason:
+                        if finish_reason.name == "MAX_TOKENS" and generation_config["max_output_tokens"] <= 1024:
+                            retry_count += 1
+                            self.logger.warning(
+                                f"Hit MAX_TOKENS limit on initial response. Retrying {retry_count}/{max_retries} with increased token limit."
+                            )
+                            final_config.max_output_tokens = 8192
+                            continue
+                        elif finish_reason.name == "MALFORMED_FUNCTION_CALL":
+                            self.logger.warning(
+                                f"Malformed function call detected (stateful). Retrying {retry_count + 1}/{max_retries}..."
+                            )
+                            retry_count += 1
+                            await asyncio.sleep(2 ** retry_count)
+                            continue
                     break
                 except Exception as e:
                     # Handle specific network client error (socket/aiohttp issue)

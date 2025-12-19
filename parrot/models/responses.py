@@ -588,6 +588,24 @@ class AIMessageFactory:
         )
 
     @staticmethod
+    def _sanitize_for_json(data: Any) -> Any:
+        """Recursively sanitize data for JSON serialization."""
+        if isinstance(data, dict):
+            return {str(k): AIMessageFactory._sanitize_for_json(v) for k, v in data.items()}
+        elif isinstance(data, list):
+            return [AIMessageFactory._sanitize_for_json(item) for item in data]
+        elif isinstance(data, (str, int, float, bool, type(None))):
+            return data
+        elif hasattr(data, 'dict'):
+            return AIMessageFactory._sanitize_for_json(data.dict())
+        elif hasattr(data, 'model_dump'):
+            return AIMessageFactory._sanitize_for_json(data.model_dump())
+        elif hasattr(data, '__dict__'):
+            return AIMessageFactory._sanitize_for_json(data.__dict__)
+        else:
+            return str(data)
+
+    @staticmethod
     def from_gemini(
         response: Any,
         input_text: str,
@@ -626,6 +644,13 @@ class AIMessageFactory:
             # Standard Gemini API format
             usage_dict = response.usage.__dict__ if hasattr(response.usage, '__dict__') else {}
 
+        # Sanitize raw response
+        try:
+             raw = response.__dict__ if hasattr(response, '__dict__') else str(response)
+             sanitized_raw = AIMessageFactory._sanitize_for_json(raw)
+        except Exception:
+             sanitized_raw = str(response)
+
         ai_message = AIMessage(
             input=input_text,
             output=structured_output or content,
@@ -640,7 +665,7 @@ class AIMessageFactory:
             user_id=user_id,
             session_id=session_id,
             turn_id=turn_id,
-            raw_response=response.__dict__ if hasattr(response, '__dict__') else str(response),
+            raw_response=sanitized_raw,
             response=content,
             files=files or [],
             images=images or [],
