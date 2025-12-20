@@ -306,6 +306,40 @@ bump-major:
 	open('parrot/version.py', 'w').write(new_content); \
 	print(f'Version bumped to {new_version}')"
 
+# Install Go (Ubuntu) - Using PPA backports
+install-go:
+	@echo "Installing Go using PPA..."
+	sudo apt-get remove -y golang-1.18* || true
+	sudo apt-get install -y software-properties-common
+	sudo add-apt-repository -y ppa:longsleep/golang-backports
+	sudo apt-get update
+	sudo apt-get install -y golang-1.24 golang-1.24-go
+	@echo "Go installed. You may need to add /usr/lib/go-1.24/bin to your PATH."
+
+# Install GenMedia MCP Server
+install-genmedia:
+	@echo "Installing GenMedia MCP Server..."
+	@if [ -d "vertex-ai-creative-studio" ]; then \
+		echo "Repository already cloned, updating..."; \
+		cd vertex-ai-creative-studio && git pull; \
+	else \
+		git clone https://github.com/GoogleCloudPlatform/vertex-ai-creative-studio.git; \
+	fi
+	cd vertex-ai-creative-studio/experiments/mcp-genmedia/mcp-genmedia-go && \
+	GO_VER=$$(go version | awk '{print $$3}' | sed 's/go//' | cut -d. -f1,2) && \
+	echo "Detected Go version: $$GO_VER. Updating go.mod and go.work files..." && \
+	find . -name "go.mod" -exec sed -i "s/^go .*/go $$GO_VER/" {} + && \
+	find . -name "go.mod" -exec sed -i "/^toolchain/d" {} + && \
+	find . -name "go.work" -exec sed -i "s/^go .*/go $$GO_VER/" {} + && \
+	if ! grep -q 'export PATH="$$PATH:$$HOME/go/bin"' $$HOME/.bashrc; then \
+		echo 'export PATH="$$PATH:$$HOME/go/bin"' >> $$HOME/.bashrc; \
+		echo "Added ~/go/bin to ~/.bashrc"; \
+	fi; \
+	python3 -c 'import subprocess, os; from navconfig import config; env = os.environ.copy(); env["PATH"] = env.get("PATH", "") + ":" + os.path.expanduser("~/go/bin"); subprocess.run(["bash", "install.sh"], env=env, check=True)'
+	@echo "Cleaning up..."
+	@rm -rf vertex-ai-creative-studio
+	@echo "GenMedia MCP Server installed and cleanup complete."
+
 help:
 	@echo "Available targets:"
 	@echo "  venv              - Create virtual environment"
@@ -322,6 +356,8 @@ help:
 	@echo "  lint              - Lint code"
 	@echo "  clean             - Clean build artifacts"
 	@echo "  install-uv        - Install uv for faster workflows"
+	@echo "  install-go        - Install Go (Ubuntu)"
+	@echo "  install-genmedia  - Install GenMedia MCP Server"
 	@echo ""
 	@echo "WhisperX specific:"
 	@echo "  install-system-deps    - Install FFmpeg and CUDA dependencies"

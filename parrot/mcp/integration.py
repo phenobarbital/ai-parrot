@@ -1,7 +1,10 @@
 import os
+import base64
+import uuid
 from typing import Dict, List, Any, Optional, Union
 import logging
 from pathlib import Path
+from navconfig import BASE_DIR, config
 # AI-Parrot imports
 from ..tools.abstract import AbstractTool, ToolResult
 from ..tools.manager import ToolManager
@@ -24,6 +27,11 @@ from .transports.quic import (
     QuicMCPConfig,
     SerializationFormat
 )
+from .chrome import ChromeManager
+
+
+logging.getLogger("MCPClient.chrome-devtools").setLevel(logging.INFO)
+logging.getLogger("MCPClient").setLevel(logging.INFO)
 
 
 class MCPToolProxy(AbstractTool):
@@ -45,8 +53,69 @@ class MCPToolProxy(AbstractTool):
         self.name = f"mcp_{server_name}_{mcp_tool_def['name']}"
         self.description = mcp_tool_def.get('description', f"MCP tool: {mcp_tool_def['name']}")
         self.input_schema = mcp_tool_def.get('inputSchema', {})
+        self._patch_missing_required()
+        self._patch_missing_items(self.input_schema)
 
         self.logger = logging.getLogger(f"MCPTool.{self.name}")
+
+    def _patch_missing_required(self):
+        """
+        Heuristically add 'required' field to schema if missing.
+        Many MCP servers (like chrome-devtools) fail to specify required fields,
+        causing LLMs to treat all arguments as optional.
+        """
+        if 'parameters' in self.input_schema:
+            target = self.input_schema['parameters']
+        else:
+            target = self.input_schema
+
+        if target.get('type') == 'object' and 'required' not in target:
+            properties = target.get('properties', {})
+            required = []
+
+            # List of keys that are almost always required if present
+            likely_required = {
+                'url', 'selector', 'query', 'code', 'script',
+                'expression', 'type', 'id', 'nodeId', 'method',
+                'params', 'name', 'text'
+            }
+
+            for key in properties:
+                if key in likely_required:
+                    required.append(key)
+
+            if required:
+                target['required'] = required
+                # logging.getLogger("MCPToolProxy").info(f"Patched required fields for {self.name}: {required}")
+
+    def _patch_missing_items(self, schema: Dict[str, Any]):
+        """
+        Recursively ensure 'array' types have 'items' field.
+        Google GenAI requires 'items' for all array parameters.
+        """
+        if not isinstance(schema, dict):
+            return
+
+        # If type is array, ensure items exists
+        if schema.get('type') == 'array' and 'items' not in schema:
+            # Default to string items if unknown
+            schema['items'] = {'type': 'string'}
+
+        # Recurse into properties
+        if 'properties' in schema:
+            for prop in schema['properties'].values():
+                self._patch_missing_items(prop)
+
+        # Recurse into items if it exists and is a dict (nested arrays)
+        if 'items' in schema and isinstance(schema['items'], dict):
+            self._patch_missing_items(schema['items'])
+
+    def validate_args(self, **kwargs) -> Dict[str, Any]:
+        """
+        Bypass Pydantic validation for MCP tools.
+        Return raw kwargs so AbstractTool.execute uses original arguments.
+        """
+        return kwargs
 
     async def _execute(self, **kwargs) -> ToolResult:
         """Execute the MCP tool."""
@@ -86,6 +155,39 @@ class MCPToolProxy(AbstractTool):
         if hasattr(result, 'content') and result.content:
             content_parts = []
             for item in result.content:
+                # For dynamically created classes, attributes are on the class, not instance
+                # type('X', (), dict)() puts dict items as class attributes
+                item_attrs = {k: v for k, v in type(item).__dict__.items() if not k.startswith('_')}
+                self.logger.debug(f"ContentItem attributes: {list(item_attrs.keys())}")
+
+                # Handle images (base64 blob)
+                blob = item_attrs.get('data') or item_attrs.get('blob')
+                mime_type = item_attrs.get('mimeType')
+
+                if blob and mime_type and mime_type.startswith('image/'):
+                    try:
+                        # Generate safe filename
+                        ext = mime_type.split('/')[-1] if '/' in mime_type else 'bin'
+                        filename = f"genmedia_{uuid.uuid4()}.{ext}"
+
+                        # Ensure directory exists
+                        save_dir = BASE_DIR.joinpath('static', 'generated')
+                        save_dir.mkdir(parents=True, exist_ok=True)
+
+                        filepath = save_dir.joinpath(filename)
+
+                        # Decode and save
+                        img_data = base64.b64decode(blob)
+                        with open(filepath, 'wb') as f:
+                            f.write(img_data)
+
+                        content_parts.append(f"Image generated and saved to: {filepath}")
+                        self.logger.info(f"Saved generated image to {filepath}")
+                        continue  # Skip text extraction for this item
+                    except Exception as e:
+                        self.logger.error(f"Failed to save generated image: {e}")
+                        content_parts.append(f"Error saving image: {str(e)}")
+
                 if hasattr(item, 'text'):
                     content_parts.append(item.text)
                 elif isinstance(item, dict):
@@ -95,11 +197,23 @@ class MCPToolProxy(AbstractTool):
             return "\n".join(content_parts) if content_parts else str(result)
         return str(result)
 
+    def get_tool_schema(self) -> Dict[str, Any]:
+        """
+        Override to return the MCP tool schema directly.
+        MCP provides the full schema in inputSchema, which corresponds to the 'parameters' field.
+        """
+        return {
+            "name": self.name,
+            "description": self.description,
+            "parameters": self.input_schema
+        }
+
 
 class MCPClient:
     """Complete MCP client with stdio and HTTP transport support."""
 
-    def __init__(self, config: MCPServerConfig):
+    def __init__(self, config: MCPServerConfig, tool_name_prefix: Optional[str] = None):
+        self.tool_name_prefix = tool_name_prefix or f"mcp_{config.name}"
         self.config = config
         self.logger = logging.getLogger(f"MCPClient.{config.name}")
         self._session = None
@@ -577,6 +691,88 @@ def create_fireflies_mcp_server(
     )
 
 
+def create_chrome_devtools_mcp_server(
+    browser_url: str = "http://127.0.0.1:9222",
+    name: str = "chrome-devtools",
+    **kwargs
+) -> MCPServerConfig:
+    """Create configuration for Chrome DevTools MCP server.
+
+    This MCP server connects to a Chrome instance running with known remote debugging port.
+    It automatically installs the chrome-devtools-mcp package using npx.
+
+    Args:
+        browser_url: URL where Chrome is listening for devtools protocol (default: http://127.0.0.1:9222)
+        name: Server name
+        **kwargs: Additional MCPServerConfig parameters
+
+    Returns:
+        MCPServerConfig configured for Chrome DevTools
+    """
+    # Parse port from browser_url or default to 9222
+    port = 9222
+    is_local = False
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(browser_url)
+        if parsed.port:
+            port = parsed.port
+
+        # Check if host is local
+        hostname = parsed.hostname or "localhost"
+        if hostname in ("localhost", "127.0.0.1", "0.0.0.0", "::1"):
+            is_local = True
+
+    except Exception:
+        # Fallback to assuming local if parsing fails (unlikely for valid URL)
+        is_local = True
+
+    # Ensure Chrome is running ONLY if we are connecting locally
+    if is_local:
+        chrome_manager = ChromeManager(port=port)
+        chrome_manager.start()
+
+    return MCPServerConfig(
+        name=name,
+        command="npx",
+        args=[
+            "-y",
+            "chrome-devtools-mcp@latest",
+            f"--browser-url={browser_url}"
+        ],
+        transport="stdio",
+        **kwargs
+    )
+
+
+def create_google_maps_mcp_server(
+    name: str = "google-maps",
+    **kwargs
+) -> MCPServerConfig:
+    """Create configuration for Google Maps MCP server.
+
+    This MCP server connects to Google Maps Platform.
+    It automatically installs the @googlemaps/code-assist-mcp package using npx.
+
+    Args:
+        name: Server name
+        **kwargs: Additional MCPServerConfig parameters
+
+    Returns:
+        MCPServerConfig configured for Google Maps
+    """
+    return MCPServerConfig(
+        name=name,
+        command="npx",
+        args=[
+            "-y",
+            "@googlemaps/code-assist-mcp@latest"
+        ],
+        transport="stdio",
+        **kwargs
+    )
+
+
 def create_perplexity_mcp_server(
     api_key: str,
     *,
@@ -730,6 +926,49 @@ class MCPEnabledMixin:
         config = create_fireflies_mcp_server(api_key=api_key, **kwargs)
         return await self.add_mcp_server(config)
 
+    async def add_chrome_devtools_mcp_server(
+        self,
+        browser_url: str = "http://127.0.0.1:9222",
+        name: str = "chrome-devtools",
+        **kwargs
+    ) -> List[str]:
+        """Add Chrome DevTools MCP server capability.
+
+        Args:
+            browser_url: URL where Chrome is listening for devtools protocol
+            name: Server name
+            **kwargs: Additional MCPServerConfig parameters
+
+        Returns:
+            List of registered tool names
+        """
+        config = create_chrome_devtools_mcp_server(
+            browser_url=browser_url,
+            name=name,
+            **kwargs
+        )
+        return await self.add_mcp_server(config)
+
+    async def add_google_maps_mcp_server(
+        self,
+        name: str = "google-maps",
+        **kwargs
+    ) -> List[str]:
+        """Add Google Maps MCP server capability.
+
+        Args:
+            name: Server name
+            **kwargs: Additional MCPServerConfig parameters
+
+        Returns:
+            List of registered tool names
+        """
+        config = create_google_maps_mcp_server(
+            name=name,
+            **kwargs
+        )
+        return await self.add_mcp_server(config)
+
     async def add_quic_mcp_server(
         self,
         name: str,
@@ -833,6 +1072,64 @@ class MCPEnabledMixin:
 
     def list_mcp_servers(self) -> List[str]:
         return self.mcp_manager.list_mcp_servers()
+
+    async def add_genmedia_mcp_servers(
+        self,
+        **kwargs
+    ) -> Dict[str, List[str]]:
+        """
+        Add all Google GenMedia MCP servers.
+
+        Available servers:
+        - mcp-avtool-go
+        - mcp-chirp3-go
+        - mcp-gemini-go
+        - mcp-imagen-go
+        - mcp-lyria-go
+        - mcp-veo-go
+        """
+        project_id = config.get('PROJECT_ID')
+        location = config.get('LOCATION', 'us-central1')
+
+        if not project_id:
+            self.logger.warning("PROJECT_ID not found in config. GenMedia servers might fail.")
+
+        servers = [
+            "mcp-avtool-go",
+            "mcp-chirp3-go",
+            "mcp-gemini-go",
+            "mcp-imagen-go",
+            "mcp-lyria-go",
+            "mcp-veo-go"
+        ]
+
+        results = {}
+
+        for server_bin in servers:
+            try:
+                # Remove 'mcp-' prefix and '-go' suffix for the name if desired,
+                # or just use the binary name. Let's use a cleaner name.
+                name = server_bin.replace("mcp-", "").replace("-go", "")
+
+                server_config = MCPServerConfig(
+                    name=name,
+                    command=server_bin, # Binary name in PATH
+                    args=[],
+                    transport="stdio",
+                    env={
+                        "MCP_SERVER_REQUEST_TIMEOUT": "55000",
+                        "PROJECT_ID": project_id,
+                        "LOCATION": location
+                    }
+                )
+
+                tools = await self.add_mcp_server(server_config)
+                results[name] = tools
+            except Exception as e:
+                self.logger.error(f"Failed to add GenMedia server {server_bin}: {e}")
+                results[name] = []
+
+        return results
 
     async def shutdown(self, **kwargs):
         if hasattr(self, 'mcp_manager'):
