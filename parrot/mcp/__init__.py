@@ -11,6 +11,13 @@ from .integration import (
 )
 from .config import AuthMethod
 from .oauth import APIKeyStore, ExternalOAuthValidator, APIKeyRecord
+from .client import AuthScheme, AuthCredential
+from .context import (
+    ReadonlyContext,
+    MCPSessionManager,
+    TransientMCPError,
+    retry_on_errors,
+)
 
 __all__ = [
     "MCPEnabledMixin",
@@ -24,5 +31,11 @@ __all__ = [
     "APIKeyStore",
     "ExternalOAuthValidator",
     "APIKeyRecord",
+    # New exports
+    "AuthScheme",
+    "AuthCredential",
+    "ReadonlyContext",
+    "MCPSessionManager",
+    "TransientMCPError",
+    "retry_on_errors",
 ]
-

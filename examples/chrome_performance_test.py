@@ -50,6 +50,8 @@ async def main():
         print(f"Error: {e}")
         import traceback
         traceback.print_exc()
+    finally:
+        await agent.shutdown()
 
 if __name__ == "__main__":
     asyncio.run(main())
