@@ -850,9 +850,9 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
             except Exception as e:
                 self.logger.error(f"Failed to send responses back: {e}")
                 break
-    
-            self.logger.info(f"Completed with {len(all_tool_calls)} total tool calls")
-            return current_response
+
+        self.logger.info(f"Completed with {len(all_tool_calls)} total tool calls")
+        return current_response
 
     def _parse_tool_code_blocks(self, text: str) -> List:
         """Convert tool_code blocks to function call objects."""
@@ -917,12 +917,18 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                         self.logger.debug(
                             f"Found proper function call: {part.function_call.name}"
                         )
+                    
+                    # Handle reasoning content types (ignore for function calling)
+                    elif hasattr(part, 'thought_signature') or hasattr(part, 'thought'):
+                        self.logger.debug("Skipping reasoning/thought part during function extraction")
 
                     # Check for tool_code in text parts
                     elif hasattr(part, 'text') and part.text and '```tool_code' in part.text:
                         self.logger.info("Found tool_code block - converting to function call")
                         code_function_calls = self._parse_tool_code_blocks(part.text)
                         function_calls.extend(code_function_calls)
+            else:
+                self.logger.warning("Response has no candidates or content parts")
 
         except Exception as e:
             self.logger.error(f"Error getting function calls: {e}")
@@ -1749,7 +1755,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                 return tc.result['expression']
             elif tc.result and isinstance(tc.result, dict) and 'result' in tc.result:
                 return f"Result: {tc.result['result']}"
-        else:
+        if len(all_tool_calls) >= 1:
             # Multiple calls - show the final result
             final_tc = all_tool_calls[-1]
             if isinstance(final_tc.result, pd.DataFrame):
@@ -1762,8 +1768,13 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                     return f"Final result: {final_tc.result['result']}"
                 elif 'expression' in final_tc.result:
                     return final_tc.result['expression']
+            # Return string representation of result if available
+            elif final_tc.result:
+                return str(final_tc.result)[:2000]
 
-        return "Calculation completed."
+        # Last resort: show what tools were called
+        tool_names = [tc.name for tc in all_tool_calls]
+        return f"Completed {len(all_tool_calls)} tool calls: {', '.join(tool_names)}"
 
     def _build_function_declarations(self) -> List[types.FunctionDeclaration]:
         """Build function declarations for Google GenAI tools."""

@@ -1,11 +1,12 @@
 import os
 import base64
 import uuid
-from typing import Dict, List, Any, Optional, Union
+from typing import Dict, List, Any, Optional, Union, Callable
 import logging
 from pathlib import Path
+import asyncio
 from navconfig import BASE_DIR, config
-# AI-Parrot imports
+from .context import ReadonlyContext
 from ..tools.abstract import AbstractTool, ToolResult
 from ..tools.manager import ToolManager
 from .oauth import (
@@ -28,10 +29,15 @@ from .transports.quic import (
     SerializationFormat
 )
 from .chrome import ChromeManager
+from .filtering import ToolPredicate, filter_tools
 
 
 logging.getLogger("MCPClient.chrome-devtools").setLevel(logging.INFO)
 logging.getLogger("MCPClient").setLevel(logging.INFO)
+
+# Module-level registry to track ChromeManager instances by port
+# This allows proper cleanup during shutdown
+_chrome_managers: Dict[int, ChromeManager] = {}
 
 
 class MCPToolProxy(AbstractTool):
@@ -42,6 +48,7 @@ class MCPToolProxy(AbstractTool):
         mcp_tool_def: Dict[str, Any],
         mcp_client: 'MCPClient',
         server_name: str,
+        require_confirmation: Union[bool, Callable[[str, Dict], bool]] = False,
         **kwargs
     ):
         super().__init__(**kwargs)
@@ -49,13 +56,13 @@ class MCPToolProxy(AbstractTool):
         self.mcp_tool_def = mcp_tool_def
         self.mcp_client = mcp_client
         self.server_name = server_name
+        self.require_confirmation = require_confirmation
 
         self.name = f"mcp_{server_name}_{mcp_tool_def['name']}"
         self.description = mcp_tool_def.get('description', f"MCP tool: {mcp_tool_def['name']}")
         self.input_schema = mcp_tool_def.get('inputSchema', {})
         self._patch_missing_required()
         self._patch_missing_items(self.input_schema)
-
         self.logger = logging.getLogger(f"MCPTool.{self.name}")
 
     def _patch_missing_required(self):
@@ -80,13 +87,10 @@ class MCPToolProxy(AbstractTool):
                 'params', 'name', 'text'
             }
 
-            for key in properties:
-                if key in likely_required:
-                    required.append(key)
+            required.extend(key for key in properties if key in likely_required)
 
             if required:
                 target['required'] = required
-                # logging.getLogger("MCPToolProxy").info(f"Patched required fields for {self.name}: {required}")
 
     def _patch_missing_items(self, schema: Dict[str, Any]):
         """
@@ -117,12 +121,49 @@ class MCPToolProxy(AbstractTool):
         """
         return kwargs
 
+    async def _should_require_confirmation(self, args: Dict[str, Any]) -> bool:
+        """Determine if confirmation is needed for this execution.
+
+        Args:
+            args: Tool arguments
+
+        Returns:
+            True if confirmation should be requested
+        """
+        if isinstance(self.require_confirmation, bool):
+            return self.require_confirmation
+        elif callable(self.require_confirmation):
+            # Call predicate function
+            result = self.require_confirmation(self.mcp_tool_def['name'], args)
+            # Handle both sync and async callables
+            return await result if asyncio.iscoroutine(result) else result
+        return False
+
     async def _execute(self, **kwargs) -> ToolResult:
-        """Execute the MCP tool."""
+        """Execute the MCP tool with context and confirmation support.
+
+        Args:
+            **kwargs: Tool arguments, may include _readonly_context
+
+        Returns:
+            ToolResult with execution status and output
+        """
+        # Extract context if provided
+        context: Optional['ReadonlyContext'] = kwargs.pop('_readonly_context', None)
         try:
+            if await self._should_require_confirmation(kwargs):
+                self.logger.info(
+                    f"Tool {self.name} requires confirmation with args: {kwargs}"
+                )
+                # For now, we'll skip confirmation but log it
+
+            # Get headers (including dynamic ones from context)
+            headers = await self.mcp_client.config.get_headers(context)
+
             result = await self.mcp_client.call_tool(
                 self.mcp_tool_def['name'],
-                kwargs
+                kwargs,
+                headers=headers
             )
 
             result_text = self._extract_result_text(result)
@@ -134,7 +175,10 @@ class MCPToolProxy(AbstractTool):
                     "server": self.server_name,
                     "tool": self.mcp_tool_def['name'],
                     "transport": self.mcp_client.config.transport,
-                    "mcp_response_type": type(result).__name__
+                    "mcp_response_type": type(result).__name__,
+                    "user_id": context.user_id if context else None,
+                    "organization_id": context.organization_id if context else None,
+                    "request_id": context.conversation_id if context else None,
                 }
             )
 
@@ -146,7 +190,8 @@ class MCPToolProxy(AbstractTool):
                 error=str(e),
                 metadata={
                     "server": self.server_name,
-                    "tool": self.mcp_tool_def['name']
+                    "tool": self.mcp_tool_def['name'],
+                    "user_id": context.user_id if context else None,
                 }
             )
 
@@ -212,8 +257,12 @@ class MCPToolProxy(AbstractTool):
 class MCPClient:
     """Complete MCP client with stdio and HTTP transport support."""
 
-    def __init__(self, config: MCPServerConfig, tool_name_prefix: Optional[str] = None):
-        self.tool_name_prefix = tool_name_prefix or f"mcp_{config.name}"
+    def __init__(
+        self,
+        config: MCPServerConfig,
+        tool_name_prefix: Optional[str] = None
+    ):
+        self.tool_name_prefix = tool_name_prefix or config.tool_name_prefix or f"mcp_{config.name}"
         self.config = config
         self.logger = logging.getLogger(f"MCPClient.{config.name}")
         self._session = None
@@ -286,15 +335,23 @@ class MCPClient:
             await self.disconnect()
             raise
 
-    async def call_tool(self, tool_name: str, arguments: Dict[str, Any]):
+    async def call_tool(
+        self,
+        tool_name: str,
+        arguments: Dict[str, Any],
+        headers: Optional[Dict[str, str]] = None
+    ):
         """Call an MCP tool."""
         if not self._connected:
             raise MCPConnectionError("Not connected to MCP server")
 
         return await self._session.call_tool(tool_name, arguments)
 
-    def get_available_tools(self) -> List[Dict[str, Any]]:
-        """Get available tools as dictionaries."""
+    async def get_available_tools(self) -> List[Dict[str, Any]]:
+        """Get raw available tools from server."""
+        if not self._connected:
+            raise MCPConnectionError("Not connected to MCP server")
+
         tools = []
         for tool in self._available_tools:
             tool_dict = {
@@ -304,6 +361,217 @@ class MCPClient:
             }
             tools.append(tool_dict)
         return tools
+
+    def get_tools_for_context(
+        self,
+        context: Optional['ReadonlyContext'] = None
+    ) -> List[Dict[str, Any]]:
+        """Get tools, filtered by context.
+
+        If a context is provided, tools will be filtered based on the
+        context's scopes and roles. Tools may specify required scopes
+        in their metadata.
+
+        Args:
+            context: Optional ReadonlyContext for filtering
+
+        Returns:
+            List of tool dictionaries accessible to the context
+
+        Example:
+            >>> from parrot.mcp.context import ReadonlyContext
+            >>> ctx = ReadonlyContext(
+            ...     agent_id="my-agent",
+            ...     scopes=["read:data", "write:data"]
+            ... )
+            >>> tools = client.get_tools_for_context(ctx)
+        """
+        all_tools = self.get_available_tools()
+
+        if not context:
+            return all_tools
+
+        return [t for t in all_tools if self._can_access(t, context)]
+
+    async def get_tools(
+        self,
+        context: Optional['ReadonlyContext'] = None
+    ) -> List[MCPToolProxy]:
+        """Get tools filtered by configuration and context.
+
+        Filtering precedence:
+        1. tool_filter (new dynamic filtering) - highest priority
+        2. allowed_tools / blocked_tools (legacy) - fallback
+        3. No filter - all tools
+
+        Args:
+            context: Optional ReadonlyContext for context-aware decisions
+
+        Returns:
+            List of MCPToolProxy objects that are available
+
+        Example:
+            >>> # Get all tools
+            >>> tools = await client.get_tools()
+            >>>
+            >>> # Get tools filtered by context
+            >>> ctx = ReadonlyContext(user_id="user123", roles=["admin"])
+            >>> admin_tools = await client.get_tools(context=ctx)
+        """
+        available = await self.get_available_tools()
+
+        # Apply tool_filter if configured
+        if self.config.tool_filter:
+            available = self._filter_tools(available, context)
+        # Fallback to legacy allowed_tools/blocked_tools
+        elif self.config.allowed_tools or self.config.blocked_tools:
+            available = self._filter_tools_legacy(available)
+
+        return available
+
+    def _filter_tools(
+        self,
+        tools: List[Dict[str, Any]],
+        context: Optional['ReadonlyContext'] = None
+    ) -> List[Dict[str, Any]]:
+        """Apply dynamic tool_filter predicate.
+
+        Args:
+            tools: List of tool definitions from server
+            context: Optional execution context
+
+        Returns:
+            Filtered tool definitions
+        """
+        if isinstance(self.config.tool_filter, list):
+            # Simple allowlist of tool names
+            tool_names = self.config.tool_filter
+            return [t for t in tools if t['name'] in tool_names]
+
+        elif callable(self.config.tool_filter):
+            # Dynamic predicate function
+            # Create temporary MCPToolProxy objects for filtering
+            filtered = []
+            for tool_dict in tools:
+                # Create a minimal tool object for the predicate
+                tool = self._create_temp_tool_for_filtering(tool_dict)
+
+                # Call predicate with tool and context
+                if self.config.tool_filter(tool, context):
+                    filtered.append(tool_dict)
+
+            return filtered
+
+        return tools
+
+    def _filter_tools_legacy(
+        self,
+        tools: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """Apply legacy allowed_tools/blocked_tools filtering.
+
+        Args:
+            tools: List of tool definitions
+
+        Returns:
+            Filtered tool definitions
+        """
+        tool_names = [t['name'] for t in tools]
+
+        # Apply allowed_tools filter
+        if self.config.allowed_tools:
+            tool_names = [n for n in tool_names if n in self.config.allowed_tools]
+
+        # Apply blocked_tools filter
+        if self.config.blocked_tools:
+            tool_names = [n for n in tool_names if n not in self.config.blocked_tools]
+
+        return [t for t in tools if t['name'] in tool_names]
+
+    def _create_temp_tool_for_filtering(self, tool_dict: Dict[str, Any]) -> MCPToolProxy:
+        """Create temporary MCPToolProxy for predicate evaluation.
+
+        This creates a minimal tool object just for the predicate to examine.
+        """
+        return MCPToolProxy(
+            mcp_tool_def=tool_dict,
+            mcp_client=self,
+            server_name=self.config.name
+        )
+
+    def _is_tool_selected(
+        self,
+        tool: MCPToolProxy,
+        context: Optional['ReadonlyContext'] = None
+    ) -> bool:
+        """Check if a tool should be available.
+
+        This is a helper for use in MCPToolManager.
+
+        Args:
+            tool: MCPToolProxy to evaluate
+            context: Optional ReadonlyContext
+
+        Returns:
+            True if tool should be available
+        """
+        # If tool_filter is configured, use it
+        if self.config.tool_filter:
+            if isinstance(self.config.tool_filter, list):
+                return tool.mcp_tool_def['name'] in self.config.tool_filter
+            elif callable(self.config.tool_filter):
+                return self.config.tool_filter(tool, context)
+
+        # Fallback to legacy filters
+        if self.config.allowed_tools and tool.mcp_tool_def['name'] not in self.config.allowed_tools:
+            return False
+
+        if self.config.blocked_tools and tool.mcp_tool_def['name'] in self.config.blocked_tools:
+            return False
+
+        return True
+
+    def _can_access(self, tool: Dict[str, Any], context: 'ReadonlyContext') -> bool:
+        """Check if context has access to tool based on scopes/roles.
+
+        Tool metadata may include:
+        - requiredScopes: List of scopes, any of which grants access
+        - requiredRoles: List of roles, any of which grants access
+
+        If neither is specified, the tool is accessible to all.
+
+        Args:
+            tool: Tool dictionary with name, description, inputSchema
+            context: ReadonlyContext with user scopes and roles
+
+        Returns:
+            True if the context has access to the tool
+        """
+        # Check tool metadata for required scopes
+        input_schema = tool.get('inputSchema', {})
+        metadata = input_schema.get('metadata', {})
+
+        required_scopes = metadata.get('requiredScopes', [])
+        required_roles = metadata.get('requiredRoles', [])
+
+        # If no requirements specified, allow access
+        if not required_scopes and not required_roles:
+            return True
+
+        # Check if context has any required scope
+        if required_scopes and any(scope in context.scopes for scope in required_scopes):
+            return True
+
+        # Check if context has any required role
+        if required_roles and any(role in context.roles for role in required_roles):
+            return True
+
+        # No matching permissions
+        self.logger.debug(
+            f"Tool '{tool.get('name')}' not accessible to context "
+            f"(required scopes: {required_scopes}, roles: {required_roles})"
+        )
+        return False
 
     async def disconnect(self):
         """Disconnect from MCP server."""
@@ -328,22 +596,34 @@ class MCPClient:
 
 
 class MCPToolManager:
-    """Manages multiple MCP servers and their tools."""
+    """Manages multiple MCP servers with context-aware filtering."""
 
     def __init__(self, tool_manager: ToolManager):
         self.tool_manager = tool_manager
         self.mcp_clients: Dict[str, MCPClient] = {}
         self.logger = logging.getLogger("MCPToolManager")
 
-    async def add_mcp_server(self, config: MCPServerConfig) -> List[str]:
-        """Add an MCP server and register its tools."""
+    async def add_mcp_server(
+        self,
+        config: MCPServerConfig,
+        context: Optional['ReadonlyContext'] = None
+    ) -> List[str]:
+        """Add MCP server with context-aware tool registration.
+
+        Args:
+            config: MCPServerConfig with optional tool_filter
+            context: Optional ReadonlyContext for filtering decisions
+
+        Returns:
+            List of registered tool names
+        """
         client = MCPClient(config)
 
         try:
             await client.connect()
             self.mcp_clients[config.name] = client
 
-            available_tools = client.get_available_tools()
+            available_tools = await client.get_available_tools()
             registered_tools = []
 
             for tool_def in available_tools:
@@ -352,17 +632,27 @@ class MCPToolManager:
                 if self._should_skip_tool(tool_name, config):
                     continue
 
+                # Apply filtering via MCPClient
+                if not client._is_tool_selected(
+                    client._create_temp_tool_for_filtering(tool_def),
+                    context
+                ):
+                    self.logger.debug(f"Tool {tool_name} filtered out")
+                    continue
+
                 proxy_tool = MCPToolProxy(
                     mcp_tool_def=tool_def,
                     mcp_client=client,
-                    server_name=config.name
+                    server_name=config.name,
+                    require_confirmation=config.require_confirmation,
                 )
 
                 self.tool_manager.register_tool(proxy_tool)
                 registered_tools.append(proxy_tool.name)
-                self.logger.info(f"Registered MCP tool: {proxy_tool.name}")
+                self.logger.info(
+                    f"Registered MCP tool: {proxy_tool.name}"
+                )
 
-            transport = getattr(client, '_session', None)
             transport_type = config.transport if config.transport != "auto" else "detected"
 
             self.logger.info(
@@ -729,7 +1019,12 @@ def create_chrome_devtools_mcp_server(
 
     # Ensure Chrome is running ONLY if we are connecting locally
     if is_local:
-        chrome_manager = ChromeManager(port=port)
+        # Reuse existing manager or create new one
+        if port not in _chrome_managers:
+            chrome_manager = ChromeManager(port=port)
+            _chrome_managers[port] = chrome_manager
+        else:
+            chrome_manager = _chrome_managers[port]
         chrome_manager.start()
 
     return MCPServerConfig(
@@ -1113,7 +1408,7 @@ class MCPEnabledMixin:
 
                 server_config = MCPServerConfig(
                     name=name,
-                    command=server_bin, # Binary name in PATH
+                    command=server_bin,  # Binary name in PATH
                     args=[],
                     transport="stdio",
                     env={
@@ -1126,7 +1421,9 @@ class MCPEnabledMixin:
                 tools = await self.add_mcp_server(server_config)
                 results[name] = tools
             except Exception as e:
-                self.logger.error(f"Failed to add GenMedia server {server_bin}: {e}")
+                self.logger.error(
+                    f"Failed to add GenMedia server {server_bin}: {e}"
+                )
                 results[name] = []
 
         return results
@@ -1134,6 +1431,16 @@ class MCPEnabledMixin:
     async def shutdown(self, **kwargs):
         if hasattr(self, 'mcp_manager'):
             await self.mcp_manager.disconnect_all()
+
+        # Stop any Chrome instances we started
+        for port, manager in list(_chrome_managers.items()):
+            try:
+                manager.stop()
+            except Exception as e:
+                logging.getLogger(
+                    "MCPEnabledMixin"
+                ).warning(f"Failed to stop Chrome on port {port}: {e}")
+        _chrome_managers.clear()
 
         if hasattr(super(), 'shutdown'):
             await super().shutdown(**kwargs)

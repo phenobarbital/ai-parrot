@@ -35,7 +35,7 @@ async def main():
             logger.warning(f"⚠️ Server '{server}' failed or has no tools.")
 
     # Define the prompt
-    prompt = "generate a image of a chubbly black american cat resting on a chair"
+    prompt = "generate a image of a chubbly tuxedo cat resting on a chair moving the tail."
     
     logger.info(f"🎨 Sending prompt to agent: '{prompt}'")
     
