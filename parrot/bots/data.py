@@ -1054,6 +1054,15 @@ class PandasAgent(BasicAgent):
                     # declared as "is_structured" response
                     response.is_structured = True
 
+                # Fallback: extract data from last tool execution if response.data is still None
+                if response.data is None and response.has_tools:
+                    # Get the last tool call that has a result (no error)
+                    for tool_call in reversed(response.tool_calls):
+                        if tool_call.result is not None and tool_call.error is None:
+                            # Sanitize for JSON serialization (inherited from AbstractBot)
+                            response.data = self._sanitize_tool_data(tool_call.result)
+                            break
+
                 format_kwargs = format_kwargs or {}
                 if output_mode != OutputMode.DEFAULT:
                     if pandas_tool := self._get_python_pandas_tool():

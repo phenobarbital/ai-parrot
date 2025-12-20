@@ -702,7 +702,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
             self.logger.info(
                 f"Iteration {iteration}: Processing {len(function_calls)} function calls"
             )
-
+            
             # Execute function calls
             tool_call_objects = []
             for fc in function_calls:
@@ -712,7 +712,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                     arguments=dict(fc.args) if hasattr(fc.args, 'items') else fc.args
                 )
                 tool_call_objects.append(tc)
-
+    
             # Execute tools
             start_time = time.time()
             tool_execution_tasks = [
@@ -721,7 +721,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
             ]
             tool_results = await asyncio.gather(*tool_execution_tasks, return_exceptions=True)
             execution_time = time.time() - start_time
-
+    
             # Lazy Loading Check
             if lazy_loading:
                 found_new = False
@@ -738,7 +738,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                     new_tools_list = self._build_tools("custom_functions", filter_names=list(active_tool_names))
                     current_config.tools = new_tools_list
                     self.logger.info(f"Updated tools for next turn. Count: {len(active_tool_names)}")
-
+    
             # Update tool call objects
             for tc, result in zip(tool_call_objects, tool_results):
                 tc.execution_time = execution_time / len(tool_call_objects)
@@ -748,18 +748,18 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                 else:
                     tc.result = result
                     # self.logger.info(f"Tool {tc.name} result: {result}")
-
+    
             all_tool_calls.extend(tool_call_objects)
             function_response_parts = []
             for fc, result in zip(function_calls, tool_results):
                 tool_id = fc.id or f"call_{uuid.uuid4().hex[:8]}"
                 self.logger.notice(f"🔍 Tool: {fc.name}")
                 self.logger.notice(f"📤 Raw Result Type: {type(result)}")
-
+    
                 try:
                     response_content = self._process_tool_result_for_api(result)
                     self.logger.info(f"📦 Processed for API: {response_content}")
-
+    
                     function_response_parts.append(
                         Part(
                             function_response=types.FunctionResponse(
@@ -769,7 +769,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                             )
                         )
                     )
-
+    
                 except Exception as e:
                     self.logger.error(f"Error processing result for tool {fc.name}: {e}")
                     function_response_parts.append(
@@ -781,7 +781,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                             )
                         )
                     )
-
+    
             summary_part = self._create_tool_summary_part(
                 function_calls,
                 tool_results,
@@ -791,7 +791,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
             next_prompt_parts = function_response_parts.copy()
             if summary_part:
                 next_prompt_parts.append(summary_part)
-
+    
             # Send responses back
             retry_count = 0
             try:
@@ -828,17 +828,17 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                         if (retry_count + 1) >= max_retries:
                             self.logger.error("Max retries reached, aborting")
                             raise e
-
+    
                 # Check for UNEXPECTED_TOOL_CALL error
                 if (hasattr(current_response, 'candidates') and
                     current_response.candidates and
                     hasattr(current_response.candidates[0], 'finish_reason')):
-
+    
                     finish_reason = current_response.candidates[0].finish_reason
-
+    
                     if str(finish_reason) == 'FinishReason.UNEXPECTED_TOOL_CALL':
                         self.logger.warning("Received UNEXPECTED_TOOL_CALL")
-
+    
                 # Debug what we got back
                 if hasattr(current_response, 'text'):
                     try:
@@ -846,13 +846,13 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                         self.logger.debug(f"Response preview: {preview}")
                     except:
                         self.logger.debug("Could not preview response text")
-
+    
             except Exception as e:
                 self.logger.error(f"Failed to send responses back: {e}")
                 break
-
-        self.logger.info(f"Completed with {len(all_tool_calls)} total tool calls")
-        return current_response
+    
+            self.logger.info(f"Completed with {len(all_tool_calls)} total tool calls")
+            return current_response
 
     def _parse_tool_code_blocks(self, text: str) -> List:
         """Convert tool_code blocks to function call objects."""

@@ -1,8 +1,33 @@
-import os
+from typing import Dict, Any, Optional, List, Callable
 import base64
 import logging
+from enum import Enum
 from dataclasses import dataclass, field
-from typing import Dict, Any, Optional, List, Callable
+from pydantic import BaseModel
+
+
+class AuthScheme(str, Enum):
+    """Authentication schemes."""
+    BEARER = "bearer"
+    API_KEY = "api_key"
+    OAUTH2 = "oauth2"
+    BASIC = "basic"
+    MTLS = "mtls"
+    NONE = "none"
+
+class AuthCredential(BaseModel):
+    """Authentication credentials for MCP client."""
+    scheme: AuthScheme
+    token: Optional[str] = None
+    api_key: Optional[str] = None
+    username: Optional[str] = None
+    password: Optional[str] = None
+    cert_path: Optional[str] = None
+    key_path: Optional[str] = None
+
+    class Config:
+        validate_assignment = True
+
 
 @dataclass
 class MCPClientConfig:
@@ -16,7 +41,8 @@ class MCPClientConfig:
     env: Optional[Dict[str, str]] = None  # Environment variables
 
     # Authentication
-    auth_type: Optional[str] = None  # "oauth", "bearer", "basic", "api_key", "none"
+    auth_credential: Optional[AuthCredential] = None
+    auth_type: Optional[AuthScheme] = None  # "oauth", "bearer", "basic", "api_key", "none"
     auth_config: Dict[str, Any] = field(default_factory=dict)
     # A token supplier hook the HTTP client will call to add headers (set by OAuthManager)
     token_supplier: Optional[Callable[[], Optional[str]]] = None

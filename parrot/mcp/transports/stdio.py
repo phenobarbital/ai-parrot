@@ -140,7 +140,8 @@ class StdioMCPSession:
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-            env=env
+            env=env,
+            limit=64 * 1024 * 1024  # 64MB buffer for large payloads (images)
         )
 
         self._stdin = self._process.stdin
