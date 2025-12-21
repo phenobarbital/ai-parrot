@@ -32,7 +32,9 @@ from ..handlers.crew.redis_persistence import CrewRedis
 from ..openapi.config import setup_swagger
 from ..conf import ENABLE_SWAGGER
 # Telegram integration
-from ..integrations.telegram import TelegramBotManager
+# Integrations (Telegram, MS Teams)
+from ..integrations import IntegrationBotManager
+
 
 
 class BotManager:
@@ -57,8 +59,8 @@ class BotManager:
         self._crews: Dict[str, Tuple[AgentCrew, CrewDefinition]] = {}
         # Initialize Redis persistence for crews
         self.crew_redis = CrewRedis()
-        # Telegram integration manager
-        self._telegram_manager: Optional[TelegramBotManager] = None
+        # Integration manager
+        self._integration_manager: Optional[IntegrationBotManager] = None
 
     def get_bot_class(self, bot_name: str) -> Optional[Type]:
         """
@@ -642,9 +644,10 @@ Available documentation UIs:
         # Start background cleanup task for expired bots
         self._cleanup_task = asyncio.create_task(self._cleanup_expired_bots())
         self.logger.info("Started background cleanup task for temporary bot instances")
-        # Start Telegram bots
-        self._telegram_manager = TelegramBotManager(self)
-        await self._telegram_manager.startup()
+        self.logger.info("Started background cleanup task for temporary bot instances")
+        # Start Integration bots
+        self._integration_manager = IntegrationBotManager(self)
+        await self._integration_manager.startup()
 
     async def on_shutdown(self, app: web.Application) -> None:
         """On shutdown."""
@@ -656,9 +659,9 @@ Available documentation UIs:
             except asyncio.CancelledError:
                 pass
             self.logger.info("Stopped background cleanup task")
-        # Stop Telegram bots
-        if self._telegram_manager:
-            await self._telegram_manager.shutdown()
+        # Stop Integration bots
+        if self._integration_manager:
+            await self._integration_manager.shutdown()
 
     async def add_crew(
         self,
