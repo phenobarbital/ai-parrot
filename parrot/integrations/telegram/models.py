@@ -30,6 +30,7 @@ class TelegramAgentConfig:
     allowed_chat_ids: Optional[List[int]] = None
     welcome_message: Optional[str] = None
     system_prompt_override: Optional[str] = None
+    kind: str = "telegram"
     commands: Dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self):
