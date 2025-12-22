@@ -1,6 +1,6 @@
-from .huggingface import SentenceTransformerModel
-from .google import GoogleEmbeddingModel
-from .openai import OpenAIEmbeddingModel
+# from .huggingface import SentenceTransformerModel
+# from .google import GoogleEmbeddingModel
+# from .openai import OpenAIEmbeddingModel
 
 supported_embeddings = {
     'huggingface': 'SentenceTransformerModel',

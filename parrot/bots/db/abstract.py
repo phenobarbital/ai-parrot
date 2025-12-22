@@ -12,7 +12,7 @@ import json
 import asyncio
 from string import Template
 from sqlalchemy.ext.asyncio import AsyncEngine
-from ..abstract import AbstractBot
+from ..base import BaseBot
 from ...tools.manager import (
     ToolManager,
 )
@@ -30,7 +30,7 @@ from ...tools.databasequery import DatabaseQueryTool
 from .cache import SchemaCache
 from ...memory import ConversationTurn
 
-class AbstractDBAgent(AbstractBot):
+class AbstractDBAgent(BaseBot):
     """
     Abstract base class for database introspection agents.
 

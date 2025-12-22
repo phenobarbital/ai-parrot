@@ -10,7 +10,7 @@ import logging
 from datetime import datetime
 from urllib.parse import urlparse
 from bs4 import BeautifulSoup
-from ..abstract import AbstractBot
+from ..base import BaseBot
 from ...tools.scraping import (
     WebScrapingTool,
     ScrapingStep,
@@ -27,7 +27,7 @@ from .models import (
 )
 
 
-class ScrapingAgent(AbstractBot):
+class ScrapingAgent(BaseBot):
     """
     Intelligent web scraping agent that uses LLM to:
     - Analyze web pages and determine optimal scraping strategies
