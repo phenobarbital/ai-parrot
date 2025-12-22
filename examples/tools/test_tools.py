@@ -1,8 +1,8 @@
 """
-Usage example showing how to use AbstractBot with ToolManager
+Usage example showing how to use BaseBot with ToolManager
 """
 import asyncio
-from parrot.bots import AbstractBot
+from parrot.bots import BaseBot
 from parrot.tools import AbstractTool
 
 def weather_function(location: str) -> str:
@@ -11,7 +11,7 @@ def weather_function(location: str) -> str:
 
 async def main():
     # Create bot with initial tools
-    bot = AbstractBot(
+    bot = BaseBot(
         name="AssistantBot",
         use_tools=True,
         tools=['math', custom_tool_instance],  # Mix of string names and instances

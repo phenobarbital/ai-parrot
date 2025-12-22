@@ -8,7 +8,7 @@ that inherits from AbstractTool and integrates with the Parrot ecosystem.
 import asyncio
 from pathlib import Path
 from typing import Dict, Any
-from parrot.bots.abstract import AbstractBot
+from parrot.bots import AbstractBot  # Use for type hints
 from parrot.tools.manager import ToolManager
 from parrot.tools.codeinterpreter import CodeInterpreterTool
 from parrot.tools.codeinterpreter.models import (
