@@ -4,7 +4,20 @@ from pathlib import Path
 from enum import Enum
 from datetime import datetime, timezone
 import hashlib
-import yaml
+
+# Use yaml_rs (Rust) for faster parsing with PyYAML fallback
+try:
+    from parrot.yaml_rs import loads as yaml_loads
+    _YAML_RS_AVAILABLE = True
+except ImportError:
+    try:
+        import yaml
+        yaml_loads = yaml.safe_load
+        _YAML_RS_AVAILABLE = False
+    except ImportError:
+        yaml_loads = None
+        _YAML_RS_AVAILABLE = False
+
 from ...tools.abstract import AbstractTool
 
 
@@ -191,7 +204,9 @@ class FormDefinition:
     @classmethod
     def from_yaml(cls, yaml_content: str, file_path: str = None) -> 'FormDefinition':
         """Parse YAML content into FormDefinition."""
-        data = yaml.safe_load(yaml_content)
+        if yaml_loads is None:
+            raise ImportError("No YAML parser available. Install yaml_rs or PyYAML.")
+        data = yaml_loads(yaml_content)
         return cls._from_dict(data, file_path)
 
     @classmethod
