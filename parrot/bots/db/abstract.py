@@ -162,10 +162,26 @@ class AbstractDBAgent(BaseBot):
         final_prompt = tmpl.safe_substitute(
             name=self.name,
             role=getattr(self, 'role', 'Database Analysis Assistant'),
-            goal=getattr(self, 'goal', 'Help users interact with databases using natural language'),
-            capabilities=getattr(self, 'capabilities', 'Database schema analysis, query generation, and data retrieval'),
-            backstory=getattr(self, 'backstory', 'Expert database assistant with deep knowledge of SQL and data analysis'),
-            rationale=getattr(self, 'rationale', 'Providing precise and helpful database interactions'),
+            goal=getattr(
+                self,
+                'goal',
+                'Help users interact with databases using natural language'
+            ),
+            capabilities=getattr(
+                self,
+                'capabilities',
+                'Database schema analysis, query generation, and data retrieval'
+            ),
+            backstory=getattr(
+                self,
+                'backstory',
+                'Expert database assistant with deep knowledge of SQL and data analysis'
+            ),
+            rationale=getattr(
+                self,
+                'rationale',
+                'Providing precise and helpful database interactions'
+            ),
             **kwargs
         )
         self.system_prompt_template = final_prompt
@@ -230,7 +246,7 @@ Based on the user context above, please tailor your response to their specific:
         # Database-specific context
         db_context_parts = []
         if self.schema_metadata:
-            db_info = f"**Database Information:**\n"
+            db_info = "**Database Information:**\n"
             db_info += f"- Database: {self.schema_metadata.database_name}\n"
             db_info += f"- Type: {self.schema_metadata.database_type}\n"
             db_info += f"- Tables: {len(self.schema_metadata.tables)}\n"
@@ -307,7 +323,7 @@ Based on the user context above, please tailor your response to their specific:
         """
         if not self.schema_metadata:
             # Try to load from cache or re-extract
-             return []
+            return []
 
         results = []
         term = search_term.lower()
@@ -319,7 +335,7 @@ Based on the user context above, please tailor your response to their specific:
         for table in self.schema_metadata.tables:
             table_match = False
             # Check table name and description
-            if search_type in ["all", "tables"]:
+            if search_type in {"all", "tables"}:
                 full_name = f"{table.schema}.{table.name}" if table.schema else table.name
                 if matches(table.name) or matches(table.description) or matches(full_name):
                     results.append({
@@ -331,12 +347,12 @@ Based on the user context above, please tailor your response to their specific:
                     table_match = True
 
             # Check columns
-            if search_type in ["all", "columns"]:
+            if search_type in {"all", "columns"}:
                 for col in table.columns:
                     if matches(col.get("name")) or matches(col.get("description")):
                         # Add table context if not already added/searching specifically for columns
                         if not table_match:
-                             results.append({
+                            results.append({
                                 "type": "column",
                                 "table": table.name,
                                 "schema": table.schema,
@@ -450,8 +466,8 @@ Columns:
         # Backwards compatibility for prompt
         if question is None:
             question = kwargs.get('prompt')
-        
-        prompt = question # internal usage expects prompt variable name in logic below
+
+        prompt = question  # internal usage expects prompt variable name in logic below
         # Force agentic mode for database operations
         effective_mode = "agentic"
 
@@ -487,8 +503,14 @@ Columns:
                     if search_results:
                         vector_context = "\n\n".join([doc.page_content for doc in search_results])
                         vector_metadata = {
-                            'sources': [doc.metadata.get('source', 'unknown') for doc in search_results],
-                            'tables_referenced': [doc.metadata.get('table_name') for doc in search_results if doc.metadata.get('table_name')]
+                            'sources': [
+                                doc.metadata.get('source', 'unknown') for doc in search_results
+                            ],
+                            'tables_referenced': [
+                                doc.metadata.get(
+                                    'table_name'
+                                ) for doc in search_results if doc.metadata.get('table_name')
+                            ]
                         }
                 except Exception as e:
                     self.logger.warning(f"Error retrieving vector context: {e}")
