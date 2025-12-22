@@ -163,9 +163,7 @@ class AdaptiveCardBuilder:
         section = form.sections[section_index]
         total_sections = len(form.sections)
         is_last = section_index == total_sections - 1
-
         body = []
-
         # Header with form title
         body.append(self._build_header(form.title, size="Medium"))
 
