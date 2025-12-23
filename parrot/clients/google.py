@@ -1361,6 +1361,15 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
 
         tools = self._build_tools(tool_type) if tool_type else []
 
+        # Debug: List tool names
+        if tools:
+            tool_names = []
+            for tool in tools:
+                if hasattr(tool, 'function_declarations'):
+                    tool_names.extend([fd.name for fd in tool.function_declarations])
+            print(f'TOOLS ({len(tool_names)}): {tool_names}')
+            print(f'request_form in tools: {"request_form" in tool_names}')
+
         if _use_tools and tool_type == "custom_functions" and not tools:
             self.logger.info(
                 "Tool usage requested but no tools are registered - disabling tools for this request."

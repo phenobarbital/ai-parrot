@@ -101,19 +101,16 @@ class FormOrchestrator:
     def __init__(
         self,
         agent: 'AbstractBot',
-        tool_manager: 'ToolManager',
         dialog_factory: FormDialogFactory = None,
     ):
         """
         Initialize the orchestrator.
 
         Args:
-            agent: The AI agent for processing messages
-            tool_manager: Tool manager for looking up and executing tools
+            agent: The AI agent for processing messages (must have tool_manager)
             dialog_factory: Factory for creating form dialogs
         """
         self.agent = agent
-        self.tool_manager = tool_manager
         self.dialog_factory = dialog_factory or FormDialogFactory()
 
         # Form generator
@@ -122,20 +119,26 @@ class FormOrchestrator:
         # Pending tool executions (keyed by conversation_id)
         self._pending: Dict[str, PendingExecution] = {}
 
-        # Register the request_form tool
+        # Register the request_form tool with agent's tool manager
         self._register_form_tool()
 
     def _register_form_tool(self):
-        """Register the RequestFormTool with the tool manager."""
+        """Register the RequestFormTool with the agent's tool manager."""
         form_tool = RequestFormTool(
             form_generator=self.form_generator,
-            tool_manager=self.tool_manager,
+            tool_manager=self.agent.tool_manager,
         )
 
-        # Register with tool manager
-        self.tool_manager.register_tool(form_tool)
+        # Use agent.register_tool() to register in BOTH agent.tool_manager AND LLM's tool_manager
+        # This is critical for tools registered after configure() - they need to be synced to the LLM
+        self.agent.register_tool(form_tool)
 
-        logger.info("Registered request_form tool with tool manager")
+        # Verify registration
+        registered_tools = self.agent.tool_manager.list_tools()
+        if 'request_form' in registered_tools:
+            logger.info(f"✅ Registered request_form tool with agent. Total tools: {len(registered_tools)}")
+        else:
+            logger.error(f"❌ request_form tool NOT found in tool manager! Available: {registered_tools[:10]}...")
 
     # =========================================================================
     # Message Processing
@@ -211,7 +214,8 @@ class FormOrchestrator:
         # Check for tool results in response
         if hasattr(response, 'tool_calls') and response.tool_calls:
             for tool_call in response.tool_calls:
-                result = tool_call.get('result', {})
+                # ToolCall is a Pydantic model with attributes: id, name, arguments, result, error
+                result = getattr(tool_call, 'result', None)
 
                 # Check metadata for form request
                 metadata = None
@@ -221,13 +225,18 @@ class FormOrchestrator:
                     metadata = result.metadata
 
                 if metadata and metadata.get('requires_form'):
+                    # Extract context message from result
+                    context_message = None
+                    if isinstance(result, dict):
+                        result_data = result.get('result', {})
+                        if isinstance(result_data, dict):
+                            context_message = result_data.get('message')
+
                     return {
                         "form": metadata.get('form_definition'),
                         "target_tool": metadata.get('target_tool'),
                         "known_values": metadata.get('known_values', {}),
-                        "context_message": result.get(
-                            'result', {}
-                        ).get('message') if isinstance(result, dict) else None,
+                        "context_message": context_message,
                     }
 
         # Check for ToolResult objects
@@ -253,7 +262,7 @@ class FormOrchestrator:
                         data = json.loads(response.content[start:end])
                         if data.get('__request_form__'):
                             # Generate form for the requested tool
-                            tool = self.tool_manager.get_tool(data.get('tool_name'))
+                            tool = self.agent.tool_manager.get_tool(data.get('tool_name'))
                             if tool:
                                 form = self.form_generator.from_tool_schema(
                                     tool,
@@ -327,7 +336,7 @@ class FormOrchestrator:
         complete_data = {**pending.known_values, **form_data}
 
         # Get and execute the target tool
-        tool = self.tool_manager.get_tool(pending.tool_name)
+        tool = self.agent.tool_manager.get_tool(pending.tool_name)
 
         if not tool:
             return f"❌ Error: Tool '{pending.tool_name}' not found."

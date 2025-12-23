@@ -102,19 +102,27 @@ class RequestFormTool(AbstractTool):
 
     name: str = "request_form"
     description: str = """
-Request a structured form from the user to collect information needed for a tool.
+CRITICAL: Use this tool to collect missing parameters from the user via a structured form.
 
-Use this tool when you need to execute another tool but don't have all required parameters.
-This is preferred over asking multiple text questions when:
-- You need 2 or more pieces of information
-- The information has specific formats (emails, dates, selections from options)
-- A structured form would be clearer for the user
+**WHEN TO USE (MANDATORY):**
+- You need to execute a tool but are MISSING required parameters
+- You need to collect 1 or more pieces of information from the user
+- User requests creation, registration, update, or any action requiring input data
 
-The form will be displayed to the user, and after they complete it, the target tool
-will be executed automatically with the collected data.
+**EXAMPLES OF WHEN TO USE:**
+- "create a ticket" → Use request_form with target_tool="jira_create_issue"
+- "create a jira ticket" → Use request_form with target_tool="jira_create_issue"
+- "register employee" → Use request_form with target_tool="create_employee"
+- "send email to john" → Use request_form, known_values={"recipient": "john"}, target_tool="send_email"
 
-IMPORTANT: Only include values in known_values that you are CONFIDENT about from
-the conversation. Do not guess or infer uncertain values.
+**DO NOT ask text questions to collect parameters. ALWAYS use this tool instead.**
+
+**HOW TO USE:**
+1. Set target_tool: the tool you want to execute after collecting data
+2. Set known_values: any parameters you already know from the conversation
+3. Optionally set form_title and context_message for better UX
+
+The form will be displayed as an Adaptive Card. After user fills it, the target_tool executes automatically.
 """
 
     args_schema = RequestFormInput

@@ -97,7 +97,6 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         # Form orchestrator (handles LLM form requests)
         self.form_orchestrator = FormOrchestrator(
             agent=agent,
-            tool_manager=agent.tool_manager if hasattr(agent, 'tool_manager') else None,
             dialog_factory=self.dialog_factory,
         )
 
