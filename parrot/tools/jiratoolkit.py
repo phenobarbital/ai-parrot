@@ -293,14 +293,15 @@ class AssignIssueInput(BaseModel):
 class CreateIssueInput(BaseModel):
     """Input for creating a new issue."""
     project: str = Field(
+        default="NAV",
         description="Project key, e.g. 'NAV' or project id"
     )
     summary: str = Field(
         description="Issue summary/title"
     )
-    issuetype: str = Field(
+    issuetype: Literal["Epic", "Story", "Bug", "Task", "Sub-task"] = Field(
         default="Task",
-        description="Issue type name: 'Epic', 'Story', 'Bug', 'Task', 'Sub-task', etc."
+        description="Issue type"
     )
     description: Optional[str] = Field(
         default=None,
@@ -310,9 +311,9 @@ class CreateIssueInput(BaseModel):
         default=None,
         description="Assignee account ID or username"
     )
-    priority: Optional[str] = Field(
+    priority: Optional[Literal["Highest", "High", "Medium", "Low", "Lowest"]] = Field(
         default=None,
-        description="Priority name: 'Highest', 'High', 'Medium', 'Low', 'Lowest'"
+        description="Priority"
     )
     labels: Optional[List[str]] = Field(
         default=None,
@@ -320,11 +321,13 @@ class CreateIssueInput(BaseModel):
     )
     due_date: Optional[str] = Field(
         default=None,
-        description="Due date in YYYY-MM-DD format"
+        description="Due date in YYYY-MM-DD format",
+        json_schema_extra={"x-exclude-form": True}
     )
     parent: Optional[str] = Field(
         default=None,
-        description="Parent issue key for sub-tasks or stories under epics"
+        description="Parent issue key for sub-tasks or stories under epics",
+        json_schema_extra={"x-exclude-form": True}
     )
     original_estimate: Optional[str] = Field(
         default=None,
@@ -333,7 +336,8 @@ class CreateIssueInput(BaseModel):
     # Generic fields for any other issue data
     fields: Optional[Dict[str, Any]] = Field(
         default=None,
-        description="Additional fields dict for custom or less common fields"
+        description="Additional fields dict for custom or less common fields",
+        json_schema_extra={"x-exclude-form": True}
     )
 
 
@@ -815,14 +819,14 @@ class JiraToolkit(AbstractToolkit):
                         "fromString": item.get("fromString"),
                         "toString": item.get("toString")
                     })
-                
+
                 if items:
                     history_events.append({
                         "author": author.get("displayName"),
                         "created": entry.get("created"),
                         "items": items
                     })
-            
+
             raw["history"] = history_events
             raw["_changelog_count"] = len(changelog_entries)
 

@@ -134,8 +134,16 @@ class WizardWithSummaryDialog(WizardFormDialog):
         if action == 'cancel':
             return await self.handle_cancel(step_context)
 
-        # Confirmed - complete the form
-        form_data = self.get_form_data(step_context)
+        # Confirmed - get form data from submitted values (included in the confirm button)
+        # The form_data is now embedded in the confirm action's data
+        if submitted:
+            # Extract form data from submitted (exclude _action key)
+            form_data = {k: v for k, v in submitted.items() if not k.startswith('_')}
+            # Merge with any existing state data for safety
+            existing_data = self.get_form_data(step_context)
+            form_data = {**existing_data, **form_data}
+        else:
+            form_data = self.get_form_data(step_context)
 
         # Optional: LLM validation before final submit
         if self.form.llm_validation and self.agent:

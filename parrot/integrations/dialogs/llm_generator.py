@@ -150,9 +150,14 @@ class LLMFormGenerator:
         # Build fields
         fields = []
         for prop_name, prop_schema in properties.items():
-            # Skip excluded fields
+            # Skip excluded fields from explicit list
             if prop_name in exclude_fields:
                 continue
+
+            # Skip fields marked with x-exclude-form in json_schema_extra
+            if prop_schema.get("x-exclude-form", False):
+                continue
+
 
             # Skip fields that are pre-filled (unless we want to show them)
             # For now, include all but mark as pre-filled

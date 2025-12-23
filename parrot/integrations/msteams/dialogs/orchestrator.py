@@ -18,6 +18,7 @@ from ..tools.request_form import RequestFormTool
 from ...dialogs.models import FormDefinition, DialogPreset
 from ...dialogs.llm_generator import LLMFormGenerator
 from .factory import FormDialogFactory
+from .card_builder import AdaptiveCardBuilder
 from ....models.outputs import OutputMode
 if TYPE_CHECKING:
     from parrot.bots.abstract import AbstractBot
@@ -208,36 +209,76 @@ class FormOrchestrator:
         Extract form request from agent response.
 
         Looks for:
-        1. Tool results with requires_form metadata
-        2. Structured form_definition in response
+        1. request_form tool calls and generates form from target_tool
+        2. Tool results with requires_form metadata
         """
-        # Check for tool results in response
+        # Check for tool calls in response
         if hasattr(response, 'tool_calls') and response.tool_calls:
             for tool_call in response.tool_calls:
-                # ToolCall is a Pydantic model with attributes: id, name, arguments, result, error
+                # ToolCall is a Pydantic model with: id, name, arguments, result, error
+                tool_name = getattr(tool_call, 'name', '')
                 result = getattr(tool_call, 'result', None)
 
-                # Check metadata for form request
-                metadata = None
-                if isinstance(result, dict):
-                    metadata = result.get('metadata', {})
-                elif hasattr(result, 'metadata'):
-                    metadata = result.metadata
+                # Check if this is a request_form tool call
+                if tool_name == 'request_form':
+                    logger.info(f"Found request_form tool call with result: {type(result)}")
 
-                if metadata and metadata.get('requires_form'):
-                    # Extract context message from result
+                    # Extract target_tool and known_values from result
+                    target_tool = None
+                    known_values = {}
                     context_message = None
+
                     if isinstance(result, dict):
-                        result_data = result.get('result', {})
+                        # Result structure: {'result': {...}, 'metadata': {...}} or just the inner result
+                        result_data = result.get('result', result)
                         if isinstance(result_data, dict):
+                            target_tool = result_data.get('target_tool')
                             context_message = result_data.get('message')
 
-                    return {
-                        "form": metadata.get('form_definition'),
-                        "target_tool": metadata.get('target_tool'),
-                        "known_values": metadata.get('known_values', {}),
-                        "context_message": context_message,
-                    }
+                        # Check metadata if present
+                        metadata = result.get('metadata', {})
+                        if metadata.get('requires_form'):
+                            known_values = metadata.get('known_values', {})
+                            form_def = metadata.get('form_definition')
+                            if form_def:
+                                return {
+                                    "form": form_def,
+                                    "target_tool": metadata.get('target_tool', target_tool),
+                                    "known_values": known_values,
+                                    "context_message": context_message,
+                                }
+
+                    elif hasattr(result, 'metadata') and result.metadata:
+                        # ToolResult object
+                        metadata = result.metadata
+                        if metadata.get('requires_form'):
+                            return {
+                                "form": metadata.get('form_definition'),
+                                "target_tool": metadata.get('target_tool'),
+                                "known_values": metadata.get('known_values', {}),
+                                "context_message": getattr(result, 'result', {}).get('message') if hasattr(result, 'result') else None,
+                            }
+
+                    # If we have target_tool but no form_definition (metadata was lost),
+                    # regenerate the form from the target tool's schema
+                    if target_tool:
+                        logger.info(f"Regenerating form for target_tool: {target_tool}")
+                        tool = self.agent.tool_manager.get_tool(target_tool)
+                        if tool:
+                            # Get known_values from the original request_form arguments
+                            arguments = getattr(tool_call, 'arguments', {})
+                            known_values = arguments.get('known_values', {})
+
+                            form = self.form_generator.from_tool_schema(
+                                tool=tool,
+                                prefilled=known_values,
+                            )
+                            return {
+                                "form": form,
+                                "target_tool": target_tool,
+                                "known_values": known_values,
+                                "context_message": context_message,
+                            }
 
         # Check for ToolResult objects
         if hasattr(response, 'tool_results'):
@@ -356,25 +397,48 @@ class FormOrchestrator:
         self,
         result: 'ToolResult',
         tool: Any,
-    ) -> str:
-        """Format tool result for user display."""
+    ) -> Dict[str, Any]:
+        """
+        Format tool result for user display as an Adaptive Card.
+
+        Returns:
+            Adaptive Card JSON dict
+        """
+        card_builder = AdaptiveCardBuilder()
+
         if hasattr(result, 'status'):
             if result.status == "success":
+                # Extract message and details from result
+                message = None
+                details = None
+
                 if hasattr(result, 'result') and result.result:
                     if isinstance(result.result, str):
-                        return f"✅ {result.result}"
+                        message = result.result
                     elif isinstance(result.result, dict):
-                        # Try to extract a message
-                        if msg := result.result.get('message') or result.result.get('result'):
-                            return f"✅ {msg}"
-                return f"✅ {tool.name} completed successfully."
+                        message = result.result.get('message') or result.result.get('result')
+                        # Extract useful details for display
+                        details = {k: v for k, v in result.result.items()
+                                  if k not in ('message', 'result', 'metadata') and v is not None}
+
+                title = tool.name.replace('_', ' ').title() + " Completed"
+                return card_builder.build_success_card(
+                    title=title,
+                    message=message,
+                    details=details if details else None,
+                )
 
             elif result.status == "error":
                 error_msg = getattr(result, 'error', 'Unknown error')
-                return f"❌ {error_msg}"
+                return card_builder.build_error_card(
+                    title="Operation Failed",
+                    errors=[error_msg],
+                    retry_action=False,
+                )
 
-        # Fallback
-        return f"✅ {tool.name} completed."
+        # Fallback success card
+        title = tool.name.replace('_', ' ').title() + " Completed"
+        return card_builder.build_success_card(title=title)
 
     # =========================================================================
     # Cancellation

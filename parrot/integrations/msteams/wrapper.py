@@ -171,7 +171,11 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
             turn_context=turn_context,
         )
 
-        await self.send_text(response, turn_context)
+        # Check if response is an Adaptive Card (dict) or plain text (str)
+        if isinstance(response, dict):
+            await self.send_card(response, turn_context)
+        else:
+            await self.send_text(response, turn_context)
 
     async def _on_form_cancel(
         self,

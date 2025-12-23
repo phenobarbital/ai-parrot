@@ -259,18 +259,18 @@ class AdaptiveCardBuilder:
                     "facts": facts,
                 })
 
-        # Confirmation actions
+        # Confirmation actions - include form_data so it's passed with the confirm action
         actions = [
             {
                 "type": "Action.Submit",
                 "title": "✓ Confirm",
                 "style": "positive",
-                "data": {"_action": "confirm"},
+                "data": {"_action": "confirm", **form_data},  # Include all form data
             },
             {
                 "type": "Action.Submit",
                 "title": "Edit",
-                "data": {"_action": "edit"},
+                "data": {"_action": "edit", **form_data},  # Include data for editing
             },
             {
                 "type": "Action.Submit",
@@ -328,6 +328,70 @@ class AdaptiveCardBuilder:
                 "type": "Action.Submit",
                 "title": "Try Again",
                 "data": {"_action": "retry"},
+            })
+
+        return self._wrap_card(body, actions)
+
+    def build_success_card(
+        self,
+        title: str,
+        message: str = None,
+        details: Dict[str, Any] = None,
+        dismiss_action: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Build a success display card.
+
+        Args:
+            title: Success card title
+            message: Optional success message
+            details: Optional dict of result details to display
+            dismiss_action: Include dismiss button
+
+        Returns:
+            Adaptive Card JSON for success display
+        """
+        body = [
+            {
+                "type": "TextBlock",
+                "text": "✅ " + title,
+                "weight": "Bolder",
+                "size": "Medium",
+                "color": "Good",
+            },
+        ]
+
+        if message:
+            body.append({
+                "type": "TextBlock",
+                "text": message,
+                "wrap": True,
+                "spacing": "Small",
+            })
+
+        # Add details as FactSet if provided
+        if details:
+            facts = []
+            for key, value in details.items():
+                if value is not None:
+                    display_key = key.replace("_", " ").title()
+                    facts.append({
+                        "title": f"{display_key}:",
+                        "value": str(value),
+                    })
+            if facts:
+                body.append({
+                    "type": "FactSet",
+                    "facts": facts,
+                    "spacing": "Medium",
+                })
+
+        actions = []
+        if dismiss_action:
+            actions.append({
+                "type": "Action.Submit",
+                "title": "OK",
+                "data": {"_action": "dismiss"},
             })
 
         return self._wrap_card(body, actions)
