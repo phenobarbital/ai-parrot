@@ -33,18 +33,10 @@ class SimpleFormDialog(BaseFormDialog):
     def __init__(
         self,
         form: FormDefinition,
-        card_builder: AdaptiveCardBuilder = None,
-        validator: FormValidator = None,
-        on_complete: Callable[[Dict[str, Any], TurnContext], Awaitable[Any]] = None,
-        on_cancel: Callable[[TurnContext], Awaitable[Any]] = None,
+        dialog_id: str = None,
+        **kwargs,  # Accept but ignore extra kwargs for backwards compatibility
     ):
-        super().__init__(
-            form=form,
-            card_builder=card_builder,
-            validator=validator,
-            on_complete=on_complete,
-            on_cancel=on_cancel,
-        )
+        super().__init__(form=form, dialog_id=dialog_id)
 
         # Define waterfall steps
         self.add_dialog(
@@ -104,9 +96,19 @@ class SimpleFormDialog(BaseFormDialog):
         validation = self._get_validator().validate_form_data(form_data, self.form)
 
         if not validation.is_valid:
-            # Store errors and re-show form
+            # Store errors and re-show form directly (don't use replace_dialog)
             self.set_validation_errors(step_context, validation.errors)
-            return await step_context.replace_dialog(self.id)
+            # Re-show the complete form with errors
+            prefilled = self.get_form_data(step_context)
+            errors = self.get_validation_errors(step_context)
+            card = self._get_card_builder().build_complete_form(
+                form=self.form,
+                prefilled=prefilled,
+                errors=errors,
+            )
+            await self.send_card(step_context, card)
+            self.set_validation_errors(step_context, None)
+            return DialogTurnResult(DialogTurnStatus.Waiting)
 
         # Complete
         return await self.handle_complete(step_context, validation.sanitized_data)

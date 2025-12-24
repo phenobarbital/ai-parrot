@@ -758,7 +758,9 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
     
                 try:
                     response_content = self._process_tool_result_for_api(result)
-                    self.logger.info(f"📦 Processed for API: {response_content}")
+                    # self.logger.info(
+                    #     f"📦 Processed for API: {response_content}"
+                    # )
     
                     function_response_parts.append(
                         Part(

@@ -444,7 +444,11 @@ class FormOrchestrator:
         turn_context: TurnContext,
     ) -> str:
         """
-        Handle form completion and execute the pending tool.
+        Handle form completion and execute the pending action.
+
+        Supports two action types:
+        - Tool execution: "tool_name" -> calls registered tool via agent
+        - Function call: "fn:module.path.function_name" -> calls function directly
 
         Args:
             form_data: Data collected from the form
@@ -464,22 +468,125 @@ class FormOrchestrator:
         # Merge known values with form data
         complete_data = {**pending.known_values, **form_data}
 
-        # Get and execute the target tool
-        tool = self.agent.tool_manager.get_tool(pending.tool_name)
+        # Check action type based on prefix
+        action = pending.tool_name
+
+        if action and action.startswith("fn:"):
+            # Direct function call: fn:module.path.function_name
+            func_path = action[3:]  # Remove "fn:" prefix
+            return await self._execute_function(
+                func_path=func_path,
+                form_data=complete_data,
+                turn_context=turn_context,
+            )
+        else:
+            # Default: Execute as registered tool
+            return await self._execute_tool(
+                tool_name=action,
+                form_data=complete_data,
+            )
+
+    async def _execute_tool(
+        self,
+        tool_name: str,
+        form_data: Dict[str, Any],
+    ) -> str:
+        """Execute a registered tool with form data."""
+        tool = self.agent.tool_manager.get_tool(tool_name)
 
         if not tool:
-            return f"❌ Error: Tool '{pending.tool_name}' not found."
+            return f"❌ Error: Tool '{tool_name}' not found."
 
         try:
-            # Execute the tool
-            result = await tool.execute(**complete_data)
-
-            # Format result for user
+            result = await tool.execute(**form_data)
             return self._format_tool_result(result, tool)
+        except Exception as e:
+            logger.error(f"Error executing {tool_name}: {e}", exc_info=True)
+            return f"❌ Error executing {tool_name}: {str(e)}"
+
+    async def _execute_function(
+        self,
+        func_path: str,
+        form_data: Dict[str, Any],
+        turn_context: TurnContext,
+    ) -> str:
+        """
+        Execute a function directly by import path.
+
+        Supports both sync and async functions.
+        Sync functions are run in a thread pool to avoid blocking.
+
+        Args:
+            func_path: Module path to function, e.g., "resources.employees.save_new_employee"
+            form_data: Form data to pass to the function
+            turn_context: Bot turn context
+
+        Returns:
+            Response message or formatted result
+        """
+        import asyncio
+        import importlib
+        from concurrent.futures import ThreadPoolExecutor
+
+        try:
+            # Split path: "resources.employees.save_new_employee" -> module="resources.employees", func="save_new_employee"
+            if "." not in func_path:
+                return f"❌ Invalid function path: '{func_path}'. Expected format: module.path.function_name"
+
+            parts = func_path.rsplit(".", 1)
+            module_path, func_name = parts[0], parts[1]
+
+            logger.info(f"Executing function: {module_path}.{func_name}")
+
+            # Import module dynamically
+            try:
+                module = importlib.import_module(module_path)
+            except ModuleNotFoundError as e:
+                logger.error(f"Module not found: {module_path}")
+                return f"❌ Module not found: '{module_path}'"
+
+            # Get function from module
+            if not hasattr(module, func_name):
+                logger.error(f"Function not found: {func_name} in {module_path}")
+                return f"❌ Function '{func_name}' not found in module '{module_path}'"
+
+            func = getattr(module, func_name)
+
+            if not callable(func):
+                return f"❌ '{func_path}' is not a callable function"
+
+            # Execute function (handle both async and sync)
+            if asyncio.iscoroutinefunction(func):
+                # Async function - call directly
+                result = await func(form_data, turn_context)
+            else:
+                # Sync function - run in thread pool to avoid blocking
+                loop = asyncio.get_event_loop()
+                with ThreadPoolExecutor() as executor:
+                    result = await loop.run_in_executor(
+                        executor,
+                        lambda: func(form_data, turn_context)
+                    )
+
+            # Format result
+            if result is None:
+                return "✅ Form processed successfully."
+            elif isinstance(result, str):
+                return result
+            elif isinstance(result, dict):
+                # Return as Adaptive Card if it looks like one, otherwise format
+                if "$schema" in result or "type" in result:
+                    return result  # It's an Adaptive Card
+                else:
+                    # Format dict as message
+                    message = result.get("message", "✅ Form processed successfully.")
+                    return message
+            else:
+                return f"✅ Result: {result}"
 
         except Exception as e:
-            logger.error(f"Error executing {pending.tool_name}: {e}", exc_info=True)
-            return f"❌ Error executing {pending.tool_name}: {str(e)}"
+            logger.error(f"Error executing function {func_path}: {e}", exc_info=True)
+            return f"❌ Error executing function: {str(e)}"
 
     def _format_tool_result(
         self,

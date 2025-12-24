@@ -21,6 +21,8 @@ from botbuilder.core import (
     MessageFactory,
     CardFactory,
 )
+import jsonpickle
+from botbuilder.core import MemoryStorage
 from botbuilder.core.teams import TeamsInfo
 from botbuilder.schema import Activity, ActivityTypes, ChannelAccount, Attachment
 from botbuilder.dialogs import DialogSet, DialogTurnStatus
@@ -38,6 +40,23 @@ from ..dialogs.cache import FormDefinitionCache
 
 
 logging.getLogger('msrest').setLevel(logging.WARNING)
+
+class DebugMemoryStorage(MemoryStorage):
+    async def write(self, changes):
+        for k, v in changes.items():
+            try:
+                jsonpickle.encode(v)
+            except Exception as e:
+                print("\n=== JSONPICKLE FAILED ===")
+                print("storage key:", k)
+                print("value type:", type(v))
+                # if it's a dict, dump top-level types
+                if isinstance(v, dict):
+                    print("top-level dict keys/types:")
+                    for kk, vv in v.items():
+                        print(" ", kk, type(vv))
+                raise
+        return await super().write(changes)
 
 
 class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
@@ -68,7 +87,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         self.logger = logging.getLogger(f"MSTeamsWrapper.{config.name}")
 
         # State Management
-        self.memory = MemoryStorage()
+        self.memory = DebugMemoryStorage()
         self.conversation_state = ConversationState(self.memory)
         self.user_state = UserState(self.memory)
 
@@ -87,12 +106,8 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         self.dialogs = DialogSet(self.dialog_state)
 
         # Form components
-        self.card_builder = AdaptiveCardBuilder()
-        self.validator = FormValidator()
-        self.dialog_factory = FormDialogFactory(
-            card_builder=self.card_builder,
-            validator=self.validator,
-        )
+        # NOTE: card_builder and validator are no longer stored - dialogs create fresh instances
+        self.dialog_factory = FormDialogFactory()
 
         # Form orchestrator (handles LLM form requests)
         self.form_orchestrator = FormOrchestrator(
@@ -146,7 +161,6 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
             form=form,
             on_complete=None,  # Handle in wrapper instead
             on_cancel=None,    # Handle in wrapper instead
-            agent=self.agent,
         )
 
         # Store conversation_id in dialog for later use
@@ -223,6 +237,9 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
             await dialog_context.cancel_all_dialogs()
             await self._on_form_cancel(turn_context, conversation_id)
             return
+
+        # Set agent in turn_state for dialogs to access (ephemeral per-turn)
+        turn_context.turn_state["FormDialog.agent"] = self.agent
 
         # Continue dialog with submitted data
         # The dialog's waterfall will pick up the data from activity.value

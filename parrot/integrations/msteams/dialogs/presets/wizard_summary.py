@@ -35,25 +35,22 @@ class WizardWithSummaryDialog(WizardFormDialog):
     3. User confirms → Complete OR User edits → Back to step 1
     """
 
+    # Key for storing agent in turn_state (ephemeral per-turn)
+    AGENT_TURNSTATE_KEY = "FormDialog.agent"
+
     def __init__(
         self,
         form: FormDefinition,
-        card_builder: AdaptiveCardBuilder = None,
-        validator: FormValidator = None,
-        on_complete: Callable[[Dict[str, Any], TurnContext], Awaitable[Any]] = None,
-        on_cancel: Callable[[TurnContext], Awaitable[Any]] = None,
-        agent: Optional['AbstractBot'] = None,
+        dialog_id: str = None,
+        **kwargs,  # Accept but ignore extra kwargs for backwards compatibility
     ):
-        # Store agent before calling super().__init__
-        self.agent = agent
+        # NOTE: Don't store agent on self to avoid serialization issues
+        # The wrapper should set it in turn_state before continuing dialog
+        super().__init__(form=form, dialog_id=dialog_id)
 
-        super().__init__(
-            form=form,
-            card_builder=card_builder,
-            validator=validator,
-            on_complete=on_complete,
-            on_cancel=on_cancel,
-        )
+    def _get_agent(self, step_context) -> Optional['AbstractBot']:
+        """Get agent from turn_state (set by wrapper per-turn)."""
+        return step_context.context.turn_state.get(self.AGENT_TURNSTATE_KEY)
 
     def _build_steps(self) -> List[Callable]:
         """Build steps including summary and confirmation."""
@@ -87,7 +84,15 @@ class WizardWithSummaryDialog(WizardFormDialog):
                 return await self.handle_cancel(step_context)
 
             if action == 'back':
-                return await step_context.replace_dialog(self.id)
+                # Go back to last section
+                last_index = len(self.form.sections) - 1
+                self.set_current_section(step_context, last_index)
+                await self.send_section_card(
+                    step_context,
+                    section_index=last_index,
+                    show_back=last_index > 0,
+                )
+                return DialogTurnResult(DialogTurnStatus.Waiting)
 
             # Merge final section data
             form_data = self.merge_submitted_data(step_context, submitted)
@@ -97,15 +102,23 @@ class WizardWithSummaryDialog(WizardFormDialog):
             validation = self._get_validator().validate_section(form_data, last_section)
 
             if not validation.is_valid:
-                self.set_validation_errors(step_context, validation.errors)
-                return await step_context.replace_dialog(self.id)
+                # Show last section with errors
+                last_index = len(self.form.sections) - 1
+                self.set_current_section(step_context, last_index)
+                await self.send_section_card(
+                    step_context,
+                    section_index=last_index,
+                    show_back=last_index > 0,
+                )
+                return DialogTurnResult(DialogTurnStatus.Waiting)
         else:
             form_data = self.get_form_data(step_context)
 
         # Generate summary
         summary_text = None
-        if self.form.llm_summary and self.agent:
-            summary_text = await self._generate_llm_summary(form_data)
+        agent = self._get_agent(step_context)
+        if self.form.llm_summary and agent:
+            summary_text = await self._generate_llm_summary(form_data, agent)
 
         # Build and send summary card
         card = self._get_card_builder().build_summary_card(
@@ -129,7 +142,13 @@ class WizardWithSummaryDialog(WizardFormDialog):
 
         if action == 'edit':
             # Go back to first section
-            return await step_context.replace_dialog(self.id)
+            self.set_current_section(step_context, 0)
+            await self.send_section_card(
+                step_context,
+                section_index=0,
+                show_back=False,
+            )
+            return DialogTurnResult(DialogTurnStatus.Waiting)
 
         if action == 'cancel':
             return await self.handle_cancel(step_context)
@@ -146,24 +165,33 @@ class WizardWithSummaryDialog(WizardFormDialog):
             form_data = self.get_form_data(step_context)
 
         # Optional: LLM validation before final submit
-        if self.form.llm_validation and self.agent:
-            validation_result = await self._llm_validate(form_data)
+        agent = self._get_agent(step_context)
+        if self.form.llm_validation and agent:
+            validation_result = await self._llm_validate(form_data, agent)
             if not validation_result['valid']:
                 await step_context.context.send_activity(
                     MessageFactory.text(
                         f"⚠️ {validation_result.get('message', 'Validation failed')}"
                     )
                 )
-                return await step_context.replace_dialog(self.id)
+                # Show first section to re-edit
+                self.set_current_section(step_context, 0)
+                await self.send_section_card(
+                    step_context,
+                    section_index=0,
+                    show_back=False,
+                )
+                return DialogTurnResult(DialogTurnStatus.Waiting)
 
         return await self.handle_complete(step_context, form_data)
 
     async def _generate_llm_summary(
         self,
         form_data: Dict[str, Any],
+        agent: 'AbstractBot',
     ) -> str:
         """Generate a human-readable summary using LLM."""
-        if not self.agent:
+        if not agent:
             return self._generate_simple_summary(form_data)
 
         # Build field descriptions for context
@@ -188,7 +216,7 @@ Submitted data:
 Summary:"""
 
         try:
-            response = await self.agent.ask(prompt)
+            response = await agent.ask(prompt)
             content = response.content if hasattr(response, 'content') else str(response)
             return content.strip()
         except Exception as e:
@@ -218,9 +246,10 @@ Summary:"""
     async def _llm_validate(
         self,
         form_data: Dict[str, Any],
+        agent: 'AbstractBot',
     ) -> Dict[str, Any]:
         """Use LLM to validate form data."""
-        if not self.agent:
+        if not agent:
             return {'valid': True}
 
         prompt = f"""
@@ -238,7 +267,7 @@ Respond with JSON:
 """
 
         try:
-            response = await self.agent.ask(prompt)
+            response = await agent.ask(prompt)
             content = response.content if hasattr(response, 'content') else str(response)
 
             # Try to parse JSON from response

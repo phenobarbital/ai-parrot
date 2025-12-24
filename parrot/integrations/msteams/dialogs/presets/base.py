@@ -43,24 +43,24 @@ class BaseFormDialog(ComponentDialog):
     Base class for all form dialog presets.
 
     Provides:
-    - State management helpers
+    - State management helpers (via step_context.values)
     - Common prompt dialogs
-    - Card building/sending utilities
-    - Validation integration
+    - Card building/sending utilities (via _get_card_builder())
+    - Validation integration (via _get_validator())
 
     NOTE: This dialog stores ONLY the form_id (a string) to avoid jsonpickle
-    serialization issues. The full FormDefinition is looked up from a global
-    registry at runtime using _get_form().
+    serialization issues. Complex objects are accessed via:
+    - form: looked up from registry via form_id
+    - card_builder/validator: created fresh per-use
+    - agent: accessed from turn_state
+    - callbacks: handled by wrapper after dialog ends
     """
 
     def __init__(
         self,
         form: FormDefinition,
-        card_builder: AdaptiveCardBuilder = None,  # Not stored - created fresh when needed
-        validator: FormValidator = None,           # Not stored - created fresh when needed
-        on_complete: Callable[[Dict[str, Any], TurnContext], Awaitable[Any]] = None,
-        on_cancel: Callable[[TurnContext], Awaitable[Any]] = None,
         dialog_id: str = None,
+        **kwargs,  # Accept but ignore extra kwargs for backwards compatibility
     ):
         super().__init__(dialog_id or form.form_id)
 
@@ -97,47 +97,47 @@ class BaseFormDialog(ComponentDialog):
         return form
 
     # =========================================================================
-    # State Management
+    # State Management - Using step_context.values for persistence
     # =========================================================================
 
     def get_form_data(self, step_context: WaterfallStepContext) -> Dict[str, Any]:
-        """Get accumulated form data from turn_state."""
-        return step_context.context.turn_state.get(FORM_DATA_KEY, {})
+        """Get accumulated form data from step_context.values (persists across steps)."""
+        return step_context.values.get(FORM_DATA_KEY, {})
 
     def set_form_data(
         self,
         step_context: WaterfallStepContext,
         data: Dict[str, Any],
     ):
-        """Store form data in turn_state."""
-        step_context.context.turn_state[FORM_DATA_KEY] = data
+        """Store form data in step_context.values."""
+        step_context.values[FORM_DATA_KEY] = data
 
     def get_current_section(self, step_context: WaterfallStepContext) -> int:
-        """Get current section index."""
-        return step_context.context.turn_state.get(CURRENT_SECTION_KEY, 0)
+        """Get current section index from step values."""
+        return step_context.values.get(CURRENT_SECTION_KEY, 0)
 
     def set_current_section(
         self,
         step_context: WaterfallStepContext,
         index: int,
     ):
-        """Set current section index."""
-        step_context.context.turn_state[CURRENT_SECTION_KEY] = index
+        """Set current section index in step values."""
+        step_context.values[CURRENT_SECTION_KEY] = index
 
     def get_validation_errors(
         self,
         step_context: WaterfallStepContext,
     ) -> Optional[Dict[str, str]]:
-        """Get validation errors from previous step."""
-        return step_context.context.turn_state.get(VALIDATION_ERRORS_KEY)
+        """Get validation errors from step values."""
+        return step_context.values.get(VALIDATION_ERRORS_KEY)
 
     def set_validation_errors(
         self,
         step_context: WaterfallStepContext,
         errors: Optional[Dict[str, str]],
     ):
-        """Store validation errors for display."""
-        step_context.context.turn_state[VALIDATION_ERRORS_KEY] = errors
+        """Store validation errors in step values."""
+        step_context.values[VALIDATION_ERRORS_KEY] = errors
 
     def merge_submitted_data(
         self,
@@ -247,13 +247,14 @@ class BaseFormDialog(ComponentDialog):
         validation = validator.validate_form_data(form_data, self.form)
 
         if not validation.is_valid:
-            # Show errors
+            # Show errors (don't use replace_dialog to avoid recursion)
             error_card = card_builder.build_error_card(
                 title="Validation Errors",
                 errors=validation.error_list,
             )
             await self.send_card(step_context, error_card)
-            return await step_context.replace_dialog(self.id)
+            # Return waiting - the user should get another chance
+            return DialogTurnResult(DialogTurnStatus.Waiting)
 
         # NOTE: Completion callback is handled by wrapper after dialog ends
         return await step_context.end_dialog(validation.sanitized_data)

@@ -66,19 +66,12 @@ class ConversationalFormDialog(BaseFormDialog):
     def __init__(
         self,
         form: FormDefinition,
-        validator: FormValidator = None,
-        on_complete: Callable[[Dict[str, Any], TurnContext], Awaitable[Any]] = None,
-        on_cancel: Callable[[TurnContext], Awaitable[Any]] = None,
+        dialog_id: str = None,
         show_progress: bool = True,
         allow_skip_optional: bool = True,
+        **kwargs,  # Accept but ignore extra kwargs for backwards compatibility
     ):
-        super().__init__(
-            form=form,
-            card_builder=None,  # Not used in conversational mode
-            validator=validator,
-            on_complete=on_complete,
-            on_cancel=on_cancel,
-        )
+        super().__init__(form=form, dialog_id=dialog_id)
 
         self.show_progress = show_progress
         self.allow_skip_optional = allow_skip_optional

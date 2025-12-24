@@ -36,18 +36,10 @@ class WizardFormDialog(BaseFormDialog):
     def __init__(
         self,
         form: FormDefinition,
-        card_builder: AdaptiveCardBuilder = None,
-        validator: FormValidator = None,
-        on_complete: Callable[[Dict[str, Any], TurnContext], Awaitable[Any]] = None,
-        on_cancel: Callable[[TurnContext], Awaitable[Any]] = None,
+        dialog_id: str = None,
+        **kwargs,  # Accept but ignore extra kwargs for backwards compatibility
     ):
-        super().__init__(
-            form=form,
-            card_builder=card_builder,
-            validator=validator,
-            on_complete=on_complete,
-            on_cancel=on_cancel,
-        )
+        super().__init__(form=form, dialog_id=dialog_id)
 
         # Build waterfall steps dynamically
         steps = self._build_steps()
@@ -108,10 +100,15 @@ class WizardFormDialog(BaseFormDialog):
                 return await self.handle_cancel(step_context)
 
             if action == 'back' and section_index > 0:
-                # Go back: replace dialog to restart, but keep data
-                # Note: Simple approach - replace dialog
-                # Advanced: could use step_context.active_dialog.state to jump
-                return await step_context.replace_dialog(self.id)
+                # Go back: show previous section's card
+                prev_index = section_index - 1
+                self.set_current_section(step_context, prev_index)
+                await self.send_section_card(
+                    step_context,
+                    section_index=prev_index,
+                    show_back=prev_index > 0,
+                )
+                return DialogTurnResult(DialogTurnStatus.Waiting)
 
             if action == 'skip':
                 # Skip this section, continue to next
@@ -126,9 +123,15 @@ class WizardFormDialog(BaseFormDialog):
                 validation = self._get_validator().validate_section(form_data, prev_section)
 
                 if not validation.is_valid:
-                    # Go back to previous section with errors
-                    self.set_validation_errors(step_context, validation.errors)
-                    return await step_context.replace_dialog(self.id)
+                    # Show previous section with errors (don't use replace_dialog)
+                    prev_index = section_index - 1
+                    self.set_current_section(step_context, prev_index)
+                    await self.send_section_card(
+                        step_context,
+                        section_index=prev_index,
+                        show_back=prev_index > 0,
+                    )
+                    return DialogTurnResult(DialogTurnStatus.Waiting)
 
             # If we have submitted data and it's validated, advance to next step
             # (This means user clicked Next/Submit on a previous card)
@@ -164,7 +167,15 @@ class WizardFormDialog(BaseFormDialog):
                 return await self.handle_cancel(step_context)
 
             if action == 'back':
-                return await step_context.replace_dialog(self.id)
+                # Go back to last section
+                last_index = len(self.form.sections) - 1
+                self.set_current_section(step_context, last_index)
+                await self.send_section_card(
+                    step_context,
+                    section_index=last_index,
+                    show_back=last_index > 0,
+                )
+                return DialogTurnResult(DialogTurnStatus.Waiting)
 
             # Merge final data
             form_data = self.merge_submitted_data(step_context, submitted)
@@ -174,8 +185,15 @@ class WizardFormDialog(BaseFormDialog):
             validation = self._get_validator().validate_section(form_data, last_section)
 
             if not validation.is_valid:
-                self.set_validation_errors(step_context, validation.errors)
-                return await step_context.replace_dialog(self.id)
+                # Show last section with errors
+                last_index = len(self.form.sections) - 1
+                self.set_current_section(step_context, last_index)
+                await self.send_section_card(
+                    step_context,
+                    section_index=last_index,
+                    show_back=last_index > 0,
+                )
+                return DialogTurnResult(DialogTurnStatus.Waiting)
         else:
             form_data = self.get_form_data(step_context)
 

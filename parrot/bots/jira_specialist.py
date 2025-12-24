@@ -1,6 +1,10 @@
+import asyncio
+import logging
+import math
 from datetime import datetime
 from typing import List, Optional
 from pydantic import BaseModel, Field
+import pandas as pd
 from navconfig import config
 from parrot.bots import Agent
 from parrot.registry import register_agent
@@ -53,7 +57,7 @@ class JiraSpecialist(Agent):
     """A specialist agent for interacting with Jira."""
     agent_id: str = "jira_specialist"
     model = 'gemini-2.5-pro'
-    max_tokens = 8000
+    max_tokens = 16000
 
     def agent_tools(self):
         """Return the agent-specific tools."""
@@ -110,7 +114,9 @@ Description:
         - store_as_dataframe: True
         - dataframe_name: 'jira_tickets_2025'
 
-        Just execute the search and confirm when done. Do not attempt to list the tickets.
+        Just execute the search and confirm when done. 
+        Do not attempt to list the tickets.
+        Avoid adding any additional text or comments to the response.
         """
 
         # Execute the tool call
@@ -147,49 +153,109 @@ Description:
             structured_output=JiraTicketDetail
         )
 
-    async def extract_all_tickets(self, max_tickets: Optional[int] = None, **kwargs) -> JiraTicketResponse:
-        """Extract all Jira tickets created in 2025 and return structured response."""
-        tickets = await self.search_all_tickets(max_tickets=max_tickets)
-        # Iterate over all tickets, extracting detailed info, and added to the dataframe:
-        if 'history' not in tickets.columns:
-            tickets['history'] = None
-        for idx, ticket in tickets.iterrows():
+    async def process_chunk(self, chunk_df: pd.DataFrame, chunk_index: int, delay: float = 2.0) -> pd.DataFrame:
+        """Process a chunk of tickets, retrieving details and history."""
+        logging.info(f"Starting processing chunk {chunk_index} with {len(chunk_df)} tickets")
+        
+        # Ensure history column exists
+        if 'history' not in chunk_df.columns:
+            chunk_df['history'] = None
+
+        for idx, ticket in chunk_df.iterrows():
             issue_number = ticket['key']
             repeat = 0
+            detailed_ticket = None
+            
+            # Retry logic: Try up to 3 times (initial + 2 retries)
             while repeat < 3:
-                response = await self.get_ticket(issue_number=issue_number)
-                detailed_ticket = response.output
-                if isinstance(detailed_ticket, str):
+                try:
+                    response = await self.get_ticket(issue_number=issue_number)
+                    detailed_ticket = response.output
+                    
+                    if isinstance(detailed_ticket, str):
+                        # Some error or unexpected string response
+                        logging.warning(f"Got string response for {issue_number}, retrying... ({repeat+1}/3)")
+                        repeat += 1
+                        await asyncio.sleep(delay * (repeat + 1)) # Exponential-ish backoff
+                        continue
+                        
+                    if detailed_ticket is None or not hasattr(detailed_ticket, 'description'):
+                        logging.warning(f"Invalid ticket data for {issue_number}, retrying... ({repeat+1}/3)")
+                        repeat += 1
+                        await asyncio.sleep(delay * (repeat + 1))
+                        continue
+                        
+                    break # Success
+                    
+                except Exception as e:
+                    logging.error(f"Error processing ticket {issue_number}: {e}")
                     repeat += 1
-                    continue
-                if detailed_ticket is None or hasattr(detailed_ticket, 'description') is False:
-                    repeat += 1
-                    continue
-                break
-            # detailed_ticket is a dataframe with summary,description and history
-            # append to ticket response
-            tickets.at[idx, 'summary'] = detailed_ticket.title
-            tickets.at[idx, 'description'] = detailed_ticket.description
-            # we need to filter the history to include only
-            # when field is "Status", "Assignee", or "Reporter" or "Resolution"
-            filtered_events = []
-            for event in detailed_ticket.history:
-                if filtered_items := [
-                    item for item in event.items
-                    if item.field.lower() in ["status", "assignee", "reporter", "resolution"]
-                ]:
-                    filtered_event = HistoryEvent(
-                        author=event.author,
-                        created=event.created,
-                        items=filtered_items
-                    )
-                    filtered_events.append(filtered_event)
-            # sort filtered_events by created date:
-            filtered_events.sort(key=lambda x: x.created)
+                    await asyncio.sleep(delay * (repeat + 1))
+            
+            if detailed_ticket:
+                # Update DataFrame with detailed info
+                chunk_df.at[idx, 'summary'] = detailed_ticket.title
+                chunk_df.at[idx, 'description'] = detailed_ticket.description
+                
+                # Filter and process history
+                filtered_events = []
+                for event in detailed_ticket.history:
+                    if filtered_items := [
+                        item for item in event.items
+                        if item.field.lower() in ["status", "assignee", "reporter", "resolution"]
+                    ]:
+                        filtered_event = HistoryEvent(
+                            author=event.author,
+                            created=event.created,
+                            items=filtered_items
+                        )
+                        filtered_events.append(filtered_event)
+                
+                # Sort history by creation date
+                filtered_events.sort(key=lambda x: x.created)
+                
+                # Store as list of dicts
+                chunk_df.at[idx, 'history'] = [event.model_dump() for event in filtered_events]
+            else:
+                 logging.error(f"Failed to retrieve ticket {issue_number} after retries. Skipping.")
+            
+            # Respect rate limit between tickets
+            await asyncio.sleep(delay)
 
-            # add filtered event as dict to tickets dataframe:
-            tickets.at[idx, 'history'] = [event.model_dump() for event in filtered_events]
-        # return dataframe:
-        # save as a CSV file before returning:
-        tickets.to_csv('jira_tickets_2025.csv', index=False)
-        return tickets
+        # Save partial result
+        filename = f"jira_tickets_part_{chunk_index}.csv"
+        chunk_df.to_csv(filename, index=False)
+        logging.info(f"Saved chunk {chunk_index} to {filename}")
+        
+        return chunk_df
+
+    async def extract_all_tickets(self, max_tickets: Optional[int] = None, chunk_size: int = 50, delay: float = 2.0, concurrency: int = 5, **kwargs) -> List[pd.DataFrame]:
+        """Extract all Jira tickets created in 2025 using chunked processing with rate limiting."""
+        tickets_df = await self.search_all_tickets(max_tickets=max_tickets)
+        
+        if tickets_df.empty:
+            return []
+
+        # Split DataFrame into chunks
+        num_chunks = math.ceil(len(tickets_df) / chunk_size)
+        chunks = [
+            tickets_df.iloc[i * chunk_size : (i + 1) * chunk_size].copy() 
+            for i in range(num_chunks)
+        ]
+        
+        logging.info(f"Split {len(tickets_df)} tickets into {num_chunks} chunks.")
+
+        # Semaphore for concurrency control
+        sem = asyncio.Semaphore(concurrency)
+
+        async def sem_process(chunk, i):
+            async with sem:
+                return await self.process_chunk(chunk, i, delay=delay)
+
+        # Create tasks for all chunks
+        tasks = [sem_process(chunk, i) for i, chunk in enumerate(chunks)]
+        
+        # Execute in parallel
+        processed_chunks = await asyncio.gather(*tasks)
+        
+        return processed_chunks
