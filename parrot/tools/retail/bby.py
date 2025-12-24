@@ -7,13 +7,21 @@ Provides methods for:
 - Inventory lookup
 """
 import os
+import asyncio
+import time
 import random
 from typing import Dict, Any, Optional
 from pydantic import BaseModel, Field
 from navconfig import config
-from ...interfaces.http import HTTPService, UA_LIST
+from navconfig.logging import logging
 from ..toolkit import AbstractToolkit
 from ..decorators import tool_schema
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service as ChromeService
+from selenium.webdriver.chrome.options import Options as ChromeOptions
+from selenium.webdriver.common.by import By
+from webdriver_manager.chrome import ChromeDriverManager
+from ...interfaces.http import UA_LIST, HTTPService
 
 
 # ============================================================================
@@ -109,7 +117,7 @@ class BestBuyToolkit(AbstractToolkit):
             **kwargs: Additional toolkit configuration
         """
         super().__init__(**kwargs)
-
+        self.logger = logging.getLogger(__name__)
         self.api_key = api_key or BESTBUY_API_KEY
         if not self.api_key:
             raise ValueError(
@@ -117,22 +125,30 @@ class BestBuyToolkit(AbstractToolkit):
                 "Set BESTBUY_APIKEY in config or pass api_key parameter."
             )
 
+
+        self.bby_url = "https://www.bestbuy.com"
         # Initialize HTTPService for BestBuy website (availability checks)
+        self.cookies = {}
+        self._driver = None
+        self.user_agent = random.choice(UA_LIST)
+        
         self.http_web = HTTPService(
             use_proxy=use_proxy,
-            cookies={
-                "CTT": random.choice(CTT_LIST),
-                "SID": random.choice(SID_LIST),
-                "bby_rdp": "l",
-                "bm_sz": "9F5ED0110AF18594E2347A89BB4AB998~YAAQxm1lX6EqYHGSAQAAw+apmhkhXIeGYEc4KnzUMsjeac3xEoQmTNz5+of62i3RXQL6fUI+0FvCb/jgSjiVQOcfaSF+LdLkOXP1F4urgeIcqp/dBAhu5MvZXaCQsT06bwr7j21ozhFfTTWhjz1HmZN8wecsE6WGbK6wXp/33ODKlLaGWkTutqHbkzvMiiHXBCs9hT8jVny0REfita4AfqTK85Y6/M6Uq4IaDLPBLnTtJ0cTlPHk1HmkG5EsnI46llghcx1KZnCGnvZfHdb2ME9YZJ2GmC2b7dNmAgyL/gSVpoNdCJOj5Jk6z/MCVhZ81OZfX4S01E2F1mBGq4uV5/1oK2KR4YgZP4dsTN8izEEPybUKGY3CyM1gOUc=~3556420~4277810",
-                "bby_cbc_lb": "p-browse-e",
-                "intl_splash": "false"
-            },
+            proxy_type='decodo',
+            cookies=self.cookies,
             headers={
+                "authority": "www.bestbuy.com",
                 "Host": "www.bestbuy.com",
                 "Referer": "https://www.bestbuy.com/",
+                "X-Requested-With": "XMLHttpRequest",
                 "TE": "trailers",
                 "Accept-Language": "en-US,en;q=0.5",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+                "Accept-Encoding": "gzip, deflate, br, zstd",
+                "DNT": "1",
+                "Connection": "keep-alive",
+                "Upgrade-Insecure-Requests": "1",
+                "User-Agent": self.user_agent,
             },
             accept='application/json',
             timeout=30
@@ -227,6 +243,66 @@ class BestBuyToolkit(AbstractToolkit):
             self.logger.error(f"Failed to search products: {e}")
             return {"error": str(e)}
 
+    def _get_driver(self):
+        """Initialize and return a headless Chrome driver."""
+        if self._driver:
+            return self._driver
+
+        options = ChromeOptions()
+        options.add_argument("--headless=new")
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
+        options.add_argument(f"user-agent={self.user_agent}")
+        
+        # Suppress logging
+        options.add_argument("--log-level=3")
+        
+        service = ChromeService(ChromeDriverManager().install())
+        self._driver = webdriver.Chrome(service=service, options=options)
+        return self._driver
+
+    def _close_driver(self):
+        """Close the Selenium driver if it exists."""
+        if self._driver:
+            try:
+                self._driver.quit()
+            except Exception as e:
+                self.logger.warning(f"Error closing driver: {e}")
+            finally:
+                self._driver = None
+
+    async def _ensure_cookies(self, force_refresh: bool = False):
+        """
+        Ensure session cookies are available via Selenium.
+        """
+        if self.cookies and not force_refresh:
+            return
+
+        print(f"Fetching fresh cookies (Force: {force_refresh})...")
+        driver = None
+        try:
+            loop = asyncio.get_running_loop()
+            driver = await loop.run_in_executor(None, self._get_driver)
+            
+            # Bypassing Splash Screen
+            await loop.run_in_executor(None, driver.get, "https://www.bestbuy.com/?intl=nosplash")
+            await loop.run_in_executor(None, time.sleep, 5) # wait for page load
+            
+            # Extract cookies
+            selenium_cookies = await loop.run_in_executor(None, driver.get_cookies)
+            for cookie in selenium_cookies:
+                self.cookies[cookie['name']] = cookie['value']
+            
+            # Update HTTP client cookies
+            self.http_web.cookies = self.cookies
+            print(f"Cookies updated: {list(self.cookies.keys())}")
+            
+        except Exception as e:
+            self.logger.error(f"Selenium error fetching cookies: {e}")
+        finally:
+            if driver:
+                await loop.run_in_executor(None, self._close_driver)
+
     @tool_schema(ProductAvailabilityInput)
     async def check_availability(
         self,
@@ -238,21 +314,11 @@ class BestBuyToolkit(AbstractToolkit):
         """
         Check product availability at a specific BestBuy store.
 
-        Returns detailed availability information including:
-        - Store information (name, address, hours)
-        - Product in-stock status
-        - Pickup eligibility
-        - On-shelf display status
-        - Available quantity
-
-        Args:
-            zipcode: ZIP code to check availability in
-            sku: Product SKU to check
-            location_id: Store location ID
-            show_only_in_stock: Whether to only show in-stock items
-
-        Returns:
-            Dictionary with availability information or error message
+        :param zipcode: ZIP code for the store.
+        :param sku: Product SKU to check.
+        :param location_id: Store location ID.
+        :param show_only_in_stock: If True, only return if in stock.
+        :return: Availability dictionary.
         """
         # Validate inputs
         if not zipcode:
@@ -281,56 +347,30 @@ class BestBuyToolkit(AbstractToolkit):
                 {
                     "sku": sku,
                     "condition": None,
-                    "quantity": 1,
-                    "itemSeqNumber": "1",
-                    "reservationToken": None,
-                    "selectedServices": [],
-                    "requiredAccessories": [],
-                    "isTradeIn": False,
-                    "isLeased": False
+                    "quantity": 1
                 }
             ]
         }
+        
+        # Ensure we have cookies before starting
+        await self._ensure_cookies()
 
-        url = "https://www.bestbuy.com/productfulfillment/c/api/2.0/storeAvailability"
-
-        self.logger.debug(
-            f"Checking availability: SKU={sku}, Location={location_id}, ZIP={zipcode}"
-        )
-
+        url = f"{self.bby_url}/fulfillment/ispu/api/ispu/v2"
+        
         try:
-            # Make request using HTTPService
-            result, error = await self.http_web.request(
-                url=url,
-                method="POST",
-                data=payload,
-                use_json=True,
-                client='httpx',
-                headers={
-                    "User-Agent": random.choice(UA_LIST)
-                },
-                use_ssl=True,
-                follow_redirects=True
+            # Use the new api_post method which handles retries and proxies
+            response = await self.http_web.api_post(
+                url,
+                payload=payload,
+                cookies=self.cookies, # Pass current cookies
+                use_proxy=True, # Ensure proxy is used
             )
-
-            if error:
-                self.logger.error(f"Error checking availability: {error}")
-                return {"error": str(error)}
-
-            if not result:
-                return {
-                    "error": "No data returned from BestBuy. Service may be unavailable."
-                }
-
-            # Format the response
-            formatted = self._format_availability_response(
-                result,
-                location_id,
-                sku,
-                show_only_in_stock
-            )
-
-            return formatted
+            
+            # The result is already a dict or empty dict
+            if not response:
+                 return {"error": "Empty response from Best Buy API"}
+                 
+            return self._format_availability_response(response, location_id, sku, show_only_in_stock)
 
         except Exception as e:
             self.logger.error(f"Failed to check availability: {e}")

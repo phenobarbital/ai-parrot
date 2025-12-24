@@ -277,6 +277,7 @@ class AdaptiveCardBuilder:
                 "title": "Cancel",
                 "style": "destructive",
                 "data": {"_action": "cancel"},
+                "associatedInputs": "none",
             },
         ]
 
@@ -762,6 +763,7 @@ class AdaptiveCardBuilder:
                 "title": "Cancel",
                 "style": "destructive",
                 "data": {"_action": "cancel"},
+                "associatedInputs": "none",
             })
 
         return actions
@@ -783,6 +785,7 @@ class AdaptiveCardBuilder:
                 "type": "Action.Submit",
                 "title": "← Back",
                 "data": {"_action": "back"},
+                "associatedInputs": "none",
             })
 
         # Skip button (optional)
@@ -791,6 +794,7 @@ class AdaptiveCardBuilder:
                 "type": "Action.Submit",
                 "title": "Skip",
                 "data": {"_action": "skip"},
+                "associatedInputs": "none",
             })
 
         # Cancel button
@@ -800,6 +804,7 @@ class AdaptiveCardBuilder:
                 "title": "Cancel",
                 "style": "destructive",
                 "data": {"_action": "cancel"},
+                "associatedInputs": "none",
             })
 
         # Next/Submit button
