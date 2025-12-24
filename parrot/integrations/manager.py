@@ -14,7 +14,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from navconfig import BASE_DIR
 from navconfig.logging import logging
-
+from ..conf import AGENTS_DIR
 from .models import (
     IntegrationBotConfig, 
     TelegramAgentConfig, 
@@ -159,7 +159,8 @@ class IntegrationBotManager:
         wrapper = MSTeamsAgentWrapper(
             agent=agent,
             config=config,
-            app=self.bot_manager.get_app()
+            app=self.bot_manager.get_app(),
+            forms_directory=config.forms_directory or AGENTS_DIR / "forms",
         )
         self.msteams_bots[name] = wrapper
         self.logger.info(f"✅ Started MS Teams bot '{name}'")

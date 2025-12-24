@@ -115,22 +115,27 @@ class WizardFormDialog(BaseFormDialog):
 
             if action == 'skip':
                 # Skip this section, continue to next
-                pass  # Will fall through to showing next section
+                return await step_context.next(None)
 
-            else:
-                # Process submitted data
-                form_data = self.merge_submitted_data(step_context, submitted)
+            # Process submitted data (next or submit action)
+            form_data = self.merge_submitted_data(step_context, submitted)
 
-                # Validate previous section
-                if section_index > 0:
-                    prev_section = self.form.sections[section_index - 1]
-                    validation = self.validator.validate_section(form_data, prev_section)
+            # Validate previous section (the one that was just submitted)
+            if section_index > 0:
+                prev_section = self.form.sections[section_index - 1]
+                validation = self._get_validator().validate_section(form_data, prev_section)
 
-                    if not validation.is_valid:
-                        # Go back to previous section with errors
-                        self.set_validation_errors(step_context, validation.errors)
-                        return await step_context.replace_dialog(self.id)
+                if not validation.is_valid:
+                    # Go back to previous section with errors
+                    self.set_validation_errors(step_context, validation.errors)
+                    return await step_context.replace_dialog(self.id)
 
+            # If we have submitted data and it's validated, advance to next step
+            # (This means user clicked Next/Submit on a previous card)
+            if action in ('next', 'submit'):
+                return await step_context.next(None)
+
+        # First time showing this section (or after validation failure)
         # Record current section
         self.set_current_section(step_context, section_index)
 
@@ -166,7 +171,7 @@ class WizardFormDialog(BaseFormDialog):
 
             # Validate last section
             last_section = self.form.sections[-1]
-            validation = self.validator.validate_section(form_data, last_section)
+            validation = self._get_validator().validate_section(form_data, last_section)
 
             if not validation.is_valid:
                 self.set_validation_errors(step_context, validation.errors)

@@ -19,6 +19,7 @@ from ...dialogs.models import FormDefinition, DialogPreset
 from ...dialogs.llm_generator import LLMFormGenerator
 from .factory import FormDialogFactory
 from .card_builder import AdaptiveCardBuilder
+from ...dialogs.cache import FormDefinitionCache
 from ....models.outputs import OutputMode
 if TYPE_CHECKING:
     from parrot.bots.abstract import AbstractBot
@@ -103,6 +104,7 @@ class FormOrchestrator:
         self,
         agent: 'AbstractBot',
         dialog_factory: FormDialogFactory = None,
+        form_cache: FormDefinitionCache = None,
     ):
         """
         Initialize the orchestrator.
@@ -110,9 +112,11 @@ class FormOrchestrator:
         Args:
             agent: The AI agent for processing messages (must have tool_manager)
             dialog_factory: Factory for creating form dialogs
+            form_cache: Cache for YAML form definitions with trigger phrase lookup
         """
         self.agent = agent
         self.dialog_factory = dialog_factory or FormDialogFactory()
+        self.form_cache = form_cache
 
         # Form generator
         self.form_generator = LLMFormGenerator(agent=agent)
@@ -141,6 +145,68 @@ class FormOrchestrator:
         else:
             logger.error(f"❌ request_form tool NOT found in tool manager! Available: {registered_tools[:10]}...")
 
+    def _check_trigger_phrases(self, message: str) -> Optional[FormDefinition]:
+        """
+        Check if message matches any YAML form trigger phrases.
+
+        Args:
+            message: User's message text
+
+        Returns:
+            FormDefinition if trigger matched, None otherwise
+        """
+        if not self.form_cache:
+            return None
+
+        message_lower = message.lower().strip()
+
+        # Check forms in cache for trigger phrase matches
+        for form_id, entry in list(self.form_cache._memory_cache.items()):
+            if entry and entry.form.trigger_phrases:
+                for phrase in entry.form.trigger_phrases:
+                    if phrase.lower() in message_lower:
+                        logger.info(f"🎯 Trigger phrase '{phrase}' matched form '{form_id}'")
+                        return entry.form
+
+        return None
+
+    async def _resolve_dynamic_choices(self, form: FormDefinition) -> FormDefinition:
+        """
+        Resolve dynamic choices from tool sources for form fields.
+
+        Args:
+            form: FormDefinition with fields that may have choices_source
+
+        Returns:
+            FormDefinition with choices populated from tools
+        """
+        for section in form.sections:
+            for field in section.fields:
+                if field.choices_source:
+                    try:
+                        # Get the tool by name
+                        tool = self.agent.tool_manager.get_tool(field.choices_source)
+                        if tool:
+                            # Execute tool to get choices
+                            result = await tool.execute()
+                            if hasattr(result, 'result') and result.result:
+                                choices = result.result
+                                if isinstance(choices, list):
+                                    field.choices = choices
+                                    logger.info(f"✅ Loaded {len(choices)} choices from '{field.choices_source}' for field '{field.name}'")
+                                elif isinstance(choices, dict):
+                                    # Convert dict to list of choice dicts
+                                    field.choices = [
+                                        {"title": str(v), "value": str(k)}
+                                        for k, v in choices.items()
+                                    ]
+                        else:
+                            logger.warning(f"Tool '{field.choices_source}' not found for field '{field.name}'")
+                    except Exception as e:
+                        logger.error(f"Error loading choices from '{field.choices_source}': {e}")
+
+        return form
+
     # =========================================================================
     # Message Processing
     # =========================================================================
@@ -163,7 +229,29 @@ class FormOrchestrator:
             ProcessResult indicating response or form needed
         """
         try:
-            # Execute agent with tools enabled
+            # FIRST: Check for trigger phrases from YAML forms
+            triggered_form = self._check_trigger_phrases(message)
+            if triggered_form:
+                # Resolve dynamic choices if any
+                triggered_form = await self._resolve_dynamic_choices(triggered_form)
+
+                # Store pending execution for the form's submit_action
+                if triggered_form.submit_action:
+                    self._pending[conversation_id] = PendingExecution(
+                        tool_name=triggered_form.submit_action,
+                        form_id=triggered_form.form_id,
+                        known_values={},  # No pre-filled values from trigger
+                        conversation_id=conversation_id,
+                    )
+
+                return ProcessResult(
+                    form=triggered_form,
+                    pending_tool=triggered_form.submit_action,
+                    known_values={},
+                    context_message=f"Starting: {triggered_form.title}",
+                )
+
+            # SECOND: Execute agent with tools enabled (LLM path)
             response = await self.agent.ask(
                 message,
                 output_mode=OutputMode.MSTEAMS,

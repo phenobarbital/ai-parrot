@@ -615,6 +615,8 @@ class AdaptiveCardBuilder:
                     input_elem["maxLength"] = validation.value
                 elif validation.rule == ValidationRule.PATTERN:
                     input_elem["regex"] = validation.value
+                    if validation.message:
+                        input_elem["errorMessage"] = validation.message
 
             return input_elem
 

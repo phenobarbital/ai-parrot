@@ -247,10 +247,19 @@ class FormDefinition:
                 if 'validation' in field_config:
                     val_config = field_config['validation']
                     if isinstance(val_config, dict):
+                        # Check for separate 'message' key at validation level
+                        default_message = val_config.get('message')
                         for rule_name, rule_value in val_config.items():
+                            if rule_name == 'message':
+                                continue  # Skip, this is just the message
                             try:
                                 rule = ValidationRule(rule_name)
-                                validations.append(FieldValidation(rule=rule, value=rule_value))
+                                # Use default_message if rule_value isn't a dict with its own message
+                                validations.append(FieldValidation(
+                                    rule=rule, 
+                                    value=rule_value,
+                                    message=default_message,
+                                ))
                             except ValueError:
                                 pass  # Unknown validation rule
 

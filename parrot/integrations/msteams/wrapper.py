@@ -98,6 +98,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         self.form_orchestrator = FormOrchestrator(
             agent=agent,
             dialog_factory=self.dialog_factory,
+            form_cache=self.form_cache,
         )
 
         # Initialize Adapter
@@ -134,16 +135,22 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         dialog_context,
         form: FormDefinition,
         conversation_id: str,
+        turn_context: TurnContext = None,
     ):
         """Start a form dialog."""
 
         # Create dialog from form definition
+        # NOTE: We don't pass callbacks here to avoid serialization issues with jsonpickle
+        # The wrapper handles completion/cancellation after dialog ends
         dialog = self.dialog_factory.create_dialog(
             form=form,
-            on_complete=lambda data, ctx: self._on_form_complete(data, ctx, conversation_id),
-            on_cancel=lambda ctx: self._on_form_cancel(ctx, conversation_id),
+            on_complete=None,  # Handle in wrapper instead
+            on_cancel=None,    # Handle in wrapper instead
             agent=self.agent,
         )
+
+        # Store conversation_id in dialog for later use
+        dialog._conversation_id = conversation_id
 
         # Add to dialog set (replace if exists)
         if form.form_id in self.dialogs._dialogs:
@@ -152,6 +159,10 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
 
         # Begin dialog
         await dialog_context.begin_dialog(form.form_id)
+
+        # Explicitly save state to ensure dialog is persisted before next interaction
+        if turn_context:
+            await self.conversation_state.save_changes(turn_context)
 
         self.logger.info(f"Started form dialog: {form.form_id}")
 
@@ -202,6 +213,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
             return
 
         self.logger.info(f"Card submission: {submitted_data}")
+        conversation_id = turn_context.activity.conversation.id
 
         # Check for action type
         action = submitted_data.get('_action', 'submit')
@@ -209,7 +221,6 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         if action == 'cancel':
             # Cancel active dialog
             await dialog_context.cancel_all_dialogs()
-            conversation_id = turn_context.activity.conversation.id
             await self._on_form_cancel(turn_context, conversation_id)
             return
 
@@ -217,7 +228,17 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         # The dialog's waterfall will pick up the data from activity.value
         results = await dialog_context.continue_dialog()
 
-        if results.status == DialogTurnStatus.Empty:
+        self.logger.info(f"Dialog continue result: status={results.status}")
+
+        if results.status == DialogTurnStatus.Complete:
+            # Dialog finished - handle completion
+            form_data = results.result
+            if form_data and not form_data.get('_cancelled'):
+                await self._on_form_complete(form_data, turn_context, conversation_id)
+            elif form_data and form_data.get('_cancelled'):
+                await self._on_form_cancel(turn_context, conversation_id)
+
+        elif results.status == DialogTurnStatus.Empty:
             # No active dialog - might be a standalone card
             self.logger.warning("Card submission but no active dialog")
             await self.send_text(
@@ -226,22 +247,8 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
             )
 
     # =========================================================================
-    # Form Trigger Detection
+    # Webhook Handler
     # =========================================================================
-
-    async def _check_form_triggers(self, text: str) -> Optional[FormDefinition]:
-        """Check if message matches any predefined form triggers."""
-        text_lower = text.lower().strip()
-
-        # Check cached forms for trigger phrases
-        for form_id in list(self.form_cache._memory_cache.keys()):
-            entry = self.form_cache._memory_cache.get(form_id)
-            if entry and entry.form.trigger_phrases:
-                for phrase in entry.form.trigger_phrases:
-                    if phrase.lower() in text_lower:
-                        return entry.form
-
-        return None
 
     async def handle_request(self, request: web.Request) -> web.Response:
         """
@@ -281,9 +288,19 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
     async def on_message_activity(self, turn_context: TurnContext):
         """Handle incoming text messages."""
 
+        # DEBUG: Log activity details
+        self.logger.info(f"🔍 on_message_activity: type={turn_context.activity.type}, "
+                         f"has_value={turn_context.activity.value is not None}, "
+                         f"text={turn_context.activity.text[:50] if turn_context.activity.text else 'None'}")
+        if turn_context.activity.value:
+            self.logger.info(f"🔍 Activity value: {turn_context.activity.value}")
+
         # Create dialog context
         dialog_context = await self.dialogs.create_context(turn_context)
         conversation_id = turn_context.activity.conversation.id
+
+        # DEBUG: Check dialog stack
+        self.logger.info(f"🔍 Dialog stack size: {len(dialog_context.stack) if dialog_context.stack else 0}")
 
         # Handle Adaptive Card submissions
         if turn_context.activity.value:
@@ -311,17 +328,8 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         # Send typing indicator
         await self.send_typing(turn_context)
 
-        # Check for trigger phrases for predefined forms
-        triggered_form = await self._check_form_triggers(text)
-        if triggered_form:
-            await self._start_form_dialog(
-                dialog_context,
-                triggered_form,
-                conversation_id
-            )
-            return
-
         # Process message with form orchestrator
+        # (Orchestrator now handles trigger phrase detection for YAML forms)
         result = await self.form_orchestrator.process_message(
             message=text,
             conversation_id=conversation_id,
@@ -346,6 +354,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
                 dialog_context,
                 result.form,
                 conversation_id,
+                turn_context,  # Pass for explicit state save
             )
             return
 

@@ -94,7 +94,7 @@ class WizardWithSummaryDialog(WizardFormDialog):
 
             # Validate last section
             last_section = self.form.sections[-1]
-            validation = self.validator.validate_section(form_data, last_section)
+            validation = self._get_validator().validate_section(form_data, last_section)
 
             if not validation.is_valid:
                 self.set_validation_errors(step_context, validation.errors)
@@ -108,7 +108,7 @@ class WizardWithSummaryDialog(WizardFormDialog):
             summary_text = await self._generate_llm_summary(form_data)
 
         # Build and send summary card
-        card = self.card_builder.build_summary_card(
+        card = self._get_card_builder().build_summary_card(
             form=self.form,
             form_data=form_data,
             summary_text=summary_text,
@@ -207,7 +207,7 @@ Summary:"""
             for field in section.fields:
                 value = form_data.get(field.name)
                 if value is not None:
-                    display = self.card_builder._format_value_for_display(field, value)
+                    display = self._get_card_builder()._format_value_for_display(field, value)
                     section_values.append(f"{field.label}: {display}")
 
             if section_values:

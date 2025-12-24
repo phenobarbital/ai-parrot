@@ -67,7 +67,7 @@ class SimpleFormDialog(BaseFormDialog):
         prefilled = self.get_form_data(step_context)
         errors = self.get_validation_errors(step_context)
 
-        card = self.card_builder.build_complete_form(
+        card = self._get_card_builder().build_complete_form(
             form=self.form,
             prefilled=prefilled,
             errors=errors,
@@ -101,7 +101,7 @@ class SimpleFormDialog(BaseFormDialog):
         form_data = self.merge_submitted_data(step_context, submitted)
 
         # Validate
-        validation = self.validator.validate_form_data(form_data, self.form)
+        validation = self._get_validator().validate_form_data(form_data, self.form)
 
         if not validation.is_valid:
             # Store errors and re-show form

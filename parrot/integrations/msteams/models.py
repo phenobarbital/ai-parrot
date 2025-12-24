@@ -29,6 +29,7 @@ class MSTeamsAgentConfig:
     welcome_message: Optional[str] = None
     commands: Dict[str, str] = field(default_factory=dict)
     dialog: Optional[Any] = None
+    forms_directory: Optional[str] = None
 
     def __post_init__(self):
         """

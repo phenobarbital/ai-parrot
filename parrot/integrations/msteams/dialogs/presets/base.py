@@ -23,6 +23,21 @@ VALIDATION_ERRORS_KEY = "FormDialog.errors"
 FORM_DEFINITION_KEY = "FormDialog.form"
 
 
+# Global form registry to avoid storing complex FormDefinition on dialog instances
+# This is used for runtime lookup - dialogs store only form_id (a string) which is serializable
+_FORM_REGISTRY: Dict[str, FormDefinition] = {}
+
+
+def register_form(form: FormDefinition) -> None:
+    """Register a form in the global registry for later lookup."""
+    _FORM_REGISTRY[form.form_id] = form
+
+
+def get_registered_form(form_id: str) -> Optional[FormDefinition]:
+    """Get a form from the global registry."""
+    return _FORM_REGISTRY.get(form_id)
+
+
 class BaseFormDialog(ComponentDialog):
     """
     Base class for all form dialog presets.
@@ -32,29 +47,54 @@ class BaseFormDialog(ComponentDialog):
     - Common prompt dialogs
     - Card building/sending utilities
     - Validation integration
+
+    NOTE: This dialog stores ONLY the form_id (a string) to avoid jsonpickle
+    serialization issues. The full FormDefinition is looked up from a global
+    registry at runtime using _get_form().
     """
 
     def __init__(
         self,
         form: FormDefinition,
-        card_builder: AdaptiveCardBuilder = None,
-        validator: FormValidator = None,
+        card_builder: AdaptiveCardBuilder = None,  # Not stored - created fresh when needed
+        validator: FormValidator = None,           # Not stored - created fresh when needed
         on_complete: Callable[[Dict[str, Any], TurnContext], Awaitable[Any]] = None,
         on_cancel: Callable[[TurnContext], Awaitable[Any]] = None,
         dialog_id: str = None,
     ):
         super().__init__(dialog_id or form.form_id)
 
-        self.form = form
-        self.card_builder = card_builder or AdaptiveCardBuilder()
-        self.validator = validator or FormValidator()
-        self.on_complete = on_complete
-        self.on_cancel = on_cancel
+        # Store ONLY the form_id (a simple string) to avoid serialization issues
+        # The full FormDefinition is registered and looked up at runtime
+        self._form_id = form.form_id
+        register_form(form)
 
         # Add standard prompts
         self.add_dialog(TextPrompt("TextPrompt"))
         self.add_dialog(ChoicePrompt("ChoicePrompt"))
         self.add_dialog(ConfirmPrompt("ConfirmPrompt"))
+
+    def __getstate__(self):
+        """Return minimal state for pickling - only what's needed to identify the dialog."""
+        return {
+            '_form_id': self._form_id,
+            'id': self.id,
+            'initial_dialog_id': getattr(self, 'initial_dialog_id', None),
+        }
+
+    def __setstate__(self, state):
+        """Restore from minimal state - dialog will be recreated when needed."""
+        self._form_id = state.get('_form_id')
+        # Note: The dialog won't be fully functional after unpickling
+        # but this prevents the recursion error
+
+    @property
+    def form(self) -> FormDefinition:
+        """Get the form from the global registry."""
+        form = get_registered_form(self._form_id)
+        if form is None:
+            raise ValueError(f"Form '{self._form_id}' not found in registry")
+        return form
 
     # =========================================================================
     # State Management
@@ -122,15 +162,24 @@ class BaseFormDialog(ComponentDialog):
     # Card Utilities
     # =========================================================================
 
+    def _get_card_builder(self) -> AdaptiveCardBuilder:
+        """Create a fresh card builder (not stored to avoid serialization issues)."""
+        return AdaptiveCardBuilder()
+
+    def _get_validator(self) -> FormValidator:
+        """Create a fresh validator (not stored to avoid serialization issues)."""
+        return FormValidator()
+
     async def send_card(
         self,
         step_context: WaterfallStepContext,
         card: Dict[str, Any],
     ):
         """Send an Adaptive Card, validating first."""
+        validator = self._get_validator()
         # Validate and sanitize
-        if not self.validator.validate_adaptive_card(card):
-            card = self.validator.sanitize_card(card)
+        if not validator.validate_adaptive_card(card):
+            card = validator.sanitize_card(card)
 
         attachment = CardFactory.adaptive_card(card)
         message = MessageFactory.attachment(attachment)
@@ -146,7 +195,8 @@ class BaseFormDialog(ComponentDialog):
         prefilled = self.get_form_data(step_context)
         errors = self.get_validation_errors(step_context)
 
-        card = self.card_builder.build_section_card(
+        card_builder = self._get_card_builder()
+        card = card_builder.build_section_card(
             form=self.form,
             section_index=section_index,
             prefilled=prefilled,
@@ -178,13 +228,10 @@ class BaseFormDialog(ComponentDialog):
         step_context: WaterfallStepContext,
     ) -> DialogTurnResult:
         """Handle cancel action."""
-        if self.on_cancel:
-            await self.on_cancel(step_context.context)
-
+        # NOTE: Callback is handled by wrapper after dialog ends
         await step_context.context.send_activity(
             MessageFactory.text("Form cancelled.")
         )
-
         return await step_context.end_dialog({"_cancelled": True})
 
     async def handle_complete(
@@ -193,20 +240,20 @@ class BaseFormDialog(ComponentDialog):
         form_data: Dict[str, Any],
     ) -> DialogTurnResult:
         """Handle form completion."""
+        validator = self._get_validator()
+        card_builder = self._get_card_builder()
+
         # Validate all data
-        validation = self.validator.validate_form_data(form_data, self.form)
+        validation = validator.validate_form_data(form_data, self.form)
 
         if not validation.is_valid:
             # Show errors
-            error_card = self.card_builder.build_error_card(
+            error_card = card_builder.build_error_card(
                 title="Validation Errors",
                 errors=validation.error_list,
             )
             await self.send_card(step_context, error_card)
             return await step_context.replace_dialog(self.id)
 
-        # Call completion callback
-        if self.on_complete:
-            await self.on_complete(validation.sanitized_data, step_context.context)
-
+        # NOTE: Completion callback is handled by wrapper after dialog ends
         return await step_context.end_dialog(validation.sanitized_data)
