@@ -59,15 +59,21 @@ class ToolInterface:
                 )
 
     def _sync_tools_to_llm(self, llm: AbstractClient = None) -> None:
-        """Sync tools from Bot's ToolManager to LLM's ToolManager."""
+        """Assign Bot's ToolManager as a reference to LLM's ToolManager.
+
+        Instead of copying tools via sync(), we share the same ToolManager instance
+        so that changes to tools are immediately reflected in both places.
+        This allows users to swap the tool_manager at runtime for session-specific toolsets.
+        """
         try:
             if not llm:
                 llm = self._llm
-            llm.tool_manager.sync(self.tool_manager)
+            # Assign by reference instead of syncing
+            llm.tool_manager = self.tool_manager
             llm.enable_tools = True
         except Exception as e:
             self.logger.error(
-                f"Error syncing tools to LLM: {e}"
+                f"Error assigning tool_manager to LLM: {e}"
             )
 
     def _use_tools(
@@ -165,8 +171,11 @@ class ToolInterface:
         input_schema: Dict[str, Any] = None,
         function: Callable = None,
     ) -> None:
-        """Register a tool in both Bot and LLM ToolManagers."""
-        # Register in Bot's ToolManager
+        """Register a tool in the shared ToolManager.
+
+        Since Bot and LLM share the same ToolManager reference (assigned during configure),
+        we only need to register once. The tool will be immediately available to both.
+        """
         self.tool_manager.register_tool(
             tool=tool,
             name=name,
@@ -174,16 +183,6 @@ class ToolInterface:
             input_schema=input_schema,
             function=function
         )
-
-        # Also register in LLM's ToolManager if available
-        if hasattr(self._llm, 'tool_manager'):
-            self._llm.tool_manager.register_tool(
-                tool=tool,
-                name=name,
-                description=description,
-                input_schema=input_schema,
-                function=function
-            )
 
     def configure_llm(
         self,

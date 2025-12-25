@@ -481,6 +481,9 @@ class AbstractBot(DBInterface, LocalKBMixin, ToolInterface, VectorInterface, ABC
         if config.client_instance:
             if conversation_memory and hasattr(config.client_instance, 'conversation_memory'):
                 config.client_instance.conversation_memory = conversation_memory
+            # Assign tool_manager reference to existing client instance
+            if self.tool_manager and hasattr(config.client_instance, 'tool_manager'):
+                config.client_instance.tool_manager = self.tool_manager
             return config.client_instance
 
         if not config.client_class:
@@ -495,6 +498,7 @@ class AbstractBot(DBInterface, LocalKBMixin, ToolInterface, VectorInterface, ABC
             top_p=config.top_p,
             max_tokens=config.max_tokens,
             conversation_memory=conversation_memory,
+            tool_manager=self.tool_manager,
             **config.extra
         )
 
