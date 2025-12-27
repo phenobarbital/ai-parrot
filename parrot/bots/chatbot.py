@@ -20,12 +20,12 @@ from ..conf import (
     KB_DEFAULT_MODEL
 )
 from ..handlers.models import BotModel
-from .abstract import AbstractBot
+from .base import BaseBot
 from ..tools import (
     AbstractTool,
 )
 
-class Chatbot(AbstractBot):
+class Chatbot(BaseBot):
     """Represents an Bot (Chatbot, Agent) in Navigator.
 
     This class is the base for all chatbots and agents in the ai-parrot framework.

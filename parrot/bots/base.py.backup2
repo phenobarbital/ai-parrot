@@ -1,0 +1,198 @@
+"""
+BaseBot - Concrete implementation of AbstractBot.
+
+This module provides BaseBot, a concrete implementation of the AbstractBot
+abstract base class. It implements all required abstract methods.
+"""
+from typing import Optional, Union, Type, AsyncIterator
+from collections.abc import Callable
+from pydantic import BaseModel
+
+from .abstract import AbstractBot
+from ..models import AIMessage, StructuredOutputConfig
+from ..models.outputs import OutputMode
+from ..utils.helpers import RequestContext
+
+
+class BaseBot(AbstractBot):
+    """
+    Base Bot implementation providing concrete implementations of 
+    abstract methods defined in AbstractBot.
+    
+    This is the recommended base class for creating custom bots. It provides
+    full implementations of ask, ask_stream, invoke, and conversation methods
+    with support for:
+    - Vector store context retrieval
+    - Knowledge base integration
+    - Conversation history management
+    - Tool usage (agentic mode)
+    - Multiple output formats
+    - Security and prompt injection detection
+    
+    Subclasses can override these methods to customize behavior or use them
+    as-is for standard bot functionality.
+    """
+
+    # Implement abstract methods by delegating to parent implementations
+    # Note: AbstractBot has @abstractmethod decorators but also provides
+    # default implementations. BaseBot satisfies the ABC contract by
+    # providing these explicit implementations.
+
+    async def ask(
+        self,
+        question: str,
+        session_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        search_type: str = 'similarity',
+        search_kwargs: dict = None,
+        metric_type: str = 'COSINE',
+        use_vector_context: bool = True,
+        use_conversation_history: bool = True,
+        return_sources: bool = True,
+        memory: Optional[Callable] = None,
+        ensemble_config: dict = None,
+        ctx: Optional[RequestContext] = None,
+        structured_output: Optional[Union[Type[BaseModel], StructuredOutputConfig]] = None,
+        output_mode: OutputMode = OutputMode.DEFAULT,
+        format_kwargs: dict = None,
+        use_tools: bool = True,
+        **kwargs
+    ) -> AIMessage:
+        """
+        Ask method implementation - delegates to parent AbstractBot implementation.
+        
+        See AbstractBot.ask() for full documentation.
+        """
+        return await super().ask(
+            question=question,
+            session_id=session_id,
+            user_id=user_id,
+            search_type=search_type,
+            search_kwargs=search_kwargs,
+            metric_type=metric_type,
+            use_vector_context=use_vector_context,
+            use_conversation_history=use_conversation_history,
+            return_sources=return_sources,
+            memory=memory,
+            ensemble_config=ensemble_config,
+            ctx=ctx,
+            structured_output=structured_output,
+            output_mode=output_mode,
+            format_kwargs=format_kwargs,
+            use_tools=use_tools,
+            **kwargs
+        )
+
+    async def ask_stream(
+        self,
+        question: str,
+        session_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        search_type: str = 'similarity',
+        search_kwargs: dict = None,
+        metric_type: str = 'COSINE',
+        use_vector_context: bool = True,
+        use_conversation_history: bool = True,
+        return_sources: bool = True,
+        memory: Optional[Callable] = None,
+        ensemble_config: dict = None,
+        ctx: Optional[RequestContext] = None,
+        structured_output: Optional[Union[Type[BaseModel], StructuredOutputConfig]] = None,
+        output_mode: OutputMode = OutputMode.DEFAULT,
+        **kwargs
+    ) -> AsyncIterator[str]:
+        """
+        Streaming ask method implementation - delegates to parent AbstractBot implementation.
+        
+        See AbstractBot.ask_stream() for full documentation.
+        """
+        async for chunk in super().ask_stream(
+            question=question,
+            session_id=session_id,
+            user_id=user_id,
+            search_type=search_type,
+            search_kwargs=search_kwargs,
+            metric_type=metric_type,
+            use_vector_context=use_vector_context,
+            use_conversation_history=use_conversation_history,
+            return_sources=return_sources,
+            memory=memory,
+            ensemble_config=ensemble_config,
+            ctx=ctx,
+            structured_output=structured_output,
+            output_mode=output_mode,
+            **kwargs
+        ):
+            yield chunk
+
+    async def invoke(
+        self,
+        question: str,
+        session_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        use_conversation_history: bool = True,
+        memory: Optional[Callable] = None,
+        ctx: Optional[RequestContext] = None,
+        response_model: Optional[Type[BaseModel]] = None,
+        **kwargs
+    ) -> AIMessage:
+        """
+        Invoke method implementation - delegates to parent AbstractBot implementation.
+        
+        See AbstractBot.invoke() for full documentation.
+        """
+        return await super().invoke(
+            question=question,
+            session_id=session_id,
+            user_id=user_id,
+            use_conversation_history=use_conversation_history,
+            memory=memory,
+            ctx=ctx,
+            response_model=response_model,
+            **kwargs
+        )
+
+    async def conversation(
+        self,
+        question: str,
+        session_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        search_type: str = 'similarity',
+        search_kwargs: dict = None,
+        metric_type: str = 'COSINE',
+        use_vector_context: bool = True,
+        use_conversation_history: bool = True,
+        return_sources: bool = True,
+        return_context: bool = False,
+        memory: Optional[Callable] = None,
+        ensemble_config: dict = None,
+        mode: str = "adaptive",
+        ctx: Optional[RequestContext] = None,
+        output_mode: OutputMode = OutputMode.DEFAULT,
+        format_kwargs: dict = None,
+        **kwargs
+    ) -> AIMessage:
+        """
+        Conversation method implementation - delegates to parent AbstractBot implementation.
+        
+        See AbstractBot.conversation() for full documentation.
+        """
+        return await super().conversation(
+            question=question,
+            session_id=session_id,
+            user_id=user_id,
+            search_type=search_type,
+            search_kwargs=search_kwargs,
+            metric_type=metric_type,
+            use_vector_context=use_vector_context,
+            use_conversation_history=use_conversation_history,
+            return_sources=return_sources,
+            return_context=return_context,
+            memory=memory,
+            ensemble_config=ensemble_config,
+            mode=mode,
+            ctx=ctx,
+            output_mode=output_mode,
+            format_kwargs=format_kwargs,
+            **kwargs
+        )

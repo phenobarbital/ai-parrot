@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Union
 import importlib
+import contextlib
 from collections.abc import Callable
 from datamodel.parsers.json import JSONContent  # pylint: disable=E0611 # noqa
 from navconfig.logging import logging
@@ -111,9 +112,8 @@ class AbstractStore(ABC):
 
     # Async Context Manager
     async def __aenter__(self):
-        if self._use_database:
-            if not self._connection:
-                await self.connection()
+        if self._use_database and not self._connection:
+            await self.connection()
         self._context_depth += 1
         return self
 
@@ -126,13 +126,11 @@ class AbstractStore(ABC):
         # closing Embedding
         if self._embed_:
             await self._free_resources()
-        try:
+        with contextlib.suppress(RuntimeError):
             # Only disconnect if we're exiting the outermost context
             if self._context_depth <= 0:
                 await self.disconnect()
                 self._context_depth = 0
-        except RuntimeError:
-            pass
 
     @abstractmethod
     def get_vector(self, metric_type: str = None, **kwargs):
@@ -259,8 +257,7 @@ class AbstractStore(ABC):
             self._embed_ = self.get_default_embedding()
 
         # Using the Embed Model to Generate Embeddings:
-        embeddings = self._embed_.embed_documents(documents)
-        return embeddings
+        return self._embed_.embed_documents(documents)
 
     @abstractmethod
     async def prepare_embedding_table(
@@ -301,7 +298,6 @@ class AbstractStore(ABC):
     """
         pass
 
-
     @abstractmethod
     async def delete_documents(
         self,
@@ -327,7 +323,6 @@ class AbstractStore(ABC):
             int: Number of deleted documents.
         """
         pass
-
 
     @abstractmethod
     async def delete_documents_by_filter(

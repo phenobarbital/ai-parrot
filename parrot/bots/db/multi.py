@@ -18,13 +18,13 @@ from .influx import InfluxDBAgent, create_influxdb_agent
 from .elastic import ElasticDbAgent, create_elasticsearch_agent
 
 # Import base components
-from ..abstract import AbstractBot
+from ..base import BaseBot
 from ...stores.abstract import AbstractStore
 from ...tools.abstract import AbstractTool, ToolResult, AbstractToolArgsSchema
 from ...stores import supported_stores
 
 
-class MultiDatabaseAgent(AbstractBot):
+class MultiDatabaseAgent(BaseBot):
     """
     Multi-Database Agent that can work with multiple database types simultaneously.
 

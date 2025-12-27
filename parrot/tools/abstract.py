@@ -9,7 +9,6 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from datetime import datetime
 import traceback
-import logging
 from dataclasses import dataclass
 from urllib.parse import urlparse, urlunparse
 from pydantic import BaseModel, Field
@@ -126,11 +125,11 @@ class AbstractTool(ABC):
     def _get_clone_kwargs(self) -> Dict[str, Any]:
         """
         Get the keyword arguments to use when cloning this tool.
-        
+
         Subclasses can override this method to customize which parameters
         are cloned and which are not. By default, all initialization
         parameters stored in _init_kwargs are returned.
-        
+
         Returns:
             Dictionary of keyword arguments for tool initialization
         """
@@ -139,15 +138,15 @@ class AbstractTool(ABC):
     def clone(self):
         """
         Create a new instance of this tool with the same configuration.
-        
+
         This method creates a new instance of the tool class with all the
         initialization parameters that were passed to the current instance.
         Subclasses can override _get_clone_kwargs() to customize which
         parameters are cloned and which are not.
-        
+
         Returns:
             New instance of the same tool class with cloned configuration
-            
+
         Example:
             >>> dbtool = DatabaseTool(connection_string="postgresql://...")
             >>> new_tool = dbtool.clone()
@@ -264,7 +263,6 @@ class AbstractTool(ABC):
             raise ValueError(
                 f"Invalid arguments for {self.name}: {e}"
             ) from e
-
 
     async def execute(self, *args, **kwargs) -> ToolResult:
         """
@@ -608,7 +606,7 @@ class ToolRegistry:
             module = __import__(f"parrot.tools.{file_name}", fromlist=[tool_name])
             tool_class = getattr(module, tool_name)
         except (ImportError, AttributeError) as e:
-            raise ValueError(f"Could not import tool '{tool_name}': {e}")
+            raise ValueError(f"Could not import tool '{tool_name}': {e}") from e
         if not issubclass(tool_class, AbstractTool):
             raise ValueError(f"Tool '{tool_name}' must be a subclass of AbstractTool")
         if tool_name in self._tools:

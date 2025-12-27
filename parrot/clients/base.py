@@ -221,6 +221,7 @@ class AbstractClient(ABC):
         tools: Optional[List[Union[str, AbstractTool]]] = None,
         use_tools: bool = False,
         debug: bool = True,
+        tool_manager: Optional[ToolManager] = None,
         **kwargs
     ):
         self.__name__ = self.__class__.__name__
@@ -251,17 +252,31 @@ class AbstractClient(ABC):
         self.client_type: str = kwargs.get('client_type', self.client_type)
         self._debug: bool = debug
         self._program: str = kwargs.get('program', 'parrot')  # Default program slug
-        # Initialize ToolManager instead of direct tools dict
-        self.tool_manager = ToolManager(
-            logger=self.logger,
-            debug=self._debug
-        )
+        # Use provided tool_manager or create a new one
+        # This allows Agent to pass its tool_manager as a reference
+        if tool_manager is not None:
+            self._tool_manager = tool_manager
+        else:
+            self._tool_manager = ToolManager(
+                logger=self.logger,
+                debug=self._debug
+            )
         self.tools: Dict[str, Union[ToolDefinition, AbstractTool]] = {}
         self.enable_tools: bool = use_tools
         # Initialize tools if provided
         if use_tools and tools:
-            self.tool_manager.default_tools(tools)
+            self._tool_manager.default_tools(tools)
             self.enable_tools = True
+
+    @property
+    def tool_manager(self) -> ToolManager:
+        """Get the tool manager."""
+        return self._tool_manager
+
+    @tool_manager.setter
+    def tool_manager(self, manager: ToolManager) -> None:
+        """Set the tool manager (allows reference swapping at runtime)."""
+        self._tool_manager = manager
 
     @property
     def default_model(self) -> str:

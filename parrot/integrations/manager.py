@@ -14,7 +14,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from navconfig import BASE_DIR
 from navconfig.logging import logging
-
+from ..conf import AGENTS_DIR
 from .models import (
     IntegrationBotConfig, 
     TelegramAgentConfig, 
@@ -139,7 +139,12 @@ class IntegrationBotManager:
 
     async def _run_polling(self, name: str, dp: Dispatcher, bot: Bot):
         try:
-            await dp.start_polling(bot, allowed_updates=["message", "callback_query"])
+            await dp.start_polling(
+                bot,
+                allowed_updates=["message", "callback_query"],
+                handle_signals=False,
+                close_bot_session=True
+            )
         except asyncio.CancelledError:
             pass
         except Exception as e:
@@ -154,20 +159,45 @@ class IntegrationBotManager:
         wrapper = MSTeamsAgentWrapper(
             agent=agent,
             config=config,
-            app=self.bot_manager.get_app()
+            app=self.bot_manager.get_app(),
+            forms_directory=config.forms_directory or AGENTS_DIR / "forms",
         )
         self.msteams_bots[name] = wrapper
         self.logger.info(f"✅ Started MS Teams bot '{name}'")
 
     async def shutdown(self) -> None:
         """Shutdown bots."""
-        # Telegram
-        for name, (bot, dp, _) in self.telegram_bots.items():
-            await dp.stop_polling()
-            await bot.session.close()
+        self.logger.info("Shutting down Integration Manager...")
         
+        # First, cancel all polling tasks to stop the polling loops
         for task in self._polling_tasks:
-            task.cancel()
-            
+            if not task.done():
+                task.cancel()
+        
+        # Wait for all polling tasks to complete (with timeout)
+        if self._polling_tasks:
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*self._polling_tasks, return_exceptions=True),
+                    timeout=5.0
+                )
+                self.logger.info("All polling tasks cancelled successfully")
+            except asyncio.TimeoutError:
+                self.logger.warning("Timeout waiting for polling tasks to cancel")
+            except Exception as e:
+                self.logger.error(f"Error while cancelling polling tasks: {e}")
+        
+        # Now close bot sessions
+        for name, (bot, dp, _) in self.telegram_bots.items():
+            try:
+                self.logger.debug(f"Closing session for bot '{name}'")
+                await bot.session.close()
+            except Exception as e:
+                self.logger.error(f"Error closing bot session for '{name}': {e}")
+        
+        # Clear data structures
         self.telegram_bots.clear()
         self.msteams_bots.clear()
+        self._polling_tasks.clear()
+        
+        self.logger.info("Integration Manager shutdown complete")

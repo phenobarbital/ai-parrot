@@ -63,6 +63,8 @@ class OutputMode(str, Enum):
     TABLE = "table"             # Generate table visualization
     HOLOVIEWS = "holoviews"   # Generate HoloViews visualization
     CARD = "card"
+    TELEGRAM = "telegram"
+    MSTEAMS = "msteams"
 
 @dataclass
 class StructuredOutputConfig:
