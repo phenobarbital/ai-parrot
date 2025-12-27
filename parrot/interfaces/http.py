@@ -141,7 +141,7 @@ class HTTPService(CredentialsInterface, PandasDataframe):
             self.accept
         )
         self.use_proxy: bool = kwargs.pop("use_proxy", False)
-        self.proxy_type: str = kwargs.pop('proxy_type', 'decodo')
+        self.proxy_type: str = kwargs.pop('proxy_type', 'oxylabs')
         self._free_proxy: bool = kwargs.pop('use_free_proxy', True)
         self._proxies: list = []
         self.rotate_ua: bool = kwargs.pop("rotate_ua", False)

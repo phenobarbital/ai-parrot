@@ -106,6 +106,7 @@ class BestBuyToolkit(AbstractToolkit):
         self,
         api_key: Optional[str] = None,
         use_proxy: bool = True,
+        proxy_type: str = 'oxylabs',
         **kwargs
     ):
         """
@@ -114,6 +115,7 @@ class BestBuyToolkit(AbstractToolkit):
         Args:
             api_key: BestBuy API key. If None, uses config.get('BESTBUY_APIKEY')
             use_proxy: Whether to use proxy for requests
+            proxy_type: Type of proxy to use (default: oxylabs)
             **kwargs: Additional toolkit configuration
         """
         super().__init__(**kwargs)
@@ -125,7 +127,6 @@ class BestBuyToolkit(AbstractToolkit):
                 "Set BESTBUY_APIKEY in config or pass api_key parameter."
             )
 
-
         self.bby_url = "https://www.bestbuy.com"
         # Initialize HTTPService for BestBuy website (availability checks)
         self.cookies = {}
@@ -134,7 +135,7 @@ class BestBuyToolkit(AbstractToolkit):
         
         self.http_web = HTTPService(
             use_proxy=use_proxy,
-            proxy_type='decodo',
+            proxy_type=proxy_type,
             cookies=self.cookies,
             headers={
                 "authority": "www.bestbuy.com",
