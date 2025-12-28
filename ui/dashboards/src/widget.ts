@@ -93,15 +93,13 @@ export class Widget {
     this.setSection(this.sectionContent, opts.content ?? "");
     this.setSection(this.sectionFooter, opts.footer ?? "");
 
-    // Resize handles (docked + floating)
-    const handleR = el("div", { class: "widget-resize-handle handle-r", title: "Resize" });
-    const handleB = el("div", { class: "widget-resize-handle handle-b", title: "Resize" });
-    const handleBR = el("div", { class: "widget-resize-handle handle-br", title: "Resize" });
+    // Resize handle (docked + floating)
+    const handleCorner = el("div", { class: "widget-resize-handle handle-br", title: "Resize" });
 
-    this.el.append(this.titleBar, this.sectionHeader, this.sectionContent, this.sectionFooter, handleR, handleB, handleBR);
+    this.el.append(this.titleBar, this.sectionHeader, this.sectionContent, this.sectionFooter, handleCorner);
 
     this.buildToolbar();
-    this.wireInteractions(handleR, handleB, handleBR);
+    this.wireInteractions(handleCorner);
   }
 
   private setSection(section: HTMLElement, value: string | HTMLElement): void {
@@ -115,6 +113,10 @@ export class Widget {
 
   getTitle(): string {
     return this.titleText.textContent ?? this.opts.title;
+  }
+
+  getIcon(): string {
+    return this.opts.icon ?? "▣";
   }
 
   private buildToolbar(): void {
@@ -231,7 +233,7 @@ export class Widget {
     }, { capture: true });
   }
 
-  private wireInteractions(handleR: HTMLElement, handleB: HTMLElement, handleBR: HTMLElement): void {
+  private wireInteractions(handleCorner: HTMLElement): void {
     // Docked drag (swap cells) OR floating drag (move freely)
     const dragEnabled = this.opts.draggable ?? true;
 
@@ -252,12 +254,12 @@ export class Widget {
 
     const resizable = this.opts.resizable ?? true;
 
-    const startResize = (edges: { right?: boolean; bottom?: boolean }) => (ev: PointerEvent) => {
+    const startResize = () => (ev: PointerEvent) => {
       if (!resizable) return;
       if (this.isMaximized()) return;
 
-      if (edges.right && !this.resizeAvail.right) return;
-      if (edges.bottom && !this.resizeAvail.bottom) return;
+      const edges = { right: this.resizeAvail.right, bottom: this.resizeAvail.bottom };
+      if (!edges.right && !edges.bottom) return;
 
       stop(ev);
 
@@ -293,9 +295,63 @@ export class Widget {
       window.addEventListener("pointerup", up, true);
     };
 
-    this.disposers.push(on(handleR, "pointerdown", startResize({ right: true })));
-    this.disposers.push(on(handleB, "pointerdown", startResize({ bottom: true })));
-    this.disposers.push(on(handleBR, "pointerdown", startResize({ right: true, bottom: true })));
+    this.disposers.push(on(handleCorner, "pointerdown", startResize()));
+  }
+
+  private storageKey(): string {
+    return `widget-state:${this.id}`;
+  }
+
+  getSavedState(): SavedWidgetState | null {
+    const raw = localStorage.getItem(this.storageKey());
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+
+  saveState(): void {
+    const payload: SavedWidgetState = {
+      state: this.state,
+      minimized: this.minimized,
+      dashId: this.dash?.id ?? this.prevDock?.dash.id ?? null,
+      cell: this.cell,
+    };
+
+    if (this.isFloating() || this.isMaximized()) {
+      payload.floating = {
+        left: this.el.style.left,
+        top: this.el.style.top,
+        width: this.el.style.width,
+        height: this.el.style.height,
+      };
+    }
+
+    localStorage.setItem(this.storageKey(), JSON.stringify(payload));
+  }
+
+  maybeRestoreState(): void {
+    if (this.restoredState) return;
+    const saved = this.getSavedState();
+    if (!saved) return;
+    this.restoredState = true;
+
+    this.minimized = !!saved.minimized;
+    this.el.classList.toggle("is-minimized", this.minimized);
+
+    if (saved.state === "floating") {
+      this.float();
+      if (saved.floating) {
+        if (saved.floating.left) this.el.style.left = saved.floating.left;
+        if (saved.floating.top) this.el.style.top = saved.floating.top;
+        if (saved.floating.width) this.el.style.width = saved.floating.width;
+        if (saved.floating.height) this.el.style.height = saved.floating.height;
+      }
+    } else if (saved.state === "maximized") {
+      this.maximize();
+    }
   }
 
   private storageKey(): string {
@@ -406,8 +462,8 @@ export class Widget {
 
   setDockedResizeAvailability(avail: { right: boolean; bottom: boolean }): void {
     this.resizeAvail = avail;
-    this.el.classList.toggle("no-resize-right", !avail.right);
-    this.el.classList.toggle("no-resize-bottom", !avail.bottom);
+    const none = !avail.right && !avail.bottom;
+    this.el.classList.toggle("no-resize", none);
   }
 
   // --- Public API ---

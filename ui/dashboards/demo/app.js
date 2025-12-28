@@ -39,11 +39,12 @@ class DashboardTabs {
     this.content.append(dash.el);
 
     const btn = el("button", { class: "dash-tab", "data-dash-id": id, type: "button" });
+    const icon = el("span", { class: "dash-tab-icon" }, tab.icon ?? "⬢");
     const title = el("span", { class: "dash-tab-title" }, tab.title);
     const burger = el("button", { class: "dash-tab-burger", type: "button", title: "Dashboard menu" }, "☰");
     const close = el("button", { class: "dash-tab-close", type: "button", title: "Close dashboard" }, "×");
 
-    btn.append(title, burger);
+    btn.append(icon, title, burger);
     if (tab.closable ?? true) btn.append(close);
 
     on(btn, "click", (ev) => {
@@ -228,7 +229,12 @@ class GridLayout {
     const target = this.normalizeCellFromSaved(widget, cell);
     this.detachWidget(widget);
     const slot = this.ensureSlot(target);
-    const tab = el("button", { class: "widget-tab", type: "button", "data-widget-id": widget.id }, widget.getTitle());
+    const tab = el(
+      "button",
+      { class: "widget-tab", type: "button", "data-widget-id": widget.id },
+      el("span", { class: "widget-tab-icon" }, widget.getIcon()),
+      el("span", { class: "widget-tab-title" }, widget.getTitle()),
+    );
     slot.tabStrip.append(tab);
     slot.tabs.set(widget.id, { widget, tab });
     slot.tabStrip.classList.toggle("has-tabs", slot.tabs.size > 1);
@@ -441,14 +447,12 @@ class Widget {
     this.setSection(this.sectionContent, opts.content ?? "");
     this.setSection(this.sectionFooter, opts.footer ?? "");
 
-    const handleR = el("div", { class: "widget-resize-handle handle-r", title: "Resize" });
-    const handleB = el("div", { class: "widget-resize-handle handle-b", title: "Resize" });
     const handleBR = el("div", { class: "widget-resize-handle handle-br", title: "Resize" });
 
-    this.el.append(this.titleBar, this.sectionHeader, this.sectionContent, this.sectionFooter, handleR, handleB, handleBR);
+    this.el.append(this.titleBar, this.sectionHeader, this.sectionContent, this.sectionFooter, handleBR);
 
     this.buildToolbar();
-    this.wireInteractions(handleR, handleB, handleBR);
+    this.wireInteractions(handleBR);
   }
 
   setSection(section, value) {
@@ -458,6 +462,8 @@ class Widget {
   }
 
   getTitle() { return this.titleText.textContent ?? this.opts.title; }
+
+  getIcon() { return this.opts.icon ?? "▣"; }
 
   buildToolbar() {
     const defaultButtons = [
@@ -514,7 +520,7 @@ class Widget {
     }, { capture: true });
   }
 
-  wireInteractions(handleR, handleB, handleBR) {
+  wireInteractions(handleCorner) {
     const dragEnabled = this.opts.draggable ?? true;
 
     if (dragEnabled) {
@@ -530,11 +536,12 @@ class Widget {
     }
 
     const resizable = this.opts.resizable ?? true;
-    const startResize = (edges) => (ev) => {
+    const startResize = () => (ev) => {
       if (!resizable) return;
       if (this.isMaximized()) return;
-      if (edges.right && !this.resizeAvail.right) return;
-      if (edges.bottom && !this.resizeAvail.bottom) return;
+
+      const edges = { right: this.resizeAvail.right, bottom: this.resizeAvail.bottom };
+      if (!edges.right && !edges.bottom) return;
 
       stop(ev);
       const startX = ev.clientX, startY = ev.clientY;
@@ -565,9 +572,48 @@ class Widget {
       window.addEventListener("pointerup", up, true);
     };
 
-    this.disposers.push(on(handleR, "pointerdown", startResize({ right: true })));
-    this.disposers.push(on(handleB, "pointerdown", startResize({ bottom: true })));
-    this.disposers.push(on(handleBR, "pointerdown", startResize({ right: true, bottom: true })));
+    this.disposers.push(on(handleCorner, "pointerdown", startResize()));
+  }
+
+  storageKey() { return `widget-state:${this.id}`; }
+
+  getSavedState() {
+    const raw = localStorage.getItem(this.storageKey());
+    if (!raw) return null;
+    try { return JSON.parse(raw); } catch { return null; }
+  }
+
+  saveState() {
+    const payload = {
+      state: this.state,
+      minimized: this.minimized,
+      dashId: this.dash?.id ?? this.prevDock?.dash.id ?? null,
+      cell: this.cell,
+    };
+    if (this.isFloating() || this.isMaximized()) {
+      payload.floating = { left: this.el.style.left, top: this.el.style.top, width: this.el.style.width, height: this.el.style.height };
+    }
+    localStorage.setItem(this.storageKey(), JSON.stringify(payload));
+  }
+
+  maybeRestoreState() {
+    if (this.restoredState) return;
+    const saved = this.getSavedState();
+    if (!saved) return;
+    this.restoredState = true;
+    this.minimized = !!saved.minimized;
+    this.el.classList.toggle("is-minimized", this.minimized);
+    if (saved.state === "floating") {
+      this.float();
+      if (saved.floating) {
+        if (saved.floating.left) this.el.style.left = saved.floating.left;
+        if (saved.floating.top) this.el.style.top = saved.floating.top;
+        if (saved.floating.width) this.el.style.width = saved.floating.width;
+        if (saved.floating.height) this.el.style.height = saved.floating.height;
+      }
+    } else if (saved.state === "maximized") {
+      this.maximize();
+    }
   }
 
   storageKey() { return `widget-state:${this.id}`; }
@@ -652,8 +698,7 @@ class Widget {
   getCell() { return this.cell; }
   setDockedResizeAvailability(avail) {
     this.resizeAvail = avail;
-    this.el.classList.toggle("no-resize-right", !avail.right);
-    this.el.classList.toggle("no-resize-bottom", !avail.bottom);
+    this.el.classList.toggle("no-resize", !avail.right && !avail.bottom);
   }
 
   // public API
@@ -823,16 +868,45 @@ function lorem(n = 1) {
   return Array.from({ length: n }, () => s).join("");
 }
 
+function makeTabbedContent() {
+  const tabs = [
+    { id: "logs", title: "Logs", body: "Streaming recent log lines from services." },
+    { id: "metrics", title: "Metrics", body: "CPU, memory, and queue depth charts." },
+    { id: "notes", title: "Notes", body: "Scratchpad for runbook links and TODOs." },
+  ];
+
+  const container = el("div", { class: "inner-tabs" });
+  const tablist = el("div", { class: "inner-tablist" });
+  const panels = tabs.map((t) => el("div", { class: "inner-panel", "data-id": t.id }, t.body));
+
+  let active = tabs[0].id;
+  const setActive = (id) => {
+    active = id;
+    tablist.querySelectorAll(".inner-tab").forEach((b) => b.classList.toggle("is-active", b.dataset.id === id));
+    panels.forEach((p) => p.classList.toggle("is-active", p.dataset.id === id));
+  };
+
+  for (const t of tabs) {
+    const btn = el("button", { class: "inner-tab", type: "button", "data-id": t.id }, t.title);
+    on(btn, "click", () => setActive(t.id));
+    tablist.append(btn);
+  }
+
+  container.append(tablist, ...panels);
+  setActive(active);
+  return container;
+}
+
 function boot(mount) {
   const tabs = new DashboardTabs(mount);
 
   const dash1 = tabs.addDashboard(
-    { title: "Dashboard A", closable: true },
+    { title: "Dashboard A", icon: "🧭", closable: true },
     { grid: { rows: 2, cols: 2 }, template: { header: section("Header A (no widgets here)"), footer: section("Footer A") } }
   );
 
   const dash2 = tabs.addDashboard(
-    { title: "Dashboard B", closable: true },
+    { title: "Dashboard B", icon: "📊", closable: true },
     { grid: { rows: 2, cols: 2 }, template: { header: section("Header B"), footer: section("Footer B") } }
   );
 
@@ -864,11 +938,19 @@ function boot(mount) {
   const wB2 = mkWidget("Queue", "📬", "teal");
   const wB3 = mkWidget("Builds", "🧱", "orange");
   const wB4 = mkWidget("Alerts", "🚨", "yellow");
+  const wTabbed = new Widget({
+    title: "Dev Console",
+    icon: "🧩",
+    header: `<div class="hint">Header: slate</div>`,
+    content: makeTabbedContent(),
+    footer: `<div class="hint">Footer actions</div>`,
+  });
 
   dash2.layout.setWidget({ row: 0, col: 0 }, wB1);
   dash2.layout.setWidget({ row: 0, col: 1 }, wB2);
   dash2.layout.setWidget({ row: 1, col: 0 }, wB3);
   dash2.layout.setWidget({ row: 1, col: 1 }, wB4);
+  dash2.layout.setWidget({ row: 1, col: 1 }, wTabbed);
 
   tabs.activate(dash1.id);
 }

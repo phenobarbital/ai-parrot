@@ -9,6 +9,7 @@ export type DashboardTemplateParts = {
 export type DashboardTabOptions = {
   id?: string;
   title: string;
+  icon?: string;
   closable?: boolean;
 };
 
@@ -55,12 +56,12 @@ export class DashboardTabs {
 
     // Tab button
     const btn = el("button", { class: "dash-tab", "data-dash-id": id, type: "button" });
+    const icon = el("span", { class: "dash-tab-icon" }, tab.icon ?? "⬢");
     const title = el("span", { class: "dash-tab-title" }, tab.title);
     const burger = el("button", { class: "dash-tab-burger", type: "button", title: "Dashboard menu" }, "☰");
     const close = el("button", { class: "dash-tab-close", type: "button", title: "Close dashboard" }, "×");
 
-    btn.append(title);
-    btn.append(burger);
+    btn.append(icon, title, burger);
     if (tab.closable ?? true) btn.append(close);
 
     // click-to-activate
@@ -264,7 +265,12 @@ export class GridLayout {
     this.detachWidget(widget);
 
     const slot = this.ensureSlot(target);
-    const tab = el("button", { class: "widget-tab", type: "button", "data-widget-id": widget.id }, widget.getTitle());
+    const tab = el(
+      "button",
+      { class: "widget-tab", type: "button", "data-widget-id": widget.id },
+      el("span", { class: "widget-tab-icon" }, widget.getIcon()),
+      el("span", { class: "widget-tab-title" }, widget.getTitle()),
+    );
 
     slot.tabStrip.append(tab);
     slot.tabs.set(widget.id, { widget, tab });
