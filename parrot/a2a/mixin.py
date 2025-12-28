@@ -44,11 +44,18 @@ class A2AClientMixin:
     """
 
     _a2a_clients: Dict[str, A2AAgentConnection]
+    _a2a_mesh: Optional[A2AMeshDiscovery] = None
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._a2a_clients: Dict[str, A2AAgentConnection] = {}
-        self._a2a_logger = logging.getLogger(f"A2AClient.{getattr(self, 'name', 'Agent')}")
+        self._a2a_logger = logging.getLogger(
+            f"A2AClient.{getattr(self, 'name', 'Agent')}"
+        )
+
+    def set_mesh(self, mesh: A2AMeshDiscovery) -> None:
+        """Connect this agent to a mesh of discovery."""
+        self._a2a_mesh = mesh
 
     async def add_a2a_agent(
         self,
@@ -174,6 +181,42 @@ class A2AClientMixin:
     # ─────────────────────────────────────────────────────────────
     # Direct Communication Methods
     # ─────────────────────────────────────────────────────────────
+    async def discover_from_mesh(
+        self,
+        skill: Optional[str] = None,
+        tag: Optional[str] = None,
+        register_as_tools: bool = True
+    ) -> List[A2AAgentConnection]:
+        """
+        Descubrir y conectar a agentes desde el mesh.
+        
+        Ejemplo:
+            # Conectar a todos los agentes con skill "data_analysis"
+            await agent.discover_from_mesh(skill="data_analysis")
+        """
+        if not self._a2a_mesh:
+            raise ValueError(
+                "No mesh configured. Call set_mesh() first."
+            )
+        
+        agents = []
+        if skill:
+            agents = self._a2a_mesh.get_by_skill(skill)
+        elif tag:
+            agents = self._a2a_mesh.get_by_tag(tag)
+        else:
+            agents = self._a2a_mesh.list_healthy()
+        
+        connections = []
+        for agent in agents:
+            if agent.card.name not in self._a2a_clients:
+                conn = await self.add_a2a_agent(
+                    agent.url,
+                    register_as_tool=register_as_tools
+                )
+                connections.append(conn)
+        
+        return connections
 
     async def ask_remote_agent(
         self,
