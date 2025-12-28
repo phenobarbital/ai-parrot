@@ -1,0 +1,220 @@
+/* --- Layout for the dashboards (tabs + content) --- */
+:root {
+  --bg: #0b0f17;
+  --panel: #131a28;
+  --panel2: #0f1522;
+  --text: #e7eefc;
+  --muted: #8aa0c6;
+  --border: rgba(255,255,255,.08);
+  --shadow: 0 12px 30px rgba(0,0,0,.35);
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+button { font: inherit; }
+
+.dashboards {
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+
+.dashboards-tabbar {
+  border-bottom: 1px solid var(--border);
+  background: rgba(255,255,255,.02);
+  padding: 10px 10px 8px;
+}
+
+.dashboards-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.dash-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,.02);
+  color: var(--text);
+  padding: 8px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.dash-tab.is-active {
+  background: rgba(255,255,255,.08);
+  border-color: rgba(255,255,255,.14);
+}
+.dash-tab-title { font-weight: 600; }
+.dash-tab-burger, .dash-tab-close {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  width: 28px; height: 28px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.dash-tab-close:hover, .dash-tab-burger:hover { color: var(--text); border-color: rgba(255,255,255,.18); }
+
+.dashboards-content {
+  position: relative;
+  overflow: hidden;
+}
+
+/* Dashboard view uses CSS grid areas so you can reorder with CSS */
+.dashboard-view {
+  height: 100%;
+  display: none;
+  padding: 12px;
+  gap: 10px;
+
+  display: grid;
+  grid-template-areas:
+    "header"
+    "main"
+    "footer";
+  grid-template-rows: auto 1fr auto;
+}
+.dashboard-view.is-active { display: grid; }
+
+.dashboard-header { grid-area: header; border: 1px solid var(--border); border-radius: 12px; background: rgba(255,255,255,.02); padding: 10px; }
+.dashboard-main   { grid-area: main;   border: 1px solid var(--border); border-radius: 12px; background: rgba(255,255,255,.02); padding: 10px; overflow: hidden; }
+.dashboard-footer { grid-area: footer; border: 1px solid var(--border); border-radius: 12px; background: rgba(255,255,255,.02); padding: 10px; }
+
+.demo-section { color: var(--muted); }
+.demo-section strong { color: var(--text); }
+
+/* --- Resizable grid in the dashboard main --- */
+.dashboard-grid{
+  height: 100%;
+  display: grid;
+  gap: 10px;
+}
+
+/* --- Widget --- */
+.widget {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(255,255,255,.035), rgba(255,255,255,.02));
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  user-select: none;
+}
+.widget.is-dragging { opacity: .55; }
+
+.widget-titlebar {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 10px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(0,0,0,.15);
+}
+
+.widget-icon { width: 26px; height: 26px; display: inline-grid; place-items: center; border: 1px solid var(--border); border-radius: 10px; background: rgba(255,255,255,.02); }
+.widget-title { font-weight: 700; letter-spacing: .2px; }
+.widget-toolbar { display: inline-flex; gap: 6px; align-items: center; }
+.widget-toolbtn, .widget-burger {
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,.02);
+  color: var(--muted);
+  height: 28px;
+  min-width: 28px;
+  padding: 0 8px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.widget-toolbtn:hover, .widget-burger:hover { color: var(--text); border-color: rgba(255,255,255,.16); }
+.widget-toolbtn:active, .widget-burger:active { transform: translateY(1px); }
+
+.widget-section { padding: 10px; }
+.widget-header { border-bottom: 1px solid var(--border); color: var(--muted); }
+.widget-footer { border-top: 1px solid var(--border); color: var(--muted); }
+
+.widget.is-minimized .widget-header,
+.widget.is-minimized .widget-content,
+.widget.is-minimized .widget-footer { display: none; }
+
+.widget.is-refreshing::after{
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,.18);
+  backdrop-filter: blur(1px);
+}
+
+/* Drag ghost */
+.widget-drag-ghost {
+  position: fixed;
+  pointer-events: none;
+  border: 2px dashed rgba(255,255,255,.28);
+  border-radius: 14px;
+  background: rgba(255,255,255,.04);
+  z-index: 99999;
+}
+
+.grid-drop-target{
+  outline: 2px solid rgba(255,255,255,.25);
+  outline-offset: -2px;
+}
+
+/* Resizer handles */
+.widget-resize-handle {
+  position: absolute;
+  background: transparent;
+}
+.widget-resize-handle.handle-r { top: 40px; right: 0; width: 10px; bottom: 10px; cursor: ew-resize; }
+.widget-resize-handle.handle-b { left: 10px; right: 10px; bottom: 0; height: 10px; cursor: ns-resize; }
+.widget-resize-handle.handle-br { right: 0; bottom: 0; width: 14px; height: 14px; cursor: nwse-resize; }
+
+.widget.no-resize-right .widget-resize-handle.handle-r,
+.widget.no-resize-right .widget-resize-handle.handle-br { display: none; }
+.widget.no-resize-bottom .widget-resize-handle.handle-b,
+.widget.no-resize-bottom .widget-resize-handle.handle-br { display: none; }
+
+/* Floating + maximized states */
+.widget.is-floating {
+  z-index: 90000;
+}
+.widget.is-maximized {
+  z-index: 95000;
+  border-radius: 0;
+}
+
+/* Menus */
+.dash-menu, .widget-menu {
+  position: fixed;
+  z-index: 100000;
+  border: 1px solid var(--border);
+  background: rgba(15,21,34,.98);
+  box-shadow: var(--shadow);
+  border-radius: 12px;
+  padding: 6px;
+  min-width: 180px;
+}
+.dash-menu-item, .widget-menu-item {
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+.dash-menu-item:hover, .widget-menu-item:hover { background: rgba(255,255,255,.06); }
+.widget-menu-item:disabled { opacity: .45; cursor: not-allowed; }
+
+/* Tiny demo extras */
+.hint { color: var(--muted); }
+.mini-chart {
+  margin-top: 10px;
+  border: 1px dashed rgba(255,255,255,.16);
+  border-radius: 10px;
+  padding: 10px;
+  color: var(--muted);
+}
