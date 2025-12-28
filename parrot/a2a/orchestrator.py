@@ -705,7 +705,7 @@ User request: {user_request}"""
                 transform_between=plan.transform_between,
             )
         else:  # single
-            agent = plan.agents[0] if plan.agents else None
+            agent = plan.agents[0] if plan.agents else None  # pylint: disable=E1136
             if not agent:
                 return OrchestrationResult(
                     success=False,
