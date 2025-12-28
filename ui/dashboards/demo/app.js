@@ -39,11 +39,12 @@ class DashboardTabs {
     this.content.append(dash.el);
 
     const btn = el("button", { class: "dash-tab", "data-dash-id": id, type: "button" });
+    const icon = el("span", { class: "dash-tab-icon" }, tab.icon ?? "⬢");
     const title = el("span", { class: "dash-tab-title" }, tab.title);
     const burger = el("button", { class: "dash-tab-burger", type: "button", title: "Dashboard menu" }, "☰");
     const close = el("button", { class: "dash-tab-close", type: "button", title: "Close dashboard" }, "×");
 
-    btn.append(title, burger);
+    btn.append(icon, title, burger);
     if (tab.closable ?? true) btn.append(close);
 
     on(btn, "click", (ev) => {
@@ -147,7 +148,8 @@ class GridLayout {
 
     this.rowSizes = Array.from({ length: this.rows }, () => 1 / this.rows);
     this.colSizes = Array.from({ length: this.cols }, () => 1 / this.cols);
-    this.cellToWidget = new Map();
+    this.cellSlots = new Map();
+    this.widgetToCell = new Map();
 
     this.dragGhost = null;
     this.draggingWidget = null;
@@ -158,45 +160,116 @@ class GridLayout {
 
   key(cell) { return `${cell.row}:${cell.col}`; }
 
-  setWidget(cell, widget) {
-    const k = this.key(cell);
-    this.cellToWidget.set(k, widget);
-
-    widget.setDocked(this.dash, cell);
-    this.gridEl.append(widget.el);
-
-    widget.el.style.gridRow = `${cell.row + 1}`;
-    widget.el.style.gridColumn = `${cell.col + 1}`;
-
-    this.updateWidgetHandles();
-    this.save();
+  normalizeCell(cell) {
+    return {
+      row: clamp(cell.row, 0, this.rows - 1),
+      col: clamp(cell.col, 0, this.cols - 1),
+    };
   }
 
-  getWidgetAt(cell) { return this.cellToWidget.get(this.key(cell)); }
+  normalizeCellFromSaved(widget, fallback) {
+    const saved = widget.getSavedState();
+    if (saved?.dashId === this.dash.id && saved.cell) return this.normalizeCell(saved.cell);
+    return this.normalizeCell(fallback);
+  }
 
-  moveWidget(from, to) {
-    const fromK = this.key(from);
-    const toK = this.key(to);
-    const a = this.cellToWidget.get(fromK);
-    const b = this.cellToWidget.get(toK);
-    if (!a) return;
+  ensureSlot(cell) {
+    const key = this.key(cell);
+    const existing = this.cellSlots.get(key);
+    if (existing) return existing;
+    const container = el("div", { class: "dashboard-cell" });
+    container.style.gridRow = `${cell.row + 1}`;
+    container.style.gridColumn = `${cell.col + 1}`;
+    const tabStrip = el("div", { class: "widget-tabstrip" });
+    const stack = el("div", { class: "widget-stack" });
+    container.append(tabStrip, stack);
+    this.gridEl.append(container);
+    const slot = { container, tabStrip, stack, tabs: new Map(), activeId: null };
+    this.cellSlots.set(key, slot);
+    return slot;
+  }
 
-    this.cellToWidget.set(toK, a);
-    a.setCell(to);
-    a.el.style.gridRow = `${to.row + 1}`;
-    a.el.style.gridColumn = `${to.col + 1}`;
-
-    if (b) {
-      this.cellToWidget.set(fromK, b);
-      b.setCell(from);
-      b.el.style.gridRow = `${from.row + 1}`;
-      b.el.style.gridColumn = `${from.col + 1}`;
-    } else {
-      this.cellToWidget.delete(fromK);
+  setActiveWidget(slot, widgetId) {
+    slot.activeId = widgetId;
+    for (const [id, entry] of slot.tabs) {
+      const active = id === widgetId;
+      entry.tab.classList.toggle("is-active", active);
+      entry.widget.el.classList.toggle("is-active", active);
     }
+  }
+
+  detachWidget(widget) {
+    const key = this.widgetToCell.get(widget.id);
+    if (!key) return;
+    const slot = this.cellSlots.get(key);
+    if (!slot) return;
+    this.removeFromSlot(slot, widget, key);
+  }
+
+  removeFromSlot(slot, widget, key) {
+    const entry = slot.tabs.get(widget.id);
+    if (!entry) return;
+    entry.tab.remove();
+    widget.el.remove();
+    slot.tabs.delete(widget.id);
+    slot.tabStrip.classList.toggle("has-tabs", slot.tabs.size > 1);
+    if (slot.activeId === widget.id) {
+      const next = slot.tabs.keys().next().value ?? null;
+      slot.activeId = next;
+      if (next) this.setActiveWidget(slot, next);
+    }
+    if (slot.tabs.size === 0) {
+      slot.container.remove();
+      this.cellSlots.delete(key ?? this.key(widget.getCell() ?? { row: 0, col: 0 }));
+    }
+    this.widgetToCell.delete(widget.id);
+  }
+
+  setWidget(cell, widget) {
+    const target = this.normalizeCellFromSaved(widget, cell);
+    this.detachWidget(widget);
+    const slot = this.ensureSlot(target);
+    const tab = el(
+      "button",
+      { class: "widget-tab", type: "button", "data-widget-id": widget.id },
+      el("span", { class: "widget-tab-icon" }, widget.getIcon()),
+      el("span", { class: "widget-tab-title" }, widget.getTitle()),
+    );
+    slot.tabStrip.append(tab);
+    slot.tabs.set(widget.id, { widget, tab });
+    slot.tabStrip.classList.toggle("has-tabs", slot.tabs.size > 1);
+
+    widget.setDocked(this.dash, target);
+    widget.el.classList.add("is-active");
+    slot.stack.append(widget.el);
+    on(tab, "click", () => this.setActiveWidget(slot, widget.id));
+
+    this.widgetToCell.set(widget.id, this.key(target));
+    if (!slot.activeId) this.setActiveWidget(slot, widget.id);
+    widget.maybeRestoreState();
 
     this.updateWidgetHandles();
     this.save();
+    widget.saveState();
+  }
+
+  getWidgetAt(cell) {
+    const slot = this.cellSlots.get(this.key(cell));
+    if (!slot) return undefined;
+    const active = slot.activeId ?? Array.from(slot.tabs.keys())[0];
+    return active ? slot.tabs.get(active)?.widget : undefined;
+  }
+
+  moveWidget(from, to, widget) {
+    const fromKey = this.key(from);
+    const slot = this.cellSlots.get(fromKey);
+    if (!slot) return;
+    const entry = widget ? slot.tabs.get(widget.id) : slot.tabs.get(slot.activeId ?? Array.from(slot.tabs.keys())[0] ?? "");
+    const w = entry?.widget;
+    if (!w) return;
+    this.removeFromSlot(slot, w, fromKey);
+    const target = this.normalizeCell(to);
+    this.setWidget(target, w);
   }
 
   cellFromPoint(clientX, clientY) {
@@ -261,10 +334,12 @@ class GridLayout {
   }
 
   updateWidgetHandles() {
-    for (const [k, w] of this.cellToWidget) {
+    for (const [k, slot] of this.cellSlots) {
       const [rowS, colS] = k.split(":");
       const row = Number(rowS), col = Number(colS);
-      w.setDockedResizeAvailability({ right: col < this.cols - 1, bottom: row < this.rows - 1 });
+      for (const { widget } of slot.tabs.values()) {
+        widget.setDockedResizeAvailability({ right: col < this.cols - 1, bottom: row < this.rows - 1 });
+      }
     }
   }
 
@@ -307,7 +382,7 @@ class GridLayout {
 
       if (cell) {
         const from = widget.getCell();
-        if (from && (from.row !== cell.row || from.col !== cell.col)) this.moveWidget(from, cell);
+        if (from && (from.row !== cell.row || from.col !== cell.col)) this.moveWidget(from, cell, widget);
       }
       this.draggingWidget = null;
     };
@@ -354,6 +429,7 @@ class Widget {
     this.prevInlineStyle = null;
     this.resizeAvail = { right: true, bottom: true };
     this.disposers = [];
+    this.restoredState = false;
 
     this.el = el("article", { class: "widget", "data-widget-id": this.id });
 
@@ -371,14 +447,12 @@ class Widget {
     this.setSection(this.sectionContent, opts.content ?? "");
     this.setSection(this.sectionFooter, opts.footer ?? "");
 
-    const handleR = el("div", { class: "widget-resize-handle handle-r", title: "Resize" });
-    const handleB = el("div", { class: "widget-resize-handle handle-b", title: "Resize" });
     const handleBR = el("div", { class: "widget-resize-handle handle-br", title: "Resize" });
 
-    this.el.append(this.titleBar, this.sectionHeader, this.sectionContent, this.sectionFooter, handleR, handleB, handleBR);
+    this.el.append(this.titleBar, this.sectionHeader, this.sectionContent, this.sectionFooter, handleBR);
 
     this.buildToolbar();
-    this.wireInteractions(handleR, handleB, handleBR);
+    this.wireInteractions(handleBR);
   }
 
   setSection(section, value) {
@@ -387,12 +461,17 @@ class Widget {
     else section.append(value);
   }
 
+  getTitle() { return this.titleText.textContent ?? this.opts.title; }
+
+  getIcon() { return this.opts.icon ?? "▣"; }
+
   buildToolbar() {
     const defaultButtons = [
       { id: "min", title: "Minimize / restore", icon: "▁", onClick: (w) => w.toggleMinimize(), visible: () => true },
       { id: "max", title: "Maximize", icon: "⛶", onClick: (w) => w.maximize(), visible: (w) => !w.isMaximized() },
       { id: "restore", title: "Restore", icon: "🗗", onClick: (w) => w.restore(), visible: (w) => w.isMaximized() },
       { id: "refresh", title: "Refresh", icon: "⟳", onClick: (w) => void w.refresh(), visible: () => true },
+      { id: "popout", title: "Open in new window", icon: "🗗", onClick: (w) => w.openInWindow(), visible: () => true },
       { id: "float", title: "Decouple / dock", icon: "⇱", onClick: (w) => w.toggleFloating(), visible: () => true },
       { id: "close", title: "Close", icon: "×", onClick: (w) => w.close(), visible: () => true },
     ];
@@ -441,7 +520,7 @@ class Widget {
     }, { capture: true });
   }
 
-  wireInteractions(handleR, handleB, handleBR) {
+  wireInteractions(handleCorner) {
     const dragEnabled = this.opts.draggable ?? true;
 
     if (dragEnabled) {
@@ -457,11 +536,12 @@ class Widget {
     }
 
     const resizable = this.opts.resizable ?? true;
-    const startResize = (edges) => (ev) => {
+    const startResize = () => (ev) => {
       if (!resizable) return;
       if (this.isMaximized()) return;
-      if (edges.right && !this.resizeAvail.right) return;
-      if (edges.bottom && !this.resizeAvail.bottom) return;
+
+      const edges = { right: this.resizeAvail.right, bottom: this.resizeAvail.bottom };
+      if (!edges.right && !edges.bottom) return;
 
       stop(ev);
       const startX = ev.clientX, startY = ev.clientY;
@@ -485,15 +565,55 @@ class Widget {
       const up = () => {
         window.removeEventListener("pointermove", move, true);
         window.removeEventListener("pointerup", up, true);
+        if (this.isFloating()) this.saveState();
       };
 
       window.addEventListener("pointermove", move, true);
       window.addEventListener("pointerup", up, true);
     };
 
-    this.disposers.push(on(handleR, "pointerdown", startResize({ right: true })));
-    this.disposers.push(on(handleB, "pointerdown", startResize({ bottom: true })));
-    this.disposers.push(on(handleBR, "pointerdown", startResize({ right: true, bottom: true })));
+    this.disposers.push(on(handleCorner, "pointerdown", startResize()));
+  }
+
+  storageKey() { return `widget-state:${this.id}`; }
+
+  getSavedState() {
+    const raw = localStorage.getItem(this.storageKey());
+    if (!raw) return null;
+    try { return JSON.parse(raw); } catch { return null; }
+  }
+
+  saveState() {
+    const payload = {
+      state: this.state,
+      minimized: this.minimized,
+      dashId: this.dash?.id ?? this.prevDock?.dash.id ?? null,
+      cell: this.cell,
+    };
+    if (this.isFloating() || this.isMaximized()) {
+      payload.floating = { left: this.el.style.left, top: this.el.style.top, width: this.el.style.width, height: this.el.style.height };
+    }
+    localStorage.setItem(this.storageKey(), JSON.stringify(payload));
+  }
+
+  maybeRestoreState() {
+    if (this.restoredState) return;
+    const saved = this.getSavedState();
+    if (!saved) return;
+    this.restoredState = true;
+    this.minimized = !!saved.minimized;
+    this.el.classList.toggle("is-minimized", this.minimized);
+    if (saved.state === "floating") {
+      this.float();
+      if (saved.floating) {
+        if (saved.floating.left) this.el.style.left = saved.floating.left;
+        if (saved.floating.top) this.el.style.top = saved.floating.top;
+        if (saved.floating.width) this.el.style.width = saved.floating.width;
+        if (saved.floating.height) this.el.style.height = saved.floating.height;
+      }
+    } else if (saved.state === "maximized") {
+      this.maximize();
+    }
   }
 
   beginFloatingDrag(ev) {
@@ -514,6 +634,7 @@ class Widget {
     const up = () => {
       window.removeEventListener("pointermove", move, true);
       window.removeEventListener("pointerup", up, true);
+      this.saveState();
     };
 
     window.addEventListener("pointermove", move, true);
@@ -536,14 +657,14 @@ class Widget {
   getCell() { return this.cell; }
   setDockedResizeAvailability(avail) {
     this.resizeAvail = avail;
-    this.el.classList.toggle("no-resize-right", !avail.right);
-    this.el.classList.toggle("no-resize-bottom", !avail.bottom);
+    this.el.classList.toggle("no-resize", !avail.right && !avail.bottom);
   }
 
   // public API
   toggleMinimize() {
     this.minimized = !this.minimized;
     this.el.classList.toggle("is-minimized", this.minimized);
+    this.saveState();
   }
 
   async refresh() {
@@ -554,6 +675,7 @@ class Widget {
 
   close() {
     this.opts.onClose?.(this);
+    localStorage.removeItem(this.storageKey());
     this.destroy();
     this.el.remove();
   }
@@ -568,12 +690,25 @@ class Widget {
 
   toggleFloating() { this.isFloating() ? this.dock() : this.float(); }
 
+  openInWindow() {
+    const win = window.open("", "_blank", "width=720,height=480");
+    if (!win) return;
+    const styles = Array.from(document.styleSheets).map((s) => {
+      try { return Array.from(s.cssRules ?? []).map((r) => r.cssText).join("\n"); }
+      catch { return ""; }
+    }).join("\n");
+    win.document.write(`<!doctype html><html><head><title>${this.getTitle()}</title><style>${styles}</style></head><body></body></html>`);
+    win.document.body.append(this.el.cloneNode(true));
+    win.document.close();
+  }
+
   float() {
     if (this.isMaximized()) this.restore();
 
     if (!this.dash || !this.cell) {
       this.state = "floating";
       this.el.classList.add("is-floating");
+      this.saveState();
       return;
     }
 
@@ -592,6 +727,7 @@ class Widget {
 
     this.dash = this.prevDock.dash;
     this.cell = this.prevDock.cell;
+    this.saveState();
   }
 
   dock() {
@@ -620,6 +756,7 @@ class Widget {
     this.el.style.left = "";
     this.el.style.top = "";
     this.el.style.position = "";
+    this.saveState();
   }
 
   maximize() {
@@ -634,6 +771,7 @@ class Widget {
       this.el.style.top = "0";
       this.el.style.width = "100vw";
       this.el.style.height = "100vh";
+      this.saveState();
       return;
     }
 
@@ -652,6 +790,7 @@ class Widget {
     this.el.style.bottom = "0";
     this.el.style.width = "";
     this.el.style.height = "";
+    this.saveState();
   }
 
   restore() {
@@ -672,6 +811,7 @@ class Widget {
       this.el.classList.add("is-floating");
       this.el.style.position = "absolute";
     }
+    this.saveState();
   }
 }
 
@@ -687,16 +827,45 @@ function lorem(n = 1) {
   return Array.from({ length: n }, () => s).join("");
 }
 
+function makeTabbedContent() {
+  const tabs = [
+    { id: "logs", title: "Logs", body: "Streaming recent log lines from services." },
+    { id: "metrics", title: "Metrics", body: "CPU, memory, and queue depth charts." },
+    { id: "notes", title: "Notes", body: "Scratchpad for runbook links and TODOs." },
+  ];
+
+  const container = el("div", { class: "inner-tabs" });
+  const tablist = el("div", { class: "inner-tablist" });
+  const panels = tabs.map((t) => el("div", { class: "inner-panel", "data-id": t.id }, t.body));
+
+  let active = tabs[0].id;
+  const setActive = (id) => {
+    active = id;
+    tablist.querySelectorAll(".inner-tab").forEach((b) => b.classList.toggle("is-active", b.dataset.id === id));
+    panels.forEach((p) => p.classList.toggle("is-active", p.dataset.id === id));
+  };
+
+  for (const t of tabs) {
+    const btn = el("button", { class: "inner-tab", type: "button", "data-id": t.id }, t.title);
+    on(btn, "click", () => setActive(t.id));
+    tablist.append(btn);
+  }
+
+  container.append(tablist, ...panels);
+  setActive(active);
+  return container;
+}
+
 function boot(mount) {
   const tabs = new DashboardTabs(mount);
 
   const dash1 = tabs.addDashboard(
-    { title: "Dashboard A", closable: true },
+    { title: "Dashboard A", icon: "🧭", closable: true },
     { grid: { rows: 2, cols: 2 }, template: { header: section("Header A (no widgets here)"), footer: section("Footer A") } }
   );
 
   const dash2 = tabs.addDashboard(
-    { title: "Dashboard B", closable: true },
+    { title: "Dashboard B", icon: "📊", closable: true },
     { grid: { rows: 2, cols: 2 }, template: { header: section("Header B"), footer: section("Footer B") } }
   );
 
@@ -728,11 +897,19 @@ function boot(mount) {
   const wB2 = mkWidget("Queue", "📬", "teal");
   const wB3 = mkWidget("Builds", "🧱", "orange");
   const wB4 = mkWidget("Alerts", "🚨", "yellow");
+  const wTabbed = new Widget({
+    title: "Dev Console",
+    icon: "🧩",
+    header: `<div class="hint">Header: slate</div>`,
+    content: makeTabbedContent(),
+    footer: `<div class="hint">Footer actions</div>`,
+  });
 
   dash2.layout.setWidget({ row: 0, col: 0 }, wB1);
   dash2.layout.setWidget({ row: 0, col: 1 }, wB2);
   dash2.layout.setWidget({ row: 1, col: 0 }, wB3);
   dash2.layout.setWidget({ row: 1, col: 1 }, wB4);
+  dash2.layout.setWidget({ row: 1, col: 1 }, wTabbed);
 
   tabs.activate(dash1.id);
 }

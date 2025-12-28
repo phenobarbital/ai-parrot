@@ -30,6 +30,14 @@ export type WidgetOptions = {
 
 type WidgetState = "docked" | "floating" | "maximized";
 
+export type SavedWidgetState = {
+  state: WidgetState;
+  minimized: boolean;
+  dashId: string | null;
+  cell: Cell | null;
+  floating?: { left?: string; top?: string; width?: string; height?: string };
+};
+
 export class Widget {
   public readonly id: string;
   public readonly el: HTMLElement;
@@ -57,6 +65,7 @@ export class Widget {
   private resizeAvail = { right: true, bottom: true };
 
   private opts: WidgetOptions;
+  private restoredState = false;
 
   constructor(opts: WidgetOptions) {
     this.opts = opts;
@@ -84,15 +93,13 @@ export class Widget {
     this.setSection(this.sectionContent, opts.content ?? "");
     this.setSection(this.sectionFooter, opts.footer ?? "");
 
-    // Resize handles (docked + floating)
-    const handleR = el("div", { class: "widget-resize-handle handle-r", title: "Resize" });
-    const handleB = el("div", { class: "widget-resize-handle handle-b", title: "Resize" });
-    const handleBR = el("div", { class: "widget-resize-handle handle-br", title: "Resize" });
+    // Resize handle (docked + floating)
+    const handleCorner = el("div", { class: "widget-resize-handle handle-br", title: "Resize" });
 
-    this.el.append(this.titleBar, this.sectionHeader, this.sectionContent, this.sectionFooter, handleR, handleB, handleBR);
+    this.el.append(this.titleBar, this.sectionHeader, this.sectionContent, this.sectionFooter, handleCorner);
 
     this.buildToolbar();
-    this.wireInteractions(handleR, handleB, handleBR);
+    this.wireInteractions(handleCorner);
   }
 
   private setSection(section: HTMLElement, value: string | HTMLElement): void {
@@ -102,6 +109,14 @@ export class Widget {
     } else {
       section.append(value);
     }
+  }
+
+  getTitle(): string {
+    return this.titleText.textContent ?? this.opts.title;
+  }
+
+  getIcon(): string {
+    return this.opts.icon ?? "▣";
   }
 
   private buildToolbar(): void {
@@ -132,6 +147,13 @@ export class Widget {
         title: "Refresh",
         icon: "⟳",
         onClick: (w) => void w.refresh(),
+        visible: () => true,
+      },
+      {
+        id: "popout",
+        title: "Open in new window",
+        icon: "🗗",
+        onClick: (w) => w.openInWindow(),
         visible: () => true,
       },
       {
@@ -211,7 +233,7 @@ export class Widget {
     }, { capture: true });
   }
 
-  private wireInteractions(handleR: HTMLElement, handleB: HTMLElement, handleBR: HTMLElement): void {
+  private wireInteractions(handleCorner: HTMLElement): void {
     // Docked drag (swap cells) OR floating drag (move freely)
     const dragEnabled = this.opts.draggable ?? true;
 
@@ -232,12 +254,12 @@ export class Widget {
 
     const resizable = this.opts.resizable ?? true;
 
-    const startResize = (edges: { right?: boolean; bottom?: boolean }) => (ev: PointerEvent) => {
+    const startResize = () => (ev: PointerEvent) => {
       if (!resizable) return;
       if (this.isMaximized()) return;
 
-      if (edges.right && !this.resizeAvail.right) return;
-      if (edges.bottom && !this.resizeAvail.bottom) return;
+      const edges = { right: this.resizeAvail.right, bottom: this.resizeAvail.bottom };
+      if (!edges.right && !edges.bottom) return;
 
       stop(ev);
 
@@ -266,15 +288,70 @@ export class Widget {
       const up = () => {
         window.removeEventListener("pointermove", move, true);
         window.removeEventListener("pointerup", up, true);
+        if (this.isFloating()) this.saveState();
       };
 
       window.addEventListener("pointermove", move, true);
       window.addEventListener("pointerup", up, true);
     };
 
-    this.disposers.push(on(handleR, "pointerdown", startResize({ right: true })));
-    this.disposers.push(on(handleB, "pointerdown", startResize({ bottom: true })));
-    this.disposers.push(on(handleBR, "pointerdown", startResize({ right: true, bottom: true })));
+    this.disposers.push(on(handleCorner, "pointerdown", startResize()));
+  }
+
+  private storageKey(): string {
+    return `widget-state:${this.id}`;
+  }
+
+  getSavedState(): SavedWidgetState | null {
+    const raw = localStorage.getItem(this.storageKey());
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+
+  saveState(): void {
+    const payload: SavedWidgetState = {
+      state: this.state,
+      minimized: this.minimized,
+      dashId: this.dash?.id ?? this.prevDock?.dash.id ?? null,
+      cell: this.cell,
+    };
+
+    if (this.isFloating() || this.isMaximized()) {
+      payload.floating = {
+        left: this.el.style.left,
+        top: this.el.style.top,
+        width: this.el.style.width,
+        height: this.el.style.height,
+      };
+    }
+
+    localStorage.setItem(this.storageKey(), JSON.stringify(payload));
+  }
+
+  maybeRestoreState(): void {
+    if (this.restoredState) return;
+    const saved = this.getSavedState();
+    if (!saved) return;
+    this.restoredState = true;
+
+    this.minimized = !!saved.minimized;
+    this.el.classList.toggle("is-minimized", this.minimized);
+
+    if (saved.state === "floating") {
+      this.float();
+      if (saved.floating) {
+        if (saved.floating.left) this.el.style.left = saved.floating.left;
+        if (saved.floating.top) this.el.style.top = saved.floating.top;
+        if (saved.floating.width) this.el.style.width = saved.floating.width;
+        if (saved.floating.height) this.el.style.height = saved.floating.height;
+      }
+    } else if (saved.state === "maximized") {
+      this.maximize();
+    }
   }
 
   private beginFloatingDrag(ev: PointerEvent): void {
@@ -298,6 +375,7 @@ export class Widget {
     const up = () => {
       window.removeEventListener("pointermove", move, true);
       window.removeEventListener("pointerup", up, true);
+      this.saveState();
     };
 
     window.addEventListener("pointermove", move, true);
@@ -328,14 +406,15 @@ export class Widget {
 
   setDockedResizeAvailability(avail: { right: boolean; bottom: boolean }): void {
     this.resizeAvail = avail;
-    this.el.classList.toggle("no-resize-right", !avail.right);
-    this.el.classList.toggle("no-resize-bottom", !avail.bottom);
+    const none = !avail.right && !avail.bottom;
+    this.el.classList.toggle("no-resize", none);
   }
 
   // --- Public API ---
   toggleMinimize(): void {
     this.minimized = !this.minimized;
     this.el.classList.toggle("is-minimized", this.minimized);
+    this.saveState();
   }
 
   async refresh(): Promise<void> {
@@ -349,6 +428,7 @@ export class Widget {
 
   close(): void {
     this.opts.onClose?.(this);
+    localStorage.removeItem(this.storageKey());
     this.destroy();
     this.el.remove();
   }
@@ -374,6 +454,25 @@ export class Widget {
     }
   }
 
+  openInWindow(): void {
+    const win = window.open("", "_blank", "width=720,height=480");
+    if (!win) return;
+    const styles = Array.from(document.styleSheets)
+      .map((s) => {
+        try {
+          return Array.from(s.cssRules ?? [])
+            .map((r) => r.cssText)
+            .join("\n");
+        } catch {
+          return "";
+        }
+      })
+      .join("\n");
+    win.document.write(`<!doctype html><html><head><title>${this.getTitle()}</title><style>${styles}</style></head><body></body></html>`);
+    win.document.body.append(this.el.cloneNode(true));
+    win.document.close();
+  }
+
   float(): void {
     if (this.isMaximized()) this.restore();
 
@@ -381,6 +480,7 @@ export class Widget {
       // already detached or not yet docked
       this.state = "floating";
       this.el.classList.add("is-floating");
+      this.saveState();
       return;
     }
 
@@ -400,6 +500,7 @@ export class Widget {
     // keep references
     this.dash = this.prevDock.dash;
     this.cell = this.prevDock.cell;
+    this.saveState();
   }
 
   dock(): void {
@@ -430,6 +531,7 @@ export class Widget {
     this.el.style.left = "";
     this.el.style.top = "";
     this.el.style.position = "";
+    this.saveState();
   }
 
   maximize(): void {
@@ -445,6 +547,7 @@ export class Widget {
       this.el.style.top = "0";
       this.el.style.width = "100vw";
       this.el.style.height = "100vh";
+      this.saveState();
       return;
     }
 
@@ -465,6 +568,7 @@ export class Widget {
     this.el.style.bottom = "0";
     this.el.style.width = "";
     this.el.style.height = "";
+    this.saveState();
   }
 
   restore(): void {
@@ -490,5 +594,6 @@ export class Widget {
       this.el.style.position = "absolute";
       // keep any previous left/top/size that user changed
     }
+    this.saveState();
   }
 }
