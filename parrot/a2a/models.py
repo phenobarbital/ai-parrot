@@ -7,6 +7,15 @@ from datetime import datetime, timezone
 import base64
 import uuid
 
+@dataclass
+class AgentConfig:
+    """Configuration for an A2A agent."""
+    name: str
+    description: str
+    port: int
+    skills: List[Dict[str, Any]]
+    system_prompt: str
+
 
 class TaskState(str, Enum):
     """Task lifecycle states."""

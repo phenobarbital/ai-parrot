@@ -34,6 +34,18 @@ Components:
         - OrchestrationResult: Result from orchestration
         - OrchestrationPlan: LLM decision plan
 
+    Security Layer:
+        - AuthScheme: Supported authentication schemes
+        - CallerIdentity: Authenticated agent identity
+        - SecurityPolicy: Access control policies
+        - CredentialProvider: Abstract credential storage
+        - InMemoryCredentialProvider: Dev/test credential store
+        - RedisCredentialProvider: Production credential store
+        - JWTAuthenticator: JWT token authentication
+        - MTLSAuthenticator: Mutual TLS authentication
+        - A2ASecurityMiddleware: Security middleware for servers
+        - SecureA2AClient: Client with automatic authentication
+
     Data Models:
         - AgentCard: Agent metadata and capabilities
         - AgentSkill: Skill/capability exposed by agent
@@ -75,6 +87,32 @@ Example Usage:
     orch = A2AOrchestrator(mesh)
     orch.set_fallback_llm(llm_client)
     result = await orch.run("Complex query requiring reasoning")
+
+    # Secure A2A communication with JWT
+    from parrot.a2a import (
+        JWTAuthenticator,
+        A2ASecurityMiddleware,
+        SecureA2AClient,
+        InMemoryCredentialProvider,
+    )
+
+    # Server-side
+    jwt_auth = JWTAuthenticator(secret_key="your-secret", issuer="a2a-net")
+    credentials = InMemoryCredentialProvider()
+    await credentials.register_agent("DataBot", permissions=["skill:*"])
+
+    middleware = A2ASecurityMiddleware(
+        jwt_authenticator=jwt_auth,
+        credential_provider=credentials,
+    )
+
+    # Client-side
+    token = jwt_auth.create_token(agent_name="MyAgent")
+    client = SecureA2AClient(
+        "http://agent:8080",
+        auth_scheme=AuthScheme.BEARER,
+        token=token,
+    )
 """
 
 # Server - Expose agents as A2A services
@@ -103,6 +141,7 @@ from .models import (
     Part,
     Artifact,
     RegisteredAgent,
+    AgentConfig
 )
 
 # Mesh Discovery - Centralized agent discovery
@@ -135,6 +174,18 @@ from .orchestrator import (
     OrchestratorStats,
 )
 
+from .security import (
+    AuthScheme,
+    CallerIdentity,
+    SecurityPolicy,
+    CredentialProvider,
+    InMemoryCredentialProvider,
+    JWTAuthenticator,
+    MTLSAuthenticator,
+    A2ASecurityMiddleware,
+    SecureA2AClient,
+)
+
 
 __all__ = [
     # === Server ===
@@ -159,6 +210,7 @@ __all__ = [
     "Part",
     "Artifact",
     "RegisteredAgent",
+    "AgentConfig",
 
     # === Mesh Discovery ===
     "A2AMeshDiscovery",
