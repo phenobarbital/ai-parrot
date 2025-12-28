@@ -285,7 +285,6 @@ class AgentCapabilities:
         return {
             "streaming": self.streaming,
             "pushNotifications": self.push_notifications,
-            "pushNotifications": self.push_notifications,
             "stateTransitionHistory": self.state_transition_history,
         }
 
@@ -325,7 +324,6 @@ class AgentCard:
             "defaultOutputModes": self.default_output_modes,
             "skills": [s.to_dict() for s in self.skills],
             "iconUrl": self.icon_url,
-            "iconUrl": self.icon_url,
             "tags": self.tags,
         }
 
@@ -345,7 +343,7 @@ class AgentCard:
                 ))
             else:
                 skills.append(s)
-        
+
         caps = data.get("capabilities", {})
         if isinstance(caps, dict):
             capabilities = AgentCapabilities.from_dict(caps)
@@ -369,7 +367,7 @@ class AgentCard:
 
 @dataclass
 class RegisteredAgent:
-    """Data about a A2A registered agent."""
+    """Definition about a Registered Agent."""
     url: str
     card: AgentCard
     last_seen: datetime = field(default_factory=datetime.utcnow)
