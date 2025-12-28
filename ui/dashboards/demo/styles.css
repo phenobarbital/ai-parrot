@@ -27,25 +27,32 @@ button { font: inherit; }
 
 .dashboards-tabs {
   display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  align-items: center;
+  gap: 4px;
+  flex-wrap: nowrap;
+  align-items: flex-end;
+  overflow-x: auto;
+  padding-bottom: 2px;
 }
 
 .dash-tab {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 8px;
   border: 1px solid var(--border);
-  background: rgba(255,255,255,.02);
+  border-bottom: none;
+  background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
   color: var(--text);
   padding: 8px 10px;
-  border-radius: 10px;
+  border-radius: 10px 10px 0 0;
   cursor: pointer;
+  box-shadow: inset 0 -1px 0 rgba(0,0,0,.4);
 }
 .dash-tab.is-active {
-  background: rgba(255,255,255,.08);
-  border-color: rgba(255,255,255,.14);
+  background: linear-gradient(180deg, rgba(255,255,255,.12), rgba(255,255,255,.04));
+  border-color: rgba(255,255,255,.18);
+  box-shadow: 0 4px 12px rgba(0,0,0,.35);
+  z-index: 2;
 }
 .dash-tab-title { font-weight: 600; }
 .dash-tab-burger, .dash-tab-close {
@@ -61,6 +68,10 @@ button { font: inherit; }
 .dashboards-content {
   position: relative;
   overflow: hidden;
+  background: rgba(255,255,255,.02);
+  border: 1px solid var(--border);
+  border-radius: 0 12px 12px 12px;
+  margin-top: -1px;
 }
 
 /* Dashboard view uses CSS grid areas so you can reorder with CSS */
@@ -70,7 +81,6 @@ button { font: inherit; }
   padding: 12px;
   gap: 10px;
 
-  display: grid;
   grid-template-areas:
     "header"
     "main"
@@ -92,6 +102,40 @@ button { font: inherit; }
   display: grid;
   gap: 10px;
 }
+
+.dashboard-cell {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  overflow: hidden;
+}
+
+.widget-tabstrip {
+  display: none;
+  gap: 4px;
+  padding: 4px 6px 0;
+  align-items: flex-end;
+}
+.widget-tabstrip.has-tabs { display: flex; }
+
+.widget-tab {
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  padding: 6px 10px;
+  background: rgba(255,255,255,.03);
+  color: var(--muted);
+  cursor: pointer;
+}
+.widget-tab.is-active {
+  color: var(--text);
+  background: rgba(255,255,255,.08);
+  box-shadow: inset 0 -1px 0 rgba(0,0,0,.45);
+}
+
+.widget-stack { position: relative; height: 100%; }
+.widget-stack > .widget { display: none; height: 100%; }
+.widget-stack > .widget.is-active { display: block; }
 
 /* --- Widget --- */
 .widget {

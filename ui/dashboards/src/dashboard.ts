@@ -203,6 +203,14 @@ export class DashboardView {
 
 export type Cell = { row: number; col: number };
 
+type CellSlot = {
+  container: HTMLElement;
+  tabStrip: HTMLElement;
+  stack: HTMLElement;
+  tabs: Map<string, { widget: Widget; tab: HTMLElement }>;
+  activeId: string | null;
+};
+
 export class GridLayout {
   private readonly dash: DashboardView;
   private readonly gridEl: HTMLElement;
@@ -214,7 +222,8 @@ export class GridLayout {
   private rowSizes: number[]; // fractions that sum to 1
   private colSizes: number[];
 
-  private cellToWidget: Map<string, Widget> = new Map();
+  private cellSlots: Map<string, CellSlot> = new Map();
+  private widgetToCell: Map<string, string> = new Map();
 
   private dragGhost: HTMLElement | null = null;
   private draggingWidget: Widget | null = null;
@@ -251,47 +260,119 @@ export class GridLayout {
   }
 
   setWidget(cell: Cell, widget: Widget): void {
-    const k = this.key(cell);
-    this.cellToWidget.set(k, widget);
+    const target = this.normalizeCellFromSaved(widget, cell);
+    this.detachWidget(widget);
 
-    widget.setDocked(this.dash, cell);
-    this.gridEl.append(widget.el);
+    const slot = this.ensureSlot(target);
+    const tab = el("button", { class: "widget-tab", type: "button", "data-widget-id": widget.id }, widget.getTitle());
 
-    widget.el.style.gridRow = `${cell.row + 1}`;
-    widget.el.style.gridColumn = `${cell.col + 1}`;
+    slot.tabStrip.append(tab);
+    slot.tabs.set(widget.id, { widget, tab });
+    slot.tabStrip.classList.toggle("has-tabs", slot.tabs.size > 1);
+
+    widget.setDocked(this.dash, target);
+    widget.el.classList.add("is-active");
+    slot.stack.append(widget.el);
+
+    on(tab, "click", () => this.setActiveWidget(slot, widget.id));
+
+    this.widgetToCell.set(widget.id, this.key(target));
+    if (!slot.activeId) this.setActiveWidget(slot, widget.id);
+    widget.maybeRestoreState();
 
     this.updateWidgetHandles();
     this.save();
+    widget.saveState();
   }
 
-  moveWidget(from: Cell, to: Cell): void {
-    const fromK = this.key(from);
-    const toK = this.key(to);
-    const a = this.cellToWidget.get(fromK);
-    const b = this.cellToWidget.get(toK);
+  moveWidget(from: Cell, to: Cell, widget?: Widget): void {
+    const fromKey = this.key(from);
+    const slot = this.cellSlots.get(fromKey);
+    if (!slot) return;
+    const entry = widget ? slot.tabs.get(widget.id) : slot.tabs.get(slot.activeId ?? Array.from(slot.tabs.keys())[0] ?? "");
+    const w = entry?.widget;
+    if (!w) return;
 
-    if (!a) return;
-
-    this.cellToWidget.set(toK, a);
-    a.setCell(to);
-    a.el.style.gridRow = `${to.row + 1}`;
-    a.el.style.gridColumn = `${to.col + 1}`;
-
-    if (b) {
-      this.cellToWidget.set(fromK, b);
-      b.setCell(from);
-      b.el.style.gridRow = `${from.row + 1}`;
-      b.el.style.gridColumn = `${from.col + 1}`;
-    } else {
-      this.cellToWidget.delete(fromK);
-    }
-
-    this.updateWidgetHandles();
-    this.save();
+    this.removeFromSlot(slot, w, fromKey);
+    const target = this.normalizeCell(to);
+    this.setWidget(target, w);
   }
 
   getWidgetAt(cell: Cell): Widget | undefined {
-    return this.cellToWidget.get(this.key(cell));
+    const slot = this.cellSlots.get(this.key(cell));
+    if (!slot) return undefined;
+    const active = slot.activeId ?? Array.from(slot.tabs.keys())[0];
+    return active ? slot.tabs.get(active)?.widget : undefined;
+  }
+
+  private normalizeCell(cell: Cell): Cell {
+    return {
+      row: clamp(cell.row, 0, this.rows - 1),
+      col: clamp(cell.col, 0, this.cols - 1),
+    };
+  }
+
+  private normalizeCellFromSaved(widget: Widget, fallback: Cell): Cell {
+    const saved = widget.getSavedState();
+    if (saved?.dashId === this.dash.id && saved.cell) return this.normalizeCell(saved.cell);
+    return this.normalizeCell(fallback);
+  }
+
+  private ensureSlot(cell: Cell): CellSlot {
+    const key = this.key(cell);
+    const existing = this.cellSlots.get(key);
+    if (existing) return existing;
+
+    const container = el("div", { class: "dashboard-cell" });
+    container.style.gridRow = `${cell.row + 1}`;
+    container.style.gridColumn = `${cell.col + 1}`;
+
+    const tabStrip = el("div", { class: "widget-tabstrip" });
+    const stack = el("div", { class: "widget-stack" });
+    container.append(tabStrip, stack);
+    this.gridEl.append(container);
+
+    const slot: CellSlot = { container, tabStrip, stack, tabs: new Map(), activeId: null };
+    this.cellSlots.set(key, slot);
+    return slot;
+  }
+
+  private setActiveWidget(slot: CellSlot, widgetId: string): void {
+    slot.activeId = widgetId;
+    for (const [id, entry] of slot.tabs) {
+      const active = id === widgetId;
+      entry.tab.classList.toggle("is-active", active);
+      entry.widget.el.classList.toggle("is-active", active);
+    }
+  }
+
+  private detachWidget(widget: Widget): void {
+    const key = this.widgetToCell.get(widget.id);
+    if (!key) return;
+    const slot = this.cellSlots.get(key);
+    if (!slot) return;
+    this.removeFromSlot(slot, widget, key);
+  }
+
+  private removeFromSlot(slot: CellSlot, widget: Widget, key?: string): void {
+    const entry = slot.tabs.get(widget.id);
+    if (!entry) return;
+    entry.tab.remove();
+    widget.el.remove();
+    slot.tabs.delete(widget.id);
+    slot.tabStrip.classList.toggle("has-tabs", slot.tabs.size > 1);
+
+    if (slot.activeId === widget.id) {
+      const next = slot.tabs.keys().next().value ?? null;
+      slot.activeId = next;
+      if (next) this.setActiveWidget(slot, next);
+    }
+
+    if (slot.tabs.size === 0) {
+      slot.container.remove();
+      this.cellSlots.delete(key ?? this.key(widget.getCell() ?? { row: 0, col: 0 }));
+    }
+    this.widgetToCell.delete(widget.id);
   }
 
   cellFromPoint(clientX: number, clientY: number): Cell | null {
@@ -374,14 +455,16 @@ export class GridLayout {
 
   updateWidgetHandles(): void {
     // Hide right/bottom resize handles on last col/row to avoid "resizing into nowhere".
-    for (const [k, w] of this.cellToWidget) {
+    for (const [k, slot] of this.cellSlots) {
       const [rowS, colS] = k.split(":");
       const row = Number(rowS);
       const col = Number(colS);
-      w.setDockedResizeAvailability({
-        right: col < this.cols - 1,
-        bottom: row < this.rows - 1,
-      });
+      for (const { widget } of slot.tabs.values()) {
+        widget.setDockedResizeAvailability({
+          right: col < this.cols - 1,
+          bottom: row < this.rows - 1,
+        });
+      }
     }
   }
 
@@ -427,8 +510,7 @@ export class GridLayout {
       if (cell) {
         const from = widget.getCell();
         if (from && (from.row !== cell.row || from.col !== cell.col)) {
-          // swap
-          this.moveWidget(from, cell);
+          this.moveWidget(from, cell, widget);
         }
       }
       this.draggingWidget = null;
