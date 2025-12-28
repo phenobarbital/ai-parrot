@@ -1,12 +1,12 @@
 /* --- Layout for the dashboards (tabs + content) --- */
 :root {
-  --bg: #e8ecf3;
-  --panel: #f7f9fc;
-  --panel2: #eef2f8;
-  --text: #1f2937;
-  --muted: #4b5563;
-  --border: #cdd6e4;
-  --shadow: 0 10px 28px rgba(15,23,42,.18);
+  --bg: #e7ebf2;
+  --panel: #f8f9fb;
+  --panel2: #eef1f7;
+  --text: #1f2d3d;
+  --muted: #566174;
+  --border: #c5d0e0;
+  --shadow: 0 8px 24px rgba(15,23,42,.16);
   --accent: #4f6bed;
   --tab: #e3e8f1;
 }
@@ -22,19 +22,19 @@ button { font: inherit; }
 }
 
 .dashboards-tabbar {
-  border-bottom: 1px solid var(--border);
-  background: linear-gradient(180deg, rgba(255,255,255,.92), rgba(255,255,255,.78));
-  padding: 12px 12px 10px;
-  box-shadow: inset 0 -1px 0 rgba(15,23,42,.06);
+  background: linear-gradient(180deg, rgba(255,255,255,.96), rgba(236,240,247,.92));
+  padding: 10px 14px 0;
+  border-bottom: none;
 }
 
 .dashboards-tabs {
   display: flex;
-  gap: 4px;
+  gap: 8px;
   flex-wrap: nowrap;
   align-items: flex-end;
   overflow-x: auto;
-  padding-bottom: 2px;
+  padding: 0 2px;
+  margin-bottom: -1px;
 }
 
 .dash-tab {
@@ -42,59 +42,69 @@ button { font: inherit; }
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  border: 1px solid var(--border);
-  border-bottom: none;
-  background: var(--tab);
+  border: none;
+  background: transparent;
   color: var(--muted);
-  padding: 9px 12px;
-  border-radius: 12px 12px 8px 8px;
+  padding: 12px 14px 10px;
+  border-radius: 14px 14px 0 0;
   cursor: pointer;
-  box-shadow: inset 0 -1px 0 rgba(15,23,42,.05);
+  transition: color .12s ease, transform .12s ease;
 }
-.dash-tab.is-active {
-  background: var(--panel);
-  color: var(--text);
-  border-color: var(--border);
-  box-shadow: 0 6px 14px rgba(15,23,42,.18);
-  z-index: 2;
+.dash-tab::before {
+  content: "";
+  position: absolute;
+  inset: 8px 0 0;
+  background: var(--tab);
+  border-radius: 12px 12px 0 0;
+  box-shadow: inset 0 -1px 0 rgba(15,23,42,.06), 0 6px 14px rgba(15,23,42,.1);
+  z-index: 0;
+}
+.dash-tab.is-active::before {
+  background: #fff;
+  box-shadow: 0 12px 24px rgba(15,23,42,.16);
 }
 .dash-tab.is-active::after {
   content: "";
   position: absolute;
-  left: 12px;
-  right: 12px;
-  bottom: -1px;
+  left: 14px;
+  right: 14px;
+  top: 4px;
   height: 3px;
   background: var(--accent);
-  border-radius: 3px 3px 0 0;
+  border-radius: 6px;
+  z-index: 2;
 }
+.dash-tab:hover { color: var(--text); transform: translateY(-1px); }
+.dash-tab > * { position: relative; z-index: 2; }
 .dash-tab-title { font-weight: 600; }
 .dash-tab-icon { width: 18px; height: 18px; display: inline-grid; place-items: center; filter: saturate(.9); }
 .dash-tab-burger, .dash-tab-close {
-  border: 1px solid var(--border);
-  background: transparent;
+  border: 1px solid transparent;
+  background: rgba(255,255,255,.8);
   color: var(--muted);
-  width: 28px; height: 28px;
-  border-radius: 8px;
+  width: 26px; height: 26px;
+  border-radius: 10px;
   cursor: pointer;
+  box-shadow: inset 0 -1px 0 rgba(15,23,42,.05);
 }
-.dash-tab-close:hover, .dash-tab-burger:hover { color: var(--text); border-color: rgba(255,255,255,.18); }
+.dash-tab-close:hover, .dash-tab-burger:hover { color: var(--text); border-color: #c9d2e4; background: #fff; }
 
 .dashboards-content {
   position: relative;
   overflow: hidden;
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 12px 12px 10px 10px;
-  border-top: 3px solid var(--accent);
-  margin-top: -2px;
+  border-top: none;
+  border-radius: 0 0 14px 14px;
+  box-shadow: 0 12px 24px rgba(15,23,42,.12);
+  margin-top: 0;
 }
 
 /* Dashboard view uses CSS grid areas so you can reorder with CSS */
 .dashboard-view {
   height: 100%;
   display: none;
-  padding: 12px;
+  padding: 10px 12px 12px;
   gap: 10px;
 
   grid-template-areas:
@@ -105,9 +115,9 @@ button { font: inherit; }
 }
 .dashboard-view.is-active { display: grid; }
 
-.dashboard-header { grid-area: header; border: 1px solid var(--border); border-radius: 12px 12px 10px 10px; background: var(--panel2); padding: 10px; box-shadow: inset 0 1px 0 rgba(255,255,255,.6); }
-.dashboard-main   { grid-area: main;   border: 1px solid var(--border); border-radius: 12px 12px 10px 10px; background: var(--panel2); padding: 10px; overflow: hidden; box-shadow: inset 0 1px 0 rgba(255,255,255,.6); }
-.dashboard-footer { grid-area: footer; border: 1px solid var(--border); border-radius: 12px 12px 10px 10px; background: var(--panel2); padding: 10px; box-shadow: inset 0 1px 0 rgba(255,255,255,.6); }
+.dashboard-header { grid-area: header; border: 1px solid var(--border); border-radius: 12px; background: var(--panel2); padding: 10px; box-shadow: inset 0 1px 0 rgba(255,255,255,.6); }
+.dashboard-main   { grid-area: main;   border: 1px solid var(--border); border-radius: 12px; background: var(--panel2); padding: 10px; overflow: hidden; box-shadow: inset 0 1px 0 rgba(255,255,255,.6); }
+.dashboard-footer { grid-area: footer; border: 1px solid var(--border); border-radius: 12px; background: var(--panel2); padding: 10px; box-shadow: inset 0 1px 0 rgba(255,255,255,.6); }
 
 .demo-section { color: var(--muted); }
 .demo-section strong { color: var(--text); }
@@ -128,30 +138,45 @@ button { font: inherit; }
 
 .widget-tabstrip {
   display: none;
-  gap: 6px;
-  padding: 4px 6px 0;
+  gap: 8px;
+  padding: 0 8px;
   align-items: flex-end;
+  background: linear-gradient(180deg, rgba(255,255,255,.9), rgba(236,240,247,.9));
+  border-bottom: 1px solid var(--border);
+  border-radius: 12px 12px 0 0;
 }
 .widget-tabstrip.has-tabs { display: flex; }
 
 .widget-tab {
-  border: 1px solid var(--border);
-  border-bottom: none;
-  border-radius: 10px 10px 8px 8px;
-  padding: 6px 10px;
-  background: var(--tab);
+  border: none;
+  border-radius: 10px 10px 0 0;
+  padding: 10px 12px 8px;
+  background: transparent;
   color: var(--muted);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  position: relative;
+}
+.widget-tab::after {
+  content: "";
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  top: 4px;
+  height: 3px;
+  border-radius: 6px;
+  background: transparent;
+  transition: background .12s ease;
 }
 .widget-tab-icon { width: 16px; height: 16px; display: inline-grid; place-items: center; }
 .widget-tab.is-active {
   color: var(--text);
-  background: var(--panel);
-  box-shadow: 0 4px 10px rgba(15,23,42,.16);
+  background: #fff;
+  box-shadow: 0 10px 18px rgba(15,23,42,.14);
 }
+.widget-tab.is-active::after { background: var(--accent); }
 
 .widget-stack { position: relative; height: 100%; }
 .widget-stack > .widget { display: none; height: 100%; }
@@ -161,8 +186,8 @@ button { font: inherit; }
 .widget {
   position: relative;
   border: 1px solid var(--border);
-  border-radius: 12px 12px 9px 9px;
-  background: linear-gradient(180deg, rgba(255,255,255,.96), rgba(255,255,255,.9));
+  border-radius: 12px;
+  background: #fff;
   box-shadow: var(--shadow);
   overflow: hidden;
   user-select: none;
@@ -174,9 +199,9 @@ button { font: inherit; }
   grid-template-columns: auto 1fr auto auto;
   align-items: center;
   gap: 10px;
-  padding: 10px 10px;
+  padding: 10px 12px;
   border-bottom: 1px solid var(--border);
-  background: linear-gradient(180deg, rgba(255,255,255,.9), rgba(231,236,245,.9));
+  background: linear-gradient(180deg, rgba(255,255,255,.96), rgba(240,244,251,.94));
 }
 
 .widget-icon { width: 26px; height: 26px; display: inline-grid; place-items: center; border: 1px solid var(--border); border-radius: 9px; background: rgba(255,255,255,.8); color: var(--muted); }
@@ -195,9 +220,9 @@ button { font: inherit; }
 .widget-toolbtn:hover, .widget-burger:hover { color: var(--text); border-color: #b5c0d3; background: #fff; }
 .widget-toolbtn:active, .widget-burger:active { transform: translateY(1px); }
 
-.widget-section { padding: 10px; }
+.widget-section { padding: 10px 12px; }
 .widget-header { border-bottom: 1px solid var(--border); color: var(--muted); }
-.widget-footer { border-top: 1px solid var(--border); color: var(--muted); }
+.widget-footer { border-top: 1px solid var(--border); color: var(--muted); display: flex; align-items: center; gap: 10px; }
 
 .widget.is-minimized .widget-header,
 .widget.is-minimized .widget-content,
