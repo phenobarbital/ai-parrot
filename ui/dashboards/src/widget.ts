@@ -354,6 +354,62 @@ export class Widget {
     }
   }
 
+  private storageKey(): string {
+    return `widget-state:${this.id}`;
+  }
+
+  getSavedState(): SavedWidgetState | null {
+    const raw = localStorage.getItem(this.storageKey());
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+
+  saveState(): void {
+    const payload: SavedWidgetState = {
+      state: this.state,
+      minimized: this.minimized,
+      dashId: this.dash?.id ?? this.prevDock?.dash.id ?? null,
+      cell: this.cell,
+    };
+
+    if (this.isFloating() || this.isMaximized()) {
+      payload.floating = {
+        left: this.el.style.left,
+        top: this.el.style.top,
+        width: this.el.style.width,
+        height: this.el.style.height,
+      };
+    }
+
+    localStorage.setItem(this.storageKey(), JSON.stringify(payload));
+  }
+
+  maybeRestoreState(): void {
+    if (this.restoredState) return;
+    const saved = this.getSavedState();
+    if (!saved) return;
+    this.restoredState = true;
+
+    this.minimized = !!saved.minimized;
+    this.el.classList.toggle("is-minimized", this.minimized);
+
+    if (saved.state === "floating") {
+      this.float();
+      if (saved.floating) {
+        if (saved.floating.left) this.el.style.left = saved.floating.left;
+        if (saved.floating.top) this.el.style.top = saved.floating.top;
+        if (saved.floating.width) this.el.style.width = saved.floating.width;
+        if (saved.floating.height) this.el.style.height = saved.floating.height;
+      }
+    } else if (saved.state === "maximized") {
+      this.maximize();
+    }
+  }
+
   private beginFloatingDrag(ev: PointerEvent): void {
     stop(ev);
     this.el.setPointerCapture?.(ev.pointerId);
