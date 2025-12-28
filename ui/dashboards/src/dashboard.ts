@@ -58,7 +58,7 @@ export class DashboardTabs {
     const btn = el("button", { class: "dash-tab", "data-dash-id": id, type: "button" });
     const icon = el("span", { class: "dash-tab-icon" }, tab.icon ?? "⬢");
     const title = el("span", { class: "dash-tab-title" }, tab.title);
-    const burger = el("button", { class: "dash-tab-burger", type: "button", title: "Dashboard menu" }, "☰");
+    const burger = el("button", { class: "dash-tab-burger", type: "button", title: "Dashboard menu" }, "▾");
     const close = el("button", { class: "dash-tab-close", type: "button", title: "Close dashboard" }, "×");
 
     btn.append(icon, title, burger);
@@ -304,6 +304,29 @@ export class GridLayout {
     this.setWidget(target, w);
   }
 
+  private swapWidgets(from: Cell, to: Cell, a: Widget, b: Widget): void {
+    const fromKey = this.key(from);
+    const toKey = this.key(to);
+    const fromSlot = this.cellSlots.get(fromKey);
+    const toSlot = this.cellSlots.get(toKey);
+
+    if (!fromSlot || !toSlot) {
+      this.moveWidget(from, to, a);
+      return;
+    }
+
+    this.removeFromSlot(fromSlot, a, fromKey);
+    this.removeFromSlot(toSlot, b, toKey);
+
+    this.setWidget(this.normalizeCell(to), a);
+    this.setWidget(this.normalizeCell(from), b);
+
+    const newFromSlot = this.cellSlots.get(this.key(from));
+    const newToSlot = this.cellSlots.get(this.key(to));
+    if (newFromSlot) this.setActiveWidget(newFromSlot, b.id);
+    if (newToSlot) this.setActiveWidget(newToSlot, a.id);
+  }
+
   getWidgetAt(cell: Cell): Widget | undefined {
     const slot = this.cellSlots.get(this.key(cell));
     if (!slot) return undefined;
@@ -406,51 +429,58 @@ export class GridLayout {
   }
 
   /** Called by Widget (docked mode) for resize gestures. */
-  resizeTracksFromCell(cell: Cell, dx: number, dy: number, edges: { right?: boolean; bottom?: boolean }): void {
+  resizeTracksFromCell(
+    cell: Cell,
+    dx: number,
+    dy: number,
+    edges: { right?: boolean; bottom?: boolean },
+    baseline?: { rows: number[]; cols: number[] },
+  ): void {
     const gridRect = this.gridEl.getBoundingClientRect();
+
+    const nextCols = baseline?.cols ? [...baseline.cols] : [...this.colSizes];
+    const nextRows = baseline?.rows ? [...baseline.rows] : [...this.rowSizes];
+
     if (edges.right && cell.col < this.cols - 1) {
       const delta = dx / gridRect.width;
-      this.adjustColSplit(cell.col, delta);
+      const [a, b] = this.adjustSplit(nextCols[cell.col], nextCols[cell.col + 1], delta);
+      nextCols[cell.col] = a;
+      nextCols[cell.col + 1] = b;
     }
     if (edges.bottom && cell.row < this.rows - 1) {
       const delta = dy / gridRect.height;
-      this.adjustRowSplit(cell.row, delta);
+      const [a, b] = this.adjustSplit(nextRows[cell.row], nextRows[cell.row + 1], delta);
+      nextRows[cell.row] = a;
+      nextRows[cell.row + 1] = b;
     }
+
+    this.colSizes = nextCols;
+    this.rowSizes = nextRows;
+    this.renormalize(this.colSizes);
+    this.renormalize(this.rowSizes);
     this.applyTracks();
     this.save();
   }
 
-  /** Adjust split between col i and i+1 by delta (+ makes left larger). */
-  private adjustColSplit(i: number, delta: number): void {
-    const a = this.colSizes[i];
-    const b = this.colSizes[i + 1];
-    const na = clamp(a + delta, this.minTrackPct, 1);
-    const nb = clamp(b - (na - a), this.minTrackPct, 1);
-    const drift = (a + b) - (na + nb);
-
-    this.colSizes[i] = na + drift / 2;
-    this.colSizes[i + 1] = nb + drift / 2;
-
-    this.renormalize(this.colSizes);
-  }
-
-  /** Adjust split between row i and i+1 by delta (+ makes top larger). */
-  private adjustRowSplit(i: number, delta: number): void {
-    const a = this.rowSizes[i];
-    const b = this.rowSizes[i + 1];
-    const na = clamp(a + delta, this.minTrackPct, 1);
-    const nb = clamp(b - (na - a), this.minTrackPct, 1);
-    const drift = (a + b) - (na + nb);
-
-    this.rowSizes[i] = na + drift / 2;
-    this.rowSizes[i + 1] = nb + drift / 2;
-
-    this.renormalize(this.rowSizes);
+  /** Adjust split between two tracks with a delta (+ makes first larger). */
+  private adjustSplit(a: number, b: number, delta: number): [number, number] {
+    const total = a + b;
+    const na = clamp(a + delta, this.minTrackPct, total - this.minTrackPct);
+    const nb = clamp(total - na, this.minTrackPct, total - this.minTrackPct);
+    return [na, nb];
   }
 
   private renormalize(arr: number[]): void {
     const sum = arr.reduce((s, n) => s + n, 0);
     for (let i = 0; i < arr.length; i++) arr[i] = arr[i] / sum;
+  }
+
+  getRowSizes(): number[] {
+    return [...this.rowSizes];
+  }
+
+  getColSizes(): number[] {
+    return [...this.colSizes];
   }
 
   private applyTracks(): void {
@@ -516,7 +546,12 @@ export class GridLayout {
       if (cell) {
         const from = widget.getCell();
         if (from && (from.row !== cell.row || from.col !== cell.col)) {
-          this.moveWidget(from, cell, widget);
+          const target = this.getWidgetAt(cell);
+          if (target && target !== widget) {
+            this.swapWidgets(from, cell, widget, target);
+          } else {
+            this.moveWidget(from, cell, widget);
+          }
         }
       }
       this.draggingWidget = null;
