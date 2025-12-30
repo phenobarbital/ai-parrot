@@ -58,7 +58,7 @@ export class DashboardTabs {
     const btn = el("button", { class: "dash-tab", "data-dash-id": id, type: "button" });
     const icon = el("span", { class: "dash-tab-icon" }, tab.icon ?? "⬢");
     const title = el("span", { class: "dash-tab-title" }, tab.title);
-    const burger = el("button", { class: "dash-tab-burger", type: "button", title: "Dashboard menu" }, "▾");
+    const burger = el("button", { class: "dash-tab-burger", type: "button", title: "Dashboard menu" }, "⌄");
     const close = el("button", { class: "dash-tab-close", type: "button", title: "Close dashboard" }, "×");
 
     btn.append(icon, title, burger);
