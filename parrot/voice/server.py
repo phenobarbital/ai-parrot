@@ -316,24 +316,27 @@ class VoiceChatServer:
             realtime_input_config=types.RealtimeInputConfig(
                 automatic_activity_detection=types.AutomaticActivityDetection(
                     disabled=False,
-                    start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_LOW,
-                    end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_LOW,
+                    start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_HIGH,
+                    end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_HIGH,
                     prefix_padding_ms=300,
-                    silence_duration_ms=700,
+                    silence_duration_ms=500,
                 )
             ),
             # Session resumption - DISABLED FOR DEBUGGING
-            # session_resumption=types.SessionResumptionConfig(
-            #     handle=conn.gemini_session_handle
-            # ),
+            session_resumption=types.SessionResumptionConfig(
+                handle=conn.gemini_session_handle
+            ),
             temperature=0.7,
-            max_output_tokens=4096
+            max_output_tokens=8192
         )
 
         if system_prompt := conn.config.get('system_prompt'):
             live_config.system_instruction = system_prompt
 
-        model = conn.config.get('model', 'gemini-2.5-flash-native-audio-preview-12-2025')
+        model = conn.config.get(
+            'model',
+            'gemini-2.5-flash-native-audio-preview-12-2025'
+        )
 
         # Start new session task
         conn.session_task = asyncio.create_task(
@@ -623,19 +626,51 @@ class VoiceChatServer:
                     self.logger.error(f"Error flushing buffer on cancel: {e}", exc_info=True)
             raise
 
+    def _identify_response_type(self, response) -> str:
+        """Identify the type of response for logging."""
+        types_found = []
+        
+        if hasattr(response, 'setup_complete') and response.setup_complete:
+            types_found.append("setup_complete")
+        if hasattr(response, 'server_content') and response.server_content:
+            types_found.append("server_content")
+        if hasattr(response, 'tool_call') and response.tool_call:
+            types_found.append("tool_call")
+        if hasattr(response, 'tool_call_cancellation') and response.tool_call_cancellation:
+            types_found.append("tool_call_cancellation")
+        if hasattr(response, 'usage_metadata') and response.usage_metadata:
+            types_found.append("usage_metadata")
+        if hasattr(response, 'go_away') and response.go_away:
+            types_found.append("go_away")
+        if hasattr(response, 'session_resumption_update') and response.session_resumption_update:
+            types_found.append("session_resumption_update")
+            
+        return ', '.join(types_found) if types_found else "unknown"
+
     async def _response_receiver(self, conn: VoiceConnection, session) -> None:
         """Receive responses from Gemini and forward to WebSocket client."""
         current_text = ""
         current_audio = b""
+        message_count = 0
         
-        self.logger.info(f"Response receiver started for session: {conn.session_id}")
+        self.logger.info(
+            f"Response receiver started for session: {conn.session_id}"
+        )
 
         try:
-            self.logger.debug(f"Starting to receive responses from Gemini: {conn.session_id}")
+            self.logger.debug(
+                f"Starting to receive responses from Gemini: {conn.session_id}"
+            )
             async for response in session.receive():
+                message_count += 1
                 self.logger.debug(f"Received response from Gemini: {conn.session_id}")
                 # Clear the waiting flag since we got a response
+                conn.responses_received = message_count
                 conn.waiting_for_response = False
+                response_type = self._identify_response_type(response)
+                self.logger.info(f"📩 Message #{message_count}: {response_type}")
+                conn.last_gemini_message = response_type
+
                 # Debug full response structure
                 try:
                     import pprint
