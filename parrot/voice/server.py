@@ -167,6 +167,18 @@ class VoiceChatServer:
         config = message.get('config', {})
         conn.config = config
 
+        try:
+            from pprint import pformat  # pylint: disable=import-outside-toplevel
+            self.logger.info(
+                "Client session request received: %s",
+                pformat(config)
+            )
+        except Exception as format_error:  # pragma: no cover - defensive logging
+            self.logger.warning(
+                "Unable to format session config: %s", format_error,
+                exc_info=True
+            )
+
         if not self.client:
             # Mock mode - simulate session start
             conn.session_active = True
@@ -377,6 +389,19 @@ class VoiceChatServer:
         within the `async with` block.
         """
         try:
+            try:
+                from pprint import pformat  # pylint: disable=import-outside-toplevel
+                self.logger.info(
+                    "Opening Gemini session with model=%s, config=%s",
+                    model,
+                    pformat(live_config)
+                )
+            except Exception as format_error:  # pragma: no cover - defensive logging
+                self.logger.warning(
+                    "Failed to format live_config for logging: %s", format_error,
+                    exc_info=True
+                )
+
             async with self.client.aio.live.connect(
                 model=model,
                 config=live_config
@@ -401,7 +426,10 @@ class VoiceChatServer:
                         )
                         self.logger.info("Welcome message sent, waiting for Gemini response...")
                     except Exception as e:
-                        self.logger.error(f"Failed to send welcome message: {e}")
+                        self.logger.error(
+                            f"Failed to send welcome message: {e}",
+                            exc_info=True
+                        )
 
                 # Run audio sender and response receiver concurrently
                 sender_task = asyncio.create_task(
@@ -431,13 +459,13 @@ class VoiceChatServer:
                             try:
                                 task.result()
                             except Exception as e:
-                                self.logger.error(f"Sender task error: {e}")
+                                self.logger.error(f"Sender task error: {e}", exc_info=True)
                         elif task == receiver_task:
                             self.logger.warning("Response receiver task ended unexpectedly")
                             try:
                                 task.result()
                             except Exception as e:
-                                self.logger.error(f"Receiver task error: {e}")
+                                self.logger.error(f"Receiver task error: {e}", exc_info=True)
                         else:
                             # Shutdown event was triggered
                             self.logger.info("Shutdown event triggered, ending session")
@@ -493,14 +521,16 @@ class VoiceChatServer:
                                 )
                                 self.logger.debug("Remaining buffer sent successfully")
                             except Exception as e:
-                                self.logger.error(f"Error sending remaining buffer: {e}")
+                                self.logger.error(f"Error sending remaining buffer: {e}", exc_info=True)
                             audio_buffer = b""
 
                         # Small delay to let Gemini process the last audio chunks
                         await asyncio.sleep(0.3)
 
                         # Signal end of audio stream to Gemini
-                        self.logger.info(f"Sending audio_stream_end signal (total sent: {total_bytes_sent} bytes, {chunks_sent} chunks)")
+                        self.logger.info(
+                            f"Sending audio_stream_end signal (total sent: {total_bytes_sent} bytes, {chunks_sent} chunks)"
+                        )
                         try:
                             # Send end signal with a short timeout to prevent blocking
                             await asyncio.wait_for(
@@ -511,8 +541,8 @@ class VoiceChatServer:
                         except asyncio.TimeoutError:
                             self.logger.error("TIMEOUT sending audio_stream_end - this may cause Gemini to not respond!")
                         except Exception as e:
-                            self.logger.error(f"Error sending audio_stream_end: {e}")
-
+                            self.logger.error(f"Error sending audio_stream_end: {e}", exc_info=True)
+                            
                         audio_stream_ended = True
 
                         # Track that we're waiting for a response
@@ -523,7 +553,12 @@ class VoiceChatServer:
                     if getattr(conn, 'waiting_for_response', False):
                         wait_time = asyncio.get_event_loop().time() - getattr(conn, 'response_wait_start', 0)
                         if wait_time > 15:  # 15 seconds timeout
-                            self.logger.warning(f"No response from Gemini after {wait_time:.1f}s, notifying client")
+                            self.logger.warning(
+                                "No response from Gemini after %.1fs (sent=%d bytes in %d chunks), notifying client",
+                                wait_time,
+                                total_bytes_sent,
+                                chunks_sent
+                            )
                             await self._send(conn.ws, {
                                 "type": "error",
                                 "message": "No response from Gemini. Please try again."
@@ -555,6 +590,11 @@ class VoiceChatServer:
                         chunk = audio_buffer[:3200]
                         audio_buffer = audio_buffer[3200:]
 
+                        self.logger.debug(
+                            "Sending audio chunk #%d (%d bytes) to Gemini [mime=audio/pcm;rate=16000]",
+                            chunks_sent + 1,
+                            len(chunk)
+                        )
                         await session.send_realtime_input(
                             media=types.Blob(
                                 data=chunk,
@@ -568,7 +608,7 @@ class VoiceChatServer:
                     # No audio in queue, continue loop
                     continue
                 except Exception as e:
-                    self.logger.error(f"Error sending audio: {e}")
+                    self.logger.error(f"Error sending audio: {e}", exc_info=True)
                     break
 
         except asyncio.CancelledError:
@@ -583,7 +623,7 @@ class VoiceChatServer:
                     )
                     self.logger.debug("Flushed remaining buffer on cancel")
                 except Exception as e:
-                    self.logger.error(f"Error flushing buffer on cancel: {e}")
+                    self.logger.error(f"Error flushing buffer on cancel: {e}", exc_info=True)
             raise
 
     def _identify_response_type(self, response) -> str:
