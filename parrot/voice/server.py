@@ -420,7 +420,8 @@ class VoiceChatServer:
                 # Send proactive welcome message to test if Gemini is working
                 # This verifies the session before any audio is sent
                 # Only send ONCE per connection, not on session restarts
-                send_welcome = conn.config.get('send_welcome', True)
+                # Default to FALSE to avoid browser autoplay policy issues
+                send_welcome = conn.config.get('send_welcome', False)
                 if send_welcome and not conn.welcome_sent:
                     conn.welcome_sent = True
                     self.logger.info("Sending proactive welcome message to Gemini...")
