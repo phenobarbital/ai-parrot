@@ -641,7 +641,7 @@ class VoiceChatServer:
     def _identify_response_type(self, response) -> str:
         """Identify the type of response for logging."""
         types_found = []
-
+        
         if hasattr(response, 'setup_complete') and response.setup_complete:
             types_found.append("setup_complete")
         if hasattr(response, 'server_content') and response.server_content:
@@ -656,7 +656,7 @@ class VoiceChatServer:
             types_found.append("go_away")
         if hasattr(response, 'session_resumption_update') and response.session_resumption_update:
             types_found.append("session_resumption_update")
-
+            
         return ', '.join(types_found) if types_found else "unknown"
 
     async def _response_receiver(self, conn: VoiceConnection, session) -> None:
@@ -664,7 +664,7 @@ class VoiceChatServer:
         current_text = ""
         current_audio = b""
         message_count = 0
-
+        
         self.logger.info(
             f"Response receiver started for session: {conn.session_id}"
         )
