@@ -1413,7 +1413,7 @@ class MCPEnabledMixin:
                     transport="stdio",
                     env={
                         "MCP_SERVER_REQUEST_TIMEOUT": "55000",
-                        "PROJECT_ID": project_id,
+                        "PROJECT_ID": project_id,  # Will be filtered if None by StdioMCPSession
                         "LOCATION": location
                     }
                 )

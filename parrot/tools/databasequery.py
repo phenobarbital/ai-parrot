@@ -536,9 +536,10 @@ class DatabaseQueryTool(AbstractTool):
 
         # Get dbtype for mongo-based drivers
         dbtype = DriverInfo.get_dbtype(normalized_driver)
+        bigquery_creds_path = config.get('BIGQUERY_CREDENTIALS_PATH')
         default_credentials = {
             'bigquery': {
-                'credentials': Path(config.get('BIGQUERY_CREDENTIALS_PATH')).resolve(),
+                'credentials': Path(bigquery_creds_path).resolve() if bigquery_creds_path else None,
                 'project_id': config.get('BIGQUERY_PROJECT_ID'),
             },
             'pg': {

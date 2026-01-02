@@ -80,7 +80,7 @@ export class Widget {
 
     this.toolbarEl = el("div", { class: "widget-toolbar" });
 
-    this.burgerBtn = el("button", { class: "widget-burger", type: "button", title: "Widget menu" }, "☰") as HTMLButtonElement;
+    this.burgerBtn = el("button", { class: "widget-burger", type: "button", title: "Widget menu" }, "⌄") as HTMLButtonElement;
 
     this.titleBar = el("div", { class: "widget-titlebar" }, iconEl, this.titleText, this.toolbarEl, this.burgerBtn);
 

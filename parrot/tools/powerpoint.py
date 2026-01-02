@@ -7,7 +7,8 @@ import tempfile
 from typing import Dict, List, Optional, Any, Union
 import io
 import traceback
-import requests
+import asyncio
+import aiohttp
 from pptx import Presentation
 from pptx.util import Pt, Inches, Cm
 from pptx.dml.color import RGBColor
@@ -358,7 +359,7 @@ class PowerPointTool(AbstractDocumentTool):
         # Create new presentation
         return Presentation()
 
-    def _create_slides(
+    async def _create_slides(
         self,
         prs: Presentation,
         slides_data: List[Dict[str, Any]],
@@ -367,7 +368,7 @@ class PowerPointTool(AbstractDocumentTool):
         content_styles: Optional[Dict[str, Any]],
         **kwargs: Any
     ) -> None:
-        """Create slides from extracted data with dynamic layout detection."""
+        """Create slides from extracted data with dynamic layout detection (async for image downloads)."""
 
         # Debug available layouts
         self.logger.info(
@@ -428,7 +429,7 @@ class PowerPointTool(AbstractDocumentTool):
 
                 # Add content only if there is content
                 if slide_data['content']:
-                    self._add_slide_content(
+                    await self._add_slide_content(
                         slide, slide_data['content'], content_styles, **kwargs
                     )
 
@@ -580,14 +581,14 @@ class PowerPointTool(AbstractDocumentTool):
         except Exception as e:
             self.logger.error(f"Error adding text as textbox: {e}")
 
-    def _add_slide_content(
+    async def _add_slide_content(
         self,
         slide: Any,
         content_elements: List,
         content_styles: Optional[Dict[str, Any]],
         **kwargs
     ) -> None:
-        """Add content to a slide placeholder."""
+        """Add content to a slide placeholder (async for image downloads)."""
 
         enable_images = kwargs.get('enable_images', True)
         image_width = kwargs.get('image_width')
@@ -648,7 +649,7 @@ class PowerPointTool(AbstractDocumentTool):
 
         # Handle images
         if images and enable_images:
-            self._add_images_to_slide(
+            await self._add_images_to_slide(
                 slide,
                 images,
                 image_width,
@@ -656,8 +657,13 @@ class PowerPointTool(AbstractDocumentTool):
                 max_image_size
             )
 
-    def _download_image(self, img_url: str, timeout: int = 30) -> Optional[bytes]:
-        """Download image from URL."""
+    async def _download_image(self, img_url: str, timeout: int = 30) -> Optional[bytes]:
+        """
+        Download image from URL using async aiohttp.
+        
+        This is non-blocking and works correctly when downloading from other
+        agents running on the same event loop.
+        """
         try:
             self.logger.debug(f"Downloading image: {img_url}")
 
@@ -665,26 +671,31 @@ class PowerPointTool(AbstractDocumentTool):
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
             }
 
-            response = requests.get(img_url, headers=headers, timeout=timeout, stream=True)
-            response.raise_for_status()
+            client_timeout = aiohttp.ClientTimeout(total=timeout)
+            async with aiohttp.ClientSession(timeout=client_timeout) as session:
+                async with session.get(img_url, headers=headers) as response:
+                    response.raise_for_status()
 
-            # Check content type
-            content_type = response.headers.get('content-type', '').lower()
-            if not any(img_type in content_type for img_type in ['image/', 'jpeg', 'jpg', 'png', 'gif', 'bmp']):
-                self.logger.warning(f"URL does not appear to be an image: {content_type}")
+                    # Check content type
+                    content_type = response.headers.get('content-type', '').lower()
+                    if not any(img_type in content_type for img_type in ['image/', 'jpeg', 'jpg', 'png', 'gif', 'bmp']):
+                        self.logger.warning(f"URL does not appear to be an image: {content_type}")
 
-            # Read image data
-            image_data = response.content
+                    # Read image data
+                    image_data = await response.read()
 
-            if len(image_data) == 0:
-                self.logger.error(f"Downloaded image is empty: {img_url}")
-                return None
+                    if len(image_data) == 0:
+                        self.logger.error(f"Downloaded image is empty: {img_url}")
+                        return None
 
-            self.logger.debug(f"Successfully downloaded image: {len(image_data)} bytes")
-            return image_data
+                    self.logger.debug(f"Successfully downloaded image: {len(image_data)} bytes")
+                    return image_data
 
-        except requests.exceptions.RequestException as e:
+        except aiohttp.ClientError as e:
             self.logger.error(f"Failed to download image {img_url}: {e}")
+            return None
+        except asyncio.TimeoutError:
+            self.logger.error(f"Timeout downloading image {img_url}")
             return None
         except Exception as e:
             self.logger.error(f"Unexpected error downloading image {img_url}: {e}")
@@ -747,7 +758,7 @@ class PowerPointTool(AbstractDocumentTool):
 
         return left, top, width, height
 
-    def _add_images_to_slide(
+    async def _add_images_to_slide(
         self,
         slide,
         images: List,
@@ -755,7 +766,7 @@ class PowerPointTool(AbstractDocumentTool):
         image_height: Optional[float],
         max_image_size: float
     ) -> None:
-        """Add images to a PowerPoint slide."""
+        """Add images to a PowerPoint slide (async for non-blocking downloads)."""
 
         for i, img_element in enumerate(images):
             try:
@@ -766,8 +777,8 @@ class PowerPointTool(AbstractDocumentTool):
                     self.logger.warning(f"Image has no src attribute: {img_alt}")
                     continue
 
-                # Download image
-                image_data = self._download_image(img_src)
+                # Download image asynchronously
+                image_data = await self._download_image(img_src)
                 if not image_data:
                     self.logger.error(f"Failed to download image: {img_src}")
                     continue
@@ -1014,7 +1025,7 @@ class PowerPointTool(AbstractDocumentTool):
                     'max_slides', 'split_by_headings'
                 ]
             }
-            self._create_slides(
+            await self._create_slides(
                 prs=prs,
                 slides_data=slides_data,
                 slide_layout=slide_layout,

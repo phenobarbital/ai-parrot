@@ -243,7 +243,6 @@ work/
 agents/
 !/crew-builder/src/routes/agents/
 
-
 # SvelteKit build
 build/
 node_modules/
