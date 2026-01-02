@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 AI-Parrot Voice Chat Server - Proof of Concept
 
@@ -14,14 +13,13 @@ Usage:
 
     # Open http://localhost:8765 in your browser
 """
-
+from typing import Dict, Any, Optional
 import asyncio
 import json
 import base64
 import uuid
 import os
 import contextlib
-from typing import Dict, Any, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
 from aiohttp import web, WSMsgType
@@ -286,10 +284,8 @@ class VoiceChatServer:
         # Cancel any existing session task
         if conn.session_task:
             conn.session_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await conn.session_task
-            except asyncio.CancelledError:
-                pass
             conn.session_task = None
 
         # Clear the audio queue
@@ -432,7 +428,11 @@ class VoiceChatServer:
                         await session.send_client_content(
                             turns=types.Content(
                                 role="user",
-                                parts=[types.Part(text="Please greet the user with a friendly 'Hi! How can I help you today?' in a warm, welcoming tone.")]
+                                parts=[
+                                    types.Part(
+                                        text="Please greet the user with a friendly 'Hi! How can I help you today?' in a warm, welcoming tone."  # noqa
+                                    )
+                                ]
                             )
                         )
                         self.logger.info("Welcome message sent, waiting for Gemini response...")
@@ -540,7 +540,7 @@ class VoiceChatServer:
 
                         # Signal end of audio stream to Gemini
                         self.logger.info(
-                            f"Sending audio_stream_end signal (total sent: {total_bytes_sent} bytes, {chunks_sent} chunks)"
+                            f"Sending audio_stream_end signal (total sent: {total_bytes_sent} bytes, {chunks_sent} chunks)"  # noqa
                         )
                         try:
                             # Send end signal with a short timeout to prevent blocking
@@ -550,10 +550,10 @@ class VoiceChatServer:
                             )
                             self.logger.info("audio_stream_end sent successfully, waiting for Gemini response...")
                         except asyncio.TimeoutError:
-                            self.logger.error("TIMEOUT sending audio_stream_end - this may cause Gemini to not respond!")
+                            self.logger.error("TIMEOUT sending audio_stream_end - this may cause Gemini to not respond!")  # noqa
                         except Exception as e:
                             self.logger.error(f"Error sending audio_stream_end: {e}", exc_info=True)
-                            
+
                         audio_stream_ended = True
 
                         # Track that we're waiting for a response
@@ -744,7 +744,9 @@ class VoiceChatServer:
                                 f.write(current_audio)
                             self.logger.info(f"DEBUG: Saved audio to {debug_path} ({len(current_audio)} bytes)")
 
-                        self.logger.info(f"Turn complete. Total audio: {len(current_audio)} bytes, Text: {len(current_text)} chars")
+                        self.logger.info(
+                            f"Turn complete. Total audio: {len(current_audio)} bytes, Text: {len(current_text)} chars"
+                        )
                         await self._send(conn.ws, {
                             "type": "response_complete",
                             "text": current_text,
@@ -855,10 +857,14 @@ class VoiceChatServer:
                     conn._audio_chunk_count = 0
                 conn._audio_chunk_count += 1
                 if conn._audio_chunk_count % 10 == 1:
-                    self.logger.debug(f"Audio chunk #{conn._audio_chunk_count}: {len(audio_bytes)} bytes, max amplitude: {max_amplitude}")
+                    self.logger.debug(
+                        f"Audio chunk #{conn._audio_chunk_count}: {len(audio_bytes)} bytes, max amplitude: {max_amplitude}"
+                    )
                 # Warn if audio appears to be silence
                 if max_amplitude < 100 and conn._audio_chunk_count <= 5:
-                    self.logger.warning(f"Audio chunk appears to be silence (max amplitude: {max_amplitude})")
+                    self.logger.warning(
+                        f"Audio chunk appears to be silence (max amplitude: {max_amplitude})"
+                    )
 
             # Detect new recording start - reset flags
             if not conn.is_recording:
@@ -1026,7 +1032,6 @@ class VoiceChatServer:
             "type": "session_reset",
             "message": "Session reset successfully"
         })
-
 
     async def _send(self, ws: web.WebSocketResponse, message: Dict) -> None:
         """Send JSON message to WebSocket client."""
