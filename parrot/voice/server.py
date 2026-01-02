@@ -206,37 +206,40 @@ class VoiceChatServer:
             live_config = types.LiveConnectConfig(
                 # IMPORTANT: Only "AUDIO" for Native Audio models!
                 response_modalities=["AUDIO"],
-
+                context_window_compression=(
+                    # Configures compression with default parameters.
+                    types.ContextWindowCompressionConfig(
+                        sliding_window=types.SlidingWindow(),
+                    )
+                ),
                 # Speech/voice configuration
                 speech_config=types.SpeechConfig(
+                    language_code="en-US",
                     voice_config=types.VoiceConfig(
                         prebuilt_voice_config=types.PrebuiltVoiceConfig(
                             voice_name=voice_name
                         )
                     )
                 ),
-
                 # Enable transcriptions using proper config objects
                 input_audio_transcription=types.AudioTranscriptionConfig(),
                 output_audio_transcription=types.AudioTranscriptionConfig(),
-
+                media_resolution=types.MediaResolution.MEDIA_RESOLUTION_LOW,
                 # Enable VAD (Voice Activity Detection) with tuned settings
                 # LOW sensitivity = less likely to detect false starts/ends
                 realtime_input_config=types.RealtimeInputConfig(
                     automatic_activity_detection=types.AutomaticActivityDetection(
                         disabled=False,
-                        start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_LOW,
-                        end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_LOW,
-                        prefix_padding_ms=300,  # Include 300ms audio before speech start
-                        silence_duration_ms=700,  # Wait 700ms of silence before ending
+                        start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_HIGH,
+                        end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_HIGH,
+                        prefix_padding_ms=100,  # Include 100ms audio before speech start
+                        silence_duration_ms=500,  # Wait 500ms of silence before ending
                     )
                 ),
-
                 # Session resumption - DISABLED FOR DEBUGGING
-                # session_resumption=types.SessionResumptionConfig(
-                #     handle=conn.gemini_session_handle  # None for new session, handle for resume
-                # ),
-
+                session_resumption=types.SessionResumptionConfig(
+                    handle=conn.gemini_session_handle
+                ),
                 # Generation config
                 temperature=0.7,
                 max_output_tokens=8192
@@ -304,13 +307,21 @@ class VoiceChatServer:
         voice_name = conn.config.get('voice_name', 'Puck')
         live_config = types.LiveConnectConfig(
             response_modalities=["AUDIO"],
+            context_window_compression=(
+                # Configures compression with default parameters.
+                types.ContextWindowCompressionConfig(
+                    sliding_window=types.SlidingWindow(),
+                )
+            ),
             speech_config=types.SpeechConfig(
+                language_code="en-US",
                 voice_config=types.VoiceConfig(
                     prebuilt_voice_config=types.PrebuiltVoiceConfig(
                         voice_name=voice_name
                     )
                 )
             ),
+            media_resolution=types.MediaResolution.MEDIA_RESOLUTION_LOW,
             input_audio_transcription=types.AudioTranscriptionConfig(),
             output_audio_transcription=types.AudioTranscriptionConfig(),
             realtime_input_config=types.RealtimeInputConfig(
@@ -318,7 +329,7 @@ class VoiceChatServer:
                     disabled=False,
                     start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_HIGH,
                     end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_HIGH,
-                    prefix_padding_ms=300,
+                    prefix_padding_ms=100,
                     silence_duration_ms=500,
                 )
             ),

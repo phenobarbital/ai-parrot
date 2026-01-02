@@ -132,6 +132,44 @@
             font-family: var(--font-mono);
         }
 
+        .status-display {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .connect-toggle-btn {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: var(--text-muted);
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: var(--transition-fast);
+            font-size: 16px;
+        }
+
+        .connect-toggle-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--text-primary);
+        }
+
+        .connect-toggle-btn.active {
+            background: rgba(0, 212, 170, 0.15);
+            border-color: rgba(0, 212, 170, 0.3);
+            color: var(--accent-primary);
+        }
+
+        .connect-toggle-btn.disconnected {
+            background: rgba(255, 107, 107, 0.15);
+            border-color: rgba(255, 107, 107, 0.3);
+            color: var(--danger);
+        }
+
         .status-dot {
             width: 8px;
             height: 8px;
@@ -685,8 +723,13 @@
                 <div class="logo-text">AI<span>-Parrot</span> Voice</div>
             </div>
             <div class="connection-status">
-                <span class="status-dot" id="statusDot"></span>
-                <span id="statusText">Disconnected</span>
+                <button id="connectBtn" class="connect-toggle-btn" title="Toggle Connection">
+                    <span class="icon">🔌</span>
+                </button>
+                <div class="status-display">
+                    <span class="status-dot" id="statusDot"></span>
+                    <span id="statusText">Disconnected</span>
+                </div>
             </div>
         </header>
 
@@ -787,6 +830,7 @@
                 this.visualizer = document.getElementById('visualizer');
                 this.settingsPanel = document.getElementById('settingsPanel');
                 this.overlay = document.getElementById('overlay');
+                this.connectBtn = document.getElementById('connectBtn');
 
                 // State
                 this.ws = null;
