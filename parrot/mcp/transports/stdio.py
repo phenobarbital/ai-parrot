@@ -134,6 +134,13 @@ class StdioMCPSession:
         if self.config.env:
             env.update(self.config.env)
 
+        # Sanitize environment: remove None values and ensure strings
+        # asyncio.create_subprocess_exec requires all env values to be formatted as strings/bytes
+        env = {
+            k: str(v) for k, v in env.items() 
+            if v is not None
+        }
+
         self._process = await asyncio.create_subprocess_exec(
             self.config.command,
             *args,

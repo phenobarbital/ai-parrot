@@ -73,7 +73,8 @@ sudo apt install -y \
     libtesseract-dev \
     poppler-utils \
     tesseract-ocr-eng \
-    tesseract-ocr-spa
+    tesseract-ocr-spa \
+    portaudio19-dev
 ```
 
 **Package breakdown**:

@@ -78,6 +78,7 @@ dependencies = [
     "aiohttp-sse-client==0.2.1",
     "prance>=25.4.8.0",
     "openapi-schema-validator==0.6.3",
+    "praw>=7.8.1",
 ]
 
 [project.scripts]
