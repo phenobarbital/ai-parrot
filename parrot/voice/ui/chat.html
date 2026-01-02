@@ -906,6 +906,9 @@
                 // Clear chat
                 document.getElementById('clearBtn').addEventListener('click', () => this.clearChat());
 
+                // Connect/Disconnect toggle
+                this.connectBtn.addEventListener('click', () => this.toggleConnection());
+
                 // Settings inputs
                 document.getElementById('voiceSelect').addEventListener('change', (e) => {
                     this.config.voiceName = e.target.value;
@@ -955,6 +958,10 @@
                         this.sessionStarted = false;
                         this.updateStatus('Disconnected', 'disconnected');
                         console.log('WebSocket closed');
+
+                        // Reset button state
+                        this.connectBtn.classList.remove('active');
+                        this.connectBtn.title = 'Connect';
                     };
 
                     this.ws.onerror = (error) => {
@@ -965,6 +972,24 @@
                 } catch (error) {
                     console.error('Failed to connect:', error);
                     this.updateStatus('Failed to connect', 'error');
+                }
+            }
+
+            // Toggle connection manually
+            toggleConnection() {
+                if (this.isConnected) {
+                    this.disconnect();
+                } else {
+                    this.connect();
+                }
+            }
+
+            // Manually disconnect
+            disconnect() {
+                if (this.ws) {
+                    this.manualDisconnect = true; // Prevent auto-reconnect logic if we add it later
+                    this.ws.close();
+                    this.ws = null;
                 }
             }
 
@@ -980,6 +1005,9 @@
 
                 switch (message.type) {
                     case 'connected':
+                        this.isConnected = true;
+                        this.connectBtn.classList.add('active');
+                        this.connectBtn.title = 'Disconnect';
                         this.startSession();
                         break;
 
