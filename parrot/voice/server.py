@@ -46,6 +46,7 @@ class VoiceConnection:
     session_active: bool = False
     recording_start_time: Optional[datetime] = None  # Track when recording started
     stop_audio_sending: bool = False  # Flag to immediately stop audio forwarding
+    gemini_responding: bool = False  # True when Gemini has started responding (VAD triggered)
 
     # Task management
     session_task: Optional[asyncio.Task] = None
@@ -544,13 +545,17 @@ class VoiceChatServer:
                             self.logger.error(f"Error sending audio_stream_end: {e}", exc_info=True)
                             
                         audio_stream_ended = True
-                        
-                        # Track that we're waiting for a response
-                        conn.waiting_for_response = True
-                        conn.response_wait_start = asyncio.get_event_loop().time()
-                    
-                    # Check if we've been waiting too long for a response
-                    if getattr(conn, 'waiting_for_response', False):
+
+                        # Track that we're waiting for a response (only if Gemini hasn't already started responding via VAD)
+                        if not conn.gemini_responding:
+                            conn.waiting_for_response = True
+                            conn.response_wait_start = asyncio.get_event_loop().time()
+                        else:
+                            self.logger.info("Gemini already responding (VAD triggered), skipping response timeout")
+                            conn.waiting_for_response = False
+
+                    # Check if we've been waiting too long for a response (only if Gemini hasn't started responding)
+                    if getattr(conn, 'waiting_for_response', False) and not conn.gemini_responding:
                         wait_time = asyncio.get_event_loop().time() - getattr(conn, 'response_wait_start', 0)
                         if wait_time > 15:  # 15 seconds timeout
                             self.logger.warning(
@@ -714,6 +719,7 @@ class VoiceChatServer:
                     # Check for interruption
                     if getattr(sc, 'interrupted', False):
                         self.logger.info(f"Turn interrupted. Audio: {len(current_audio)} bytes")
+                        conn.gemini_responding = False  # Reset on interruption
                         await self._send(conn.ws, {
                             "type": "response_complete",
                             "text": current_text or "",
@@ -732,7 +738,7 @@ class VoiceChatServer:
                             with open(debug_path, "wb") as f:
                                 f.write(current_audio)
                             self.logger.info(f"DEBUG: Saved audio to {debug_path} ({len(current_audio)} bytes)")
-                        
+
                         self.logger.info(f"Turn complete. Total audio: {len(current_audio)} bytes, Text: {len(current_text)} chars")
                         await self._send(conn.ws, {
                             "type": "response_complete",
@@ -740,7 +746,10 @@ class VoiceChatServer:
                             "audio_base64": "",  # Client already received stream, send empty string instead of None
                             "is_interrupted": False
                         })
-                        
+
+                        # Reset responding flag - turn is complete
+                        conn.gemini_responding = False
+
                         # Signal frontend that it can speak again
                         await self._send(conn.ws, {
                             "type": "ready_to_speak",
@@ -763,6 +772,10 @@ class VoiceChatServer:
                             if hasattr(part, 'inline_data') and part.inline_data:
                                 audio_chunk = part.inline_data.data
                                 current_audio += audio_chunk
+                                # Mark that Gemini has started responding (VAD triggered)
+                                if not conn.gemini_responding:
+                                    conn.gemini_responding = True
+                                    self.logger.info("Gemini started responding (VAD triggered)")
                                 self.logger.debug(f"Received audio chunk: {len(audio_chunk)} bytes")
                                 await self._send(conn.ws, {
                                     "type": "response_chunk",
@@ -853,6 +866,7 @@ class VoiceChatServer:
             if not conn.is_recording:
                 self.logger.debug(f"New recording started: {conn.session_id}")
                 conn.stop_audio_sending = False  # Reset FIRST
+                conn.gemini_responding = False  # Reset responding flag for new turn
                 conn.recording_start_time = datetime.now()
                 conn._audio_chunk_count = 0
             
