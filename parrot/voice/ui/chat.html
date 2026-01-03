@@ -1044,6 +1044,12 @@
                         break;
 
                     case 'response_chunk':
+                        // If we're still recording when Gemini starts responding (VAD detected end of speech),
+                        // stop the recording UI without sending stop_recording to backend
+                        if (this.isRecording) {
+                            console.log('Gemini started responding - auto-stopping recording UI');
+                            this.stopRecordingUI();
+                        }
                         this.handleResponseChunk(message);
                         break;
 
@@ -1111,6 +1117,12 @@
 
             async startRecording() {
                 if (this.isRecording) return;
+
+                // Don't start if we're not allowed to speak (e.g., agent is responding)
+                if (!this.canSpeak) {
+                    console.log('Cannot start recording - canSpeak is false');
+                    return;
+                }
 
                 // Ensure connection
                 if (!this.isConnected) {
@@ -1244,6 +1256,37 @@
                     type: 'audio_chunk',
                     data: base64
                 }));
+            }
+
+            // Stop recording UI only (when Gemini VAD triggers response while user is recording)
+            // Does NOT send stop_recording to backend since Gemini already knows to respond
+            stopRecordingUI() {
+                if (!this.isRecording) return;
+
+                console.log('stopRecordingUI called - Gemini VAD triggered response');
+
+                this.isRecording = false;
+                this.recordBtn.classList.remove('recording');
+                this.visualizer.classList.remove('active');
+
+                // Stop media stream
+                if (this.mediaStream) {
+                    this.mediaStream.getTracks().forEach(track => track.stop());
+                    this.mediaStream = null;
+                }
+
+                // Close audio context
+                if (this.audioContext) {
+                    this.audioContext.close();
+                    this.audioContext = null;
+                }
+
+                // Disable speak button until backend signals ready
+                this.canSpeak = false;
+                this.recordBtn.disabled = true;
+                this.recordBtn.classList.add('disabled');
+
+                this.updateStatusBar('Agent responding...');
             }
 
             stopRecording() {
