@@ -5,10 +5,10 @@ import asyncio
 from dataclasses import dataclass
 import logging
 from enum import Enum
+import aiohttp
 import pandas as pd
 from .math import MathTool
 from .abstract import AbstractTool, ToolResult
-import aiohttp
 from ..a2a.models import RegisteredAgent, AgentCard
 
 
@@ -212,7 +212,7 @@ class ToolManager:
         self.auto_share_dataframes: bool = True
         self.auto_push_to_pandas: bool = True
         self.pandas_tool_name: str = "python_pandas"
-        
+
         # Self-register the search tool
         self.register_tool(
             name="search_tools",
@@ -238,42 +238,42 @@ class ToolManager:
     def search_tools(self, query: str, limit: int = 15) -> str:
         """
         Search for tools by name or description.
-        
+
         Args:
             query: Search query
             limit: Max results
-            
+
         Returns:
             JSON string list of matching tools with descriptions
         """
         query = query.lower().strip()
         matches = []
-        
+
         for name, tool in self._tools.items():
             if name == "search_tools":
                 continue
-                
+
             # Get description
             desc = ""
             if hasattr(tool, 'description'):
                 desc = tool.description
             elif isinstance(tool, dict):
                 desc = tool.get('description', '')
-                
+
             # Check match
             if query in name.lower() or query in desc.lower():
                 matches.append({
                     "name": name,
                     "description": desc
                 })
-                
+
         # Sort by name and limit
         matches.sort(key=lambda x: x['name'])
         matches = matches[:limit]
-        
+
         if not matches:
             return f"No tools found matching '{query}'. Try a different search term."
-            
+
         import json
         return json.dumps(matches, indent=2)
 
@@ -899,38 +899,38 @@ class ToolManager:
     async def register_a2a_agent(self, url: str) -> RegisteredAgent:
         """
         Register an A2A agent by its URL.
-        
+
         Args:
             url (str): The base URL of the A2A agent.
-            
+
         Returns:
             RegisteredAgent: The registered agent object.
-            
+
         Raises:
             Exception: If registration fails or agent is unreachable.
         """
         url = url.rstrip('/')
         agent_url = f"{url}/.well-known/agent.json"
-        
+
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(agent_url) as response:
                     if response.status != 200:
                         raise ValueError(f"Failed to fetch agent card: {response.status}")
-                    
+
                     data = await response.json()
                     card = AgentCard.from_dict(data)
                     card.url = url # Ensure URL is set to the base URL
-                    
+
                     agent = RegisteredAgent(
                         url=url,
                         card=card
                     )
-                    
+
                     self._registered_agents[card.name] = agent
                     self.logger.info(f"Registered A2A agent: {card.name} ({url})")
                     return agent
-                    
+
         except Exception as e:
             self.logger.error(f"Error registering A2A agent from {url}: {e}")
             raise
@@ -965,7 +965,7 @@ class ToolManager:
             for s in agent.card.skills:
                 if any(tag_lower == t.lower() for t in s.tags):
                     results.append(agent)
-                    break 
+                    break
         return results
 
     def search_a2a_agents(self, query: str) -> List[RegisteredAgent]:
@@ -976,24 +976,24 @@ class ToolManager:
         q = query.lower()
         for agent in self._registered_agents.values():
             # Search in agent metadata and tags
-            if (q in agent.card.name.lower() or 
+            if (q in agent.card.name.lower() or
                 q in agent.card.description.lower() or
                 any(q in t.lower() for t in agent.card.tags)):
                 results.append(agent)
                 continue
-                
+
             # Search in skills
             found_in_skills = False
             for s in agent.card.skills:
-                if (q in s.name.lower() or 
+                if (q in s.name.lower() or
                     q in s.description.lower() or
                     any(q in t.lower() for t in s.tags)):
                     found_in_skills = True
                     break
-            
+
             if found_in_skills:
                 results.append(agent)
-                
+
         return results
 
     def list_a2a_agents(self) -> List[str]:

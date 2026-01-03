@@ -502,6 +502,15 @@ class AbstractBot(DBInterface, LocalKBMixin, ToolInterface, VectorInterface, ABC
             **config.extra
         )
 
+    @property
+    def system_prompt(self) -> str:
+        """Get Current System Prompt Template."""
+        return self._system_prompt_template
+
+    @system_prompt.setter
+    def system_prompt(self, value: str) -> None:
+        """Define the system prompt template."""
+        self._system_prompt_template = value
 
     def set_program(self, program_slug: str) -> None:
         """Set the program slug for the bot."""

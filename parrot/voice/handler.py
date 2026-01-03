@@ -1,70 +1,140 @@
 """
-Voice WebSocket Handler
+VoiceChatHandler - WebSocket Handler Desacoplado
 
-Provides WebSocket endpoints for real-time voice interactions.
-Handles bidirectional audio streaming between web clients and VoiceBot.
+Este handler SOLO se encarga del transporte WebSocket.
+NO conoce nada de Google/Gemini - toda la lógica de voz
+está encapsulada en VoiceBot/GeminiLiveClient.
+
+Responsabilidades:
+- Manejar conexiones WebSocket
+- Codificar/decodificar audio base64
+- Rutear mensajes de control
+- Mantener estado de conexiones
+
+NO hace:
+- Inicializar genai.Client
+- Construir LiveConnectConfig
+- Ejecutar herramientas
+- Procesar respuestas de Gemini
 """
-
+from __future__ import annotations
 import asyncio
+import base64
+import contextlib
 import json
 import uuid
-import base64
-import logging
-from typing import Dict, Any, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Optional,
+)
 from aiohttp import web, WSMsgType
-from navigator.views import BaseHandler
-from .models import VoiceConfig, VoiceResponse
-from ..bots.voice import VoiceBot, create_voice_bot
+from navconfig.logging import logging
+from parrot.bots.voice import VoiceBot, create_voice_bot
+from parrot.voice.models import VoiceConfig
 
 
 @dataclass
-class WebSocketVoiceConnection:
-    """Represents an active WebSocket voice connection."""
+class WebSocketConnection:
+    """Representa una conexión WebSocket activa."""
     ws: web.WebSocketResponse
     session_id: str
     user_id: Optional[str] = None
     created_at: datetime = field(default_factory=datetime.now)
-    config: Dict[str, Any] = field(default_factory=dict)
-    # Audio streaming state
-    audio_queue: asyncio.Queue = field(default_factory=asyncio.Queue)
+
+    # Bot asociado a esta conexión
+    bot: Optional[VoiceBot] = None
+
+    # Estado de grabación (matching VoiceChatServer)
     is_recording: bool = False
-    session_active: bool = False
-    # Task management
-    session_task: Optional[asyncio.Task] = None
+    recording_start_time: Optional[datetime] = None
+    session_active: bool = False  # True when bot session is active
+    stop_audio_sending: bool = False  # Flag to immediately stop audio forwarding
+    gemini_responding: bool = False  # True when Gemini has started responding (VAD triggered)
+
+    # Queue de audio para el bot
+    audio_queue: asyncio.Queue = field(default_factory=asyncio.Queue)
+
+    # Task de la sesión de voz
+    voice_task: Optional[asyncio.Task] = None
+
+    # Evento de shutdown
     shutdown_event: asyncio.Event = field(default_factory=asyncio.Event)
 
+    # Configuración recibida del cliente
+    config: Dict[str, Any] = field(default_factory=dict)
 
-class VoiceStreamHandler(BaseHandler):
-    """
-    WebSocket handler for voice streaming.
-    Provides real-time bidirectional audio streaming for voice chat.
-    Protocol:
-        Client → Server:
-            - {"type": "start_session", "config": {...}}
-            - {"type": "audio_chunk", "data": "<base64_pcm>"}
-            - {"type": "stop_recording"}
-            - {"type": "end_session"}
 
-        Server → Client:
-            - {"type": "session_started", "session_id": "..."}
-            - {"type": "transcription", "text": "...", "is_user": true/false}
-            - {"type": "response_chunk", "text": "...", "audio_base64": "..."}
-            - {"type": "response_complete", "text": "...", "audio_base64": "..."}
-            - {"type": "error", "message": "..."}
+class VoiceChatHandler:
     """
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.connections: Dict[str, WebSocketVoiceConnection] = {}
-        self.default_bot_config: Dict[str, Any] = kwargs.get('bot_config', {})
+    Handler de WebSocket para chat de voz.
+
+    Completamente desacoplado del proveedor de voz (Google, OpenAI, etc.).
+    Solo maneja el transporte WebSocket <-> VoiceBot.
+
+    Usage:
+        handler = VoiceChatHandler(
+            bot_factory=lambda: create_voice_bot(
+                name="Assistant",
+                voice_name="Puck",
+            )
+        )
+
+        app = web.Application()
+        app.router.add_get('/ws/voice', handler.handle_websocket)
+    """
+
+    def __init__(
+        self,
+        bot_factory: Optional[Callable[[], VoiceBot]] = None,
+        default_config: Optional[Dict[str, Any]] = None,
+    ):
+        """
+        Inicializar handler.
+
+        Args:
+            bot_factory: Factory para crear VoiceBot instances
+            default_config: Configuración por defecto para bots
+        """
+        self.bot_factory = bot_factory or self._default_bot_factory
+        self.default_config = default_config or {}
+        self.connections: Dict[str, WebSocketConnection] = {}
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
 
-    async def voice_websocket(self, request: web.Request) -> web.WebSocketResponse:
-        """
-        Main WebSocket endpoint for voice interactions.
+    def _default_bot_factory(self) -> VoiceBot:
+        """Factory por defecto para crear bots."""
+        # Use _current_config if set (merged config from session), else use default_config
+        config = getattr(self, '_current_config', None) or self.default_config
+        return create_voice_bot(
+            name=config.get('name', 'Voice Assistant'),
+            voice_name=config.get('voice_name', 'Puck'),
+            language=config.get('language', 'en-US'),
+            system_prompt=config.get('system_prompt'),
+        )
 
-        Route: /ws/voice or /ws/voice/{bot_id}
+    async def handle_websocket(self, request: web.Request) -> web.WebSocketResponse:
+        """
+        Handler principal de WebSocket.
+
+        Protocolo de mensajes:
+
+        Cliente -> Servidor:
+        - {"type": "start_session", "config": {...}}
+        - {"type": "audio_data", "data": "<base64>"}
+        - {"type": "start_recording"}
+        - {"type": "stop_recording"}
+        - {"type": "send_text", "text": "..."}
+        - {"type": "end_session"}
+
+        Servidor -> Cliente:
+        - {"type": "session_started", "session_id": "..."}
+        - {"type": "voice_response", "text": "...", "audio_base64": "..."}
+        - {"type": "transcription", "text": "...", "role": "user|assistant"}
+        - {"type": "tool_call", "name": "...", "result": {...}}
+        - {"type": "error", "message": "..."}
         """
         ws = web.WebSocketResponse(
             heartbeat=30.0,
@@ -72,355 +142,548 @@ class VoiceStreamHandler(BaseHandler):
         )
         await ws.prepare(request)
 
-        # Create connection
         session_id = str(uuid.uuid4())
-        bot_id = request.match_info.get('bot_id', 'default')
 
-        connection = WebSocketVoiceConnection(
+        connection = WebSocketConnection(
             ws=ws,
             session_id=session_id,
-            user_id=request.headers.get('X-User-Id')
+            user_id=request.query.get('user_id'),
         )
         self.connections[session_id] = connection
 
-        self.logger.info(f"Voice WebSocket connected: {session_id}")
+        self.logger.info(f"New WebSocket connection: {session_id}")
 
         try:
-            # Send connection confirmation
+            # Enviar confirmación de conexión
             await self._send_message(ws, {
                 "type": "connected",
                 "session_id": session_id,
-                "message": "Voice WebSocket connected. Send 'start_session' to begin."
             })
 
-            # Message handling loop
+            # Procesar mensajes
             async for msg in ws:
                 if msg.type == WSMsgType.TEXT:
-                    await self._handle_text_message(connection, msg.data)
+                    try:
+                        data = json.loads(msg.data)
+                        await self._handle_message(connection, data)
+                    except json.JSONDecodeError:
+                        await self._send_error(ws, "Invalid JSON")
+                    except Exception as e:
+                        self.logger.error(f"Error handling message: {e}")
+                        await self._send_error(ws, str(e))
+
                 elif msg.type == WSMsgType.BINARY:
-                    await self._handle_binary_message(connection, msg.data)
+                    # Audio binario directo (matching VoiceChatServer _handle_binary)
+                    # Auto-detect recording start
+                    if not connection.is_recording:
+                        connection.stop_audio_sending = False
+                        connection.gemini_responding = False
+                        connection.recording_start_time = datetime.now()
+                    connection.is_recording = True
+
+                    if connection.session_active and not connection.stop_audio_sending:
+                        await connection.audio_queue.put(msg.data)
+
                 elif msg.type == WSMsgType.ERROR:
                     self.logger.error(f"WebSocket error: {ws.exception()}")
-                    break
-                elif msg.type == WSMsgType.CLOSE:
-                    break
 
         except asyncio.CancelledError:
-            self.logger.info(f"Voice WebSocket cancelled: {session_id}")
-        except Exception as e:
-            self.logger.error(f"Voice WebSocket error: {e}")
-            await self._send_error(ws, str(e))
+            self.logger.info(f"Connection cancelled: {session_id}")
+
         finally:
-            # Cleanup
-            await self._cleanup_connection(session_id)
-            self.logger.info(f"Voice WebSocket disconnected: {session_id}")
+            await self._cleanup_connection(connection)
+            del self.connections[session_id]
+            self.logger.info(f"Connection closed: {session_id}")
 
         return ws
 
-    async def _handle_text_message(
+    async def _handle_message(
         self,
-        connection: WebSocketVoiceConnection,
-        data: str
+        connection: WebSocketConnection,
+        message: Dict[str, Any]
     ) -> None:
-        """Handle incoming JSON text messages."""
-        try:
-            message = json.loads(data)
-            msg_type = message.get('type', '')
+        """Rutear mensaje al handler apropiado."""
+        msg_type = message.get('type', '')
 
-            if msg_type == 'start_session':
-                await self._handle_start_session(connection, message)
+        handlers = {
+            'start_session': self._handle_start_session,
+            'end_session': self._handle_end_session,
+            'reset_session': self._handle_reset_session,  # VoiceChatServer compatibility
+            'start_recording': self._handle_start_recording,
+            'stop_recording': self._handle_stop_recording,
+            'audio_data': self._handle_audio_data,
+            'audio_chunk': self._handle_audio_data,  # Alias for VoiceChatServer compatibility
+            'send_text': self._handle_send_text,
+            'text_message': self._handle_send_text,  # Alias for VoiceChatServer compatibility
+            'ping': self._handle_ping,
+        }
 
-            elif msg_type == 'audio_chunk':
-                await self._handle_audio_chunk(connection, message)
-
-            elif msg_type == 'stop_recording':
-                await self._handle_stop_recording(connection)
-
-            elif msg_type == 'text_message':
-                await self._handle_text_input(connection, message)
-
-            elif msg_type == 'end_session':
-                await self._handle_end_session(connection)
-
-            elif msg_type == 'ping':
-                await self._send_message(connection.ws, {"type": "pong"})
-
-            else:
-                self.logger.warning(f"Unknown message type: {msg_type}")
-
-        except json.JSONDecodeError as e:
-            await self._send_error(connection.ws, f"Invalid JSON: {e}")
-
-    async def _handle_binary_message(
-        self,
-        connection: WebSocketVoiceConnection,
-        data: bytes
-    ) -> None:
-        """Handle incoming binary audio data."""
-        if connection.is_recording and connection.session_active:
-            await connection.audio_queue.put(data)
+        if handler := handlers.get(msg_type):
+            await handler(connection, message)
+        else:
+            self.logger.warning(f"Unknown message type: {msg_type}")
 
     async def _handle_start_session(
         self,
-        connection: WebSocketVoiceConnection,
+        connection: WebSocketConnection,
         message: Dict[str, Any]
     ) -> None:
-        """Initialize a new voice session."""
-        config = message.get('config', {})
+        """Iniciar sesión de voz."""
+        # Merge default config with client-provided config
+        config = {**self.default_config, **message.get('config', {})}
         connection.config = config
 
-        # Create voice configuration
-        voice_config = VoiceConfig(
-            voice_name=config.get('voice_name', 'Puck'),
-            language=config.get('language', 'en-US'),
-            enable_vad=config.get('enable_vad', True),
-        )
+        # Use bot_factory to create the bot (uses merged config)
+        # Store config in instance for factory to use
+        self._current_config = config
+        connection.bot = self.bot_factory()
 
-        # Create voice bot
-        system_prompt = config.get('system_prompt', self.default_bot_config.get('system_prompt'))
+        # Get voice config for response
+        voice_name = config.get('voice_name', 'Puck')
+        language = config.get('language', 'en-US')
 
-        bot = create_voice_bot(
-            name=config.get('name', 'Voice Assistant'),
-            system_prompt=system_prompt,
-            voice_name=voice_config.voice_name,
-            language=voice_config.language,
-        )
-
-        # Reset shutdown event for new session
+        # Iniciar task de voz
         connection.shutdown_event.clear()
-
-        # Start session task - bot handles Gemini connection internally
-        connection.session_task = asyncio.create_task(
-            self._run_voice_session(connection, bot)
+        connection.session_active = True
+        connection.stop_audio_sending = False
+        connection.voice_task = asyncio.create_task(
+            self._run_voice_session(connection)
         )
 
         await self._send_message(connection.ws, {
             "type": "session_started",
             "session_id": connection.session_id,
             "config": {
-                "voice_name": voice_config.voice_name,
-                "language": voice_config.language,
+                "voice_name": voice_name,
+                "language": language,
                 "input_format": "audio/pcm;rate=16000",
-                "output_format": "audio/pcm;rate=24000"
+                "output_format": "audio/pcm;rate=24000",
             }
+        })
+
+        # Signal frontend that it can speak (enables Talk button)
+        await self._send_message(connection.ws, {
+            "type": "ready_to_speak",
+            "message": "Ready for your question"
         })
 
         self.logger.info(f"Voice session started: {connection.session_id}")
 
-    async def _run_voice_session(
+    async def _handle_end_session(
         self,
-        connection: WebSocketVoiceConnection,
-        bot: VoiceBot
+        connection: WebSocketConnection,
+        message: Dict[str, Any]
     ) -> None:
-        """
-        Run the voice session with proper context management.
+        """Terminar sesión de voz."""
+        connection.shutdown_event.set()
+        connection.session_active = False
+        connection.stop_audio_sending = True
 
-        All VoiceBot/Gemini interaction happens inside this method.
-        """
-        connection.session_active = True
+        if connection.voice_task:
+            connection.voice_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await connection.voice_task
 
-        async def audio_from_queue() -> bytes:
-            """Generator that yields audio from the connection's queue."""
-            while connection.session_active and not connection.ws.closed:
-                try:
-                    audio_data = await asyncio.wait_for(
-                        connection.audio_queue.get(),
-                        timeout=0.1
-                    )
-                    yield audio_data
-                except asyncio.TimeoutError:
-                    # Check if we should shutdown
-                    if connection.shutdown_event.is_set():
+        if connection.bot:
+            await connection.bot.close()
+            connection.bot = None
+
+        await self._send_message(connection.ws, {
+            "type": "session_ended",
+            "session_id": connection.session_id,
+        })
+
+        self.logger.info(
+            f"Voice session ended: {connection.session_id}"
+        )
+
+    async def _handle_reset_session(
+        self,
+        connection: WebSocketConnection,
+        message: Dict[str, Any]
+    ) -> None:
+        """Reset session - end current and start new."""
+        # End current session
+        await self._handle_end_session(connection, message)
+
+        # Clear audio queue
+        while not connection.audio_queue.empty():
+            try:
+                connection.audio_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+
+        # Start new session with same config
+        await self._handle_start_session(connection, {
+            'config': connection.config
+        })
+
+        self.logger.info(f"Voice session reset: {connection.session_id}")
+
+    async def _handle_start_recording(
+        self,
+        connection: WebSocketConnection,
+        message: Dict[str, Any]
+    ) -> None:
+        """Iniciar grabación de audio."""
+        # Reset flags for new recording (like VoiceChatServer)
+        connection.stop_audio_sending = False
+        connection.gemini_responding = False
+        connection.is_recording = True
+        connection.recording_start_time = datetime.now()
+
+        await self._send_message(connection.ws, {
+            "type": "recording_started",
+        })
+
+    async def _handle_stop_recording(
+        self,
+        connection: WebSocketConnection,
+        message: Dict[str, Any]
+    ) -> None:
+        """Detener grabación de audio (matching VoiceChatServer)."""
+        connection.is_recording = False
+        connection.stop_audio_sending = True  # Immediately stop audio forwarding
+
+        # Check minimum recording duration (500ms)
+        MIN_DURATION_MS = 500
+        duration_ms = 0
+        if connection.recording_start_time:
+            duration_ms = (datetime.now() - connection.recording_start_time).total_seconds() * 1000
+            connection.recording_start_time = None  # Reset for next recording
+
+            if duration_ms < MIN_DURATION_MS:
+                self.logger.info(
+                    f"Recording too short ({duration_ms:.0f}ms < {MIN_DURATION_MS}ms), ignoring: {connection.session_id}"
+                )
+                # Clear the queue
+                while not connection.audio_queue.empty():
+                    try:
+                        connection.audio_queue.get_nowait()
+                    except asyncio.QueueEmpty:
                         break
+                # Notify client to reset UI
+                await self._send_message(connection.ws, {
+                    "type": "recording_stopped",
+                    "message": "Recording too short. Please hold longer."
+                })
+                return
+
+        await self._send_message(connection.ws, {
+            "type": "recording_stopped",
+            "message": "Processing...",
+            "duration_ms": duration_ms,
+        })
+
+    async def _handle_audio_data(
+        self,
+        connection: WebSocketConnection,
+        message: Dict[str, Any]
+    ) -> None:
+        """Recibir chunk de audio (base64) - matching VoiceChatServer behavior."""
+        # Detect new recording start - reset flags (like VoiceChatServer)
+        if not connection.is_recording:
+            self.logger.debug(f"New recording started: {connection.session_id}")
+            connection.stop_audio_sending = False  # Reset FIRST
+            connection.gemini_responding = False  # Reset responding flag for new turn
+            connection.recording_start_time = datetime.now()
+
+        connection.is_recording = True
+
+        # Check session is active
+        if not connection.session_active or connection.stop_audio_sending:
+            self.logger.warning(
+                f"Audio NOT queued: session_active={connection.session_active}, "
+                f"stop_audio_sending={connection.stop_audio_sending}"
+            )
+            return
+
+        if audio_b64 := message.get('data', ''):
+            audio_bytes = base64.b64decode(audio_b64)
+            await connection.audio_queue.put(audio_bytes)
+            self.logger.debug(f"Audio queued: {len(audio_bytes)} bytes, queue size: {connection.audio_queue.qsize()}")
+
+    async def _handle_send_text(
+        self,
+        connection: WebSocketConnection,
+        message: Dict[str, Any]
+    ) -> None:
+        """Enviar texto al bot y recibir respuesta de voz."""
+        text = message.get('text', '')
+        if not text or not connection.bot:
+            return
+
+        try:
+            async for response in connection.bot.ask(
+                question=text,
+                session_id=connection.session_id,
+                user_id=connection.user_id,
+            ):
+                await self._send_voice_response(connection, response)
+        except Exception as e:
+            self.logger.error(f"Error processing text: {e}")
+            await self._send_error(connection.ws, str(e))
+
+    async def _handle_ping(
+        self,
+        connection: WebSocketConnection,
+        message: Dict[str, Any]
+    ) -> None:
+        """Responder ping con pong."""
+        await self._send_message(connection.ws, {
+            "type": "pong",
+            "timestamp": datetime.now().isoformat(),
+        })
+
+    async def _run_voice_session(self, connection: WebSocketConnection) -> None:
+        """
+        Ejecutar sesión de voz.
+
+        Lee audio del queue, lo envía al bot, y transmite respuestas.
+        """
+        if not connection.bot:
+            return
+
+        async def audio_from_queue():
+            """Generador que lee audio del queue.
+            
+            For multi-turn support:
+            - Yields audio chunks to send to Gemini
+            - Yields None (sentinel) when turn ends to trigger audio_stream_end
+            - Stays alive until shutdown_event is set
+            """
+            audio_ended_sent = False
+            
+            while not connection.shutdown_event.is_set():
+                try:
+                    chunk = await asyncio.wait_for(
+                        connection.audio_queue.get(),
+                        timeout=0.5
+                    )
+                    # New audio arrived - reset end signal flag
+                    audio_ended_sent = False
+                    yield chunk
+                except asyncio.TimeoutError:
+                    # No audio available
+                    # If recording stopped and queue empty, signal end of this turn's audio
+                    if connection.stop_audio_sending and connection.audio_queue.empty():
+                        if not audio_ended_sent:
+                            self.logger.debug(
+                                f"Turn audio complete for session {connection.session_id}"
+                            )
+                            # Yield None sentinel to signal end of turn's audio
+                            # The _audio_sender will send audio_stream_end
+                            yield None
+                            audio_ended_sent = True
                     continue
                 except asyncio.CancelledError:
                     break
 
-        try:
-            async for response in bot.ask_voice_stream(
-                audio_input=audio_from_queue(),
-                session_id=connection.session_id,
-                user_id=connection.user_id
-            ):
-                if connection.ws.closed:
-                    break
-
-                await self._forward_response(connection.ws, response)
-
-        except asyncio.CancelledError:
-            self.logger.info(f"Voice session cancelled: {connection.session_id}")
-        except Exception as e:
-            self.logger.error(f"Voice session error: {e}", exc_info=True)
-            await self._send_error(connection.ws, str(e))
-        finally:
-            connection.session_active = False
-            self.logger.info(f"Voice session ended: {connection.session_id}")
-
-    async def _handle_audio_chunk(
-        self,
-        connection: WebSocketVoiceConnection,
-        message: Dict[str, Any]
-    ) -> None:
-        """Process incoming audio chunk."""
-        if not connection.session_active:
-            await self._send_error(connection.ws, "Session not started")
-            return
-
-        # Decode base64 audio
-        audio_b64 = message.get('data', '')
-        if audio_b64:
+        # Multi-turn session loop
+        # Gemini sessions may close (GoAway, timeout, etc.) but we keep listening
+        # and restart the session for subsequent questions
+        while not connection.shutdown_event.is_set():
             try:
-                audio_bytes = base64.b64decode(audio_b64)
-                connection.is_recording = True
-                await connection.audio_queue.put(audio_bytes)
+                self.logger.debug(f"Starting/restarting Gemini session for {connection.session_id}")
+
+                async for response in connection.bot.ask_stream(
+                    audio_input=audio_from_queue(),
+                    session_id=connection.session_id,
+                    user_id=connection.user_id,
+                ):
+                    await self._send_voice_response(connection, response)
+
+                    # Check for GoAway - session will close
+                    if response.metadata.get('go_away'):
+                        self.logger.info(f"Received GoAway, will restart session: {connection.session_id}")
+                        await self._send_message(connection.ws, {
+                            "type": "session_warning",
+                            "message": "Session reconnecting...",
+                        })
+                        break
+
+                    if connection.shutdown_event.is_set():
+                        return
+
+                # Session ended - notify and loop to restart
+                if not connection.shutdown_event.is_set():
+                    self.logger.info(f"Gemini session ended, restarting: {connection.session_id}")
+
+            except asyncio.CancelledError:
+                self.logger.info(f"Voice session cancelled: {connection.session_id}")
+                return
             except Exception as e:
-                self.logger.error(f"Error processing audio chunk: {e}")
+                self.logger.error(f"Voice session error: {e}", exc_info=True)
+                await self._send_error(connection.ws, str(e))
+                # Wait before retry
+                await asyncio.sleep(1)
 
-    async def _handle_stop_recording(
+    async def _send_voice_response(
         self,
-        connection: WebSocketVoiceConnection
+        connection: WebSocketConnection,
+        response: Any
     ) -> None:
-        """Handle end of user speech."""
-        connection.is_recording = False
+        """Enviar respuesta de voz al cliente en formato VoiceChatServer."""
+        import base64
 
-        await self._send_message(connection.ws, {
-            "type": "recording_stopped",
-            "message": "Processing your request..."
-        })
-
-    async def _handle_text_input(
-        self,
-        connection: WebSocketVoiceConnection,
-        message: Dict[str, Any]
-    ) -> None:
-        """Handle text input (for hybrid voice/text interactions)."""
-        text = message.get('text', '')
-        if text:
-            self.logger.info(f"Text message received: {text}")
-            # Text input would require a different flow
-            # For now, just acknowledge
+        # Send audio chunks as response_chunk (matching VoiceChatServer)
+        # BUT only if this is NOT a complete response (to avoid duplicate audio)
+        if response.audio_data and not response.is_complete:
             await self._send_message(connection.ws, {
-                "type": "info",
-                "message": "Text input received. Use voice for this session."
+                "type": "response_chunk",
+                "text": "",
+                "audio_base64": base64.b64encode(response.audio_data).decode(),
+                "audio_format": "audio/pcm;rate=24000",
+                "is_interrupted": response.is_interrupted,
             })
 
-    async def _handle_end_session(
-        self,
-        connection: WebSocketVoiceConnection
-    ) -> None:
-        """End the voice session."""
-        # Signal shutdown
-        connection.shutdown_event.set()
-        connection.session_active = False
+        # Send user transcription if available
+        if response.metadata.get('user_transcription'):
+            await self._send_message(connection.ws, {
+                "type": "transcription",
+                "text": response.metadata['user_transcription'],
+                "is_user": True,
+            })
 
-        if connection.session_task:
-            connection.session_task.cancel()
-            try:
-                await connection.session_task
-            except asyncio.CancelledError:
-                pass
-            connection.session_task = None
+        # Send assistant transcription if available (from metadata or turn_metadata)
+        assistant_text = response.metadata.get('assistant_transcription')
+        if not assistant_text and response.turn_metadata:
+            assistant_text = response.turn_metadata.output_transcription
+        if assistant_text:
+            await self._send_message(connection.ws, {
+                "type": "transcription",
+                "text": assistant_text,
+                "is_user": False,
+            })
 
-        await self._send_message(connection.ws, {
-            "type": "session_ended",
-            "session_id": connection.session_id
-        })
+        # Send tool call notifications
+        for tc in response.tool_calls:
+            await self._send_message(connection.ws, {
+                "type": "tool_call",
+                "name": tc.name,
+                "arguments": tc.arguments,
+                "result": tc.result,
+                "execution_time_ms": tc.execution_time_ms,
+            })
 
-    async def _forward_response(
-        self,
-        ws: web.WebSocketResponse,
-        response: VoiceResponse
-    ) -> None:
-        """Forward a VoiceResponse to the WebSocket client."""
-        message = {
-            "type": "response_complete" if response.is_complete else "response_chunk",
-            "text": response.text,
-            "audio_base64": base64.b64encode(response.audio_data).decode() if response.audio_data else None,
-            "audio_format": response.audio_format.value if response.audio_data else None,
-            "is_interrupted": response.is_interrupted,
-        }
+        # On turn complete, send response_complete and ready_to_speak
+        if response.is_complete:
+            # Don't include text in response_complete - it contains model "thoughts"
+            # Actual transcriptions were already sent via transcription messages
+            await self._send_message(connection.ws, {
+                "type": "response_complete",
+                "text": "",  # Don't show thoughts/reasoning
+                "audio_base64": "",  # Audio already streamed
+                "is_interrupted": response.is_interrupted,
+            })
 
-        # Include transcription metadata if available
-        if "user_transcription" in response.metadata:
-            message["user_transcription"] = response.metadata["user_transcription"]
-
-        # Include tool calls if any
-        if response.tool_calls:
-            message["tool_calls"] = response.tool_calls
-
-        await self._send_message(ws, message)
+            # Signal frontend that it can speak again (enables Talk button)
+            await self._send_message(connection.ws, {
+                "type": "ready_to_speak",
+                "message": "Ready for new question"
+            })
 
     async def _send_message(
         self,
         ws: web.WebSocketResponse,
         message: Dict[str, Any]
     ) -> None:
-        """Send a JSON message to the WebSocket client."""
-        if not ws.closed:
-            try:
-                await ws.send_str(json.dumps(message))
-            except Exception as e:
-                self.logger.error(f"Error sending message: {e}")
+        """Enviar mensaje JSON al cliente."""
+        try:
+            await ws.send_json(message)
+        except Exception as e:
+            self.logger.error(f"Error sending message: {e}")
 
     async def _send_error(
         self,
         ws: web.WebSocketResponse,
-        error: str
+        error_message: str
     ) -> None:
-        """Send an error message to the client."""
+        """Enviar mensaje de error al cliente."""
         await self._send_message(ws, {
             "type": "error",
-            "message": error
+            "message": error_message,
+            "timestamp": datetime.now().isoformat(),
         })
 
-    async def _cleanup_connection(self, session_id: str) -> None:
-        """Clean up a connection and its resources."""
-        connection = self.connections.pop(session_id, None)
-        if connection:
-            # Signal shutdown
-            connection.shutdown_event.set()
-            connection.session_active = False
+    async def _cleanup_connection(self, connection: WebSocketConnection) -> None:
+        """Limpiar recursos de una conexión."""
+        connection.shutdown_event.set()
 
-            # Cancel session task
-            if connection.session_task:
-                connection.session_task.cancel()
-                try:
-                    await connection.session_task
-                except asyncio.CancelledError:
-                    pass
+        if connection.voice_task:
+            connection.voice_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await connection.voice_task
 
-            # Close WebSocket
-            if not connection.ws.closed:
-                await connection.ws.close()
+        if connection.bot:
+            await connection.bot.close()
+
+        # Vaciar queue
+        while not connection.audio_queue.empty():
+            try:
+                connection.audio_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+
+    async def broadcast(self, message: Dict[str, Any]) -> None:
+        """Enviar mensaje a todas las conexiones activas."""
+        for connection in self.connections.values():
+            await self._send_message(connection.ws, message)
+
+    @property
+    def active_connections(self) -> int:
+        """Número de conexiones activas."""
+        return len(self.connections)
 
 
-def setup_voice_routes(app: web.Application, handler: VoiceStreamHandler = None) -> None:
+# =============================================================================
+# Factory para crear servidor completo
+# =============================================================================
+
+def create_voice_server(
+    host: str = "0.0.0.0",
+    port: int = 8765,
+    bot_config: Optional[Dict[str, Any]] = None,
+    **kwargs
+) -> web.Application:
     """
-    Set up voice WebSocket routes on an aiohttp application.
+    Crear servidor de voz completo.
 
     Args:
-        app: aiohttp Application
-        handler: VoiceStreamHandler instance (creates new if None)
+        host: Host para el servidor
+        port: Puerto para el servidor
+        bot_config: Configuración por defecto para bots
+        **kwargs: Argumentos adicionales para aiohttp
+
+    Returns:
+        Aplicación aiohttp configurada
     """
-    if handler is None:
-        handler = VoiceStreamHandler()
+    from parrot.conf import STATIC_DIR  # pylint: disable=C0415
+    frontend_dir = STATIC_DIR / 'chat'
+    handler = VoiceChatHandler(default_config=bot_config or {})
 
-    app.router.add_get('/ws/voice', handler.voice_websocket)
-    app.router.add_get('/ws/voice/{bot_id}', handler.voice_websocket)
-
-    # Store handler reference for cleanup
-    app['voice_handler'] = handler
-
-
-# Standalone server for testing
-async def create_voice_app() -> web.Application:
-    """Create a standalone voice server application."""
     app = web.Application()
+    app.router.add_get('/ws/voice', handler.handle_websocket)
 
-    handler = VoiceStreamHandler()
-    setup_voice_routes(app, handler)
+    if frontend_dir.exists():
+        app.router.add_static('/static', frontend_dir)
 
-    # Add CORS headers for local testing
+        # Serve chat.html at root
+        async def index(request):
+            return web.FileResponse(frontend_dir / 'chat.html')
+
+        app.router.add_get('/', index)
+
+    # Health check
+    async def health_check(request):
+        return web.json_response({
+            "status": "ok",
+            "active_connections": handler.active_connections,
+        })
+
+    app.router.add_get('/health', health_check)
+
+    # CORS middleware
     @web.middleware
     async def cors_middleware(request, handler):
         if request.method == "OPTIONS":
@@ -438,7 +701,27 @@ async def create_voice_app() -> web.Application:
     return app
 
 
-if __name__ == '__main__':
-    # Run standalone voice server
-    app = asyncio.get_event_loop().run_until_complete(create_voice_app())
-    web.run_app(app, host='0.0.0.0', port=8765)
+# =============================================================================
+# Entry point
+# =============================================================================
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Voice Chat WebSocket Server")
+    parser.add_argument('--host', default='0.0.0.0', help='Host to bind')
+    parser.add_argument('--port', type=int, default=8765, help='Port to bind')
+    parser.add_argument('--voice', default='Puck', help='Default voice name')
+    args = parser.parse_args()
+
+    app = create_voice_server(
+        host=args.host,
+        port=args.port,
+        bot_config={
+            'voice_name': args.voice,
+            'system_prompt': "You are a helpful voice assistant.",
+        }
+    )
+
+    print(f"Starting voice server on {args.host}:{args.port}")
+    web.run_app(app, host=args.host, port=args.port)

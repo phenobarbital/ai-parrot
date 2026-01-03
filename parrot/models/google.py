@@ -26,6 +26,26 @@ class GoogleModel(Enum):
     VEO_2_0 = "veo-2.0-generate-001"
     VEO_3_0_FAST = "veo-3.0-fast-generate-001"
 
+class GoogleVoiceModel(str, Enum):
+    """
+    Available models for Gemini Live API.
+
+    Native Audio models support bidirectional voice streaming.
+    See: https://ai.google.dev/gemini-api/docs/live
+    """
+    # Latest Native Audio models
+    GEMINI_2_5_FLASH_NATIVE_AUDIO_LATEST = "gemini-2.5-flash-native-audio-preview-12-2025"
+    GEMINI_2_5_FLASH_NATIVE_AUDIO_DEC_2025 = "gemini-2.5-flash-native-audio-preview-12-2025"
+    GEMINI_2_5_FLASH_NATIVE_AUDIO_SEP_2025 = "gemini-2.5-flash-native-audio-preview-09-2025"
+
+    # Aliases
+    DEFAULT = "gemini-2.5-flash-native-audio-preview-12-2025"
+
+    @classmethod
+    def all_models(cls) -> List[str]:
+        """Get all available model strings."""
+        return [m.value for m in cls if m.name not in ('DEFAULT',)]
+
 # NEW: Enum for all valid TTS voice names
 class TTSVoice(str, Enum):
     """Google TTS voices."""

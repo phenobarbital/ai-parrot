@@ -271,7 +271,9 @@ class VoiceChatServer:
                 }
             })
 
-            self.logger.info(f"Live session started: {conn.session_id}")
+            self.logger.info(
+                f"Live session started: {conn.session_id}"
+            )
 
         except Exception as e:
             self.logger.error(f"Failed to start session: {e}", exc_info=True)
@@ -500,13 +502,17 @@ class VoiceChatServer:
                         break
 
         except asyncio.CancelledError:
-            self.logger.info(f"Gemini session cancelled: {conn.session_id}")
+            self.logger.info(
+                f"Gemini session cancelled: {conn.session_id}"
+            )
         except Exception as e:
             self.logger.error(f"Gemini session error: {e}", exc_info=True)
             await self._send(conn.ws, {"type": "error", "message": str(e)})
         finally:
             conn.session_active = False
-            self.logger.info(f"Gemini session ended: {conn.session_id}, WS closed: {conn.ws.closed}")
+            self.logger.info(
+                f"Gemini session ended: {conn.session_id}, WS closed: {conn.ws.closed}"
+            )
 
     async def _audio_sender(self, conn: VoiceConnection, session) -> None:
         """Send audio from queue to Gemini session."""
@@ -646,7 +652,7 @@ class VoiceChatServer:
     def _identify_response_type(self, response) -> str:
         """Identify the type of response for logging."""
         types_found = []
-        
+
         if hasattr(response, 'setup_complete') and response.setup_complete:
             types_found.append("setup_complete")
         if hasattr(response, 'server_content') and response.server_content:
@@ -661,7 +667,7 @@ class VoiceChatServer:
             types_found.append("go_away")
         if hasattr(response, 'session_resumption_update') and response.session_resumption_update:
             types_found.append("session_resumption_update")
-            
+
         return ', '.join(types_found) if types_found else "unknown"
 
     async def _response_receiver(self, conn: VoiceConnection, session) -> None:
@@ -669,7 +675,7 @@ class VoiceChatServer:
         current_text = ""
         current_audio = b""
         message_count = 0
-        
+
         self.logger.info(
             f"Response receiver started for session: {conn.session_id}"
         )
@@ -690,8 +696,9 @@ class VoiceChatServer:
 
                 # Debug full response structure
                 try:
-                    import pprint
-                    self.logger.debug(f"Gemini raw response: {pprint.pformat(response)}")
+                    # import pprint
+                    # self.logger.debug(f"Gemini raw response: {pprint.pformat(response)}")
+                    pass
                 except Exception:
                     self.logger.debug(f"Gemini response: {response}")
                 if conn.ws.closed or not conn.session_active:
@@ -747,9 +754,9 @@ class VoiceChatServer:
                         # Save audio to file for debugging
                         if current_audio:
                             debug_path = f"/tmp/gemini_audio_{conn.session_id}.pcm"
-                            with open(debug_path, "wb") as f:
-                                f.write(current_audio)
-                            self.logger.info(f"DEBUG: Saved audio to {debug_path} ({len(current_audio)} bytes)")
+                            # with open(debug_path, "wb") as f:
+                            #    f.write(current_audio)
+                            # self.logger.info(f"DEBUG: Saved audio to {debug_path} ({len(current_audio)} bytes)")
 
                         self.logger.info(f"Turn complete. Total audio: {len(current_audio)} bytes, Text: {len(current_text)} chars")
                         await self._send(conn.ws, {
