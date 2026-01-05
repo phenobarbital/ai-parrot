@@ -60,8 +60,6 @@ Welcome to the AI-Parrot documentation. This is your comprehensive guide to buil
 ### 🔧 Advanced Topics
 
 - [MCP GenMedia Installation](install-mcp-genmedia.md) - Installing GenMedia for MCP
-- [A2A Communication](a2a_communication.md) - Advanced agent communication patterns
-
 ---
 
 ## 🎯 Quick Navigation by Use Case
@@ -100,7 +98,7 @@ When contributing to the documentation, please follow the [Style Guide](STYLE_GU
 
 ## 🔗 External Resources
 
-- [GitHub Repository](https://github.com/Trocdigital/ai-parrot)
+- [GitHub Repository](https://github.com/phenobarbital/ai-parrot)
 - [Project README](../README.md)
 
 ---
