@@ -304,8 +304,12 @@ class AbstractClient(ABC):
         return False
 
     async def close(self):
-        if self.client and hasattr(self.client, 'close'):
-            await self.client.close()
+        if self.client is not None and hasattr(self.client, 'close'):
+            close_method = self.client.close
+            if asyncio.iscoroutinefunction(close_method):
+                await close_method()
+            elif callable(close_method):
+                close_method()
 
     def __repr__(self):
         return f'<{self.__name__} model={self.model} client_type={self.client_type}>'
@@ -533,23 +537,20 @@ class AbstractClient(ABC):
         fn["strict"] = True
         return schema
 
-        self.logger.debug(f"Prepared {len(tool_schemas)} tool schemas")
-        return tool_schemas
-
     def _check_new_tools(self, tool_name: str, tool_result_content: str) -> List[str]:
         """
         Check if search_tools was called and return any found tool names.
-        
+
         Args:
             tool_name: Name of the executed tool
             tool_result_content: Content returned by the tool (JSON string)
-            
+
         Returns:
             List of found tool names
         """
         if tool_name != "search_tools":
             return []
-            
+
         try:
             # Result should be a JSON string of list of dicts
             import json
@@ -558,7 +559,7 @@ class AbstractClient(ABC):
                 return [t.get("name") for t in found_tools if isinstance(t, dict) and "name" in t]
         except Exception as e:
             self.logger.warning(f"Failed to parse search_tools result: {e}")
-            
+
         return []
 
     def _prepare_lazy_tools(self, tool_choice: str = "auto") -> List[Dict[str, Any]]:
@@ -568,37 +569,37 @@ class AbstractClient(ABC):
         # Always include search_tools
         lazy_tools = ["search_tools"]
         # Maybe include some basics if defined in a preset
-        
+
         schemas = []
         for name in lazy_tools:
             if tool := self.tool_manager.get_tool(name):
-                 # Reuse _prepare_tools logic but for specific tools? 
-                 # _prepare_tools iterates ALL tools in manager.
-                 # We should probably filter _prepare_tools.
-                 pass
-        
+                # Reuse _prepare_tools logic but for specific tools?
+                # _prepare_tools iterates ALL tools in manager.
+                # We should probably filter _prepare_tools.
+                pass
+
         # ACTUALLY, simpler:
         # If lazy loading, we just return the schema for 'search_tools'
         # tool_manager.get_tool_schemas can be updated/used?
         # Or we manually fetch schema for search_tools.
-        
+
         # Let's rely on ToolManager.get_tool_schemas supporting filtering?
         # I didn't add filtering to ToolManager.get_tool_schemas yet.
         # I should have done that.
         # But I can just fetch the tool and get its schema.
-        
+
         search_tool = self.tool_manager.get_tool("search_tools")
         if not search_tool:
             self.logger.warning("search_tools not found for lazy loading")
             return []
-            
+
         # We need to adapt the schema using the same logic as _prepare_tools
         # _prepare_tools calls tool_manager.get_tool_schemas()
-        
-        # I will hack specific getting for now to avoid modifying ToolManager again if possible, 
+
+        # I will hack specific getting for now to avoid modifying ToolManager again if possible,
         # but modifying ToolManager to filter is cleaner.
         # Let's assume I can iterate and filter here.
-        
+
         return self._prepare_tools(filter_names=["search_tools"])
 
     def _prepare_tools(self, filter_names: Optional[List[str]] = None) -> List[Dict[str, Any]]:
@@ -627,11 +628,11 @@ class AbstractClient(ABC):
             clean_schema.pop('_tool_instance', None)
 
             tool_name = clean_schema.get('name')
-            
+
             # FILTERING LOGIC
             if filter_names is not None and tool_name not in filter_names:
                 continue
-                
+
             if tool_name and tool_name not in processed_tools:
                 # Format according to the client type
                 if self.client_type == 'openai':
@@ -654,7 +655,7 @@ class AbstractClient(ABC):
                         "description": clean_schema["description"],
                         "input_schema": clean_schema.get("parameters", {})
                     }
-                
+
                 tool_schemas.append(formatted_schema)
                 processed_tools.add(tool_name)
 
@@ -793,7 +794,7 @@ class AbstractClient(ABC):
         lazy_loading: bool = False,
     ) -> MessageResponse:
         """Send a prompt to the model and return the response.
-        
+
         Args:
             prompt: The input prompt for the model
             model: The model to use
@@ -829,7 +830,7 @@ class AbstractClient(ABC):
         lazy_loading: bool = False,
     ) -> AsyncIterator[str]:
         """Stream the model's response.
-        
+
         Args:
             prompt: The input prompt for the model
             model: The model to use

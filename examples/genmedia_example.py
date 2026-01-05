@@ -30,9 +30,13 @@ async def main():
     
     for server, tools in mcp_results.items():
         if tools:
-            logger.info(f"✅ Server '{server}' registered with tools: {tools}")
+            logger.info(
+                f"✅ Server '{server}' registered with tools: {tools}"
+            )
         else:
-            logger.warning(f"⚠️ Server '{server}' failed or has no tools.")
+            logger.warning(
+                f"⚠️ Server '{server}' failed or has no tools."
+            )
 
     # Define the prompt
     prompt = "generate a image of a chubbly tuxedo cat resting on a chair moving the tail."

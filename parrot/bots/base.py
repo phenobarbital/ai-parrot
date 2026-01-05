@@ -36,7 +36,6 @@ class BaseBot(AbstractBot):
     Subclasses can override these methods to customize behavior or use them
     as-is for standard bot functionality.
     """
-
     async def conversation(
         self,
         question: str,
