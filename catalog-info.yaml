@@ -4,7 +4,7 @@ metadata:
   name: ai-parrot
   description: A unified Python library for building intelligent agents, chatbots, and LLM-powered applications. Simplifies working with Large Language Models by providing a cohesive framework for creating conversational agents, managing tools, implementing RAG systems, and orchestrating complex AI workflows.
   annotations:
-    github.com/project-slug: Trocdigital/ai-parrot
+    github.com/project-slug: phenobarbital/ai-parrot
     backstage.io/techdocs-ref: dir:.
   tags:
     - ai
