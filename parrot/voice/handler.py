@@ -1,21 +1,15 @@
 """
-VoiceChatHandler - WebSocket Handler Desacoplado
+VoiceChatHandler - WebSocket Handler
 
-Este handler SOLO se encarga del transporte WebSocket.
-NO conoce nada de Google/Gemini - toda la lógica de voz
-está encapsulada en VoiceBot/GeminiLiveClient.
+This handler ONLY handles WebSocket transport.
+It does NOT know about Google/Gemini - all voice logic
+is encapsulated in VoiceBot/GeminiLiveClient.
 
-Responsabilidades:
-- Manejar conexiones WebSocket
-- Codificar/decodificar audio base64
-- Rutear mensajes de control
-- Mantener estado de conexiones
-
-NO hace:
-- Inicializar genai.Client
-- Construir LiveConnectConfig
-- Ejecutar herramientas
-- Procesar respuestas de Gemini
+Responsibilities:
+- Handle WebSocket connections
+- Encode/decode base64 audio
+- Route control messages
+- Maintain connection state
 """
 from __future__ import annotations
 import asyncio
@@ -23,29 +17,75 @@ import base64
 import contextlib
 import json
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from typing import (
     Any,
     Callable,
     Dict,
+    List,
     Optional,
 )
 from aiohttp import web, WSMsgType
 from navconfig.logging import logging
-from parrot.bots.voice import VoiceBot, create_voice_bot
-from parrot.voice.models import VoiceConfig
+from parrot.bots.voice import VoiceBot, create_voice_bot, VoiceConfig
+from parrot.voice.models import VoiceConfig as VoiceModelConfig
+
+
+@dataclass
+class BotConfig:
+    """Configuration for VoiceBot creation.
+    
+    All default values are defined here, making configuration explicit
+    and type-safe.
+    """
+    name: str = "Voice Assistant"
+    voice_name: str = "Puck"
+    language: str = "en-US"
+    system_prompt: Optional[str] = None
+    tools: Optional[List[Any]] = None
+    voice_config: Optional[VoiceConfig] = None
+    
+    # Additional client configuration
+    api_key: Optional[str] = None
+    vertexai: bool = False
+    project: Optional[str] = None
+    location: Optional[str] = None
+    credentials_file: Optional[str] = None
+    
+    def as_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for passing to create_voice_bot().
+        
+        Excludes None values to allow defaults in create_voice_bot.
+        """
+        result = {}
+        for key, value in asdict(self).items():
+            if value is not None:
+                result[key] = value
+        return result
+    
+    def merge_with(self, overrides: Dict[str, Any]) -> 'BotConfig':
+        """Create new BotConfig with overrides applied."""
+        current = asdict(self)
+        current.update(overrides)
+        return BotConfig(**{k: v for k, v in current.items() if k in BotConfig.__dataclass_fields__})
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'BotConfig':
+        """Create BotConfig from dictionary."""
+        valid_fields = {k: v for k, v in data.items() if k in cls.__dataclass_fields__}
+        return cls(**valid_fields)
 
 
 @dataclass
 class WebSocketConnection:
-    """Representa una conexión WebSocket activa."""
+    """Represents an active WebSocket connection."""
     ws: web.WebSocketResponse
     session_id: str
     user_id: Optional[str] = None
     created_at: datetime = field(default_factory=datetime.now)
 
-    # Bot asociado a esta conexión
+    # Bot associated with this connection
     bot: Optional[VoiceBot] = None
 
     # Estado de grabación (matching VoiceChatServer)
@@ -55,25 +95,25 @@ class WebSocketConnection:
     stop_audio_sending: bool = False  # Flag to immediately stop audio forwarding
     gemini_responding: bool = False  # True when Gemini has started responding (VAD triggered)
 
-    # Queue de audio para el bot
+    # Audio queue for the bot
     audio_queue: asyncio.Queue = field(default_factory=asyncio.Queue)
 
-    # Task de la sesión de voz
+    # Voice session task
     voice_task: Optional[asyncio.Task] = None
 
-    # Evento de shutdown
+    # Shutdown event
     shutdown_event: asyncio.Event = field(default_factory=asyncio.Event)
 
-    # Configuración recibida del cliente
+    # Configuration received from client
     config: Dict[str, Any] = field(default_factory=dict)
 
 
 class VoiceChatHandler:
     """
-    Handler de WebSocket para chat de voz.
+    Handler of WebSocket messages for voice chat.
 
-    Completamente desacoplado del proveedor de voz (Google, OpenAI, etc.).
-    Solo maneja el transporte WebSocket <-> VoiceBot.
+    Completely decoupled from the voice provider (Google, OpenAI, etc.).
+    Only handles WebSocket transport WebSocket <-> VoiceBot.
 
     Usage:
         handler = VoiceChatHandler(
@@ -90,38 +130,40 @@ class VoiceChatHandler:
     def __init__(
         self,
         bot_factory: Optional[Callable[[], VoiceBot]] = None,
-        default_config: Optional[Dict[str, Any]] = None,
+        default_config: Optional[BotConfig | Dict[str, Any]] = None,
     ):
         """
-        Inicializar handler.
+        Initialize handler.
 
         Args:
-            bot_factory: Factory para crear VoiceBot instances
-            default_config: Configuración por defecto para bots
+            bot_factory: Bot factory for creating VoiceBot instances
+            default_config: Default configuration for bots (BotConfig or dict)
         """
         self.bot_factory = bot_factory or self._default_bot_factory
-        self.default_config = default_config or {}
+        # Support both BotConfig and dict for backward compatibility
+        if isinstance(default_config, BotConfig):
+            self.default_config = default_config
+        elif isinstance(default_config, dict):
+            self.default_config = BotConfig.from_dict(default_config)
+        else:
+            self.default_config = BotConfig()
+        self._current_config: Optional[BotConfig] = None
         self.connections: Dict[str, WebSocketConnection] = {}
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
 
     def _default_bot_factory(self) -> VoiceBot:
-        """Factory por defecto para crear bots."""
+        """Default Factory for Bots"""
         # Use _current_config if set (merged config from session), else use default_config
-        config = getattr(self, '_current_config', None) or self.default_config
-        return create_voice_bot(
-            name=config.get('name', 'Voice Assistant'),
-            voice_name=config.get('voice_name', 'Puck'),
-            language=config.get('language', 'en-US'),
-            system_prompt=config.get('system_prompt'),
-        )
+        config = self._current_config or self.default_config
+        return create_voice_bot(**config.as_dict())
 
     async def handle_websocket(self, request: web.Request) -> web.WebSocketResponse:
         """
-        Handler principal de WebSocket.
+        Handler of Websocket messages
 
-        Protocolo de mensajes:
+        Messages protocol:
 
-        Cliente -> Servidor:
+        Client -> Server:
         - {"type": "start_session", "config": {...}}
         - {"type": "audio_data", "data": "<base64>"}
         - {"type": "start_recording"}
@@ -129,7 +171,7 @@ class VoiceChatHandler:
         - {"type": "send_text", "text": "..."}
         - {"type": "end_session"}
 
-        Servidor -> Cliente:
+        Server -> Client:
         - {"type": "session_started", "session_id": "..."}
         - {"type": "voice_response", "text": "...", "audio_base64": "..."}
         - {"type": "transcription", "text": "...", "role": "user|assistant"}
@@ -154,13 +196,13 @@ class VoiceChatHandler:
         self.logger.info(f"New WebSocket connection: {session_id}")
 
         try:
-            # Enviar confirmación de conexión
+            # Send connection confirmation
             await self._send_message(ws, {
                 "type": "connected",
                 "session_id": session_id,
             })
 
-            # Procesar mensajes
+            # Process messages
             async for msg in ws:
                 if msg.type == WSMsgType.TEXT:
                     try:
@@ -173,7 +215,7 @@ class VoiceChatHandler:
                         await self._send_error(ws, str(e))
 
                 elif msg.type == WSMsgType.BINARY:
-                    # Audio binario directo (matching VoiceChatServer _handle_binary)
+                    # Direct binary audio (matching VoiceChatServer _handle_binary)
                     # Auto-detect recording start
                     if not connection.is_recording:
                         connection.stop_audio_sending = False
@@ -202,7 +244,7 @@ class VoiceChatHandler:
         connection: WebSocketConnection,
         message: Dict[str, Any]
     ) -> None:
-        """Rutear mensaje al handler apropiado."""
+        """Route message to appropriate handler."""
         msg_type = message.get('type', '')
 
         handlers = {
@@ -228,9 +270,10 @@ class VoiceChatHandler:
         connection: WebSocketConnection,
         message: Dict[str, Any]
     ) -> None:
-        """Iniciar sesión de voz."""
+        """Start voice session."""
         # Merge default config with client-provided config
-        config = {**self.default_config, **message.get('config', {})}
+        client_config = message.get('config', {})
+        config = self.default_config.merge_with(client_config)
         connection.config = config
 
         # Use bot_factory to create the bot (uses merged config)
@@ -238,11 +281,7 @@ class VoiceChatHandler:
         self._current_config = config
         connection.bot = self.bot_factory()
 
-        # Get voice config for response
-        voice_name = config.get('voice_name', 'Puck')
-        language = config.get('language', 'en-US')
-
-        # Iniciar task de voz
+        # Start voice task
         connection.shutdown_event.clear()
         connection.session_active = True
         connection.stop_audio_sending = False
@@ -254,8 +293,8 @@ class VoiceChatHandler:
             "type": "session_started",
             "session_id": connection.session_id,
             "config": {
-                "voice_name": voice_name,
-                "language": language,
+                "voice_name": config.voice_name,
+                "language": config.language,
                 "input_format": "audio/pcm;rate=16000",
                 "output_format": "audio/pcm;rate=24000",
             }
@@ -274,7 +313,7 @@ class VoiceChatHandler:
         connection: WebSocketConnection,
         message: Dict[str, Any]
     ) -> None:
-        """Terminar sesión de voz."""
+        """End voice session."""
         connection.shutdown_event.set()
         connection.session_active = False
         connection.stop_audio_sending = True
@@ -325,7 +364,7 @@ class VoiceChatHandler:
         connection: WebSocketConnection,
         message: Dict[str, Any]
     ) -> None:
-        """Iniciar grabación de audio."""
+        """Start audio recording."""
         # Reset flags for new recording (like VoiceChatServer)
         connection.stop_audio_sending = False
         connection.gemini_responding = False
@@ -341,7 +380,7 @@ class VoiceChatHandler:
         connection: WebSocketConnection,
         message: Dict[str, Any]
     ) -> None:
-        """Detener grabación de audio (matching VoiceChatServer)."""
+        """Stop audio recording (matching VoiceChatServer)."""
         connection.is_recording = False
         connection.stop_audio_sending = True  # Immediately stop audio forwarding
 
@@ -380,7 +419,7 @@ class VoiceChatHandler:
         connection: WebSocketConnection,
         message: Dict[str, Any]
     ) -> None:
-        """Recibir chunk de audio (base64) - matching VoiceChatServer behavior."""
+        """Receive audio chunk (base64) - matching VoiceChatServer behavior."""
         # Detect new recording start - reset flags (like VoiceChatServer)
         if not connection.is_recording:
             self.logger.debug(f"New recording started: {connection.session_id}")
@@ -408,7 +447,7 @@ class VoiceChatHandler:
         connection: WebSocketConnection,
         message: Dict[str, Any]
     ) -> None:
-        """Enviar texto al bot y recibir respuesta de voz."""
+        """Send text to bot and receive voice response."""
         text = message.get('text', '')
         if not text or not connection.bot:
             return
@@ -429,7 +468,7 @@ class VoiceChatHandler:
         connection: WebSocketConnection,
         message: Dict[str, Any]
     ) -> None:
-        """Responder ping con pong."""
+        """Respond to ping with pong."""
         await self._send_message(connection.ws, {
             "type": "pong",
             "timestamp": datetime.now().isoformat(),
@@ -437,15 +476,15 @@ class VoiceChatHandler:
 
     async def _run_voice_session(self, connection: WebSocketConnection) -> None:
         """
-        Ejecutar sesión de voz.
+        Run voice session.
 
-        Lee audio del queue, lo envía al bot, y transmite respuestas.
+        Reads audio from queue, sends it to the bot, and transmits responses.
         """
         if not connection.bot:
             return
 
         async def audio_from_queue():
-            """Generador que lee audio del queue.
+            """Generator that reads audio from queue.
             
             For multi-turn support:
             - Yields audio chunks to send to Gemini
@@ -493,6 +532,34 @@ class VoiceChatHandler:
                 ):
                     await self._send_voice_response(connection, response)
 
+                    # Check for unrecoverable error (e.g., unsupported language)
+                    if response.metadata.get('error') and not response.metadata.get('is_retryable', True):
+                        error_type = response.metadata.get('error_type', 'unknown')
+                        self.logger.error(
+                            f"Unrecoverable error ({error_type}): {response.metadata.get('error')}"
+                        )
+                        if error_type == 'unsupported_language':
+                            # Fallback to English and restart
+                            await self._send_message(connection.ws, {
+                                "type": "session_warning",
+                                "message": "Language not supported. Switching to English..."
+                            })
+                            # Update config to use English
+                            connection.config['language'] = 'en-US'
+                            self._current_config = connection.config
+                            # Recreate bot with English
+                            if connection.bot:
+                                await connection.bot.close()
+                            connection.bot = self.bot_factory()
+                            self.logger.info(
+                                f"Fallback to English for session {connection.session_id}"
+                            )
+                            break  # Break to restart with English
+                        else:
+                            await self._send_error(connection.ws, response.metadata.get('error'))
+                            connection.session_active = False
+                            return  # Exit completely for other unrecoverable errors
+
                     # Check for GoAway - session will close
                     if response.metadata.get('go_away'):
                         self.logger.info(f"Received GoAway, will restart session: {connection.session_id}")
@@ -513,17 +580,33 @@ class VoiceChatHandler:
                 self.logger.info(f"Voice session cancelled: {connection.session_id}")
                 return
             except Exception as e:
-                self.logger.error(f"Voice session error: {e}", exc_info=True)
-                await self._send_error(connection.ws, str(e))
-                # Wait before retry
-                await asyncio.sleep(1)
+                error_str = str(e).lower()
+                is_language_error = "unsupported language" in error_str
+
+                if is_language_error:
+                    # Unrecoverable configuration error - don't retry
+                    self.logger.error(
+                        f"Voice session unrecoverable error: {e}",
+                        exc_info=True
+                    )
+                    await self._send_error(
+                        connection.ws,
+                        "Language not supported for this model. Please use English."
+                    )
+                    connection.session_active = False
+                    return  # Exit the loop
+                else:
+                    self.logger.error(f"Voice session error: {e}", exc_info=True)
+                    await self._send_error(connection.ws, str(e))
+                    # Wait before retry
+                    await asyncio.sleep(1)
 
     async def _send_voice_response(
         self,
         connection: WebSocketConnection,
         response: Any
     ) -> None:
-        """Enviar respuesta de voz al cliente en formato VoiceChatServer."""
+        """Send voice response to client in VoiceChatServer format."""
         import base64
 
         # Send audio chunks as response_chunk (matching VoiceChatServer)
@@ -588,7 +671,7 @@ class VoiceChatHandler:
         ws: web.WebSocketResponse,
         message: Dict[str, Any]
     ) -> None:
-        """Enviar mensaje JSON al cliente."""
+        """Send JSON message to client."""
         try:
             await ws.send_json(message)
         except Exception as e:
@@ -599,7 +682,7 @@ class VoiceChatHandler:
         ws: web.WebSocketResponse,
         error_message: str
     ) -> None:
-        """Enviar mensaje de error al cliente."""
+        """Send error message to client."""
         await self._send_message(ws, {
             "type": "error",
             "message": error_message,
@@ -607,7 +690,7 @@ class VoiceChatHandler:
         })
 
     async def _cleanup_connection(self, connection: WebSocketConnection) -> None:
-        """Limpiar recursos de una conexión."""
+        """Clean up resources of a connection."""
         connection.shutdown_event.set()
 
         if connection.voice_task:
@@ -618,7 +701,7 @@ class VoiceChatHandler:
         if connection.bot:
             await connection.bot.close()
 
-        # Vaciar queue
+        # Empty queue
         while not connection.audio_queue.empty():
             try:
                 connection.audio_queue.get_nowait()
@@ -626,18 +709,18 @@ class VoiceChatHandler:
                 break
 
     async def broadcast(self, message: Dict[str, Any]) -> None:
-        """Enviar mensaje a todas las conexiones activas."""
+        """Send message to all active connections."""
         for connection in self.connections.values():
             await self._send_message(connection.ws, message)
 
     @property
     def active_connections(self) -> int:
-        """Número de conexiones activas."""
+        """Number of active connections."""
         return len(self.connections)
 
 
 # =============================================================================
-# Factory para crear servidor completo
+# Factory to create complete server
 # =============================================================================
 
 def create_voice_server(
@@ -647,16 +730,16 @@ def create_voice_server(
     **kwargs
 ) -> web.Application:
     """
-    Crear servidor de voz completo.
+    Create complete voice server.
 
     Args:
-        host: Host para el servidor
-        port: Puerto para el servidor
-        bot_config: Configuración por defecto para bots
-        **kwargs: Argumentos adicionales para aiohttp
+        host: Host for the server
+        port: Port for the server
+        bot_config: Default configuration for bots
+        **kwargs: Additional arguments for aiohttp
 
     Returns:
-        Aplicación aiohttp configurada
+        Configured aiohttp application
     """
     from parrot.conf import STATIC_DIR  # pylint: disable=C0415
     frontend_dir = STATIC_DIR / 'chat'

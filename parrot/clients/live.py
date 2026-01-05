@@ -862,10 +862,20 @@ class GeminiLiveClient(AbstractClient):
             raise
         except Exception as e:
             self.logger.error(f"Voice session error: {e}")
+
+            # Check for unsupported language error
+            error_str = str(e).lower()
+            is_language_error = "unsupported language" in error_str
+            is_retryable = not is_language_error  # Language errors are not retryable
+
             yield LiveVoiceResponse(
                 text="",
                 is_complete=True,
-                metadata={"error": str(e)},
+                metadata={
+                    "error": str(e),
+                    "is_retryable": is_retryable,
+                    "error_type": "unsupported_language" if is_language_error else "unknown",
+                },
                 session_id=session_id,
                 turn_id=turn_id,
                 user_id=user_id,
