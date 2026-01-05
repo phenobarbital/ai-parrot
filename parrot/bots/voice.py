@@ -41,10 +41,10 @@ class AudioFormat(Enum):
 @dataclass
 class VoiceConfig:
     """Configuration for Audio Sessions"""
-    # Modelo
+    # Model
     model: str = GoogleVoiceModel.DEFAULT
 
-    # Voz
+    # Voice
     voice_name: str = "Puck"
     language: str = "en-US"
 
@@ -52,7 +52,7 @@ class VoiceConfig:
     input_format: AudioFormat = AudioFormat.PCM_16K
     output_format: AudioFormat = AudioFormat.PCM_24K
 
-    # Generación
+    # Generation
     temperature: float = 0.7
     max_tokens: int = 4096
 
@@ -172,10 +172,10 @@ class VoiceBot(BaseBot):
         """
         Create a new GeminiLiveClient instance.
 
-        GeminiLiveClient hereda de AbstractClient, así que:
-        - tools se registran automáticamente en tool_manager
-        - preset system está disponible
-        - use_tools habilita las herramientas
+        GeminiLiveClient inherits from AbstractClient, so:
+        - tools are automatically registered in tool_manager
+        - preset system is available
+        - use_tools enables tools
 
         Returns:
             GeminiLiveClient configured for voice interactions
@@ -187,22 +187,22 @@ class VoiceBot(BaseBot):
                 language=self.voice_config.language,
                 temperature=self.voice_config.temperature,
                 max_tokens=self.voice_config.max_tokens,
-                # Pasar herramientas - se registran en tool_manager de AbstractClient
+                # Pass tools - they are registered in AbstractClient's tool_manager
                 tools=self._voice_tools,
                 use_tools=bool(self._voice_tools or self.tool_manager),
-                # Si ya tenemos un tool_manager (del bot padre), pasarlo
+                # If we already have a tool_manager (from parent bot), pass it
                 tool_manager=self.tool_manager,
-                # Credenciales
+                # Credentials
                 **{k: v for k, v in self._client_config.items() if v is not None}
             )
         return self._llm
 
     def get_tool_definitions(self) -> List[Dict[str, Any]]:
         """
-        Obtener definiciones de herramientas en formato API.
+        Get tool definitions in API format.
 
         Returns:
-            Lista de definiciones de funciones
+            List of function definitions
         """
         definitions = []
 
@@ -236,14 +236,14 @@ class VoiceBot(BaseBot):
         arguments: Dict[str, Any]
     ) -> Any:
         """
-        Ejecutar una herramienta por nombre.
+        Execute a tool by name.
 
         Args:
-            tool_name: Nombre de la herramienta
-            arguments: Argumentos de la herramienta
+            tool_name: Name of the tool
+            arguments: Tool arguments
 
         Returns:
-            Resultado de la ejecución
+            Execution result
         """
         for tool in self._voice_tools:
             if getattr(tool, 'name', None) == tool_name:
@@ -252,7 +252,7 @@ class VoiceBot(BaseBot):
                 elif callable(tool):
                     return await tool(**arguments)
 
-        # Buscar en tool_manager
+        # Search in tool_manager
         if self.tool_manager:
             if tool := self.tool_manager.get_tool(tool_name):
                 return await tool._execute(**arguments)
@@ -267,42 +267,42 @@ class VoiceBot(BaseBot):
         **kwargs
     ) -> AsyncIterator[LiveVoiceResponse]:
         """
-        Stream de interacción de voz.
+        Voice interaction stream.
 
-        Este es el punto de entrada principal para interacciones de voz.
-        Acepta audio (buffer completo o chunks en streaming) y retorna
-        respuestas multimodales con texto y audio.
+        This is the main entry point for voice interactions.
+        Accepts audio (complete buffer or streaming chunks) and returns
+        multimodal responses with text and audio.
 
         Args:
-            audio_input: Datos de audio - bytes completos o async iterator
-            session_id: Identificador de sesión
-            user_id: Identificador de usuario
-            **kwargs: Opciones adicionales
+            audio_input: Audio data - complete bytes or async iterator
+            session_id: Session identifier
+            user_id: User identifier
+            **kwargs: Additional options
 
         Yields:
-            LiveVoiceResponse con texto, audio y metadata de uso
+            LiveVoiceResponse with text, audio and usage metadata
         """
         session_id = session_id or str(uuid.uuid4())
         user_id = user_id or "anonymous"
 
         try:
-            # Manejar diferentes tipos de input
+            # Handle different input types
             if isinstance(audio_input, bytes):
-                # Buffer único - envolver en iterator
+                # Single buffer - wrap in iterator
                 async def single_chunk_iterator():
                     yield audio_input
 
                 audio_iterator = single_chunk_iterator()
             else:
-                # Ya es un iterator
+                # Already an iterator
                 audio_iterator = audio_input
 
             # Build context for system prompt (simplified for voice)
             kb_context, user_context, vector_context, vector_metadata = await self._build_context(
-                question="",  # No hay pregunta de texto en voice
+                question="",  # No text question in voice
                 user_id=user_id,
                 session_id=session_id,
-                use_vectors=False,  # Deshabilitado por defecto para voice
+                use_vectors=False,  # Disabled by default for voice
                 **kwargs
             )
 
@@ -352,18 +352,18 @@ class VoiceBot(BaseBot):
         **kwargs
     ) -> LiveVoiceResponse:
         """
-        Procesar entrada de voz y retornar respuesta completa.
+        Process voice input and return complete response.
 
-        Versión no-streaming que espera la respuesta completa.
+        Non-streaming version that waits for the complete response.
 
         Args:
-            audio_input: Buffer de audio completo (PCM 16-bit, 16kHz, mono)
-            session_id: Identificador de sesión
-            user_id: Identificador de usuario
-            **kwargs: Opciones adicionales
+            audio_input: Complete audio buffer (PCM 16-bit, 16kHz, mono)
+            session_id: Session identifier
+            user_id: User identifier
+            **kwargs: Additional options
 
         Returns:
-            LiveVoiceResponse completo con texto y audio
+            Complete LiveVoiceResponse with text and audio
         """
         full_text = ""
         full_audio = b""
@@ -405,18 +405,18 @@ class VoiceBot(BaseBot):
         **kwargs
     ) -> AsyncIterator[LiveVoiceResponse]:
         """
-        Enviar texto y recibir respuesta de voz.
+        Send text and receive voice response.
 
-        Útil para testing o escenarios text-to-speech.
+        Useful for testing or text-to-speech scenarios.
 
         Args:
-            question: Texto de entrada
-            session_id: Identificador de sesión
-            user_id: Identificador de usuario
-            **kwargs: Configuración adicional
+            question: Input text
+            session_id: Session identifier
+            user_id: User identifier
+            **kwargs: Additional configuration
 
         Yields:
-            LiveVoiceResponse con audio generado
+            LiveVoiceResponse with generated audio
         """
         session_id = session_id or str(uuid.uuid4())
         user_id = user_id or "anonymous"
@@ -483,18 +483,18 @@ def create_voice_bot(
     **kwargs
 ) -> VoiceBot:
     """
-    Factory para crear VoiceBot configurado.
+    Factory to create a configured VoiceBot.
 
     Args:
-        name: Nombre del bot
-        system_prompt: Instrucciones del sistema
-        voice_name: Voz a usar (Puck, Charon, Kore, etc.)
-        language: Código de idioma
-        tools: Lista de herramientas
-        **kwargs: Configuración adicional
+        name: Bot name
+        system_prompt: System instructions
+        voice_name: Voice to use (Puck, Charon, Kore, etc.)
+        language: Language code
+        tools: List of tools
+        **kwargs: Additional configuration
 
     Returns:
-        VoiceBot configurado
+        Configured VoiceBot
     """
     voice_config = VoiceConfig(
         voice_name=voice_name,
@@ -519,7 +519,7 @@ if __name__ == "__main__":
     import os
 
     async def example():
-        """Ejemplo de uso del VoiceBot refactorizado."""
+        """Example usage of the refactored VoiceBot."""
 
         # Define Sample Tool
         class SearchTool:
@@ -543,11 +543,11 @@ if __name__ == "__main__":
                 }
 
             async def _execute(self, query: str):
-                # Simular búsqueda
+                # Simulate search
                 await asyncio.sleep(0.5)
                 return {"results": [f"Result for: {query}"]}
 
-        # Crear bot
+        # Create bot
         bot = create_voice_bot(
             name="Demo Assistant",
             system_prompt="You are a helpful assistant with web search capability.",
@@ -556,7 +556,7 @@ if __name__ == "__main__":
         )
 
         async with bot:
-            # Test con texto (genera audio)
+            # Test with text (generates audio)
             print("Testing text-to-speech...")
             async for response in bot.ask("Search for AI news and tell me about it."):
                 if response.text:

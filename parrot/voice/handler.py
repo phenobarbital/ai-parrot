@@ -105,7 +105,7 @@ class WebSocketConnection:
     shutdown_event: asyncio.Event = field(default_factory=asyncio.Event)
 
     # Configuration received from client
-    config: Dict[str, Any] = field(default_factory=dict)
+    config: Optional[BotConfig] = None
 
 
 class VoiceChatHandler:
@@ -354,7 +354,7 @@ class VoiceChatHandler:
 
         # Start new session with same config
         await self._handle_start_session(connection, {
-            'config': connection.config
+            'config': connection.config.as_dict() if connection.config else {}
         })
 
         self.logger.info(f"Voice session reset: {connection.session_id}")
@@ -545,7 +545,7 @@ class VoiceChatHandler:
                                 "message": "Language not supported. Switching to English..."
                             })
                             # Update config to use English
-                            connection.config['language'] = 'en-US'
+                            connection.config = connection.config.merge_with({'language': 'en-US'})
                             self._current_config = connection.config
                             # Recreate bot with English
                             if connection.bot:
