@@ -1,0 +1,26 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: ai-parrot
+  description: A unified Python library for building intelligent agents, chatbots, and LLM-powered applications. Simplifies working with Large Language Models by providing a cohesive framework for creating conversational agents, managing tools, implementing RAG systems, and orchestrating complex AI workflows.
+  annotations:
+    github.com/project-slug: Trocdigital/ai-parrot
+    backstage.io/techdocs-ref: dir:.
+  tags:
+    - ai
+    - python
+    - agents
+    - llm
+    - chatbot
+    - rag
+    - mcp
+    - automation
+    - orchestrator
+    - frontend
+    - backend
+spec:
+  type: documentation
+  lifecycle: production
+  owner: navigator-ope
+
+
