@@ -116,6 +116,19 @@ class IdentifiedProduct(BaseModel):
             # Generate a unique integer to avoid collisions. Negative values clearly
             # indicate that this item was found by the LLM, not YOLO.
             return -int(str(uuid.uuid4().int)[:8])
+        if isinstance(v, float):
+            # If the model returns fractional IDs (e.g., 1.1), treat as a new item.
+            if v.is_integer():
+                return int(v)
+            return -int(str(uuid.uuid4().int)[:8])
+        if isinstance(v, str):
+            try:
+                num = float(v.strip())
+                if num.is_integer():
+                    return int(num)
+                return -int(str(uuid.uuid4().int)[:8])
+            except ValueError:
+                return -int(str(uuid.uuid4().int)[:8])
         return v
 
     # VALIDATOR 2: Converts a coordinate list into a DetectionBox object.
@@ -144,12 +157,52 @@ class IdentifiedProduct(BaseModel):
         # If it's already a dict or a DetectionBox object, pass it through.
         return v
 
+    @field_validator('detection_box', mode='after')
+    @classmethod
+    def ensure_detection_box_fields(cls, v: Optional[DetectionBox], values: Any) -> Optional[DetectionBox]:
+        """Ensure detection_box has class_id/class_name/area to avoid overlay crashes."""
+        if v is None:
+            return v
+        if v.class_id is None:
+            v.class_id = 0
+        if v.class_name is None:
+            v.class_name = 'llm_detected'
+        if v.area is None:
+            v.area = abs(int(v.x2) - int(v.x1)) * abs(int(v.y2) - int(v.y1))
+        return v
+
+    @field_validator('extra', mode='before')
+    @classmethod
+    def coerce_extra(cls, v: Any) -> Dict[str, str]:
+        """Allow LLMs to return a string for extra; coerce to a dict."""
+        if v is None:
+            return {}
+        if isinstance(v, str):
+            return {"note": v}
+        if isinstance(v, dict):
+            return v
+        return {"note": str(v)}
+
 class IdentificationResponse(BaseModel):
     """Response from product identification"""
     identified_products: List[IdentifiedProduct] = Field(
         alias="detections",
         description="List of identified products from the image"
     )
+
+    @field_validator('identified_products', mode='after')
+    @classmethod
+    def ensure_unique_detection_ids(
+        cls,
+        v: List[IdentifiedProduct],
+    ) -> List[IdentifiedProduct]:
+        """Ensure detection_id is unique; duplicate IDs become new negative IDs."""
+        seen: set[int] = set()
+        for item in v:
+            if item.detection_id in seen:
+                item.detection_id = -int(str(uuid.uuid4().int)[:8])
+            seen.add(item.detection_id)
+        return v
 
 # Enhanced models for pipeline planogram description
 class BrandDetectionConfig(BaseModel):

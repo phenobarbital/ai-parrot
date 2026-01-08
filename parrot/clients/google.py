@@ -275,6 +275,11 @@ class GoogleGenAIClient(AbstractClient):
         if 'properties' in cleaned and cleaned.get('type') != 'object':
             cleaned['type'] = 'object'
 
+        # Google rejects OBJECT schemas with empty properties; coerce to string.
+        if cleaned.get('type') == 'object' and cleaned.get('properties') == {}:
+            cleaned.pop('properties', None)
+            cleaned['type'] = 'string'
+
         # Remove problematic fields
         problematic_fields = {
             'prefixItems', 'additionalItems', 'minItems', 'maxItems',
