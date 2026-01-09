@@ -1,6 +1,7 @@
 import re
 import sys
 import asyncio
+import json
 from datetime import datetime
 from typing import Any, AsyncIterator, Dict, List, Optional, Union, Tuple
 from functools import partial
@@ -274,6 +275,11 @@ class GoogleGenAIClient(AbstractClient):
         # Ensure object-like schemas always advertise an object type
         if 'properties' in cleaned and cleaned.get('type') != 'object':
             cleaned['type'] = 'object'
+
+        # Google rejects OBJECT schemas with empty properties; coerce to string.
+        if cleaned.get('type') == 'object' and cleaned.get('properties') == {}:
+            cleaned.pop('properties', None)
+            cleaned['type'] = 'string'
 
         # Remove problematic fields
         problematic_fields = {
@@ -4115,8 +4121,55 @@ Your job is to produce a final summary from the following text and identify the 
                 )
 
             print('RAW RESPONSE:', response_text)
+            # Normalize detection_box coords if the model returned normalized floats.
+            parsed_payload = json.loads(response_text)
+            detections_payload = parsed_payload.get("detections", [])
+            if isinstance(detections_payload, list):
+                img_w, img_h = main_image_pil.width, main_image_pil.height
+
+                def _coerce_box(box: dict) -> None:
+                    coords = [box.get("x1"), box.get("y1"), box.get("x2"), box.get("y2")]
+                    if any(c is None for c in coords):
+                        return
+                    try:
+                        nums = [float(c) for c in coords]
+                    except (TypeError, ValueError):
+                        return
+
+                    if all(0.0 <= n <= 1.0 for n in nums):
+                        box["x1"] = int(nums[0] * img_w)
+                        box["y1"] = int(nums[1] * img_h)
+                        box["x2"] = int(nums[2] * img_w)
+                        box["y2"] = int(nums[3] * img_h)
+                    else:
+                        box["x1"] = int(nums[0])
+                        box["y1"] = int(nums[1])
+                        box["x2"] = int(nums[2])
+                        box["y2"] = int(nums[3])
+
+                for det in detections_payload:
+                    if not isinstance(det, dict):
+                        continue
+                    box = det.get("detection_box")
+                    if isinstance(box, dict):
+                        _coerce_box(box)
+                    elif isinstance(box, list) and len(box) == 4:
+                        try:
+                            nums = [float(c) for c in box]
+                        except (TypeError, ValueError):
+                            continue
+                        if all(0.0 <= n <= 1.0 for n in nums):
+                            det["detection_box"] = [
+                                int(nums[0] * img_w),
+                                int(nums[1] * img_h),
+                                int(nums[2] * img_w),
+                                int(nums[3] * img_h),
+                            ]
+                        else:
+                            det["detection_box"] = [int(n) for n in nums]
+
             # The model output should conform to the Pydantic model directly
-            parsed_data = IdentificationResponse.model_validate_json(response_text)
+            parsed_data = IdentificationResponse.model_validate(parsed_payload)
             identified_items = parsed_data.identified_products
 
             # --- 5. Link LLM results back to original detections ---

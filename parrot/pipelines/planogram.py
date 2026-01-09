@@ -29,6 +29,7 @@ import torch
 from google.genai.errors import ServerError
 from .abstract import AbstractPipeline
 from ..models.detections import (
+    BoundingBox,
     DetectionBox,
     Detection,
     Detections,
@@ -2481,10 +2482,11 @@ Analyze all provided images and return the complete JSON response.
 
         # Update the endcap_det bbox with the corrected values
         if endcap_det is None:
-            endcap_det = DetectionBox(
-                x1=ex1, y1=ey1, x2=ex2, y2=ey2,
-                confidence=0.9, # Assign a default confidence
-                label="endcap"
+            endcap_det = Detection(
+                label="endcap",
+                confidence=0.9,  # Assign a default confidence
+                content=None,
+                bbox=BoundingBox(x1=ex1, y1=ey1, x2=ex2, y2=ey2),
             )
         else:
             endcap_det.bbox.x1 = ex1
