@@ -842,12 +842,13 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                         self.logger.warning("Received UNEXPECTED_TOOL_CALL")
     
                 # Debug what we got back
-                if hasattr(current_response, 'text'):
-                    try:
-                        preview = current_response.text[:100] if current_response.text else "No text"
-                        self.logger.debug(f"Response preview: {preview}")
-                    except:
-                        self.logger.debug("Could not preview response text")
+                try:
+                    # Use _safe_extract_text to avoid triggering warnings on function calls
+                    preview_text = self._safe_extract_text(current_response)
+                    preview = preview_text[:100] if preview_text else "No text (or Function Call)"
+                    self.logger.debug(f"Response preview: {preview}")
+                except Exception as e:
+                    self.logger.debug(f"Could not preview response text: {e}")
     
             except Exception as e:
                 self.logger.error(f"Failed to send responses back: {e}")

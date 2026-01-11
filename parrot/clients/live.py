@@ -405,9 +405,24 @@ class LiveToolAdapter:
 
             # Handle ToolResult from AbstractTool
             if isinstance(result, ToolResult):
-                response_data = result.result if result.status == "success" else {"error": result.error}
+                if result.status == "success":
+                    # Ensure response is always a dict
+                    if isinstance(result.result, dict):
+                        response_data = result.result
+                    elif isinstance(result.result, str):
+                        response_data = {"output": result.result}
+                    else:
+                        response_data = {"output": str(result.result) if result.result else "Success"}
+                else:
+                    response_data = {"error": result.error or "Unknown error"}
             else:
-                response_data = {"result": result}
+                # Wrap non-dict results
+                if isinstance(result, dict):
+                    response_data = result
+                elif isinstance(result, str):
+                    response_data = {"output": result}
+                else:
+                    response_data = {"result": result}
 
             return types.FunctionResponse(
                 name=tool_name,
@@ -800,9 +815,11 @@ class GeminiLiveClient(AbstractClient):
 
                         # Handle tool calls
                         if hasattr(response, 'tool_call') and response.tool_call:
+                            self.logger.info(f"Tool call received: {response.tool_call}")
                             adapter = self._get_tool_adapter()
 
                             for fc in response.tool_call.function_calls:
+                                self.logger.info(f"Executing tool: {fc.name} with args: {dict(fc.args) if fc.args else {}}")
                                 tool_call = LiveToolCall(
                                     id=fc.id,
                                     name=fc.name,

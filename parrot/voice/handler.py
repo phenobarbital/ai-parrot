@@ -35,7 +35,7 @@ from parrot.voice.models import VoiceConfig as VoiceModelConfig
 @dataclass
 class BotConfig:
     """Configuration for VoiceBot creation.
-    
+
     All default values are defined here, making configuration explicit
     and type-safe.
     """
@@ -45,17 +45,17 @@ class BotConfig:
     system_prompt: Optional[str] = None
     tools: Optional[List[Any]] = None
     voice_config: Optional[VoiceConfig] = None
-    
+
     # Additional client configuration
     api_key: Optional[str] = None
     vertexai: bool = False
     project: Optional[str] = None
     location: Optional[str] = None
     credentials_file: Optional[str] = None
-    
+
     def as_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for passing to create_voice_bot().
-        
+
         Excludes None values to allow defaults in create_voice_bot.
         """
         result = {}
@@ -63,13 +63,13 @@ class BotConfig:
             if value is not None:
                 result[key] = value
         return result
-    
+
     def merge_with(self, overrides: Dict[str, Any]) -> 'BotConfig':
         """Create new BotConfig with overrides applied."""
         current = asdict(self)
         current.update(overrides)
         return BotConfig(**{k: v for k, v in current.items() if k in BotConfig.__dataclass_fields__})
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'BotConfig':
         """Create BotConfig from dictionary."""
@@ -485,14 +485,14 @@ class VoiceChatHandler:
 
         async def audio_from_queue():
             """Generator that reads audio from queue.
-            
+
             For multi-turn support:
             - Yields audio chunks to send to Gemini
             - Yields None (sentinel) when turn ends to trigger audio_stream_end
             - Stays alive until shutdown_event is set
             """
             audio_ended_sent = False
-            
+
             while not connection.shutdown_event.is_set():
                 try:
                     chunk = await asyncio.wait_for(
@@ -724,18 +724,16 @@ class VoiceChatHandler:
 # =============================================================================
 
 def create_voice_server(
-    host: str = "0.0.0.0",
-    port: int = 8765,
-    bot_config: Optional[Dict[str, Any]] = None,
+    bot_factory: Optional[Callable[[], VoiceBot]] = None,
+    bot_config: Optional[BotConfig | Dict[str, Any]] = None,
     **kwargs
 ) -> web.Application:
     """
     Create complete voice server.
 
     Args:
-        host: Host for the server
-        port: Port for the server
-        bot_config: Default configuration for bots
+        bot_factory: Custom bot factory for creating VoiceBot instances
+        bot_config: Default configuration for bots (BotConfig or dict)
         **kwargs: Additional arguments for aiohttp
 
     Returns:
@@ -743,7 +741,10 @@ def create_voice_server(
     """
     from parrot.conf import STATIC_DIR  # pylint: disable=C0415
     frontend_dir = STATIC_DIR / 'chat'
-    handler = VoiceChatHandler(default_config=bot_config or {})
+    handler = VoiceChatHandler(
+        bot_factory=bot_factory,
+        default_config=bot_config,
+    )
 
     app = web.Application()
     app.router.add_get('/ws/voice', handler.handle_websocket)
@@ -798,12 +799,10 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     app = create_voice_server(
-        host=args.host,
-        port=args.port,
-        bot_config={
-            'voice_name': args.voice,
-            'system_prompt': "You are a helpful voice assistant.",
-        }
+        bot_config=BotConfig(
+            voice_name=args.voice,
+            system_prompt="You are a helpful voice assistant.",
+        )
     )
 
     print(f"Starting voice server on {args.host}:{args.port}")

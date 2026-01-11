@@ -277,7 +277,7 @@ class AbstractTool(ABC):
         TODO: Use the Global Registry to share data between tools.
         """
         try:
-            self.logger.notice(f"Executing tool: {self.name}")
+            self.logger.info(f"Executing tool: {self.name}")
 
             # Validate arguments
             validated_args = self.validate_args(**kwargs)
