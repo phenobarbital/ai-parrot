@@ -29,6 +29,9 @@ from ..clients.live import (
     GoogleVoiceModel,
 )
 from .base import BaseBot
+# Mixin imports for A2A and MCP support
+from ..a2a.server import A2AEnabledMixin
+from ..mcp import MCPEnabledMixin, MCPToolManager, MCPServerConfig
 
 
 # Voice models
@@ -98,7 +101,7 @@ Key behaviors for voice interaction:
 Remember: Respond in a way that sounds natural when spoken aloud."""
 
 
-class VoiceBot(BaseBot):
+class VoiceBot(A2AEnabledMixin, MCPEnabledMixin, BaseBot):
     """
     Bot with native voice interaction capabilities.
 
@@ -143,7 +146,7 @@ class VoiceBot(BaseBot):
             llm: LLM identifier (for text fallback)
             **kwargs: Additional arguments for BaseBot
         """
-        self._llm: Optional[GeminiLiveClient] = None
+        self._voice_client: Optional[GeminiLiveClient] = None
         self._client_initialized = False
         super().__init__(
             name=name,
@@ -155,6 +158,8 @@ class VoiceBot(BaseBot):
         self.system_prompt_template = system_prompt or self._default_voice_prompt() or self.system_prompt_template
         self.voice_config = voice_config or VoiceConfig()
         self._voice_tools = tools or []
+        # Initialize MCP support
+        self.mcp_manager = MCPToolManager(self.tool_manager)
         # Additional client configuration
         self._client_config = {
             'api_key': kwargs.get('api_key'),
@@ -180,8 +185,8 @@ class VoiceBot(BaseBot):
         Returns:
             GeminiLiveClient configured for voice interactions
         """
-        if not self._llm:
-            self._llm = GeminiLiveClient(
+        if not self._voice_client:
+            self._voice_client = GeminiLiveClient(
                 model=self.voice_config.model,
                 voice_name=self.voice_config.voice_name,
                 language=self.voice_config.language,
@@ -195,7 +200,7 @@ class VoiceBot(BaseBot):
                 # Credentials
                 **{k: v for k, v in self._client_config.items() if v is not None}
             )
-        return self._llm
+        return self._voice_client
 
     def get_tool_definitions(self) -> List[Dict[str, Any]]:
         """
@@ -259,6 +264,35 @@ class VoiceBot(BaseBot):
 
         raise ValueError(f"Tool '{tool_name}' not found")
 
+    async def setup_mcp_servers(self, configurations: List[MCPServerConfig]) -> None:
+        """
+        Setup multiple MCP servers during initialization.
+
+        This is useful for configuring a VoiceBot with multiple MCP servers
+        at once, typically during bot creation or from configuration files.
+
+        Args:
+            configurations: List of MCPServerConfig objects
+
+        Example:
+            >>> configs = [
+            ...     create_http_mcp_server("weather", "https://api.weather.com/mcp"),
+            ...     create_local_mcp_server("files", "./mcp_servers/files.py")
+            ... ]
+            >>> await voice_bot.setup_mcp_servers(configs)
+        """
+        for config in configurations:
+            try:
+                tools = await self.add_mcp_server(config)
+                self.logger.info(
+                    f"Added MCP server '{config.name}' with tools: {tools}"
+                )
+            except Exception as e:
+                self.logger.error(
+                    f"Failed to add MCP server '{config.name}': {e}",
+                    exc_info=True
+                )
+
     async def ask_stream(
         self,
         audio_input: Union[bytes, AsyncIterator[bytes]],
@@ -298,12 +332,15 @@ class VoiceBot(BaseBot):
                 audio_iterator = audio_input
 
             # Build context for system prompt (simplified for voice)
+            # Note: For voice, vector context is typically fetched via tools
+            # since we don't have the question text upfront. Enable use_vectors
+            # if you want to include a generic context from the vector store.
             kb_context, user_context, vector_context, vector_metadata = await self._build_context(
-                question="",  # No text question in voice
+                question=kwargs.get('initial_context', ''),  # Optional context query
                 user_id=user_id,
                 session_id=session_id,
-                use_vectors=False,  # Disabled by default for voice
-                **kwargs
+                use_vectors=kwargs.get('use_vectors', False),
+                **{k: v for k, v in kwargs.items() if k not in ('initial_context', 'use_vectors')}
             )
 
             # Get conversation context if available
@@ -462,12 +499,12 @@ class VoiceBot(BaseBot):
 
     async def close(self):
         """Close any resources if needed."""
-        if self._llm is not None:
+        if self._voice_client is not None:
             try:
-                await self._llm.close()
+                await self._voice_client.close()
             except Exception as e:
                 self.logger.debug(f"Error closing GeminiLiveClient: {e}")
-        self._llm = None
+        self._voice_client = None
         self.logger.info("VoiceBot closed")
 
 # =============================================================================

@@ -1,0 +1,23 @@
+# Telegram Bot Configuration
+# =========================
+#
+# Copy this file to env/telegram_bots.yaml
+#
+# Bot tokens: use env var {AGENT_NAME}_TELEGRAM_TOKEN
+# The chatbot_id must match a bot registered in BotManager
+
+agents:
+  # Example 1: Basic agent
+  HRAgent:
+    chatbot_id: hr_agent
+    welcome_message: "Hello! I'm your HR Assistant. Use /help for commands."
+
+  # Example 2: Agent with custom commands
+  # DataBot:
+  #   chatbot_id: data_agent
+  #   welcome_message: "Data Assistant ready!"
+  #   commands:
+  #     report: generate_report     # /report -> agent.generate_report()
+  #     stats: get_statistics       # /stats -> agent.get_statistics()
+  #     summary: daily_summary      # /summary -> agent.daily_summary()
+  #   allowed_chat_ids: [12345678]
