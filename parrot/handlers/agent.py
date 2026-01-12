@@ -843,19 +843,39 @@ class AgentTalk(BaseView):
             )
 
     async def debug_agent(self, agent):
-        return {
-            "dataframes": list(agent.dataframes.keys()),
-            "df_metadata": {k: v['shape'] for k, v in agent.df_metadata.items()},
-            "pandas_tool": {
-                "exists": agent._get_python_pandas_tool() is not None,
-                "dataframes": list(agent._get_python_pandas_tool().dataframes.keys())
-                    if agent._get_python_pandas_tool() else []
-            },
-            "metadata_tool": {
-                "exists": agent._get_metadata_tool() is not None,
-                "dataframes": list(agent._get_metadata_tool().dataframes.keys())
-                    if agent._get_metadata_tool() else [],
-                "metadata": list(agent._get_metadata_tool().metadata.keys())
-                    if agent._get_metadata_tool() else []
+        debug_info = {}
+
+        # Safely get dataframes if available
+        if hasattr(agent, 'dataframes') and agent.dataframes:
+            debug_info["dataframes"] = list(agent.dataframes.keys())
+        else:
+            debug_info["dataframes"] = []
+
+        # Safely get df_metadata if available
+        if hasattr(agent, 'df_metadata') and agent.df_metadata:
+            debug_info["df_metadata"] = {k: v['shape'] for k, v in agent.df_metadata.items()}
+        else:
+            debug_info["df_metadata"] = {}
+
+        # Safely get pandas_tool if available
+        if hasattr(agent, '_get_python_pandas_tool'):
+            pandas_tool = agent._get_python_pandas_tool()
+            debug_info["pandas_tool"] = {
+                "exists": pandas_tool is not None,
+                "dataframes": list(pandas_tool.dataframes.keys()) if pandas_tool else []
             }
-        }
+        else:
+            debug_info["pandas_tool"] = {"exists": False, "dataframes": []}
+
+        # Safely get metadata_tool if available
+        if hasattr(agent, '_get_metadata_tool'):
+            metadata_tool = agent._get_metadata_tool()
+            debug_info["metadata_tool"] = {
+                "exists": metadata_tool is not None,
+                "dataframes": list(metadata_tool.dataframes.keys()) if metadata_tool else [],
+                "metadata": list(metadata_tool.metadata.keys()) if metadata_tool else []
+            }
+        else:
+            debug_info["metadata_tool"] = {"exists": False, "dataframes": [], "metadata": []}
+
+        return debug_info

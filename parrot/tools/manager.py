@@ -193,13 +193,18 @@ class ToolManager:
     def __init__(
         self,
         logger: Optional[logging.Logger] = None,
-        debug: bool = False
+        debug: bool = False,
+        include_search_tool: bool = True
     ):
         """
         Initialize tool manager.
 
         Args:
             logger: Logger instance
+            debug: Enable debug logging
+            include_search_tool: Whether to include the 'search_tools' meta-tool.
+                Set to False for agents that rely on RAG context rather than
+                dynamic tool discovery. Default is True.
         """
         self._shared: Dict[str, Any] = {"dataframes": {}}  # name -> (df, meta)
         self._registered_agents: Dict[str, RegisteredAgent] = {}
@@ -213,27 +218,28 @@ class ToolManager:
         self.auto_push_to_pandas: bool = True
         self.pandas_tool_name: str = "python_pandas"
 
-        # Self-register the search tool
-        self.register_tool(
-            name="search_tools",
-            description="Search for available tools by name or description. Use this to find tools that can help with your task.",
-            input_schema={
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "The search query to match against tool names and descriptions"
+        # Self-register the search tool (can be disabled)
+        if include_search_tool:
+            self.register_tool(
+                name="search_tools",
+                description="Search for available tools by name or description. Use this to find tools that can help with your task.",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "The search query to match against tool names and descriptions"
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Maximum number of results to return",
+                            "default": 15
+                        }
                     },
-                    "limit": {
-                        "type": "integer",
-                        "description": "Maximum number of results to return",
-                        "default": 15
-                    }
+                    "required": ["query"]
                 },
-                "required": ["query"]
-            },
-            function=self.search_tools
-        )
+                function=self.search_tools
+            )
 
     def search_tools(self, query: str, limit: int = 15) -> str:
         """

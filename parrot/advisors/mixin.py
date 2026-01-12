@@ -23,35 +23,35 @@ from .tools import (
 class ProductAdvisorMixin:
     """
     Mixin that adds product selection wizard capabilities to any Bot/Agent.
-    
+
     Features:
     - Guided product selection through discriminant questions
     - State management with Redis
     - Undo/redo support via Memento pattern
     - Works with VoiceBot and text chatbots
-    
+
     Usage:
         class MyProductBot(ProductAdvisorMixin, BasicAgent):
             pass
-        
+
         bot = MyProductBot(
             name="Product Advisor",
             llm="google:gemini-2.0-flash",
             catalog=my_catalog,  # ProductCatalog instance
         )
         await bot.configure()
-    
+
     Or with VoiceBot:
         class VoiceAdvisor(ProductAdvisorMixin, VoiceBot):
             pass
     """
-    
+
     # Mixin state
     _product_catalog: Optional[ProductCatalog] = None
     _selection_manager: Optional[SelectionStateManager] = None
     _question_set: Optional[QuestionSet] = None
     _advisor_tools: List[AbstractTool] = []
-    
+
     def __init__(
         self,
         *args,
@@ -65,7 +65,7 @@ class ProductAdvisorMixin:
     ):
         """
         Initialize ProductAdvisorMixin.
-        
+
         Args:
             catalog: Pre-configured ProductCatalog
             catalog_id: Identifier for multi-tenant catalogs
@@ -75,16 +75,20 @@ class ProductAdvisorMixin:
             auto_register_tools: Whether to auto-register advisor tools
         """
         # Store advisor config before calling super().__init__
-        self._catalog = catalog
         self._catalog_id = catalog_id
-        self._vector_store = vector_store
-        self._custom_selection_manager = selection_manager
-        self._custom_question_set = question_set
+        if catalog:
+            self._product_catalog = catalog
+        if vector_store:
+            self._vector_store = vector_store
+        if selection_manager:
+            self._selection_manager = selection_manager
+        if question_set:
+            self._question_set = question_set
         self._auto_register_tools = auto_register_tools
-        
+
         # Call parent init
         super().__init__(*args, **kwargs)
-    
+
     async def configure_advisor(
         self,
         catalog: Optional[ProductCatalog] = None,
@@ -92,7 +96,7 @@ class ProductAdvisorMixin:
     ) -> None:
         """
         Configure the product advisor components.
-        
+
         Call this after bot.configure() or override configure() to call it.
         """
         # Initialize catalog
@@ -103,57 +107,54 @@ class ProductAdvisorMixin:
             if self._catalog_id == "gorillashed":
                 catalog_kwargs["schema"] = "gorillashed"
                 catalog_kwargs["table"] = "products"
-                
+
             self._product_catalog = ProductCatalog(
                 catalog_id=self._catalog_id,
-                vector_store=self._vector_store,
+                vector_store=self.store,
                 **catalog_kwargs
             )
-        
+
         if not self._product_catalog:
             raise ValueError(
                 "ProductAdvisorMixin requires either a 'catalog' or 'vector_store'"
             )
-        
+
         # Initialize state manager
         self._selection_manager = (
-            self._custom_selection_manager or 
-            SelectionStateManager()
+            self._question_set or SelectionStateManager()
         )
-        
+
         # Initialize or generate question set
         self._question_set = (
-            question_set or 
-            self._custom_question_set or
-            await self._generate_questions()
+            question_set or self._question_set or await self._generate_questions()
         )
-        
+
         # Register tools
         if self._auto_register_tools:
             await self._register_advisor_tools()
-    
+
     async def _generate_questions(self) -> QuestionSet:
         """
         Generate discriminant questions using LLM.
-        
+
         This analyzes the product catalog and creates optimal questions.
         Should be called once per catalog and cached.
         """
         from .generator import generate_discriminant_questions
-        
+
         products = await self._product_catalog.get_all_products()
-        
+
         # Use the bot's LLM to generate questions
         llm = getattr(self, '_llm', None) or getattr(self, 'llm', None)
         if not llm:
             raise ValueError("No LLM available for question generation")
-        
+
         return await generate_discriminant_questions(
             products=products,
             llm=llm,
             catalog_id=self._catalog_id
         )
-    
+
     async def _register_advisor_tools(self) -> None:
         """Register all product advisor tools."""
         self._advisor_tools = [
@@ -194,22 +195,29 @@ class ProductAdvisorMixin:
                 state_manager=self._selection_manager,
             ),
         ]
-        
+
         # Register with the bot's tool manager
         tool_manager = getattr(self, 'tool_manager', None)
         if tool_manager:
             for tool in self._advisor_tools:
                 tool_manager.add_tool(tool)
+            # Sync tools to the LLM client's tool manager
+            llm = getattr(self, '_llm', None)
+            if llm and hasattr(self, '_sync_tools_to_llm'):
+                self._sync_tools_to_llm(llm)
+                self.logger.info(
+                    f"Synced {len(self._advisor_tools)} advisor tools to LLM"
+                )
         else:
             # Fallback: add to tools list if no tool_manager
             tools = getattr(self, '_tools', []) or []
             tools.extend(self._advisor_tools)
             self._tools = tools
-    
+
     # ─────────────────────────────────────────────────────────────────────────
     # Convenience Methods
     # ─────────────────────────────────────────────────────────────────────────
-    
+
     async def start_product_selection(
         self,
         user_id: str,
@@ -218,33 +226,33 @@ class ProductAdvisorMixin:
     ) -> str:
         """
         Start a new product selection session.
-        
+
         Returns welcome message with first question.
         """
         products = await self._product_catalog.get_all_products(category=category)
         product_ids = [p.product_id for p in products]
-        
+
         state = await self._selection_manager.create_state(
             session_id=session_id,
             user_id=user_id,
             catalog_id=self._catalog_id,
             product_ids=product_ids
         )
-        
+
         # Get first question
         first_question = self._question_set.get_next_question(
             asked=[],
             criteria={},
             remaining_products=len(product_ids)
         )
-        
+
         return (
             f"Great! I'll help you find the perfect product. "
             f"I have {len(product_ids)} options to consider. "
             f"Let me ask you a few questions to narrow it down.\n\n"
             f"{first_question.format_for_text() if first_question else 'What are you looking for?'}"
         )
-    
+
     async def undo_last_answer(
         self,
         user_id: str,
@@ -252,7 +260,7 @@ class ProductAdvisorMixin:
     ) -> str:
         """Undo the last answer and restore previous state."""
         state, action = await self._selection_manager.undo(session_id, user_id)
-        
+
         if state:
             return (
                 f"No problem! I've undone: {action}. "
@@ -260,12 +268,12 @@ class ProductAdvisorMixin:
                 f"What would you like to do?"
             )
         return "Nothing to undo - you're at the beginning of the selection."
-    
+
     @property
     def product_catalog(self) -> Optional[ProductCatalog]:
         """Access the product catalog."""
         return self._product_catalog
-    
+
     @property
     def selection_manager(self) -> Optional[SelectionStateManager]:
         """Access the selection state manager."""
