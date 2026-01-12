@@ -499,8 +499,6 @@ class BaseBot(AbstractBot):
                 **kwargs
             )
 
-            print('VECTOR CONTEXT > ', vector_context)
-
             _mode = output_mode if isinstance(output_mode, str) else output_mode.value
 
             # Handle output mode in system prompt
