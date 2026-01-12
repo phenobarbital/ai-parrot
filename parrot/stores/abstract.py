@@ -47,10 +47,8 @@ class AbstractStore(ABC):
                 }
             elif isinstance(embedding_model, dict):
                 self.embedding_model = embedding_model
-            else:
-                raise ValueError(
-                    "Embedding Model must be a string or a dictionary."
-                )
+                if 'model_name' not in self.embedding_model and 'model' in self.embedding_model:
+                    self.embedding_model['model_name'] = self.embedding_model['model']
         # Use or not connection to a vector database:
         self._use_database: bool = kwargs.get('use_database', True)
         # Database Information:

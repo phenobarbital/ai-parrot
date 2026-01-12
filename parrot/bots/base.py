@@ -120,6 +120,8 @@ class BaseBot(AbstractBot):
                 **kwargs
             )
 
+            print('VECTOR CONTEXT > ', vector_context)
+
             # Determine if tools should be used
             use_tools = self._use_tools(question)
             if mode == "adaptive":

@@ -55,27 +55,53 @@ class SearchProductsTool(BaseAdvisorTool):
     ) -> ToolResult:
         """Execute product search."""
         try:
+            self.logger.debug(
+                f"🔍 SearchProductsTool._execute called with query='{query}', "
+                f"catalog={self._catalog}, catalog_id={getattr(self._catalog, 'catalog_id', 'N/A')}"
+            )
+            
             if not self._catalog:
+                self.logger.error("❌ Product catalog is None!")
                 return self._error_result("Product catalog not available.")
+            
+            # Check catalog initialization status
+            self.logger.debug(
+                f"📦 Catalog status: initialized={getattr(self._catalog, '_initialized', 'N/A')}, "
+                f"schema={getattr(self._catalog, 'schema', 'N/A')}, "
+                f"table={getattr(self._catalog, 'table', 'N/A')}"
+            )
             
             # Try semantic search first if available
             results: List[ProductSpec] = []
             
             # Check if catalog has semantic search
-            if hasattr(self._catalog, 'search_products'):
+            has_search = hasattr(self._catalog, 'search_products')
+            has_similar = hasattr(self._catalog, 'find_similar')
+            self.logger.debug(
+                f"🔎 Method availability: search_products={has_search}, find_similar={has_similar}"
+            )
+            
+            if has_search:
+                self.logger.debug("Using catalog.search_products()")
                 results = await self._catalog.search_products(
                     query=query,
                     limit=max_results
                 )
-            elif hasattr(self._catalog, 'find_similar'):
+            elif has_similar:
+                self.logger.debug("Using catalog.find_similar()")
                 results = await self._catalog.find_similar(
                     query=query,
                     limit=max_results
                 )
             else:
                 # Fallback: get all and filter
+                self.logger.debug("Using fallback: get_all_products() + scoring")
                 all_products = await self._catalog.get_all_products()
-                query_lower = query.lower()
+                self.logger.debug(f"📊 Got {len(all_products)} products from catalog")
+                query_lower = query.lower().strip()
+                # Tokenize query into words for better matching
+                query_words = [w.strip() for w in query_lower.split() if len(w.strip()) > 2]
+                self.logger.debug(f"🔍 Search query: '{query_lower}', words: {query_words}")
                 
                 # Score products by relevance
                 scored = []
@@ -84,33 +110,83 @@ class SearchProductsTool(BaseAdvisorTool):
                     name_lower = p.name.lower() if p.name else ""
                     category_lower = p.category.lower() if p.category else ""
                     
-                    # Exact name match
-                    if query_lower in name_lower:
-                        score += 10
-                    if query_lower == name_lower:
-                        score += 20
+                    self.logger.debug(
+                        f"  Checking product: name='{p.name}' (lower='{name_lower}'), "
+                        f"category='{p.category}'"
+                    )
                     
-                    # Category match
-                    if query_lower in category_lower:
-                        score += 5
+                    # ═══════════════════════════════════════════════════════════
+                    # Name matching (highest priority)
+                    # ═══════════════════════════════════════════════════════════
+                    
+                    # Exact name match (highest score)
+                    if query_lower == name_lower:
+                        score += 30
+                        self.logger.debug(f"    +30 (exact name match)")
+                    # Product name is contained in query (e.g., "imperial" in "imperial shed")
+                    elif name_lower and name_lower in query_lower:
+                        score += 20
+                        self.logger.debug(f"    +20 (name in query)")
+                    # Query is contained in product name
+                    elif query_lower in name_lower:
+                        score += 15
+                        self.logger.debug(f"    +15 (query in name)")
+                    else:
+                        # Check if any query word matches the product name
+                        for word in query_words:
+                            if word == name_lower:
+                                score += 20
+                                self.logger.debug(f"    +20 (word '{word}' exact match)")
+                                break
+                            elif word in name_lower or name_lower in word:
+                                score += 10
+                                self.logger.debug(f"    +10 (word '{word}' partial match)")
+                                break
+                    
+                    # ═══════════════════════════════════════════════════════════
+                    # Category matching
+                    # ═══════════════════════════════════════════════════════════
+                    
+                    # Check if category matches any query word
+                    if category_lower:
+                        for word in query_words:
+                            if word in category_lower or category_lower in word:
+                                score += 5
+                                self.logger.debug(f"    +5 (category match: '{word}')")
+                                break
+                    
+                    # ═══════════════════════════════════════════════════════════
+                    # Features and description matching
+                    # ═══════════════════════════════════════════════════════════
                     
                     # Keywords in features
                     for feat in (p.features or []):
-                        if query_lower in str(feat.value).lower():
-                            score += 2
+                        feat_value = str(feat.value).lower()
+                        for word in query_words:
+                            if word in feat_value:
+                                score += 2
+                                break
                     
                     # Keywords in description
-                    if p.description and query_lower in p.description.lower():
-                        score += 3
+                    if p.description:
+                        desc_lower = p.description.lower()
+                        for word in query_words:
+                            if word in desc_lower:
+                                score += 3
+                                self.logger.debug(f"    +3 (description match)")
+                                break
                     
+                    self.logger.debug(f"    Final score: {score}")
                     if score > 0:
                         scored.append((score, p))
                 
                 # Sort by score and take top results
                 scored.sort(key=lambda x: x[0], reverse=True)
                 results = [p for _, p in scored[:max_results]]
+                self.logger.debug(f"📊 Scoring complete: {len(scored)} products matched, returning top {len(results)}")
             
             if not results:
+                self.logger.warning(f"⚠️ No products found for query '{query}'")
                 return self._success_result(
                     f"No products found matching '{query}'. Try a different search term.",
                     data={"results": [], "query": query}

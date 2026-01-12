@@ -196,7 +196,7 @@ class ProductCatalog:
             "product_data": json.dumps(getattr(product, "product_data", {}) or {}),
             "use_cases": json.dumps(product.use_cases),
             "unique_selling_points": json.dumps(product.unique_selling_points),
-            "metadata": json.dumps({
+            "cmetadata": json.dumps({
                 "brochure_url": product.brochure_url,
                 "price_range": product.price_range,
             }),
