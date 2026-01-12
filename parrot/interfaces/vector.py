@@ -52,13 +52,13 @@ class VectorInterface:
         try:
             module = importlib.import_module(cls_path, package=name)
             store_cls = getattr(module, store_cls)
-            self.logger.notice(
-                f"Using VectorStore: {store_cls.__name__} for {name} with Embedding {self.embedding_model}"  # noqa
-            )
             if 'embedding_model' not in store:
                 store['embedding_model'] = self.embedding_model
             if 'embedding' not in store:
                 store['embedding'] = self.embeddings
+            self.logger.notice(
+                f"Using VectorStore: {store_cls.__name__} for {name} with Embedding {store['embedding_model']}"  # noqa
+            )
             try:
                 return store_cls(
                     **store

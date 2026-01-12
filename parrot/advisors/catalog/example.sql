@@ -1,23 +1,8 @@
-# parrot/advisors/catalog/schema.py
-"""
-SQL Schema for Product Catalog with PgVector.
-
-Optimized for:
-- Fast structured filtering (price, dimensions, category)
-- Semantic search via embeddings
-- Flexible specs via JSONB
-"""
-
-PRODUCTS_TABLE_SCHEMA = """
--- Enable pgvector extension if not exists
-CREATE EXTENSION IF NOT EXISTS vector;
-
 -- Main products table
-CREATE TABLE IF NOT EXISTS {schema}.{table} (
+CREATE TABLE IF NOT EXISTS gorillashed.products (
     -- Primary identification
     id VARCHAR(255) PRIMARY KEY,
     catalog_id VARCHAR(100) NOT NULL DEFAULT 'default',
-    collection_id UUID DEFAULT uuid_generate_v4(),
     
     -- Core product info (indexed for fast filtering)
     name VARCHAR(500) NOT NULL,
@@ -45,18 +30,18 @@ CREATE TABLE IF NOT EXISTS {schema}.{table} (
     is_active BOOLEAN DEFAULT TRUE,
     
     -- Vector search columns
-    embedding vector({dimension}),
+    embedding vector(1024),
     document TEXT,  -- Markdown version of product brochure for vectorization
     
     -- Flexible JSONB columns
     specs JSONB DEFAULT '{{}}',           -- Technical specifications (nested object)
     features JSONB DEFAULT '[]',          -- Feature list with metadata
-    faqs JSONB DEFAULT '[]',              -- FAQ list [{{question, answer}}]
+    faqs JSONB DEFAULT '[]',              -- FAQ list [{question, answer}]
     product_variants JSONB DEFAULT '[]',  -- Variant list with pricing/options
     product_json JSONB DEFAULT '{{}}',    -- Raw Shopify/source product JSON
     product_data JSONB DEFAULT '{{}}',    -- Additional product metadata
     use_cases JSONB DEFAULT '[]',         -- Applicable use cases
-    cmetadata JSONB DEFAULT '{{}}',        -- Extra data for extensibility
+    metadata JSONB DEFAULT '{{}}',        -- Extra data for extensibility
     
     -- Comparison helpers
     unique_selling_points JSONB DEFAULT '[]',
@@ -68,66 +53,48 @@ CREATE TABLE IF NOT EXISTS {schema}.{table} (
 );
 
 -- Indexes for fast filtering
-CREATE INDEX IF NOT EXISTS idx_{schema}_{table}_catalog 
-    ON {schema}.{table}(catalog_id);
+CREATE INDEX IF NOT EXISTS idx_gorillashed_products_catalog 
+    ON gorillashed.products(catalog_id);
 
-CREATE INDEX IF NOT EXISTS idx_{schema}_{table}_category 
-    ON {schema}.{table}(catalog_id, category);
+CREATE INDEX IF NOT EXISTS idx_gorillashed_products_category 
+    ON gorillashed.products(catalog_id, category);
 
-CREATE INDEX IF NOT EXISTS idx_{schema}_{table}_price 
-    ON {schema}.{table}(catalog_id, price) 
+CREATE INDEX IF NOT EXISTS idx_gorillashed_products_price 
+    ON gorillashed.products(catalog_id, price) 
     WHERE is_active = TRUE;
 
-CREATE INDEX IF NOT EXISTS idx_{schema}_{table}_footprint 
-    ON {schema}.{table}(catalog_id, footprint_sqft) 
+CREATE INDEX IF NOT EXISTS idx_gorillashed_products_footprint 
+    ON gorillashed.products(catalog_id, footprint_sqft) 
     WHERE is_active = TRUE;
 
-CREATE INDEX IF NOT EXISTS idx_{schema}_{table}_active 
-    ON {schema}.{table}(catalog_id, is_active);
+CREATE INDEX IF NOT EXISTS idx_gorillashed_products_active 
+    ON gorillashed.products(catalog_id, is_active);
 
 -- Vector similarity index (IVFFlat for large catalogs, HNSW for small)
-CREATE INDEX IF NOT EXISTS idx_{schema}_{table}_embedding_cosine 
-    ON {schema}.{table} 
+CREATE INDEX IF NOT EXISTS idx_gorillashed_products_embedding_cosine 
+    ON gorillashed.products 
     USING ivfflat (embedding vector_cosine_ops)
     WITH (lists = 100);
 
 -- GIN index for JSONB specs queries
-CREATE INDEX IF NOT EXISTS idx_{schema}_{table}_specs 
-    ON {schema}.{table} 
+CREATE INDEX IF NOT EXISTS idx_gorillashed_products_specs 
+    ON gorillashed.products 
     USING GIN (specs);
 
-CREATE INDEX IF NOT EXISTS idx_{schema}_{table}_features 
-    ON {schema}.{table} 
+CREATE INDEX IF NOT EXISTS idx_gorillashed_products_features 
+    ON gorillashed.products 
     USING GIN (features);
 
-CREATE INDEX IF NOT EXISTS idx_{schema}_{table}_use_cases 
-    ON {schema}.{table} 
+CREATE INDEX IF NOT EXISTS idx_gorillashed_products_use_cases 
+    ON gorillashed.products 
     USING GIN (use_cases);
 
 -- Full-text search on document
-CREATE INDEX IF NOT EXISTS idx_{schema}_{table}_document_fts 
-    ON {schema}.{table} 
+CREATE INDEX IF NOT EXISTS idx_gorillashed_products_document_fts 
+    ON gorillashed.products 
     USING GIN (to_tsvector('english', document));
 
 -- Composite index for common filter patterns
-CREATE INDEX IF NOT EXISTS idx_{schema}_{table}_filter_combo 
-    ON {schema}.{table}(catalog_id, category, footprint_sqft, price) 
+CREATE INDEX IF NOT EXISTS idx_gorillashed_products_filter_combo 
+    ON gorillashed.products(catalog_id, category, footprint_sqft, price) 
     WHERE is_active = TRUE;
-"""
-
-# Index configuration based on catalog size
-INDEX_CONFIGS = {
-    "small": {  # < 100 products
-        "vector_index": "HNSW",
-        "hnsw_m": 16,
-        "hnsw_ef_construction": 64,
-    },
-    "medium": {  # 100-1000 products
-        "vector_index": "IVFFlat",
-        "lists": 100,
-    },
-    "large": {  # > 1000 products
-        "vector_index": "IVFFlat",
-        "lists": 300,
-    }
-}

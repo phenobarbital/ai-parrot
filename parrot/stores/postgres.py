@@ -71,6 +71,7 @@ class PgVectorStore(AbstractStore):
         use_uuid: bool = False,
         pool_size: int = 50,
         auto_initialize: bool = True,
+        enable_colbert: bool = False,
         **kwargs
     ):
         """ Initializes the PgVectorStore with the specified parameters.
@@ -86,6 +87,7 @@ class PgVectorStore(AbstractStore):
         self._embedding_store_cache: Dict[str, Any] = {}
         self._max_size = pool_size or 50
         self._auto_initialize_db: bool = auto_initialize
+        self._enable_colbert: bool = enable_colbert
         super().__init__(
             embedding_model=embedding_model,
             embedding=embedding,
@@ -371,7 +373,8 @@ class PgVectorStore(AbstractStore):
                 await session.execute(text("SET enable_seqscan = off"))
 
                 # Create ColBERT MaxSim function
-                await self._create_maxsim_function(session)
+                if self._enable_colbert:
+                    await self._create_maxsim_function(session)
 
                 await session.commit()
         except Exception as e:
