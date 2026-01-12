@@ -120,6 +120,8 @@ class BaseBot(AbstractBot):
                 **kwargs
             )
 
+            print('VECTOR CONTEXT > ', vector_context)
+
             # Determine if tools should be used
             use_tools = self._use_tools(question)
             if mode == "adaptive":
@@ -496,6 +498,8 @@ class BaseBot(AbstractBot):
                 return_sources=return_sources,
                 **kwargs
             )
+
+            print('VECTOR CONTEXT > ', vector_context)
 
             _mode = output_mode if isinstance(output_mode, str) else output_mode.value
 

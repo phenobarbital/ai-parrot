@@ -100,7 +100,7 @@ class ProductAdvisorMixin:
         Call this after bot.configure() or override configure() to call it.
         """
         # Initialize catalog
-        self._product_catalog = catalog or self._catalog
+        self._product_catalog = catalog or self._product_catalog
         if not self._product_catalog and self._vector_store:
             # Special configuration for gorillashed catalog
             catalog_kwargs = {}
@@ -121,7 +121,7 @@ class ProductAdvisorMixin:
 
         # Initialize state manager
         self._selection_manager = (
-            self._question_set or SelectionStateManager()
+            self._selection_manager or SelectionStateManager()
         )
 
         # Initialize or generate question set

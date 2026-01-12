@@ -1416,7 +1416,9 @@ class AbstractBot(DBInterface, LocalKBMixin, ToolInterface, VectorInterface, ABC
         context_parts = []
         # Add Vector Context First
         if vector_context:
-            context_parts.extend(("\n# Document Context:", vector_context))
+            context_parts.extend(
+                ("\n# Document Context:", vector_context)
+            )
         if metadata:
             metadata_text = "### Metadata:\n"
             for key, value in metadata.items():
