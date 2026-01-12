@@ -481,22 +481,41 @@ class BaseBot(AbstractBot):
                 )  # noqa
                 conversation_context = self.build_conversation_context(conversation_history)
 
-            # Get vector context
-            kb_context, user_context, vector_context, vector_metadata = await self._build_context(
-                question,
+            # Build context from different sources
+            kb_context = ""
+            user_context = ""
+            vector_context = ""
+            vector_metadata = {'activated_kbs': []}
+
+            # Get vector context only if enabled
+            if use_vector_context:
+                vector_context, vector_meta = await self._build_vector_context(
+                    question,
+                    search_type=search_type,
+                    search_kwargs=search_kwargs,
+                    ensemble_config=ensemble_config,
+                    metric_type=metric_type,
+                    limit=limit,
+                    score_threshold=score_threshold,
+                    return_sources=return_sources,
+                )
+                vector_metadata['vector'] = vector_meta
+
+            # Get user-specific context
+            user_context = await self._build_user_context(
                 user_id=user_id,
                 session_id=session_id,
-                ctx=ctx,
-                use_vectors=use_vector_context,
-                search_type=search_type,
-                search_kwargs=search_kwargs,
-                ensemble_config=ensemble_config,
-                metric_type=metric_type,
-                limit=limit,
-                score_threshold=score_threshold,
-                return_sources=return_sources,
-                **kwargs
             )
+
+            # Get knowledge base context only if knowledge bases are declared
+            if self.knowledge_bases:
+                kb_context, kb_meta = await self._build_kb_context(
+                    question,
+                    user_id=user_id,
+                    session_id=session_id,
+                    ctx=ctx,
+                )
+                vector_metadata['activated_kbs'] = kb_meta.get('activated_kbs', [])
 
             _mode = output_mode if isinstance(output_mode, str) else output_mode.value
 
@@ -694,21 +713,41 @@ class BaseBot(AbstractBot):
                 conversation_history = await self.get_conversation_history(user_id, session_id) or await self.create_conversation_history(user_id, session_id)  # noqa
                 conversation_context = self.build_conversation_context(conversation_history)
 
-            kb_context, user_context, vector_context, vector_metadata = await self._build_context(
-                question,
+            # Build context from different sources
+            kb_context = ""
+            user_context = ""
+            vector_context = ""
+            vector_metadata = {'activated_kbs': []}
+
+            # Get vector context only if enabled
+            if use_vector_context:
+                vector_context, vector_meta = await self._build_vector_context(
+                    question,
+                    search_type=search_type,
+                    search_kwargs=search_kwargs,
+                    ensemble_config=ensemble_config,
+                    metric_type=metric_type,
+                    limit=limit,
+                    score_threshold=score_threshold,
+                    return_sources=return_sources,
+                )
+                vector_metadata['vector'] = vector_meta
+
+            # Get user-specific context
+            user_context = await self._build_user_context(
                 user_id=user_id,
                 session_id=session_id,
-                ctx=ctx,
-                use_vectors=use_vector_context,
-                search_type=search_type,
-                search_kwargs=search_kwargs,
-                ensemble_config=ensemble_config,
-                metric_type=metric_type,
-                limit=limit,
-                score_threshold=score_threshold,
-                return_sources=return_sources,
-                **kwargs
             )
+
+            # Get knowledge base context only if knowledge bases are declared
+            if self.knowledge_bases:
+                kb_context, kb_meta = await self._build_kb_context(
+                    question,
+                    user_id=user_id,
+                    session_id=session_id,
+                    ctx=ctx,
+                )
+                vector_metadata['activated_kbs'] = kb_meta.get('activated_kbs', [])
 
             _mode = output_mode if isinstance(output_mode, str) else output_mode.value
 
