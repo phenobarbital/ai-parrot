@@ -23,6 +23,7 @@ from .outputs import (
 )
 from .google import GoogleModel, TTSVoice
 from .generation import VideoGenerationPrompt
+from .voice import VoiceConfig, AudioFormat
 
 __all__ = (
     "OutputFormat",
@@ -43,4 +44,6 @@ __all__ = (
     "GoogleModel",
     "TTSVoice",
     "VideoGenerationPrompt",
+    "VoiceConfig",
+    "AudioFormat",
 )
