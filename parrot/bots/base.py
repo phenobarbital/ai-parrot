@@ -119,9 +119,6 @@ class BaseBot(AbstractBot):
                 return_sources=return_sources,
                 **kwargs
             )
-
-            print('VECTOR CONTEXT > ', vector_context)
-
             # Determine if tools should be used
             use_tools = self._use_tools(question)
             if mode == "adaptive":
@@ -410,6 +407,7 @@ class BaseBot(AbstractBot):
         ensemble_config: dict = None,
         ctx: Optional[RequestContext] = None,
         structured_output: Optional[Union[Type[BaseModel], StructuredOutputConfig]] = None,
+        system_prompt_partial: Optional[str] = None,
         output_mode: OutputMode = OutputMode.DEFAULT,
         format_kwargs: dict = None,
         use_tools: bool = True,
@@ -424,6 +422,7 @@ class BaseBot(AbstractBot):
             user_id: User identifier
             search_type: Type of search to perform ('similarity', 'mmr', 'ensemble')
             search_kwargs: Additional search parameters
+            system_prompt_partial: Partial system prompt to append to the generated system prompt
             metric_type: Metric type for vector search
             use_vector_context: Whether to retrieve context from vector store
             use_conversation_history: Whether to use conversation history
