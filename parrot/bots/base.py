@@ -54,6 +54,7 @@ class BaseBot(AbstractBot):
         ctx: Optional[RequestContext] = None,
         output_mode: OutputMode = OutputMode.DEFAULT,
         format_kwargs: dict = None,
+        system_prompt: Optional[str] = None,
         **kwargs
     ) -> AIMessage:
         """
@@ -170,6 +171,7 @@ class BaseBot(AbstractBot):
                         output_mode=_mode
                     )
             # Create system prompt
+            system_prompt_addition = system_prompt
             system_prompt = await self.create_system_prompt(
                 kb_context=kb_context,
                 vector_context=vector_context,
@@ -177,7 +179,7 @@ class BaseBot(AbstractBot):
                 metadata=vector_metadata,
                 user_context=user_context,
                 **kwargs
-            )
+            ) + (system_prompt_addition or '')
             # Configure LLM if needed
             llm = self._llm
             if (new_llm := kwargs.pop('llm', None)):
@@ -425,7 +427,7 @@ class BaseBot(AbstractBot):
         ensemble_config: dict = None,
         ctx: Optional[RequestContext] = None,
         structured_output: Optional[Union[Type[BaseModel], StructuredOutputConfig]] = None,
-        system_prompt_partial: Optional[str] = None,
+        system_prompt: Optional[str] = None,
         output_mode: OutputMode = OutputMode.DEFAULT,
         format_kwargs: dict = None,
         use_tools: bool = True,
@@ -440,7 +442,7 @@ class BaseBot(AbstractBot):
             user_id: User identifier
             search_type: Type of search to perform ('similarity', 'mmr', 'ensemble')
             search_kwargs: Additional search parameters
-            system_prompt_partial: Partial system prompt to append to the generated system prompt
+            system_prompt: System prompt to append to the generated system prompt
             metric_type: Metric type for vector search
             use_vector_context: Whether to retrieve context from vector store
             use_conversation_history: Whether to use conversation history
@@ -550,6 +552,7 @@ class BaseBot(AbstractBot):
                         output_mode=_mode
                     )
             # Create system prompt
+            system_prompt_addition = system_prompt
             system_prompt = await self.create_system_prompt(
                 kb_context=kb_context,
                 vector_context=vector_context,
@@ -557,7 +560,7 @@ class BaseBot(AbstractBot):
                 metadata=vector_metadata,
                 user_context=user_context,
                 **kwargs
-            )
+            ) + (system_prompt_addition or '')
 
             # Configure LLM if needed
             llm = self._llm
@@ -691,6 +694,7 @@ class BaseBot(AbstractBot):
         ctx: Optional[RequestContext] = None,
         structured_output: Optional[Union[Type[BaseModel], StructuredOutputConfig]] = None,
         output_mode: OutputMode = OutputMode.DEFAULT,
+        system_prompt: Optional[str] = None,
         **kwargs
     ) -> AsyncIterator[str]:
         """Stream responses using the same preparation logic as :meth:`ask`."""
@@ -775,6 +779,7 @@ class BaseBot(AbstractBot):
                         output_mode=_mode
                     )
 
+            system_prompt_addition = system_prompt
             system_prompt = await self.create_system_prompt(
                 kb_context=kb_context,
                 vector_context=vector_context,
@@ -782,7 +787,7 @@ class BaseBot(AbstractBot):
                 metadata=vector_metadata,
                 user_context=user_context,
                 **kwargs
-            )
+            ) + (system_prompt_addition or '')
 
             llm = self._llm
             if (new_llm := kwargs.pop('llm', None)):
