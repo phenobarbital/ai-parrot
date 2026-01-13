@@ -141,11 +141,26 @@ class ProductAdvisorMixin:
         Should be called once per catalog and cached.
         """
         from .generator import generate_discriminant_questions
+        from ..clients.factory import SUPPORTED_CLIENTS
 
         products = await self._product_catalog.get_all_products()
 
-        # Use the bot's LLM to generate questions
+        # For VoiceBot, _llm is GeminiLiveClient which has different ask() signature.
+        # If bot has ask_text() method, use text LLM for question generation.
         llm = getattr(self, '_llm', None) or getattr(self, 'llm', None)
+
+        # Check if LLM is a voice-only client (GeminiLiveClient has stream_voice)
+        if llm and hasattr(llm, 'stream_voice'):
+            # Create a text-based LLM for question generation
+            # Note: Don't use llm.model as it's an audio-only model
+            GoogleGenAIClient = SUPPORTED_CLIENTS.get('google')
+            if GoogleGenAIClient:
+                llm = GoogleGenAIClient(
+                    model='gemini-2.5-flash',
+                    temperature=0.3,
+                )
+                self.logger.debug("Using text LLM for question generation (voice LLM not compatible)")
+
         if not llm:
             raise ValueError("No LLM available for question generation")
 
@@ -197,22 +212,19 @@ class ProductAdvisorMixin:
         ]
 
         # Register with the bot's tool manager
-        tool_manager = getattr(self, 'tool_manager', None)
-        if tool_manager:
-            for tool in self._advisor_tools:
-                tool_manager.add_tool(tool)
-            # Sync tools to the LLM client's tool manager
-            llm = getattr(self, '_llm', None)
-            if llm and hasattr(self, '_sync_tools_to_llm'):
-                self._sync_tools_to_llm(llm)
-                self.logger.info(
-                    f"Synced {len(self._advisor_tools)} advisor tools to LLM"
-                )
-        else:
-            # Fallback: add to tools list if no tool_manager
-            tools = getattr(self, '_tools', []) or []
-            tools.extend(self._advisor_tools)
-            self._tools = tools
+        tool_manager = getattr(self, 'tool_manager')
+        for tool in self._advisor_tools:
+            tool_manager.register_tool(tool)
+
+        # Sync tools to the LLM client's tool manager
+        llm = getattr(self, '_llm', None)
+        if llm and hasattr(self, '_sync_tools_to_llm'):
+            self._sync_tools_to_llm(llm)
+            # Enable tools on the LLM client (may have been False at creation time)
+            llm.enable_tools = True
+            self.logger.info(
+                f"Synced {len(self._advisor_tools)} advisor tools to LLM (enable_tools=True)"
+            )
 
     # ─────────────────────────────────────────────────────────────────────────
     # Convenience Methods
