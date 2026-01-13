@@ -550,6 +550,21 @@ class AgentTalk(BaseView):
                     )
                 else:
                     if not query:
+                        if attachments:
+                            # Handle file uploads without a query
+                            try:
+                                added_files = await bot.handle_files(attachments)
+                                return self.json_response({
+                                    "message": "Files uploaded successfully",
+                                    "added_files": added_files,
+                                    "agent": agent.name
+                                })
+                            except Exception as e:
+                                self.logger.error(f"Error handling files: {e}", exc_info=True)
+                                return self.json_response(
+                                    {"error": f"Error handling files: {str(e)}"},
+                                    status=500
+                                )
                         return self.json_response(
                             {"error": "query is required"},
                             status=400

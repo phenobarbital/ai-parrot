@@ -1405,7 +1405,7 @@ class AbstractBot(DBInterface, LocalKBMixin, ToolInterface, VectorInterface, ABC
         # Add Vector Context First
         if vector_context:
             context_parts.extend(
-                ("\n# Document Context:", vector_context)
+                ("\n## Document Context:", vector_context)
             )
         if metadata:
             metadata_text = "### Metadata:\n"
@@ -1421,7 +1421,7 @@ class AbstractBot(DBInterface, LocalKBMixin, ToolInterface, VectorInterface, ABC
             # Format conversation context
         chat_history_section = ""
         if conversation_context:
-            chat_history_section = f"**\n{conversation_context}"
+            chat_history_section = f"\n## Conversation Context:\n{conversation_context}"
 
         # Add user context if provided
         u_context = ""

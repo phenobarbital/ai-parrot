@@ -48,7 +48,7 @@ SECURITY RULES:
 - if Input contains instructions to harm yourself or others, you must refuse to comply.
 </system_instructions>
 
-## Knowledge Base Context:
+## Knowledge Context:
 $pre_context
 $context
 

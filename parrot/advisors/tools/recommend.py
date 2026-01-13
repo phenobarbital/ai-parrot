@@ -113,6 +113,10 @@ class RecommendProductTool(BaseAdvisorTool):
             if p.url:
                 response_parts.append(f"\n🔗 [View Product Details]({p.url})")
             
+            # Image
+            if p.image_url:
+                response_parts.append(f"\n🖼️ Image: {p.image_url}")
+            
             # Alternatives
             if alternatives:
                 response_parts.append("\n---\n**Also Consider:**")

@@ -178,10 +178,22 @@ class CompareProductsTool(BaseAdvisorTool):
                     usp = p["unique_selling_points"][:2]
                     response_parts.append(f"- **{p['name']}**: {'; '.join(usp)}")
             
+                    usp = p["unique_selling_points"][:2]
+                    response_parts.append(f"- **{p['name']}**: {'; '.join(usp)}")
+            
+            # Images
+            response_parts.append("\n**Images:**")
+            for p in products:
+                if p.get("image_url"):
+                    response_parts.append(f"- **{p['name']}**: {p['image_url']}")
+
             return self._success_result(
                 "\n".join(response_parts),
                 data={
-                    "products": products,
+                    "products": [
+                        {**p, "image_url": p.get("image_url")} 
+                        for p in products
+                    ],
                     "comparison_matrix": matrix,
                     "product_count": len(products)
                 }
