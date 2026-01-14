@@ -410,7 +410,7 @@ class AgentTalk(BaseView):
                 status=500,
             )
 
-    async def _get_agent_name(self, data: dict) -> Union[str, None]:
+    def _get_agent_name(self, data: dict) -> Union[str, None]:
         """
         Extract agent_name from request data or query string.
 
@@ -573,6 +573,17 @@ class AgentTalk(BaseView):
         # Prepare ask() parameters
         format_kwargs = data.pop('format_kwargs', {})
         response = None
+
+        # Use RedisConversation for history management if session_id is present
+        memory = None
+        if user_id and session_id:
+             try:
+                 memory = RedisConversation()
+             except Exception as ex:
+                 self.logger.warning(
+                    f"Failed to initialize RedisConversation: {ex}"
+                )
+
         async with agent.retrieval(self.request, app=app, user_id=user_id, session_id=session_id) as bot:
             if method_name:
                 return await self._execute_agent_method(
@@ -612,6 +623,7 @@ class AgentTalk(BaseView):
                     use_conversation_history=use_conversation_history,
                     output_mode=output_mode,
                     format_kwargs=format_kwargs,
+                    memory=memory,
                     **data,
                 )
             else:
@@ -625,6 +637,7 @@ class AgentTalk(BaseView):
                     use_conversation_history=use_conversation_history,
                     output_mode=output_mode,
                     format_kwargs=format_kwargs,
+                    memory=memory,
                     **data,
                 )
 

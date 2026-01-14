@@ -38,7 +38,7 @@ class RedisConversation(ConversationMemory):
         parts = [self.key_prefix]
         if chatbot_id:
             parts.append(str(chatbot_id))
-        parts.extend([user_id, session_id])
+        parts.extend([str(user_id), str(session_id)])
         return ":".join(parts)
 
     def _get_user_sessions_key(
@@ -50,7 +50,7 @@ class RedisConversation(ConversationMemory):
         parts = [f"{self.key_prefix}_sessions"]
         if chatbot_id:
             parts.append(str(chatbot_id))
-        parts.append(user_id)
+        parts.append(str(user_id))
         return ":".join(parts)
 
     def _serialize_data(self, data: Any) -> str:
@@ -101,17 +101,15 @@ class RedisConversation(ConversationMemory):
 
             # Store each field separately in a hash
             mapping = {
-                'session_id': history_dict['session_id'],
-                'user_id': history_dict['user_id'],
-                'chatbot_id': chatbot_id,
+                'session_id': str(history_dict['session_id']),
+                'user_id': str(history_dict['user_id']),
                 'turns': self._serialize_data(history_dict['turns']),
                 'created_at': history_dict['created_at'],
                 'updated_at': history_dict['updated_at'],
                 'metadata': self._serialize_data(history_dict['metadata'])
             }
-            if history_dict.get('chatbot_id') is not None:
-                mapping['chatbot_id'] = history_dict['chatbot_id']
-            await self.redis.hset(key, mapping=mapping)
+            if chatbot_id:
+                mapping['chatbot_id'] = str(chatbot_id)
         else:
             # Method 2: Using simple key-value storage
             key = self._get_key(user_id, session_id, chatbot_id)
@@ -143,13 +141,13 @@ class RedisConversation(ConversationMemory):
             try:
                 # Reconstruct the history dict
                 history_dict = {
-                    'session_id': data['session_id'],
-                    'user_id': data['user_id'],
+                    'session_id': data.get('session_id', session_id),
+                    'user_id': data.get('user_id', user_id),
                     'chatbot_id': data.get('chatbot_id', chatbot_id),
-                    'turns': self._deserialize_data(data['turns']),
-                    'created_at': data['created_at'],
-                    'updated_at': data['updated_at'],
-                    'metadata': self._deserialize_data(data['metadata'])
+                    'turns': self._deserialize_data(data.get('turns', '[]')),
+                    'created_at': data.get('created_at', datetime.now().isoformat()),
+                    'updated_at': data.get('updated_at', datetime.now().isoformat()),
+                    'metadata': self._deserialize_data(data.get('metadata', '{}'))
                 }
                 return ConversationHistory.from_dict(history_dict)
             except (KeyError, ValueError) as e:

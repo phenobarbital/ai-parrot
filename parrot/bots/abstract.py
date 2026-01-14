@@ -265,7 +265,7 @@ class AbstractBot(DBInterface, LocalKBMixin, ToolInterface, VectorInterface, ABC
         self.memory_config: dict = kwargs.get('memory_config', {})
 
         # Conversation settings
-        self.max_context_turns: int = kwargs.get('max_context_turns', 5)
+        self.max_context_turns: int = kwargs.get('max_context_turns', 10)
         self.context_search_limit: int = kwargs.get('context_search_limit', 10)
         self.context_score_threshold: float = kwargs.get('context_score_threshold', 0.7)
 
@@ -1244,15 +1244,18 @@ class AbstractBot(DBInterface, LocalKBMixin, ToolInterface, VectorInterface, ABC
     ) -> str:
         """Build conversation context from history using Template to avoid f-string conflicts."""
         if not history or not history.turns:
+            print("DEBUG: build_conversation_context - No history provided or history is empty")
             return ""
 
         recent_turns = history.get_recent_turns(self.max_context_turns)
+        print(f"DEBUG: build_conversation_context - Retrieved {len(recent_turns)} turns (max: {self.max_context_turns})")
 
         if not recent_turns:
+            print("DEBUG: build_conversation_context - No recent turns after filtering")
             return ""
 
-        context_parts = []
-        total_chars = 0
+        if max_chars_per_message is None:
+            max_chars_per_message = 200 # User requested limit
 
         # Template for turn formatting
         turn_header_template = Template("=== Turn $turn_number ===")
@@ -1277,18 +1280,38 @@ class AbstractBot(DBInterface, LocalKBMixin, ToolInterface, VectorInterface, ABC
             )
 
             # Build turn with optional timestamp using templates
+            
+            # Simplified format:
+            turn_parts = [
+                turn_header_template.safe_substitute(turn_number=turn_number), # Removed as per user request to simplify? "without any separation between before"
+                # Actually user example showed "=== Turn X ===" but then "without any separation".
+                # User said: "remove this: ## Conversation Context: and instead leave: ## 📋 User Conversation"
+                # "without any separation between before" might mean compacting.
+                # User's example SHOWED "=== Turn X ===". But maybe they mean "User Conversation..." then turns directly.
+                # Let's check the request again carefully: "without any separation between before" - maybe referring to the header.
+                
+                # Wait, user said: "limit to no more than 200 characters"
+            ]
+            
+            # Re-implementing compact turn format:
+            turn_parts = []
+            # turn_parts.append(turn_header_template.safe_substitute(turn_number=turn_number)) # Let's REMOVE turn headers for compactness if implied?
+            # User example:
+            # === Turn 1 ===
+            # 👤 User: ...
+            
+            # But "without any separation between before" - maybe they mean newlines between turns?
+            # If I look at "Recen Conversation (6 turns):" in user request, it had "=== Turn X ===".
+            # I will keep Turn X headers but make it compact.
+            
             turn_parts = [turn_header_template.safe_substitute(turn_number=turn_number)]
-
-            if include_turn_timestamps and hasattr(turn, 'timestamp'):
-                timestamp_str = turn.timestamp.strftime('%H:%M')
-                turn_parts.append(timestamp_template.safe_substitute(timestamp=timestamp_str))
 
             # Add user and assistant messages using templates
             turn_parts.extend([
                 user_message_template.safe_substitute(message=user_msg),
                 assistant_message_template.safe_substitute(message=assistant_msg)
             ])
-
+            
             turn_text = "\n".join(turn_parts)
 
             # Check total length
@@ -1311,7 +1334,7 @@ class AbstractBot(DBInterface, LocalKBMixin, ToolInterface, VectorInterface, ABC
 
         # Create final context using Template to avoid f-string issues with JSON content
         header_template = Template(
-            "📋 Recent Conversation ($num_turns turns):"
+            "## 📋 User Conversation ($num_turns turns):"
         )
         header = header_template.safe_substitute(num_turns=len(context_parts))
 
@@ -1319,7 +1342,7 @@ class AbstractBot(DBInterface, LocalKBMixin, ToolInterface, VectorInterface, ABC
         final_template = Template("$header\n\n$content")
         return final_template.safe_substitute(
             header=header,
-            content="\n\n".join(context_parts)
+            content="\n".join(context_parts)
         )
 
     def _smart_truncate(self, text: str, max_length: int) -> str:
