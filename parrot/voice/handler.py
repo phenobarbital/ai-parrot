@@ -16,6 +16,7 @@ import asyncio
 import base64
 import contextlib
 import json
+import re
 import uuid
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
@@ -1327,16 +1328,22 @@ class VoiceChatHandler:
         """Send voice response to client."""
         # Send response_chunk for audio OR text (not just audio)
         # FILTER: Skip internal thought processes that leak into output
+        # Generic pattern: Bold/Header followed by a Gerund (Verb-ing)
+        # e.g. **Clarifying...**, **Locating...**, **Confirming...**
         is_thought = response.text and re.match(
-            r'^\s*(\*\*|##)?\s*(Clarifying|Analyzing|Defining|Thinking|Focusing|Honing|Refining)',
-            response.text,
-            re.IGNORECASE
+            r'^\s*(\*\*|##)?\s*[A-Z][a-z]+ing\b',
+            response.text
         )
         
-        if (response.audio_data or (response.text and not is_thought)) and not response.is_complete:
+        # Determine strict text to send (suppress if thought)
+        text_to_send = response.text
+        if is_thought:
+            text_to_send = ""
+        
+        if (response.audio_data or text_to_send) and not response.is_complete:
             await self._send_message(connection.ws, {
                 "type": "response_chunk",
-                "text": response.text or "",
+                "text": text_to_send or "",
                 "audio_base64": base64.b64encode(response.audio_data).decode() if response.audio_data else "",
                 "audio_format": "audio/pcm;rate=24000" if response.audio_data else "",
                 "is_interrupted": response.is_interrupted,
@@ -1369,9 +1376,14 @@ class VoiceChatHandler:
             })
 
         if response.is_complete:
+            # Re-check filter for the final text payload
+            final_text = response.text
+            if final_text and re.match(r'^\s*(\*\*|##)?\s*[A-Z][a-z]+ing\b', final_text):
+                final_text = ""
+
             await self._send_message(connection.ws, {
                 "type": "response_complete",
-                "text": response.text or "",
+                "text": final_text or "",
                 "is_interrupted": response.is_interrupted,
             })
 

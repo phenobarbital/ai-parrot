@@ -1050,7 +1050,9 @@ class GeminiLiveClient(AbstractClient):
 
 
                         if hasattr(server_content, 'model_turn') and server_content.model_turn:
+                            print(f"\nDEBUG: RAW MODEL TURN: {server_content.model_turn}")
                             for part in server_content.model_turn.parts:
+                                print(f"DEBUG: RAW PART: {part}")
                                 if hasattr(part, 'text') and part.text:
                                     accumulated_text += part.text
                                     yield LiveVoiceResponse(
