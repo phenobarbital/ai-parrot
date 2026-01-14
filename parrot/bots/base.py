@@ -9,7 +9,10 @@ from collections.abc import Callable
 import uuid
 import asyncio
 from pydantic import BaseModel
-from .abstract import AbstractBot
+from ..memory import (
+    ConversationTurn,
+    ConversationHistory
+)
 from ..models import AIMessage, StructuredOutputConfig
 from ..models.outputs import OutputMode
 from ..utils.helpers import RequestContext
@@ -17,6 +20,8 @@ from ..security import PromptInjectionException
 from .prompts import (
     OUTPUT_SYSTEM_PROMPT
 )
+from .abstract import AbstractBot
+
 
 class BaseBot(AbstractBot):
     """
@@ -54,6 +59,7 @@ class BaseBot(AbstractBot):
         ctx: Optional[RequestContext] = None,
         output_mode: OutputMode = OutputMode.DEFAULT,
         format_kwargs: dict = None,
+        system_prompt: Optional[str] = None,
         **kwargs
     ) -> AIMessage:
         """
@@ -96,19 +102,19 @@ class BaseBot(AbstractBot):
             memory = memory or self.conversation_memory
 
             if use_conversation_history and memory:
-                conversation_history = await self.get_conversation_history(
+                conversation_history = await memory.get_history(
                     user_id, session_id
-                ) or await self.create_conversation_history(
+                ) or await memory.create_history(
                     user_id, session_id
                 )  # noqa
                 conversation_context = self.build_conversation_context(conversation_history)
 
-            # Get vector context if store exists and enabled
-            kb_context, user_context, vector_context, vector_metadata = await self._build_context(
+            # Build context from different sources
+            vector_metadata = {'activated_kbs': []}
+
+            # Get vector context (method handles use_vectors check internally)
+            vector_context, vector_meta = await self._build_vector_context(
                 question,
-                user_id=user_id,
-                session_id=session_id,
-                ctx=ctx,
                 use_vectors=use_vector_context,
                 search_type=search_type,
                 search_kwargs=search_kwargs,
@@ -117,10 +123,25 @@ class BaseBot(AbstractBot):
                 limit=limit,
                 score_threshold=score_threshold,
                 return_sources=return_sources,
-                **kwargs
+            )
+            if vector_meta:
+                vector_metadata['vector'] = vector_meta
+
+            # Get user-specific context
+            user_context = await self._build_user_context(
+                user_id=user_id,
+                session_id=session_id,
             )
 
-            print('VECTOR CONTEXT > ', vector_context)
+            # Get knowledge base context
+            kb_context, kb_meta = await self._build_kb_context(
+                question,
+                user_id=user_id,
+                session_id=session_id,
+                ctx=ctx,
+            )
+            if kb_meta.get('activated_kbs'):
+                vector_metadata['activated_kbs'] = kb_meta['activated_kbs']
 
             # Determine if tools should be used
             use_tools = self._use_tools(question)
@@ -155,6 +176,7 @@ class BaseBot(AbstractBot):
                         output_mode=_mode
                     )
             # Create system prompt
+            system_prompt_addition = system_prompt
             system_prompt = await self.create_system_prompt(
                 kb_context=kb_context,
                 vector_context=vector_context,
@@ -162,7 +184,7 @@ class BaseBot(AbstractBot):
                 metadata=vector_metadata,
                 user_context=user_context,
                 **kwargs
-            )
+            ) + (system_prompt_addition or '')
             # Configure LLM if needed
             llm = self._llm
             if (new_llm := kwargs.pop('llm', None)):
@@ -245,6 +267,25 @@ class BaseBot(AbstractBot):
                                 # Assign extracted data if we found any
                                 if extracted_data and not response.data:
                                     response.data = extracted_data
+
+                            
+                            # Save conversation turn
+                            if use_conversation_history and memory:
+                                turn = ConversationTurn(
+                                    turn_id=response.turn_id or str(uuid.uuid4()),
+                                    user_id=user_id,
+                                    user_message=question,
+                                    assistant_response=response.content,
+                                    context_used=vector_context if use_vector_context else None,
+                                    tools_used=[t.name for t in response.tool_calls] if response.tool_calls else [],
+                                    metadata={
+                                        'response_time': response.response_time,
+                                        'model': response.model,
+                                        'usage': response.usage,
+                                        'finish_reason': response.finish_reason
+                                    }
+                                )
+                                await memory.add_turn(user_id, session_id, turn)
 
                             # return the response Object:
                             return self.get_response(
@@ -329,7 +370,7 @@ class BaseBot(AbstractBot):
             memory = memory or self.conversation_memory
 
             if use_conversation_history and memory:
-                conversation_history = await self.get_conversation_history(user_id, session_id) or await self.create_conversation_history(user_id, session_id)  # noqa
+                conversation_history = await memory.get_history(user_id, session_id) or await memory.create_history(user_id, session_id)  # noqa
                 conversation_context = self.build_conversation_context(conversation_history)
 
             # Create system prompt (no vector context)
@@ -382,6 +423,24 @@ class BaseBot(AbstractBot):
                     return response  # return structured response directly
 
                 # Return the response
+                # Save conversation turn
+                if use_conversation_history and memory:
+                    turn = ConversationTurn(
+                        turn_id=response.turn_id or str(uuid.uuid4()),
+                        user_id=user_id,
+                        user_message=question,
+                        assistant_response=response.content,
+                        context_used=None, # invoke does not use vector context usually
+                        tools_used=[t.name for t in response.tool_calls] if response.tool_calls else [],
+                        metadata={
+                            'response_time': response.response_time,
+                            'model': response.model,
+                            'usage': response.usage,
+                            'finish_reason': response.finish_reason
+                        }
+                    )
+                    await memory.add_turn(user_id, session_id, turn)
+
                 return self.get_response(
                     response,
                     return_sources=False,
@@ -410,6 +469,7 @@ class BaseBot(AbstractBot):
         ensemble_config: dict = None,
         ctx: Optional[RequestContext] = None,
         structured_output: Optional[Union[Type[BaseModel], StructuredOutputConfig]] = None,
+        system_prompt: Optional[str] = None,
         output_mode: OutputMode = OutputMode.DEFAULT,
         format_kwargs: dict = None,
         use_tools: bool = True,
@@ -424,6 +484,7 @@ class BaseBot(AbstractBot):
             user_id: User identifier
             search_type: Type of search to perform ('similarity', 'mmr', 'ensemble')
             search_kwargs: Additional search parameters
+            system_prompt: System prompt to append to the generated system prompt
             metric_type: Metric type for vector search
             use_vector_context: Whether to retrieve context from vector store
             use_conversation_history: Whether to use conversation history
@@ -475,19 +536,19 @@ class BaseBot(AbstractBot):
             memory = memory or self.conversation_memory
 
             if use_conversation_history and memory:
-                conversation_history = await self.get_conversation_history(
+                conversation_history = await memory.get_history(
                     user_id, session_id
-                ) or await self.create_conversation_history(
+                ) or await memory.create_history(
                     user_id, session_id
                 )  # noqa
                 conversation_context = self.build_conversation_context(conversation_history)
 
-            # Get vector context
-            kb_context, user_context, vector_context, vector_metadata = await self._build_context(
+            # Build context from different sources
+            vector_metadata = {'activated_kbs': []}
+
+            # Get vector context (method handles use_vectors check internally)
+            vector_context, vector_meta = await self._build_vector_context(
                 question,
-                user_id=user_id,
-                session_id=session_id,
-                ctx=ctx,
                 use_vectors=use_vector_context,
                 search_type=search_type,
                 search_kwargs=search_kwargs,
@@ -496,8 +557,25 @@ class BaseBot(AbstractBot):
                 limit=limit,
                 score_threshold=score_threshold,
                 return_sources=return_sources,
-                **kwargs
             )
+            if vector_meta:
+                vector_metadata['vector'] = vector_meta
+
+            # Get user-specific context
+            user_context = await self._build_user_context(
+                user_id=user_id,
+                session_id=session_id,
+            )
+
+            # Get knowledge base context
+            kb_context, kb_meta = await self._build_kb_context(
+                question,
+                user_id=user_id,
+                session_id=session_id,
+                ctx=ctx,
+            )
+            if kb_meta.get('activated_kbs'):
+                vector_metadata['activated_kbs'] = kb_meta['activated_kbs']
 
             _mode = output_mode if isinstance(output_mode, str) else output_mode.value
 
@@ -516,6 +594,7 @@ class BaseBot(AbstractBot):
                         output_mode=_mode
                     )
             # Create system prompt
+            system_prompt_addition = system_prompt
             system_prompt = await self.create_system_prompt(
                 kb_context=kb_context,
                 vector_context=vector_context,
@@ -523,7 +602,10 @@ class BaseBot(AbstractBot):
                 metadata=vector_metadata,
                 user_context=user_context,
                 **kwargs
-            )
+            ) + (system_prompt_addition or '')
+            
+            # DEBUG: Validate functionality
+            print(f"DEBUG: System Prompt: {system_prompt}")
 
             # Configure LLM if needed
             llm = self._llm
@@ -564,6 +646,24 @@ class BaseBot(AbstractBot):
                                     llm_kwargs["structured_output"] = structured_output
 
                             response = await client.ask(**llm_kwargs)
+
+                            # Save conversation turn
+                            if use_conversation_history and memory:
+                                turn = ConversationTurn(
+                                    turn_id=response.turn_id or str(uuid.uuid4()),
+                                    user_id=user_id,
+                                    user_message=question,
+                                    assistant_response=response.content,
+                                    context_used=vector_context if use_vector_context else None,
+                                    tools_used=[t.name for t in response.tool_calls] if response.tool_calls else [],
+                                    metadata={
+                                        'response_time': response.response_time,
+                                        'model': response.model,
+                                        'usage': response.usage,
+                                        'finish_reason': response.finish_reason
+                                    }
+                                )
+                                await memory.add_turn(user_id, session_id, turn)
 
                             # Enhance response with metadata
                             response.set_vector_context_info(
@@ -657,45 +757,51 @@ class BaseBot(AbstractBot):
         ctx: Optional[RequestContext] = None,
         structured_output: Optional[Union[Type[BaseModel], StructuredOutputConfig]] = None,
         output_mode: OutputMode = OutputMode.DEFAULT,
+        system_prompt: Optional[str] = None,
         **kwargs
     ) -> AsyncIterator[str]:
         """Stream responses using the same preparation logic as :meth:`ask`."""
 
-        # Generate session ID if not provided
-        if not session_id:
-            session_id = str(uuid.uuid4())
-        turn_id = str(uuid.uuid4())
-
-        limit = kwargs.get(
-            'limit',
-            self.context_search_limit
-        )
-        score_threshold = kwargs.get(
-            'score_threshold', self.context_score_threshold
-        )
+        session_id = session_id or str(uuid.uuid4())
+        user_id = user_id or "anonymous"
+        # Maintain turn identifier generation for parity with ask()
+        _turn_id = str(uuid.uuid4())
 
         try:
-            # Get conversation history using unified memory
-            conversation_history = None
-            conversation_context = ""
+            question = await self._sanitize_question(
+                question=question,
+                user_id=user_id,
+                session_id=session_id,
+                context={'method': 'ask_stream'}
+            )
+        except PromptInjectionException as e:
+            yield (
+                "Your request could not be processed due to security concerns. "
+                "Please rephrase your question."
+            )
+            return
 
+        default_max_tokens = self._llm_kwargs.get('max_tokens', None)
+        max_tokens = kwargs.get('max_tokens', default_max_tokens)
+        limit = kwargs.get('limit', self.context_search_limit)
+        score_threshold = kwargs.get('score_threshold', self.context_score_threshold)
+
+        search_kwargs = search_kwargs or {}
+
+        try:
+            conversation_context = ""
             memory = memory or self.conversation_memory
 
             if use_conversation_history and memory:
-                conversation_history = await self.get_conversation_history(
-                    user_id, session_id
-                ) or await self.create_conversation_history(
-                    user_id, session_id
-                )
-
+                conversation_history = await memory.get_history(user_id, session_id) or await memory.create_history(user_id, session_id)  # noqa
                 conversation_context = self.build_conversation_context(conversation_history)
 
-            # Get vector context if store exists and enabled
-            kb_context, user_context, vector_context, vector_metadata = await self._build_context(
+            # Build context from different sources
+            vector_metadata = {'activated_kbs': []}
+
+            # Get vector context (method handles use_vectors check internally)
+            vector_context, vector_meta = await self._build_vector_context(
                 question,
-                user_id=user_id,
-                session_id=session_id,
-                ctx=ctx,
                 use_vectors=use_vector_context,
                 search_type=search_type,
                 search_kwargs=search_kwargs,
@@ -704,10 +810,39 @@ class BaseBot(AbstractBot):
                 limit=limit,
                 score_threshold=score_threshold,
                 return_sources=return_sources,
-                **kwargs
+            )
+            if vector_meta:
+                vector_metadata['vector'] = vector_meta
+
+            # Get user-specific context
+            user_context = await self._build_user_context(
+                user_id=user_id,
+                session_id=session_id,
             )
 
-            # Create system prompt
+            # Get knowledge base context
+            kb_context, kb_meta = await self._build_kb_context(
+                question,
+                user_id=user_id,
+                session_id=session_id,
+                ctx=ctx,
+            )
+            if kb_meta.get('activated_kbs'):
+                vector_metadata['activated_kbs'] = kb_meta['activated_kbs']
+
+            _mode = output_mode if isinstance(output_mode, str) else output_mode.value
+
+            if output_mode != OutputMode.DEFAULT:
+                if 'system_prompt' in kwargs:
+                    kwargs['system_prompt'] += OUTPUT_SYSTEM_PROMPT.format(
+                        output_mode=_mode
+                    )
+                else:
+                    user_context += OUTPUT_SYSTEM_PROMPT.format(
+                        output_mode=_mode
+                    )
+
+            system_prompt_addition = system_prompt
             system_prompt = await self.create_system_prompt(
                 kb_context=kb_context,
                 vector_context=vector_context,
@@ -715,39 +850,55 @@ class BaseBot(AbstractBot):
                 metadata=vector_metadata,
                 user_context=user_context,
                 **kwargs
-            )
+            ) + (system_prompt_addition or '')
 
-            # Configure LLM if needed
             llm = self._llm
             if (new_llm := kwargs.pop('llm', None)):
-                llm = self.configure_llm(
-                    llm=new_llm,
-                    model=kwargs.get('model', None),
-                    **kwargs.pop('llm_config', {})
-                )
+                llm = self.configure_llm(llm=new_llm, **kwargs.pop('llm_config', {}))
 
-            # Make the LLM call using client streaming
             async with llm as client:
                 llm_kwargs = {
                     "prompt": question,
                     "system_prompt": system_prompt,
-                    "temperature": kwargs.get('temperature', None),
+                    "model": kwargs.get('model', self._llm_model),
+                    "temperature": kwargs.get('temperature', 0),
                     "user_id": user_id,
                     "session_id": session_id,
                 }
 
-                if (_model := kwargs.get('model', None)):
-                    llm_kwargs["model"] = _model
-
-                max_tokens = kwargs.get('max_tokens', self._llm_kwargs.get('max_tokens'))
                 if max_tokens is not None:
                     llm_kwargs["max_tokens"] = max_tokens
 
+                if structured_output:
+                    if isinstance(structured_output, type) and issubclass(structured_output, BaseModel):
+                        llm_kwargs["structured_output"] = StructuredOutputConfig(
+                            output_type=structured_output
+                        )
+                    elif isinstance(structured_output, StructuredOutputConfig):
+                        llm_kwargs["structured_output"] = structured_output
+
+                full_response = ""
                 async for chunk in client.ask_stream(**llm_kwargs):
+                    full_response += chunk
                     yield chunk
 
+                # Save conversation turn
+                if use_conversation_history and memory:
+                    turn = ConversationTurn(
+                        turn_id=_turn_id,
+                        user_id=user_id,
+                        user_message=question,
+                        assistant_response=full_response,
+                        context_used=vector_context if use_vector_context else None,
+                        tools_used=[],
+                        metadata={
+                            'model': kwargs.get('model', self._llm_model)
+                        }
+                    )
+                    await memory.add_turn(user_id, session_id, turn)
+
         except asyncio.CancelledError:
-            self.logger.info("Stream task was cancelled.")
+            self.logger.info("Ask stream task was cancelled.")
             raise
         except Exception as e:
             self.logger.error(f"Error in ask_stream: {e}")

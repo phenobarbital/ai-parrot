@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import Any, Optional, Union
 import inspect
 from aiohttp import web
 
@@ -21,12 +21,16 @@ class RequestContext:
         request: web.Request = None,
         app: Optional[Any] = None,
         llm: Optional[Any] = None,
+        user_id: Union[str, int] = None,
+        session_id: str = None,
         **kwargs
     ):
         """Initialize the RequestContext with the given parameters."""
         self.request = request
         self.app = app
         self.llm = llm
+        self.user_id = user_id
+        self.session_id = session_id
         self.kwargs = kwargs
 
     async def __aenter__(self):

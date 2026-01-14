@@ -28,8 +28,8 @@ from typing import (
 )
 from aiohttp import web, WSMsgType
 from navconfig.logging import logging
-from parrot.bots.voice import VoiceBot, create_voice_bot, VoiceConfig
-from parrot.voice.models import VoiceConfig as VoiceModelConfig
+from parrot.bots.voice import VoiceBot, create_voice_bot
+from parrot.models.voice import VoiceConfig
 
 
 @dataclass

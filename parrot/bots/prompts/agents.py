@@ -12,7 +12,9 @@ $context
 
 <user_data>
 $user_context
-$chat_history
+   <chat_history>
+   $chat_history
+   </chat_history>
 </user_data>
 
 ## Instructions:

@@ -4,7 +4,9 @@ AgentTalk - HTTP Handler for Agent Conversations
 Provides a flexible HTTP interface for talking with agents/bots using the ask() method
 with support for multiple output modes and MCP server integration.
 """
-from typing import Dict, Any, List, Union
+from __future__ import annotations
+import contextlib
+from typing import Dict, Any, List, Union, TYPE_CHECKING
 import tempfile
 import os
 import json
@@ -13,6 +15,7 @@ from aiohttp import web
 import pandas as pd
 from datamodel.parsers.json import json_encoder  # noqa  pylint: disable=E0611
 from navconfig.logging import logging
+from navigator_session import get_session
 from navigator_auth.decorators import is_authenticated, user_session
 from navigator.views import BaseView
 from ..bots.abstract import AbstractBot
@@ -20,6 +23,9 @@ from ..bots.data import PandasAgent
 from ..models.responses import AIMessage, AgentResponse
 from ..outputs import OutputMode, OutputFormatter
 from ..mcp.integration import MCPServerConfig
+from ..memory import RedisConversation
+if TYPE_CHECKING:
+    from ..manager import BotManager
 
 
 @is_authenticated()
@@ -66,8 +72,7 @@ class AgentTalk(BaseView):
             Output format string: 'json', 'html', 'markdown', or 'text'
         """
         # Check explicit output_format parameter
-        output_format = data.pop('output_format', None) or qs.get('output_format')
-        if output_format:
+        if output_format := data.pop('output_format', None) or qs.get('output_format'):
             return output_format.lower()
 
         # Check Accept header
@@ -344,7 +349,7 @@ class AgentTalk(BaseView):
         remaining_kwargs = dict(data)
 
         for param_name, param in sig.parameters.items():
-            if param_name == 'self' or param_name == 'kwargs':
+            if param_name in ['self', 'kwargs']:
                 continue
 
             if param.kind == inspect.Parameter.VAR_POSITIONAL:
@@ -375,8 +380,7 @@ class AgentTalk(BaseView):
                 status=400,
             )
 
-        final_kwargs = {**method_params, **remaining_kwargs}
-
+        final_kwargs = method_params | remaining_kwargs
         try:
             if use_background:
                 self.request.app.loop.create_task(method(**final_kwargs))
@@ -405,6 +409,54 @@ class AgentTalk(BaseView):
                 {"error": f"Error calling method {method_name}: {exc}"},
                 status=500,
             )
+
+    def _get_agent_name(self, data: dict) -> Union[str, None]:
+        """
+        Extract agent_name from request data or query string.
+
+        Priority:
+        1. Explicit 'agent_name' in request body
+        2. 'agent_id' from URL path
+        3. 'agent_name' in query string
+
+        Args:
+            data: Request body data
+
+        Returns:
+            agent_name or None
+        """
+        agent_name = self.request.match_info.get('agent_id', None)
+        if not agent_name:
+            agent_name = data.pop('agent_name', None)
+        if not agent_name:
+            qs = self.query_parameters(self.request)
+            agent_name = qs.get('agent_name')
+        return agent_name
+
+    async def _get_user_session(self, data: dict) -> tuple[Union[str, None], Union[str, None]]:
+        """
+        Extract user_id and session_id from data or request context.
+
+        Priority:
+        1. Explicit 'user_id' and 'session_id' in request body
+        2. From authenticated user session context
+
+        Args:
+            data: Request body data
+
+        Returns:
+            Tuple of (user_id, session_id)
+        """
+        user_id = data.pop('user_id', None) or self.request.get('user_id', None)
+        session_id = data.pop('session_id', None) or self.request.get('session_id', None)
+        # Try to get from request session if not provided
+        with contextlib.suppress(AttributeError):
+            request_session = self.request.session or await get_session(self.request)
+            if not session_id:
+                session_id = request_session.get('session_id')
+            if not user_id:
+                user_id = request_session.get('user_id')
+        return user_id, session_id
 
     async def post(self):
         """
@@ -441,168 +493,160 @@ class AgentTalk(BaseView):
         - HTML page if output_mode is 'html' or Accept header is text/html
         - Markdown/plain text otherwise
         """
+        qs = self.query_parameters(self.request)
+        app = self.request.app
+        method_name = self.request.match_info.get('method_name', None)
         try:
-            qs = self.query_parameters(self.request)
-            app = self.request.app
-            method_name = self.request.match_info.get('method_name', None)
-            try:
-                attachments, data = await self.handle_upload()
-            except web.HTTPUnsupportedMediaType:
-                # if no file is provided, then is a JSON request:
-                data = await self.request.json()
-                attachments = {}
+            attachments, data = await self.handle_upload()
+        except web.HTTPUnsupportedMediaType:
+            # if no file is provided, then is a JSON request:
+            data = await self.request.json()
+            attachments = {}
 
-            # Support method invocation via body or query parameter in addition to the
-            # /{agent_id}/{method_name} route so clients don't need to construct a
-            # different URL for maintenance operations like refresh_data.
-            method_name = (
-                method_name
-                or data.pop('method_name', None)
-                or qs.get('method_name')
-            )
-            # Get BotManager
-            manager = self.request.app.get('bot_manager')
-            if not manager:
-                return self.json_response(
-                    {"error": "BotManager is not installed."},
-                    status=500
-                )
+        # Method for extract session and user information:
+        user_id, session_id = await self._get_user_session(data)
 
-            # Extract agent name
-            agent_name = self.request.match_info.get('agent_id', None)
-            if not agent_name:
-                agent_name = data.pop('agent_name', None) or qs.get('agent_name')
-            if not agent_name:
-                return self.error(
-                    "Missing Agent Name",
-                    status=400
-                )
-            query = data.pop('query', None)
-            # Get the agent
-            try:
-                agent: AbstractBot = await manager.get_bot(agent_name)
-                if not agent:
-                    return self.error(
-                        f"Agent '{agent_name}' not found.",
-                        status=404
-                    )
-            except Exception as e:
-                self.logger.error(f"Error retrieving agent {agent_name}: {e}")
-                return self.error(
-                    f"Error retrieving agent: {e}",
-                    status=500
-                )
-
-            # task background:
-            use_background = data.pop('background', False)
-
-            # Add MCP servers if provided
-            mcp_servers = data.pop('mcp_servers', [])
-            if mcp_servers and isinstance(mcp_servers, list):
-                await self._add_mcp_servers(agent, mcp_servers)
-
-            # TODO: Get session information
-            session_id = data.pop('session_id', None)
-            user_id = data.pop('user_id', None)
-
-            # Try to get from request session if not provided
-            try:
-                request_session = self.request.session
-                if not session_id:
-                    session_id = request_session.get('session_id')
-                if not user_id:
-                    user_id = request_session.get('user_id')
-            except AttributeError:
-                pass
-
-            # Determine output mode
-            # output_mode = self._get_output_mode(self.request)
-            # Determine output format
-            output_format = self._get_output_format(data, qs)
-            output_mode = data.pop('output_mode', OutputMode.DEFAULT)
-
-            # Extract parameters for ask()
-            search_type = data.pop('search_type', 'similarity')
-            return_sources = data.pop('return_sources', True)
-            use_vector_context = data.pop('use_vector_context', True)
-            use_conversation_history = data.pop('use_conversation_history', True)
-            followup_turn_id = data.pop('turn_id', None)
-            followup_data = data.pop('data', None)
-
-            # Override with explicit parameter if provided
-            if 'output_mode' in data:
-                try:
-                    output_mode = OutputMode(data.pop('output_mode'))
-                except ValueError:
-                    pass
-
-            # Prepare ask() parameters
-            format_kwargs = data.pop('format_kwargs', {})
-            response = None
-            async with agent.retrieval(self.request, app=app) as bot:
-                if method_name:
-                    return await self._execute_agent_method(
-                        bot=bot,
-                        method_name=method_name,
-                        data=data,
-                        attachments=attachments,
-                        use_background=use_background,
-                    )
-                else:
-                    if not query:
-                        return self.json_response(
-                            {"error": "query is required"},
-                            status=400
-                        )
-                    if isinstance(bot, PandasAgent) and followup_turn_id and followup_data is not None:
-                        response: AIMessage = await bot.followup(
-                            question=query,
-                            turn_id=followup_turn_id,
-                            data=followup_data,
-                            session_id=session_id,
-                            user_id=user_id,
-                            use_conversation_history=use_conversation_history,
-                            output_mode=output_mode,
-                            format_kwargs=format_kwargs,
-                            **data,
-                        )
-                    else:
-                        response: AIMessage = await bot.ask(
-                            question=query,
-                            session_id=session_id,
-                            user_id=user_id,
-                            search_type=search_type,
-                            return_sources=return_sources,
-                            use_vector_context=use_vector_context,
-                            use_conversation_history=use_conversation_history,
-                            output_mode=output_mode,
-                            format_kwargs=format_kwargs,
-                            **data,
-                        )
-
-            # Return formatted response
-            return self._format_response(
-                response,
-                output_format,
-                format_kwargs
-            )
-
-        except json.JSONDecodeError:
+        # Support method invocation via body or query parameter in addition to the
+        # /{agent_id}/{method_name} route so clients don't need to construct a
+        # different URL for maintenance operations like refresh_data.
+        method_name = (
+            method_name or data.pop('method_name', None) or qs.get('method_name')
+        )
+        # Get BotManager
+        manager: BotManager = self.request.app.get('bot_manager')
+        if not manager:
             return self.json_response(
-                {"error": "Invalid JSON in request body"},
-                status=400
-            )
-        except Exception as e:
-            self.logger.error(
-                f"Error in AgentTalk: {e}", exc_info=True
-            )
-            return self.json_response(
-                {
-                    "error": "Internal server error",
-                    "message": str(e)
-                },
+                {"error": "BotManager is not installed."},
                 status=500
             )
+
+        # Extract agent name
+        agent_name = self._get_agent_name(data)
+        if not agent_name:
+            return self.error(
+                "Missing Agent Name",
+                status=400
+            )
+        query = data.pop('query', None)
+        # Get the agent
+        try:
+            agent: AbstractBot = await manager.get_bot(agent_name)
+            if not agent:
+                return self.error(
+                    f"Agent '{agent_name}' not found.",
+                    status=404
+                )
+        except Exception as e:
+            self.logger.error(f"Error retrieving agent {agent_name}: {e}")
+            return self.error(
+                f"Error retrieving agent: {e}",
+                status=500
+            )
+
+        # task background:
+        use_background = data.pop('background', False)
+
+        # Add MCP servers if provided
+        mcp_servers = data.pop('mcp_servers', [])
+        if mcp_servers and isinstance(mcp_servers, list):
+            await self._add_mcp_servers(agent, mcp_servers)
+
+        # Determine output mode
+        # output_mode = self._get_output_mode(self.request)
+        # Determine output format
+        output_format = self._get_output_format(data, qs)
+        output_mode = data.pop('output_mode', OutputMode.DEFAULT)
+
+        # Extract parameters for ask()
+        search_type = data.pop('search_type', 'similarity')
+        return_sources = data.pop('return_sources', True)
+        use_vector_context = data.pop('use_vector_context', True)
+        use_conversation_history = data.pop('use_conversation_history', True)
+        followup_turn_id = data.pop('turn_id', None)
+        followup_data = data.pop('data', None)
+
+        # Override with explicit parameter if provided
+        if 'output_mode' in data:
+            with contextlib.suppress(ValueError):
+                output_mode = OutputMode(data.pop('output_mode'))
+
+        # Prepare ask() parameters
+        format_kwargs = data.pop('format_kwargs', {})
+        response = None
+
+        # Use RedisConversation for history management if session_id is present
+        memory = None
+        if user_id and session_id:
+             try:
+                 memory = RedisConversation()
+             except Exception as ex:
+                 self.logger.warning(
+                    f"Failed to initialize RedisConversation: {ex}"
+                )
+
+        async with agent.retrieval(self.request, app=app, user_id=user_id, session_id=session_id) as bot:
+            if method_name:
+                return await self._execute_agent_method(
+                    bot=bot,
+                    method_name=method_name,
+                    data=data,
+                    attachments=attachments,
+                    use_background=use_background,
+                )
+            if not query:
+                if attachments:
+                    # Handle file uploads without a query
+                    try:
+                        added_files = await bot.handle_files(attachments)
+                        return self.json_response({
+                            "message": "Files uploaded successfully",
+                            "added_files": added_files,
+                            "agent": agent.name
+                        })
+                    except Exception as e:
+                        self.logger.error(f"Error handling files: {e}", exc_info=True)
+                        return self.json_response(
+                            {"error": f"Error handling files: {str(e)}"},
+                            status=500
+                        )
+                return self.json_response(
+                    {"error": "query is required"},
+                    status=400
+                )
+            if isinstance(bot, PandasAgent) and followup_turn_id and followup_data is not None:
+                response: AIMessage = await bot.followup(
+                    question=query,
+                    turn_id=followup_turn_id,
+                    data=followup_data,
+                    session_id=session_id,
+                    user_id=user_id,
+                    use_conversation_history=use_conversation_history,
+                    output_mode=output_mode,
+                    format_kwargs=format_kwargs,
+                    memory=memory,
+                    **data,
+                )
+            else:
+                response: AIMessage = await bot.ask(
+                    question=query,
+                    session_id=session_id,
+                    user_id=user_id,
+                    search_type=search_type,
+                    return_sources=return_sources,
+                    use_vector_context=use_vector_context,
+                    use_conversation_history=use_conversation_history,
+                    output_mode=output_mode,
+                    format_kwargs=format_kwargs,
+                    memory=memory,
+                    **data,
+                )
+
+        # Return formatted response
+        return self._format_response(
+            response,
+            output_format,
+            format_kwargs
+        )
 
     async def get(self):
         """

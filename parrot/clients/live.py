@@ -635,12 +635,19 @@ class GeminiLiveClient(AbstractClient):
             live_config.system_instruction = system_prompt
 
         # Tools (if enabled)
+        print('ENABLE TOOLS')
+        print(self.enable_tools)
+        print('Tool manager tools')
+        print(self.tool_manager.tools)
         if self.enable_tools:
             adapter = self._get_tool_adapter()
             if declarations := adapter.get_function_declarations():
                 live_config.tools = [types.Tool(function_declarations=declarations)]
-                self.logger.debug(f"Registered {len(declarations)} tools for Live session")
-
+                self.logger.debug(
+                    f"Registered {len(declarations)} tools for Live session"
+                )
+        print('LIVE CONFIG ')
+        print(live_config)
         return live_config
 
     async def stream_voice(
@@ -904,7 +911,7 @@ class GeminiLiveClient(AbstractClient):
         audio_iterator: AsyncIterator[bytes]
     ) -> None:
         """Send audio chunks to the Gemini session.
-        
+
         For multi-turn support:
         - Receives audio chunks via iterator
         - When iterator yields None (sentinel), sends audio_stream_end
@@ -955,7 +962,12 @@ class GeminiLiveClient(AbstractClient):
                     )
                     self.logger.info("Final audio_stream_end sent successfully")
                 except Exception as e:
-                    self.logger.error(f"Error sending final audio_stream_end: {e}")
+                    # Expected during session close - downgrade to debug
+                    error_str = str(e).lower()
+                    if "1011" in str(e) or "closed" in error_str:
+                        self.logger.debug(f"Session closed before audio_stream_end: {e}")
+                    else:
+                        self.logger.error(f"Error sending final audio_stream_end: {e}")
 
         except asyncio.CancelledError:
             # Even on cancel, try to send audio_stream_end if we sent audio

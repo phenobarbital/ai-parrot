@@ -137,6 +137,67 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
             agent_id=self.agent_id
         )
 
+    async def handle_files(self, attachments: Dict[str, Any]) -> List[str]:
+        """
+        Handle uploaded files and register them as DataFrames.
+        
+        Args:
+            attachments: Dictionary of uploaded files (filename: file_obj/content)
+            
+        Returns:
+            List of names of the added DataFrames
+        """
+        try:
+            from slugify import slugify
+        except ImportError:
+            # simple fallback if slugify is not available
+            def slugify(text):
+                return "".join(c if c.isalnum() else "_" for c in text).lower()
+
+        if not attachments:
+            return []
+
+        added_dataframes = []
+
+        for filename, file_data in attachments.items():
+            try:
+                # Handle aiohttp FileField objects
+                if hasattr(file_data, 'file'):
+                    content = file_data.file.read()
+                elif hasattr(file_data, 'read'):
+                    content = file_data.read()
+                else:
+                    content = file_data
+
+                # Create BytesIO object
+                import io
+                if isinstance(content, bytes):
+                    file_obj = io.BytesIO(content)
+                else:
+                    file_obj = io.BytesIO(content.encode('utf-8'))
+
+                # Determine file type and read into DataFrame
+                df = None
+                if filename.lower().endswith(('.xlsx', '.xls')):
+                    df = pd.read_excel(file_obj)
+                elif filename.lower().endswith('.csv'):
+                    df = pd.read_csv(file_obj)
+                
+                if df is not None:
+                    # Generate slug for dataframe name
+                    name_base = filename.rsplit('.', 1)[0]
+                    slug = slugify(name_base).replace('-', '_')
+                    
+                    # Add to this agent
+                    self.add_dataframe(df, name=slug)
+                    added_dataframes.append(slug)
+                    self.logger.info(f"Added DataFrame from file {filename} as '{slug}'")
+                
+            except Exception as e:
+                self.logger.error(f"Error processing file {filename}: {e}", exc_info=True)
+                
+        return added_dataframes
+
     def _get_default_tools(self, tools: list) -> List[AbstractTool]:
         """Return Agent-specific tools."""
         if not tools:

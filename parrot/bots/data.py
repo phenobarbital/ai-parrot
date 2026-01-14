@@ -818,13 +818,23 @@ class PandasAgent(BasicAgent):
                 # Get base context (history only if needed, but tool llm mostly needs data context)
                 # For simplicity, we can pass empty user/conv context to tool LLM or lightweight one
                 # but usually it needs to know about dataframes.
+                vector_metadata = {'activated_kbs': []}
 
-                kb_context, user_context, vector_context, vector_metadata = await self._build_context(
+                # Get vector context (method handles use_vectors check internally)
+                vector_context, vector_meta = await self._build_vector_context(
                     question,
                     use_vectors=False,  # PandasAgent doesn't use vectors usually
-                    **kwargs
                 )
+                if vector_meta:
+                    vector_metadata['vector'] = vector_meta
 
+                # Get user-specific context
+                user_context = await self._build_user_context()
+
+                # Get knowledge base context
+                kb_context, kb_meta = await self._build_kb_context(question)
+                if kb_meta.get('activated_kbs'):
+                    vector_metadata['activated_kbs'] = kb_meta['activated_kbs']
                 base_system_prompt = await self.create_system_prompt(
                     kb_context=kb_context,
                     vector_context=vector_context,
@@ -965,16 +975,33 @@ class PandasAgent(BasicAgent):
             if output_mode is None:
                 output_mode = OutputMode.DEFAULT
 
-            # Get vector context
-            kb_context, user_context, vector_context, vector_metadata = await self._build_context(
+            # Build context from different sources (no vector context for PandasAgent)
+            vector_metadata = {'activated_kbs': []}
+
+            # Get vector context (method handles use_vectors check internally)
+            vector_context, vector_meta = await self._build_vector_context(
+                question,
+                use_vectors=False,  # NO vector context for PandasAgent
+            )
+            if vector_meta:
+                vector_metadata['vector'] = vector_meta
+
+            # Get user-specific context
+            user_context = await self._build_user_context(
+                user_id=user_id,
+                session_id=session_id,
+            )
+
+            # Get knowledge base context
+            kb_context, kb_meta = await self._build_kb_context(
                 question,
                 user_id=user_id,
                 session_id=session_id,
                 ctx=ctx,
-                use_vectors=False,  # NO vector context for PandasAgent
-                limit=5,
-                **kwargs
             )
+            if kb_meta.get('activated_kbs'):
+                vector_metadata['activated_kbs'] = kb_meta['activated_kbs']
+
             # Build system prompt with DataFrame context (no vector context)
             # Create system prompt
             system_prompt = await self.create_system_prompt(
