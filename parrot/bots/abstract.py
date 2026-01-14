@@ -1263,6 +1263,9 @@ class AbstractBot(DBInterface, LocalKBMixin, ToolInterface, VectorInterface, ABC
         user_message_template = Template("👤 User: $message")
         assistant_message_template = Template("🤖 Assistant: $message")
 
+        context_parts = []
+        total_chars = 0
+
         for i, turn in enumerate(recent_turns):
             turn_number = len(recent_turns) - i
 
