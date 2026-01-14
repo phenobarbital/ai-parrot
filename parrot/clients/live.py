@@ -1047,17 +1047,7 @@ class GeminiLiveClient(AbstractClient):
                     if response.server_content:
                         server_content = response.server_content
 
-                        if getattr(server_content, 'turn_complete', False):
-                            yield LiveVoiceResponse(
-                                text=accumulated_text,
-                                audio_data=accumulated_audio or None,
-                                is_complete=True,
-                                tool_calls=tool_calls_list,
-                                session_id=session_id,
-                                turn_id=turn_id,
-                                user_id=user_id,
-                            )
-                            break
+
 
                         if hasattr(server_content, 'model_turn') and server_content.model_turn:
                             for part in server_content.model_turn.parts:
@@ -1102,6 +1092,21 @@ class GeminiLiveClient(AbstractClient):
                                 function_responses=[func_response]
                             )
 
+                            # Reset text accumulator after tool call to capture only the final answer
+                            accumulated_text = ""
+                            
+                            # Inject tool output as initial part of the answer
+                            if isinstance(tool_call.result, dict) and "output" in tool_call.result:
+                                tool_output_text = str(tool_call.result["output"]) + "\n\n"
+                                accumulated_text += tool_output_text
+                                yield LiveVoiceResponse(
+                                    text=tool_output_text,
+                                    is_complete=False,
+                                    session_id=session_id,
+                                    turn_id=turn_id,
+                                    user_id=user_id,
+                                )
+
                             yield LiveVoiceResponse(
                                 text="",
                                 tool_calls=[tool_call],
@@ -1110,6 +1115,20 @@ class GeminiLiveClient(AbstractClient):
                                 turn_id=turn_id,
                                 user_id=user_id,
                             )
+
+                        # Check for turn_complete ONLY if we didn't just handle a tool call
+                        # If we handled a tool call, we sent a response and expect the model to continue
+                        if getattr(server_content, 'turn_complete', False):
+                            yield LiveVoiceResponse(
+                                text=accumulated_text,
+                                audio_data=accumulated_audio or None,
+                                is_complete=True,
+                                tool_calls=tool_calls_list,
+                                session_id=session_id,
+                                turn_id=turn_id,
+                                user_id=user_id,
+                            )
+                            break
 
         except Exception as e:
             self.logger.error(f"Text session error: {e}")

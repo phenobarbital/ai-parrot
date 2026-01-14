@@ -434,6 +434,11 @@ class VoiceBot(A2AEnabledMixin, MCPEnabledMixin, BaseBot):
                 **kwargs
             )
 
+            # Ensure LLM client is configured
+            if self._llm is None:
+                config = self._resolve_llm_config()
+                self._llm = self._create_llm_client(config, self.conversation_memory)
+
             # Use self._llm which is GeminiLiveClient (via _resolve_llm_config override)
             # Memory tracking variables
             current_turn_id = None
@@ -629,6 +634,11 @@ class VoiceBot(A2AEnabledMixin, MCPEnabledMixin, BaseBot):
             user_context=user_context,
             **kwargs
         )
+
+        # Ensure LLM client is configured
+        if self._llm is None:
+            config = self._resolve_llm_config()
+            self._llm = self._create_llm_client(config, self.conversation_memory)
 
         # Use self._llm which is GeminiLiveClient (via _resolve_llm_config override)
         async with self._llm as client:
