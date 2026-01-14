@@ -163,7 +163,7 @@ vectors = [
     "numpy>=2.1,<2.2",
     "tiktoken==0.9.0",
     "accelerate==0.34.2",
-    "bitsandbytes==0.44.1",
+    "bitsandbytes==0.49.1",
     "datasets>=3.0.2",
     "safetensors>=0.4.3",
     "transformers>=4.51.1,<=4.51.3",
