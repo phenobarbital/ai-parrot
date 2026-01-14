@@ -415,6 +415,11 @@ footer {
 
         This function fixes common table formatting issues and ensures
         tables are properly recognized by the Markdown parser.
+        
+        Key fixes:
+        - Ensures blank line BEFORE and AFTER tables (required for markdown parser)
+        - Normalizes table row formatting
+        - Converts ASCII-style separators to standard markdown format
         """
         lines = text.split('\n')
         processed_lines = []
@@ -443,6 +448,12 @@ footer {
 
                 # Check if this looks like a table row (starts and ends with |)
                 if stripped.startswith('|') and stripped.endswith('|'):
+                    # If this is the start of a new table, ensure blank line before
+                    if not in_table:
+                        # Add blank line before table if the previous line isn't blank
+                        if processed_lines and processed_lines[-1].strip():
+                            processed_lines.append('')
+                    
                     # Clean up the row - remove extra spaces and normalize
                     cells = [cell.strip() for cell in stripped.split('|')[1:-1]]
                     cleaned_row = '| ' + ' | '.join(cells) + ' |'
@@ -452,6 +463,11 @@ footer {
 
                 # Check for table row without proper pipe formatting
                 if stripped.count('|') >= 2:
+                    # If this is the start of a new table, ensure blank line before
+                    if not in_table:
+                        if processed_lines and processed_lines[-1].strip():
+                            processed_lines.append('')
+                    
                     # Ensure the line starts and ends with pipes
                     if not stripped.startswith('|'):
                         stripped = '| ' + stripped
@@ -630,11 +646,12 @@ footer {
                 content = self._preprocess_markdown_tables(content)
 
                 # Configure markdown with all necessary extensions
+                # NOTE: nl2br is intentionally excluded as it interferes with table parsing
+                # by converting newlines to <br> before the tables extension can process them
                 md = markdown.Markdown(
                     extensions=[
                         'tables',           # Table support
                         'fenced_code',      # Code blocks
-                        'nl2br',           # Newline to break
                         'attr_list',        # Attribute lists
                         'def_list',         # Definition lists
                         'footnotes',        # Footnotes
@@ -657,9 +674,19 @@ footer {
                 content = md.convert(content)
 
                 # If no tables were converted but we suspect there are ASCII tables, try fallback
+                # Use preprocessed content (not original text) to maintain consistency
                 if '<table' not in content and '|' in text and text.count('|') > 4:
                     self.logger.info("Markdown didn't create tables, trying ASCII table conversion")
-                    content = self._convert_ascii_tables_to_html(text)
+                    # Store original converted content
+                    original_content = content
+                    # Try to extract and convert tables from preprocessed markdown
+                    preprocessed_for_tables = self._preprocess_markdown_tables(text)
+                    table_html = self._convert_ascii_tables_to_html(preprocessed_for_tables)
+                    # If we got tables, use the table HTML; otherwise keep original
+                    if '<table' in table_html:
+                        content = table_html
+                    else:
+                        content = original_content
 
                 # Post-process HTML tables
                 content = self._post_process_html_tables(content)
