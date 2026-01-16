@@ -411,23 +411,31 @@ footer {
 
     def _preprocess_markdown_tables(self, text: str) -> str:
         """
-        Preprocess Markdown tables to ensure proper formatting.
+        Preprocess Markdown tables to ensure proper formatting and preserve newlines.
 
-        This function fixes common table formatting issues and ensures
-        tables are properly recognized by the Markdown parser.
-        
-        Key fixes:
-        - Ensures blank line BEFORE and AFTER tables (required for markdown parser)
-        - Normalizes table row formatting
-        - Converts ASCII-style separators to standard markdown format
+        This function:
+        1. Fixes common table formatting issues
+        2. Preserves line breaks by adding double spaces (Markdown hard break)
+        3. Protects code blocks from modification
         """
-        lines = text.split('\n')
+        lines = text.splitlines()
         processed_lines = []
         in_table = False
+        in_code_block = False
         table_buffer = []
 
-        for i, line in enumerate(lines):
+        for line in lines:
             stripped = line.strip()
+
+            # Handle code blocks - toggle state and preserve content as-is
+            if stripped.startswith('```') or stripped.startswith('~~~'):
+                in_code_block = not in_code_block
+                processed_lines.append(line)
+                continue
+
+            if in_code_block:
+                processed_lines.append(line)
+                continue
 
             # Detect potential table rows
             if stripped and '|' in stripped:
@@ -498,12 +506,19 @@ footer {
                     processed_lines.append('')  # Add empty line after table
                     table_buffer = []
                 in_table = False
-                processed_lines.append(line)
+                # Add line break for this line as it's outside table
+                processed_lines.append(line + "  ")
                 continue
 
-            # Not a table line
+            # Not a table line and not in code block
             if not in_table:
-                processed_lines.append(line)
+                # For headers, blockquotes, horizontal rules, keeping them as is usually safer
+                # but adding spaces to headers shouldn't hurt.
+                # However, for regular text lines, we want "  " to force break.
+                if stripped:
+                     processed_lines.append(line + "  ")
+                else:
+                     processed_lines.append(line)
 
         # Handle any remaining table buffer
         if table_buffer:
