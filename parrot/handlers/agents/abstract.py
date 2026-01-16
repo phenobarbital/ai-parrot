@@ -872,9 +872,11 @@ class AgentHandler(BaseView):
                     "No query provided or found in the request."
                 )
         try:
-            response = await agent.conversation(
+            response = await agent.ask(
                 question=query,
-                max_tokens=8192
+                use_conversation_history=False,
+                use_vector_context=False,
+                max_tokens=16000
             )
             if isinstance(response, Exception):
                 raise response

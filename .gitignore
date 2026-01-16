@@ -240,8 +240,9 @@ documents/
 work/
 
 # Custom Agents:
-agents/
+plugins/agents/
 !/crew-builder/src/routes/agents/
+/agents/
 
 # SvelteKit build
 build/
