@@ -2253,7 +2253,11 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
 
         # Create the stateful chat session
         chat = self.client.aio.chats.create(model=model, history=history)
-        final_config = GenerateContentConfig(**generation_config)
+        # Disable thinking for image tasks as recommended by Google (reduces latency)
+        final_config = GenerateContentConfig(
+            **generation_config,
+            thinking_config=ThinkingConfig(thinking_budget=0)
+        )
 
         # Make the primary multi-modal call
         self.logger.debug(f"Sending {len(contents)} parts to the model.")

@@ -1,4 +1,4 @@
-from typing import AsyncIterator, Dict, List, Optional, Union, Any, Tuple, Iterable
+from typing import AsyncIterator, Dict, List, Optional, Union, Any, Tuple
 import base64
 import io
 import json
@@ -9,12 +9,11 @@ import time
 import asyncio
 from logging import getLogger
 from enum import Enum
-from dataclasses import is_dataclass
 from PIL import Image
 import pytesseract
-from pydantic import BaseModel, ValidationError, TypeAdapter
+from pydantic import ValidationError
 from datamodel.parsers.json import json_decoder, json_decoder  # pylint: disable=E0611 # noqa
-from navconfig import config, BASE_DIR
+from navconfig import config
 from tenacity import (
     AsyncRetrying,
     stop_after_attempt,
@@ -655,30 +654,30 @@ class OpenAIClient(AbstractClient):
             # For deep research, build specialized tools array
             if enable_web_search:
                 research_tools.append({"type": "web_search_preview"})
-            
+
             if vector_store_ids:
                 research_tools.append({
                     "type": "file_search",
                     "vector_store_ids": vector_store_ids
                 })
-            
+
             if enable_code_interpreter:
                 research_tools.append({
                     "type": "code_interpreter",
                     "container": {"type": "auto"}
                 })
-            
+
             self.logger.info(f"Deep research tools configured: {len(research_tools)} tools")
 
         # tools prep
         if tools and isinstance(tools, list):
             for tool in tools:
                 self.register_tool(tool)
-        
+
         # LAZY LOADING LOGIC
         active_tool_names = set()
         prepared_tools = None
-        
+
         if _use_tools:
             if lazy_loading:
                 # Prepare only search_tools + explicitly passed tools?
@@ -761,7 +760,7 @@ class OpenAIClient(AbstractClient):
                     for tc in result.tool_calls
                 ]
             })
-            
+
             found_new_tools = False
 
             for tool_call in result.tool_calls:
@@ -782,7 +781,7 @@ class OpenAIClient(AbstractClient):
                         start_time = time.time()
                         tool_result = await self._execute_tool(tool_name, tool_args)
                         execution_time = time.time() - start_time
-                        
+
                         # Lazy Loading Check
                         if lazy_loading and tool_name == "search_tools":
                              new_tools = self._check_new_tools(tool_name, str(tool_result))
@@ -921,7 +920,7 @@ class OpenAIClient(AbstractClient):
         lazy_loading: bool = False,
     ) -> AsyncIterator[str]:
         """Stream OpenAI's response with optional conversation memory.
-        
+
         Args:
             deep_research: If True, use deep research models with streaming
             agent_config: Optional configuration (not used for OpenAI, for interface compatibility)
@@ -986,11 +985,11 @@ class OpenAIClient(AbstractClient):
         if tools and isinstance(tools, list):
             for tool in tools:
                 self.register_tool(tool)
-        
+
         # LAZY LOADING LOGIC
         active_tool_names = set()
         tools_payload = None
-        
+
         if self.tools:
             if lazy_loading:
                 tools_payload = self._prepare_lazy_tools()
