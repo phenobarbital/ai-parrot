@@ -1468,7 +1468,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                 max_thinking_tokens=100,
                 max_thinking_time=10,
             )
-        elif 'flash' in model_str.lower():
+        elif 'flash' in model.lower():
             # Flash puede deshabilitarse con budget=0
             thinking_config = ThinkingConfig(
                 thinking_budget=0,
