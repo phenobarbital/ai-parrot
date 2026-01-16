@@ -13,7 +13,7 @@ pytest>=6.0.0
 pytest-asyncio==1.2.0
 pytest-cov==4.0.0
 pytest-cython==0.2.0
-pytest-xdist==3.5.0
+pytest-xdist==3.8.0
 pytest-assume==2.4.3
 sdist==0.0.0
 sphinx==6.1.3
