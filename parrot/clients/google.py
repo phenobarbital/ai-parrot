@@ -1468,7 +1468,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                 max_thinking_tokens=100,
                 max_thinking_time=10,
             )
-        elif 'flash' in model_str.lower():
+        elif 'flash' in model.lower():
             # Flash puede deshabilitarse con budget=0
             thinking_config = ThinkingConfig(
                 thinking_budget=0,
@@ -2253,7 +2253,11 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
 
         # Create the stateful chat session
         chat = self.client.aio.chats.create(model=model, history=history)
-        final_config = GenerateContentConfig(**generation_config)
+        # Disable thinking for image tasks as recommended by Google (reduces latency)
+        final_config = GenerateContentConfig(
+            **generation_config,
+            thinking_config=ThinkingConfig(thinking_budget=0)
+        )
 
         # Make the primary multi-modal call
         self.logger.debug(f"Sending {len(contents)} parts to the model.")

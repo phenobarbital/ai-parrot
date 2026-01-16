@@ -1,21 +1,18 @@
-
 import asyncio
+import contextlib
 import re
 import unicodedata
 from typing import Any, Dict, List, Optional, Tuple, Union
 from pathlib import Path
 from collections import defaultdict
-import numpy as np
 from PIL import Image, ImageDraw, ImageFont
-
-from navconfig.logging import logging
 from ..abstract import AbstractPipeline
 from ..models import PlanogramConfig
 from ...models.detections import (
-    DetectionBox, 
-    ShelfRegion, 
-    IdentifiedProduct, 
-    Detection, 
+    DetectionBox,
+    ShelfRegion,
+    IdentifiedProduct,
+    Detection,
     BoundingBox,
     Detections
 )
@@ -25,17 +22,17 @@ from ...models.compliance import (
     TextComplianceResult,
     ComplianceStatus,
     TextMatcher
-) 
+)
 
 class PlanogramCompliance(AbstractPipeline):
     """
     Pure-LLM Planogram Compliance Pipeline.
-    
+
     Step 1: Endcap/Poster Detection (LLM-based _find_poster)
     Step 2: Object Detection & Identification (Gemini 3 Flash)
     Step 3: Planogram Compliance Verification
     """
-    
+
     def __init__(
         self,
         planogram_config: PlanogramConfig,
@@ -51,12 +48,12 @@ class PlanogramCompliance(AbstractPipeline):
             **kwargs
         )
         self.planogram_config = planogram_config
-        
+
         # Endcap geometry defaults
         geometry = planogram_config.endcap_geometry
         self.left_margin_ratio = geometry.left_margin_ratio
         self.right_margin_ratio = geometry.right_margin_ratio
-        
+
         self.reference_images = planogram_config.reference_images or {}
 
     async def run(
@@ -65,18 +62,19 @@ class PlanogramCompliance(AbstractPipeline):
         output_dir: Optional[Union[str, Path]] = None,
         **kwargs
     ) -> Dict[str, Any]:
-        
-        self.logger.info("Starting Pure-LLM Planogram Compliance Pipeline")
-        
+        self.logger.info(
+            "Starting Pure-LLM Planogram Compliance Pipeline"
+        )
+
         # Step 1: Find Poster/Endcap
         img = self.open_image(image)
         planogram_description = self.planogram_config.get_planogram_description()
-        
+
         detections_step1 = {}
         endcap = None
-        
+
         try:
-             # reuse _find_poster logic
+            # reuse _find_poster logic
             endcap, ad, brand, panel_text, raw_dets = await self._find_poster(
                 img,
                 planogram_description,
@@ -87,8 +85,9 @@ class PlanogramCompliance(AbstractPipeline):
                 "dataset": raw_dets
             }
         except Exception as e:
-             self.logger.error(f"Step 1 Failed: {e}")
-             pass
+            self.logger.error(
+                f"Step 1 Failed: {e}"
+            )
 
         if output_dir:
             # Debug Step 1: Draw Poster and Endcap on original image
@@ -96,11 +95,12 @@ class PlanogramCompliance(AbstractPipeline):
                 debug_img = img.copy()
                 debug_draw = ImageDraw.Draw(debug_img)
                 w, h = debug_img.size
-                
+
                 # Draw detections if avail
                 if detections_step1.get("dataset"):
                     for d in detections_step1["dataset"]:
-                        # d is likely Detection object or dict? _find_poster returns 'raw_dets' which is list of Detection objects
+                        # d is likely Detection object or dict? _find_poster returns 'raw_dets'
+                        # which is list of Detection objects
                         if hasattr(d, 'bbox'):
                             b = d.bbox
                             x1, y1, x2, y2 = b.x1 * w, b.y1 * h, b.x2 * w, b.y2 * h
@@ -111,32 +111,33 @@ class PlanogramCompliance(AbstractPipeline):
 
                 # Draw calculated Endcap ROI
                 if endcap:
-                     b = endcap.bbox
-                     x1, y1, x2, y2 = b.x1 * w, b.y1 * h, b.x2 * w, b.y2 * h
-                     debug_draw.rectangle([x1, y1, x2, y2], outline="red", width=5)
-                     debug_draw.text((x1, y1), "ENDCAP ROI", fill="red")
-                
+                    b = endcap.bbox
+                    x1, y1, x2, y2 = b.x1 * w, b.y1 * h, b.x2 * w, b.y2 * h
+                    debug_draw.rectangle([x1, y1, x2, y2], outline="red", width=5)
+                    debug_draw.text((x1, y1), "ENDCAP ROI", fill="red")
+
                 debug_path = Path(output_dir) / "debug_step1_roi.png"
                 debug_img.save(debug_path)
-                self.logger.info(f"Saved Step 1 Debug Image to {debug_path}")
+                self.logger.info(
+                    f"Saved Step 1 Debug Image to {debug_path}"
+                )
             except Exception as e:
-                self.logger.warning(f"Failed to save Step 1 debug image: {e}")
-
+                self.logger.warning(
+                    f"Failed to save Step 1 debug image: {e}"
+                )
 
         # Step 2: Object Detection & Identification
         # We process the ROI if found, else the whole image?
-        # Better to process the whole image but focus on ROI? 
+        # Better to process the whole image but focus on ROI?
         # Or crop?
         # User sample uses `extract_segmentation_masks` on the image.
-        # If we have endcap, we should probably crop to it to help the model? 
+        # If we have endcap, we should probably crop to it to help the model?
         # Or pass the ROI as a hint?
         # The user said "stay with _find_poster method to find area... this is the Endcap Region of Interest".
-        # So likely we should crop or draw a box? 
+        # So likely we should crop or draw a box?
         # Typically cropping is better for resolution.
-        
         target_image = img
         offset_x, offset_y = 0, 0
-        
         if endcap:
             w, h = img.size
             x1, y1, x2, y2 = endcap.bbox.get_pixel_coordinates(width=w, height=h)
@@ -151,182 +152,168 @@ class PlanogramCompliance(AbstractPipeline):
                 except Exception as e:
                     self.logger.warning(f"Failed to save ROI crop: {e}")
 
-
         # Construct prompt/call
         # We need to ask for products, shelf regions, etc?
         # User sample returns "segmentation masks".
         # We need to map these to "IdentifiedProduct" and "ShelfRegion".
         # Prompt needs to be specific.
-        
         # Extract hints from planogram description
         hints = []
         if planogram_description:
             for shelf in getattr(planogram_description, "shelves", []):
                 for p in getattr(shelf, "products", []):
-                   name = getattr(p, "name", "")
-                   if name: hints.append(name)
-        
-        hints_str = ", ".join(set(hints))
+                    if name := getattr(p, "name", ""):
+                        hints.append(name)
 
+        hints_str = ", ".join(set(hints))
         prompt = f"""
-        Detect all retail products, empty slots, and shelf regions in this image.
-        Use the provided reference images to identify specific products.
-        
-        IMPORTANT:
-        - If you see a cardboard box containing a product image/name, label it as "[Product Name] box".
-        - If you see the bare product itself (e.g. a loose printer), label it as "[Product Name]".
-        - Prefer the following product names if they match: {hints_str}
-        - If an item is NOT in the list, provide a descriptive name (e.g. "Epson 502 Ink Bottle", "Unknown Printer") rather than just "unknown".
-        - Do not output "unknown" unless strictly necessary.
-        
-        Output a JSON list where each entry contains:
-        - "label": The identified product name/model or 'shelf' or 'unknown'.
-        - "box_2d": [ymin, xmin, ymax, xmax] normalized 0-1000.
-        - "confidence": 0-1.
-        - "type": "product" (for loose items), "product_box" (for boxes), "shelf", "gap".
+Detect all retail products, empty slots, and shelf regions in this image.
+Use the provided reference images to identify specific products.
+
+IMPORTANT:
+- If you see a cardboard box containing a product image/name, label it as "[Product Name] box".
+- If you see the bare product itself (e.g. a loose printer), label it as "[Product Name]".
+- Prefer the following product names if they match: {hints_str}
+- If an item is NOT in the list, provide a descriptive name (e.g. "Ink Bottle", "Printer") rather than just "unknown".
+- Do not output "unknown" unless strictly necessary.
+
+Output a JSON list where each entry contains:
+- "label": The identified product name/model or 'shelf' or 'unknown'.
+- "box_2d": [ymin, xmin, ymax, xmax] normalized 0-1000.
+- "confidence": 0-1.
+- "type": "product" (for loose items), "product_box" (for boxes), "shelf", "gap".
         """
-        
+
         # Pass reference images
         refs = list(self.reference_images.values()) if self.reference_images else []
-        
+
         detected_items = await self.llm.detect_objects(
             image=target_image,
             prompt=prompt,
             reference_images=refs,
-            output_dir=output_dir if output_dir else None # Save debug masks if dir provided?
+            output_dir=output_dir or None
         )
-        
+
         # Convert to internal models (IdentifiedProduct, ShelfRegion)
         # We need to map coordinates back to full image if cropped
-        
+
         shelf_regions = []
         identified_products = []
-        
-        w, h = target_image.size # Size of the image passed to detector
-        
+
+        w, h = target_image.size  # Size of the image passed to detector
+
         for item in detected_items:
-            # item["box_2d"] is [x1, y1, x2, y2] absolute pixels in target_image (as per my implementation of detect_objects)
-            # detect_objects implementation returns [x0, y0, x1, y1] (StartLine 4930 in snippet: x0, y0, x1, y1)
-            
-            box = item.get("box_2d") # [x1, y1, x2, y2]
-            if not box: continue
-            
+            # item["box_2d"] is [x1, y1, x2, y2] absolute pixels in target_image
+            # (as per my implementation of detect_objects)
+            # detect_objects implementation returns [x0, y0, x1, y1]
+            # (StartLine 4930 in snippet: x0, y0, x1, y1)
+
+            box = item.get("box_2d")  # [x1, y1, x2, y2]
+            if not box:
+                continue
+
             x1, y1, x2, y2 = box
-            
             # Map to original image
             abs_x1 = x1 + offset_x
             abs_y1 = y1 + offset_y
             abs_x2 = x2 + offset_x
             abs_y2 = y2 + offset_y
-            
+
             label = item.get("label", "unknown")
             conf = item.get("confidence", 0.0)
-            
-            # Simple heuristic classification based on label or "type" if we added it (we didn't explicitly in detect_objects return, but model might put it in label?)
-            # Prompt asked for "label" and "type". But detect_objects mainly parsers standard keys. 
-            # I should inspect `item` fully? detect_objects returns the whole dict item from JSON + adds mask/overlay/box_2d (converted).
-            # The `detect_objects` implementation I wrote puts the parsed JSON item into `item` variable, 
-            # extracts `box_2d`, converts it, and creates `result_item`.
-            # `result_item` has "label", "confidence", etc.
-            # Whatever extra keys were in the JSON (like "type") are NOT strictly copied to `result_item` in my implementation (I created a new dict).
-            # Wait, I created `result_item = { ... }`.
-            # I should have copied others!
-            # My `detect_objects` implementation was specific:
-            # result_item = { "label": ..., "box_2d": ..., "confidence": ..., "mask_image": ... }
-            # It DROPPED "type".
             # Mapping "type" from label for now.
-            
             if "shelf" in label.lower():
                 # Shelf Region
-                shelf_regions.append(ShelfRegion(
-                    shelf_id=f"shelf_{len(shelf_regions)}",
-                    level=label, # simplistic
-                    bbox=DetectionBox(x1=abs_x1, y1=abs_y1, x2=abs_x2, y2=abs_y2, confidence=conf)
-                ))
+                shelf_regions.append(
+                    ShelfRegion(
+                        shelf_id=f"shelf_{len(shelf_regions)}",
+                        level=label,  # simplistic
+                        bbox=DetectionBox(
+                            x1=abs_x1, y1=abs_y1, x2=abs_x2, y2=abs_y2, confidence=conf
+                        )
+                    )
+                )
             else:
                 # Product
                 ptype = item.get("type", "product")
-                
                 # Heuristic: if label contains 'box', force type 'product_box'
                 if "box" in label.lower() or "carton" in label.lower():
                     ptype = "product_box"
-                
-                identified_products.append(IdentifiedProduct(
-                    detection_box=DetectionBox(x1=abs_x1, y1=abs_y1, x2=abs_x2, y2=abs_y2, confidence=conf),
-                    product_model=label,
-                    confidence=conf,
-                    product_type=ptype
-                    # We need shelf location. We can calc it later or assume model gives it?
-                    # Planogram compliance needs `shelf_location`.
-                ))
-
+                identified_products.append(
+                    IdentifiedProduct(
+                        detection_box=DetectionBox(
+                            x1=abs_x1, y1=abs_y1, x2=abs_x2, y2=abs_y2, confidence=conf
+                        ),
+                        product_model=label,
+                        confidence=conf,
+                        product_type=ptype
+                    )
+                )
         # Generate virtual shelves from Step 1 Endcap ROI as per user request
         if endcap and endcap.bbox:
-             self.logger.info("Generating virtual shelves from Endcap ROI...")
-             virtual_shelves = self._generate_virtual_shelves(endcap.bbox, img.size, planogram_description)
-             # Use virtual shelves instead of model detections
-             shelf_regions = virtual_shelves
+            self.logger.info(
+                "Generating virtual shelves from Endcap ROI..."
+            )
+            virtual_shelves = self._generate_virtual_shelves(
+                endcap.bbox, img.size, planogram_description
+            )
+            # Use virtual shelves instead of model detections
+            shelf_regions = virtual_shelves
 
         # Assign products to shelves
         self._assign_products_to_shelves(identified_products, shelf_regions)
-
         # If Step 1 found text, add it as a 'promotional_graphic' product
         if panel_text and getattr(panel_text, 'content', None):
             self.logger.info(f"Injecting poster text: {panel_text.content}")
-            
             # Ensure text is treated as OCR content
             ocr_content = panel_text.content.strip()
-            
             # Create a separate product for the text, or attach to the poster product if we had one?
             # Creating a new one ensures it's in the 'promos' list in check_compliance
             text_product = IdentifiedProduct(
                 detection_box=DetectionBox(
-                    x1=int(panel_text.bbox.x1 * img.width), 
-                    y1=int(panel_text.bbox.y1 * img.height), 
-                    x2=int(panel_text.bbox.x2 * img.width), 
-                    y2=int(panel_text.bbox.y2 * img.height), 
+                    x1=int(panel_text.bbox.x1 * img.width),
+                    y1=int(panel_text.bbox.y1 * img.height),
+                    x2=int(panel_text.bbox.x2 * img.width),
+                    y2=int(panel_text.bbox.y2 * img.height),
                     confidence=float(getattr(panel_text, 'confidence', 1.0)),
-                    ocr_text=ocr_content # Direct attribute usage if supported
+                    ocr_text=ocr_content
                 ),
                 product_type="promotional_graphic",
                 product_model="poster_text",
                 confidence=float(getattr(panel_text, 'confidence', 1.0)),
                 visual_features=[f"ocr:{ocr_content}"],
-                shelf_location="header" # Text usually in header
+                shelf_location="header"
             )
             identified_products.append(text_product)
 
         # If Step 1 found brand logo, add it to satisfy brand check
         if brand:
-             brand_conf = float(getattr(brand, 'confidence', 1.0))
-             # Map coords
-             bx1 = int(brand.bbox.x1 * img.width)
-             by1 = int(brand.bbox.y1 * img.height)
-             bx2 = int(brand.bbox.x2 * img.width)
-             by2 = int(brand.bbox.y2 * img.height)
-             
-             brand_product = IdentifiedProduct(
-                 detection_box=DetectionBox(x1=bx1, y1=by1, x2=bx2, y2=by2, confidence=brand_conf),
-                 product_type="brand_logo",
-                 product_model=brand.label or "brand_logo",
-                 confidence=brand_conf,
-                 brand=planogram_description.brand, # Use the expected brand name
-                 shelf_location="header"
-             )
-             identified_products.append(brand_product)
-             self.logger.info(f"Injecting brand logo: {brand_product.brand}")
-
-        
+            brand_conf = float(getattr(brand, 'confidence', 1.0))
+            # Map coords
+            bx1 = int(brand.bbox.x1 * img.width)
+            by1 = int(brand.bbox.y1 * img.height)
+            bx2 = int(brand.bbox.x2 * img.width)
+            by2 = int(brand.bbox.y2 * img.height)
+            brand_product = IdentifiedProduct(
+                detection_box=DetectionBox(x1=bx1, y1=by1, x2=bx2, y2=by2, confidence=brand_conf),
+                product_type="brand_logo",
+                product_model=brand.label or "brand_logo",
+                confidence=brand_conf,
+                brand=planogram_description.brand,  # Use the expected brand name
+                shelf_location="header"
+            )
+            identified_products.append(brand_product)
+            self.logger.info(f"Injecting brand logo: {brand_product.brand}")
+        # Step 3: Planogram Compliance Verification
         compliance_results = self.check_planogram_compliance(
-             identified_products, planogram_description
+            identified_products, planogram_description
         )
-
         overall_score = 0.0
         overall_compliant = True
         if compliance_results:
-             overall_score = sum(r.compliance_score for r in compliance_results) / len(compliance_results)
-             overall_compliant = all(r.compliance_status == ComplianceStatus.COMPLIANT for r in compliance_results)
-        
+            overall_score = sum(r.compliance_score for r in compliance_results) / len(compliance_results)
+            overall_compliant = all(r.compliance_status == ComplianceStatus.COMPLIANT for r in compliance_results)
+
         # ... (Render) ...
         rendered_image = self.render_evaluated_image(
             img,
@@ -353,7 +340,7 @@ class PlanogramCompliance(AbstractPipeline):
     async def _find_poster(
         self,
         image: Image.Image,
-        planogram: Any, # PlanogramDescription
+        planogram: Any,  # PlanogramDescription
         partial_prompt: str
     ) -> Any:
         # Ask VISION Model to find the main promotional graphic
@@ -365,7 +352,7 @@ class PlanogramCompliance(AbstractPipeline):
             for tr in endcap.text_requirements:
                 if getattr(tr, "required_text", None):
                     tags.append(tr.required_text)
-        tag_hint = ", ".join(sorted(set(f"'{t}'" for t in tags if t)))
+        tag_hint = ", ".join(sorted({f"'{t}'" for t in tags if t}))
 
         # downscale for LLM
         image_small = self._downscale_image(image, max_side=1024, quality=78)
@@ -382,32 +369,43 @@ class PlanogramCompliance(AbstractPipeline):
                     msg = await client.ask_to_image(
                         image=image_small,
                         prompt=prompt,
-                        model="gemini-2.5-flash", 
+                        model="gemini-2.5-flash",
                         no_memory=True,
                         structured_output=Detections,
                         max_tokens=8192
                     )
                 break
-            except ServerError as e:
+            except Exception as e:
                 if attempt < max_attempts - 1:
                     await asyncio.sleep(10)
                 else:
                     raise e
-                    
+
         data = msg.structured_output or msg.output or {}
         dets = data.detections or []
         if not dets:
             return None, None, None, None, []
-            
-        panel_det = next((d for d in dets if d.label == "poster_panel"), None) \
-             or next((d for d in dets if d.label == "poster"), None) \
-             or (max(dets, key=lambda x: float(x.confidence)) if dets else None)
 
-        text_det = next((d for d in dets if d.label == "poster_text"), None)
-        brand_det = next((d for d in dets if d.label == "brand_logo"), None)
-        
+        panel_det = next(
+            (
+                d for d in dets if d.label == "poster_panel"), None) or next(
+                    (d for d in dets if d.label == "poster"), None) or (
+                        max(dets, key=lambda x: float(x.confidence)) if dets else None
+        )
+
+        text_det = next(
+            (d for d in dets if d.label == "poster_text"),
+            None
+        )
+        brand_det = next(
+            (d for d in dets if d.label == "brand_logo"),
+            None
+        )
+
         if not panel_det:
-            self.logger.error("Critical failure: Could not detect the poster_panel.")
+            self.logger.error(
+                "Critical failure: Could not detect the poster_panel."
+            )
             return None, None, None, None, []
 
         promo_graphic_det = next(
@@ -415,10 +413,10 @@ class PlanogramCompliance(AbstractPipeline):
         )
 
         if promo_graphic_det and panel_det:
-             if not (promo_graphic_det.bbox.x1 >= panel_det.bbox.x1 and promo_graphic_det.bbox.x2 <= panel_det.bbox.x2):
+            if not (promo_graphic_det.bbox.x1 >= panel_det.bbox.x1 and promo_graphic_det.bbox.x2 <= panel_det.bbox.x2):
                 panel_det.bbox.x1 = min(panel_det.bbox.x1, promo_graphic_det.bbox.x1)
                 panel_det.bbox.x2 = max(panel_det.bbox.x2, promo_graphic_det.bbox.x2)
-        
+
         config_width_percent = geometry.width_margin_percent
         config_height_percent = geometry.height_margin_percent
         config_top_margin_percent = geometry.top_margin_percent
@@ -448,23 +446,36 @@ class PlanogramCompliance(AbstractPipeline):
             ey1 = max(0.0, py1 - top_margin)
             ey2 = min(1.0, ey1 + panel_h / ratio)
 
-        x_buffer = max(self.left_margin_ratio * (px2-px1), self.right_margin_ratio * (px2-px1))
+        x_buffer = max(
+            self.left_margin_ratio * (px2 - px1), self.right_margin_ratio * (px2 - px1)
+        )
         ex1 = min(ex1, px1 - x_buffer)
         ex2 = max(ex2, px2 + x_buffer)
 
-        ex1 = max(0.0, ex1); ex2 = min(1.0, ex2)
-        if ex2 <= ex1: ex2 = ex1 + 1e-6
-        ey1 = max(0.0, ey1); ey2 = min(1.0, ey2)
-        if ey2 <= ey1: ey2 = ey1 + 1e-6
+        ex1 = max(0.0, ex1)
+        ex2 = min(1.0, ex2)
+        if ex2 <= ex1:
+            ex2 = ex1 + 1e-6
+        ey1 = max(0.0, ey1)
+        ey2 = min(1.0, ey2)
+        if ey2 <= ey1:
+            ey2 = ey1 + 1e-6
 
         if endcap_det is None:
-            endcap_det = Detection(label="endcap", confidence=0.9, content=None, bbox=BoundingBox(x1=ex1, y1=ey1, x2=ex2, y2=ey2))
+            endcap_det = Detection(
+                label="endcap",
+                confidence=0.9,
+                content=None,
+                bbox=BoundingBox(x1=ex1, y1=ey1, x2=ex2, y2=ey2)
+            )
         else:
-            endcap_det.bbox.x1 = ex1; endcap_det.bbox.x2 = ex2
-            endcap_det.bbox.y1 = ey1; endcap_det.bbox.y2 = ey2
-            
+            endcap_det.bbox.x1 = ex1
+            endcap_det.bbox.x2 = ex2
+            endcap_det.bbox.y1 = ey1
+            endcap_det.bbox.y2 = ey2
+
         return endcap_det, panel_det, brand_det, text_det, dets
-        
+
     def check_planogram_compliance(
         self,
         identified_products: List[IdentifiedProduct],
@@ -473,14 +484,14 @@ class PlanogramCompliance(AbstractPipeline):
         """Check compliance of identified products against the planogram."""
         def _matches(ek, fk) -> bool:
             (e_ptype, e_base), (f_ptype, f_base) = ek, fk
-            
+
             # Relaxed type matching
             type_match = (e_ptype == f_ptype)
             if not type_match:
                 # specific overrides
                 if {e_ptype, f_ptype} <= {"printer", "product"}:
                     type_match = True
-            
+
             if not type_match:
                 return False
             if not e_base or not f_base:
@@ -490,7 +501,8 @@ class PlanogramCompliance(AbstractPipeline):
             if f_base == e_base or e_base in f_base or f_base in e_base:
                 return True
             if e_ptype == "promotional_graphic":
-                fam = lambda s: "canvas-tv" if "canvas-tv" in s else s
+                def fam(s):
+                    return "canvas-tv" if "canvas-tv" in s else s
                 return fam(e_base) == fam(f_base)
             return e_base in f_base or f_base in e_base
 
@@ -516,7 +528,7 @@ class PlanogramCompliance(AbstractPipeline):
             shelf_level = shelf_cfg.level
             products_on_shelf = by_shelf.get(shelf_level, [])
             expected = []
-            
+
             for sp in shelf_cfg.products:
                 if sp.product_type in ("fact_tag", "price_tag", "slot"):
                     continue
@@ -561,7 +573,8 @@ class PlanogramCompliance(AbstractPipeline):
             found_readable = []
             for (used, (f_ptype, f_base), (_, _, original_label)) in zip(consumed, found_keys, found_lookup):
                 tag = original_label
-                if f_base: tag = f"{original_label} [{f_ptype}:{f_base}]"
+                if f_base:
+                    tag = f"{original_label} [{f_ptype}:{f_base}]"
                 found_readable.append(tag)
 
             missing = [expected_readable[i] for i, ok in enumerate(matched) if not ok]
@@ -570,11 +583,14 @@ class PlanogramCompliance(AbstractPipeline):
                 for used, (f_ptype, f_base), (_, _, original_label) in zip(consumed, found_keys, found_lookup):
                     if not used:
                         lbl = original_label
-                        if f_base: lbl = f"{original_label} [{f_ptype}:{f_base}]"
+                        if f_base:
+                            lbl = f"{original_label} [{f_ptype}:{f_base}]"
                         unexpected.append(lbl)
 
-            basic_score = (sum(1 for ok in matched if ok) / (len(expected) or 1.0))
-            
+            basic_score = (
+                sum(1 for ok in matched if ok) / (len(expected) or 1.0)
+            )
+
             visual_feature_score = 1.0
             if visual_feature_scores:
                 visual_feature_score = sum(visual_feature_scores) / len(visual_feature_scores)
@@ -592,17 +608,23 @@ class PlanogramCompliance(AbstractPipeline):
                                 if isinstance(feat, str) and feat.startswith("ocr:"):
                                     ocr_blocks.append(feat[4:].strip())
                             ocr_text = getattr(promo.detection_box, 'ocr_text', '')
-                            if ocr_text: ocr_blocks.append(ocr_text.strip())
+                            if ocr_text:
+                                ocr_blocks.append(ocr_text.strip())
                     if ocr_blocks:
-                         ocr_norm = self._normalize_ocr_text(" ".join(ocr_blocks))
-                         if ocr_norm: all_features.append(ocr_norm)
+                        ocr_norm = self._normalize_ocr_text(" ".join(ocr_blocks))
+                        if ocr_norm:
+                            all_features.append(ocr_norm)
 
                     if not promos and shelf_level == "header":
-                         overall_text_ok = False
-                         for text_req in endcap.text_requirements:
-                             text_results.append(TextComplianceResult(
-                                 required_text=text_req.required_text, found=False, matched_features=[], confidence=0.0, match_type=text_req.match_type
-                             ))
+                        overall_text_ok = False
+                        for text_req in endcap.text_requirements:
+                            text_results.append(TextComplianceResult(
+                                required_text=text_req.required_text,
+                                found=False,
+                                matched_features=[],
+                                confidence=0.0,
+                                match_type=text_req.match_type
+                            ))
                     else:
                         for text_req in endcap.text_requirements:
                             result = TextMatcher.check_text_match(
@@ -616,14 +638,22 @@ class PlanogramCompliance(AbstractPipeline):
                             if not result.found and text_req.mandatory:
                                 overall_text_ok = False
                         if text_results:
-                            text_score = sum(r.confidence for r in text_results if r.found) / len(text_results)
+                            text_score = sum(
+                                r.confidence for r in text_results if r.found
+                            ) / len(text_results)
 
             elif shelf_level != "header":
                 overall_text_ok = True
                 text_score = 1.0
 
-            threshold = getattr(shelf_cfg, "compliance_threshold", planogram_description.global_compliance_threshold or 0.8)
-            major_unexpected = [p for p in unexpected if "ink" not in p.lower() and "price tag" not in p.lower()]
+            threshold = getattr(
+                shelf_cfg,
+                "compliance_threshold",
+                planogram_description.global_compliance_threshold or 0.8
+            )
+            major_unexpected = [
+                p for p in unexpected if "ink" not in p.lower() and "price tag" not in p.lower()
+            ]
 
             status = ComplianceStatus.NON_COMPLIANT
             if shelf_level != "header":
@@ -641,7 +671,11 @@ class PlanogramCompliance(AbstractPipeline):
                 else:
                     status = ComplianceStatus.NON_COMPLIANT
 
-            visual_weight = getattr(planogram_description, 'visual_features_weight', 0.2)
+            visual_weight = getattr(
+                planogram_description,
+                'visual_features_weight',
+                0.2
+            )
             if shelf_level == "header" and endcap:
                 adjusted_product_weight = endcap.product_weight * (1 - visual_weight)
                 visual_feature_weight = endcap.product_weight * visual_weight
@@ -661,28 +695,29 @@ class PlanogramCompliance(AbstractPipeline):
             combined_score = min(1.0, max(0.0, combined_score))
             text_score = min(1.0, max(0.0, text_score))
 
-            results.append(ComplianceResult(
-                shelf_level=shelf_level,
-                expected_products=expected_readable,
-                found_products=found_readable,
-                missing_products=missing,
-                unexpected_products=unexpected,
-                compliance_status=status,
-                compliance_score=combined_score,
-                text_compliance_results=text_results,
-                text_compliance_score=text_score,
-                overall_text_compliant=overall_text_ok,
-                brand_compliance_result=brand_compliance_result
-            ))
-
+            results.append(
+                ComplianceResult(
+                    shelf_level=shelf_level,
+                    expected_products=expected_readable,
+                    found_products=found_readable,
+                    missing_products=missing,
+                    unexpected_products=unexpected,
+                    compliance_status=status,
+                    compliance_score=combined_score,
+                    text_compliance_results=text_results,
+                    text_compliance_score=text_score,
+                    overall_text_compliant=overall_text_ok,
+                    brand_compliance_result=brand_compliance_result
+                )
+            )
         return results
-        
+
     def render_evaluated_image(
         self,
         image: Union[str, Path, Image.Image],
         *,
         shelf_regions: Optional[List[ShelfRegion]] = None,
-        detections: Optional[List[DetectionBox]] = None, # Unused argument or keep for compatibility?
+        detections: Optional[List[DetectionBox]] = None,
         identified_products: Optional[List[IdentifiedProduct]] = None,
         mode: str = "identified",
         show_shelves: bool = True,
@@ -691,10 +726,14 @@ class PlanogramCompliance(AbstractPipeline):
         """Enhanced render."""
         def _norm_box(x1, y1, x2, y2):
             x1, x2, y1, y2 = int(x1), int(x2), int(y1), int(y2)
-            if x1 > x2: x1, x2 = x2, x1
-            if y1 > y2: y1, y2 = y2, y1
-            if x2 - x1 < 1: x2 = x1 + 1
-            if y2 - y1 < 1: y2 = y1 + 1
+            if x1 > x2:
+                x1, x2 = x2, x1
+            if y1 > y2:
+                y1, y2 = y2, y1
+            if x2 - x1 < 1:
+                x2 = x1 + 1
+            if y2 - y1 < 1:
+                y2 = y1 + 1
             return x1, y1, x2, y2
 
         if isinstance(image, (str, Path)):
@@ -705,13 +744,14 @@ class PlanogramCompliance(AbstractPipeline):
         draw = ImageDraw.Draw(base)
         try:
             font = ImageFont.load_default()
-        except:
+        except Exception:
             font = None
-        
+
         W, H = base.size
+
         def _clip(x1, y1, x2, y2):
-            return max(0, x1), max(0, y1), min(W-1, x2), min(H-1, y2)
-            
+            return max(0, x1), max(0, y1), min(W - 1, x2), min(H - 1, y2)
+
         def _txt(draw_obj, xy, text, fill, bg=None):
             try:
                 if not font:
@@ -719,11 +759,11 @@ class PlanogramCompliance(AbstractPipeline):
                     return
                 bbox = draw_obj.textbbox(xy, text, font=font)
                 if bg is not None:
-                     draw_obj.rectangle(bbox, fill=bg)
+                    draw_obj.rectangle(bbox, fill=bg)
                 draw_obj.text(xy, text, fill=fill, font=font)
-            except:
-                try: draw_obj.text(xy, text, fill=fill)
-                except: pass
+            except Exception:
+                with contextlib.suppress(Exception):
+                    draw_obj.text(xy, text, fill=fill)
 
         colors = {
             "tv_demonstration": (0, 255, 0), "promotional_graphic": (255, 0, 255),
@@ -737,40 +777,47 @@ class PlanogramCompliance(AbstractPipeline):
                     x1, y1, x2, y2 = _clip(sr.bbox.x1, sr.bbox.y1, sr.bbox.x2, sr.bbox.y2)
                     x1, y1, x2, y2 = _norm_box(x1, y1, x2, y2)
                     draw.rectangle([x1, y1, x2, y2], outline=(255, 255, 0), width=3)
-                    _txt(draw, (x1+3, max(0, y1-14)), f"SHELF {sr.level}", fill=(0, 0, 0), bg=(255, 255, 0))
+                    _txt(
+                        draw, (x1 + 3, max(0, y1 - 14)), f"SHELF {sr.level}", fill=(0, 0, 0), bg=(255, 255, 0)
+                    )
                 except Exception as e:
-                     logging.warning(f"Could not draw shelf {sr.level}: {e}")
+                    self.logger.warning(
+                        f"Could not draw shelf {sr.level}: {e}"
+                    )
 
         if identified_products:
             for i, p in enumerate(identified_products):
                 try:
                     box = p.detection_box
-                    if not box: continue
+                    if not box:
+                        continue
                     x1, y1, x2, y2 = _clip(box.x1, box.y1, box.x2, box.y2)
                     x1, y1, x2, y2 = _norm_box(x1, y1, x2, y2)
-                    
+
                     ptype = (p.product_type or "unknown").lower()
                     color = colors.get(ptype, colors["unknown"])
-                    
+
                     draw.rectangle([x1, y1, x2, y2], outline=color, width=2)
-                    
-                    label = f"{i+1}. {p.product_model or ptype}"
+
+                    label = f"{i + 1}. {p.product_model or ptype}"
                     if p.confidence:
                         label += f" ({p.confidence:.2f})"
-                    
-                    _txt(draw, (x1, max(0, y1-20)), label, fill=color, bg=(0,0,0))
+
+                    _txt(
+                        draw, (x1, max(0, y1 - 20)), label, fill=color, bg=(0, 0, 0)
+                    )
                 except Exception as e:
-                    logging.warning(f"Failed to draw product: {e}")
-        
+                    self.logger.warning(f"Failed to draw product: {e}")
+
         if save_to:
             try:
                 base.save(save_to)
-                logging.info(f"Saved rendered image to {save_to}")
+                self.logger.info(f"Saved rendered image to {save_to}")
             except Exception as e:
-                logging.error(f"Failed save image to {save_to}: {e}")
-                
+                self.logger.error(f"Failed save image to {save_to}: {e}")
+
         return base
-        
+
     def _base_model_from_str(self, s: str, brand: str = None) -> str:
         """
         Extract normalized base model from any text, supporting multiple brands.
@@ -860,7 +907,14 @@ class PlanogramCompliance(AbstractPipeline):
     def _looks_like_box(self, visual_features: Optional[List[str]]) -> bool:
         if not visual_features:
             return False
-        keywords = {"packaging", "package", "cardboard", "box", "blue packaging", "printer image on box"}
+        keywords = {
+            "packaging",
+            "package",
+            "cardboard",
+            "box",
+            "blue packaging",
+            "printer image on box"
+        }
         norm = " ".join(visual_features).lower()
         return any(k in norm for k in keywords)
 
@@ -874,7 +928,11 @@ class PlanogramCompliance(AbstractPipeline):
         s = re.sub(r"\s+", " ", s).strip().lower()
         return s
 
-    def _calculate_visual_feature_match(self, expected_features: List[str], detected_features: List[str]) -> float:
+    def _calculate_visual_feature_match(
+        self,
+        expected_features: List[str],
+        detected_features: List[str]
+    ) -> float:
         if not expected_features:
             return 1.0
         if not detected_features:
@@ -882,7 +940,10 @@ class PlanogramCompliance(AbstractPipeline):
 
         def extract_keywords(text):
             text = text.lower().strip()
-            stop_words = {'a', 'an', 'the', 'is', 'are', 'on', 'of', 'in', 'at', 'to', 'for', 'with', 'visible', 'displayed', 'showing'}
+            stop_words = {
+                'a', 'an', 'the', 'is', 'are', 'on', 'of', 'in', 'at',
+                'to', 'for', 'with', 'visible', 'displayed', 'showing'
+            }
             words = [w for w in text.split() if w not in stop_words and len(w) > 1]
             return set(words)
 
@@ -910,21 +971,32 @@ class PlanogramCompliance(AbstractPipeline):
             all_detected_keywords = set()
             for detected in detected_features:
                 all_detected_keywords.update(extract_keywords(detected))
-            
+
             feature_matched = False
             for exp_keyword in expected_keywords:
                 if semantic_match(exp_keyword, all_detected_keywords):
                     feature_matched = True
                     break
-            
+
             if feature_matched:
                 matches += 1
 
         return matches / len(expected_features)
 
+    def _get_default_shelf_configs(self) -> List[Dict[str, Any]]:
+        """
+        Returns default shelf configuration when no planogram config is provided.
+        Default: Header (0.34), Middle (0.25), Bottom (rest ~0.41)
+        """
+        return [
+            {"level": "header", "height_ratio": 0.34},
+            {"level": "middle", "height_ratio": 0.25},
+            {"level": "bottom", "height_ratio": 0.41},
+        ]
+
     def _generate_virtual_shelves(
-        self, 
-        roi_bbox: DetectionBox, 
+        self,
+        roi_bbox: DetectionBox,
         image_size: Tuple[int, int],
         planogram: Any
     ) -> List[ShelfRegion]:
@@ -933,50 +1005,51 @@ class PlanogramCompliance(AbstractPipeline):
         """
         w, h = image_size
         r_x1, r_y1, r_x2, r_y2 = roi_bbox.x1, roi_bbox.y1, roi_bbox.x2, roi_bbox.y2
-        
+
         # Ensure absolute coords
         if r_x1 <= 1.0 and r_x2 <= 1.0:
-            r_x1 *= w; r_y1 *= h; r_x2 *= w; r_y2 *= h
-            
+            r_x1 *= w
+            r_y1 *= h
+            r_x2 *= w
+            r_y2 *= h
+
         roi_h = r_y2 - r_y1
         shelves = []
         current_y = r_y1
-        
+
         # Get shelf config from planogram
-        shelf_configs = getattr(planogram, "shelves", []) or []
-        
-        # If no config, fallback to default thirds? Or hardcoded user preference?
-        # User snippet: Header (0.34), Middle (0.25), Bottom (rest)
-        if not shelf_configs:
-            # Create dummy config matching user description if missing
-            pass # TODO: Fallback logic?
-            
+        # If no config, fallback to default thirds: Header (0.34), Middle (0.25), Bottom (rest)
+        shelf_configs = getattr(planogram, "shelves", []) or self._get_default_shelf_configs()
+
         used_ratio = 0.0
-        
         for i, cfg in enumerate(shelf_configs):
             level = getattr(cfg, "level", f"shelf_{i}")
-            ratio = getattr(cfg, "height_ratio", None)
-            
-            if ratio:
+            if ratio := getattr(cfg, "height_ratio", None):
                 s_h = roi_h * float(ratio)
                 used_ratio += float(ratio)
             elif i == len(shelf_configs) - 1:
                 # Last shelf takes the rest
                 s_h = max(0, (r_y2 - current_y))
             else:
-                s_h = roi_h * 0.25 # Default?
-            
+                s_h = roi_h * 0.25  # Default?
+
             s_y2 = min(r_y2, current_y + s_h)
-            
+
             shelves.append(ShelfRegion(
                 shelf_id=f"virtual_{level}",
                 level=level,
-                bbox=DetectionBox(x1=int(r_x1), y1=int(current_y), x2=int(r_x2), y2=int(s_y2), confidence=1.0)
+                bbox=DetectionBox(
+                    x1=int(r_x1),
+                    y1=int(current_y),
+                    x2=int(r_x2),
+                    y2=int(s_y2),
+                    confidence=1.0
+                )
             ))
             current_y = s_y2
             if current_y >= r_y2:
                 break
-                
+
         return shelves
 
     def _assign_products_to_shelves(
@@ -993,27 +1066,27 @@ class PlanogramCompliance(AbstractPipeline):
 
         # Sort just in case, though virtual generator creates them ordered
         shelves.sort(key=lambda s: s.bbox.y1)
-        
+
         for p in products:
             if p.product_type == "promotional_graphic" and p.shelf_location == "header":
-                continue # Already assigned
+                continue  # Already assigned
 
             p_box = p.detection_box
             p_cy = (p_box.y1 + p_box.y2) / 2
-            
+
             best_shelf = None
             max_iou = 0.0
             min_dist = float('inf')
-            
+
             # Use Vertical Intersection similar to user request
             for s in shelves:
                 s_box = s.bbox
                 sy1, sy2 = s_box.y1, s_box.y2
                 py1, py2 = p_box.y1, p_box.y2
-                
+
                 inter_y1 = max(sy1, py1)
                 inter_y2 = min(sy2, py2)
-                
+
                 if inter_y2 > inter_y1:
                     iy = inter_y2 - inter_y1
                     ph = py2 - py1
@@ -1021,7 +1094,7 @@ class PlanogramCompliance(AbstractPipeline):
                     if overlap > 0.5:
                         best_shelf = s
                         break
-            
+
             if not best_shelf:
                 # Vertical center distance fallback
                 for s in shelves:
@@ -1031,9 +1104,8 @@ class PlanogramCompliance(AbstractPipeline):
                     if dist < min_dist:
                         min_dist = dist
                         best_shelf = s
-                        
+
             if best_shelf:
                 # Normalize level name if specific logic needed, or just use literal level
                 # User config has "header", "middle", etc. So use literal.
                 p.shelf_location = best_shelf.level
-        
