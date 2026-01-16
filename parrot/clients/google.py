@@ -1,5 +1,6 @@
 import re
 import sys
+import os
 import asyncio
 import json
 from datetime import datetime
@@ -13,13 +14,16 @@ import io
 import uuid
 import aiofiles
 import aiohttp
-from PIL import Image
+import base64
+import numpy as np
+from PIL import Image, ImageDraw
 from google import genai
 from google.genai.types import (
     GenerateContentConfig,
     Part,
     ModelContent,
     UserContent,
+    ThinkingConfig
 )
 from google.oauth2 import service_account
 from google.genai import types
@@ -708,7 +712,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
             self.logger.info(
                 f"Iteration {iteration}: Processing {len(function_calls)} function calls"
             )
-            
+
             # Execute function calls
             tool_call_objects = []
             for fc in function_calls:
@@ -718,7 +722,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                     arguments=dict(fc.args) if hasattr(fc.args, 'items') else fc.args
                 )
                 tool_call_objects.append(tc)
-    
+
             # Execute tools
             start_time = time.time()
             tool_execution_tasks = [
@@ -727,7 +731,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
             ]
             tool_results = await asyncio.gather(*tool_execution_tasks, return_exceptions=True)
             execution_time = time.time() - start_time
-    
+
             # Lazy Loading Check
             if lazy_loading:
                 found_new = False
@@ -738,13 +742,13 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                             if nt not in active_tool_names:
                                 active_tool_names.add(nt)
                                 found_new = True
-                
+
                 if found_new:
                     # Rebuild tools with expanded set
                     new_tools_list = self._build_tools("custom_functions", filter_names=list(active_tool_names))
                     current_config.tools = new_tools_list
                     self.logger.info(f"Updated tools for next turn. Count: {len(active_tool_names)}")
-    
+
             # Update tool call objects
             for tc, result in zip(tool_call_objects, tool_results):
                 tc.execution_time = execution_time / len(tool_call_objects)
@@ -754,20 +758,20 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                 else:
                     tc.result = result
                     # self.logger.info(f"Tool {tc.name} result: {result}")
-    
+
             all_tool_calls.extend(tool_call_objects)
             function_response_parts = []
             for fc, result in zip(function_calls, tool_results):
                 tool_id = fc.id or f"call_{uuid.uuid4().hex[:8]}"
                 self.logger.notice(f"🔍 Tool: {fc.name}")
                 self.logger.notice(f"📤 Raw Result Type: {type(result)}")
-    
+
                 try:
                     response_content = self._process_tool_result_for_api(result)
                     # self.logger.info(
                     #     f"📦 Processed for API: {response_content}"
                     # )
-    
+
                     function_response_parts.append(
                         Part(
                             function_response=types.FunctionResponse(
@@ -777,7 +781,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                             )
                         )
                     )
-    
+
                 except Exception as e:
                     self.logger.error(f"Error processing result for tool {fc.name}: {e}")
                     function_response_parts.append(
@@ -789,7 +793,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                             )
                         )
                     )
-    
+
             summary_part = self._create_tool_summary_part(
                 function_calls,
                 tool_results,
@@ -799,7 +803,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
             next_prompt_parts = function_response_parts.copy()
             if summary_part:
                 next_prompt_parts.append(summary_part)
-    
+
             # Send responses back
             retry_count = 0
             try:
@@ -836,17 +840,17 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                         if (retry_count + 1) >= max_retries:
                             self.logger.error("Max retries reached, aborting")
                             raise e
-    
+
                 # Check for UNEXPECTED_TOOL_CALL error
                 if (hasattr(current_response, 'candidates') and
                     current_response.candidates and
                     hasattr(current_response.candidates[0], 'finish_reason')):
-    
+
                     finish_reason = current_response.candidates[0].finish_reason
-    
+
                     if str(finish_reason) == 'FinishReason.UNEXPECTED_TOOL_CALL':
                         self.logger.warning("Received UNEXPECTED_TOOL_CALL")
-    
+
                 # Debug what we got back
                 try:
                     # Use _safe_extract_text to avoid triggering warnings on function calls
@@ -855,7 +859,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                     self.logger.debug(f"Response preview: {preview}")
                 except Exception as e:
                     self.logger.debug(f"Could not preview response text: {e}")
-    
+
             except Exception as e:
                 self.logger.error(f"Failed to send responses back: {e}")
                 break
@@ -926,7 +930,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                         self.logger.debug(
                             f"Found proper function call: {part.function_call.name}"
                         )
-                    
+
                     # Handle reasoning content types (ignore for function calling)
                     elif hasattr(part, 'thought_signature') or hasattr(part, 'thought'):
                         self.logger.debug("Skipping reasoning/thought part during function extraction")
@@ -1001,6 +1005,11 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                             self.logger.debug(
                                 f"Found text part: '{clean_text[:50]}...'"
                             )
+
+                    # Skip thought_signature parts
+                    if hasattr(part, 'thought_signature'):
+                        self.logger.debug("Skipping thought_signature part")
+                        continue
 
                     # Check for code execution result (contains output from executed code)
                     elif hasattr(part, 'code_execution_result') and part.code_execution_result:
@@ -1241,6 +1250,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
         session_id: Optional[str] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
         use_tools: Optional[bool] = None,
+        use_thinking: Optional[bool] = None,
         stateless: bool = False,
         deep_research: bool = False,
         background: bool = False,
@@ -1399,7 +1409,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
             # Add system prompt instruction
             search_prompt = "You have access to a library of tools. Use the 'search_tools' function to find relevant tools."
             system_prompt = f"{system_prompt}\n\n{search_prompt}" if system_prompt else search_prompt
-            # Update final_config later with this new system prompt if needed, 
+            # Update final_config later with this new system prompt if needed,
             # but system_prompt is passed to GenerateContentConfig below.
 
 
@@ -1450,6 +1460,25 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
         chat = None
         if not self.client:
             self.client = await self.get_client()
+        # configure thinking config for gemini:
+        thinking_config = None
+        if use_thinking:
+            thinking_config = ThinkingConfig(
+                max_thinking_steps=1,
+                max_thinking_tokens=100,
+                max_thinking_time=10,
+            )
+        elif 'flash' in model_str.lower():
+            # Flash puede deshabilitarse con budget=0
+            thinking_config = ThinkingConfig(
+                thinking_budget=0,
+                include_thoughts=False
+            )
+        else:
+            thinking_config = ThinkingConfig(
+                thinking_budget=1024,  # Reasonable minimum for complex tasks
+                include_thoughts=False  # Critical: no thoughts in response
+            )
         final_config = GenerateContentConfig(
             system_instruction=system_prompt,
             safety_settings=[
@@ -1463,6 +1492,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                 ),
             ],
             tools=tools,
+            thinking_config=thinking_config,
             **generation_config
         )
         if stateless:
@@ -1867,7 +1897,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
         if isinstance(model, (list, tuple)):
             model = model[0]
 
-        # Stub for deep research streaming  
+        # Stub for deep research streaming
         if deep_research:
             self.logger.warning(
                 "Google Deep Research streaming is not yet fully implemented. "
@@ -2052,10 +2082,10 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                         self.client = None
                         if not self.client:
                             self.client = await self.get_client()
-                        
+
                         # Recreate chat session
-                        # Note: We rely on history variable being the initial history. 
-                        # Intermediate turn state might be lost if this happens mid-conversation, 
+                        # Note: We rely on history variable being the initial history.
+                        # Intermediate turn state might be lost if this happens mid-conversation,
                         # but this error usually happens at connection start.
                         chat = self.client.aio.chats.create(
                             model=model,
@@ -3025,9 +3055,9 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
     ) -> AIMessage:
         """
         Perform deep research using Google's interactions.create() API.
-        
-        Note: This is a stub implementation. Full implementation requires the 
-        Google Gen AI interactions SDK which uses a different API than the 
+
+        Note: This is a stub implementation. Full implementation requires the
+        Google Gen AI interactions SDK which uses a different API than the
         standard models.generate_content().
         """
         self.logger.warning(
@@ -4845,4 +4875,139 @@ Text:
         return video_path
 
 
-GoogleClient = GoogleGenAIClient  # Alias for easier imports
+    async def detect_objects(
+        self,
+        image: Union[str, Path, Image.Image],
+
+
+        prompt: str,
+        reference_images: Optional[List[Union[str, Path, Image.Image]]] = None,
+        output_dir: Optional[Union[str, Path]] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Detects objects and segmentation masks using Gemini 3 Flash.
+        Based on provided sample code.
+        """
+        try:
+            # 1. Prepare Image
+            if isinstance(image, (str, Path)):
+                im = Image.open(str(image))
+            else:
+                im = image.copy()
+
+            original_size = im.size
+            # Resize for consistent processing (as per sample)
+            im.thumbnail([1024, 1024], Image.Resampling.LANCZOS)
+
+            # 2. Configure Client
+            # Note: thinking_budget=0 is recommended for object detection
+            config = types.GenerateContentConfig(
+                thinking_config=types.ThinkingConfig(thinking_budget=0),
+                response_mime_type="application/json"
+            )
+
+            # 3. Call Model
+            client = self.client or await self.get_client()
+
+            # Prepare contents
+            contents = [prompt, im]
+            if reference_images:
+                for ref in reference_images:
+                    if isinstance(ref, (str, Path)):
+                        contents.append(Image.open(str(ref)))
+                    else:
+                        contents.append(ref)
+
+            response = await client.aio.models.generate_content(
+                model="gemini-3-flash-preview",
+                contents=contents,
+                config=config
+            )
+
+            # 4. Parse Response
+            text = response.text
+            # Strip markdown fencing if present
+            if "```json" in text:
+                text = text.split("```json")[1].split("```")[0]
+            elif "```" in text:
+                text = text.split("```")[1].split("```")[0]
+
+            try:
+                items = json.loads(text)
+            except json.JSONDecodeError:
+                self.logger.error(f"Failed to parse JSON from detection response: {text[:200]}...")
+                return []
+
+            if output_dir:
+                os.makedirs(output_dir, exist_ok=True)
+
+            results = []
+
+            # 5. Process Masks
+            for i, item in enumerate(items):
+                try:
+                    box = item.get("box_2d")
+                    if not box:
+                        continue
+
+                    # Map coordinates back to ORIGINAL image size
+                    # Gemini returns [ymin, xmin, ymax, xmax] normalized 0-1000
+                    
+                    y0 = int(box[0] / 1000 * original_size[1])
+                    x0 = int(box[1] / 1000 * original_size[0])
+                    y1 = int(box[2] / 1000 * original_size[1])
+                    x1 = int(box[3] / 1000 * original_size[0])
+
+                    if y0 >= y1 or x0 >= x1:
+                        continue
+
+                    result_item = {
+                        "label": item.get("label", "unknown"),
+                        "box_2d": [x0, y0, x1, y1], # [x1, y1, x2, y2]
+                        "confidence": item.get("confidence", 1.0), # Assuming 1.0 if not provided
+                        "mask_image": None,
+                        "overlay_image": None
+                    }
+                    # Preserve other keys (like 'type' or custom fields)
+                    for k, v in item.items():
+                        if k not in result_item and k != "mask" and k != "box_2d":
+                            result_item[k] = v
+
+                    png_str = item.get("mask")
+                    if png_str and png_str.startswith("data:image/png;base64,"):
+                        png_str = png_str.removeprefix("data:image/png;base64,")
+                        mask_data = base64.b64decode(png_str)
+                        mask = Image.open(io.BytesIO(mask_data))
+
+                        # Resize mask to match bounding box via original_size
+                        mask = mask.resize((x1 - x0, y1 - y0), Image.Resampling.BILINEAR)
+                        
+                        full_mask = Image.new('L', original_size, 0)
+                        full_mask.paste(mask, (x0, y0))
+
+                        # Create colored overlay
+                        colored_overlay = Image.new('RGBA', original_size, (255, 0, 0, 128))
+
+                        result_item["mask_image"] = full_mask
+                        result_item["overlay_image"] = full_mask # simplified for now, or return the overlay logic
+
+                        # Helper to save if requested
+                        if output_dir:
+                            mask_filename = f"{item['label']}_{i}_mask.png"
+                            full_mask.save(os.path.join(output_dir, mask_filename))
+
+                            # Composite
+                            # composite = Image.alpha_composite(im.convert('RGBA'), overlay) ...
+                            pass
+
+                    results.append(result_item)
+
+                except Exception as e:
+                    self.logger.error(f"Error processing item {i}: {e}")
+                    continue
+
+            return results
+
+        except Exception as e:
+            self.logger.error(f"Error in detect_objects: {e}")
+            raise

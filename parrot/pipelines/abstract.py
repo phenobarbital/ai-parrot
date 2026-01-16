@@ -50,7 +50,7 @@ class AbstractPipeline(ABC):
             self.llm_provider = llm.client_name.lower()
         # Ensure a Google Client for multi-modal capabilities:
         self.roi_client = GoogleGenAIClient(
-            model=GoogleModel.GEMINI_2_5_FLASH,
+            model="gemini-3-flash-preview",
             temperature=0.0,
             max_retries=2,
             timeout=20
