@@ -27,8 +27,8 @@ from pydantic import BaseModel, Field
 import cv2
 import torch
 from google.genai.errors import ServerError
-from .abstract import AbstractPipeline
-from ..models.detections import (
+from ..abstract import AbstractPipeline
+from ...models.detections import (
     BoundingBox,
     DetectionBox,
     Detection,
@@ -37,15 +37,15 @@ from ..models.detections import (
     IdentifiedProduct,
     PlanogramDescription
 )
-from ..models.compliance import (
+from ...models.compliance import (
     ComplianceResult,
     ComplianceStatus,
     TextComplianceResult,
     TextMatcher,
     BrandComplianceResult
 )
-from .detector import AbstractDetector
-from .models import PlanogramConfig
+from ..detector import AbstractDetector
+from ..models import PlanogramConfig
 
 
 CID = {

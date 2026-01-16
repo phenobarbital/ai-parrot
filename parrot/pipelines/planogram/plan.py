@@ -1,0 +1,1039 @@
+
+import asyncio
+import re
+import unicodedata
+from typing import Any, Dict, List, Optional, Tuple, Union
+from pathlib import Path
+from collections import defaultdict
+import numpy as np
+from PIL import Image, ImageDraw, ImageFont
+
+from navconfig.logging import logging
+from ..abstract import AbstractPipeline
+from ..models import PlanogramConfig
+from ...models.detections import (
+    DetectionBox, 
+    ShelfRegion, 
+    IdentifiedProduct, 
+    Detection, 
+    BoundingBox,
+    Detections
+)
+from ...models.compliance import (
+    ComplianceResult,
+    BrandComplianceResult,
+    TextComplianceResult,
+    ComplianceStatus,
+    TextMatcher
+) 
+
+class PlanogramCompliance(AbstractPipeline):
+    """
+    Pure-LLM Planogram Compliance Pipeline.
+    
+    Step 1: Endcap/Poster Detection (LLM-based _find_poster)
+    Step 2: Object Detection & Identification (Gemini 3 Flash)
+    Step 3: Planogram Compliance Verification
+    """
+    
+    def __init__(
+        self,
+        planogram_config: PlanogramConfig,
+        llm: Any = None,
+        llm_provider: str = "google",
+        llm_model: Optional[str] = None,
+        **kwargs: Any
+    ):
+        super().__init__(
+            llm=llm,
+            llm_provider=llm_provider,
+            llm_model=llm_model,
+            **kwargs
+        )
+        self.planogram_config = planogram_config
+        
+        # Endcap geometry defaults
+        geometry = planogram_config.endcap_geometry
+        self.left_margin_ratio = geometry.left_margin_ratio
+        self.right_margin_ratio = geometry.right_margin_ratio
+        
+        self.reference_images = planogram_config.reference_images or {}
+
+    async def run(
+        self,
+        image: Union[str, Path, Image.Image],
+        output_dir: Optional[Union[str, Path]] = None,
+        **kwargs
+    ) -> Dict[str, Any]:
+        
+        self.logger.info("Starting Pure-LLM Planogram Compliance Pipeline")
+        
+        # Step 1: Find Poster/Endcap
+        img = self.open_image(image)
+        planogram_description = self.planogram_config.get_planogram_description()
+        
+        detections_step1 = {}
+        endcap = None
+        
+        try:
+             # reuse _find_poster logic
+            endcap, ad, brand, panel_text, raw_dets = await self._find_poster(
+                img,
+                planogram_description,
+                partial_prompt=self.planogram_config.roi_detection_prompt
+            )
+            detections_step1 = {
+                "endcap": endcap,
+                "dataset": raw_dets
+            }
+        except Exception as e:
+             self.logger.error(f"Step 1 Failed: {e}")
+             pass
+
+        if output_dir:
+            # Debug Step 1: Draw Poster and Endcap on original image
+            try:
+                debug_img = img.copy()
+                debug_draw = ImageDraw.Draw(debug_img)
+                w, h = debug_img.size
+                
+                # Draw detections if avail
+                if detections_step1.get("dataset"):
+                    for d in detections_step1["dataset"]:
+                        # d is likely Detection object or dict? _find_poster returns 'raw_dets' which is list of Detection objects
+                        if hasattr(d, 'bbox'):
+                            b = d.bbox
+                            x1, y1, x2, y2 = b.x1 * w, b.y1 * h, b.x2 * w, b.y2 * h
+                            label = getattr(d, 'label', 'unknown')
+                            color = "blue" if "poster" in label else "green"
+                            debug_draw.rectangle([x1, y1, x2, y2], outline=color, width=3)
+                            debug_draw.text((x1, y1), label, fill=color)
+
+                # Draw calculated Endcap ROI
+                if endcap:
+                     b = endcap.bbox
+                     x1, y1, x2, y2 = b.x1 * w, b.y1 * h, b.x2 * w, b.y2 * h
+                     debug_draw.rectangle([x1, y1, x2, y2], outline="red", width=5)
+                     debug_draw.text((x1, y1), "ENDCAP ROI", fill="red")
+                
+                debug_path = Path(output_dir) / "debug_step1_roi.png"
+                debug_img.save(debug_path)
+                self.logger.info(f"Saved Step 1 Debug Image to {debug_path}")
+            except Exception as e:
+                self.logger.warning(f"Failed to save Step 1 debug image: {e}")
+
+
+        # Step 2: Object Detection & Identification
+        # We process the ROI if found, else the whole image?
+        # Better to process the whole image but focus on ROI? 
+        # Or crop?
+        # User sample uses `extract_segmentation_masks` on the image.
+        # If we have endcap, we should probably crop to it to help the model? 
+        # Or pass the ROI as a hint?
+        # The user said "stay with _find_poster method to find area... this is the Endcap Region of Interest".
+        # So likely we should crop or draw a box? 
+        # Typically cropping is better for resolution.
+        
+        target_image = img
+        offset_x, offset_y = 0, 0
+        
+        if endcap:
+            w, h = img.size
+            x1, y1, x2, y2 = endcap.bbox.get_pixel_coordinates(width=w, height=h)
+            target_image = img.crop((x1, y1, x2, y2))
+            offset_x, offset_y = x1, y1
+            self.logger.info(f"Cropped to Endcap ROI: {x1},{y1},{x2},{y2}")
+            if output_dir:
+                try:
+                    roi_path = Path(output_dir) / "debug_roi_crop.png"
+                    target_image.save(roi_path)
+                    self.logger.info(f"Saved ROI crop to {roi_path}")
+                except Exception as e:
+                    self.logger.warning(f"Failed to save ROI crop: {e}")
+
+
+        # Construct prompt/call
+        # We need to ask for products, shelf regions, etc?
+        # User sample returns "segmentation masks".
+        # We need to map these to "IdentifiedProduct" and "ShelfRegion".
+        # Prompt needs to be specific.
+        
+        # Extract hints from planogram description
+        hints = []
+        if planogram_description:
+            for shelf in getattr(planogram_description, "shelves", []):
+                for p in getattr(shelf, "products", []):
+                   name = getattr(p, "name", "")
+                   if name: hints.append(name)
+        
+        hints_str = ", ".join(set(hints))
+
+        prompt = f"""
+        Detect all retail products, empty slots, and shelf regions in this image.
+        Use the provided reference images to identify specific products.
+        
+        IMPORTANT:
+        - If you see a cardboard box containing a product image/name, label it as "[Product Name] box".
+        - If you see the bare product itself (e.g. a loose printer), label it as "[Product Name]".
+        - Prefer the following product names if they match: {hints_str}
+        - If an item is NOT in the list, provide a descriptive name (e.g. "Epson 502 Ink Bottle", "Unknown Printer") rather than just "unknown".
+        - Do not output "unknown" unless strictly necessary.
+        
+        Output a JSON list where each entry contains:
+        - "label": The identified product name/model or 'shelf' or 'unknown'.
+        - "box_2d": [ymin, xmin, ymax, xmax] normalized 0-1000.
+        - "confidence": 0-1.
+        - "type": "product" (for loose items), "product_box" (for boxes), "shelf", "gap".
+        """
+        
+        # Pass reference images
+        refs = list(self.reference_images.values()) if self.reference_images else []
+        
+        detected_items = await self.llm.detect_objects(
+            image=target_image,
+            prompt=prompt,
+            reference_images=refs,
+            output_dir=output_dir if output_dir else None # Save debug masks if dir provided?
+        )
+        
+        # Convert to internal models (IdentifiedProduct, ShelfRegion)
+        # We need to map coordinates back to full image if cropped
+        
+        shelf_regions = []
+        identified_products = []
+        
+        w, h = target_image.size # Size of the image passed to detector
+        
+        for item in detected_items:
+            # item["box_2d"] is [x1, y1, x2, y2] absolute pixels in target_image (as per my implementation of detect_objects)
+            # detect_objects implementation returns [x0, y0, x1, y1] (StartLine 4930 in snippet: x0, y0, x1, y1)
+            
+            box = item.get("box_2d") # [x1, y1, x2, y2]
+            if not box: continue
+            
+            x1, y1, x2, y2 = box
+            
+            # Map to original image
+            abs_x1 = x1 + offset_x
+            abs_y1 = y1 + offset_y
+            abs_x2 = x2 + offset_x
+            abs_y2 = y2 + offset_y
+            
+            label = item.get("label", "unknown")
+            conf = item.get("confidence", 0.0)
+            
+            # Simple heuristic classification based on label or "type" if we added it (we didn't explicitly in detect_objects return, but model might put it in label?)
+            # Prompt asked for "label" and "type". But detect_objects mainly parsers standard keys. 
+            # I should inspect `item` fully? detect_objects returns the whole dict item from JSON + adds mask/overlay/box_2d (converted).
+            # The `detect_objects` implementation I wrote puts the parsed JSON item into `item` variable, 
+            # extracts `box_2d`, converts it, and creates `result_item`.
+            # `result_item` has "label", "confidence", etc.
+            # Whatever extra keys were in the JSON (like "type") are NOT strictly copied to `result_item` in my implementation (I created a new dict).
+            # Wait, I created `result_item = { ... }`.
+            # I should have copied others!
+            # My `detect_objects` implementation was specific:
+            # result_item = { "label": ..., "box_2d": ..., "confidence": ..., "mask_image": ... }
+            # It DROPPED "type".
+            # Mapping "type" from label for now.
+            
+            if "shelf" in label.lower():
+                # Shelf Region
+                shelf_regions.append(ShelfRegion(
+                    shelf_id=f"shelf_{len(shelf_regions)}",
+                    level=label, # simplistic
+                    bbox=DetectionBox(x1=abs_x1, y1=abs_y1, x2=abs_x2, y2=abs_y2, confidence=conf)
+                ))
+            else:
+                # Product
+                ptype = item.get("type", "product")
+                
+                # Heuristic: if label contains 'box', force type 'product_box'
+                if "box" in label.lower() or "carton" in label.lower():
+                    ptype = "product_box"
+                
+                identified_products.append(IdentifiedProduct(
+                    detection_box=DetectionBox(x1=abs_x1, y1=abs_y1, x2=abs_x2, y2=abs_y2, confidence=conf),
+                    product_model=label,
+                    confidence=conf,
+                    product_type=ptype
+                    # We need shelf location. We can calc it later or assume model gives it?
+                    # Planogram compliance needs `shelf_location`.
+                ))
+
+        # Generate virtual shelves from Step 1 Endcap ROI as per user request
+        if endcap and endcap.bbox:
+             self.logger.info("Generating virtual shelves from Endcap ROI...")
+             virtual_shelves = self._generate_virtual_shelves(endcap.bbox, img.size, planogram_description)
+             # Use virtual shelves instead of model detections
+             shelf_regions = virtual_shelves
+
+        # Assign products to shelves
+        self._assign_products_to_shelves(identified_products, shelf_regions)
+
+        # If Step 1 found text, add it as a 'promotional_graphic' product
+        if panel_text and getattr(panel_text, 'content', None):
+            self.logger.info(f"Injecting poster text: {panel_text.content}")
+            
+            # Ensure text is treated as OCR content
+            ocr_content = panel_text.content.strip()
+            
+            # Create a separate product for the text, or attach to the poster product if we had one?
+            # Creating a new one ensures it's in the 'promos' list in check_compliance
+            text_product = IdentifiedProduct(
+                detection_box=DetectionBox(
+                    x1=int(panel_text.bbox.x1 * img.width), 
+                    y1=int(panel_text.bbox.y1 * img.height), 
+                    x2=int(panel_text.bbox.x2 * img.width), 
+                    y2=int(panel_text.bbox.y2 * img.height), 
+                    confidence=float(getattr(panel_text, 'confidence', 1.0)),
+                    ocr_text=ocr_content # Direct attribute usage if supported
+                ),
+                product_type="promotional_graphic",
+                product_model="poster_text",
+                confidence=float(getattr(panel_text, 'confidence', 1.0)),
+                visual_features=[f"ocr:{ocr_content}"],
+                shelf_location="header" # Text usually in header
+            )
+            identified_products.append(text_product)
+
+        # If Step 1 found brand logo, add it to satisfy brand check
+        if brand:
+             brand_conf = float(getattr(brand, 'confidence', 1.0))
+             # Map coords
+             bx1 = int(brand.bbox.x1 * img.width)
+             by1 = int(brand.bbox.y1 * img.height)
+             bx2 = int(brand.bbox.x2 * img.width)
+             by2 = int(brand.bbox.y2 * img.height)
+             
+             brand_product = IdentifiedProduct(
+                 detection_box=DetectionBox(x1=bx1, y1=by1, x2=bx2, y2=by2, confidence=brand_conf),
+                 product_type="brand_logo",
+                 product_model=brand.label or "brand_logo",
+                 confidence=brand_conf,
+                 brand=planogram_description.brand, # Use the expected brand name
+                 shelf_location="header"
+             )
+             identified_products.append(brand_product)
+             self.logger.info(f"Injecting brand logo: {brand_product.brand}")
+
+        
+        compliance_results = self.check_planogram_compliance(
+             identified_products, planogram_description
+        )
+
+        overall_score = 0.0
+        overall_compliant = True
+        if compliance_results:
+             overall_score = sum(r.compliance_score for r in compliance_results) / len(compliance_results)
+             overall_compliant = all(r.compliance_status == ComplianceStatus.COMPLIANT for r in compliance_results)
+        
+        # ... (Render) ...
+        rendered_image = self.render_evaluated_image(
+            img,
+            shelf_regions=shelf_regions,
+            identified_products=identified_products,
+            save_to=str(Path(output_dir) / "compliance_render.png") if output_dir else None
+        )
+
+        return {
+            "step3_compliance_results": compliance_results,
+            "compliance_results": compliance_results,
+            "overall_compliance_score": overall_score,
+            "overall_compliant": overall_compliant,
+            "identified_products": identified_products,
+            "shelf_regions": shelf_regions,
+            "rendered_image": rendered_image,
+            "overlay_path": str(Path(output_dir) / "compliance_render.png") if output_dir else None
+        }
+
+    # =========================================================================
+    # Helpers (Copied/Adapted)
+    # =========================================================================
+
+    async def _find_poster(
+        self,
+        image: Image.Image,
+        planogram: Any, # PlanogramDescription
+        partial_prompt: str
+    ) -> Any:
+        # Ask VISION Model to find the main promotional graphic
+        brand = (getattr(planogram, "brand", "") or "").strip()
+        tags = [t.strip() for t in getattr(planogram, "tags", []) or []]
+        endcap = getattr(planogram, "advertisement_endcap", None)
+        geometry = self.planogram_config.endcap_geometry
+        if endcap and getattr(endcap, "text_requirements", None):
+            for tr in endcap.text_requirements:
+                if getattr(tr, "required_text", None):
+                    tags.append(tr.required_text)
+        tag_hint = ", ".join(sorted(set(f"'{t}'" for t in tags if t)))
+
+        # downscale for LLM
+        image_small = self._downscale_image(image, max_side=1024, quality=78)
+        prompt = partial_prompt.format(
+            brand=brand,
+            tag_hint=tag_hint,
+            image_size=image_small.size
+        )
+        max_attempts = 2
+        msg = None
+        for attempt in range(max_attempts):
+            try:
+                async with self.roi_client as client:
+                    msg = await client.ask_to_image(
+                        image=image_small,
+                        prompt=prompt,
+                        model="gemini-2.5-flash", 
+                        no_memory=True,
+                        structured_output=Detections,
+                        max_tokens=8192
+                    )
+                break
+            except ServerError as e:
+                if attempt < max_attempts - 1:
+                    await asyncio.sleep(10)
+                else:
+                    raise e
+                    
+        data = msg.structured_output or msg.output or {}
+        dets = data.detections or []
+        if not dets:
+            return None, None, None, None, []
+            
+        panel_det = next((d for d in dets if d.label == "poster_panel"), None) \
+             or next((d for d in dets if d.label == "poster"), None) \
+             or (max(dets, key=lambda x: float(x.confidence)) if dets else None)
+
+        text_det = next((d for d in dets if d.label == "poster_text"), None)
+        brand_det = next((d for d in dets if d.label == "brand_logo"), None)
+        
+        if not panel_det:
+            self.logger.error("Critical failure: Could not detect the poster_panel.")
+            return None, None, None, None, []
+
+        promo_graphic_det = next(
+            (d for d in dets if d.label == "promotional_graphic"), None
+        )
+
+        if promo_graphic_det and panel_det:
+             if not (promo_graphic_det.bbox.x1 >= panel_det.bbox.x1 and promo_graphic_det.bbox.x2 <= panel_det.bbox.x2):
+                panel_det.bbox.x1 = min(panel_det.bbox.x1, promo_graphic_det.bbox.x1)
+                panel_det.bbox.x2 = max(panel_det.bbox.x2, promo_graphic_det.bbox.x2)
+        
+        config_width_percent = geometry.width_margin_percent
+        config_height_percent = geometry.height_margin_percent
+        config_top_margin_percent = geometry.top_margin_percent
+        side_margin_percent = geometry.side_margin_percent
+
+        panel_det.bbox.x1 = max(0.0, panel_det.bbox.x1 - side_margin_percent)
+        panel_det.bbox.x2 = min(1.0, panel_det.bbox.x2 + side_margin_percent)
+
+        if panel_det and text_det:
+            text_bottom_y2 = text_det.bbox.y2
+            padding = 0.08
+            new_panel_y2 = min(text_bottom_y2 + padding, 1.0)
+            panel_det.bbox.y2 = new_panel_y2
+
+        endcap_det = next((d for d in dets if d.label == "endcap"), None)
+        px1, py1, px2, py2 = panel_det.bbox.x1, panel_det.bbox.y1, panel_det.bbox.x2, panel_det.bbox.y2
+
+        if endcap_det:
+            ex1, ey1, ex2, ey2 = endcap_det.bbox.x1, endcap_det.bbox.y1, endcap_det.bbox.x2, endcap_det.bbox.y2
+        else:
+            ex1, ey1, ex2, ey2 = px1, py1, px2, py2
+
+        if endcap_det is None:
+            panel_h = py2 - py1
+            ratio = max(1e-6, float(config_height_percent))
+            top_margin = float(config_top_margin_percent)
+            ey1 = max(0.0, py1 - top_margin)
+            ey2 = min(1.0, ey1 + panel_h / ratio)
+
+        x_buffer = max(self.left_margin_ratio * (px2-px1), self.right_margin_ratio * (px2-px1))
+        ex1 = min(ex1, px1 - x_buffer)
+        ex2 = max(ex2, px2 + x_buffer)
+
+        ex1 = max(0.0, ex1); ex2 = min(1.0, ex2)
+        if ex2 <= ex1: ex2 = ex1 + 1e-6
+        ey1 = max(0.0, ey1); ey2 = min(1.0, ey2)
+        if ey2 <= ey1: ey2 = ey1 + 1e-6
+
+        if endcap_det is None:
+            endcap_det = Detection(label="endcap", confidence=0.9, content=None, bbox=BoundingBox(x1=ex1, y1=ey1, x2=ex2, y2=ey2))
+        else:
+            endcap_det.bbox.x1 = ex1; endcap_det.bbox.x2 = ex2
+            endcap_det.bbox.y1 = ey1; endcap_det.bbox.y2 = ey2
+            
+        return endcap_det, panel_det, brand_det, text_det, dets
+        
+    def check_planogram_compliance(
+        self,
+        identified_products: List[IdentifiedProduct],
+        planogram_description: Any
+    ) -> List[ComplianceResult]:
+        """Check compliance of identified products against the planogram."""
+        def _matches(ek, fk) -> bool:
+            (e_ptype, e_base), (f_ptype, f_base) = ek, fk
+            
+            # Relaxed type matching
+            type_match = (e_ptype == f_ptype)
+            if not type_match:
+                # specific overrides
+                if {e_ptype, f_ptype} <= {"printer", "product"}:
+                    type_match = True
+            
+            if not type_match:
+                return False
+            if not e_base or not f_base:
+                return True
+            if not e_base:
+                return True
+            if f_base == e_base or e_base in f_base or f_base in e_base:
+                return True
+            if e_ptype == "promotional_graphic":
+                fam = lambda s: "canvas-tv" if "canvas-tv" in s else s
+                return fam(e_base) == fam(f_base)
+            return e_base in f_base or f_base in e_base
+
+        results: List[ComplianceResult] = []
+        planogram_brand = planogram_description.brand.lower()
+        found_brand_product = next((
+            p for p in identified_products if p.brand and p.brand.lower() == planogram_brand
+        ), None)
+
+        brand_compliance_result = BrandComplianceResult(
+            expected_brand=planogram_description.brand,
+            found_brand=found_brand_product.brand if found_brand_product else None,
+            found=bool(found_brand_product),
+            confidence=found_brand_product.confidence if found_brand_product else 0.0
+        )
+        brand_check_ok = brand_compliance_result.found
+        by_shelf = defaultdict(list)
+
+        for p in identified_products:
+            by_shelf[p.shelf_location].append(p)
+
+        for shelf_cfg in planogram_description.shelves:
+            shelf_level = shelf_cfg.level
+            products_on_shelf = by_shelf.get(shelf_level, [])
+            expected = []
+            
+            for sp in shelf_cfg.products:
+                if sp.product_type in ("fact_tag", "price_tag", "slot"):
+                    continue
+                e_ptype, e_base = self._canonical_expected_key(sp, brand=planogram_brand)
+                expected.append((e_ptype, e_base))
+
+            found_keys = []
+            found_lookup = []
+            promos = []
+            for p in products_on_shelf:
+                if p.product_type in ("fact_tag", "price_tag", "slot", "brand_logo"):
+                    continue
+                f_ptype, f_base, f_conf = self._canonical_found_key(p, brand=planogram_brand)
+                found_keys.append((f_ptype, f_base))
+                if p.product_type == "promotional_graphic":
+                    promos.append(p)
+                label = p.product_model or p.product_type or "unknown"
+                found_lookup.append((f_ptype, f_base, label))
+
+            matched = [False] * len(expected)
+            consumed = [False] * len(found_keys)
+            visual_feature_scores = []
+
+            for i, ek in enumerate(expected):
+                for j, fk in enumerate(found_keys):
+                    if matched[i] or consumed[j]:
+                        continue
+                    if _matches(ek, fk):
+                        matched[i] = True
+                        consumed[j] = True
+                        shelf_product = shelf_cfg.products[i]
+                        identified_product = products_on_shelf[j]
+                        if hasattr(shelf_product, 'visual_features') and shelf_product.visual_features:
+                            detected_features = getattr(identified_product, 'visual_features', []) or []
+                            vf_score = self._calculate_visual_feature_match(
+                                shelf_product.visual_features, detected_features
+                            )
+                            visual_feature_scores.append(vf_score)
+                        break
+
+            expected_readable = [f"{e_ptype}:{e_base}" if e_base else f"{e_ptype}" for (e_ptype, e_base) in expected]
+            found_readable = []
+            for (used, (f_ptype, f_base), (_, _, original_label)) in zip(consumed, found_keys, found_lookup):
+                tag = original_label
+                if f_base: tag = f"{original_label} [{f_ptype}:{f_base}]"
+                found_readable.append(tag)
+
+            missing = [expected_readable[i] for i, ok in enumerate(matched) if not ok]
+            unexpected = []
+            if not shelf_cfg.allow_extra_products:
+                for used, (f_ptype, f_base), (_, _, original_label) in zip(consumed, found_keys, found_lookup):
+                    if not used:
+                        lbl = original_label
+                        if f_base: lbl = f"{original_label} [{f_ptype}:{f_base}]"
+                        unexpected.append(lbl)
+
+            basic_score = (sum(1 for ok in matched if ok) / (len(expected) or 1.0))
+            
+            visual_feature_score = 1.0
+            if visual_feature_scores:
+                visual_feature_score = sum(visual_feature_scores) / len(visual_feature_scores)
+
+            text_results, text_score, overall_text_ok = [], 1.0, True
+            endcap = planogram_description.advertisement_endcap
+            if endcap and endcap.enabled and endcap.position == shelf_level:
+                if endcap.text_requirements:
+                    all_features = []
+                    ocr_blocks = []
+                    for promo in promos:
+                        if getattr(promo, "visual_features", None):
+                            all_features.extend(promo.visual_features)
+                            for feat in promo.visual_features:
+                                if isinstance(feat, str) and feat.startswith("ocr:"):
+                                    ocr_blocks.append(feat[4:].strip())
+                            ocr_text = getattr(promo.detection_box, 'ocr_text', '')
+                            if ocr_text: ocr_blocks.append(ocr_text.strip())
+                    if ocr_blocks:
+                         ocr_norm = self._normalize_ocr_text(" ".join(ocr_blocks))
+                         if ocr_norm: all_features.append(ocr_norm)
+
+                    if not promos and shelf_level == "header":
+                         overall_text_ok = False
+                         for text_req in endcap.text_requirements:
+                             text_results.append(TextComplianceResult(
+                                 required_text=text_req.required_text, found=False, matched_features=[], confidence=0.0, match_type=text_req.match_type
+                             ))
+                    else:
+                        for text_req in endcap.text_requirements:
+                            result = TextMatcher.check_text_match(
+                                required_text=text_req.required_text,
+                                visual_features=all_features,
+                                match_type=text_req.match_type,
+                                case_sensitive=text_req.case_sensitive,
+                                confidence_threshold=text_req.confidence_threshold
+                            )
+                            text_results.append(result)
+                            if not result.found and text_req.mandatory:
+                                overall_text_ok = False
+                        if text_results:
+                            text_score = sum(r.confidence for r in text_results if r.found) / len(text_results)
+
+            elif shelf_level != "header":
+                overall_text_ok = True
+                text_score = 1.0
+
+            threshold = getattr(shelf_cfg, "compliance_threshold", planogram_description.global_compliance_threshold or 0.8)
+            major_unexpected = [p for p in unexpected if "ink" not in p.lower() and "price tag" not in p.lower()]
+
+            status = ComplianceStatus.NON_COMPLIANT
+            if shelf_level != "header":
+                if basic_score >= threshold and not major_unexpected:
+                    status = ComplianceStatus.COMPLIANT
+                elif basic_score == 0.0 and len(expected) > 0:
+                    status = ComplianceStatus.MISSING
+            else:
+                if not brand_check_ok:
+                    status = ComplianceStatus.NON_COMPLIANT
+                elif basic_score >= threshold and not major_unexpected and overall_text_ok:
+                    status = ComplianceStatus.COMPLIANT
+                elif basic_score == 0.0 and len(expected) > 0:
+                    status = ComplianceStatus.MISSING
+                else:
+                    status = ComplianceStatus.NON_COMPLIANT
+
+            visual_weight = getattr(planogram_description, 'visual_features_weight', 0.2)
+            if shelf_level == "header" and endcap:
+                adjusted_product_weight = endcap.product_weight * (1 - visual_weight)
+                visual_feature_weight = endcap.product_weight * visual_weight
+                combined_score = (
+                    (basic_score * adjusted_product_weight) +
+                    (text_score * endcap.text_weight) +
+                    (brand_compliance_result.confidence * getattr(endcap, "brand_weight", 0.0)) +
+                    (visual_feature_score * visual_feature_weight)
+                )
+            else:
+                combined_score = (
+                    basic_score * (1 - visual_weight) +
+                    text_score * 0.1 +
+                    visual_feature_score * visual_weight
+                )
+
+            combined_score = min(1.0, max(0.0, combined_score))
+            text_score = min(1.0, max(0.0, text_score))
+
+            results.append(ComplianceResult(
+                shelf_level=shelf_level,
+                expected_products=expected_readable,
+                found_products=found_readable,
+                missing_products=missing,
+                unexpected_products=unexpected,
+                compliance_status=status,
+                compliance_score=combined_score,
+                text_compliance_results=text_results,
+                text_compliance_score=text_score,
+                overall_text_compliant=overall_text_ok,
+                brand_compliance_result=brand_compliance_result
+            ))
+
+        return results
+        
+    def render_evaluated_image(
+        self,
+        image: Union[str, Path, Image.Image],
+        *,
+        shelf_regions: Optional[List[ShelfRegion]] = None,
+        detections: Optional[List[DetectionBox]] = None, # Unused argument or keep for compatibility?
+        identified_products: Optional[List[IdentifiedProduct]] = None,
+        mode: str = "identified",
+        show_shelves: bool = True,
+        save_to: Optional[Union[str, Path]] = None,
+    ) -> Image.Image:
+        """Enhanced render."""
+        def _norm_box(x1, y1, x2, y2):
+            x1, x2, y1, y2 = int(x1), int(x2), int(y1), int(y2)
+            if x1 > x2: x1, x2 = x2, x1
+            if y1 > y2: y1, y2 = y2, y1
+            if x2 - x1 < 1: x2 = x1 + 1
+            if y2 - y1 < 1: y2 = y1 + 1
+            return x1, y1, x2, y2
+
+        if isinstance(image, (str, Path)):
+            base = Image.open(image).convert("RGB").copy()
+        else:
+            base = image.convert("RGB").copy()
+
+        draw = ImageDraw.Draw(base)
+        try:
+            font = ImageFont.load_default()
+        except:
+            font = None
+        
+        W, H = base.size
+        def _clip(x1, y1, x2, y2):
+            return max(0, x1), max(0, y1), min(W-1, x2), min(H-1, y2)
+            
+        def _txt(draw_obj, xy, text, fill, bg=None):
+            try:
+                if not font:
+                    draw_obj.text(xy, text, fill=fill)
+                    return
+                bbox = draw_obj.textbbox(xy, text, font=font)
+                if bg is not None:
+                     draw_obj.rectangle(bbox, fill=bg)
+                draw_obj.text(xy, text, fill=fill, font=font)
+            except:
+                try: draw_obj.text(xy, text, fill=fill)
+                except: pass
+
+        colors = {
+            "tv_demonstration": (0, 255, 0), "promotional_graphic": (255, 0, 255),
+            "promotional_base": (0, 0, 255), "fact_tag": (255, 255, 0),
+            "product_box": (255, 128, 0), "printer": (255, 0, 0), "unknown": (200, 200, 200)
+        }
+
+        if show_shelves and shelf_regions:
+            for sr in shelf_regions:
+                try:
+                    x1, y1, x2, y2 = _clip(sr.bbox.x1, sr.bbox.y1, sr.bbox.x2, sr.bbox.y2)
+                    x1, y1, x2, y2 = _norm_box(x1, y1, x2, y2)
+                    draw.rectangle([x1, y1, x2, y2], outline=(255, 255, 0), width=3)
+                    _txt(draw, (x1+3, max(0, y1-14)), f"SHELF {sr.level}", fill=(0, 0, 0), bg=(255, 255, 0))
+                except Exception as e:
+                     logging.warning(f"Could not draw shelf {sr.level}: {e}")
+
+        if identified_products:
+            for i, p in enumerate(identified_products):
+                try:
+                    box = p.detection_box
+                    if not box: continue
+                    x1, y1, x2, y2 = _clip(box.x1, box.y1, box.x2, box.y2)
+                    x1, y1, x2, y2 = _norm_box(x1, y1, x2, y2)
+                    
+                    ptype = (p.product_type or "unknown").lower()
+                    color = colors.get(ptype, colors["unknown"])
+                    
+                    draw.rectangle([x1, y1, x2, y2], outline=color, width=2)
+                    
+                    label = f"{i+1}. {p.product_model or ptype}"
+                    if p.confidence:
+                        label += f" ({p.confidence:.2f})"
+                    
+                    _txt(draw, (x1, max(0, y1-20)), label, fill=color, bg=(0,0,0))
+                except Exception as e:
+                    logging.warning(f"Failed to draw product: {e}")
+        
+        if save_to:
+            try:
+                base.save(save_to)
+                logging.info(f"Saved rendered image to {save_to}")
+            except Exception as e:
+                logging.error(f"Failed save image to {save_to}: {e}")
+                
+        return base
+        
+    def _base_model_from_str(self, s: str, brand: str = None) -> str:
+        """
+        Extract normalized base model from any text, supporting multiple brands.
+        """
+        if not s:
+            return ""
+
+        t = s.lower().strip()
+        t = t.replace("—", "-").replace("–", "-").replace("_", "-")
+
+        # Brand-specific patterns
+        if brand and brand.lower() == "epson":
+            m = re.search(r"(et)[- ]?(\d{4})", t)
+            if m:
+                return f"{m.group(1)}-{m.group(2)}"
+
+        elif brand and brand.lower() == "hisense":
+            if re.search(r"canvas[\s-]*tv", t):
+                return "canvas-tv"
+            if re.search(r"canvas", t):
+                return "canvas"
+            patterns = [
+                r"(\d*)(u\d+)([a-z]*)",
+                r"(u\d+)",
+            ]
+            for pattern in patterns:
+                m = re.search(pattern, t)
+                if m:
+                    if len(m.groups()) >= 2:
+                        size = m.group(1) if m.group(1) else ""
+                        series = m.group(2)
+                        variant = m.group(3) if len(m.groups()) > 2 and m.group(3) else ""
+                        return f"{size}{series}{variant}".lower()
+                    else:
+                        return m.group(1).lower()
+
+        # Generic
+        generic_patterns = [
+            r"([a-z]+)[- ]?(\d{3,4})",
+            r"([a-z]\d+)",
+            r"(\d{4})",
+        ]
+        for pattern in generic_patterns:
+            m = re.search(pattern, t)
+            if m:
+                if len(m.groups()) >= 2:
+                    return f"{m.group(1)}-{m.group(2)}"
+                else:
+                    return m.group(1).lower()
+        return ""
+
+    def _canonical_expected_key(self, sp: Any, brand: str) -> Tuple[str, str]:
+        ptype = (getattr(sp, "product_type", "") or "").strip().lower()
+        type_mappings = {
+            "tv_demonstration": "tv",
+            "promotional_graphic": "promotional_graphic",
+            "product_box": "product_box",
+            "printer": "printer",
+            "promotional_materials": "promotional_materials"
+        }
+        ptype = type_mappings.get(ptype, ptype)
+        model_str = getattr(sp, "name", "") or getattr(sp, "product_model", "") or ""
+        base = self._base_model_from_str(model_str, brand=brand)
+        return ptype or "unknown", base or ""
+
+    def _canonical_found_key(self, p: Any, brand: str) -> Tuple[str, str, float]:
+        ptype = (getattr(p, "product_type", "") or "").strip().lower()
+        type_mappings = {
+            "tv_demonstration": "tv",
+            "promotional_graphic": "promotional_graphic",
+            "product_box": "product_box",
+            "printer": "printer",
+            "promotional_material": "promotional_material",
+            "promotional_display": "promotional_display"
+        }
+        ptype = type_mappings.get(ptype, ptype)
+        model_str = getattr(p, "product_model", "") or getattr(p, "product_type", "") or ""
+        base = self._base_model_from_str(model_str, brand=brand)
+        conf = float(getattr(p, "confidence", 0.0) or 0.0)
+
+        if self._looks_like_box(getattr(p, "visual_features", None)):
+            if ptype != "product_box":
+                ptype = "product_box"
+            conf = min(1.0, conf + 0.05)
+        return ptype or "unknown", base or "", conf
+
+    def _looks_like_box(self, visual_features: Optional[List[str]]) -> bool:
+        if not visual_features:
+            return False
+        keywords = {"packaging", "package", "cardboard", "box", "blue packaging", "printer image on box"}
+        norm = " ".join(visual_features).lower()
+        return any(k in norm for k in keywords)
+
+    def _normalize_ocr_text(self, s: str) -> str:
+        if not s:
+            return ""
+        s = unicodedata.normalize("NFKC", s)
+        s = "".join(ch for ch in unicodedata.normalize("NFKD", s) if not unicodedata.combining(ch))
+        s = re.sub(r"[—–‐-‒–—―…“”\"'·•••·•—–/\\|_=+^°™®©§]", " ", s)
+        s = re.sub(r"[^A-Za-z0-9 ]+", " ", s)
+        s = re.sub(r"\s+", " ", s).strip().lower()
+        return s
+
+    def _calculate_visual_feature_match(self, expected_features: List[str], detected_features: List[str]) -> float:
+        if not expected_features:
+            return 1.0
+        if not detected_features:
+            return 0.0
+
+        def extract_keywords(text):
+            text = text.lower().strip()
+            stop_words = {'a', 'an', 'the', 'is', 'are', 'on', 'of', 'in', 'at', 'to', 'for', 'with', 'visible', 'displayed', 'showing'}
+            words = [w for w in text.split() if w not in stop_words and len(w) > 1]
+            return set(words)
+
+        semantic_mappings = {
+            'active': ['active', 'on', 'powered', 'illuminated', 'lit'],
+            'display': ['display', 'screen', 'tv', 'television', 'monitor'],
+            'illuminated': ['illuminated', 'backlit', 'lit', 'bright', 'glowing'],
+            'logo': ['logo', 'text', 'branding', 'brand'],
+            'dynamic': ['dynamic', 'colorful', 'graphics', 'content'],
+            'official': ['official', 'partner'],
+            'white': ['white', 'large']
+        }
+
+        def semantic_match(expected_word, detected_keywords):
+            if expected_word in detected_keywords:
+                return True
+            if expected_word in semantic_mappings:
+                synonyms = semantic_mappings[expected_word]
+                return any(syn in detected_keywords for syn in synonyms)
+            return any(expected_word in keyword for keyword in detected_keywords)
+
+        matches = 0
+        for expected in expected_features:
+            expected_keywords = extract_keywords(expected)
+            all_detected_keywords = set()
+            for detected in detected_features:
+                all_detected_keywords.update(extract_keywords(detected))
+            
+            feature_matched = False
+            for exp_keyword in expected_keywords:
+                if semantic_match(exp_keyword, all_detected_keywords):
+                    feature_matched = True
+                    break
+            
+            if feature_matched:
+                matches += 1
+
+        return matches / len(expected_features)
+
+    def _generate_virtual_shelves(
+        self, 
+        roi_bbox: DetectionBox, 
+        image_size: Tuple[int, int],
+        planogram: Any
+    ) -> List[ShelfRegion]:
+        """
+        Generates virtual shelf regions based on ROI and planogram configuration ratios.
+        """
+        w, h = image_size
+        r_x1, r_y1, r_x2, r_y2 = roi_bbox.x1, roi_bbox.y1, roi_bbox.x2, roi_bbox.y2
+        
+        # Ensure absolute coords
+        if r_x1 <= 1.0 and r_x2 <= 1.0:
+            r_x1 *= w; r_y1 *= h; r_x2 *= w; r_y2 *= h
+            
+        roi_h = r_y2 - r_y1
+        shelves = []
+        current_y = r_y1
+        
+        # Get shelf config from planogram
+        shelf_configs = getattr(planogram, "shelves", []) or []
+        
+        # If no config, fallback to default thirds? Or hardcoded user preference?
+        # User snippet: Header (0.34), Middle (0.25), Bottom (rest)
+        if not shelf_configs:
+            # Create dummy config matching user description if missing
+            pass # TODO: Fallback logic?
+            
+        used_ratio = 0.0
+        
+        for i, cfg in enumerate(shelf_configs):
+            level = getattr(cfg, "level", f"shelf_{i}")
+            ratio = getattr(cfg, "height_ratio", None)
+            
+            if ratio:
+                s_h = roi_h * float(ratio)
+                used_ratio += float(ratio)
+            elif i == len(shelf_configs) - 1:
+                # Last shelf takes the rest
+                s_h = max(0, (r_y2 - current_y))
+            else:
+                s_h = roi_h * 0.25 # Default?
+            
+            s_y2 = min(r_y2, current_y + s_h)
+            
+            shelves.append(ShelfRegion(
+                shelf_id=f"virtual_{level}",
+                level=level,
+                bbox=DetectionBox(x1=int(r_x1), y1=int(current_y), x2=int(r_x2), y2=int(s_y2), confidence=1.0)
+            ))
+            current_y = s_y2
+            if current_y >= r_y2:
+                break
+                
+        return shelves
+
+    def _assign_products_to_shelves(
+        self,
+        products: List[IdentifiedProduct],
+        shelves: List[ShelfRegion]
+    ):
+        """
+        Assigns each product to the spatially best-fitting shelf.
+        Modifies 'shelf_location' in-place.
+        """
+        if not shelves:
+            return
+
+        # Sort just in case, though virtual generator creates them ordered
+        shelves.sort(key=lambda s: s.bbox.y1)
+        
+        for p in products:
+            if p.product_type == "promotional_graphic" and p.shelf_location == "header":
+                continue # Already assigned
+
+            p_box = p.detection_box
+            p_cy = (p_box.y1 + p_box.y2) / 2
+            
+            best_shelf = None
+            max_iou = 0.0
+            min_dist = float('inf')
+            
+            # Use Vertical Intersection similar to user request
+            for s in shelves:
+                s_box = s.bbox
+                sy1, sy2 = s_box.y1, s_box.y2
+                py1, py2 = p_box.y1, p_box.y2
+                
+                inter_y1 = max(sy1, py1)
+                inter_y2 = min(sy2, py2)
+                
+                if inter_y2 > inter_y1:
+                    iy = inter_y2 - inter_y1
+                    ph = py2 - py1
+                    overlap = iy / ph if ph > 0 else 0
+                    if overlap > 0.5:
+                        best_shelf = s
+                        break
+            
+            if not best_shelf:
+                # Vertical center distance fallback
+                for s in shelves:
+                    s_box = s.bbox
+                    s_cy = (s_box.y1 + s_box.y2) / 2
+                    dist = abs(p_cy - s_cy)
+                    if dist < min_dist:
+                        min_dist = dist
+                        best_shelf = s
+                        
+            if best_shelf:
+                # Normalize level name if specific logic needed, or just use literal level
+                # User config has "header", "middle", etc. So use literal.
+                p.shelf_location = best_shelf.level
+        
