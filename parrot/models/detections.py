@@ -56,6 +56,7 @@ class ShelfRegion(BaseModel):
     bbox: DetectionBox = Field(description="Shelf bounding box")
     level: str = Field(description="Shelf level (top, middle, bottom)")
     objects: List[DetectionBox] = Field(default_factory=list, description="Objects on this shelf")
+    is_background: bool = Field(default=False, description="If True, promotional graphics prefer this shelf")
 
 
 class IdentifiedProduct(BaseModel):
@@ -76,6 +77,7 @@ class IdentifiedProduct(BaseModel):
     advertisement_type: Optional[str] = Field(
         None, description="Ad type if promotional (backlit_graphic, endcap_poster, shelf_talker, banner, digital_display)"
     )
+    ocr_text: Optional[str] = Field(None, description="OCR text found on the product")
     detection_box: Optional[DetectionBox] = Field(None, description="Detection box information")
     extra: Dict[str, str] = Field(default_factory=dict, description="Any Extra descriptive tags")
 
@@ -237,7 +239,9 @@ class ShelfConfig(BaseModel):
     compliance_threshold: float = Field(default=0.8, description="Compliance threshold for this shelf")
     allow_extra_products: bool = Field(default=False, description="Allow products not in the specification")
     position_strict: bool = Field(default=False, description="Enforce strict positioning")
-    height_ratio: Optional[float] = Field(default=0.30)  # Add this field: 0.30 = 30% of ROI height
+    height_ratio: Optional[float] = Field(default=0.30, description="Height as ratio of ROI (0.30 = 30%)")
+    y_start_ratio: Optional[float] = Field(default=None, description="Start Y position as ratio of ROI (for overlapping shelves)")
+    is_background: bool = Field(default=False, description="If True, promotional graphics prefer this shelf")
 
 class TextRequirement(BaseModel):
     """Text requirement for promotional materials"""
@@ -438,7 +442,10 @@ class PlanogramDescriptionFactory:
                 products=shelf_products,
                 compliance_threshold=shelf_data.get("compliance_threshold", 0.8),
                 allow_extra_products=shelf_data.get("allow_extra_products", False),
-                position_strict=shelf_data.get("position_strict", False)
+                position_strict=shelf_data.get("position_strict", False),
+                height_ratio=shelf_data.get("height_ratio", 0.30),
+                y_start_ratio=shelf_data.get("y_start_ratio"),
+                is_background=shelf_data.get("is_background", False)
             )
             shelf_configs.append(shelf_config)
 
