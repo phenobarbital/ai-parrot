@@ -1,115 +1,127 @@
-import { cssPx, el, on, stop, uid, type Dispose } from "./utils";
-import type { DashboardView, Cell } from "./dashboard";
+// widget.ts - Widget con dock corregido y responsive
+import { clamp, cssPx, el, on, stop, storage, uid, type Dispose } from "./utils.js";
+import { bus } from "./events.js";
+import type { DashboardView } from "./dashboard.js";
+import type { Placement, WidgetOptions, WidgetState, ToolbarButton, AnyPlacement } from "./types.js";
 
-export type ToolbarButton = {
-  id: string;
-  title: string;
-  icon?: string;       // text/icon (simple demo)
-  onClick: (w: Widget) => void;
-  visible?: (w: Widget) => boolean;
-};
-
-export type WidgetOptions = {
-  id?: string;
-  title: string;
-  icon?: string; // can be emoji or an icon text; replace with <i> if you use an icon font
-  header?: string | HTMLElement;
-  content?: string | HTMLElement;
-  footer?: string | HTMLElement;
-
-  // Behavior toggles
-  draggable?: boolean;
-  resizable?: boolean;
-
-  // Callbacks
-  onRefresh?: (w: Widget) => void | Promise<void>;
-  onClose?: (w: Widget) => void;
-
-  toolbar?: ToolbarButton[]; // allow custom buttons
-};
-
-type WidgetState = "docked" | "floating" | "maximized";
-
-export type SavedWidgetState = {
-  state: WidgetState;
-  minimized: boolean;
-  dashId: string | null;
-  cell: Cell | null;
-  floating?: { left?: string; top?: string; width?: string; height?: string };
-};
+type WidgetMode = "docked" | "floating" | "maximized";
 
 export class Widget {
-  public readonly id: string;
-  public readonly el: HTMLElement;
+  readonly id: string;
+  readonly el: HTMLElement;
 
-  private readonly titleBar: HTMLElement;
-  private readonly titleText: HTMLElement;
-  private readonly toolbarEl: HTMLElement;
-  private readonly burgerBtn: HTMLButtonElement;
+  protected readonly opts: WidgetOptions;
+  protected readonly titleBar: HTMLElement;
+  protected readonly titleText: HTMLElement;
+  protected readonly toolbar: HTMLElement;
+  protected readonly burgerBtn: HTMLElement;
+  protected readonly headerSection: HTMLElement;
+  protected readonly contentSection: HTMLElement;
+  protected readonly footerSection: HTMLElement;
+  protected readonly resizeHandle: HTMLElement;
 
-  private readonly sectionHeader: HTMLElement;
-  private readonly sectionContent: HTMLElement;
-  private readonly sectionFooter: HTMLElement;
+  protected dashboard: DashboardView | null = null;
+  protected placement: AnyPlacement | null = null;
+  protected mode: WidgetMode = "docked";
+  protected minimized = false;
 
-  private dash: DashboardView | null = null;
-  private cell: Cell | null = null;
+  // Para restaurar estado al re-dockear
+  protected lastDocked: { dashboard: DashboardView; placement: AnyPlacement } | null = null;
+  protected floatingStyles: { left: string; top: string; width: string; height: string } | null = null;
 
-  private state: WidgetState = "docked";
-  private minimized = false;
-
-  private prevDock: { dash: DashboardView; cell: Cell } | null = null;
-  private prevInlineStyle: string | null = null;
-
-  private disposers: Dispose[] = [];
-
-  private resizeAvail = { right: true, bottom: true };
-
-  private opts: WidgetOptions;
-  private restoredState = false;
+  protected disposers: Dispose[] = [];
+  protected stateRestored = false;
 
   constructor(opts: WidgetOptions) {
     this.opts = opts;
-    this.id = opts.id ?? uid("w");
+    this.id = opts.id ?? uid("widget");
 
-    // Root
-    this.el = el("article", { class: "widget", "data-widget-id": this.id });
+    // Crear estructura del widget
+    this.el = el("article", {
+      class: "widget",
+      "data-widget-id": this.id
+    });
 
-    // Titlebar
-    const iconEl = el("span", { class: "widget-icon", title: "Widget icon" }, opts.icon ?? "▣");
+    // Title bar con icono, título, y toolbar
+    this.titleBar = el("header", { class: "widget-titlebar" });
+
+    const iconEl = el("span", { class: "widget-icon" }, opts.icon ?? "▣");
     this.titleText = el("span", { class: "widget-title" }, opts.title);
 
-    this.toolbarEl = el("div", { class: "widget-toolbar" });
+    // Burger menu para modo responsive
+    this.burgerBtn = el("button", {
+      class: "widget-burger",
+      type: "button",
+      title: "Menu",
+      "aria-label": "Widget menu"
+    }, "☰");
 
-    this.burgerBtn = el("button", { class: "widget-burger", type: "button", title: "Widget menu" }, "⌄") as HTMLButtonElement;
+    this.toolbar = el("div", { class: "widget-toolbar" });
 
-    this.titleBar = el("div", { class: "widget-titlebar" }, iconEl, this.titleText, this.toolbarEl, this.burgerBtn);
+    const titleGroup = el("div", { class: "widget-title-group" });
+    titleGroup.append(iconEl, this.titleText);
 
-    // Sections
-    this.sectionHeader = el("div", { class: "widget-section widget-header" });
-    this.sectionContent = el("div", { class: "widget-section widget-content" });
-    this.sectionFooter = el("div", { class: "widget-section widget-footer" });
+    const actionsGroup = el("div", { class: "widget-actions" });
+    actionsGroup.append(this.toolbar, this.burgerBtn);
 
-    this.setSection(this.sectionHeader, opts.header ?? "");
-    this.setSection(this.sectionContent, opts.content ?? "");
-    this.setSection(this.sectionFooter, opts.footer ?? "");
+    this.titleBar.append(titleGroup, actionsGroup);
 
-    // Resize handle (docked + floating)
-    const handleCorner = el("div", { class: "widget-resize-handle handle-br", title: "Resize" });
+    // Secciones de contenido
+    this.headerSection = el("div", { class: "widget-header" });
+    this.contentSection = el("div", { class: "widget-content" });
+    this.footerSection = el("div", { class: "widget-footer" });
 
-    this.el.append(this.titleBar, this.sectionHeader, this.sectionContent, this.sectionFooter, handleCorner);
+    this.setSection(this.headerSection, opts.header);
+    this.setSection(this.contentSection, opts.content);
+    this.setSection(this.footerSection, opts.footer);
+
+    // Resize handle
+    this.resizeHandle = el("div", {
+      class: "widget-resize-handle",
+      title: "Resize"
+    });
+
+    this.el.append(
+      this.titleBar,
+      this.headerSection,
+      this.contentSection,
+      this.footerSection,
+      this.resizeHandle
+    );
 
     this.buildToolbar();
-    this.wireInteractions(handleCorner);
+    this.setupInteractions();
+
+    // Lifecycle hook: initialization complete
+    this.onInit();
   }
 
-  private setSection(section: HTMLElement, value: string | HTMLElement): void {
-    section.innerHTML = "";
-    if (typeof value === "string") {
-      section.innerHTML = value;
-    } else {
-      section.append(value);
+  // === Lifecycle Hooks (override in subclasses) ===
+
+  /** Called after widget is fully constructed. Override in subclasses. */
+  protected onInit(): void { }
+
+  /** Called before widget is destroyed. Override in subclasses. */
+  protected onDestroy(): void { }
+
+  /** Called before refresh starts. Override in subclasses. */
+  protected onRefresh(): void { }
+
+  /** Called after refresh completes. Override in subclasses. */
+  protected onReload(): void { }
+
+  /** Called when configuration is saved. Override in subclasses. */
+  protected onConfigSave(config: Record<string, unknown>): void {
+    // Apply common config changes
+    if (config.title && typeof config.title === "string") {
+      this.setTitle(config.title);
+    }
+    if (config.icon && typeof config.icon === "string") {
+      this.setIcon(config.icon);
     }
   }
+
+  // === Getters ===
 
   getTitle(): string {
     return this.titleText.textContent ?? this.opts.title;
@@ -119,334 +131,203 @@ export class Widget {
     return this.opts.icon ?? "▣";
   }
 
-  private buildToolbar(): void {
-    const defaultButtons: ToolbarButton[] = [
-      {
-        id: "min",
-        title: "Minimize / restore",
-        icon: "▁",
-        onClick: (w) => w.toggleMinimize(),
-        visible: () => true,
-      },
-      {
-        id: "max",
-        title: "Maximize",
-        icon: "⛶",
-        onClick: (w) => w.maximize(),
-        visible: (w) => !w.isMaximized(),
-      },
-      {
-        id: "restore",
-        title: "Restore",
-        icon: "🗗",
-        onClick: (w) => w.restore(),
-        visible: (w) => w.isMaximized(),
-      },
-      {
-        id: "refresh",
-        title: "Refresh",
-        icon: "⟳",
-        onClick: (w) => void w.refresh(),
-        visible: () => true,
-      },
-      {
-        id: "popout",
-        title: "Open in new window",
-        icon: "🗗",
-        onClick: (w) => w.openInWindow(),
-        visible: () => true,
-      },
-      {
-        id: "float",
-        title: "Decouple / dock",
-        icon: "⇱",
-        onClick: (w) => w.toggleFloating(),
-        visible: () => true,
-      },
-      {
-        id: "close",
-        title: "Close",
-        icon: "×",
-        onClick: (w) => w.close(),
-        visible: () => true,
-      },
-    ];
-
-    const all = [...defaultButtons, ...(this.opts.toolbar ?? [])];
-
-    const render = () => {
-      this.toolbarEl.innerHTML = "";
-      for (const b of all) {
-        if (b.visible && !b.visible(this)) continue;
-        const btn = el("button", { class: "widget-toolbtn", type: "button", title: b.title, "data-btn": b.id }, b.icon ?? b.title);
-        on(btn, "click", (ev) => {
-          stop(ev);
-          b.onClick(this);
-          // re-render on state changes
-          render();
-        });
-        this.toolbarEl.append(btn);
-      }
-    };
-    render();
-
-    // Burger menu duplicates toolbar actions (simple)
-    on(this.burgerBtn, "click", (ev) => {
-      stop(ev);
-      this.showMenu();
-    });
+  /** Get configuration tabs for this widget. Override in subclasses to add tabs. */
+  getConfigTabs(): import("./widget-config-modal.js").ConfigTab[] {
+    return [];
   }
 
-  private showMenu(): void {
-    document.querySelector(".widget-menu")?.remove();
-
-    const menu = el("div", { class: "widget-menu", role: "menu" });
-
-    const add = (label: string, fn: () => void, enabled = true) => {
-      const b = el("button", { class: "widget-menu-item", type: "button" }, label) as HTMLButtonElement;
-      b.disabled = !enabled;
-      on(b, "click", (ev) => {
-        stop(ev);
-        fn();
-        menu.remove();
-      });
-      menu.append(b);
-    };
-
-    add(this.minimized ? "Restore from minimize" : "Minimize", () => this.toggleMinimize());
-    add(this.isMaximized() ? "Restore size" : "Maximize", () => (this.isMaximized() ? this.restore() : this.maximize()));
-    add(this.isFloating() ? "Dock widget" : "Decouple (float)", () => this.toggleFloating());
-    add("Refresh", () => void this.refresh(), !!this.opts.onRefresh);
-    add("Close", () => this.close());
-
-    document.body.append(menu);
-    const r = this.burgerBtn.getBoundingClientRect();
-    menu.style.left = cssPx(r.right - menu.offsetWidth);
-    menu.style.top = cssPx(r.bottom + 6);
-
-    const off = on(window, "pointerdown", (ev) => {
-      const t = ev.target as HTMLElement;
-      if (!t.closest(".widget-menu") && t !== this.burgerBtn) {
-        menu.remove();
-        off();
-      }
-    }, { capture: true });
+  /** Open the settings modal */
+  async openSettings(): Promise<void> {
+    const { openWidgetConfig } = await import("./widget-config-modal.js");
+    openWidgetConfig(this, this.getConfigTabs());
   }
 
-  private wireInteractions(handleCorner: HTMLElement): void {
-    // Docked drag (swap cells) OR floating drag (move freely)
-    const dragEnabled = this.opts.draggable ?? true;
-
-    if (dragEnabled) {
-      this.disposers.push(on(this.titleBar, "pointerdown", (ev) => {
-        const p = ev as PointerEvent;
-        const t = ev.target as HTMLElement;
-        if (t.closest("button")) return; // don't start drag on buttons
-        if (this.isMaximized()) return;
-
-        if (this.isFloating()) {
-          this.beginFloatingDrag(p);
-        } else if (this.dash && this.dash.layout && this.cell) {
-          this.dash.layout.beginDockDrag(this, { x: p.clientX, y: p.clientY });
-        }
-      }));
-    }
-
-    const resizable = this.opts.resizable ?? true;
-
-    const startResize = () => (ev: PointerEvent) => {
-      if (!resizable) return;
-      if (this.isMaximized()) return;
-
-      const edges = { right: this.resizeAvail.right, bottom: this.resizeAvail.bottom };
-      if (!edges.right && !edges.bottom) return;
-
-      stop(ev);
-
-      const startX = ev.clientX;
-      const startY = ev.clientY;
-      const baseline = this.dash && this.cell
-        ? { rows: this.dash.layout.getRowSizes(), cols: this.dash.layout.getColSizes() }
-        : undefined;
-
-      // Floating: resize the widget itself.
-      const startRect = this.el.getBoundingClientRect();
-      const startW = startRect.width;
-      const startH = startRect.height;
-
-      const move = (e: PointerEvent) => {
-        const dx = e.clientX - startX;
-        const dy = e.clientY - startY;
-
-        if (this.isFloating()) {
-          const w = Math.max(220, startW + (edges.right ? dx : 0));
-          const h = Math.max(120, startH + (edges.bottom ? dy : 0));
-          this.el.style.width = cssPx(w);
-          this.el.style.height = cssPx(h);
-        } else if (this.dash && this.cell) {
-          this.dash.layout.resizeTracksFromCell(this.cell, dx, dy, edges, baseline);
-        }
-      };
-
-      const up = () => {
-        window.removeEventListener("pointermove", move, true);
-        window.removeEventListener("pointerup", up, true);
-        if (this.isFloating()) this.saveState();
-      };
-
-      window.addEventListener("pointermove", move, true);
-      window.addEventListener("pointerup", up, true);
-    };
-
-    this.disposers.push(on(handleCorner, "pointerdown", startResize()));
+  /** Set the widget title */
+  setTitle(title: string): void {
+    this.titleText.textContent = title;
   }
 
-  private storageKey(): string {
-    return `widget-state:${this.id}`;
+  /** Set the widget icon */
+  setIcon(icon: string): void {
+    const iconEl = this.titleBar.querySelector(".widget-icon");
+    if (iconEl) iconEl.textContent = icon;
   }
 
-  getSavedState(): SavedWidgetState | null {
-    const raw = localStorage.getItem(this.storageKey());
-    if (!raw) return null;
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return null;
-    }
+  getDashboard(): DashboardView | null {
+    return this.dashboard;
   }
 
-  saveState(): void {
-    const payload: SavedWidgetState = {
-      state: this.state,
-      minimized: this.minimized,
-      dashId: this.dash?.id ?? this.prevDock?.dash.id ?? null,
-      cell: this.cell,
-    };
-
-    if (this.isFloating() || this.isMaximized()) {
-      payload.floating = {
-        left: this.el.style.left,
-        top: this.el.style.top,
-        width: this.el.style.width,
-        height: this.el.style.height,
-      };
-    }
-
-    localStorage.setItem(this.storageKey(), JSON.stringify(payload));
+  getPlacement(): AnyPlacement | null {
+    return this.placement;
   }
 
-  maybeRestoreState(): void {
-    if (this.restoredState) return;
-    const saved = this.getSavedState();
-    if (!saved) return;
-    this.restoredState = true;
-
-    this.minimized = !!saved.minimized;
-    this.el.classList.toggle("is-minimized", this.minimized);
-
-    if (saved.state === "floating") {
-      this.float();
-      if (saved.floating) {
-        if (saved.floating.left) this.el.style.left = saved.floating.left;
-        if (saved.floating.top) this.el.style.top = saved.floating.top;
-        if (saved.floating.width) this.el.style.width = saved.floating.width;
-        if (saved.floating.height) this.el.style.height = saved.floating.height;
-      }
-    } else if (saved.state === "maximized") {
-      this.maximize();
-    }
+  isFloating(): boolean {
+    return this.mode === "floating";
   }
 
-  private beginFloatingDrag(ev: PointerEvent): void {
-    stop(ev);
-    this.el.setPointerCapture?.(ev.pointerId);
-
-    const startX = ev.clientX;
-    const startY = ev.clientY;
-
-    const r = this.el.getBoundingClientRect();
-    const ox = startX - r.left;
-    const oy = startY - r.top;
-
-    const move = (e: PointerEvent) => {
-      const x = e.clientX - ox;
-      const y = e.clientY - oy;
-      this.el.style.left = cssPx(x);
-      this.el.style.top = cssPx(y);
-    };
-
-    const up = () => {
-      window.removeEventListener("pointermove", move, true);
-      window.removeEventListener("pointerup", up, true);
-      this.saveState();
-    };
-
-    window.addEventListener("pointermove", move, true);
-    window.addEventListener("pointerup", up, true);
+  isMaximized(): boolean {
+    return this.mode === "maximized";
   }
 
-  // --- API used by Dashboard ---
-  setDocked(dash: DashboardView, cell: Cell): void {
-    this.dash = dash;
-    this.cell = cell;
-    this.state = "docked";
+  isDocked(): boolean {
+    return this.mode === "docked";
+  }
+
+  isMinimized(): boolean {
+    return this.minimized;
+  }
+
+  // === Setters (used by layout) ===
+
+  setDocked(dashboard: DashboardView, placement: AnyPlacement): void {
+    this.dashboard = dashboard;
+    this.placement = placement; // No spread if AnyPlacement is union
+    this.mode = "docked";
+
+    // Guardar para poder re-dockear
+    this.lastDocked = { dashboard, placement: placement };
+
+    // Limpiar estilos de floating/maximized
     this.el.classList.remove("is-floating", "is-maximized");
     this.el.style.position = "";
     this.el.style.left = "";
     this.el.style.top = "";
-    // In docked mode width/height are governed by the grid tracks.
     this.el.style.width = "";
     this.el.style.height = "";
+    this.el.style.zIndex = "";
   }
 
-  setCell(cell: Cell): void {
-    this.cell = cell;
-  }
-
-  getCell(): Cell | null {
-    return this.cell;
-  }
-
-  setDockedResizeAvailability(avail: { right: boolean; bottom: boolean }): void {
-    this.resizeAvail = avail;
-    const none = !avail.right && !avail.bottom;
-    this.el.classList.toggle("no-resize", none);
-  }
-
-  // --- Public API ---
-  toggleMinimize(): void {
-    this.minimized = !this.minimized;
-    this.el.classList.toggle("is-minimized", this.minimized);
-    this.saveState();
-  }
-
-  async refresh(): Promise<void> {
-    this.el.classList.add("is-refreshing");
-    try {
-      await this.opts.onRefresh?.(this);
-    } finally {
-      this.el.classList.remove("is-refreshing");
+  setPlacement(placement: AnyPlacement): void {
+    this.placement = placement;
+    if (this.lastDocked) {
+      this.lastDocked.placement = placement;
     }
   }
 
-  close(): void {
-    this.opts.onClose?.(this);
-    localStorage.removeItem(this.storageKey());
-    this.destroy();
+  setContent(content: string | HTMLElement): void {
+    this.setSection(this.contentSection, content);
+  }
+
+  // === Public Actions ===
+
+  toggleMinimize(): void {
+    this.minimized = !this.minimized;
+    this.el.classList.toggle("is-minimized", this.minimized);
+    bus.emit("widget:minimized", { widget: this });
+    this.saveState();
+  }
+
+  float(): void {
+    // Si ya está flotando, no hacer nada
+    if (this.isFloating()) return;
+
+    // Si está maximizado, primero restaurar
+    if (this.isMaximized()) {
+      this.restore();
+    }
+
+    // Guardar posición actual antes de flotar
+    if (this.dashboard && this.placement) {
+      this.lastDocked = {
+        dashboard: this.dashboard,
+        placement: this.placement
+      };
+    }
+
+    // Obtener rect actual para posicionar
+    const rect = this.el.getBoundingClientRect();
+
+    // Mover al body
+    document.body.appendChild(this.el);
+
+    this.mode = "floating";
+    this.el.classList.add("is-floating");
+    this.el.classList.remove("is-maximized");
+
+    // Aplicar estilos de floating
+    Object.assign(this.el.style, {
+      position: "fixed",
+      left: cssPx(rect.left),
+      top: cssPx(rect.top),
+      width: cssPx(Math.max(280, rect.width)),
+      height: cssPx(Math.max(200, rect.height)),
+      zIndex: "9999",
+    });
+
+    // Guardar estilos floating para persistencia
+    this.floatingStyles = {
+      left: this.el.style.left,
+      top: this.el.style.top,
+      width: this.el.style.width,
+      height: this.el.style.height,
+    };
+
+    bus.emit("widget:floated", { widget: this });
+    this.saveState();
+    this.renderToolbar();
+  }
+
+  /**
+   * DOCK CORREGIDO: Ahora siempre tiene un destino
+   */
+  dock(): void {
+    if (!this.isFloating() && !this.isMaximized()) return;
+
+    // Buscar dónde re-dockear
+    let targetDash = this.lastDocked?.dashboard ?? this.dashboard;
+    let targetPlacement = this.lastDocked?.placement ?? this.placement;
+
+    // Si no hay destino guardado, buscar el dashboard activo
+    if (!targetDash) {
+      // Importación dinámica para evitar circular dependency
+      const container = (window as any).__dashboardContainer;
+      if (container) {
+        targetDash = container.getActiveDashboard();
+      }
+    }
+
+    // Si aún no hay dashboard, no podemos dockear
+    if (!targetDash) {
+      console.warn("No dashboard available to dock widget");
+      return;
+    }
+
+    // Si no hay placement, encontrar espacio libre
+    if (!targetPlacement) {
+      targetPlacement = targetDash.layout.findFreeSpace(4, 4) ??
+        { row: 0, col: 0, rowSpan: 4, colSpan: 4 };
+    }
+
+    // Remover del body
     this.el.remove();
-  }
 
-  destroy(): void {
-    for (const d of this.disposers) d();
-    this.disposers = [];
-  }
+    // Limpiar estilos floating
+    this.el.classList.remove("is-floating", "is-maximized");
+    Object.assign(this.el.style, {
+      left: "",
+      top: "",
+      width: "",
+      height: "",
+      zIndex: "",
+    });
+    console.log(`[Widget] setDocked: ${this.id}`, { style: this.el.style.cssText });
 
-  isFloating(): boolean {
-    return this.state === "floating";
-  }
+    // Re-agregar al layout
+    this.mode = "docked";
 
-  isMaximized(): boolean {
-    return this.state === "maximized";
+    // CRITICAL: Restore dimensions for FreeLayout
+    // addWidget typically resets to default if we don't pass full info.
+    // targetPlacement should already have the correct Width/Height if it came from FreeLayout state
+    targetDash.addWidget(this, targetPlacement);
+
+    bus.emit("widget:docked", {
+      widget: this,
+      dashboard: targetDash,
+      placement: targetPlacement
+    });
+
+    this.saveState();
+    this.renderToolbar();
   }
 
   toggleFloating(): void {
@@ -457,146 +338,557 @@ export class Widget {
     }
   }
 
-  openInWindow(): void {
-    const win = window.open("", "_blank", "width=720,height=480");
-    if (!win) return;
-    const styles = Array.from(document.styleSheets)
-      .map((s) => {
-        try {
-          return Array.from(s.cssRules ?? [])
-            .map((r) => r.cssText)
-            .join("\n");
-        } catch {
-          return "";
-        }
-      })
-      .join("\n");
-    win.document.write(`<!doctype html><html><head><title>${this.getTitle()}</title><style>${styles}</style></head><body></body></html>`);
-    win.document.body.append(this.el.cloneNode(true));
-    win.document.close();
-  }
-
-  float(): void {
-    if (this.isMaximized()) this.restore();
-
-    if (!this.dash || !this.cell) {
-      // already detached or not yet docked
-      this.state = "floating";
-      this.el.classList.add("is-floating");
-      this.saveState();
-      return;
-    }
-
-    this.prevDock = { dash: this.dash, cell: { ...this.cell } };
-    this.prevInlineStyle = this.el.getAttribute("style");
-
-    const r = this.el.getBoundingClientRect();
-    document.body.append(this.el);
-    this.state = "floating";
-    this.el.classList.add("is-floating");
-    this.el.style.position = "absolute";
-    this.el.style.left = cssPx(r.left);
-    this.el.style.top = cssPx(r.top);
-    this.el.style.width = cssPx(Math.max(260, r.width));
-    this.el.style.height = cssPx(Math.max(160, r.height));
-
-    // keep references
-    this.dash = this.prevDock.dash;
-    this.cell = this.prevDock.cell;
-    this.saveState();
-  }
-
-  dock(): void {
-    if (!this.prevDock) {
-      // best effort: if we don't know original, just remove floating styles
-      this.el.classList.remove("is-floating");
-      this.state = "docked";
-      this.el.style.position = "";
-      this.el.style.left = "";
-      this.el.style.top = "";
-      this.el.style.width = "";
-      this.el.style.height = "";
-      return;
-    }
-
-    const { dash, cell } = this.prevDock;
-    dash.layout.setWidget(cell, this); // re-attach
-    this.state = "docked";
-    this.el.classList.remove("is-floating");
-    this.prevDock = null;
-
-    if (this.prevInlineStyle) this.el.setAttribute("style", this.prevInlineStyle);
-    this.prevInlineStyle = null;
-
-    // grid governs size; remove explicit sizing
-    this.el.style.width = "";
-    this.el.style.height = "";
-    this.el.style.left = "";
-    this.el.style.top = "";
-    this.el.style.position = "";
-    this.saveState();
-  }
-
   maximize(): void {
     if (this.isMaximized()) return;
 
+    // Guardar estado actual
     if (this.isFloating()) {
-      // maximize over page
-      this.prevInlineStyle = this.el.getAttribute("style");
-      this.el.classList.add("is-maximized");
-      this.state = "maximized";
-      this.el.style.position = "fixed";
-      this.el.style.left = "0";
-      this.el.style.top = "0";
-      this.el.style.width = "100vw";
-      this.el.style.height = "100vh";
-      this.saveState();
-      return;
+      this.floatingStyles = {
+        left: this.el.style.left,
+        top: this.el.style.top,
+        width: this.el.style.width,
+        height: this.el.style.height,
+      };
+    } else if (this.dashboard && this.placement) {
+      this.lastDocked = {
+        dashboard: this.dashboard,
+        placement: this.placement,
+      };
+      // Ensure we don't accidentally treat it as "was floating"
+      this.floatingStyles = null;
     }
 
-    if (!this.dash) return;
+    // Mover al body si no está ahí
+    if (!this.el.parentElement || this.el.parentElement !== document.body) {
+      document.body.appendChild(this.el);
+    }
 
-    // Move to dashboard root to cover header/main/footer
-    this.prevDock = this.cell ? { dash: this.dash, cell: { ...this.cell } } : null;
-    this.prevInlineStyle = this.el.getAttribute("style");
-
-    this.dash.el.append(this.el);
-
+    this.mode = "maximized";
     this.el.classList.add("is-maximized");
-    this.state = "maximized";
-    this.el.style.position = "absolute";
-    this.el.style.left = "0";
-    this.el.style.top = "0";
-    this.el.style.right = "0";
-    this.el.style.bottom = "0";
-    this.el.style.width = "";
-    this.el.style.height = "";
+    this.el.classList.remove("is-floating");
+
+    Object.assign(this.el.style, {
+      position: "fixed",
+      left: "0",
+      top: "0",
+      width: "100vw",
+      height: "100vh",
+      zIndex: "10000",
+    });
+
+    bus.emit("widget:maximized", { widget: this });
     this.saveState();
+    this.renderToolbar();
   }
 
   restore(): void {
     if (!this.isMaximized()) return;
 
     this.el.classList.remove("is-maximized");
-    this.state = this.prevDock ? "docked" : "floating";
 
-    if (this.prevInlineStyle != null) {
-      this.el.setAttribute("style", this.prevInlineStyle);
-    } else {
-      this.el.removeAttribute("style");
-    }
-    this.prevInlineStyle = null;
+    // Decidir si restaurar a floating o docked
 
-    if (this.prevDock) {
-      const { dash, cell } = this.prevDock;
-      dash.layout.setWidget(cell, this);
-      this.prevDock = null;
-    } else {
-      // restore from fullscreen float to normal floating
+    // PRIORITY: If we have a last docked state, go back there.
+    // Maximized widgets should usually return to their docked state unless they were floating before maximizing.
+    // But even if floating, if they have a dock parent, we might want to dock?
+    // Let's track "wasFloating" specifically?
+    // Actually, `floatingStyles` is set when we float.
+    // unique issue: `maximize` sets `floatingStyles` if floating, OR `lastDocked` if docked.
+
+    if (this.lastDocked && this.mode === "maximized" && !this.floatingStyles) {
+      // It was docked, then maximized. Restore to dock.
+      this.dock();
+    } else if (this.floatingStyles) {
+      // Restore to floating
+      this.mode = "floating";
       this.el.classList.add("is-floating");
-      this.el.style.position = "absolute";
-      // keep any previous left/top/size that user changed
+      Object.assign(this.el.style, this.floatingStyles);
+      this.el.style.zIndex = "9999";
+    } else if (this.lastDocked) {
+      // Fallback: If no floating styles but lastDocked exists, dock it.
+      this.dock();
+    } else {
+      // Fallback: floating center
+      this.mode = "floating";
+      this.el.classList.add("is-floating");
+      Object.assign(this.el.style, {
+        position: "fixed",
+        left: "50%",
+        top: "50%",
+        transform: "translate(-50%, -50%)",
+        width: "400px",
+        height: "300px",
+        zIndex: "9999",
+      });
     }
+
+    bus.emit("widget:restored", { widget: this });
     this.saveState();
+    this.renderToolbar();
+  }
+
+  async refresh(): Promise<void> {
+    if (!this.opts.onRefresh) return;
+
+    this.onRefresh(); // Lifecycle hook: before refresh
+    this.el.classList.add("is-refreshing");
+    try {
+      await this.opts.onRefresh(this);
+    } finally {
+      this.el.classList.remove("is-refreshing");
+      this.onReload(); // Lifecycle hook: after refresh
+    }
+  }
+
+  close(): void {
+    this.opts.onClose?.(this);
+
+    // If docked, remove from layout
+    if (this.dashboard) {
+      this.dashboard.layout.removeWidget(this);
+    }
+    // If floating/maximized, it might not have 'this.dashboard' set (it's null when floating)
+    // But we might have 'lastDocked' which holds the original dashboard reference
+    else if (this.lastDocked?.dashboard) {
+      this.lastDocked.dashboard.layout.removeWidget(this);
+    }
+
+    storage.remove(this.storageKey());
+    this.destroy();
+    this.el.remove();
+  }
+
+  openInNewWindow(): void {
+    const win = window.open("", "_blank", "width=720,height=480");
+    if (!win) return;
+
+    // Copiar estilos
+    const styles = Array.from(document.styleSheets)
+      .map(sheet => {
+        try {
+          return Array.from(sheet.cssRules ?? [])
+            .map(rule => rule.cssText)
+            .join("\n");
+        } catch {
+          return "";
+        }
+      })
+      .join("\n");
+
+    win.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>${this.getTitle()}</title>
+          <style>${styles}</style>
+        </head>
+        <body class="widget-popup-body">
+          ${this.el.outerHTML}
+        </body>
+      </html>
+    `);
+    win.document.close();
+  }
+
+  // === Private Methods ===
+
+  private setSection(section: HTMLElement, content?: string | HTMLElement): void {
+    section.innerHTML = "";
+    if (!content) {
+      section.style.display = "none";
+      return;
+    }
+    section.style.display = "";
+    if (typeof content === "string") {
+      section.innerHTML = content;
+    } else {
+      section.appendChild(content);
+    }
+  }
+
+  private buildToolbar(): void {
+    const defaultButtons: ToolbarButton[] = [
+      {
+        id: "minimize",
+        title: this.minimized ? "Restore" : "Minimize",
+        icon: "−",
+        onClick: () => this.toggleMinimize(),
+        visible: () => this.opts.minimizable !== false,
+      },
+      {
+        id: "maximize",
+        title: "Maximize",
+        icon: "□",
+        onClick: () => this.maximize(),
+        visible: () => !this.isMaximized() && this.opts.maximizable !== false,
+      },
+      {
+        id: "restore",
+        title: "Restore",
+        icon: "❐",
+        onClick: () => this.restore(),
+        visible: () => this.isMaximized(),
+      },
+      {
+        id: "float",
+        title: this.isFloating() ? "Dock" : "Float",
+        icon: this.isFloating() ? "⊡" : "⊟",
+        onClick: () => this.toggleFloating(),
+        visible: () => this.opts.floatable !== false,
+      },
+      {
+        id: "refresh",
+        title: "Refresh",
+        icon: "↻",
+        onClick: () => void this.refresh(),
+        visible: () => !!this.opts.onRefresh,
+      },
+      {
+        id: "popout",
+        title: "Open in new window",
+        icon: "↗",
+        onClick: () => this.openInNewWindow(),
+        visible: () => true,
+      },
+      {
+        id: "settings",
+        title: "Settings",
+        icon: "⚙",
+        onClick: () => void this.openSettings(),
+        visible: () => true,
+      },
+      {
+        id: "close",
+        title: "Close",
+        icon: "×",
+        onClick: () => this.close(),
+        visible: () => this.opts.closable !== false,
+      },
+    ];
+
+    this.renderToolbar(defaultButtons);
+  }
+
+  private renderToolbar(buttons?: ToolbarButton[]): void {
+    const allButtons = buttons ?? this.getToolbarButtons();
+
+    this.toolbar.innerHTML = "";
+    for (const btn of allButtons) {
+      if (btn.visible && !btn.visible(this)) continue;
+
+      const button = el("button", {
+        class: "widget-toolbtn",
+        type: "button",
+        title: btn.title,
+        "data-btn-id": btn.id,
+      }, btn.icon);
+
+      this.disposers.push(
+        on(button, "click", (ev: Event) => {
+          stop(ev);
+          btn.onClick(this);
+          this.renderToolbar();
+        })
+      );
+
+      this.toolbar.appendChild(button);
+    }
+  }
+
+  private getToolbarButtons(): ToolbarButton[] {
+    return [
+      {
+        id: "minimize",
+        title: this.minimized ? "Restore" : "Minimize",
+        icon: "−",
+        onClick: () => this.toggleMinimize(),
+        visible: () => this.opts.minimizable !== false,
+      },
+      {
+        id: "maximize",
+        title: "Maximize",
+        icon: "□",
+        onClick: () => this.maximize(),
+        visible: () => !this.isMaximized() && this.opts.maximizable !== false,
+      },
+      {
+        id: "restore",
+        title: "Restore",
+        icon: "❐",
+        onClick: () => this.restore(),
+        visible: () => this.isMaximized(),
+      },
+      {
+        id: "float",
+        title: this.isFloating() ? "Dock" : "Float",
+        icon: this.isFloating() ? "⊡" : "⊟",
+        onClick: () => this.toggleFloating(),
+        visible: () => this.opts.floatable !== false,
+      },
+      {
+        id: "refresh",
+        title: "Refresh",
+        icon: "↻",
+        onClick: () => void this.refresh(),
+        visible: () => !!this.opts.onRefresh,
+      },
+      {
+        id: "popout",
+        title: "Open in new window",
+        icon: "↗",
+        onClick: () => this.openInNewWindow(),
+        visible: () => true,
+      },
+      {
+        id: "settings",
+        title: "Settings",
+        icon: "⚙",
+        onClick: () => void this.openSettings(),
+        visible: () => true,
+      },
+      {
+        id: "close",
+        title: "Close",
+        icon: "×",
+        onClick: () => this.close(),
+        visible: () => this.opts.closable !== false,
+      },
+      ...(this.opts.toolbar ?? []),
+    ];
+  }
+
+  private setupInteractions(): void {
+    // Drag desde titlebar
+    if (this.opts.draggable !== false) {
+      this.disposers.push(
+        on(this.titleBar, "pointerdown", (ev: PointerEvent) => {
+          const target = ev.target as HTMLElement;
+          if (target.closest("button")) return;
+
+          if (this.isMaximized()) return;
+
+          if (this.isFloating()) {
+            this.beginFloatingDrag(ev);
+          } else if (this.dashboard) {
+            this.dashboard.layout.beginDrag(this, ev);
+          }
+        })
+      );
+    }
+
+    // Resize
+    if (this.opts.resizable !== false) {
+      this.disposers.push(
+        on(this.resizeHandle, "pointerdown", (ev: PointerEvent) => {
+          if (this.isMaximized()) return;
+
+          if (this.isFloating()) {
+            this.beginFloatingResize(ev);
+          } else if (this.dashboard) {
+            this.dashboard.layout.beginResize(this, ev);
+          }
+        })
+      );
+    }
+
+    // Burger menu
+    this.disposers.push(
+      on(this.burgerBtn, "click", (ev: Event) => {
+        stop(ev);
+        this.showBurgerMenu();
+      })
+    );
+
+    // Double-click para maximize/restore
+    this.disposers.push(
+      on(this.titleBar, "dblclick", (ev: Event) => {
+        const target = ev.target as HTMLElement;
+        if (target.closest("button")) return;
+
+        if (this.isMaximized()) {
+          this.restore();
+        } else {
+          this.maximize();
+        }
+      })
+    );
+  }
+
+  private beginFloatingDrag(ev: PointerEvent): void {
+    stop(ev);
+
+    const startX = ev.clientX;
+    const startY = ev.clientY;
+    const rect = this.el.getBoundingClientRect();
+    const offsetX = startX - rect.left;
+    const offsetY = startY - rect.top;
+
+    const onMove = (e: PointerEvent) => {
+      this.el.style.left = cssPx(e.clientX - offsetX);
+      this.el.style.top = cssPx(e.clientY - offsetY);
+    };
+
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove, true);
+      window.removeEventListener("pointerup", onUp, true);
+      this.floatingStyles = {
+        left: this.el.style.left,
+        top: this.el.style.top,
+        width: this.el.style.width,
+        height: this.el.style.height,
+      };
+      this.saveState();
+    };
+
+    window.addEventListener("pointermove", onMove, true);
+    window.addEventListener("pointerup", onUp, true);
+  }
+
+  private beginFloatingResize(ev: PointerEvent): void {
+    stop(ev);
+
+    const startX = ev.clientX;
+    const startY = ev.clientY;
+    const rect = this.el.getBoundingClientRect();
+    const startW = rect.width;
+    const startH = rect.height;
+
+    const onMove = (e: PointerEvent) => {
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      this.el.style.width = cssPx(Math.max(200, startW + dx));
+      this.el.style.height = cssPx(Math.max(150, startH + dy));
+    };
+
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove, true);
+      window.removeEventListener("pointerup", onUp, true);
+      this.floatingStyles = {
+        left: this.el.style.left,
+        top: this.el.style.top,
+        width: this.el.style.width,
+        height: this.el.style.height,
+      };
+      this.saveState();
+    };
+
+    window.addEventListener("pointermove", onMove, true);
+    window.addEventListener("pointerup", onUp, true);
+  }
+
+  private showBurgerMenu(): void {
+    // Remover menú existente
+    document.querySelector(".widget-context-menu")?.remove();
+
+    const menu = el("div", {
+      class: "widget-context-menu",
+      role: "menu"
+    });
+
+    const menuItems = [
+      { label: this.minimized ? "Restore" : "Minimize", action: () => this.toggleMinimize() },
+      { label: this.isMaximized() ? "Restore size" : "Maximize", action: () => this.isMaximized() ? this.restore() : this.maximize() },
+      { label: this.isFloating() ? "Dock" : "Float", action: () => this.toggleFloating() },
+      { divider: true },
+      { label: "Refresh", action: () => void this.refresh(), disabled: !this.opts.onRefresh },
+      { label: "Open in new window", action: () => this.openInNewWindow() },
+      { divider: true },
+      { label: "Close", action: () => this.close() },
+    ];
+
+    for (const item of menuItems) {
+      if ((item as { divider?: boolean }).divider) {
+        menu.appendChild(el("hr", { class: "widget-menu-divider" }));
+        continue;
+      }
+
+      const { label, action, disabled } = item as { label: string; action: () => void; disabled?: boolean };
+      const btn = el("button", {
+        class: "widget-menu-item",
+        type: "button",
+        disabled: disabled ? "true" : "",
+      }, label);
+
+      on(btn, "click", () => {
+        action();
+        menu.remove();
+      });
+
+      menu.appendChild(btn);
+    }
+
+    document.body.appendChild(menu);
+
+    // Posicionar menú
+    const rect = this.burgerBtn.getBoundingClientRect();
+    Object.assign(menu.style, {
+      position: "fixed",
+      top: cssPx(rect.bottom + 4),
+      right: cssPx(window.innerWidth - rect.right),
+      zIndex: "100000",
+    });
+
+    // Cerrar al hacer click fuera
+    const closeMenu = (e: Event) => {
+      if (!(e.target as HTMLElement).closest(".widget-context-menu")) {
+        menu.remove();
+        document.removeEventListener("pointerdown", closeMenu, true);
+      }
+    };
+    setTimeout(() => {
+      document.addEventListener("pointerdown", closeMenu, true);
+    }, 0);
+  }
+
+  // === Persistence ===
+
+  private storageKey(): string {
+    return `widget:${this.id}`;
+  }
+
+  saveState(): void {
+    const state: WidgetState = {
+      id: this.id,
+      mode: this.mode,
+      minimized: this.minimized,
+      dashboardId: this.dashboard?.id ?? this.lastDocked?.dashboard.id ?? null,
+      placement: this.placement ?? this.lastDocked?.placement ?? null,
+      floating: this.floatingStyles,
+    };
+    storage.set(this.storageKey(), state);
+  }
+
+  getSavedState(): WidgetState | null {
+    return storage.get<WidgetState>(this.storageKey());
+  }
+
+  restoreState(): void {
+    if (this.stateRestored) return;
+    this.stateRestored = true;
+
+    const state = this.getSavedState();
+    if (!state) return;
+
+    this.minimized = state.minimized;
+    this.el.classList.toggle("is-minimized", this.minimized);
+
+    if (state.mode === "floating" && state.floating) {
+      // Restaurar floating después de que el widget esté en el DOM
+      setTimeout(() => {
+        this.float();
+        if (state.floating) {
+          Object.assign(this.el.style, state.floating);
+          this.floatingStyles = state.floating;
+        }
+      }, 0);
+    } else if (state.mode === "maximized") {
+      setTimeout(() => this.maximize(), 0);
+    }
+  }
+
+  destroy(): void {
+    this.onDestroy(); // Lifecycle hook: before destroy
+    for (const d of this.disposers) d();
+    this.disposers = [];
   }
 }

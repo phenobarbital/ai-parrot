@@ -8,7 +8,7 @@
   import { getTurn, saveTurn, loadConversation } from '$lib/utils/conversation';
   import { ChatBubble, LoadingSpinner } from '../../../components';
 
-  export let data: { agentId: string };
+  let { data }: { data: { agentId: string } } = $props();
 
   let agent: BotSummary | null = $state(null);
   type ChatMessage = {

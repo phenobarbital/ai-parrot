@@ -1,25 +1,72 @@
 import axios from 'axios';
+import { browser } from '$app/environment';
 import { config } from '$lib/config';
 
 const apiClient = axios.create({
   baseURL: config.apiBaseUrl,
+  timeout: 30000,
   withCredentials: true,
   headers: {
     'Content-Type': 'application/json'
   }
 });
 
-apiClient.interceptors.request.use((config) => {
-  if (typeof window === 'undefined') {
-    return config;
+// Request interceptor - add authorization token
+apiClient.interceptors.request.use(
+  (requestConfig) => {
+    if (browser) {
+      const token = localStorage.getItem(config.tokenStorageKey);
+      if (token) {
+        requestConfig.headers.Authorization = `Bearer ${token}`;
+      }
+    }
+    return requestConfig;
+  },
+  (error) => {
+    return Promise.reject(error);
   }
+);
 
-  const token = localStorage.getItem(config.tokenStorageKey);
-  if (token) {
-    config.headers = config.headers || {};
-    config.headers.Authorization = `Bearer ${token}`;
+// Response interceptor - handle common error scenarios
+apiClient.interceptors.response.use(
+  (response) => {
+    return response;
+  },
+  (error) => {
+    if (error.response) {
+      switch (error.response.status) {
+        case 401:
+          // Unauthorized - clear token and redirect to login
+          if (browser) {
+            localStorage.removeItem(config.tokenStorageKey);
+            window.location.href = '/login';
+          }
+          break;
+        case 403:
+          // Forbidden - could add notification here
+          console.warn('Access forbidden:', error.response.data);
+          break;
+        case 404:
+          // Not found - could add notification here
+          console.warn('Resource not found:', error.response.data);
+          break;
+        case 500:
+          // Server error - could add notification here
+          console.error('Server error:', error.response.data);
+          break;
+        default:
+          // Other errors
+          console.error('API error:', error.response.status, error.response.data);
+      }
+    } else if (error.request) {
+      // Request made but no response received
+      console.error('No response received:', error.request);
+    } else {
+      // Error setting up the request
+      console.error('Request setup error:', error.message);
+    }
+    return Promise.reject(error);
   }
-  return config;
-});
+);
 
 export default apiClient;
